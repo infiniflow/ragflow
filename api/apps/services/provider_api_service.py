@@ -27,6 +27,7 @@ from api.db.services.tenant_model_instance_service import TenantModelInstanceSer
 from api.db.services.tenant_model_service import TenantModelService
 from api.utils.model_utils import get_model_type_human, calculate_model_type
 from rag.llm import ChatModel, CvModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, Seq2txtModel, TTSModel
+from rag.llm.bedrock_model_discovery import BedrockModelDiscoveryError
 
 
 def _to_int(v, default=500):
@@ -76,8 +77,8 @@ def _bedrock_model_list_api_key(api_key: str | None, region: str | None, extensi
     return json.dumps(bedrock_key)
 
 
-def _should_verify_bedrock_api_key_without_models(provider_name: str, api_key: str | dict | None, model_info: list[dict] | None) -> bool:
-    if provider_name != "Bedrock" or model_info:
+def _is_bedrock_api_key_config(api_key: str | dict | None) -> bool:
+    if not api_key:
         return False
     if isinstance(api_key, dict):
         key_config = api_key
@@ -87,6 +88,10 @@ def _should_verify_bedrock_api_key_without_models(provider_name: str, api_key: s
         except (json.JSONDecodeError, TypeError):
             return False
     return isinstance(key_config, dict) and key_config.get("auth_mode") == "bedrock_api_key"
+
+
+def _should_verify_bedrock_api_key_without_models(provider_name: str, api_key: str | dict | None, model_info: list[dict] | None) -> bool:
+    return provider_name == "Bedrock" and not model_info and _is_bedrock_api_key_config(api_key)
 
 
 def _factory_llm_name(llm: dict) -> str:
@@ -213,7 +218,13 @@ def show_provider(provider_id_or_name: str):
     return True, {"base_url": {"default": factory_info.get("url", "")}, "name": factory_info["name"], "total_models": len(factory_info.get("llm", []))}
 
 
-async def list_provider_models(provider_id_or_name: str, api_key: str = None, base_url: str = None, region: str = None, extensions: dict[str, object] | None = None):
+async def list_provider_models(
+    provider_id_or_name: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    region: str | None = None,
+    extensions: dict[str, object] | None = None,
+) -> tuple[bool, list[dict[str, object]] | str]:
     """
     List all models for a provider from the LLM dictionary.
 
@@ -234,13 +245,7 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
     api_key = _normalize_provider_api_key(provider_name, api_key)
     if provider_name == "Bedrock":
         api_key = _bedrock_model_list_api_key(api_key, region, extensions)
-    bedrock_remote_only = False
-    if provider_name == "Bedrock" and api_key:
-        try:
-            parsed_bedrock_key = json.loads(api_key) if isinstance(api_key, str) else api_key
-            bedrock_remote_only = parsed_bedrock_key.get("auth_mode") == "bedrock_api_key"
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
+    bedrock_remote_only = provider_name == "Bedrock" and _is_bedrock_api_key_config(api_key)
     static_llms = (
         []
         if bedrock_remote_only
@@ -259,16 +264,23 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
     remote_models = []
     should_fetch_remote = provider_name in ModelMeta and (provider_name != "Bedrock" or bedrock_remote_only)
     if should_fetch_remote:
+        logging.info("Listing remote models for provider %s", provider_name)
         model_list_coro = ModelMeta[provider_name](api_key, model_base_url).get_model_list()
         if provider_name == "Bedrock":
             timeout_seconds = max(1, _to_int(os.environ.get("LLM_TIMEOUT_SECONDS"), 10))
             try:
                 remote_models = await asyncio.wait_for(model_list_coro, timeout=timeout_seconds)
             except TimeoutError:
+                logging.warning("Timed out while listing remote models for provider %s", provider_name)
                 return False, f"Timed out while listing models from {provider_name}"
+            except (BedrockModelDiscoveryError, ValueError) as error:
+                logging.warning("Failed to list remote models for provider %s: %s", provider_name, error)
+                return False, str(error)
         else:
             remote_models = await model_list_coro
 
+    if bedrock_remote_only and not remote_models:
+        return False, "No compatible Bedrock models were discovered"
     if not static_llms and not remote_models:
         return True, []
 
@@ -719,6 +731,8 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
         )
         if not ok:
             return False, result, {}
+        if not result:
+            return False, "No compatible Bedrock models were discovered", {}
         return True, "success", {}
 
     if model_info:

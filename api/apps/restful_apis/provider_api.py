@@ -245,6 +245,8 @@ async def list_provider_models(provider_id_or_name: str):
                 type: object
     """
     try:
+        if request.method == "POST":
+            logging.info("Listing models for provider %s via POST", provider_id_or_name)
         body = await request.get_json(silent=True) if request.method == "POST" else {}
         if body is None:
             body = {}

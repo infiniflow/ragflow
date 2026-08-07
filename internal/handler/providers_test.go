@@ -65,6 +65,11 @@ func TestProviderListModelItemUsesFrontendContract(t *testing.T) {
 	if _, exists := item["max_output"]; exists {
 		t.Fatal("legacy max_output field must not be emitted")
 	}
+	emptyTypes := providerListModelItem(modelModule.ListModelResponse{Name: "empty"})["model_types"]
+	modelTypes, ok := emptyTypes.([]string)
+	if !ok || len(modelTypes) != 0 {
+		t.Fatalf("model_types=%#v, want an empty string array", emptyTypes)
+	}
 }
 
 func TestBuildModelListAPIKeyMapsBedrockExtensions(t *testing.T) {

@@ -40,4 +40,9 @@ describe('serializeProviderAPIKey', () => {
       '{"yiyan_ak":"ak","yiyan_sk":"sk"}',
     );
   });
+
+  it('maps missing API keys to an empty string', () => {
+    expect(serializeProviderAPIKey(null)).toBe('');
+    expect(serializeProviderAPIKey(undefined)).toBe('');
+  });
 });

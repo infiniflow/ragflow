@@ -59,33 +59,20 @@ import { VerifyResult } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
 import { parseApiKeyAsObject } from '../provider-schema/field-config/utils';
 import {
+  getBedrockCatalogCredentialScope,
+  shouldResetBedrockForm,
+} from './bedrock-instance-utils';
+import type {
+  AuthMode,
+  BedrockEndpointType,
+  BedrockFormValues,
+} from './bedrock-instance-utils';
+import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
 } from './interface';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
-
-type AuthMode =
-  | 'access_key_secret'
-  | 'iam_role'
-  | 'assume_role'
-  | 'bedrock_api_key';
-type BedrockEndpointType = 'runtime' | 'mantle_openai' | 'mantle_anthropic';
-
-export type BedrockFormValues = {
-  auth_mode: AuthMode;
-  bedrock_ak?: string;
-  bedrock_sk?: string;
-  aws_role_arn?: string;
-  bedrock_api_key?: string;
-  bedrock_endpoint_type?: BedrockEndpointType;
-  bedrock_endpoint_url?: string;
-  bedrock_discovery_endpoint_url?: string;
-  bedrock_region: string;
-  llm_name: string;
-  max_tokens: number;
-  model_type: ('chat' | 'embedding')[];
-};
 
 export const getBedrockModelListRequest = (values: BedrockFormValues) => {
   const extensions: Record<string, unknown> = {
@@ -99,8 +86,7 @@ export const getBedrockModelListRequest = (values: BedrockFormValues) => {
   } else if (values.auth_mode === 'bedrock_api_key') {
     extensions.endpoint_type = values.bedrock_endpoint_type;
     extensions.endpoint_url = values.bedrock_endpoint_url;
-    extensions.discovery_endpoint_url =
-      values.bedrock_discovery_endpoint_url;
+    extensions.discovery_endpoint_url = values.bedrock_discovery_endpoint_url;
   }
   return {
     api_key:
@@ -119,26 +105,6 @@ interface BedrockInstanceCardProps {
   onDelete?: () => void;
   defaultOpen?: boolean;
 }
-
-export const getBedrockCatalogCredentialScope = (
-  values: Pick<
-    BedrockFormValues,
-    | 'auth_mode'
-    | 'bedrock_endpoint_type'
-    | 'bedrock_api_key'
-    | 'bedrock_region'
-    | 'bedrock_endpoint_url'
-    | 'bedrock_discovery_endpoint_url'
-  >,
-) =>
-  JSON.stringify([
-    values.auth_mode,
-    values.bedrock_endpoint_type,
-    values.bedrock_api_key,
-    values.bedrock_region,
-    values.bedrock_endpoint_url,
-    values.bedrock_discovery_endpoint_url,
-  ]);
 
 /**
  * Inline instance card for AWS Bedrock. Renders Bedrock-specific fields
@@ -322,16 +288,26 @@ export const BedrockInstanceCard = forwardRef<
   const persistedCatalogCredentialScopeRef = useRef(
     getBedrockCatalogCredentialScope(initialValues),
   );
+  const previousInitialValuesRef = useRef(initialValues);
+  const pendingCatalogResetRef = useRef<{
+    scope: string;
+    invalidateCatalog: boolean;
+  } | null>(null);
 
   useEffect(() => {
-    // Reset form when initial values change (e.g. instance details load).
-    catalogCredentialScopeRef.current =
-      getBedrockCatalogCredentialScope(initialValues);
-    persistedCatalogCredentialScopeRef.current =
-      catalogCredentialScopeRef.current;
+    if (
+      !shouldResetBedrockForm(previousInitialValuesRef.current, initialValues)
+    )
+      return;
+    const nextScope = getBedrockCatalogCredentialScope(initialValues);
+    pendingCatalogResetRef.current = {
+      scope: nextScope,
+      invalidateCatalog:
+        persistedCatalogCredentialScopeRef.current !== nextScope,
+    };
+    previousInitialValuesRef.current = initialValues;
+    persistedCatalogCredentialScopeRef.current = nextScope;
     setCatalogCredentialsDirty(false);
-    setSelectedModelInfo([]);
-    setCatalogRevision((revision) => revision + 1);
     form.reset(initialValues);
     // oxlint-disable-next-line react/exhaustive-deps
   }, [initialValues]);
@@ -357,6 +333,15 @@ export const BedrockInstanceCard = forwardRef<
     control: form.control,
     name: 'bedrock_discovery_endpoint_url',
   });
+  const bedrockAccessKey = useWatch({
+    control: form.control,
+    name: 'bedrock_ak',
+  });
+  const bedrockSecretKey = useWatch({
+    control: form.control,
+    name: 'bedrock_sk',
+  });
+  const awsRoleArn = useWatch({ control: form.control, name: 'aws_role_arn' });
 
   const catalogCredentialScope = getBedrockCatalogCredentialScope({
     auth_mode: authMode,
@@ -365,9 +350,23 @@ export const BedrockInstanceCard = forwardRef<
     bedrock_region: bedrockRegion,
     bedrock_endpoint_url: endpointURL,
     bedrock_discovery_endpoint_url: discoveryEndpointURL,
+    bedrock_ak: bedrockAccessKey,
+    bedrock_sk: bedrockSecretKey,
+    aws_role_arn: awsRoleArn,
   });
 
   useEffect(() => {
+    const pendingReset = pendingCatalogResetRef.current;
+    if (pendingReset) {
+      if (pendingReset.scope !== catalogCredentialScope) return;
+      pendingCatalogResetRef.current = null;
+      catalogCredentialScopeRef.current = catalogCredentialScope;
+      if (pendingReset.invalidateCatalog) {
+        setSelectedModelInfo([]);
+        setCatalogRevision((revision) => revision + 1);
+      }
+      return;
+    }
     if (catalogCredentialScopeRef.current === catalogCredentialScope) return;
     catalogCredentialScopeRef.current = catalogCredentialScope;
     setSelectedModelInfo([]);

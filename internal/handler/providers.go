@@ -320,9 +320,13 @@ func providerListModelItem(model models.ListModelResponse) map[string]interface{
 	if model.MaxOutput != nil {
 		maxTokens = *model.MaxOutput
 	}
+	modelTypes := model.ModelTypes
+	if modelTypes == nil {
+		modelTypes = []string{}
+	}
 	return map[string]interface{}{
 		"name":        model.Name,
-		"model_types": model.ModelTypes,
+		"model_types": modelTypes,
 		"max_tokens":  maxTokens,
 	}
 }

@@ -72,6 +72,10 @@ describe('isCatalogBaseURLReady', () => {
       isCatalogBaseURLReady(LLMFactory.Ollama, 'http://localhost:11434'),
     ).toBe(true);
   });
+
+  it('treats a provider without a base URL field as ready', () => {
+    expect(isCatalogBaseURLReady(LLMFactory.VolcEngine, undefined)).toBe(true);
+  });
 });
 
 describe('buildVerifyArgs', () => {
@@ -163,7 +167,7 @@ describe('buildVerifyArgs', () => {
 });
 
 describe('useModelsDerived', () => {
-  it('keeps a deferred saved instance selection instead of selecting the full catalog', () => {
+  it('keeps a draft selection instead of selecting the full catalog', () => {
     const onInstanceModelsChange = jest.fn();
     const persistedModels = [
       {

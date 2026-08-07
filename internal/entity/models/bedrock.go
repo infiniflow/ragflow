@@ -212,7 +212,10 @@ func normalizeBedrockEndpoint(endpointType, endpointURL string) string {
 		return endpointURL
 	}
 	for _, suffix := range []string{"/anthropic/v1/messages", "/v1/models", "/anthropic", "/v1"} {
-		endpointURL = strings.TrimSuffix(endpointURL, suffix)
+		if strings.HasSuffix(endpointURL, suffix) {
+			endpointURL = strings.TrimSuffix(endpointURL, suffix)
+			break
+		}
 	}
 	if endpointType == bedrockEndpointMantleOpenAI {
 		return endpointURL + "/v1"

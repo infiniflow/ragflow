@@ -131,6 +131,14 @@ func TestParseBedrockAPIKeyNormalizesMantleEndpoint(t *testing.T) {
 	}
 }
 
+func TestNormalizeBedrockEndpointStopsAfterFirstSuffix(t *testing.T) {
+	got := normalizeBedrockEndpoint(bedrockEndpointMantleOpenAI, "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic/v1/models")
+	want := "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic/v1"
+	if got != want {
+		t.Fatalf("normalizeBedrockEndpoint() = %q, want %q", got, want)
+	}
+}
+
 func TestAuthorizeBedrockRequestUsesBearerWithoutSigV4(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "https://bedrock.ap-northeast-1.amazonaws.com/foundation-models", nil)
 	if err != nil {

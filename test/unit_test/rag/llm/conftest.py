@@ -74,7 +74,16 @@ def _install_rag_llm_stub():
 
     llm_pkg.SupportedLiteLLMProvider = SupportedLiteLLMProvider
     llm_pkg.FACTORY_DEFAULT_BASE_URL = {}
-    llm_pkg.LITELLM_PROVIDER_PREFIX = {SupportedLiteLLMProvider.Bedrock: "bedrock/"}
+    llm_pkg.LITELLM_PROVIDER_PREFIX = {
+        SupportedLiteLLMProvider.Bedrock: "bedrock/",
+        SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",
+        SupportedLiteLLMProvider.Ollama: "ollama_chat/",
+        SupportedLiteLLMProvider.OpenRouter: "openai/",
+        SupportedLiteLLMProvider.MiniMax: "openai/",
+        SupportedLiteLLMProvider.GPUStack: "openai/",
+        SupportedLiteLLMProvider.Moonshot: "moonshot/",
+        SupportedLiteLLMProvider.ZHIPU_AI: "openai/",
+    }
     sys.modules["rag.llm"] = llm_pkg
 
 

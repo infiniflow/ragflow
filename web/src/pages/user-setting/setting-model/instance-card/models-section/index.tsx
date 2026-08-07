@@ -36,6 +36,7 @@ import { ModelRow } from './components/model-row';
 import { TagFilterButton } from './components/tag-filter-button';
 import {
   DRAFT_INSTANCE_SENTINEL,
+  normalizeModelTypes,
   useModelEdit,
   useModelMutations,
   useModelVerify,
@@ -127,7 +128,15 @@ export function ModelsSection(props: ModelsSectionProps) {
     if (!deferModelMutations || hasSeededDeferredModelsRef.current) return;
     if (!instanceModels) return;
     hasSeededDeferredModelsRef.current = true;
-    setDraftModels(instanceModels as unknown as IProviderModelItem[]);
+    setDraftModels(
+      instanceModels.map((model) => ({
+        name: model.name,
+        max_tokens: model.max_tokens ?? 0,
+        model_types: normalizeModelTypes(model.model_type),
+        features: model.is_tools ? ['is_tools'] : [],
+        extra: model.extra,
+      })),
+    );
   }, [deferModelMutations, instanceModels]);
 
   // Auto-populate the draft's model list from the catalog on first

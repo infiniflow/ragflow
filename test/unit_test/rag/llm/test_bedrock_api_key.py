@@ -20,6 +20,7 @@ from rag.llm.bedrock_model_discovery import BEDROCK_DISCOVERY_TIMEOUT_SECONDS, B
 from rag.llm.chat_model import LiteLLMBase, SupportedLiteLLMProvider
 from rag.llm.cv_model import BedrockCV
 from rag.llm.embedding_model import BedrockEmbed
+from rag.llm.model_meta import Bedrock as BedrockModelMeta
 from rag.llm.rerank_model import BedrockRerank
 from rag.utils.bedrock_endpoint import normalize_bedrock_endpoint, resolve_bedrock_endpoint, validate_bedrock_region
 
@@ -72,7 +73,9 @@ def test_list_bedrock_models_without_api_key_keeps_static_catalog():
     assert models == [{"name": "static-model", "max_tokens": 1024, "model_types": ["chat"], "features": []}]
 
 
-def test_list_bedrock_models_times_out_remote_discovery():
+def test_list_bedrock_models_times_out_remote_discovery(monkeypatch):
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+
     class SlowDiscovery:
         def __init__(self, *_args):
             pass
@@ -110,8 +113,8 @@ def test_runtime_discovery_client_has_bounded_network_timeouts(mock_client):
     create_bedrock_bearer_client("bedrock", "token", "ap-northeast-1")
 
     config = mock_client.call_args.kwargs["config"]
-    assert config.connect_timeout == 10
-    assert config.read_timeout == 10
+    assert config.connect_timeout == BEDROCK_DISCOVERY_TIMEOUT_SECONDS
+    assert config.read_timeout == BEDROCK_DISCOVERY_TIMEOUT_SECONDS
     assert config.retries == {"max_attempts": 0}
 
 
@@ -166,6 +169,64 @@ def test_verify_bedrock_api_key_without_models_reports_discovery_error():
     assert success is False
     assert message == "\nFail to access Bedrock model discovery.Failed to list models from Amazon Bedrock"
     assert model_results == {}
+
+
+def test_verify_bedrock_api_key_without_models_rejects_empty_discovery():
+    class EmptyBedrockDiscovery:
+        def __init__(self, _api_key, _base_url):
+            pass
+
+        async def get_model_list(self):
+            return []
+
+    api_key = json.dumps(
+        {
+            "auth_mode": "bedrock_api_key",
+            "bedrock_api_key": "token",
+            "bedrock_region": "ap-northeast-1",
+        }
+    )
+    with (
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_id", return_value=(False, None)),
+        patch.dict("api.apps.services.provider_api_service.ModelMeta", {"Bedrock": EmptyBedrockDiscovery}),
+    ):
+        success, message, model_results = asyncio.run(verify_api_key("Bedrock", api_key, "", "ap-northeast-1", []))
+
+    assert success is False
+    assert message == "No compatible Bedrock models were discovered"
+    assert model_results == {}
+
+
+def test_list_bedrock_models_reports_discovery_error():
+    class FailedBedrockDiscovery:
+        def __init__(self, _api_key, _base_url):
+            pass
+
+        async def get_model_list(self):
+            raise BedrockModelDiscoveryError("Failed to list models from Amazon Bedrock")
+
+    api_key = json.dumps(
+        {
+            "auth_mode": "bedrock_api_key",
+            "bedrock_api_key": "invalid",
+            "bedrock_region": "ap-northeast-1",
+        }
+    )
+    factory_info = [{"name": "Bedrock", "url": "", "llm": []}]
+    with (
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_id", return_value=(False, None)),
+        patch("api.apps.services.provider_api_service.FACTORY_LLM_INFOS", factory_info),
+        patch.dict("api.apps.services.provider_api_service.ModelMeta", {"Bedrock": FailedBedrockDiscovery}),
+    ):
+        success, message = asyncio.run(list_provider_models("Bedrock", api_key, None))
+
+    assert success is False
+    assert message == "Failed to list models from Amazon Bedrock"
+
+
+def test_bedrock_model_meta_rejects_non_object_api_key():
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        asyncio.run(BedrockModelMeta("12345").get_model_list())
 
 
 def test_normalize_mantle_endpoint_from_models_url():
@@ -296,7 +357,7 @@ def test_runtime_discovery_uses_remote_modalities(mock_create_client):
 def test_mantle_anthropic_discovery_filters_catalog(mock_openai):
     mock_openai.return_value.models.list.return_value = SimpleNamespace(
         data=[
-            SimpleNamespace(id="anthropic.claude-sonnet-current"),
+            SimpleNamespace(id="Anthropic.claude-sonnet-current"),
             SimpleNamespace(id="amazon.nova-pro-v1:0"),
             SimpleNamespace(id="amazon.titan-embed-text-v2:0"),
         ]
@@ -311,7 +372,7 @@ def test_mantle_anthropic_discovery_filters_catalog(mock_openai):
         }
     )
 
-    assert [model["name"] for model in models] == ["anthropic.claude-sonnet-current"]
+    assert [model["name"] for model in models] == ["Anthropic.claude-sonnet-current"]
     mock_openai.assert_called_once_with(
         api_key="token",
         base_url="https://bedrock-mantle.ap-northeast-1.api.aws/v1",
@@ -326,12 +387,17 @@ def test_bedrock_bearer_client_registers_request_scoped_header():
     with patch("boto3.client", return_value=client):
         from rag.llm.bedrock_model_discovery import create_bedrock_bearer_client
 
-        assert create_bedrock_bearer_client("bedrock-runtime", "token", "ap-northeast-1") is client
+        assert create_bedrock_bearer_client("bedrock-runtime", " token ", "ap-northeast-1") is client
     event_name, callback = events.register.call_args.args
     request = SimpleNamespace(headers={})
     callback(request)
     assert event_name == "before-sign.bedrock-runtime.*"
     assert request.headers["Authorization"] == "Bearer token"
+
+
+def test_bedrock_bearer_client_rejects_control_characters():
+    with pytest.raises(ValueError, match="control characters"):
+        create_bedrock_bearer_client("bedrock-runtime", "token\nInjected: value", "ap-northeast-1")
 
 
 @patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")
@@ -347,7 +413,7 @@ def test_embedding_uses_request_scoped_bearer_client(mock_create_client):
 
 
 def test_rerank_rejects_bedrock_api_key():
-    with pytest.raises(ValueError, match="do not support.*rerank"):
+    with pytest.raises(ValueError, match=r"do not support.*rerank"):
         BedrockRerank(
             '{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}',
             "amazon.rerank-v1:0",
@@ -379,3 +445,11 @@ def test_mantle_anthropic_vision_uses_api_key_header_credentials():
     assert model.litellm_model_name == "anthropic/anthropic.claude-sonnet-current"
     assert args["api_key"] == "token"
     assert "extra_headers" not in args
+
+
+def test_bedrock_vision_requires_region():
+    with pytest.raises(ValueError, match="region must be provided"):
+        BedrockCV(
+            '{"auth_mode":"bedrock_api_key","bedrock_api_key":"token"}',
+            "anthropic.claude-sonnet-current",
+        )

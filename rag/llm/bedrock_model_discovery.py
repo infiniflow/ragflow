@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 from typing import TypedDict
 
 from botocore import UNSIGNED
@@ -57,8 +58,17 @@ class DiscoveredBedrockModel(TypedDict):
     features: list[str]
 
 
+def _validated_bedrock_api_key(api_key: str) -> str:
+    api_key = api_key.strip()
+    if not api_key or not api_key.isprintable():
+        raise ValueError("Bedrock API key must not be empty or contain control characters")
+    return api_key
+
+
 def create_bedrock_bearer_client(service_name: str, api_key: str, region_name: str, endpoint_url: str = "") -> BaseClient:
     import boto3
+
+    api_key = _validated_bedrock_api_key(api_key)
 
     client_args: dict[str, object] = {
         "service_name": service_name,
@@ -130,7 +140,7 @@ def _discover_mantle_models(api_key: str, endpoint_url: str, anthropic_only: boo
     return [
         {"name": model.id, "model_types": [LLMType.CHAT.value], "max_tokens": DEFAULT_BEDROCK_MAX_TOKENS, "features": []}
         for model in response.data
-        if _is_mantle_chat_model(model.id) and (not anthropic_only or model.id.startswith("anthropic."))
+        if _is_mantle_chat_model(model.id) and (not anthropic_only or model.id.lower().startswith("anthropic."))
     ]
 
 
@@ -138,6 +148,7 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
     api_key = config.get("bedrock_api_key")
     if not api_key:
         raise ValueError("Bedrock API key must be provided")
+    api_key = _validated_bedrock_api_key(api_key)
     region_name = config.get("bedrock_region")
     if not region_name:
         raise ValueError("Bedrock region must be provided in the key")
@@ -145,6 +156,7 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
     endpoint_type, endpoint_url = resolve_bedrock_endpoint("bedrock_api_key", config.get("bedrock_endpoint_type"), config.get("bedrock_endpoint_url"))
     catalog_endpoint_url = config.get("bedrock_discovery_endpoint_url") or ""
     validate_bedrock_endpoint_target(catalog_endpoint_url)
+    logging.info("Discovering Bedrock models using endpoint type %s", endpoint_type)
     if endpoint_type == "runtime":
         models = _discover_runtime_models(api_key, region_name, catalog_endpoint_url)
     else:
@@ -152,4 +164,5 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
     unique_models = {model["name"]: model for model in models}
     if not unique_models:
         raise ValueError("No compatible Bedrock chat or embedding models were discovered")
+    logging.info("Discovered %d compatible Bedrock models", len(unique_models))
     return list(unique_models.values())

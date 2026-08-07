@@ -989,6 +989,21 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 	return result, common.CodeSuccess, nil
 }
 
+func buildCheckConnectionAPIConfig(providerName, apiKey, region, baseURL string, modelInfo []CheckConnectionModelInfo) (*modelModule.APIConfig, bool) {
+	verifyBedrockAPIKey := shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey, modelInfo)
+	apiConfig := &modelModule.APIConfig{
+		ApiKey:  &apiKey,
+		Region:  &region,
+		BaseURL: &baseURL,
+	}
+	if verifyBedrockAPIKey {
+		// The API key JSON owns the Bedrock region. Do not let the generic
+		// "default" placeholder override it during discovery-based validation.
+		apiConfig.Region = nil
+	}
+	return apiConfig, verifyBedrockAPIKey
+}
+
 func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName, apiKey, region, baseURL, instanceID, userID string, modelInfo []CheckConnectionModelInfo) (common.ErrorCode, error) {
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
@@ -1015,12 +1030,8 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		}
 	}
 
-	apiConfig := &modelModule.APIConfig{
-		ApiKey:  &apiKey,
-		Region:  &region,
-		BaseURL: &baseURL,
-	}
-	if shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey, modelInfo) {
+	apiConfig, verifyBedrockAPIKey := buildCheckConnectionAPIConfig(providerName, apiKey, region, baseURL, modelInfo)
+	if verifyBedrockAPIKey {
 		if err := driver.CheckConnection(ctx, apiConfig); err != nil {
 			return common.CodeServerError, err
 		}

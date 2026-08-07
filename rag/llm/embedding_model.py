@@ -673,7 +673,8 @@ class BedrockEmbed(Base):
         # - Supported auth modes:
         #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
-        #   - else: treated as "assume_role" (default AWS credential chain).
+        #   - "assume_role": uses the default AWS credential chain.
+        #   - "bedrock_api_key": uses a request-scoped Bearer token.
         key = json.loads(key)
         mode = key.get("auth_mode")
         if not mode:

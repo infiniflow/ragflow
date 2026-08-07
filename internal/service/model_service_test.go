@@ -197,6 +197,25 @@ func TestShouldVerifyBedrockAPIKeyWithoutModels(t *testing.T) {
 	}
 }
 
+func TestBuildCheckConnectionAPIConfigUsesBedrockKeyRegion(t *testing.T) {
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`
+	config, verifyByDiscovery := buildCheckConnectionAPIConfig("Bedrock", apiKey, "default", "", nil)
+	if !verifyByDiscovery {
+		t.Fatal("verifyByDiscovery = false, want true")
+	}
+	if config.Region != nil {
+		t.Fatalf("config.Region = %q, want nil so the key JSON region is used", *config.Region)
+	}
+
+	config, verifyByDiscovery = buildCheckConnectionAPIConfig("OpenAI", "token", "default", "", nil)
+	if verifyByDiscovery {
+		t.Fatal("verifyByDiscovery = true for OpenAI")
+	}
+	if config.Region == nil || *config.Region != "default" {
+		t.Fatalf("config.Region = %v, want default", config.Region)
+	}
+}
+
 func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	factoryMaxDimension := 2048
 	factoryBatchSize := 128

@@ -72,6 +72,8 @@ class Bedrock(Base):
             config = json.loads(self.api_key)
         except (JSONDecodeError, TypeError) as error:
             raise ValueError("Bedrock API key must be a JSON object") from error
+        if not isinstance(config, dict):
+            raise ValueError("Bedrock API key must be a JSON object")
         if config.get("auth_mode") != "bedrock_api_key":
             return []
         return await asyncio.to_thread(discover_bedrock_models, config)

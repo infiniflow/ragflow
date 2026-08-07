@@ -1376,7 +1376,9 @@ class BedrockCV(Base):
 
         bedrock_key = json.loads(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
-        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_region = bedrock_key.get("bedrock_region")
+        if not self.aws_region:
+            raise ValueError("Bedrock region must be provided in the key")
         validate_bedrock_region(self.aws_region)
         self.aws_ak = bedrock_key.get("bedrock_ak", "")
         self.aws_sk = bedrock_key.get("bedrock_sk", "")
