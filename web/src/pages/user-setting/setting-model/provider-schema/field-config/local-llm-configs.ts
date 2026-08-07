@@ -31,8 +31,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.AIMLAPI]: buildLocalConfig(
     LLMFactory.AIMLAPI,
     'aimlapi.com',
-    ['chat', 'embedding', 'image2text', 'tts', 'speech2text'],
-    undefined,
     false,
     [
       {
@@ -49,8 +47,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.Ollama]: buildLocalConfig(
     LLMFactory.Ollama,
     'Ollama',
-    ['chat', 'embedding', 'rerank', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx',
@@ -58,8 +54,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.Xinference]: buildLocalConfig(
     LLMFactory.Xinference,
     'Xinference',
-    ['chat', 'embedding', 'rerank', 'image2text', 'speech2text', 'tts'],
-    'modelUid',
     false,
     undefined,
     'https://inference.readthedocs.io/en/latest/user_guide',
@@ -67,8 +61,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.FunASR]: buildLocalConfig(
     LLMFactory.FunASR,
     'FunASR',
-    ['speech2text'],
-    undefined,
     false,
     [
       {
@@ -87,8 +79,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.ModelScope]: buildLocalConfig(
     LLMFactory.ModelScope,
     'ModelScope',
-    ['chat'],
-    undefined,
     false,
     undefined,
     'https://www.modelscope.cn/docs/model-service/API-Inference/intro',
@@ -96,8 +86,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.LocalAI]: buildLocalConfig(
     LLMFactory.LocalAI,
     'LocalAI',
-    ['chat', 'embedding', 'rerank', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://localai.io/docs/getting-started/models/',
@@ -105,8 +93,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.LMStudio]: buildLocalConfig(
     LLMFactory.LMStudio,
     'LMStudio',
-    ['chat', 'embedding', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://lmstudio.ai/docs/basics',
@@ -114,8 +100,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.OpenAiAPICompatible]: buildLocalConfig(
     LLMFactory.OpenAiAPICompatible,
     'OpenAiAPICompatible',
-    ['chat', 'embedding', 'rerank', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://platform.openai.com/docs/models/gpt-4',
@@ -123,8 +107,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.RAGcon]: buildLocalConfig(
     LLMFactory.RAGcon,
     'RAGcon',
-    ['chat', 'embedding', 'rerank', 'image2text', 'speech2text', 'tts'],
-    undefined,
     false,
     undefined,
     'https://www.ragcon.ai/erste-schritte-mit-ragflow/',
@@ -132,8 +114,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.TogetherAI]: buildLocalConfig(
     LLMFactory.TogetherAI,
     'TogetherAI',
-    ['chat', 'embedding', 'rerank', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://docs.together.ai/docs/deployment-options',
@@ -141,8 +121,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.Replicate]: buildLocalConfig(
     LLMFactory.Replicate,
     'Replicate',
-    ['chat', 'embedding', 'rerank', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://replicate.com/docs/topics/deployments',
@@ -150,8 +128,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.OpenRouter]: buildLocalConfig(
     LLMFactory.OpenRouter,
     'OpenRouter',
-    ['chat', 'image2text'],
-    undefined,
     true,
     [
       {
@@ -168,8 +144,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.HuggingFace]: buildLocalConfig(
     LLMFactory.HuggingFace,
     'HuggingFace',
-    ['embedding', 'chat', 'rerank'],
-    undefined,
     false,
     undefined,
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
@@ -177,8 +151,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.GPUStack]: buildLocalConfig(
     LLMFactory.GPUStack,
     'GPUStack',
-    ['chat', 'embedding', 'rerank', 'speech2text', 'tts'],
-    undefined,
     false,
     undefined,
     'https://docs.gpustack.ai/latest/quickstart',
@@ -186,8 +158,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.VLLM]: buildLocalConfig(
     LLMFactory.VLLM,
     'VLLM',
-    ['chat', 'embedding', 'rerank', 'image2text'],
-    undefined,
     false,
     undefined,
     'https://docs.vllm.ai/en/latest/',
@@ -195,8 +165,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.NewAPI]: buildLocalConfig(
     LLMFactory.NewAPI,
     'New API',
-    ['chat', 'embedding', 'rerank', 'image2text', 'tts', 'speech2text'],
-    undefined,
     false,
     undefined,
     'https://github.com/QuantumNous/new-api',
@@ -218,8 +186,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
 function buildLocalConfig(
   llmFactory: string,
   title: string,
-  modelTypes: string[],
-  modelNameLabel?: string,
   addProviderOrder = false,
   customFields?: FieldConfig[],
   docLink?: string,

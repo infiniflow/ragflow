@@ -125,7 +125,7 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 		b.WriteString("\n\n")
 	}
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
@@ -159,7 +159,7 @@ func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
 	// run is one unit that still exceeds the budget and must stay whole.
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
@@ -196,7 +196,7 @@ func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
 
 	run := func(underCap bool) []map[string]any {
 		comp, err := NewTokenChunker(map[string]any{
-			"delimiter_mode":   "token_size",
+			"delimiter_mode":   "delimiter",
 			"chunk_token_size": budget,
 			"under_cap":        underCap,
 		})
@@ -250,7 +250,7 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 		b.WriteByte('\n')
 	}
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {

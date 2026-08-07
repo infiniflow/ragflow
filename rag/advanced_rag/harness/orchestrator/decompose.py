@@ -244,8 +244,6 @@ async def decompose_and_search(state: dict, tools) -> dict:
         if action in ("ANSWER", "ANSWER_PARTIAL"):
             return _finalize(ctx, tools, partial=action == "ANSWER_PARTIAL", loop=completed_cycles)
         if action == "ABSTAIN":
-            if getattr(tools, "text_attachments_content", ""):
-                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True, "loop": completed_cycles}
         if action == "FALLBACK_LLM":

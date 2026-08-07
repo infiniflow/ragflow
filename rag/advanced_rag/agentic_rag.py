@@ -653,24 +653,11 @@ class RAGTools:
 
         if self.tool_started_sink is not None:
             self.tool_started_sink()
-        if self.text_attachments_content:
-            self.kbinfos = {
-                "chunks": [
-                    {
-                        "id": "chat_attachment",
-                        "chunk_id": "chat_attachment",
-                        "doc_id": "chat_attachment",
-                        "docnm_kwd": "Chat attachment",
-                        "content_with_weight": self.text_attachments_content,
-                    }
-                ],
-                "doc_aggs": [{"doc_id": "chat_attachment", "doc_name": "Chat attachment", "count": 1}],
-            }
-
         # P0: reuse a near-identical question's cached answer instead of re-running
         # the whole agentic graph. Significant-keyword overlap (>= min_overlap AND
         # >=2 shared words, and matching numbers) collapses the re-ask pattern
-        # while leaving genuinely different questions untouched.
+        # while leaving genuinely different questions untouched. Attachments bypass
+        # the cache (their content is appended to the question message below).
         if question and not self.text_attachments_content:
             qk = _question_keywords(question)
             if self._rag_cache:
@@ -681,6 +668,8 @@ class RAGTools:
                         return cached_answer
 
         messages = [{"role": "user", "content": question}] if question else []
+        if self.text_attachments_content and messages:
+            messages[-1]["content"] += self.text_attachments_content
         final = ""
         async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
             if kind == "answer":
