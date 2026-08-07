@@ -45,9 +45,8 @@ func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 }
 
 // TestTokenChunker_ChildrenDelimiterDroppedText asserts the text/markdown/html
-// children_delimiters split also DROPS the delimiter (applyChildrenDelim /
-// applyChildrenDelimText mirror _split_text_by_pattern), keeping the parent
-// segment in "mom".
+// children_delimiters split also DROPS the delimiter (applyChildrenDelimText
+// mirrors _split_text_by_pattern), keeping the parent segment in "mom".
 // TestTokenChunker_ChildrenDelimiterBacktickStripped asserts that a
 // backtick-wrapped children_delimiter contributes its INNER content as the
 // split pattern (not the literal wrapped token), and the matched delimiter is

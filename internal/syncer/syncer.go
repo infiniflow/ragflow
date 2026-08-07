@@ -22,11 +22,14 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	documentservice "ragflow/internal/service/document"
 	syncerconnector "ragflow/internal/syncer/connector"
 	"ragflow/internal/utility"
+
+	"go.uber.org/zap"
 )
 
 // Syncer owns the scheduler, task queue, and bounded worker pool.
@@ -55,7 +58,7 @@ func NewSyncer(maxConcurrency int, pollInterval time.Duration) *Syncer {
 	registerBuiltInConnectors(registry)
 
 	documentService := documentservice.NewDocumentService()
-	pruneService := service.NewSyncPruneService(dao.NewSyncPruneSnapshotDAO(taskDAO.DB()), documentService, nil)
+	pruneService := service.NewSyncPruneService(documentService, nil)
 
 	return New(config, taskDAO, registry, documentService, pruneService)
 }
@@ -134,6 +137,22 @@ func (s *Syncer) Stop() {
 	})
 }
 
+// logTemporarySyncTaskDuration records sync task wall time while concurrency tuning is in progress.
+func logTemporarySyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Time) {
+	if taskContext.Task.TaskType != service.TaskTypeSync {
+		return
+	}
+	common.Info(
+		"sync task duration",
+		zap.String("temporary_code", "remove_after_sync_concurrency_optimization"),
+		zap.String("task_id", taskContext.Task.ID),
+		zap.String("connector_id", taskContext.Connector.ID),
+		zap.String("kb_id", taskContext.Knowledgebase.ID),
+		zap.String("source", taskContext.Connector.Source),
+		zap.Duration("elapsed", time.Since(startedAt)),
+	)
+}
+
 // registerBuiltInConnectors registers datasource connectors available in the server binary.
 func registerBuiltInConnectors(registry *syncerconnector.Registry) {
 	registry.Register("rss", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
@@ -149,5 +168,12 @@ func registerBuiltInConnectors(registry *syncerconnector.Registry) {
 			return nil, errors.New("github connector received an invalid task context")
 		}
 		return syncerconnector.NewGitHubConnector(map[string]any(row.Connector.Config))
+	})
+	registry.Register("gmail", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
+		row, ok := taskContext.(dao.SyncTaskContext)
+		if !ok {
+			return nil, errors.New("gmail connector received an invalid task context")
+		}
+		return syncerconnector.NewGmailConnector(map[string]any(row.Connector.Config))
 	})
 }

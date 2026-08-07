@@ -865,6 +865,8 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
         if any_passed:
             msg = ""
+        else:
+            msg = msg or "No model passed verification"
 
     success = bool(passed_types)
     return success, "success" if success else msg, model_verify_result

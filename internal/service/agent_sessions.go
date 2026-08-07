@@ -591,7 +591,7 @@ func normalizeAgentTags(rawTags interface{}) (string, error) {
 	normalized := make([]string, 0, len(cleaned))
 	used := 0
 	for _, tag := range cleaned {
-		tag = truncateRunes(tag, agentTagMaxLen)
+		tag = utility.TruncateRunes(tag, agentTagMaxLen)
 		key := strings.ToLower(tag)
 		if _, ok := seen[key]; ok {
 			continue
@@ -610,14 +610,6 @@ func normalizeAgentTags(rawTags interface{}) (string, error) {
 		used += extra
 	}
 	return strings.Join(normalized, ","), nil
-}
-
-func truncateRunes(value string, maxLen int) string {
-	runes := []rune(value)
-	if len(runes) <= maxLen {
-		return value
-	}
-	return string(runes[:maxLen])
 }
 
 // UpdateAgentTags normalises tags and persists them on a single canvas.

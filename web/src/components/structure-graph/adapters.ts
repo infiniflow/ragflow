@@ -1,3 +1,4 @@
+import trim from 'lodash/trim';
 import { type TreeDataItem } from '@/components/ui/tree-view';
 import {
   type IArtifactGraph,
@@ -17,7 +18,7 @@ declare module '@/components/ui/tree-view' {
 }
 
 export function getEntityDisplayName(entity: IStructureGraphEntity) {
-  return entity.name ?? entity.id ?? '';
+  return trim(entity.name ?? entity.id ?? '');
 }
 
 function normalizeEntity(entity: IStructureGraphEntity) {

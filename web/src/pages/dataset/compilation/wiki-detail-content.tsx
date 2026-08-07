@@ -38,7 +38,7 @@ export function WikiDetailContent({
     isDirty,
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,
@@ -95,7 +95,7 @@ export function WikiDetailContent({
 
           <WikiCommitModal
             open={isOpen}
-            onOpenChange={close}
+            onOpenChange={setIsOpen}
             form={form}
             onConfirm={handleConfirm}
             loading={isUpdating}

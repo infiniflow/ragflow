@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"ragflow/internal/service"
 	"sync"
+	"time"
 )
 
 // TaskWorker consumes claimed task envelopes and runs coordinators.
@@ -79,11 +80,15 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	}
 	defer w.locker.Unlock(taskContext.Connector.ID)
 
+	startedAt := time.Now()
 	if err = w.coordinator.Execute(ctx, taskContext); err != nil {
+		logTemporarySyncTaskDuration(taskContext, startedAt)
 		if ctx.Err() != nil {
 			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 			return
 		}
 		_ = w.taskService.Fail(ctx, taskContext.Task.ID, taskContext.Connector.ID, fmt.Errorf("sync task failed: %w", err))
+		return
 	}
+	logTemporarySyncTaskDuration(taskContext, startedAt)
 }

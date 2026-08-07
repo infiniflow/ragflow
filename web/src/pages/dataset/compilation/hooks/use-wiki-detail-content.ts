@@ -160,7 +160,7 @@ export function useWikiDetailContent({
     }
   }, [handleMarkAsSaved, isVersionView, onSelectVersion]);
 
-  const { isOpen, open, close, form, handleConfirm, isUpdating } =
+  const { isOpen, open, setIsOpen, form, handleConfirm, isUpdating } =
     useCommitArtifact({
       editedContent,
       pageType: currentEntry?.pageType ?? selectedArtifact?.page_type ?? '',
@@ -207,7 +207,7 @@ export function useWikiDetailContent({
     referenceDocuments,
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,
