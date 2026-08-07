@@ -176,6 +176,18 @@ def test_nvidia_fallback_preserves_path_and_logs_without_api_key(base_url):
     assert "super-secret-key" not in repr(info.call_args)
 
 
+def test_nvidia_specific_model_does_not_log_fallback_assignment():
+    """Use the model-specific endpoint without emitting a fallback event."""
+    with patch("rag.llm.rerank_model.logging.info") as info:
+        reranker = NvidiaRerank(
+            "key",
+            "nvidia/nv-rerankqa-mistral-4b-v3",
+        )
+
+    assert reranker.base_url == "https://ai.api.nvidia.com/v1/retrieval/nvidia/nv-rerankqa-mistral-4b-v3/reranking"
+    info.assert_not_called()
+
+
 def test_calibrated_relevance_scores_are_preserved():
     # A provider already returning [0,1] relevance scores keeps them verbatim;
     # min-max would have stretched these to [1.0, 0.0, 0.5].

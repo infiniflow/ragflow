@@ -394,7 +394,7 @@ def test_mws_embedding_rejects_empty_token_without_request():
 @pytest.mark.p1
 def test_mws_rerank_uses_cohere_path_and_exact_payload():
     """Use the MWS Cohere endpoint with the exact reranking payload."""
-    reranker = MWSRerank("token", "bge-reranker-v2-m3", PROJECT_URL)
+    reranker = MWSRerank("super-secret-token", "bge-reranker-v2-m3", PROJECT_URL)
     response = _response(
         {
             "results": [
@@ -404,13 +404,25 @@ def test_mws_rerank_uses_cohere_path_and_exact_payload():
         }
     )
 
-    with patch("rag.llm.rerank_model.requests.post", return_value=response) as post:
-        scores, _ = reranker.similarity("query", ["first", "second"])
+    token_counts = {"query": 5, "first": 2, "second": 3}
+    with (
+        patch("rag.llm.rerank_model.requests.post", return_value=response) as post,
+        patch(
+            "rag.llm.rerank_model.num_tokens_from_string",
+            side_effect=lambda text: token_counts[text],
+        ),
+        patch("rag.llm.rerank_model.logging.info") as info,
+    ):
+        scores, tokens = reranker.similarity("query", ["first", "second"])
 
     assert np.array_equal(scores, np.array([0.2, 0.9]))
+    assert tokens == 10
     post.assert_called_once_with(
         PROJECT_URL + "/cohere/v2/rerank",
-        headers={"Content-Type": "application/json", "Authorization": "Bearer token"},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer super-secret-token",
+        },
         json={
             "model": "bge-reranker-v2-m3",
             "query": "query",
@@ -419,6 +431,109 @@ def test_mws_rerank_uses_cohere_path_and_exact_payload():
         },
         timeout=30,
     )
+    info.assert_called_once_with(
+        "mws_rerank_request",
+        extra={
+            "provider": "MWS",
+            "operation": "rerank",
+            "endpoint": PROJECT_URL + "/cohere/v2/rerank",
+            "model": "bge-reranker-v2-m3",
+            "document_count": 2,
+        },
+    )
+    logged = repr(info.call_args)
+    assert "super-secret-token" not in logged
+    assert "Bearer" not in logged
+    assert "query" not in logged
+    assert "first" not in logged
+    assert "second" not in logged
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"index": 0},
+        {"index": 0, "relevance_score": "invalid"},
+        {"index": 0, "relevance_score": True},
+        {"index": 0, "relevance_score": float("nan")},
+        {"index": 0, "relevance_score": float("inf")},
+    ],
+)
+def test_mws_rerank_rejects_invalid_relevance_scores(result):
+    """Reject missing, non-numeric, boolean, and non-finite scores."""
+    reranker = MWSRerank("super-secret-token", "bge-reranker-v2-m3", PROJECT_URL)
+    response = _response({"results": [result]})
+    log_context = {
+        "provider": "MWS",
+        "operation": "rerank",
+        "endpoint": PROJECT_URL + "/cohere/v2/rerank",
+        "model": "bge-reranker-v2-m3",
+        "document_count": 1,
+    }
+
+    with (
+        patch("rag.llm.rerank_model.requests.post", return_value=response),
+        patch("rag.llm.rerank_model.logging.info"),
+        patch("rag.llm.rerank_model.logging.warning") as warning,
+    ):
+        with pytest.raises(ValueError, match="relevance_score"):
+            reranker.similarity("query", ["first"])
+
+    warning.assert_called_once_with(
+        "mws_rerank_failed",
+        extra={
+            **log_context,
+            "failure_stage": "response_validation",
+            "error_type": "ValueError",
+        },
+    )
+    logged = repr(warning.call_args)
+    assert "super-secret-token" not in logged
+    assert "query" not in logged
+    assert "first" not in logged
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("failure_stage", ["http_request", "json_parsing"])
+def test_mws_rerank_logs_failure_stage_and_reraises(failure_stage):
+    """Log the failing rerank stage and re-raise the original exception."""
+    reranker = MWSRerank("super-secret-token", "bge-reranker-v2-m3", PROJECT_URL)
+    response = _response({"results": []})
+    error = RuntimeError(failure_stage)
+    if failure_stage == "http_request":
+        response.raise_for_status.side_effect = error
+    else:
+        response.json.side_effect = error
+    log_context = {
+        "provider": "MWS",
+        "operation": "rerank",
+        "endpoint": PROJECT_URL + "/cohere/v2/rerank",
+        "model": "bge-reranker-v2-m3",
+        "document_count": 1,
+    }
+
+    with (
+        patch("rag.llm.rerank_model.requests.post", return_value=response),
+        patch("rag.llm.rerank_model.logging.info"),
+        patch("rag.llm.rerank_model.logging.warning") as warning,
+    ):
+        with pytest.raises(RuntimeError) as caught:
+            reranker.similarity("query", ["first"])
+
+    assert caught.value is error
+    warning.assert_called_once_with(
+        "mws_rerank_failed",
+        extra={
+            **log_context,
+            "failure_stage": failure_stage,
+            "error_type": "RuntimeError",
+        },
+    )
+    logged = repr(warning.call_args)
+    assert "super-secret-token" not in logged
+    assert "query" not in logged
+    assert "first" not in logged
 
 
 @pytest.mark.p1
