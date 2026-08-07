@@ -1,0 +1,20 @@
+{
+  "component": "tokenizer",
+  "description": "Known divergences of the Go Tokenizer component from the Python DSL path (rag/flow/tokenizer/tokenizer.py). Items tagged go_intentional are Go-correct behaviors that MUST NOT be 'aligned' to the DSL; they are pinned by no-tag unit tests. Items tagged go_bug are Go defects to fix. Absence of an entry means the two paths are expected to match.",
+  "diffs": [
+    {
+      "id": "A3",
+      "tag": "go_intentional",
+      "applies_to": "internal/ingestion/component/tokenizer.go:embedChunks (empty name branch)",
+      "pinned_by": "TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector",
+      "reason": "When the upstream document name is empty, Go skips title weighting so the merged vector is the content vector alone. From the end-user perspective an empty title must not contribute the filename embedding weight; the Python DSL instead computes 0.1*emb(\"\"), injecting an undefined bias into every chunk. Go's skip is correct."
+    },
+    {
+      "id": "A4",
+      "tag": "go_intentional",
+      "applies_to": "internal/ingestion/component/tokenizer.go:shouldHaveEmbedding (kbID != \"\" guard)",
+      "pinned_by": "TestTokenizerComponent_DebugSkipsEmbedding",
+      "reason": "Each dataset configures its own embedding model. An empty kb_id (e.g. a canvas-debug dry run) must NOT fall back to the tenant's default embedding model, otherwise the produced vectors cannot be used at retrieval time for that dataset. The kbID != \"\" guard is deliberate."
+    }
+  ]
+}
