@@ -178,8 +178,6 @@ func emptyOutputs() map[string]any {
 	}
 }
 
-func emptyChunkDocs() []schema.ChunkDoc { return []schema.ChunkDoc{} }
-
 // chunkOutputs builds the canonical chunker output (output_format="chunks" +
 // chunks). The Go runtime passes only this explicit output to the next node,
 // so the run-level metadata that downstream components still need (e.g.
