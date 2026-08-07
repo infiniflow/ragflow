@@ -355,7 +355,9 @@ class TokenChunker(ProcessBase):
         if from_upstream.output_format in ["markdown", "text", "html"]:
             payload = getattr(from_upstream, f"{from_upstream.output_format}_result") or ""
             if self._param.delimiter_mode == "one":
-                self.set_output("chunks", [{"text": payload}] if payload.strip() else [])
+                # Strip parser coordinate tags so they never reach
+                # embedding/index (consistent with the JSON merge path).
+                self.set_output("chunks", [{"text": remove_tag(payload)}] if payload.strip() else [])
                 self.callback(1, "Done.")
                 return
             if delimiter_pattern:
@@ -392,7 +394,9 @@ class TokenChunker(ProcessBase):
                 if not isinstance(text, str):
                     text = item.get("content_with_weight")
                 if isinstance(text, str) and text.strip():
-                    sections.append(text)
+                    # Strip parser coordinate tags so they never reach
+                    # embedding/index (consistent with the JSON merge path).
+                    sections.append(remove_tag(text))
             merged_text = "\n".join(sections)
             self.set_output("chunks", [{"text": merged_text}] if merged_text.strip() else [])
             self.callback(1, "Done.")
