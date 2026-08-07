@@ -92,7 +92,8 @@ const AgentKeys = {
       ? ([AgentApiAction.FetchAgentListByPage] as const)
       : ([AgentApiAction.FetchAgentListByPage, params] as const),
   all: () => [AgentApiAction.FetchAllAgentList] as const,
-  listAll: () => [AgentApiAction.FetchAgentList] as const,
+  listAll: (canvasCategory?: string) =>
+    [AgentApiAction.FetchAgentList, canvasCategory] as const,
   filters: () => [AgentApiAction.FetchAgentFilters] as const,
   tags: (canvasCategory?: string) =>
     canvasCategory === undefined
@@ -305,6 +306,9 @@ export const useDuplicateAgent = () => {
           queryClient.invalidateQueries({
             queryKey: AgentKeys.list(),
           });
+          queryClient.invalidateQueries({
+            queryKey: AgentKeys.filters(),
+          });
           return data;
         }
 
@@ -337,6 +341,9 @@ export const useDeleteAgent = () => {
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: AgentKeys.list(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.filters(),
         });
       }
       return data?.data ?? false;
@@ -501,6 +508,11 @@ export const useSetAgent = (
         queryClient.invalidateQueries({
           queryKey: AgentKeys.list(),
         });
+        if (!agentId) {
+          queryClient.invalidateQueries({
+            queryKey: AgentKeys.filters(),
+          });
+        }
         if (agentId && !skipInvalidation) {
           queryClient.invalidateQueries({
             queryKey: AgentKeys.detail(agentId),
@@ -875,7 +887,7 @@ export const useFetchAgentList = ({
     canvas: AgentListItem[];
     total: number;
   }>({
-    queryKey: AgentKeys.listAll(),
+    queryKey: AgentKeys.listAll(canvas_category),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
     queryFn: async () => {
