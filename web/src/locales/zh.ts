@@ -920,7 +920,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       createChunk: '创建解析块',
       editChunk: '编辑解析块',
       bulk: '批量',
-      selectAll: '选择所有',
+      selectAll: '选择当前页',
       enabledSelected: '启用选定的',
       disabledSelected: '禁用选定的',
       deleteSelected: '删除选定的',
