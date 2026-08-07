@@ -659,41 +659,79 @@ class Canvas(Graph):
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
+                        in_thinking = False
+                        tts_tasks = []
+                        sentence_end = re.compile(r"(?:[。！？!?；;\n](?:[”’\"』」】》）)]*)|(?<=[.!?])(?=\s|$))")
                         stream = cpn_obj.output("content")()
 
+                        def _schedule_tts(text):
+                            if tts_mdl and text:
+                                tts_tasks.append(asyncio.create_task(asyncio.to_thread(self.tts, tts_mdl, text)))
+
+                        async def _drain_ready_tts():
+                            events = []
+                            while tts_tasks and tts_tasks[0].done():
+                                task = tts_tasks.pop(0)
+                                try:
+                                    audio_binary = task.result()
+                                except Exception:
+                                    continue
+                                if audio_binary:
+                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary}))
+                            return events
+
                         async def _process_stream(m):
-                            nonlocal buff_m, _m, tts_mdl
+                            nonlocal buff_m, _m, in_thinking
                             if not m:
                                 return
                             if m == "<think>":
+                                in_thinking = True
+                                buff_m = ""
                                 return decorate("message", {"content": "", "start_to_think": True})
 
                             elif m == "</think>":
+                                in_thinking = False
                                 return decorate("message", {"content": "", "end_to_think": True})
 
-                            buff_m += m
                             _m += m
+                            if in_thinking:
+                                return decorate("message", {"content": m})
 
-                            if len(buff_m) > 16:
-                                ev = decorate("message", {"content": m, "audio_binary": self.tts(tts_mdl, buff_m)})
-                                buff_m = ""
-                                return ev
+                            buff_m += m
+                            while True:
+                                match = sentence_end.search(buff_m)
+                                if not match:
+                                    break
+                                sentence = buff_m[: match.end()]
+                                buff_m = buff_m[match.end() :]
+                                _schedule_tts(sentence)
 
                             return decorate("message", {"content": m})
 
                         if inspect.isasyncgen(stream):
                             async for m in stream:
+                                for ev in await _drain_ready_tts():
+                                    yield ev
                                 ev = await _process_stream(m)
                                 if ev:
                                     yield ev
                         else:
                             for m in stream:
+                                for ev in await _drain_ready_tts():
+                                    yield ev
                                 ev = await _process_stream(m)
                                 if ev:
                                     yield ev
                         if buff_m:
-                            yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
+                            _schedule_tts(buff_m)
                             buff_m = ""
+                        while tts_tasks:
+                            try:
+                                await tts_tasks[0]
+                            except Exception:
+                                pass
+                            for ev in await _drain_ready_tts():
+                                yield ev
                         cpn_obj.set_output("content", _m)
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})

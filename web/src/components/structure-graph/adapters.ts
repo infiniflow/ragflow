@@ -153,37 +153,6 @@ export function adaptTreeToTreeData(
   return buildTreeDataItems(template.entities, template.relations, ['child']);
 }
 
-function filterTreeDataItems(
-  items: TreeDataItem[],
-  keyword: string,
-): TreeDataItem[] {
-  const lowerKeyword = keyword.toLowerCase();
-
-  return items.reduce<TreeDataItem[]>((acc, item) => {
-    const children = item.children
-      ? filterTreeDataItems(item.children, keyword)
-      : [];
-    const matches = item.name.toLowerCase().includes(lowerKeyword);
-
-    if (matches || children.length > 0) {
-      acc.push({
-        ...item,
-        children: children.length > 0 ? children : item.children,
-      });
-    }
-
-    return acc;
-  }, []);
-}
-
-export function filterTreeDataByKeyword(
-  data: TreeDataItem[],
-  keyword: string,
-): TreeDataItem[] {
-  if (!keyword.trim()) return data;
-  return filterTreeDataItems(data, keyword);
-}
-
 export function adaptKnowledgeGraphToForceGraph(
   template: IStructureGraphTemplate,
 ): IArtifactGraph {

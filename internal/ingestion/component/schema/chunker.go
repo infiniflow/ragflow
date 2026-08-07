@@ -173,7 +173,7 @@ type ChunkerOutputs struct {
 
 type TokenChunkerParam struct {
 	// DelimiterMode selects the chunking strategy.
-	// Allowed values: "token_size", "delimiter".
+	// Allowed value: "delimiter".
 	// The single-chunk "one" behavior is provided by the separate
 	// OneChunker component.
 	DelimiterMode string `json:"delimiter_mode"`
@@ -246,7 +246,7 @@ func (p TokenChunkerParam) MergeStrategy() MergeStrategy {
 // Defaults returns the Python default TokenChunkerParam.
 func (TokenChunkerParam) Defaults() TokenChunkerParam {
 	return TokenChunkerParam{
-		DelimiterMode:      "token_size",
+		DelimiterMode:      "delimiter",
 		ChunkTokenSize:     512,
 		Delimiters:         []string{"\n"},
 		OverlappedPercent:  0,
@@ -357,7 +357,7 @@ func (p *TokenChunkerParam) Validate() error {
 		p.OverlappedPercent = math.Round(v * 100)
 	}
 	switch p.DelimiterMode {
-	case "token_size", "delimiter":
+	case "delimiter":
 	default:
 		return errInvalidValue{Field: "delimiter_mode", Value: p.DelimiterMode}
 	}

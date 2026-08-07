@@ -8,6 +8,7 @@ import { useDebounceFn, useSize } from 'ahooks';
 import axios from 'axios';
 import JSZip from 'jszip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 
 // ZIP file header bytes "PK"
 const ZIP_HEADER_0 = 0x50;
@@ -158,6 +159,40 @@ async function stripWpsDispImg(data: ArrayBuffer): Promise<ArrayBuffer> {
   });
 }
 
+/**
+ * ExcelJS (used internally by @js-preview/excel) fails to parse workbooks
+ * whose root <workbook> element carries an XML namespace prefix (e.g.
+ * <x:workbook> instead of <workbook>). This is common in files exported by
+ * WPS Office or older Excel versions. The workbook-xform parser only sets
+ * its model when the closing tag name is exactly "workbook", so a prefixed
+ * root element leaves the model undefined and crashes with
+ * "Cannot read properties of undefined (reading 'sheets')".
+ *
+ * When such a prefix is detected, re-serialize the file with SheetJS (which
+ * always emits a standard, prefix-free xlsx) so ExcelJS can parse it.
+ */
+async function normalizeXlsxForExcelJS(data: ArrayBuffer): Promise<ArrayBuffer> {
+  try {
+    const zip = await JSZip.loadAsync(data);
+    const workbookFile = zip.file('xl/workbook.xml');
+    if (!workbookFile) return data;
+
+    const xml = await workbookFile.async('string');
+    // Detect a namespace prefix on the root <workbook> element, e.g. <x:workbook>
+    if (!/<\w+:workbook[\s>]/.test(xml)) return data;
+
+    const workbook = XLSX.read(data, { type: 'array' });
+    return XLSX.write(workbook, {
+      bookType: 'xlsx',
+      type: 'array',
+    }) as ArrayBuffer;
+  } catch {
+    // Not a valid ZIP, SheetJS can't parse, etc. - let the previewer
+    // handle the original data and surface its own error.
+    return data;
+  }
+}
+
 export const useFetchExcel = (filePath: string) => {
   const [status, setStatus] = useState(true);
   const { fetchDocument } = useFetchDocument();
@@ -192,8 +227,15 @@ export const useFetchExcel = (filePath: string) => {
     } catch (e) {
       // oxlint-disable-next-line no-console
       console.warn('failed', e);
-      previewer.destroy();
+      // Defer destroy() so the library's pending setTimeout(0) callback
+      // (scheduled by xs.loadData during its error handling) can access
+      // workbookDataSource before we null it out. Destroying immediately
+      // triggers a secondary "Cannot read properties of null (reading
+      // '_worksheets')" error.
       previewerRef.current = null;
+      setTimeout(() => {
+        previewer.destroy();
+      }, 0);
       setStatus(false);
     }
   }, [containerEl]);
@@ -225,7 +267,10 @@ export const useFetchExcel = (filePath: string) => {
         const jsonFile = await fetchDocument(filePath);
         if (cancelled) return;
         try {
-          dataRef.current = await stripWpsDispImg(jsonFile.data);
+          let data = jsonFile.data;
+          data = await normalizeXlsxForExcelJS(data);
+          data = await stripWpsDispImg(data);
+          dataRef.current = data;
         } catch {
           // Not a valid ZIP or preprocessing failed — use original data
           dataRef.current = jsonFile.data;
