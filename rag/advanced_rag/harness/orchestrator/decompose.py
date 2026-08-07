@@ -28,6 +28,13 @@ async def decompose_and_search(state: dict, tools) -> dict:
     claims = [ClaimTarget(**c) if isinstance(c, dict) else c for c in claims_raw]
     ctx = OrchestratorContext(question=question, claims=claims, mode=mode_label)
 
+    # Stagnation guard: stop when the fusion score stops improving across
+    # consecutive rounds (corpus lacks the data, follow-ups keep returning
+    # nothing) instead of burning the remaining cycle budget unproductively.
+    prev_score: float | None = None
+    _STAGNATION_CYCLES = 2
+    _STAGNATION_GAIN = 0.05
+
     for cycle in range(mode.max_orchestrator_cycles):
         ctx.iteration = cycle
         unverified = [c for c in ctx.claims if not c.is_verified]
@@ -91,7 +98,14 @@ async def decompose_and_search(state: dict, tools) -> dict:
         agent_results = [c.agent_result for c in ctx.claims if c.agent_result]
         cross_results = [cross_check_claim(r, all_chunks) for r in agent_results]
 
-        verdict = compute_fusion_score(agent_results, cross_results, mode)
+        verdict = compute_fusion_score(
+            agent_results,
+            cross_results,
+            mode,
+            question=ctx.question,
+            claims=ctx.claims,
+            all_chunks=all_chunks,
+        )
 
         # Phase-2: LLM Sufficient Context AutoRater fallback on ambiguous
         # verdicts — confirm sufficiency when the code signals are unclear.
@@ -113,6 +127,22 @@ async def decompose_and_search(state: dict, tools) -> dict:
             cycle,
             mode.max_orchestrator_cycles,
         )
+
+        # Stagnation guard (same rationale as agentic.py): no meaningful score
+        # gain for a couple of rounds → emit a partial answer instead of
+        # looping through the remaining cycles on unproductive searches.
+        if should_continue and verdict.status in ("INSUFFICIENT", "USEFUL_BUT_INCOMPLETE"):
+            if prev_score is not None and cycle >= _STAGNATION_CYCLES and verdict.score - prev_score < _STAGNATION_GAIN:
+                _LOG.info(
+                    "[Decompose] Round %d: score stagnant (%.3f → %.3f) — early-stopping to partial answer",
+                    cycle + 1,
+                    prev_score,
+                    verdict.score,
+                )
+                action = "ANSWER_PARTIAL"
+                should_continue = False
+            else:
+                prev_score = verdict.score
 
         if action in ("ANSWER", "ANSWER_PARTIAL"):
             return {

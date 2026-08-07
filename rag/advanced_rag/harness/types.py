@@ -51,6 +51,10 @@ class ExecutionStrategy:
     fusion_strategy: str = "geometric"
     # Cross-check (Signal B) weight for geometric/weighted strategies.
     fusion_w_b: float = 0.6
+    # Min cross-check floor for a self-verified claim. Any claim scoring below
+    # this vetoes SUFFICIENT (its localized evidence gap must not be averaged
+    # away by stronger sibling claims). Default 0.5 == the cross-check pass bar.
+    fusion_min_cross: float = 0.5
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -184,6 +184,67 @@ def extract_named_entities(text: str) -> list[str]:
     return _spacy_ner_entities(text, lang)
 
 
+def _entity_present(ent: str, chunk_texts: list[str]) -> bool:
+    """Whether ``ent`` (lowercased) appears in any of the evidence chunk texts.
+
+    CJK entities have no word boundaries (every Han char is ``\\w``) and are
+    commonly followed by function words ("的/是"), so they use a substring
+    match. Non-CJK entities use a bounded word/phrase match (Ann must not match
+    Annual). Mirrors the matching inside ``cross_check_claim``.
+    """
+    if _is_cjk(ent):
+        return any(ent.lower() in t for t in chunk_texts)
+    return any(re.search(rf"(?<![\w]){re.escape(ent.lower())}(?![\w])", t) for t in chunk_texts)
+
+
+def required_entity_gaps(
+    question: str,
+    claims: list,
+    all_chunks: dict,
+) -> dict[str, list[str]]:
+    """Find per-claim "required entities" missing from the evidence.
+
+    Aligns with the Sufficient Context paper (arXiv 2411.06037): sufficiency is
+    anchored on *what the question needs*, not on what the agent *claims* in its
+    report. Extracting entities from the report is vulnerable to the agent
+    back-filling facts from prior knowledge (check1.log Q2: the agent injected
+    Tyson Fury's "age 35" from memory while the corpus had no Fury data, so the
+    report-based cross-check passed on Mike Tyson's numbers that padded the
+    score). Instead we extract entities from the *claim description + question*
+    (what the answer actually requires) and check each against the evidence.
+
+    Returns {claim_id: [missing entities]}. A claim whose required entity is
+    absent from every cited/evidence chunk is flagged — under AND semantics one
+    missing required entity means that part of the question is unsupported.
+    """
+    # Union of all evidence chunk texts (independent of any claim's citation).
+    chunk_texts: list[str] = []
+    for chunk in (all_chunks or {}).values():
+        text = chunk.get("content_with_weight") or chunk.get("text") or ""
+        if text:
+            chunk_texts.append(text.lower())
+
+    # Pre-extract question entities once (shared across claims) + seed per-claim.
+    q_entities = extract_named_entities(question or "")
+    gaps: dict[str, list[str]] = {}
+    for claim in claims or []:
+        cid = getattr(claim, "claim_id", None)
+        desc = getattr(claim, "description", None) or ""
+        if not cid or not desc:
+            continue
+        # Required entities = those in the claim description, plus any
+        # question-level entities also mentioned by the claim (so a composite
+        # question like "Mike Tyson AND Tyson Fury" keeps each named entity
+        # individually accountable).
+        desc_entities = extract_named_entities(desc)
+        desc_lower = {e.lower() for e in desc_entities}
+        required = [e for e in desc_entities] + [e for e in q_entities if e.lower() in desc_lower]
+        missing = [e for e in required if not _entity_present(e, chunk_texts)]
+        if missing:
+            gaps[cid] = missing
+    return gaps
+
+
 def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCrossCheckResult:
     """Code-level cross-check: number matching + entity presence."""
     report = agent_result.report
@@ -339,19 +400,59 @@ def compute_fusion_score(
     agent_results: list[AgentResult],
     cross_check_results: list[ClaimCrossCheckResult],
     mode: ExecutionStrategy,
+    question: str = "",
+    claims: list | None = None,
+    all_chunks: dict | None = None,
 ) -> SufficiencyVerdict:
-    """Dual-signal fusion: agent confidence + cross-check pass rate."""
+    """Dual-signal fusion: agent confidence + cross-check pass rate.
+
+    ``question`` / ``claims`` / ``all_chunks`` are optional; when provided they
+    drive the *required-entity* AND-semantics veto from the Sufficient Context
+    paper (anchored on what the question needs, not what the agent claims), plus
+    suppression of self-confidence for claims whose required entities are
+    missing from the evidence.
+    """
+    # ── Required-entity gaps (Sufficient Context paper, AND semantics) ──
+    # Anchored on *what the question needs* rather than what the agent claims
+    # (see required_entity_gaps). Any claim whose required entity is absent from
+    # the evidence flags a localized gap: under AND semantics the whole verdict
+    # must not be SUFFICIENT, and the agent's self-confidence for that claim is
+    # suppressed (selective generation: confidence must not override missing
+    # evidence). Computed once here so it drives both Signal A and the veto.
+    required_gaps: dict[str, list[str]] = {}
+    if question or claims:
+        required_gaps = required_entity_gaps(question, claims, all_chunks)
+    if required_gaps:
+        _LOG.info(
+            "[Sufficiency] Required-entity gaps (AND semantics): %s",
+            {k: v for k, v in required_gaps.items()},
+        )
+    gapped_ids = set(required_gaps.keys())
+
     # Signal A: agent self-assessed confidence (continuous, per design doc).
     # Only self-verified claims count toward "agent is confident" — an
     # unverified claim's confidence is not trustworthy. This replaces the old
     # boolean pass-rate (verified_count / n) which inflated the score to 1.0
     # whenever the agent merely said "verified" (benchmark/2.log showed
     # confidence 0.5-0.7 being reported as agent_score=1.0).
-    verified = [r for r in agent_results if r.is_verified]
+    #
+    # A claim whose REQUIRED entity is missing from the evidence must not lend
+    # its self-confidence to Signal A — the agent is confident about a fact the
+    # corpus cannot support (prior-knowledge back-fill, see check1.log Q2). Its
+    # confidence is zeroed for the mean, so self-assessed confidence can never
+    # mask an evidence gap.
+    verified = [r for r in agent_results if r.is_verified and r.claim_id not in gapped_ids]
+    suppressed = [r.claim_id for r in agent_results if r.is_verified and r.claim_id in gapped_ids]
     verified_count = len(verified)
     agent_score = sum(r.confidence for r in verified) / verified_count if verified_count else 0.0
+    if suppressed:
+        _LOG.info(
+            "[Sufficiency] Signal A: suppressed %d self-verified claim(s) with missing required entities (confidence zeroed): %s",
+            len(suppressed),
+            suppressed,
+        )
     _LOG.info(
-        "[Sufficiency] Signal A (self): %d/%d claims self-verified, mean confidence → agent_score=%.3f (raw confidence values=%s)",
+        "[Sufficiency] Signal A (self): %d/%d claims self-verified (and evidence-backed), mean confidence → agent_score=%.3f (raw confidence values=%s)",
         verified_count,
         len(agent_results),
         agent_score,
@@ -398,6 +499,33 @@ def compute_fusion_score(
         sum(1 for r in cross_results if r.cross_check_passed),
     )
 
+    # ── Min-score veto: the mean hides a *localized* evidence gap ──
+    # Multi-claim questions (e.g. "Mike Tyson AND Tyson Fury") can average a
+    # genuinely weak claim up to the SUFFICIENT band. Q2 (check.log): c4/c5's
+    # "Tyson Fury" / "Usyk" entities matched 0 chunks, yet the 5-claim mean
+    # cross_score=0.822 crossed the threshold and produced an answer that
+    # could not back the Fury half. Fix: when any SELF-VERIFIED claim scores
+    # below a floor (its own evidence is thin even though it passed), we cap
+    # the verdict at partial — never SUFFICIENT. We key on self-verified claims
+    # only (an unrelated claim is already excluded as noise above).
+    min_cross_floor = getattr(mode, "fusion_min_cross", 0.5) or 0.5
+    self_verified_ids = {r.claim_id for r in agent_results if r.is_verified}
+    weak = [r.claim_id for r in cross_results if r.claim_id in self_verified_ids and r.cross_check_score < min_cross_floor]
+    # AND-semantics required-entity veto: a claim missing a required entity
+    # (even if its report-based cross-check passed — the numbers matched on
+    # unrelated padding) must cap the verdict below SUFFICIENT. This catches
+    # the Q2 case that min-cross alone missed: c2/c3 self-verified with score
+    # 0.83/0.80 (padded by Mike Tyson's digits) yet Tyson Fury's entities were
+    # absent from every evidence chunk.
+    weak += [cid for cid in gapped_ids if cid not in weak]
+    if weak:
+        _LOG.info(
+            "[Sufficiency] Min-score + required-entity veto: %d self-verified claim(s) below floor %.2f OR missing a required entity → capping below SUFFICIENT: %s",
+            len(weak),
+            min_cross_floor,
+            weak,
+        )
+
     # Fusion of Signal A and Signal B — configurable per mode instead of the
     # old hard-coded max/avg/min (which are arbitrary and ill-calibrated):
     #   - geometric (default): weighted geometric mean; any signal near 0 vetoes
@@ -439,7 +567,11 @@ def compute_fusion_score(
     # 5-way verdict
     if has_conflicts and fusion_score < mode.partial_threshold:
         status = "CONFLICTING"
-    elif fusion_score >= mode.sufficiency_threshold:
+    elif fusion_score >= mode.sufficiency_threshold and not weak:
+        # A self-verified claim with a thin cross-check score means part of the
+        # question's evidence is missing even though the MEAN passed. Never
+        # claim full sufficiency while a localized gap remains — degrade to
+        # partial so the caller either fills the gap or emits a partial answer.
         status = "SUFFICIENT"
     elif fusion_score >= mode.partial_threshold:
         status = "USEFUL_BUT_INCOMPLETE"
@@ -458,6 +590,9 @@ def compute_fusion_score(
     # Excluded unrelated claims are surfaced (not silently dropped) so the
     # caller knows the planner invented unanswerable claims.
     missing += noise_ids
+    # Thin-evidence claims that vetoed SUFFICIENT are surfaced too, so the
+    # caller sees exactly which part of the question still lacks support.
+    missing += [c for c in weak if c not in missing]
 
     return SufficiencyVerdict(
         status=status,

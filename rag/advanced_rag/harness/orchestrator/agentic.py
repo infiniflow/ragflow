@@ -67,6 +67,16 @@ async def agentic_research(state: dict, tools) -> dict:
     ctx = OrchestratorContext(question=question, claims=claims, mode=mode_label)
     pipeline = Pipeline(tools, compilation_map)
 
+    # Stagnation guard: if the fusion score stops improving across consecutive
+    # rounds, further searching is unlikely to help (e.g. the corpus simply lacks
+    # the data, and follow-ups keep returning nothing). Without this, a
+    # persistently INSUFFICIENT verdict burns every remaining cycle and, in the
+    # worst case, feeds a long empty loop (see check.log Q4: AutoRater said
+    # "not in corpus", follow-ups found nothing, yet the loop kept spinning).
+    prev_score: float | None = None
+    _STAGNATION_CYCLES = 2  # rounds with no meaningful gain before giving up
+    _STAGNATION_GAIN = 0.05  # minimum fusion-score improvement to count
+
     for cycle in range(mode.max_orchestrator_cycles):
         ctx.iteration = cycle
         _LOG.info("[Agentic research] Research round %d of %d — %d step(s) still unanswered.", cycle + 1, mode.max_orchestrator_cycles, sum(1 for c in ctx.claims if not c.is_verified))
@@ -160,7 +170,14 @@ async def agentic_research(state: dict, tools) -> dict:
         )
         cross_results = [cross_check_claim(r, all_chunks) for r in agent_results_list]
 
-        verdict = compute_fusion_score(agent_results_list, cross_results, mode)
+        verdict = compute_fusion_score(
+            agent_results_list,
+            cross_results,
+            mode,
+            question=ctx.question,
+            claims=ctx.claims,
+            all_chunks=all_chunks,
+        )
         ctx.verdict = verdict
 
         # Phase-2: when the code-level verdict is ambiguous (evidence looks
@@ -189,6 +206,23 @@ async def agentic_research(state: dict, tools) -> dict:
             cycle,
             mode.max_orchestrator_cycles,
         )
+
+        # Stagnation guard: when the verdict is not (yet) sufficient and the
+        # fusion score has not meaningfully improved for a couple of rounds,
+        # stop instead of burning the remaining cycle budget on unproductive
+        # re-searches. Override the CONTINUE decision with a partial answer.
+        if should_continue and verdict.status in ("INSUFFICIENT", "USEFUL_BUT_INCOMPLETE"):
+            if prev_score is not None and cycle >= _STAGNATION_CYCLES and verdict.score - prev_score < _STAGNATION_GAIN:
+                _LOG.info(
+                    "[Agentic research] Round %d: score stagnant (%.3f → %.3f) — early-stopping to partial answer",
+                    cycle + 1,
+                    prev_score,
+                    verdict.score,
+                )
+                action = "ANSWER_PARTIAL"
+                should_continue = False
+            else:
+                prev_score = verdict.score
 
         _LOG.info("[Agentic research] Round %d: evidence looks %s (confidence %.0f%%) — next: %s", cycle + 1, verdict.status, verdict.score * 100, action)
 
