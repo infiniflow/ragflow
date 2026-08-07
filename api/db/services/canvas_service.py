@@ -228,12 +228,6 @@ class UserCanvasService(CommonService):
             else:
                 nickname = User.select(User.nickname).where(User.id == user_id).scalar()
                 owner_list.append({"id": user_id, "label": nickname or "", "count": group_count})
-        logging.info(
-            "UserCanvasService.get_owner_filter joined_tenants=%d owners=%d template_groups=%d",
-            len(joined_tenant_ids),
-            len(owner_list),
-            group_count,
-        )
         return owner_list
 
     @classmethod
@@ -259,12 +253,6 @@ class UserCanvasService(CommonService):
         )
         if group_count:
             category_list.append({"id": "compilation_template_group", "count": group_count})
-        logging.info(
-            "UserCanvasService.get_category_filter joined_tenants=%d categories=%d template_groups=%d",
-            len(joined_tenant_ids),
-            len(category_list),
-            group_count,
-        )
         return category_list
 
     @classmethod
