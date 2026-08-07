@@ -175,9 +175,11 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 			meta[keyLower] = val
 		}
 	}
-	if target["metadata"] {
-		content["metadata"] = meta
-	}
+	// Always emit metadata to match the Python flow parser contract
+	// (rag/flow/parser/parser.py:_email), which unconditionally builds a
+	// metadata dict and collects every non-basic header into it regardless
+	// of whether "metadata" is present in the configured fields.
+	content["metadata"] = meta
 
 	// Body and attachments — readMailBody walks all multipart parts
 	// and collects text/html bodies alongside attachment parts whose
@@ -186,12 +188,11 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 	if target["body"] {
 		contentType := msg.Header.Get("Content-Type")
 		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, needAttachments)
-		if bodyText != "" {
-			content["text"] = bodyText
-		}
-		if bodyHTML != "" {
-			content["text_html"] = bodyHTML
-		}
+		// Always emit text/text_html to match the Python flow parser contract
+		// (rag/flow/parser/parser.py:_email), which sets both unconditionally
+		// (empty string for a missing part) rather than omitting the key.
+		content["text"] = bodyText
+		content["text_html"] = bodyHTML
 		if needAttachments {
 			content["attachments"] = attachments
 		}
