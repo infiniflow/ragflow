@@ -107,6 +107,25 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	now := time.Now()
 	runID := utility.GenerateUUID()
 	inputHash := mergedInputHash(products)
+	// Diagnostics: before building merged rows, confirm the incoming products
+	// actually carry an embedding. mergedChunkMap only writes q_<dim>_vec when
+	// len(p.Vector)>0; if this reports 0 vectors while LoadDocProducts/dedup
+	// audits reported vectors, the vector is being dropped somewhere between
+	// dedup and WriteMerged.
+	{
+		vecCount, dims := 0, map[int]int{}
+		for _, p := range products {
+			if dim := len(p.Vector); dim > 0 {
+				vecCount++
+				dims[dim]++
+			}
+		}
+		common.Info("knowledge_compile: WriteMerged vector audit",
+			zap.String("kb_id", kb),
+			zap.Int("products", len(products)),
+			zap.Int("with_vector", vecCount),
+			zap.Any("vector_dims", dims))
+	}
 	// Shard the rows and drive the inserts through the shared global pool
 	// (docengine-bounded) instead of one monolithic InsertChunks call.
 	jobs := make([]CompilerJob, 0, (len(products)+writeMergedBatchSize-1)/writeMergedBatchSize)
@@ -606,6 +625,10 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 				"slug_kwd", "page_type_kwd", "title_kwd",
 				"entity_names_kwd", "summary_with_weight", "outlinks_kwd",
 				"source_doc_ids", "source_chunk_ids",
+				// compile_kwd is selected purely so the query-result telemetry
+				// below can confirm the Search filter is honoured (without it the
+				// "compile_kwd_seen" audit would always read as {"":n}).
+				"compile_kwd",
 			},
 			Limit:  batchSize,
 			Offset: offset,
