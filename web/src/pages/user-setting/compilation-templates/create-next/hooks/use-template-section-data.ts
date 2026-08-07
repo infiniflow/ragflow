@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ArrayPath, UseFormReturn } from 'react-hook-form';
+import { ArrayPath, UseFormReturn, useWatch } from 'react-hook-form';
 
 import {
   ICompilationTemplateBuiltin,
@@ -24,6 +24,11 @@ export const useTemplateSectionData = (
       | undefined;
   }, [activeSectionTab, builtinTemplate?.config]);
 
+  const existingFields = useWatch({
+    control: form.control,
+    name: activeFieldsPath,
+  }) as Record<string, string>[] | undefined;
+
   const editingField = useMemo(() => {
     if (editingFieldIndex === null) return undefined;
     return ((form.getValues(activeFieldsPath) as
@@ -35,6 +40,7 @@ export const useTemplateSectionData = (
     activeSectionPath,
     activeFieldsPath,
     builtinSection,
+    existingFields,
     editingField,
   };
 };
