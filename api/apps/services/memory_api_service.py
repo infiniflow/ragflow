@@ -270,6 +270,11 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     filter_dict["memory_type"] = memory_types
 
     memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
+    if tenant_ids:
+        accessible_memories = [m for m in memory_list if m["tenant_id"] == current_user.id or (m["permissions"] == TenantPermission.TEAM.value and m["tenant_id"] in allowed_tenant_ids)]
+        if len(accessible_memories) != len(memory_list):
+            denied_ids = [m["id"] for m in memory_list if m["id"] not in [a["id"] for a in accessible_memories]]
+            raise NotFoundException(f"""User '{current_user.id}' lacks permission for memories: '{", ".join(denied_ids)}'""")
     embd_name_map = get_composite_model_name_by_ids([memory["embd_id"] for memory in memory_list])
     [memory.update({"memory_type": get_memory_type_human(memory["memory_type"]), "embd_name": embd_name_map.get(memory["embd_id"], "")}) for memory in memory_list]
     memory_list.sort(key=lambda m: m["create_time"], reverse=True)
