@@ -398,7 +398,10 @@ const (
 // mergeDecision computes the merge decision shared by the text and JSON merge
 // paths. prevText is the current chunk, incoming is the next unit, and joinSep
 // is the separator used to project the joined text ("" for the text path, "\n"
-// for the JSON path). target is the token cap.
+// for the JSON path). target is the token cap. prevTokens is the running sum of
+// per-unit token counts already accumulated into prevText; incomingTokens is
+// the token count of incoming, counted the same way the calling path counts a
+// unit.
 //
 // strategy selects the merge strategy (schema.MergeStrategy), mirroring
 // Python's MergeStrategy:
@@ -412,17 +415,40 @@ const (
 //   - MergeUnderCap (Python UNDER_CAP, strict no-overflow): an overflowing
 //     joined text starts a new chunk instead.
 //
+// The merge decision is made on the RUNNING SUM of per-unit token counts
+// (prevTokens + incomingTokens), NEVER on tokenizeStr(joined). BPE
+// tokenization is non-additive across joinSep ("\n"), so re-tokenizing the
+// joined string disagreed with Python's per-paragraph size() sum and shifted
+// every downstream boundary by a line — and, once the budget is small enough,
+// changed the chunk count. Both Python references accumulate a running sum of
+// per-unit counts: rag/nlp/__init__.py:_merge_paragraph_groups
+// (size("\n" + sub_sec)) and rag/flow/chunker/token_chunker.py:
+// _merge_text_chunks_by_token_size (tk_nums += current["tk_nums"]). The joined
+// text is still returned as the merged content.
+//
 // JSON-only metadata (PDFPositions/Positions/TKNums) is the caller's
 // responsibility; this helper only returns the merged/new text and the action.
-func mergeDecision(prevText, incoming, joinSep string, target int, overlapPct float64, strategy schema.MergeStrategy) (string, mergeAction) {
-	incomingTokens := tokenizeStr(incoming)
+//
+// Note on the JSON path: this helper decides on the running sum, but it still
+// uses the OVER_CAP strategy (merge-then-close on overflow). The Python JSON
+// reference (rag/flow/chunker/token_chunker.py:_merge_text_chunks_by_token_size)
+// decides on prev_tk_nums > threshold instead, so JSON parity is only partially
+// addressed here: the join-string re-tokenization is gone but the merge
+// STRATEGY difference remains. The TKNums accounting contract is pinned by
+// TestMergeByTokenSizeFromJSON_TKNumsConsistency.
+func mergeDecision(prevText, incoming, joinSep string, target int, overlapPct float64, strategy schema.MergeStrategy, prevTokens, incomingTokens int) (string, mergeAction) {
 	// An incoming unit that already exceeds target can never be merged; it
 	// stands alone as its own chunk.
 	if incomingTokens > target {
 		return newChunkText(prevText, incoming, target, overlapPct, incomingTokens), startNewChunk
 	}
 	joined := prevText + joinSep + incoming
-	if tokenizeStr(joined) <= target {
+	// Faithful to Python: decide on the running sum of per-unit token counts,
+	// never on the BPE count of the re-joined string, which is non-additive
+	// across joinSep ("\n") and therefore disagrees with Python's per-paragraph
+	// size() sum, shifting every downstream boundary by a line (and, on a small
+	// enough budget, changing the chunk count). See the function doc.
+	if prevTokens+incomingTokens <= target {
 		return joined, mergeIntoPrev
 	}
 	if strategy == schema.MergeOverCap {
@@ -503,11 +529,13 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			tkns = append(tkns, tokenizeStr(out))
 			return
 		}
-		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, c.param.MergeStrategy())
+		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, c.param.MergeStrategy(), tkns[len(tkns)-1], tnum)
 		switch act {
 		case mergeIntoPrev, mergeThenClose:
 			cks[len(cks)-1] = out
-			tkns[len(tkns)-1] = tokenizeStr(out)
+			// Maintain the running sum of per-paragraph token counts so the
+			// next merge decision matches Python's size() sum.
+			tkns[len(tkns)-1] += tnum
 			prevClosed = act == mergeThenClose
 		case startNewChunk:
 			cks = append(cks, out)
@@ -930,22 +958,33 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				prevClosed = false
 				cp := cloneChunkDoc(ck)
 				cp.Text = newChunkText(prev.Text, ck.Text, chunkTokens, overlappedPct, tk)
+				// Boundary path: TKNums is the RE-TOKENIZED new chunk text (which
+				// may include an overlap prefix and the "\n" joins), NOT the
+				// running sum used on the merge path above. With overlap > 0 this
+				// mixes the actual text count into the otherwise-running-sum
+				// accounting, so it can diverge from Python; pinned by
+				// TestMergeByTokenSizeFromJSON_TKNumsConsistency.
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
 				merged = append(merged, cp)
 				return
 			}
 			// Proactive projected-total merge (joined with "\n").
-			out, act := mergeDecision(prev.Text, ck.Text, "\n", chunkTokens, overlappedPct, strategy)
+			out, act := mergeDecision(prev.Text, ck.Text, "\n", chunkTokens, overlappedPct, strategy, intValue(prev.TKNums), tk)
 			switch act {
 			case mergeIntoPrev, mergeThenClose:
 				prev.Text = out
-				prev.TKNums = intPtr(tokenizeStr(out))
+				// Maintain the running sum of upstream tk_nums so the next
+				// merge decision matches Python's tk_nums += current["tk_nums"].
+				prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
 				prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
 				prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
 				prevClosed = act == mergeThenClose
 			case startNewChunk:
 				cp := cloneChunkDoc(ck)
 				cp.Text = out
+				// Boundary path: TKNums is the RE-TOKENIZED new chunk text, not the
+				// running sum (see the prevClosed branch above for why this is a
+				// deliberate, divergence-prone accounting choice).
 				cp.TKNums = intPtr(tokenizeStr(out))
 				merged = append(merged, cp)
 			}
