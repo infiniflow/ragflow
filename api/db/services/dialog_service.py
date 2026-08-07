@@ -828,7 +828,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         kwargs.setdefault("knowledge", "")
     gen_conf = dialog.llm_setting
 
-    system_content = prompt_config["system"].format(**kwargs) + text_attachments_content
+    system_content = prompt_config["system"].format(**kwargs)
     # If knowledge was retrieved but the template has no {knowledge}
     # placeholder, auto-append it so the LLM still sees the context.
     if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
@@ -838,6 +838,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
+    if text_attachments_content and msg:
+        msg[-1]["content"] += text_attachments_content
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
@@ -1882,6 +1884,8 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
     agent_messages = deepcopy(messages)
+    if text_attachments_content and agent_messages:
+        agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
