@@ -114,7 +114,7 @@ def _highlight_keywords(text: str, kwds: list[str]) -> str:
     if not terms:
         return text
     pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE)
-    return pattern.sub(lambda m: f"<em>{m.group(0)}</em>", text)
+    return pattern.sub(lambda m: f"*{m.group(0)}*", text)
 
 
 def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
