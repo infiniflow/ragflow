@@ -56,11 +56,18 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 	}
 	// OVER_CAP (Python's canonical default) permits a chunk to exceed budget
 	// by at most one incoming unit: a chunk is closed right after the
-	// overflowing merge, so it can hold prev (<= budget) + one unit (<= budget).
+	// overflowing merge, so its running-sum token count is <= budget+unit.
+	// The reconstructed chunk text carries the "\n" joins between units, and
+	// cl100k is non-additive across joins, so the actual token count can land
+	// a little above budget+unit; allow one extra unit of slack (matching the
+	// sibling TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow tolerance
+	// for the same cl100k delta). Python's naive_merge produces the same 3
+	// chunks here, so this pins the faithful boundary, not the old re-tokenized
+	// (under-packed) one.
 	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range merged {
 		n := tokenizeStr(ck.Text)
-		if n > budget+unit {
+		if n > budget+2*unit {
 			t.Errorf("chunk %d exceeds budget by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
 	}
@@ -212,19 +219,25 @@ func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
 		}
 	}
 
-	// Control: OVER_CAP (default) must overflow on the same input, proving the
-	// toggle changes behavior rather than being a no-op.
+	// Control: OVER_CAP (default) must follow its one-boundary-overflow
+	// contract on the same input, proving the toggle changes behavior rather
+	// than being a no-op. With the running-sum merge decision (faithful to
+	// Python's naive_merge), a chunk may hold prev (<= budget) + one unit, so
+	// its running-sum token count is <= budget+unit; the reconstructed text
+	// carries the "\n" joins and cl100k is non-additive across them, so allow
+	// the same one-extra-unit slack. For this particular input Python's
+	// OVER_CAP does not actually exceed budget, but it still permits the
+	// one-unit overflow that UNDER_CAP forbids, so the two strategies produce
+	// different chunk counts — proving the toggle is live.
 	over := run(false)
-	overflowed := false
-	for _, ck := range over {
-		text, _ := ck["text"].(string)
-		if tokenizeStr(text) > budget {
-			overflowed = true
-			break
-		}
+	if len(over) == len(respect) {
+		t.Errorf("OVER_CAP produced the same chunk count as UNDER_CAP (%d); toggle may be a no-op", len(over))
 	}
-	if !overflowed {
-		t.Errorf("OVER_CAP control produced no overflow on input that UNDER_CAP keeps within budget; toggle may be a no-op")
+	for i, ck := range over {
+		text, _ := ck["text"].(string)
+		if tokenizeStr(text) > budget+sentenceN {
+			t.Errorf("OVER_CAP chunk %d exceeds one-unit overflow contract: tokens=%d (cap=%d unit=%d)", i, tokenizeStr(text), budget, sentenceN)
+		}
 	}
 }
 
@@ -337,5 +350,46 @@ func TestInvokeJSONPayload_UnderCapEndToEnd(t *testing.T) {
 		if n := tokenizeStr(text); n > budget+unit {
 			t.Errorf("OVER_CAP chunk %d overflows by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
+	}
+}
+
+// TestMergeDecisionOverCapVsUnderCapBoundary pins the semantic difference
+// between the two merge strategies at the exact boundary
+// (prevTokens+incomingTokens > target while incomingTokens <= target),
+// independent of BPE text-token-count fluctuations. OVER_CAP must
+// merge-then-close (a chunk may exceed target by at most one unit); UNDER_CAP
+// must start a fresh chunk (strict no-overflow). This restores the strong
+// constraint that the under_cap toggle is live — the integration test in
+// TestMergeByTokenSize_UnderCapNoOverflow can only assert that the two
+// strategies produce a different chunk COUNT, because on repetitive text the
+// re-tokenized merged chunk can fall back under budget (cl100k is
+// non-additive across the join). A regression that turns OVER_CAP into a
+// no-op would not be caught there, but is caught here.
+func TestMergeDecisionOverCapVsUnderCapBoundary(t *testing.T) {
+	const prevT, incT = 10, 10
+	target := prevT + incT - 1 // boundary: running sum > target, unit fits
+	if incT > target {
+		t.Fatalf("bad fixture: incoming unit must fit target (incT=%d target=%d)", incT, target)
+	}
+
+	_, overAct := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeOverCap, prevT, incT)
+	if overAct != mergeThenClose {
+		t.Errorf("OVER_CAP at boundary: want mergeThenClose, got %v", overAct)
+	}
+
+	_, underAct := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeUnderCap, prevT, incT)
+	if underAct != startNewChunk {
+		t.Errorf("UNDER_CAP at boundary: want startNewChunk, got %v", underAct)
+	}
+
+	// Both strategies must still refuse to merge an incoming unit that
+	// already exceeds target — it stands alone as its own chunk.
+	_, overBig := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeOverCap, prevT, target+5)
+	if overBig != startNewChunk {
+		t.Errorf("OVER_CAP with oversized incoming: want startNewChunk, got %v", overBig)
+	}
+	_, underBig := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeUnderCap, prevT, target+5)
+	if underBig != startNewChunk {
+		t.Errorf("UNDER_CAP with oversized incoming: want startNewChunk, got %v", underBig)
 	}
 }
