@@ -58,3 +58,8 @@ export const FieldLabelKeyMap: Record<string, string> = {
   description: 'setting.fieldDescription',
   rule: 'setting.fieldRule',
 };
+
+export const FieldRequiredMessageKeyMap: Record<string, string> = {
+  type: 'setting.fieldTypeRequired',
+  description: 'setting.fieldDescriptionRequired',
+};
