@@ -1958,6 +1958,15 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     assert target_payload["code"] == 0, target_payload
     chat_id = target_payload["data"]["id"]
 
+    duplicate_parameters_res = rest_client.put(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_res.status_code == 200
+    duplicate_parameters_payload = duplicate_parameters_res.json()
+    assert duplicate_parameters_payload["code"] == 102, duplicate_parameters_payload
+    assert duplicate_parameters_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_payload
+
     unauthorized = rest_client.patch("/chats/invalid-chat-id", json={"name": "anything"})
     assert unauthorized.status_code == 200
     unauthorized_payload = unauthorized.json()
