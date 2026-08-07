@@ -15,6 +15,7 @@
 package chunker
 
 import (
+	"strings"
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
@@ -196,6 +197,17 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 			kinds:  []string{"text", "text"},
 			target: 4, overlap: 20, joinSep: "\n", strat: schema.MergeOverCap,
 		},
+		{
+			// Longer tag so the RAW-text cut would land INSIDE the tag. The
+			// overlap prefix must still be carved from the tag-free visible
+			// text, so a partial "@@...##" fragment can never leak into the
+			// next chunk (A3 / Python test_overlap_prefix_never_leaks_partial_tag).
+			name:   "overlap never leaks partial tag when cut lands inside tag",
+			texts:  []string{"abcd@@100\t200\t300\t400##", "wxyz"},
+			tkNums: []int{10, 4},
+			kinds:  []string{"text", "text"},
+			target: 5, overlap: 20, joinSep: "\n", strat: schema.MergeOverCap,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -215,6 +227,54 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 				if intValue(got[i].TKNums) != want[i].tk {
 					t.Errorf("chunk[%d] TKNums mismatch: got=%d want=%d (text=%q)", i, intValue(got[i].TKNums), want[i].tk, got[i].Text)
 				}
+			}
+		})
+	}
+}
+
+// TestMergeUnitsOverlapPrefixIsTagFree locks the cross-language overlap parity
+// on TAG-BEARING input: every overlap-prefixed chunk must be carved from the
+// previous chunk's tag-free visible text, so a dangling "@@...##" coordinate
+// fragment can never leak into a chunk (A3). It also asserts the prefix equals
+// the visible-cut tail of the previous chunk, mirroring computeOverlapPrefix.
+func TestMergeUnitsOverlapPrefixIsTagFree(t *testing.T) {
+	cases := []struct {
+		name    string
+		prev    string
+		cur     string
+		target  int
+		overlap float64
+	}{
+		{"cut inside tag", "abcd@@100\t200\t300\t400##", "wxyz", 5, 20},
+		{"tag at end", "hello world@@1\t2\t3\t4##", "next", 5, 20},
+		{"tag at start", "@@1\t2\t3\t4##leading text", "next", 5, 20},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			units := []schema.ChunkDoc{
+				{Text: c.prev, TKNums: intPtr(10), CKType: "text"},
+				{Text: c.cur, TKNums: intPtr(4), CKType: "text"},
+			}
+			got := mergeUnits(units, c.target, c.overlap, schema.MergeOverCap, "\n")
+			if len(got) < 2 {
+				t.Fatalf("expected >=2 chunks, got %d: %v", len(got), got)
+			}
+			if strings.Contains(got[1].Text, "@@") || strings.Contains(got[1].Text, "##") {
+				t.Errorf("overlap-prefixed chunk leaks coord tag: %q", got[1].Text)
+			}
+			// The prefix must equal the visible-cut tail of prev (mirror of
+			// computeOverlapPrefix): strip tags, cut, prepend.
+			vis := []rune(removeTag(c.prev))
+			cut := int(float64(len(vis)) * (100.0 - c.overlap) / 100.0)
+			if cut < 0 {
+				cut = 0
+			}
+			if cut >= len(vis) {
+				cut = len(vis) - 1
+			}
+			wantPrefix := string(vis[cut:])
+			if !strings.HasPrefix(got[1].Text, wantPrefix) {
+				t.Errorf("overlap prefix mismatch: got=%q wantPrefix=%q", got[1].Text, wantPrefix)
 			}
 		})
 	}
