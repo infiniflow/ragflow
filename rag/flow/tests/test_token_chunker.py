@@ -55,6 +55,19 @@ def _load_token_chunker_with_stubs():
             def __init__(self):
                 pass
 
+            def check_valid_value(self, value, msg, allowed):
+                if value not in allowed:
+                    raise ValueError(msg)
+
+            def check_positive_integer(self, value, msg):
+                pass
+
+            def check_decimal_float(self, value, msg):
+                pass
+
+            def check_nonnegative_number(self, value, msg):
+                pass
+
         class ProcessBase:
             def __init__(self, _pipeline, _id, param):
                 self._pipeline = _pipeline
@@ -275,6 +288,26 @@ def test_json_delimiter_mode_pdf_positions_retained():
         chunks = chunker._outputs["chunks"]
         assert len(chunks) == 1
         assert chunks[0].get("pdf_positions") == [[1, 0, 10, 0, 5], [2, 0, 20, 0, 8]]
+
+
+def test_token_size_mode_normalized_to_delimiter():
+    # Backward-compat: the removed "token_size" value must still be accepted by
+    # check() and coerced to "delimiter" (runtime behavior is identical), so
+    # legacy configs / pre-fix frontends don't get rejected. Unknown values are
+    # still rejected.
+    with _load_token_chunker_with_stubs() as token_chunker_module:
+        param = token_chunker_module.TokenChunkerParam()
+        param.delimiter_mode = "token_size"
+        param.check()
+        assert param.delimiter_mode == "delimiter"
+
+        bad = token_chunker_module.TokenChunkerParam()
+        bad.delimiter_mode = "nope"
+        try:
+            bad.check()
+            raise AssertionError("expected check() to reject unknown delimiter_mode")
+        except Exception:
+            pass
 
 
 def test_json_no_delimiter_mode_merges_to_token_cap():

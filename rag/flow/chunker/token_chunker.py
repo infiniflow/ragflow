@@ -41,6 +41,12 @@ class TokenChunkerParam(ProcessParamBase):
         self.image_context_size = 0
 
     def check(self):
+        # Backward-compat: "token_size" was removed but is behaviorally identical
+        # to "delimiter" at runtime (both route through the same code path), so
+        # accept and coerce it instead of rejecting legacy configs / pre-fix
+        # frontends. Only genuinely unknown values are rejected.
+        if self.delimiter_mode == "token_size":
+            self.delimiter_mode = "delimiter"
         self.check_valid_value(self.delimiter_mode, "Delimiter mode abnormal.", ["delimiter", "one"])
         if self.delimiters is None:
             self.delimiters = []
