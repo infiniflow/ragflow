@@ -1,5 +1,6 @@
 import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { TruncatedText } from '@/components/truncated-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,9 +43,13 @@ export function CompilationTemplateCard({
 
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <section className="flex items-center justify-between gap-2">
-            <h3 className="flex-1 min-w-0 text-base font-normal truncate text-text-primary">
+            <TruncatedText
+              as="h3"
+              className="flex-1 min-w-0 truncate"
+              tooltip={data.name}
+            >
               {data.name}
-            </h3>
+            </TruncatedText>
 
             <Button variant="ghost" size="sm">
               <CompilerIcon />
@@ -55,9 +60,13 @@ export function CompilationTemplateCard({
             </CompilationTemplateDropdown>
           </section>
 
-          <p className="text-sm text-text-secondary line-clamp-1">
+          <TruncatedText
+            as="p"
+            className="text-sm text-text-secondary line-clamp-1"
+            tooltip={data.description}
+          >
             {data.description}
-          </p>
+          </TruncatedText>
 
           <div className="flex flex-wrap gap-2 mt-2">
             {kinds.map((kind) => (
