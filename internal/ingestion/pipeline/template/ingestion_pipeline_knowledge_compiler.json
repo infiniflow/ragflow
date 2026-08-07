@@ -157,7 +157,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",

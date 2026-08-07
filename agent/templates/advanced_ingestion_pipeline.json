@@ -336,7 +336,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [],
                         "image_context_size": 0,
                         "outputs": {
@@ -576,7 +576,7 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "token_size",
+                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"

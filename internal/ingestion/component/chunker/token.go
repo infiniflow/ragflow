@@ -16,7 +16,7 @@
 
 // SCOPE (honest) for token.go:
 //
-//   - WHITELIST: delimiter_mode ∈ {"token_size","delimiter"} (the
+//   - WHITELIST: delimiter_mode ∈ {"delimiter"} (the
 //     single-chunk "one" behaviour moved to OneChunker in one.go).
 //     chunk_token_size > 0, overlapped_percent accepts a [0,1) fraction or a
 //     [0,90] percentage (normalized to [0,90] by normalizeOverlappedPercent,

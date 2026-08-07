@@ -143,8 +143,6 @@ async def agentic_research(state: dict, tools) -> dict:
         if action == "ANSWER_PARTIAL":
             return _finalize(ctx, tools, partial=True)
         if action == "ABSTAIN":
-            if getattr(tools, "text_attachments_content", ""):
-                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
         if action == "REPLAN":
@@ -249,12 +247,24 @@ def _merge_agent_results(ctx: OrchestratorContext, tools):
     if combined:
         tools.kbinfos["pre_summary"] = "\n\n".join(combined)
 
-    # Collect evidence chunks from agent results
+    # Collect the chunks the agents actually cited across all claims. These
+    # indices share the same positional space as kb_prompt's ``[ID:n]`` markers
+    # (both index tools.kbinfos["chunks"]).
     for c in ctx.claims:
         if c.agent_result and c.agent_result.evidence_ids:
             for eid in c.agent_result.evidence_ids:
-                if eid not in seen_evidence:
+                if isinstance(eid, int):
                     seen_evidence.add(eid)
+
+    # Drop chunks no claim ever cited (e.g. pre_search recall that didn't pan
+    # out) so the final-answer LLM call only sees the useful evidence. Preserve
+    # order so the re-numbered [ID:n] citations stay stable. Defensive: never
+    # filter to empty — if nothing was cited, keep the full pool.
+    all_chunks = tools.kbinfos.get("chunks") or []
+    keep = sorted(i for i in seen_evidence if 0 <= i < len(all_chunks))
+    if keep and len(keep) < len(all_chunks):
+        _LOG.info("[Agentic research] Trimming evidence for the final answer: %d of %d chunk(s) were cited.", len(keep), len(all_chunks))
+        tools.kbinfos["chunks"] = [all_chunks[i] for i in keep]
 
 
 async def _get_compilation_map(tools) -> dict[str, set[str]]:
