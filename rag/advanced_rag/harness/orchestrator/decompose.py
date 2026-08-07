@@ -12,6 +12,7 @@ from rag.advanced_rag.harness.sufficiency import (
     compute_fusion_score,
     route_sufficiency_verdict,
 )
+from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
 from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
@@ -48,8 +49,11 @@ Return JSON:
   "confidence": 0.0,
   "report": "Short evidence-backed finding, or what was learned so far.",
   "gaps": ["specific missing fact or relationship"],
-  "next_queries": ["standalone follow-up search query"]
-}}"""
+  "next_queries": ["standalone follow-up search query"],
+  "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match"],
+  "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"]
+}}
+Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one."""
 
 
 async def decompose_and_search(state: dict, tools) -> dict:
@@ -67,6 +71,13 @@ async def decompose_and_search(state: dict, tools) -> dict:
     attempted_queries: dict[str, set[str]] = {c.claim_id: set() for c in ctx.claims}
     pending_queries: dict[str, list[str]] = {c.claim_id: [] for c in ctx.claims}
     completed_cycles = 0
+
+    # Stagnation guard: stop when the fusion score stops improving across
+    # consecutive rounds (corpus lacks the data, follow-ups return nothing)
+    # instead of burning the remaining cycle budget unproductively.
+    prev_score: float | None = None
+    _STAGNATION_CYCLES = 2
+    _STAGNATION_GAIN = 0.05
 
     for cycle in range(max_cycles):
         ctx.iteration = cycle
@@ -145,6 +156,8 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 evidence_ids=evidence_ids,
                 gaps=analysis["gaps"],
                 discovered_claims=[],
+                grounded=analysis.get("grounded", []),
+                numbers=analysis.get("numbers", []),
             )
 
             next_queries = _new_queries(
@@ -172,15 +185,60 @@ async def decompose_and_search(state: dict, tools) -> dict:
         agent_results = [c.agent_result for c in ctx.claims if c.agent_result]
         cross_results = [cross_check_claim(r, all_chunks) for r in agent_results]
 
-        verdict = compute_fusion_score(agent_results, cross_results, mode)
+        # HEAD sufficiency enhancements: pass the question + claims + evidence so
+        # the fusion activates required-entity AND-semantics veto, grounded-fact
+        # verification, and numeric multi-source conflict detection (not just the
+        # baseline ratio/mean that upstream's 3-arg call skipped).
+        verdict = compute_fusion_score(
+            agent_results,
+            cross_results,
+            mode,
+            question=ctx.question,
+            claims=ctx.claims,
+            all_chunks=all_chunks,
+        )
         ctx.verdict = verdict
 
-        action, should_continue = route_sufficiency_verdict(
+        # LLM Sufficient Context AutoRater (primary sufficiency judge). Medium
+        # keeps it gated to the borderline band for cost control; its verdict
+        # (`auto=boost`) is fed to the decision ladder inside
+        # ``route_sufficiency_verdict``, which replaces the old manual
+        # SUFFICIENT upgrade. Missing-piece follow-ups feed the next hop.
+        boost: dict = {}
+        if verdict.status in ("USEFUL_BUT_INCOMPLETE", "INSUFFICIENT", "CONFLICTING"):
+            boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=_global_evidence_ids(tools, {"chunks": tools.kbinfos.get("chunks", [])}))
+            followups = boost.get("followups") or []
+            if followups:
+                ctx.pending_followups = followups
+                _LOG.info("[Decompose] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
+            if boost:
+                _LOG.info("[Decompose] AutoRater is_sufficient=%s confidence=%.2f", boost.get("is_sufficient"), boost.get("confidence", 1.0))
+
+        action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
             cycle,
             max_cycles,
+            auto=boost,
         )
+        if caveat:
+            _LOG.info("[Decompose] caveat=%s", caveat)
+
+        # Stagnation guard: if the verdict is not (yet) sufficient and the score
+        # has not meaningfully improved across consecutive rounds, stop instead
+        # of burning the remaining cycle budget on unproductive re-searches.
+        if should_continue and verdict.status in ("INSUFFICIENT", "USEFUL_BUT_INCOMPLETE"):
+            if prev_score is not None and cycle >= _STAGNATION_CYCLES and verdict.score - prev_score < _STAGNATION_GAIN:
+                _LOG.info(
+                    "[Decompose] Round %d: score stagnant (%.3f → %.3f) — early-stopping to partial answer",
+                    cycle + 1,
+                    prev_score,
+                    verdict.score,
+                )
+                action = "ANSWER_PARTIAL"
+                should_continue = False
+            else:
+                prev_score = verdict.score
 
         if action in ("ANSWER", "ANSWER_PARTIAL"):
             return _finalize(ctx, tools, partial=action == "ANSWER_PARTIAL", loop=completed_cycles)
@@ -285,11 +343,16 @@ def _normalize_analysis(
     report = str(parsed.get("report") or "").strip() or _summarize(result)
     gaps = _string_list(parsed.get("gaps"))
     next_queries = _string_list(parsed.get("next_queries"))[:_MAX_NEXT_QUERIES]
+    grounded = _string_list(parsed.get("grounded"))
+    numbers = _string_list(parsed.get("numbers"))
 
     if is_verified:
         gaps = []
         next_queries = []
-        confidence = max(confidence, 0.65)
+        # NOTE: no optimistic floor here. The old ``max(confidence, 0.65)``
+        # inflated medium's agent confidence and distorted the decision-ladder
+        # gate (agent_confidence >= c_high/c_low). Keep the LLM's raw confidence
+        # so the ladder's thresholds behave as designed.
     elif not next_queries and cycle + 1 < max_cycles:
         next_queries = _fallback_queries(question, claim)
 
@@ -299,6 +362,8 @@ def _normalize_analysis(
         "report": report,
         "gaps": gaps,
         "next_queries": next_queries,
+        "grounded": grounded,
+        "numbers": numbers,
     }
 
 
@@ -319,6 +384,8 @@ def _fallback_analysis(
         "report": _summarize(result),
         "gaps": [] if is_verified else ["need more specific evidence"],
         "next_queries": next_queries,
+        "grounded": [],
+        "numbers": [],
     }
 
 
