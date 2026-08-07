@@ -719,6 +719,7 @@ def list_agents(tenant_id):
         effective_owner_ids = list(requested_owner_ids)
     else:
         effective_owner_ids = list(authorized_owner_ids)
+    include_template_groups = tenant_id in effective_owner_ids
 
     # Groups-only: when ``compilation_template_group`` is the only selected
     # category, return just the caller's template groups (no agents) via
@@ -727,11 +728,12 @@ def list_agents(tenant_id):
     if canvas_category_list == [_COMPILATION_TEMPLATE_GROUP_CATEGORY]:
         from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 
-        try:
-            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
-        except Exception:
-            logging.exception("list_agents: compilation template group list failed for tenant=%s", tenant_id)
-            groups = []
+        groups = []
+        if include_template_groups:
+            try:
+                groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+            except Exception:
+                logging.exception("list_agents: compilation template group list failed for tenant=%s", tenant_id)
         for group in groups:
             group["type"] = _COMPILATION_TEMPLATE_GROUP_CATEGORY
         total = len(groups)
@@ -770,11 +772,12 @@ def list_agents(tenant_id):
         )
         # Groups are owner-only (no team sharing), so they're scoped to the
         # caller. Keyword filters the group name; scope is left unfiltered.
-        try:
-            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
-        except Exception:
-            logging.exception("list_agents: compilation template group merge failed for tenant=%s", tenant_id)
-            groups = []
+        groups = []
+        if include_template_groups:
+            try:
+                groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+            except Exception:
+                logging.exception("list_agents: compilation template group merge failed for tenant=%s", tenant_id)
 
         items: list[dict] = []
         for agent in agents:
@@ -814,11 +817,12 @@ def list_agents(tenant_id):
             tags,
             canvas_type,
         )
-        try:
-            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
-        except Exception:
-            logging.exception("list_agents: compilation template group mixed failed for tenant=%s", tenant_id)
-            groups = []
+        groups = []
+        if include_template_groups:
+            try:
+                groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+            except Exception:
+                logging.exception("list_agents: compilation template group mixed failed for tenant=%s", tenant_id)
 
         items = []
         for agent in agents:
