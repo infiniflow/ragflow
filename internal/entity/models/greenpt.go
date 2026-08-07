@@ -81,7 +81,7 @@ func (m *GreenPTModel) ChatWithMessages(ctx context.Context, modelName string, m
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -98,7 +98,7 @@ func (m *GreenPTModel) ChatWithMessages(ctx context.Context, modelName string, m
 		}
 	}
 
-	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	body, err := m.baseModel.doRequest(ctx, baseURL, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (m *GreenPTModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -144,7 +144,7 @@ func (m *GreenPTModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		}
 	}
 
-	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+	return m.baseModel.doStreamRequest(ctx, baseURL, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
 }

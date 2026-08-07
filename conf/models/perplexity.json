@@ -52,7 +52,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 512
+      "max_batch_size": 512
     },
     {
       "name": "pplx-embed-v1-4b",
@@ -60,7 +60,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 512
+      "max_batch_size": 512
     }
   ]
 }

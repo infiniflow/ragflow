@@ -118,7 +118,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "embed-english-v3.0",
@@ -126,7 +126,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "embed-english-light-v3.0",
@@ -134,7 +134,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "embed-multilingual-v3.0",
@@ -142,7 +142,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "embed-multilingual-light-v3.0",
@@ -150,7 +150,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere-transcribe-03-2026",

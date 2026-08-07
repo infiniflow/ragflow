@@ -125,7 +125,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16
+      "max_batch_size": 16
     }
   ]
 }

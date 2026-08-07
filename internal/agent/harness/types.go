@@ -26,7 +26,13 @@ type RouteDecision struct {
 	QuestionType          string // factual | comparative | analytical | procedural | exploratory | verification | summarization
 	RequiresDecomposition bool
 	ExecutionStrategy     string // direct_search | decompose_and_search | agentic_research | deep_research
-	Reasoning             string
+	// SuggestsCompilation is the compiled-artifact type the route suggests using
+	// for retrieval: "" (none) | "toc" | "graph" | "wiki". Mirrors Python's
+	// route `suggests_compilation`. It is preserved so the production runner can
+	// prefer a compiled wiki/graph tool when the bound KBs actually carry the
+	// artifact, and fall back to general hybrid search otherwise.
+	SuggestsCompilation string
+	Reasoning           string
 }
 
 // ClaimTarget mirrors Python ClaimTarget.

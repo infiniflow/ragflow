@@ -365,7 +365,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 50
+      "max_batch_size": 50
     },
     {
       "name": "kinfra-text-embedding-4b",
@@ -373,7 +373,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 50
+      "max_batch_size": 50
     },
     {
       "name": "kinfra-vl-embedding-2b",
@@ -381,7 +381,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 50
+      "max_batch_size": 50
     },
     {
       "name": "kinfra-vl-embedding-8b",
@@ -389,7 +389,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 50
+      "max_batch_size": 50
     }
   ]
 }

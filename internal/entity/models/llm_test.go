@@ -64,7 +64,7 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 			Name: "search_my_dateset",
 			Desc: "Search datasets.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"query": &schema.ParameterInfo{Type: schema.String, Required: true},
+				"query": {Type: schema.String, Required: true},
 			}),
 		},
 	})
@@ -122,7 +122,7 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 			Name: "search_my_dateset",
 			Desc: "Search datasets.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"query": &schema.ParameterInfo{Type: schema.String, Required: true},
+				"query": {Type: schema.String, Required: true},
 			}),
 		},
 	})

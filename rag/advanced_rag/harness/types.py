@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -59,7 +59,7 @@ class ClaimTarget:
     is_verified: bool = False
     confidence: float = 0.0
     suggested_tools: list[str] = field(default_factory=list)
-    agent_result: dict | None = None
+    agent_result: AgentResult | None = None
 
 
 @dataclass
@@ -144,7 +144,6 @@ class OrchestratorContext:
     mode: str
     iteration: int = 0
     current_phase: str = "locate"
-    agent_results: dict[str, Any] = field(default_factory=dict)
     verdict: SufficiencyVerdict | None = None
     history: list[dict] = field(default_factory=list)
     _last_entity: str | None = None
@@ -169,7 +168,18 @@ class OrchestratorContext:
         return unverified[0].description if unverified else None
 
     def has_any_chunks(self) -> bool:
-        return any(r.get("evidence_ids") for r in self.agent_results.values())
+        """True once any claim's research produced evidence passages.
 
-    def record_fallback(self, tool_name: str, fallback_from: str | None = None):
-        pass
+        Reads the claims (whose ``agent_result`` is populated by both
+        orchestrators) — the ``agent_results`` dict is never written to, so
+        reading it would leave the search phase stuck at "locate" forever and
+        gate off every inspector tool.
+        """
+        for c in self.claims:
+            r = c.agent_result
+            if r is None:
+                continue
+            ids = r.get("evidence_ids") if isinstance(r, dict) else r.evidence_ids
+            if ids:
+                return True
+        return False

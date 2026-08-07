@@ -821,9 +821,10 @@ async def _wiki_extract_one_batch(
     language: str,
     llm_timeout: int,
     parser_config: Optional[dict] = None,
-) -> dict:
+) -> Optional[dict]:
     """Single LLM call for one packed batch. Returns the raw (label-tagged)
-    extract dict.
+    extract dict, or ``None`` on a transient LLM timeout/error so the caller
+    can avoid persisting a poisoned empty result.
 
     The entity / relation schemas and the extra rules sections of the
     prompt are rendered from ``parser_config`` when supplied (mirroring
@@ -851,10 +852,10 @@ async def _wiki_extract_one_batch(
         )
     except asyncio.TimeoutError:
         logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", llm_timeout, len(packed))
-        return _wiki_empty_extract()
+        return None
     except Exception:
         logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
-        return _wiki_empty_extract()
+        return None
     _ = language  # reserved for future localization
     return _wiki_unwrap_extract(res)
 
@@ -881,6 +882,12 @@ async def _wiki_process_batch(
     the top of ``wiki_map_from_chunks``; threaded through so the
     persisted resume rows record the right hash and the next
     incremental run can compare cleanly.
+
+    On a transient LLM failure/timeout (``_wiki_extract_one_batch`` returns
+    ``None``) the batch is NOT persisted with a resume hash. The next
+    incremental run then sees those chunks as ``new`` and retries, instead of
+    replaying a permanently cached empty extract. Only a genuine LLM response
+    (even one with zero items) is persisted.
     """
     if not packed:
         return _wiki_empty_extract()
@@ -896,6 +903,10 @@ async def _wiki_process_batch(
             llm_timeout,
             parser_config=parser_config,
         )
+        if raw_extract is None:
+            # LLM call failed/timed out: leave no resume hash so the next run
+            # re-extracts these chunks instead of locking in an empty result.
+            return _wiki_empty_extract()
         merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
         await _wiki_persist_extracts(
             per_chunk,
@@ -2648,7 +2659,7 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
 )
 
 
-def _build_refine_writer_system(instruction: str | None = None, page_example: str | None = None) -> str:
+def _build_refine_writer_system(instruction: str | None = None, example: str | None = None) -> str:
     """Return the writer system prompt with separate instruction and page
     example overrides. Empty values use the built-in defaults.
 
@@ -2657,7 +2668,7 @@ def _build_refine_writer_system(instruction: str | None = None, page_example: st
     override to apply.
     """
     instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
-    example_body = (page_example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    example_body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
     return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(
         template_instruction=instruction_body,
         template_example=example_body,
@@ -3266,14 +3277,12 @@ async def _wiki_write_page_simple(
     chat_mdl,
     llm_timeout: int,
     instruction: Optional[str] = None,
-    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
 
-    ``instruction`` and ``page_example`` are the separate per-template
-    writer overrides. ``example`` is retained as a fallback for callers
-    using the older combined configuration field.
+    ``instruction`` and ``example`` are the separate per-template writer
+    overrides.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -3300,7 +3309,7 @@ async def _wiki_write_page_simple(
         chat_mdl,
         _build_refine_writer_system(
             instruction=instruction,
-            page_example=page_example or example,
+            example=example,
         ),
         user_prompt,
         temperature=0.15,
@@ -3542,7 +3551,6 @@ async def wiki_refine_from_plan(
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
     instruction: Optional[str] = None,
-    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
@@ -3738,7 +3746,6 @@ async def wiki_refine_from_plan(
                     chat_mdl,
                     llm_timeout,
                     instruction=instruction,
-                    page_example=page_example,
                     example=example,
                 )
                 if not content_md_raw:
