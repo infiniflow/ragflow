@@ -692,14 +692,6 @@ def compute_fusion_score(
         )
         cross_results = kept
 
-    cross_score = sum(r.cross_check_score for r in cross_results) / len(cross_results) if cross_results else 0.0
-    _LOG.info(
-        "[Sufficiency] Signal B (cross): mean cross_check_score → cross_score=%.3f (per-claim cross scores=%s, %d passed)",
-        cross_score,
-        [round(r.cross_check_score, 3) for r in cross_results],
-        sum(1 for r in cross_results if r.cross_check_passed),
-    )
-
     # ── Hard-veto floor: a *localized* evidence gap must veto "good enough" ──
     # Multi-claim questions (e.g. "Mike Tyson AND Tyson Fury") can average a
     # genuinely weak claim up to the sufficient band. Q2 (check.log): c4/c5's
@@ -765,13 +757,10 @@ def compute_fusion_score(
         # Reference score for logging/monitoring only — the final decision comes
         # from the decision ladder, not from this scalar.
         score=agent_score,
-        agent_score=agent_score,
-        cross_score=cross_score,
         claim_assessments=[{"claim_id": r.claim_id, "is_verified": r.cross_check_passed, "score": r.cross_check_score, "mismatches": r.mismatches} for r in cross_results],
         has_conflicts=has_conflicts,
         missing_claims=missing,
         feedback=_build_feedback(missing, cross_results),
-        overall_reason=_format_reason(status, agent_score, missing),
         hard_violations=weak,
         agent_confidence=agent_score,
     )
@@ -792,10 +781,6 @@ def _build_feedback(missing: list[str], results: list[ClaimCrossCheckResult]) ->
     return "missing: " + "; ".join(hints)
 
 
-def _format_reason(status: str, score: float, missing: list[str]) -> str:
-    return f"{status} score={score:.2f} missing={missing}"
-
-
 def route_sufficiency_verdict(
     verdict: SufficiencyVerdict,
     mode_label: str,
@@ -814,7 +799,7 @@ def route_sufficiency_verdict(
     """
     mode = get_mode(mode_label)
     hard_violations = getattr(verdict, "hard_violations", []) or []
-    agent_confidence = getattr(verdict, "agent_confidence", verdict.agent_score)
+    agent_confidence = getattr(verdict, "agent_confidence", getattr(verdict, "score", 0.0))
 
     # AutoRater signals, with sane defaults when it was not invoked.
     auto_sufficient = bool(auto.get("is_sufficient")) if auto else (verdict.status == "SUFFICIENT")

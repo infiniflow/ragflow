@@ -42,7 +42,6 @@ class ExecutionStrategy:
     max_parallel_agents: int
     available_tools: list[str]
     sufficiency_threshold: float
-    partial_threshold: float
     fallback_to_direct_llm: bool
     # Min cross-check floor for a self-verified claim. Any claim scoring below
     # this becomes a hard veto (its localized evidence gap must not be averaged
@@ -133,13 +132,10 @@ class ClaimCrossCheckResult:
 class SufficiencyVerdict:
     status: str  # code-level preliminary label (decision ladder decides final action)
     score: float
-    agent_score: float
-    cross_score: float
     claim_assessments: list[dict]
     has_conflicts: bool
     missing_claims: list[str]
     feedback: str
-    overall_reason: str
     # Decision-ladder inputs (Sufficient Context redesign):
     #   - hard_violations: claim IDs with a code-proven evidence gap (required
     #     entity missing / grounded absent / numeric conflict) that must veto a
