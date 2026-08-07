@@ -50,6 +50,7 @@ export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
   FetchAllAgentList = 'fetchAllAgentList',
   FetchAgentList = 'fetchAgentList',
+  FetchAgentFilters = 'fetchAgentFilters',
   UpdateAgentSetting = 'updateAgentSetting',
   DeleteAgent = 'deleteAgent',
   FetchAgentDetail = 'fetchAgentDetail',
@@ -873,6 +874,42 @@ export const useFetchAgentList = ({
   });
 
   return { data, loading };
+};
+
+export interface IAgentOwnerFilter {
+  id: string;
+  label: string;
+  count: number;
+}
+
+export interface IAgentCategoryFilter {
+  id: string;
+  count: number;
+}
+
+export const useFetchAgentFilters = () => {
+  const { data, isFetching: loading } = useQuery<{
+    filter: {
+      owner: IAgentOwnerFilter[];
+      canvas_category: IAgentCategoryFilter[];
+    };
+    total: number;
+  }>({
+    queryKey: [AgentApiAction.FetchAgentFilters],
+    initialData: { filter: { owner: [], canvas_category: [] }, total: 0 },
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await agentService.listAgents(
+        { params: { type: 'filter' } },
+        true,
+      );
+      return (
+        data?.data ?? { filter: { owner: [], canvas_category: [] }, total: 0 }
+      );
+    },
+  });
+
+  return { data: data.filter, loading };
 };
 
 export const BuiltinPipelineKeys = {

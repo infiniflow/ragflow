@@ -681,6 +681,18 @@ _COMPILATION_TEMPLATE_GROUP_CATEGORY = "compilation_template_group"
 @login_required
 @add_tenant_id_to_kwargs
 def list_agents(tenant_id):
+    if request.args.get("type") == "filter":
+        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = list({member["tenant_id"] for member in tenants} | {tenant_id})
+        owners = UserCanvasService.get_owner_filter(joined_tenant_ids, tenant_id)
+        categories = UserCanvasService.get_category_filter(joined_tenant_ids, tenant_id)
+        return get_json_result(
+            data={
+                "filter": {"owner": owners, "canvas_category": categories},
+                "total": sum(owner["count"] for owner in owners),
+            }
+        )
+
     keywords = request.args.get("keywords", "")
     canvas_category_list = [item for item in request.args.get("canvas_category", "").strip().split(",") if item]
     canvas_type = request.args.get("canvas_type")
