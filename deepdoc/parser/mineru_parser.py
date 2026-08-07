@@ -363,24 +363,55 @@ class MinerUParser(RAGFlowPdfParser):
             self.total_page = 0
             self.logger.exception(e)
 
-    def _line_tag(self, bx):
-        pn = [bx["page_idx"] + 1]
-        positions = bx.get("bbox", (0, 0, 0, 0))
-        x0, top, x1, bott = positions
+    @staticmethod
+    def _normalize_bbox(bbox):
+        x0, top, x1, bott = [float(v) for v in bbox[:4]]
         # Normalize flipped coordinates (MinerU may report inverted bbox for flipped images)
         if x0 > x1:
             x0, x1 = x1, x0
         if top > bott:
             top, bott = bott, top
+        return x0, top, x1, bott
 
-        if hasattr(self, "page_images") and self.page_images and len(self.page_images) > bx["page_idx"]:
-            page_width, page_height = self.page_images[bx["page_idx"]].size
+    def _content_bbox_to_page_space(self, page_idx, bbox):
+        x0, top, x1, bott = self._normalize_bbox(bbox)
+        if hasattr(self, "page_images") and self.page_images and len(self.page_images) > page_idx:
+            page_width, page_height = self.page_images[page_idx].size
             x0 = (x0 / 1000.0) * page_width
             x1 = (x1 / 1000.0) * page_width
             top = (top / 1000.0) * page_height
             bott = (bott / 1000.0) * page_height
+        return x0, top, x1, bott
 
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
+    def _middle_bbox_to_page_space(self, page_idx, bbox, page_size=None):
+        x0, top, x1, bott = self._normalize_bbox(bbox)
+        if hasattr(self, "page_images") and self.page_images and len(self.page_images) > page_idx:
+            page_width, page_height = self.page_images[page_idx].size
+            if max(abs(x0), abs(x1), abs(top), abs(bott)) <= 1:
+                x0, x1 = x0 * page_width, x1 * page_width
+                top, bott = top * page_height, bott * page_height
+            elif page_size and len(page_size) >= 2:
+                source_width, source_height = float(page_size[0]), float(page_size[1])
+                if source_width > 0 and source_height > 0:
+                    x0, x1 = x0 / source_width * page_width, x1 / source_width * page_width
+                    top, bott = top / source_height * page_height, bott / source_height * page_height
+                else:
+                    self.logger.warning("[MinerU] Invalid middle-json page_size=%s for page_idx=%s; using raw bbox=%s", page_size, page_idx, bbox)
+            else:
+                self.logger.warning("[MinerU] Missing middle-json page_size for page_idx=%s; using raw bbox=%s", page_idx, bbox)
+        return x0, top, x1, bott
+
+    @staticmethod
+    def _format_line_tag(page_idx, bbox):
+        x0, top, x1, bott = bbox
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(page_idx + 1, x0, x1, top, bott)
+
+    def _line_tag(self, bx):
+        middle_positions = bx.get("_mineru_positions")
+        if middle_positions:
+            return "".join(self._format_line_tag(pos["page_idx"], pos["bbox"]) for pos in middle_positions)
+
+        return self._format_line_tag(bx["page_idx"], self._content_bbox_to_page_space(bx["page_idx"], bx.get("bbox", (0, 0, 0, 0))))
 
     def crop(self, text, ZM=1, need_position=False):
         imgs = []
@@ -523,6 +554,144 @@ class MinerUParser(RAGFlowPdfParser):
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
 
+    def _find_middle_json(self, output_dir: Path, subdir: Path, file_stem: str, safe_stem: str) -> Path | None:
+        middle_names = tuple(dict.fromkeys((f"{file_stem}_middle.json", f"{safe_stem}_middle.json", "middle.json")))
+        for base in (subdir, output_dir):
+            for name in middle_names:
+                candidate = base / name
+                if candidate.exists():
+                    return candidate
+
+        stem_dirs = tuple(dict.fromkeys((file_stem, safe_stem)))
+        for pattern in ("**/*_middle.json", "**/middle.json"):
+            for candidate in sorted(output_dir.glob(pattern)):
+                rel_parts = candidate.relative_to(output_dir).parts
+                if candidate.name in middle_names or any(stem_dir in rel_parts for stem_dir in stem_dirs):
+                    return candidate
+        return None
+
+    @staticmethod
+    def _normalize_match_text(text: str) -> str:
+        text = html.unescape(str(text or ""))
+        text = re.sub(r"(?is)<[^>]+>", "", text)
+        return re.sub(r"\s+", "", text).lower()
+
+    @classmethod
+    def _table_match_text(cls, output: dict[str, Any]) -> str:
+        text = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
+        return cls._normalize_match_text(text)
+
+    @classmethod
+    def _middle_block_text(cls, value: Any) -> str:
+        parts = []
+
+        def collect(node):
+            if isinstance(node, str):
+                parts.append(node)
+            elif isinstance(node, list):
+                for item in node:
+                    collect(item)
+            elif isinstance(node, dict):
+                for key, child in node.items():
+                    if key in {"type", "bbox", "page_idx", "page_size"}:
+                        continue
+                    collect(child)
+
+        collect(value)
+        return cls._normalize_match_text(" ".join(parts))
+
+    def _iter_middle_blocks(self, middle_data: dict[str, Any]):
+        for default_page_idx, page in enumerate(middle_data.get("pdf_info", []) or []):
+            if not isinstance(page, dict):
+                continue
+            page_idx = int(page.get("page_idx", default_page_idx))
+            page_size = page.get("page_size")
+            for key in ("para_blocks", "preproc_blocks"):
+                for block in page.get(key, []) or []:
+                    if not isinstance(block, dict) or not isinstance(block.get("bbox"), (list, tuple)) or len(block["bbox"]) < 4:
+                        continue
+                    yield {
+                        "type": block.get("type"),
+                        "page_idx": page_idx,
+                        "bbox": self._middle_bbox_to_page_space(page_idx, block["bbox"], page_size),
+                        "text": self._middle_block_text(block),
+                    }
+
+    @staticmethod
+    def _overlap_ratio(a, b):
+        ax0, atop, ax1, abott = a
+        bx0, btop, bx1, bbott = b
+        x0, x1 = max(ax0, bx0), min(ax1, bx1)
+        top, bott = max(atop, btop), min(abott, bbott)
+        if x1 <= x0 or bott <= top:
+            return 0
+        area = (x1 - x0) * (bott - top)
+        base = max((ax1 - ax0) * (abott - atop), 1)
+        return area / base
+
+    def _middle_positions_for_output(self, output: dict[str, Any], middle_blocks: list[dict[str, Any]]):
+        if output.get("type") != MinerUContentType.TABLE:
+            return []
+        if not isinstance(output.get("bbox"), (list, tuple)) or len(output["bbox"]) < 4 or output.get("page_idx") is None:
+            return []
+
+        target_text = self._table_match_text(output)
+        page_idx = int(output["page_idx"])
+        anchor_bbox = self._content_bbox_to_page_space(page_idx, output["bbox"])
+        matches = []
+
+        for idx, block in enumerate(middle_blocks):
+            if block["type"] != "table":
+                continue
+
+            block_text = block.get("text", "")
+            is_anchor = block["page_idx"] == page_idx and self._overlap_ratio(anchor_bbox, block["bbox"]) >= 0.5
+            is_text_match = len(block_text) >= 4 and target_text and (block_text in target_text or target_text in block_text)
+            if is_anchor or is_text_match:
+                matches.append((idx, block, is_anchor, is_text_match))
+
+        anchor_indices = [idx for idx, _, is_anchor, _ in matches if is_anchor]
+        if not anchor_indices:
+            return []
+
+        first_anchor_idx = min(anchor_indices)
+        positions = []
+        seen = set()
+
+        for idx, block, is_anchor, is_text_match in matches:
+            if not (is_anchor or (idx >= first_anchor_idx and is_text_match)):
+                continue
+
+            key = (block["page_idx"], *[round(v, 3) for v in block["bbox"]])
+            if key in seen:
+                continue
+            seen.add(key)
+            positions.append({"page_idx": block["page_idx"], "bbox": block["bbox"]})
+
+        positions.sort(key=lambda item: (item["page_idx"], item["bbox"][1], item["bbox"][0]))
+        return positions
+
+    def _enrich_outputs_with_middle_positions(self, outputs: list[dict[str, Any]], middle_json: Path):
+        try:
+            with open(middle_json, "r", encoding="utf-8") as f:
+                middle_data = json.load(f)
+        except Exception as exc:
+            self.logger.warning("[MinerU] Failed to read middle json %s: %s", middle_json, exc)
+            return
+
+        middle_blocks = list(self._iter_middle_blocks(middle_data))
+        if not middle_blocks:
+            self.logger.info("[MinerU] No middle-json blocks found in %s; skipping cross-page position enrichment.", middle_json)
+            return
+
+        enriched_count = 0
+        for output in outputs:
+            positions = self._middle_positions_for_output(output, middle_blocks)
+            if len(positions) > 1:
+                output["_mineru_positions"] = positions
+                enriched_count += 1
+        self.logger.info("[MinerU] Enriched %s outputs with cross-page table positions from %s.", enriched_count, middle_json)
+
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         json_file = None
         subdir = None
@@ -646,6 +815,13 @@ class MinerUParser(RAGFlowPdfParser):
 
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        middle_json = self._find_middle_json(output_dir, subdir, file_stem, safe_stem)
+        if middle_json:
+            self.logger.info(f"[MinerU] Found middle json: {middle_json}")
+            self._enrich_outputs_with_middle_positions(data, middle_json)
+        else:
+            self.logger.info("[MinerU] No middle json found; skipping cross-page position enrichment.")
 
         for item in data:
             for key in ("img_path", "table_img_path", "equation_img_path"):

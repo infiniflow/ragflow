@@ -20,14 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strings"
-	"time"
-
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"regexp"
+	"strings"
+	"time"
 )
 
 type mindMapRunConfig struct {
@@ -42,7 +41,7 @@ type mindMapRunConfig struct {
 	TenantSvc     *service.TenantService
 }
 
-func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
+func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, error) {
 	if config.ChunkSvc == nil {
 		return mindMapNode{}, fmt.Errorf("chunk service not configured")
 	}
@@ -54,7 +53,7 @@ func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
 		modelTenantID = config.AuthUserID
 	}
 	retrievalReq := mindMapRetrievalRequest(config.Question, config.KbIDs, config.SearchID, config.SearchConfig)
-	ranks, err := config.ChunkSvc.RetrievalTest(retrievalReq, config.AuthUserID)
+	ranks, err := config.ChunkSvc.RetrievalTest(ctx, retrievalReq, config.AuthUserID)
 	if err != nil {
 		return mindMapNode{}, err
 	}
@@ -64,18 +63,19 @@ func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
 	}
 	modelID, _ := config.SearchConfig["chat_id"].(string)
 	messages := []modelModule.Message{{Role: "system", Content: mindMapPrompt(strings.Join(sections, "\n"))}, {Role: "user", Content: "Output:"}}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
+
+	streamCtx, streamCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer streamCancel()
 
 	// search_config chat_id can be a stale tenant_model ID that no longer
 	// exists. ResolveModelConfig tries ID lookup first, then falls back to
 	// composite-name parsing which fails for bare IDs. If the configured
 	// model can't be resolved, fall back to the tenant's default chat model
 	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
-	ch, streamErr := config.LLM.ChatStream(ctx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
+	ch, streamErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
 	if streamErr != nil && config.TenantSvc != nil {
-		if defaultModel, err := config.TenantSvc.GetDefaultModelName(modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
-			ch, streamErr = config.LLM.ChatStream(ctx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
+		if defaultModel, err := config.TenantSvc.GetDefaultModelName(streamCtx, modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
+			ch, streamErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
 		}
 	}
 	if streamErr != nil {

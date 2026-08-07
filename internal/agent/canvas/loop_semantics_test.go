@@ -33,7 +33,8 @@ package canvas
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 
@@ -43,7 +44,6 @@ import (
 	// exercise real component invocation.
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/agent/workflowx"
 )
 
 // runLoopCanvas is the common harness for the e2e loop tests. It
@@ -153,15 +153,8 @@ func TestLoop_DoWhileCounter(t *testing.T) {
 // counter=5 (5 successful body runs).
 func TestLoop_MaxCount(t *testing.T) {
 	state, err := runLoopCanvas(t, counterLoopDSL(1, 100, 5))
-	// workflowx surfaces a MaxIterationsExceeded error when the cap
-	// is hit. Both the error path AND the partial state must be
-	// observable to the caller — the state writes that succeeded
-	// before the cap should still be present.
-	if err == nil {
-		t.Fatalf("expected ErrLoopMaxIterationsExceeded, got nil")
-	}
-	if !errors.Is(err, workflowx.ErrLoopMaxIterationsExceeded) {
-		t.Fatalf("want ErrLoopMaxIterationsExceeded, got: %v", err)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
 	v, err := state.GetVar("loop@counter")
 	if err != nil {
@@ -173,6 +166,141 @@ func TestLoop_MaxCount(t *testing.T) {
 	}
 	if got != 5 {
 		t.Errorf("counter at cap: got %v, want 5 (maximum_loop_count)", got)
+	}
+}
+
+// TestLoop_StreamEmitsEveryIteration pins the canvas Loop streaming mode.
+// Python emits Message output from inside a loop on every iteration; the Go
+// canvas must therefore install workflowx loops in every_iteration mode rather
+// than buffering and exposing only the final body result.
+func TestLoop_StreamEmitsEveryIteration(t *testing.T) {
+	cc, err := Compile(context.Background(), counterLoopDSL(1, 3, 50))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	state := NewCanvasState("run-loop-stream", "task-loop-stream")
+	ctx := withState(context.Background(), state)
+	sr, err := cc.Workflow.Stream(ctx, map[string]any{"query": "go"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	defer sr.Close()
+
+	var chunks []map[string]any
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr != nil {
+			if recvErr == io.EOF {
+				break
+			}
+			t.Fatalf("Recv: %v", recvErr)
+		}
+		chunks = append(chunks, chunk)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("stream chunks: got %d (%v), want 3", len(chunks), chunks)
+	}
+	v, err := state.GetVar("loop@counter")
+	if err != nil {
+		t.Fatalf("GetVar: %v", err)
+	}
+	if got, ok := v.(float64); !ok || got != 3 {
+		t.Fatalf("counter after stream: got %T %v, want float64(3)", v, v)
+	}
+}
+
+func TestLoop_EmitsLifecycleEventsForMacroAndBody(t *testing.T) {
+	cc, err := Compile(context.Background(), counterLoopDSL(1, 3, 50))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	state := NewCanvasState("run-loop-events", "task-loop-events")
+	events := make(chan RunEvent, 32)
+	ctx := withState(context.Background(), state)
+	ctx = WithRunMeta(ctx, &RunMeta{Events: events})
+
+	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	started, finished := collectLifecycleEvents(t, events)
+	if started["loop"] != 1 {
+		t.Fatalf("loop node_started: got %d, want 1; all started: %v", started["loop"], started)
+	}
+	if finished["loop"] != 1 {
+		t.Fatalf("loop node_finished: got %d, want 1; all finished: %v", finished["loop"], finished)
+	}
+	if started["bump"] != 3 {
+		t.Fatalf("bump node_started: got %d, want 3; all started: %v", started["bump"], started)
+	}
+	if finished["bump"] != 3 {
+		t.Fatalf("bump node_finished: got %d, want 3; all finished: %v", finished["bump"], finished)
+	}
+}
+
+func TestLoop_MessageEmitsEveryIteration(t *testing.T) {
+	dsl := counterLoopDSL(1, 3, 50)
+	bump := dsl.Components["bump"]
+	bump.Downstream = []string{"msg"}
+	dsl.Components["bump"] = bump
+	dsl.Components["msg"] = CanvasComponent{
+		Obj: CanvasComponentObj{
+			ComponentName: "Message",
+			Params: map[string]any{
+				"content": []any{"tick"},
+			},
+		},
+		Upstream: []string{"bump"},
+	}
+
+	cc, err := Compile(context.Background(), dsl)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	state := NewCanvasState("run-loop-message", "task-loop-message")
+	ctx := withState(context.Background(), state)
+	var emitted []string
+	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+		emitted = append(emitted, content)
+	})
+
+	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(emitted) != 3 {
+		t.Fatalf("emitted messages: got %d %#v, want 3", len(emitted), emitted)
+	}
+	for i, msg := range emitted {
+		if msg != "tick" {
+			t.Fatalf("emitted[%d] = %q, want tick; all = %#v", i, msg, emitted)
+		}
+	}
+}
+
+func collectLifecycleEvents(t *testing.T, events <-chan RunEvent) (map[string]int, map[string]int) {
+	t.Helper()
+	started := map[string]int{}
+	finished := map[string]int{}
+	for {
+		select {
+		case ev := <-events:
+			if ev.Type != "node_started" && ev.Type != "node_finished" {
+				continue
+			}
+			var payload struct {
+				ComponentID string `json:"component_id"`
+			}
+			if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+				t.Fatalf("decode %s payload %q: %v", ev.Type, ev.Data, err)
+			}
+			if ev.Type == "node_started" {
+				started[payload.ComponentID]++
+			} else {
+				finished[payload.ComponentID]++
+			}
+		default:
+			return started, finished
+		}
 	}
 }
 

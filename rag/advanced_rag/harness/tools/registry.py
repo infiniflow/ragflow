@@ -11,7 +11,7 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {}
 #   async def fn(tools, **kwargs) -> dict  # {"chunks": [...], ...}
 
 
-def register_tool(name: str, schema: dict, fn: callable, requires_compilation: bool = False, compilation_type: str | None = None, processing_time: str = "fast") -> None:
+def register_tool(name: str, schema: dict, fn: callable, requires_compilation: bool = False, compilation_type: str | tuple[str, ...] | None = None, processing_time: str = "fast") -> None:
     TOOL_REGISTRY[name] = {
         "name": name,
         "function_schema": schema,
@@ -32,6 +32,7 @@ def get_function_schemas(tool_names: list[str]) -> list[dict]:
 
 
 # Common schema builders
+
 
 def _search_schema(name: str, desc: str) -> dict:
     return {
@@ -60,8 +61,9 @@ def _navigate_schema(name: str, desc: str) -> dict:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "topic": {"type": "string", "description": "the topic to navigate to."},
-                    "keywords": {"type": "string", "description": "the keywords used for searching split by space or ','."},
+                    "topic": {"type": "string", "description": "the query/keywords to navigate to."},
+                    "keywords": {"type": "string", "description": "the query/keywords used for searching split by space or ','."},
+                    "doc_scope": {"type": "array", "items": {"type": "string"}, "description": "The doc ID list to narrow down the searching scope. None or empty value means no limitation at all."},
                 },
                 "required": ["topic"],
             },

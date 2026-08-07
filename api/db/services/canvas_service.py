@@ -130,7 +130,7 @@ class UserCanvasService(CommonService):
         orderby,
         desc,
         keywords,
-        canvas_category=None,
+        canvas_category_list=None,
         tags=None,
         canvas_type=None,
     ):
@@ -148,23 +148,20 @@ class UserCanvasService(CommonService):
             cls.model.canvas_category,
             cls.model.tags,
         ]
+        owner_filter = cls.model.user_id.in_(joined_tenant_ids) & ((cls.model.permission == TenantPermission.TEAM.value) | (cls.model.user_id == user_id))
         if keywords:
             agents = (
                 cls.model.select(*fields)
                 .join(User, on=(cls.model.user_id == User.id))
                 .where(
-                    (((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id)),
+                    owner_filter,
                     (fn.LOWER(cls.model.title).contains(keywords.lower())),
                 )
             )
         else:
-            agents = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.user_id == User.id))
-                .where((((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id)))
-            )
-        if canvas_category:
-            agents = agents.where(cls.model.canvas_category == canvas_category)
+            agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(owner_filter)
+        if canvas_category_list:
+            agents = agents.where(cls.model.canvas_category.in_(canvas_category_list))
         if canvas_type:
             agents = agents.where(cls.model.canvas_type == canvas_type)
         if tags:

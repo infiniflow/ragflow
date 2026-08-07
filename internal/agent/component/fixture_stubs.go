@@ -41,6 +41,8 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // ----- Retrieval -----
@@ -69,13 +71,13 @@ func (r *RetrievalStub) Name() string { return componentNameRetrieval }
 // Invoke returns a stub result that downstream templates can
 // resolve. `formalized_content` is the field the test fixtures
 // reference; empty string is the safe fixture value.
-func (r *RetrievalStub) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (r *RetrievalStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return map[string]any{"formalized_content": ""}, nil
 }
 
 // Stream mirrors Invoke as a single-chunk SSE stream.
-func (r *RetrievalStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := r.Invoke(ctx, inputs)
+func (r *RetrievalStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := r.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -125,13 +127,13 @@ func (t *TavilySearchStub) Name() string { return componentNameTavilySearch }
 
 // Invoke returns an empty `formalized_content` so downstream
 // templates resolve.
-func (t *TavilySearchStub) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (t *TavilySearchStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return map[string]any{"formalized_content": ""}, nil
 }
 
 // Stream mirrors Invoke.
-func (t *TavilySearchStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := t.Invoke(ctx, inputs)
+func (t *TavilySearchStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := t.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +189,7 @@ func (e *ExeSQLStub) Name() string { return componentNameExeSQL }
 // Invoke returns a stable two-column stub result. Downstream
 // templates that render SQL output will see headers + an empty row
 // — enough for the message surface to format a string.
-func (e *ExeSQLStub) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (e *ExeSQLStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return map[string]any{
 		"columns": []string{"col1", "col2"},
 		"rows":    [][]any{{"", ""}},
@@ -196,8 +198,8 @@ func (e *ExeSQLStub) Invoke(_ context.Context, _ map[string]any) (map[string]any
 }
 
 // Stream mirrors Invoke.
-func (e *ExeSQLStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := e.Invoke(ctx, inputs)
+func (e *ExeSQLStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := e.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -258,13 +260,13 @@ func NewGenerateStub(params map[string]any) (Component, error) {
 func (g *GenerateStub) Name() string { return componentNameGenerate }
 
 // Invoke delegates to the LLM component.
-func (g *GenerateStub) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return g.inner.Invoke(ctx, inputs)
+func (g *GenerateStub) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	return g.inner.Invoke(ctx, db, inputs)
 }
 
 // Stream delegates to the LLM component.
-func (g *GenerateStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	return g.inner.Stream(ctx, inputs)
+func (g *GenerateStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	return g.inner.Stream(ctx, db, inputs)
 }
 
 // Inputs returns the DSL param surface. Matches LLM's surface
@@ -342,7 +344,7 @@ func (a *AnswerStub) Name() string { return componentNameAnswer }
 // Invoke returns an empty answer. Real implementation will block
 // until the user provides input; the stub is fire-and-forget so
 // the e2e flow doesn't deadlock.
-func (a *AnswerStub) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+func (a *AnswerStub) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Mirror the no-state-check pattern of Message/Retrieval: we
 	// don't read state, but the signature must match.
 	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
@@ -352,8 +354,8 @@ func (a *AnswerStub) Invoke(ctx context.Context, _ map[string]any) (map[string]a
 }
 
 // Stream mirrors Invoke.
-func (a *AnswerStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := a.Invoke(ctx, inputs)
+func (a *AnswerStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := a.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -418,13 +420,13 @@ func NewIterationStub(params map[string]any) (Component, error) {
 func (i *IterationStub) Name() string { return componentNameIteration }
 
 // Invoke delegates to the inner Parallel component.
-func (i *IterationStub) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	return i.inner.Invoke(ctx, inputs)
+func (i *IterationStub) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	return i.inner.Invoke(ctx, db, inputs)
 }
 
 // Stream delegates to the inner Parallel component.
-func (i *IterationStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	return i.inner.Stream(ctx, inputs)
+func (i *IterationStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	return i.inner.Stream(ctx, db, inputs)
 }
 
 // Inputs mirrors Parallel's surface for introspection.
@@ -451,13 +453,13 @@ func NewIterationItemStub(_ map[string]any) (Component, error) {
 func (it *IterationItemStub) Name() string { return componentNameIterationItem }
 
 // Invoke returns a passthrough empty map.
-func (it *IterationItemStub) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (it *IterationItemStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return map[string]any{"result": ""}, nil
 }
 
 // Stream mirrors Invoke.
-func (it *IterationItemStub) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := it.Invoke(ctx, inputs)
+func (it *IterationItemStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := it.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

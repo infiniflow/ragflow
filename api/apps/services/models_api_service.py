@@ -373,6 +373,6 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
                     }
                 )
 
-    added_models.sort(key=lambda x: (factory_rank_mapping.get(x["provider_name"]), x["provider_name"], x["instance_name"], -x["rank"], x["name"]))
+    added_models.sort(key=lambda x: (factory_rank_mapping.get(x["provider_name"], -500), x["provider_name"], x["instance_name"], -x["rank"], x["name"]))
 
     return True, added_models

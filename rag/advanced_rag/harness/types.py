@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -59,7 +59,7 @@ class ClaimTarget:
     is_verified: bool = False
     confidence: float = 0.0
     suggested_tools: list[str] = field(default_factory=list)
-    agent_result: dict | None = None
+    agent_result: AgentResult | None = None
 
 
 @dataclass
@@ -124,7 +124,10 @@ class SufficiencyVerdict:
 
 @dataclass
 class ToolResult:
-    chunks: list[dict]
+    chunks: list[dict] = field(default_factory=list)
+    # Doc-id list from routing tools (e.g. dataset_navigation_by_tree) that
+    # narrow the corpus to the relevant documents instead of returning chunks.
+    docs: list[str] | None = None
     metadata: dict = field(default_factory=dict)
     error: str | None = None
 
@@ -141,7 +144,6 @@ class OrchestratorContext:
     mode: str
     iteration: int = 0
     current_phase: str = "locate"
-    agent_results: dict[str, Any] = field(default_factory=dict)
     verdict: SufficiencyVerdict | None = None
     history: list[dict] = field(default_factory=list)
     _last_entity: str | None = None
@@ -150,13 +152,34 @@ class OrchestratorContext:
     def last_entity(self) -> str | None:
         return self._last_entity
 
+    def note_entity(self, name: str | None) -> None:
+        """Record the most recently discovered entity/document name.
+
+        Gates ``graph_explore`` in ``tool_fits_context``: the tool is only
+        offered once research has surfaced something to expand from. Ignores
+        empty values so a fruitless round can't clear a prior discovery.
+        """
+        if isinstance(name, str) and name.strip():
+            self._last_entity = name.strip()
+
     @property
     def current_claim(self) -> str | None:
         unverified = [c for c in self.claims if not c.is_verified]
         return unverified[0].description if unverified else None
 
     def has_any_chunks(self) -> bool:
-        return any(r.get("evidence_ids") for r in self.agent_results.values())
+        """True once any claim's research produced evidence passages.
 
-    def record_fallback(self, tool_name: str, fallback_from: str | None = None):
-        pass
+        Reads the claims (whose ``agent_result`` is populated by both
+        orchestrators) — the ``agent_results`` dict is never written to, so
+        reading it would leave the search phase stuck at "locate" forever and
+        gate off every inspector tool.
+        """
+        for c in self.claims:
+            r = c.agent_result
+            if r is None:
+                continue
+            ids = r.get("evidence_ids") if isinstance(r, dict) else r.evidence_ids
+            if ids:
+                return True
+        return False

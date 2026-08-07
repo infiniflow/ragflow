@@ -22,13 +22,15 @@ import (
 	"fmt"
 	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"regexp"
 
-	"github.com/kaptinlin/jsonrepair"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kaptinlin/jsonrepair"
 
 	"go.uber.org/zap"
 
@@ -203,7 +205,7 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, nil)
+	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
 	if err != nil {
 		common.Warn("ChatWithMessages failed for GenMetaFilter",
 			zap.String("model",
@@ -646,7 +648,7 @@ func ApplyMetaDataFilter(
 						"value": c.Value,
 					}
 				}
-				pushdownIDs := docEngine.FilterDocIdsByMetaPushdown(ctx, kbIDs, condMaps, logic)
+				pushdownIDs := docEngine.FilterDocIdsByMetaPushdown(ctx, dao.DB, kbIDs, condMaps, logic)
 				// nil  = push-down not viable / errored -> fall back to in-memory
 				// non-nil (including empty slice) = push-down definitive -> use as-is
 				if pushdownIDs != nil {

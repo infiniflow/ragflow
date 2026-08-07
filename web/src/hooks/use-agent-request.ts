@@ -4,9 +4,11 @@ import message from '@/components/ui/message';
 import { AgentCategory, AgentGlobals } from '@/constants/agent';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
+  AgentListItem,
   IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
+  IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
   IPipeLineListRequest,
@@ -77,6 +79,9 @@ export const enum AgentApiAction {
   FetchSharedAgent = 'fetchSharedAgent',
   FetchAgentTags = 'fetchAgentTags',
   UpdateAgentTags = 'updateAgentTags',
+  FetchPipelineNodes = 'fetchPipelineNodes',
+  FetchBuiltinPipelineList = 'fetchBuiltinPipelineList',
+  FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
 export const useFetchAgentTemplates = () => {
@@ -97,14 +102,14 @@ const buildAgentListParams = ({
   page,
   pageSize,
   keywords,
-  canvasCategory,
+  canvasCategoryIds,
   ownerIds,
   tags,
 }: {
   page: number;
   pageSize: number;
   keywords?: string;
-  canvasCategory?: string;
+  canvasCategoryIds?: string[];
   ownerIds?: string[];
   tags?: string[];
 }) => {
@@ -116,8 +121,8 @@ const buildAgentListParams = ({
   if (keywords) {
     params.keywords = keywords;
   }
-  if (canvasCategory) {
-    params.canvas_category = canvasCategory;
+  if (Array.isArray(canvasCategoryIds) && canvasCategoryIds.length > 0) {
+    params.canvas_category = canvasCategoryIds.join(',');
   }
   if (Array.isArray(ownerIds) && ownerIds.length > 0) {
     params.owner_ids = ownerIds.join(',');
@@ -134,9 +139,9 @@ export const useFetchAgentListByPage = () => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
-  const canvasCategory = Array.isArray(filterValue.canvasCategory)
-    ? filterValue.canvasCategory
-    : [];
+  const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
+    ? (filterValue.canvasCategory as string[])
+    : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
@@ -144,13 +149,13 @@ export const useFetchAgentListByPage = () => {
     page: pagination.current,
     pageSize: pagination.pageSize,
     keywords: debouncedSearchString,
-    canvasCategory: canvasCategory.length === 1 ? canvasCategory[0] : undefined,
+    canvasCategoryIds,
     ownerIds: Array.isArray(owner) ? owner : undefined,
     tags,
   });
 
   const { data, isFetching: loading } = useQuery<{
-    canvas: IFlow[];
+    canvas: AgentListItem[];
     total: number;
   }>({
     queryKey: [
@@ -193,7 +198,7 @@ export const useFetchAgentListByPage = () => {
     loading,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
     handleFilterSubmit,
@@ -201,7 +206,7 @@ export const useFetchAgentListByPage = () => {
 };
 
 export function useFetchAllAgentList() {
-  const { data, isFetching: loading } = useQuery<IFlow[]>({
+  const { data, isFetching: loading } = useQuery<AgentListItem[]>({
     queryKey: [AgentApiAction.FetchAllAgentList],
     queryFn: async () => {
       const { data } = await agentService.listAgents(
@@ -439,7 +444,10 @@ export const useResetAgent = () => {
   return { data, loading, resetAgent: mutateAsync };
 };
 
-export const useSetAgent = (showMessage: boolean = true) => {
+export const useSetAgent = (
+  showMessage: boolean = true,
+  skipInvalidation: boolean = false,
+) => {
   const { id } = useParams();
   const queryClient = useQueryClient();
   const {
@@ -478,7 +486,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
-        if (agentId) {
+        if (agentId && !skipInvalidation) {
           queryClient.invalidateQueries({
             queryKey: [AgentApiAction.FetchAgentDetail, agentId],
           });
@@ -849,7 +857,7 @@ export const useFetchAgentList = ({
   canvas_category,
 }: IPipeLineListRequest) => {
   const { data, isFetching: loading } = useQuery<{
-    canvas: IFlow[];
+    canvas: AgentListItem[];
     total: number;
   }>({
     queryKey: [AgentApiAction.FetchAgentList],
@@ -865,6 +873,37 @@ export const useFetchAgentList = ({
   });
 
   return { data, loading };
+};
+
+export const BuiltinPipelineKeys = {
+  list: (type: string) =>
+    [AgentApiAction.FetchBuiltinPipelineList, type] as const,
+  detail: (id: string) =>
+    [AgentApiAction.FetchBuiltinPipelineDetail, id] as const,
+};
+
+export const useFetchBuiltinPipelines = (type = 'builtin', enabled = true) => {
+  const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
+    queryKey: BuiltinPipelineKeys.list(type),
+    initialData: { canvas: [], total: 0 },
+    gcTime: 0,
+    enabled,
+    queryFn: async () => {
+      const { data } = await agentService.listBuiltinPipelines(
+        { params: { type } },
+        true,
+      );
+      return data?.data ?? { canvas: [], total: 0 };
+    },
+  });
+
+  const options =
+    data?.canvas?.map((item) => ({
+      label: item.title,
+      value: item.id,
+    })) ?? [];
+
+  return { data, loading, options };
 };
 
 export const useCancelDataflow = () => {
@@ -1115,4 +1154,27 @@ export const useExportAgentLog = () => {
   });
 
   return { exportLogs: mutateAsync, loading };
+};
+
+export const useFetchPipelineDslByPipelineId = (
+  pipelineId?: string,
+  isBuiltin = false,
+) => {
+  const { data: dsl, isFetching: loading } = useQuery({
+    queryKey: isBuiltin
+      ? BuiltinPipelineKeys.detail(pipelineId!)
+      : [AgentApiAction.FetchPipelineNodes, pipelineId],
+    initialData: {},
+    gcTime: 0,
+    enabled: !!pipelineId,
+    queryFn: async () => {
+      const { data } = isBuiltin
+        ? await agentService.getBuiltinPipeline(pipelineId!)
+        : await agentService.getAgent(pipelineId!);
+      const flow = data?.data;
+      return flow?.dsl ?? {};
+    },
+  });
+
+  return { dsl, loading };
 };

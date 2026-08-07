@@ -83,23 +83,41 @@ const NumberInput = forwardRef<
     }
 
     if (!isNaN(newValue)) {
-      if (newValue > max || newValue < min) {
-        return;
-      }
+      // Allow intermediate editing states that fall outside [min, max]
+      // (e.g. deleting "1024" → "102" when min=512). Update local state so the
+      // controlled input doesn't snap back, but only propagate to the form
+      // when the value is within range. Out-of-range values are clamped on blur.
       setValue(newValue);
-      onChange?.(newValue);
+      if (newValue >= min && newValue <= max) {
+        onChange?.(newValue);
+      }
     }
   };
 
   const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(() => {
     if (isNumber(value)) {
-      onChange?.(value);
+      let finalValue = value;
+      if (value < min) {
+        finalValue = min;
+      } else if (value > max) {
+        finalValue = max;
+      }
+      if (finalValue !== value) {
+        setValue(finalValue);
+      }
+      onChange?.(finalValue);
     } else {
       const previousValue = valueRef.current ?? min;
-      setValue(previousValue);
-      onChange?.(previousValue);
+      let finalValue = previousValue;
+      if (previousValue < min) {
+        finalValue = min;
+      } else if (previousValue > max) {
+        finalValue = max;
+      }
+      setValue(finalValue);
+      onChange?.(finalValue);
     }
-  }, [min, onChange, value]);
+  }, [min, max, onChange, value]);
 
   const style = useMemo(
     () => ({

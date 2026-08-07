@@ -53,22 +53,29 @@ type ThinkStreamState struct {
 }
 
 // EnterReasoning marks the start of a reasoning block (model-level, not tag-based).
+// It also writes a <think> marker into fullText so that ExtractVisibleAnswer can
+// strip the reasoning segment from the final answer when the model exposes
+// reasoning through a separate channel (e.g. delta.reasoning_content).
 // Returns true when this is a new transition (reasoning was not already active).
 func (s *ThinkStreamState) EnterReasoning() bool {
 	if s.inReasoning {
 		return false
 	}
 	s.inReasoning = true
+	s.fullText += "<think>"
 	return true
 }
 
 // ExitReasoning marks the end of a reasoning block (model-level, not tag-based).
+// It writes a matching </think> marker into fullText so the reasoning segment is
+// closed before the visible answer text begins.
 // Returns true when this is a new transition (reasoning was active).
 func (s *ThinkStreamState) ExitReasoning() bool {
 	if !s.inReasoning {
 		return false
 	}
 	s.inReasoning = false
+	s.fullText += "</think>"
 	return true
 }
 

@@ -39,3 +39,8 @@ export enum DatasetMetadata {
   SemiAutomatic = 'semi_auto',
   Manual = 'manual',
 }
+
+export enum WebSearchProvider {
+  Tavily = 'tavily',
+  Querit = 'querit',
+}

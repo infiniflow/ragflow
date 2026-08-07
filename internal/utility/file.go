@@ -114,6 +114,12 @@ func GetFileType(filename string) FileType {
 	case "mp4", "avi", "mkv", "mov", "webm", "flv", "mpeg",
 		"mpg", "wmv", "3gp", "3gpp":
 		return FileTypeVIDEO
+	case "png", "jpg", "jpeg", "gif", "bmp":
+		return FileTypeVISUAL
+	case "tiff", "tif", "webp", "svg", "ico":
+		return FileTypeVISUAL
+	case "avif", "heic", "apng":
+		return FileTypeVISUAL
 	default:
 		return FileTypeOTHER
 	}

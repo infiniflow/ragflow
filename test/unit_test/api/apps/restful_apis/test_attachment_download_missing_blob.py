@@ -204,7 +204,7 @@ class TestAttachmentDownloadMissingBlob:
     """Regression for #15502: missing-blob → structured 4xx, not HTTP 500."""
 
     def test_empty_blob_returns_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Storage returns None (orphaned metadata) → 'Document not found!' 4xx,
+        """Storage returns None (orphaned metadata) → 'document not found' 4xx,
         not a TypeError 500 from make_response(None)."""
         module = _load_agent_api(monkeypatch, storage_get=lambda *_a, **_k: None)
         result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="orphan"))

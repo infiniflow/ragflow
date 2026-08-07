@@ -19,11 +19,11 @@ package chunker
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
 )
 
@@ -62,31 +62,6 @@ func newChunkerByName(name string, params map[string]any) (runtime.Component, er
 // numeric / list conversion helpers (shared across chunker variants)
 // ---------------------------------------------------------------------------
 
-// numericFromAny normalises JSON-decoded ints to float64 so the
-// schema-defaults-vs-Param-Update convention doesn't depend on the
-// encoding source (yaml/toml/json all behave the same).
-func numericFromAny(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int32:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case uint:
-		return float64(x), true
-	case uint32:
-		return float64(x), true
-	case uint64:
-		return float64(x), true
-	}
-	return 0, false
-}
-
 func stringListFromAny(in []any) []string {
 	out := make([]string, 0, len(in))
 	for _, x := range in {
@@ -101,41 +76,27 @@ func stringListFromAny(in []any) []string {
 // regex / split helpers
 // ---------------------------------------------------------------------------
 
-// compileDelimPattern joins all delimiter entries into a single
-// alternation. Entries wrapped in backticks are treated as regex
-// literals and regex-escaped; plain strings are simply regex-escaped.
-// Longer patterns win (matches python `sorted(set, key=len, reverse=True)`).
+// compileDelimPattern compiles a TokenChunker-style []string delimiter list.
+// Only backtick-wrapped entries produce an active pattern (Python
+// token_chunker / rag/nlp/delim list helper). Plain entries are ignored here
+// and used by mergeByTokenSize for sentence-level splitting when no active
+// pattern exists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	var custom []string
-	var plain []string
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
-			custom = append(custom, regexp.QuoteMeta(d[1:len(d)-1]))
-		} else {
-			plain = append(plain, regexp.QuoteMeta(d))
-		}
-	}
-	all := append(plain, custom...)
-	if len(all) == 0 {
-		return nil
-	}
-	sort.SliceStable(all, func(i, j int) bool { return len(all[i]) > len(all[j]) })
-	return regexp.MustCompile(strings.Join(all, "|"))
+	return chunk.CompileDelimiterListPattern(delims)
 }
 
-// splitKeepingDelim is the Go equivalent of python's
-// `re.split((pattern), text, flags=re.DOTALL)` with the matched
-// delimiter preserved (alternation keeps the original delimiter text
-// in the output stream so the rebuilding at token_chunker.py:88-93
-// stays lossy-free).
-func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
+// splitDroppingDelim mirrors Python's _split_text_by_pattern
+// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
+// glued to a segment: re.split with a captured group keeps delimiters at odd
+// indices, and only the even-index (text) parts are kept. This is the
+// behaviour every delimiter path (primary and children, text/markdown/html
+// and json) must reproduce so a split chunk reads "first sentence here"
+// without the trailing delimiter.
+func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
 	}
-	idxs := pattern.FindAllStringSubmatchIndex(text, -1)
+	idxs := pattern.FindAllStringIndex(text, -1)
 	if len(idxs) == 0 {
 		return []string{text}
 	}
@@ -143,10 +104,11 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 	cursor := 0
 	for _, idx := range idxs {
 		start, end := idx[0], idx[1]
-		if start > cursor {
-			out = append(out, text[cursor:start])
+		if start == cursor {
+			cursor = end
+			continue
 		}
-		out = append(out, text[start:end])
+		out = append(out, text[cursor:start])
 		cursor = end
 	}
 	if cursor < len(text) {

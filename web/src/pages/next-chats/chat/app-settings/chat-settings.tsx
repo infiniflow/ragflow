@@ -22,6 +22,7 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
+import { getWebSearchProvider } from '../web-search-api-key';
 
 type ChatSettingsProps = { hasSingleChatBox: boolean };
 
@@ -50,13 +51,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         quote: true,
         keyword: false,
         tts: false,
-        use_kg: false,
         refine_multiturn: true,
         system: '',
         parameters: [],
         reasoning: false,
         cross_languages: [],
-        toc_enhance: false,
         reference_metadata: {
           include: false,
           fields: undefined,
@@ -89,6 +88,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
     // Add model_type to llm_setting based on the selected llm_id
     if (nextValues.llm_id) {
+      // The model selector returns the tenant model ID. Keep the legacy
+      // llm_id and the tenant-scoped ID synchronized; the backend gives
+      // tenant_llm_id precedence when resolving the chat model.
+      nextValues.tenant_llm_id = nextValues.llm_id;
       nextValues.llm_setting = {
         ...nextValues.llm_setting,
         model_type: findLlmByUuid(nextValues.llm_id)?.model_type || 'chat',
@@ -133,6 +136,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       ...data,
       prompt_config: {
         ...data.prompt_config,
+        web_search_provider: getWebSearchProvider(data.prompt_config),
         reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,

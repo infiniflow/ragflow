@@ -41,11 +41,13 @@ export const LargeModelFilterFormSchema = {
 
 type LargeModelFormFieldProps = Pick<
   NextInnerLLMSelectProps,
-  'showSpeech2TextModel' | 'ownerTenantId'
->;
+  'ownerTenantId'
+> & {
+  name?: string;
+};
 export function LargeModelFormField({
-  showSpeech2TextModel: showTTSModel,
   ownerTenantId,
+  name = 'llm_id',
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
@@ -55,7 +57,7 @@ export function LargeModelFormField({
     <>
       <FormField
         control={form.control}
-        name="llm_id"
+        name={name}
         render={({ field }) => (
           <FormItem>
             <FormLabel tooltip={t('chat.modelTip')}>
@@ -96,7 +98,6 @@ export function LargeModelFormField({
                 <NextLLMSelect
                   {...field}
                   filter={filter}
-                  showSpeech2TextModel={showTTSModel}
                   ownerTenantId={ownerTenantId}
                 />
               </FormControl>

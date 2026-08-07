@@ -26,6 +26,30 @@ def _snip(text: str, limit: int = 160) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
+def _discovered_entity(tools) -> str | None:
+    """Pick a salient discovered name from the gathered evidence.
+
+    Prefers an explicit entity/keyword tag on a chunk, falling back to a source
+    document name. Used only to gate ``graph_explore`` eligibility (its context
+    check needs ``context.last_entity``), so a coarse signal is enough.
+    """
+    chunks = (getattr(tools, "kbinfos", {}) or {}).get("chunks", []) or []
+    for c in chunks:
+        for key in ("entities_kwd", "important_kwd"):
+            val = c.get(key)
+            if isinstance(val, list) and val:
+                first = str(val[0]).strip()
+                if first:
+                    return first
+            if isinstance(val, str) and val.strip():
+                return val.strip().split()[0]
+    for c in chunks:
+        name = str(c.get("docnm_kwd") or "").strip()
+        if name:
+            return name
+    return None
+
+
 async def agentic_research(state: dict, tools) -> dict:
     """Two-level loop for high/ultra modes."""
     question = state.get("question", "")
@@ -91,7 +115,11 @@ async def agentic_research(state: dict, tools) -> dict:
                                         description=dc,
                                     )
                                 )
-                                _LOG.info("[Agentic research] Found a new angle worth researching: \"%s\"", dc)
+                                _LOG.info('[Agentic research] Found a new angle worth researching: "%s"', dc)
+
+        # ── Step A.5: note a discovered entity so graph_explore becomes eligible
+        # in the next round (its context gate requires context.last_entity). ──
+        ctx.note_entity(_discovered_entity(tools))
 
         # ── Step B: Sufficiency Check ──
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
@@ -115,16 +143,30 @@ async def agentic_research(state: dict, tools) -> dict:
         if action == "ANSWER_PARTIAL":
             return _finalize(ctx, tools, partial=True)
         if action == "ABSTAIN":
+            if getattr(tools, "text_attachments_content", ""):
+                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
         if action == "REPLAN":
-            # Ultra: re-plan on low score
+            # Ultra: re-plan on low score. Ground the new plan on the evidence
+            # gathered so far, and carry still-valid verified claims over so a
+            # replan doesn't re-research (and re-bill) work already done.
             from rag.advanced_rag.harness.planner import planner_node
 
             state["feedback"] = verdict.feedback
             state["route"] = route
+            state["seed_chunks"] = list(tools.kbinfos.get("chunks", []) or [])
             new_plan = await planner_node(state, tools)
-            ctx.claims = new_plan.get("claims", ctx.claims)
+            # Keep EVERY verified claim (even ones the new plan omitted — their
+            # evidence is still valid and shouldn't be re-researched), then
+            # append only the new plan's unverified claims.
+            verified = [c for c in ctx.claims if c.is_verified]
+            new_by_desc = {}
+            for c in new_plan.get("claims", ctx.claims):
+                if isinstance(c, ClaimTarget):
+                    new_by_desc.setdefault(c.description, c)
+            seen = {c.description for c in verified}
+            ctx.claims = verified + [c for c in new_by_desc.values() if c.description not in seen]
         if action == "FALLBACK_LLM":
             return _finalize(ctx, tools, partial=True, fallback=True)
 
@@ -140,7 +182,7 @@ async def _run_claim_research(
     mode,
     compilation_map: dict,
 ) -> dict:
-    _LOG.info("[Agentic research] Researching: \"%s\"", _snip(claim.description))
+    _LOG.info('[Agentic research] Researching: "%s"', _snip(claim.description))
     try:
         result = await asyncio.wait_for(
             research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map),
@@ -150,7 +192,7 @@ async def _run_claim_research(
         raise
     except asyncio.TimeoutError:
         _LOG.warning(
-            "[Agentic research] Gave up on \"%s\" — it took longer than %ss.",
+            '[Agentic research] Gave up on "%s" — it took longer than %ss.',
             _snip(claim.description),
             CLAIM_RESEARCH_TIMEOUT_SECONDS,
         )
@@ -163,7 +205,7 @@ async def _run_claim_research(
             "discovered_claims": [],
         }
     except Exception:
-        _LOG.exception("[Agentic research] Hit an error while researching \"%s\".", _snip(claim.description))
+        _LOG.exception('[Agentic research] Hit an error while researching "%s".', _snip(claim.description))
         return {
             "report": "",
             "is_verified": False,
@@ -174,7 +216,7 @@ async def _run_claim_research(
         }
 
     _LOG.info(
-        "[Agentic research] Finished \"%s\" — %s, backed by %d passage(s) (confidence %.0f%%)%s.",
+        '[Agentic research] Finished "%s" — %s, backed by %d passage(s) (confidence %.0f%%)%s.',
         _snip(claim.description),
         "answered" if result.get("is_verified") else "still unanswered",
         len(result.get("evidence_ids") or []),
@@ -233,6 +275,91 @@ async def _get_compilation_map(tools) -> dict[str, set[str]]:
             comps.add("mindmap")
         if parser_config.get("page_index"):
             comps.add("page_index")
+        await _add_template_group_compilations(comps, parser_config, getattr(kb, "tenant_id", ""))
+        if await _has_dataset_nav_rows(getattr(kb, "tenant_id", ""), getattr(kb, "id", "")):
+            comps.add("tree")
         if comps:
             result[kb.id] = comps
     return result
+
+
+async def _has_dataset_nav_rows(tenant_id: str, kb_id: str) -> bool:
+    if not tenant_id or not kb_id:
+        return False
+    try:
+        from common import settings
+        from common.doc_store.doc_store_base import OrderByExpr
+        from common.misc_utils import thread_pool_exec
+        from rag.nlp import search
+
+        index_name = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index_name, kb_id):
+            return False
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            [],
+            {"compile_kwd": ["dataset_nav"]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index_name,
+            [kb_id],
+        )
+        return bool(settings.docStoreConn.get_total(res))
+    except Exception:
+        _LOG.exception("[agentic] dataset-nav existence check failed for kb=%s", kb_id)
+        return False
+
+
+async def _add_template_group_compilations(comps: set[str], parser_config: dict, tenant_id: str) -> None:
+    """Infer available compilation kinds from selected template groups."""
+    if not tenant_id:
+        return
+    try:
+        from common.misc_utils import thread_pool_exec
+        from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+        from rag.svr.task_executor_refactor.chunk_post_processor import (
+            _parser_config_compilation_template_group_ids,
+        )
+    except Exception:
+        _LOG.exception("[agentic] compilation-map helper import failed")
+        return
+
+    try:
+        group_ids = _parser_config_compilation_template_group_ids(parser_config)
+    except Exception:
+        _LOG.exception("[agentic] compilation template group id resolution failed")
+        return
+
+    for group_id in group_ids:
+        try:
+            group = await thread_pool_exec(CompilationTemplateGroupService.get_saved, group_id, tenant_id)
+        except Exception:
+            _LOG.exception("[agentic] compilation template group read failed id=%s", group_id)
+            continue
+        for template in (group or {}).get("templates") or []:
+            config = template.get("config") or {}
+            raw_kind = (config.get("kind") if isinstance(config, dict) else "") or template.get("kind") or ""
+            raw_norm = raw_kind.strip().lower().replace("-", "_") if isinstance(raw_kind, str) else ""
+            kind = _compilation_kind_for_agentic_map(raw_kind)
+            if raw_norm == "knowledge_graph":
+                comps.add("knowledge_graph")
+            if kind == "tree":
+                comps.add("tree")
+            elif kind in {"timeline", "page_index", "pageindex"}:
+                comps.add("page_index")
+            elif kind in {"mindmap", "mind_map"}:
+                comps.add("mindmap")
+            elif kind == "wiki":
+                comps.add("wiki")
+
+
+def _compilation_kind_for_agentic_map(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index"}:
+        return "timeline"
+    return normalized

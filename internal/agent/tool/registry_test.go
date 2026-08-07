@@ -40,12 +40,107 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 	}
 }
 
+func TestBuildByName_CanvasComponentNames(t *testing.T) {
+	tests := []struct {
+		name         string
+		wantToolName string
+	}{
+		{name: "CodeExec", wantToolName: "execute_code"},
+		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
+		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "QueritSearch", wantToolName: "querit_search"},
+		{name: "TavilyExtract", wantToolName: "tavily_extract"},
+		{name: "TavilySearch", wantToolName: "tavily_search"},
+		{name: "YahooFinance", wantToolName: "yahoo_finance"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			built, err := BuildByName(tc.name, nil)
+			if err != nil {
+				t.Fatalf("BuildByName(%q): %v", tc.name, err)
+			}
+			info, err := built.Info(t.Context())
+			if err != nil {
+				t.Fatalf("BuildByName(%q).Info: %v", tc.name, err)
+			}
+			if info.Name != tc.wantToolName {
+				t.Errorf("BuildByName(%q).Info().Name = %q, want %q", tc.name, info.Name, tc.wantToolName)
+			}
+		})
+	}
+}
+
+func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		paramsKey string
+		topN      int
+	}{
+		{name: "canonical key", paramsKey: "google_scholar", topN: 7},
+		{name: "canvas key", paramsKey: "googlescholar", topN: 9},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tools, err := BuildAll(
+				[]string{"GoogleScholar"},
+				map[string]map[string]any{
+					tc.paramsKey: {"top_n": tc.topN},
+				},
+			)
+			if err != nil {
+				t.Fatalf("BuildAll: %v", err)
+			}
+			if len(tools) != 1 {
+				t.Fatalf("len(tools) = %d, want 1", len(tools))
+			}
+			scholar, ok := tools[0].(*GoogleScholarTool)
+			if !ok {
+				t.Fatalf("tools[0] = %T, want *GoogleScholarTool", tools[0])
+			}
+			if scholar.defaults.TopN != tc.topN {
+				t.Errorf("GoogleScholar defaults.TopN = %d, want %d", scholar.defaults.TopN, tc.topN)
+			}
+		})
+	}
+}
+
+func TestBuildByName_QueritAliases(t *testing.T) {
+	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
+		built, err := BuildByName(name, map[string]any{
+			"api_key":          "stored-key",
+			"count":            float64(8),
+			"chunks_per_doc":   float64(2),
+			"site_include":     []any{"example.com"},
+			"site_exclude":     []string{"blocked.example"},
+			"time_range":       "d7",
+			"country_include":  []any{"CN"},
+			"language_include": []any{"zh"},
+			"outputs":          map[string]any{"json": map[string]any{}},
+		})
+		if err != nil {
+			t.Fatalf("BuildByName(%q): %v", name, err)
+		}
+		querit, ok := built.(*QueritTool)
+		if !ok {
+			t.Fatalf("BuildByName(%q) returned %T, want *QueritTool", name, built)
+		}
+		if querit.defaults.Count != 8 || querit.defaults.ChunksPerDoc == nil || *querit.defaults.ChunksPerDoc != 2 || len(querit.defaults.SiteInclude) != 1 {
+			t.Fatalf("BuildByName(%q) defaults = %#v", name, querit.defaults)
+		}
+		info, infoErr := built.Info(context.Background())
+		if infoErr != nil || info.Name != "querit_search" {
+			t.Fatalf("BuildByName(%q).Info() = %#v, %v", name, info, infoErr)
+		}
+	}
+}
+
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"querit", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -109,6 +204,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"querit", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -164,7 +260,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Alias consistency: execute_sql and exesql must surface the
 	// same canonical Info().Name; same for retrieval/search_my_dataset/
-	// search_my_dateset and crawler/web_crawler. A bug here would mean
+	// search_my_dataset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
 		"execute_sql":           "execute_sql",
@@ -178,6 +274,8 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"web_crawler":           "web_crawler",
 		"wikipedia":             "wikipedia_search",
 		"wikipedia_search":      "wikipedia_search",
+		"querit":                "querit_search",
+		"querit_search":         "querit_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

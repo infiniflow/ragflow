@@ -235,7 +235,7 @@ func buildParallelOuterWorkflow(
 		// and Outputs across items.
 		localState, cloneErr := cloneCanvasState(parentState)
 		if cloneErr != nil || localState == nil {
-			localState = runtime.NewCanvasState(parentState.RunID, parentState.TaskID)
+			localState = runtime.NewCanvasState(parentState.RunID, parentState.SessionID)
 			localState.Sys = shallowCopyAnyMap(parentState.Sys)
 			localState.Globals = shallowCopyAnyMap(parentState.Globals)
 		}
@@ -309,7 +309,7 @@ func cloneCanvasState(src *CanvasState) (*CanvasState, error) {
 	if err != nil {
 		return nil, err
 	}
-	dst := NewCanvasState(src.RunID, src.TaskID)
+	dst := NewCanvasState(src.RunID, src.SessionID)
 	if err := json.Unmarshal(raw, dst); err != nil {
 		return nil, err
 	}

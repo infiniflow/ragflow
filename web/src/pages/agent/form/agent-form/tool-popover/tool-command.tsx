@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/command';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { Operator } from '@/pages/agent/constant';
-import OperatorIcon from '@/pages/agent/operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { LucidePlus } from 'lucide-react';
@@ -23,6 +23,7 @@ const Menus = [
     list: [
       Operator.TavilySearch,
       Operator.TavilyExtract,
+      Operator.QueritSearch,
       Operator.Google,
       // Operator.Bing,
       Operator.DuckDuckGo,
@@ -108,7 +109,7 @@ function useHandleSelectChange({ onChange, value }: ToolCommandProps) {
   };
 }
 
-// eslint-disable-next-line
+// oxlint-disable-next-line
 export function ToolCommand({ value, onChange }: ToolCommandProps) {
   const { t } = useTranslation();
 

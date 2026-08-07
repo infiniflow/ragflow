@@ -49,12 +49,13 @@ import SystemSetting from './layout/system-setting';
  * Save flow: the top Save button validates every visible card through
  * the imperative ref API; if all are valid it collects each card's
  * payload (skipping non-dirty saved cards) and dispatches one API call
- * per dirty card - `addProviderInstance` for drafts and Bedrock/SoMark
+ * per dirty card - `addProviderInstance` for drafts and Bedrock
  * saved cards, `updateProviderInstance` for generic saved cards.
  *
  * Special-case providers (handled inside `ProviderInstanceCard`):
  *  - `Bedrock`: rendered inline via `BedrockInstanceCard`.
- *  - `SoMark`: rendered inline via `SoMarkInstanceCard`.
+ *  - All other providers (including SoMark) use the generic
+ *    `GenericProviderInstanceCard` path.
  */
 const SettingModelV2: FC = () => {
   const { t: tSetting } = useTranslate('setting');
@@ -163,10 +164,10 @@ const SettingModelV2: FC = () => {
   //   3. If any card is invalid (or a draft has no name), abort the
   //      whole batch - errors are surfaced in the form UI by `trigger()`.
   //   4. Dispatch one API call per dirty card, in order. Drafts and
-  //      Bedrock/SoMark saved cards go through `addProviderInstance`
-  //      (Bedrock/SoMark saved cards carry an `id` so the backend
-  //      updates instead of creating); generic saved cards go through
-  //      `updateProviderInstance`.
+  //      Bedrock saved cards go through `addProviderInstance`
+  //      (Bedrock saved cards carry an `id` so the backend
+  //      updates instead of creating); generic and SoMark saved cards
+  //      go through `updateProviderInstance`.
   //   5. On success: clear drafts (they're persisted now), mark each
   //      saved card's baseline so the next save short-circuits, and
   //      invalidate the instance query so the new/updated cards appear.
@@ -176,19 +177,17 @@ const SettingModelV2: FC = () => {
     );
     if (refs.length === 0) return;
 
-    // 1. Validate every card up front. Block all saves if any is invalid.
+    const dirty = refs
+      .map((r) => ({ ref: r, payload: r.getSavePayload() }))
+      .filter((e) => e.payload !== null);
+    if (dirty.length === 0) return;
+
     const validations = await Promise.all(
-      refs.map(async (r) => ({ ref: r, valid: await r.validate() })),
+      dirty.map(async (e) => ({ ...e, valid: await e.ref.validate() })),
     );
     if (validations.some((v) => !v.valid)) {
       return;
     }
-
-    // 2. Collect dirty payloads (null = nothing to save for this card).
-    const entries = validations
-      .map((v) => ({ ref: v.ref, payload: v.ref.getSavePayload() }))
-      .filter((e) => e.payload !== null);
-    if (entries.length === 0) return;
 
     setSaving(true);
     // Pin the auto-show guard so a draft isn't re-spawned while the
@@ -200,7 +199,7 @@ const SettingModelV2: FC = () => {
       // 3. Dispatch one API call per dirty card. Sequential so any
       //    backend error stops the batch and the user can retry the
       //    remaining cards after fixing the issue.
-      for (const { ref, payload } of entries) {
+      for (const { ref, payload } of validations) {
         if (!payload) continue;
         if (payload.apiKind === 'add') {
           const ret = await addProviderInstance(payload.payload as any);

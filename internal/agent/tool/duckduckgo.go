@@ -565,13 +565,6 @@ func normalizeWhitespace(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func duckduckgoJSON(env duckduckgoEnvelope) string {
 	b, err := json.Marshal(env)
 	if err != nil {

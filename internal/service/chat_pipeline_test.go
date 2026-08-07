@@ -1186,10 +1186,10 @@ func (f *sqlFakeEngine) RunSQL(ctx context.Context, table, sqlText string, kbIDs
 // Infinity multi-KB short-circuit (mirrors Python's add_kb_filter
 // no-op for Infinity).
 func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
-	engine := &sqlFakeEngine{engineType: "infinity"}
+	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		context.Background(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm", []string{"kb_a", "kb_b"},
 	)
@@ -1202,7 +1202,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 // path populates chunks and doc_aggs correctly.
 func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
-	engine := &sqlFakeEngine{
+	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
@@ -1214,7 +1214,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		context.Background(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1243,10 +1243,10 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 // TestFetchAggregateChunks_NoWhereClause verifies the no-WHERE early
 // return (matches Python's aggregate fallback at L1365).
 func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
-	engine := &sqlFakeEngine{engineType: "elasticsearch"}
+	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		context.Background(), sqlEngine, "t",
 		"select count(*) from t",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1257,7 +1257,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 
 // TestFetchAggregateChunks_RunSQLError verifies graceful failure.
 func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
-	engine := &sqlFakeEngine{
+	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		runSQL: func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error) {
 			return nil, fmt.Errorf("engine boom")
@@ -1265,7 +1265,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		context.Background(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1336,7 +1336,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 		{"count": 42.0, "label": "total"},
 	}
 	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
-	engine := &sqlFakeEngine{
+	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
@@ -1347,7 +1347,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), engine, "t",
+		context.Background(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		rows, "", "elasticsearch", kbs, nil,
 	)

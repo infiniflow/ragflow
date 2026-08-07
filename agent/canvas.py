@@ -835,6 +835,8 @@ class Canvas(Graph):
             )
             text = emoji_pattern.sub("", text)
 
+            text = re.sub(r"<[^>]*>", "", text)
+
             text = re.sub(r"\s+", " ", text).strip()
 
             MAX_LEN = 500
@@ -981,6 +983,9 @@ class Canvas(Graph):
             message_end["status"] = cpn_obj.get_param("status")
         if isinstance(cpn_obj.output("attachment"), dict):
             message_end["attachment"] = cpn_obj.output("attachment")
+        downloads = cpn_obj.output("downloads")
+        if isinstance(downloads, list) and downloads:
+            message_end["downloads"] = downloads
         if self._has_reference():
             message_end["reference"] = self.get_reference()
         # NOTE: aggregated run token usage is intentionally NOT attached here.

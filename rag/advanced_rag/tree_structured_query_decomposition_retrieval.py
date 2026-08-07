@@ -19,7 +19,7 @@ from functools import partial
 from api.db.services.llm_service import LLMBundle
 from rag.prompts import kb_prompt
 from rag.prompts.generator import sufficiency_check, multi_queries_gen
-from rag.utils.tavily_conn import Tavily
+from rag.utils.web_search_conn import create_web_search_provider
 from timeit import default_timer as timer
 
 
@@ -49,13 +49,13 @@ class TreeStructuredQueryDecompositionRetrieval:
         except Exception as e:
             logging.error(f"Knowledge base retrieval error: {e}")
 
-        # 2. Web retrieval (if Tavily API is configured)
+        # 2. Web retrieval (if a web search provider is configured)
         try:
-            if self.internet_enabled and self.prompt_config.get("tavily_api_key"):
-                tav = Tavily(self.prompt_config["tavily_api_key"])
-                tav_res = tav.retrieve_chunks(search_query)
-                kbinfos["chunks"].extend(tav_res["chunks"])
-                kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+            web_search = create_web_search_provider(self.prompt_config) if self.internet_enabled else None
+            if web_search:
+                web_res = web_search.retrieve_chunks(search_query)
+                kbinfos["chunks"].extend(web_res["chunks"])
+                kbinfos["doc_aggs"].extend(web_res["doc_aggs"])
         except Exception as e:
             logging.error(f"Web retrieval error: {e}")
 

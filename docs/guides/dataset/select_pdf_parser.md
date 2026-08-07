@@ -1,11 +1,13 @@
 ---
 sidebar_position: -3
+title: Select PDF Parser
+sidebar_label: Select PDF Parser
 slug: /select_pdf_parser
 sidebar_custom_props: {
   categoryIcon: LucideFileText
 }
 ---
-# Select PDF parser
+# Select PDF Parser
 
 Select a visual model for parsing your PDFs.
 
@@ -57,12 +59,12 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
       - `"vlm-mlx-engine"`
       - `"vlm-vllm-async-engine"`
       - `"vlm-lmdeploy-engine"`.
-   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`. 
+   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`.
    - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
      - `1`: Delete.
      - `0`: Retain.
-3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:  
+3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:
    - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
 
@@ -82,12 +84,12 @@ All MinerU environment variables are optional. When set, these values are used t
 Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
 :::
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### When should I select DeepDoc or a third-party visual model as the PDF parser?
+### When Should I Select DeepDoc or a Third-Party Visual Model as the PDF Parser?
 
 Use a visual model to extract data if your PDFs contain formatted or image-based text rather than plain text. DeepDoc is the default visual model but can be time-consuming. You can also choose a lightweight or high-performance VLM depending on your needs and hardware capabilities.
 
-### Can I select a visual model to parse my DOCX files?
+### Can I Select a Visual Model to Parse My DOCX Files?
 
 No, you cannot. This dropdown menu is for PDFs only. To use this feature, convert your DOCX files to PDF first.

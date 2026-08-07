@@ -88,10 +88,15 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
-        model_type = "chat" if "chat" in model_types else model_types[0]
-        chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
+        try:
+            model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
+            model_type = "chat" if "chat" in model_types else model_types[0]
+            chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
+        except Exception as e:
+            logging.warning(f"Fail to load LLM configuration for component. {e}")
+            self.chat_mdl = None
+
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:

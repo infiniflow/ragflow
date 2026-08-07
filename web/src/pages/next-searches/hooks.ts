@@ -155,6 +155,10 @@ export interface IllmSettingProps {
   top_p?: number;
   frequency_penalty?: number;
   presence_penalty?: number;
+  temperature_enabled?: boolean;
+  top_p_enabled?: boolean;
+  frequency_penalty_enabled?: boolean;
+  presence_penalty_enabled?: boolean;
 }
 interface IllmSettingEnableProps {
   temperatureEnabled?: boolean;
@@ -350,7 +354,7 @@ export const useRenameSearch = () => {
           });
           const detail = response.data?.data;
 
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          // oxlint-disable-next-line typescript/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;
           res = await updateSearch({
             ...searchDataTemp,

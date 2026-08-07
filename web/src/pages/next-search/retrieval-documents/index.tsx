@@ -22,7 +22,7 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ChevronDown, Files, XIcon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface IProps {
@@ -52,12 +52,21 @@ const RetrievalDocuments = ({
     }
   }, [isTesting, setLoading]);
 
-  const { documents: useDocuments } = {
-    documents:
-      documentsAll?.length > documents?.length ? documentsAll : documents,
-  };
+  const latestDocuments =
+    documentsAll?.length > documents?.length ? documentsAll : documents;
+  // Keep the last non-empty list so the popover anchor is not unmounted
+  // while a new testing request is pending.
+  const documentsRef = useRef(latestDocuments);
+  if (latestDocuments?.length) {
+    documentsRef.current = latestDocuments;
+  }
+  const useDocuments = documentsRef.current;
   const [selectedValues, setSelectedValues] =
     useState<string[]>(selectedDocumentIds);
+
+  useEffect(() => {
+    setSelectedValues(selectedDocumentIds);
+  }, [selectedDocumentIds]);
 
   const multiOptions = useMemo(() => {
     if (!useDocuments || !useDocuments.length) {
@@ -115,7 +124,7 @@ const RetrievalDocuments = ({
   return (
     <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
       <PopoverTrigger asChild>
-        {useDocuments?.length && (
+        {useDocuments?.length > 0 && (
           <Button
             onClick={handleTogglePopover}
             className={cn(

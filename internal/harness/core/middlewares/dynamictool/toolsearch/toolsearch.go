@@ -53,10 +53,7 @@ func (m *middleware[M]) ContributeTools(ctx context.Context) []core.Tool {
 	}
 	// Client-side search mode: add search meta-tool + pass some directly
 	tools := []core.Tool{m.newSearchTool()}
-	passDirect := m.cfg.SearchThreshold / 2
-	if passDirect > len(m.cfg.AllTools) {
-		passDirect = len(m.cfg.AllTools)
-	}
+	passDirect := min(m.cfg.SearchThreshold/2, len(m.cfg.AllTools))
 	tools = append(tools, m.cfg.AllTools[:passDirect]...)
 	return tools
 }

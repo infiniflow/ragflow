@@ -4,16 +4,18 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
+	ctx := t.Context()
 	p, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {
 		t.Fatalf("NewMarkdownParser: %v", err)
 	}
 	md := "# Hello\n\nThis is a paragraph.\n\n* List item 1\n* List item 2\n\n```go\nfunc main() {}\n```\n"
-	res := p.ParseWithResult("test.md", []byte(md))
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -33,8 +35,9 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 }
 
 func TestMarkdownParser_ParseWithResult_EmptyInput(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
-	res := p.ParseWithResult("empty.md", []byte(""))
+	res := p.ParseWithResult(ctx, "empty.md", []byte(""))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -44,13 +47,14 @@ func TestMarkdownParser_ParseWithResult_EmptyInput(t *testing.T) {
 }
 
 func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
 	// 1×1 pixel transparent PNG encoded as data URI
 	pixelPNG := make([]byte, 68) // minimal 1x1 PNG header
 	pixelB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
 	md := "Some text with an image\n![test](data:image/png;base64," + pixelB64 + ")\n"
 	_ = pixelPNG
-	res := p.ParseWithResult("test.md", []byte(md))
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -71,9 +75,10 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 }
 
 func TestMarkdownParser_ParseWithResult_NoImage(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
 	md := "# Title\n\nJust some text, no images here.\n\nMore text."
-	res := p.ParseWithResult("test.md", []byte(md))
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -81,6 +86,32 @@ func TestMarkdownParser_ParseWithResult_NoImage(t *testing.T) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			t.Fatal("unexpected image item in text-only markdown")
 		}
+	}
+}
+
+func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	md := "[M03] Health check package comparison:\n\n| Check item | Basic 699 CNY | Advanced 1299 CNY |\n| --- | --- | --- |\n| Blood routine / Urine routine | Yes | Yes |\n\nNote: All packages require fasting.\n"
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("len(JSON) = %d, want 1", len(res.JSON))
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "text" {
+		t.Fatalf("doc_type_kwd = %q, want text", got)
+	}
+	if !strings.Contains(text, "<table>") || !strings.Contains(text, "<th>Check item</th>") {
+		t.Fatalf("table was not rendered inline: %q", text)
+	}
+	if strings.Contains(text, "| Check item |") {
+		t.Fatalf("raw markdown table leaked into text: %q", text)
+	}
+	if gap := text[strings.Index(text, "</table>"):strings.Index(text, "Note:")]; gap != "</table>\n" {
+		t.Fatalf("gap after table = %q, want %q", gap, "</table>\n")
 	}
 }
 
@@ -114,6 +145,44 @@ func TestMarkdownParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	}
 }
 
+// TestMarkdownParser_FlattenMediaToText verifies that when
+// flatten_media_to_text is true, image items are emitted with
+// doc_type_kwd="text" (mirroring Python parser.py:1034). When false,
+// image items keep doc_type_kwd="image".
+func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
+	ctx := t.Context()
+	pixelB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
+	md := "Some text with an image\n![test](data:image/png;base64," + pixelB64 + ")\n"
+
+	cases := []struct {
+		name        string
+		flatten     bool
+		wantDocType string
+	}{
+		{"flatten=false keeps image", false, "image"},
+		{"flatten=true forces text", true, "text"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _ := NewMarkdownParser(GoMarkdown)
+			p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": tc.flatten})
+			if p.FlattenMediaToText != tc.flatten {
+				t.Fatalf("FlattenMediaToText field = %v, want %v", p.FlattenMediaToText, tc.flatten)
+			}
+			res := p.ParseWithResult(ctx, "test.md", []byte(md))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			for _, item := range res.JSON {
+				if kd, _ := item["doc_type_kwd"].(string); kd != tc.wantDocType {
+					t.Errorf("doc_type_kwd = %q, want %q (item text=%q)",
+						kd, tc.wantDocType, item["text"])
+				}
+			}
+		})
+	}
+}
+
 func TestResolveMarkdownImage_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
 	md := "![alt](data:image/png;base64," + b64 + ")"
@@ -134,6 +203,7 @@ func TestResolveMarkdownImage_NoImage(t *testing.T) {
 }
 
 func TestResolveMarkdownImage_HTTPImage(t *testing.T) {
+	withSSRFBypass(t)
 	// httptest servers bind loopback, which the SSRF guard rejects by
 	// default. Allow loopback for this test so the HTTP fetch path is
 	// exercised (production keeps ssrfAllowLoopback == false).
@@ -167,6 +237,7 @@ func TestFetchImageAsBase64_RejectsCredentials(t *testing.T) {
 }
 
 func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
+	withSSRFBypass(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))

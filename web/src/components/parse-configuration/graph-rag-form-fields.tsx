@@ -1,19 +1,18 @@
 import { FormLayout } from '@/constants/form';
-import { DocumentParserType } from '@/constants/knowledge';
+import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
 import { LLMModelItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
-import {
-  GenerateLogButton,
-  IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate-log-button';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { FormContainer } from '../form-container';
+import {
+  GenerateLogButton,
+  IGenerateLogButtonProps,
+} from '../generate-log-button';
 import { SliderInputFormField } from '../slider-input-form-field';
 import {
   FormControl,

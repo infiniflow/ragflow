@@ -3,7 +3,6 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { ChildrenDelimiterForm } from '@/components/children-delimiter-form';
-import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { DelimiterFormField } from '@/components/delimiter-form-field';
 import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
@@ -19,13 +18,13 @@ import {
   ImageContextWindow,
   OverlappedPercent,
 } from './common-item';
+import { FormLayout } from '@/constants/form';
 
 export function NaiveConfiguration() {
   const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <CompilationTemplateFormField horizontal></CompilationTemplateFormField>
         <LayoutRecognizeFormField
           testId="ds-settings-parser-pdf-parser-select"
           ownerTenantId={ownerTenantId}
@@ -43,8 +42,12 @@ export function NaiveConfiguration() {
         <OverlappedPercent />
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
-        <AutoKeywordsFormField></AutoKeywordsFormField>
-        <AutoQuestionsFormField></AutoQuestionsFormField>
+        <AutoKeywordsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoKeywordsFormField>
+        <AutoQuestionsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoQuestionsFormField>
         <ExcelToHtmlFormField></ExcelToHtmlFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>

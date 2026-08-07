@@ -53,6 +53,56 @@ func TestBuildInputSpec_BasicFields(t *testing.T) {
 	}
 }
 
+func TestUserFillUpNodeBody_ResolvesTipsFromCanvasState(t *testing.T) {
+	state := NewCanvasState("run-1", "task-1")
+	state.SetVar("Agent:MoodyIdeasMarry", "content", "How old are you?")
+	ctx := WithState(context.Background(), state)
+
+	body := UserFillUpNodeBody("UserFillUp:TwelveBadgersRescue", map[string]any{
+		"enable_tips": true,
+		"tips":        "{Agent:MoodyIdeasMarry@content}",
+	})
+	_, err := body(ctx, nil)
+	if err == nil {
+		t.Fatal("UserFillUp should interrupt while waiting for input")
+	}
+	rawInfo, ok := compose.IsInterruptRerunError(err)
+	if !ok {
+		t.Fatalf("UserFillUp returned non-interrupt error: %v", err)
+	}
+	got, ok := rawInfo.(map[string]any)
+	if !ok {
+		t.Fatalf("interrupt info type = %T, want map[string]any", rawInfo)
+	}
+
+	if got["tips"] != "How old are you?" {
+		t.Fatalf("tips = %q, want resolved upstream Agent content", got["tips"])
+	}
+}
+
+func TestUserFillUpNodeBody_OmitsDisabledTips(t *testing.T) {
+	body := UserFillUpNodeBody("UserFillUp:TwelveBadgersRescue", map[string]any{
+		"enable_tips": false,
+		"tips":        "should not be shown",
+	})
+	_, err := body(context.Background(), nil)
+	if err == nil {
+		t.Fatal("UserFillUp should interrupt while waiting for input")
+	}
+	rawInfo, ok := compose.IsInterruptRerunError(err)
+	if !ok {
+		t.Fatalf("UserFillUp returned non-interrupt error: %v", err)
+	}
+	got, ok := rawInfo.(map[string]any)
+	if !ok {
+		t.Fatalf("interrupt info type = %T, want map[string]any", rawInfo)
+	}
+
+	if _, ok := got["tips"]; ok {
+		t.Fatalf("disabled tips should be omitted: %+v", got)
+	}
+}
+
 // TestBuildInputSpec_NilSafe covers the nil params path (defensive).
 func TestBuildInputSpec_NilSafe(t *testing.T) {
 	got := BuildInputSpec(nil)

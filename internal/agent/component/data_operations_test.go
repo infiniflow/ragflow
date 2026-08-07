@@ -68,7 +68,7 @@ func TestDataOperations_SelectKeys(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestDataOperations_Combine(t *testing.T) {
 	state.Outputs["cpn_1"] = map[string]any{"d2": map[string]any{"k": []any{2, 3}}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestDataOperations_RemoveKeys(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestDataOperations_LiteralEval(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestDataOperations_FilterValues(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestDataOperations_AppendOrUpdate(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestDataOperations_RenameKeys(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

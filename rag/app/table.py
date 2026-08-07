@@ -19,6 +19,7 @@ import csv
 import io
 import logging
 import re
+from datetime import datetime
 from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
@@ -39,8 +40,40 @@ from common import settings
 logger = logging.getLogger(__name__)
 
 
+def _deduplicate_column_names(columns):
+    reserved = {str(col) for col in columns}
+    used = set()
+    counts = Counter()
+    unique_columns = []
+    for col in columns:
+        name = str(col)
+        counts[name] += 1
+        if name not in used:
+            unique_columns.append(name)
+            used.add(name)
+            continue
+        suffix = counts[name]
+        new_name = f"{name}_{suffix}"
+        while new_name in used or new_name in reserved:
+            suffix += 1
+            new_name = f"{name}_{suffix}"
+        counts[name] = suffix
+        unique_columns.append(new_name)
+        used.add(new_name)
+    return unique_columns
+
+
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, callback=None, **kwargs):
+    def __call__(
+        self,
+        fnm,
+        binary=None,
+        from_page=0,
+        to_page=MAXIMUM_TASK_PAGE_NUMBER,
+        callback=None,
+        lang="English",
+        **kwargs,
+    ):
         if not binary:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
@@ -57,10 +90,16 @@ class Excel(ExcelParser):
             images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
             pending_cell_images = []
             if images:
-                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
+                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(
+                    images=images,
+                    callback=callback,
+                    lang=lang,
+                    **kwargs,
+                )
                 if image_descriptions and len(image_descriptions) == len(images):
                     for i, bf in enumerate(image_descriptions):
-                        images[i]["image_description"] = "\n".join(bf[0][1])
+                        desc = bf[0][1]
+                        images[i]["image_description"] = "\n".join(desc) if isinstance(desc, list) else str(desc)
                     for img in images:
                         if img["span_type"] == "single_cell" and img.get("image_description"):
                             pending_cell_images.append(img)
@@ -95,6 +134,7 @@ class Excel(ExcelParser):
             if len(data) == 0:
                 continue
             df = pd.DataFrame(data, columns=headers)
+            df.columns = _deduplicate_column_names(df.columns)
             for img in pending_cell_images:
                 excel_row = img["row_from"] - 1
                 excel_col = img["col_from"] - 1
@@ -325,16 +365,38 @@ def column_data_type(arr):
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]+$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
-            counts["int"] += 1
-            if int(str(a)) > 2**63 - 1:
+        if isinstance(a, float) and pd.isna(a):
+            continue  # skip NaN
+        # Check native Python type first (from openpyxl via pandas DataFrame)
+        if isinstance(a, bool):
+            counts["bool"] += 1
+            continue
+        if isinstance(a, (int, np.integer)):
+            if int(a) > 2**63 - 1:
                 float_flag = True
                 break
-        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
+            counts["int"] += 1
+            continue
+        if isinstance(a, (float, np.floating)):
             counts["float"] += 1
-        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
+            continue
+        if isinstance(a, datetime):
+            if pd.isna(a):
+                continue  # skip pd.NaT
+            counts["datetime"] += 1
+            continue
+        # Fallback to string-based regex matching
+        s = str(a)
+        if re.match(r"[+-]?[0-9]+$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+            counts["int"] += 1
+            if int(s) > 2**63 - 1:
+                float_flag = True
+                break
+        elif re.match(r"[+-]?[0-9.]{,19}$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+            counts["float"] += 1
+        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", s, flags=re.IGNORECASE):
             counts["bool"] += 1
-        elif trans_datatime(str(a)):
+        elif trans_datatime(s):
             counts["datetime"] += 1
         else:
             counts["text"] += 1
@@ -346,11 +408,20 @@ def column_data_type(arr):
     for i in range(len(arr)):
         if arr[i] is None:
             continue
+        if isinstance(arr[i], float) and pd.isna(arr[i]):
+            arr[i] = None
+            continue
+        if isinstance(arr[i], datetime) and pd.isna(arr[i]):
+            arr[i] = None
+            continue
         try:
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
             arr[i] = None
             logging.warning(f"Column {i}: {e}")
+            # Keep original value from openpyxl/pandas instead of dropping to None.
+            # This preserves cells (e.g. text in numeric columns) that would
+            # otherwise be silently discarded by forced column-level conversion.
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -381,7 +452,15 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs, tbls = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, **kwargs)
+        dfs, tbls = excel_parser(
+            filename,
+            binary,
+            from_page=from_page,
+            to_page=to_page,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -402,7 +481,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
 
         callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        dfs = [pd.DataFrame(np.array(rows), columns=headers)]
+        dfs = [pd.DataFrame(np.array(rows), columns=_deduplicate_column_names(headers))]
     elif re.search(r"\.csv$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -425,7 +504,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
 
         callback(0.3, (f"Extract records: {from_page}~{from_page + len(rows)}" + (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else "")))
 
-        dfs = [pd.DataFrame(rows, columns=headers)]
+        dfs = [pd.DataFrame(rows, columns=_deduplicate_column_names(headers))]
     else:
         raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
 
@@ -450,10 +529,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 del df[n]
         clmns = df.columns.values
         if len(clmns) != len(set(clmns)):
-            col_counts = Counter(clmns)
-            duplicates = [col for col, count in col_counts.items() if count > 1]
-            if duplicates:
-                raise ValueError(f"Duplicate column names detected: {duplicates}\nFrom: {clmns}")
+            df.columns = _deduplicate_column_names(clmns)
+            clmns = df.columns.values
 
         txts = list(copy.deepcopy(clmns))
         py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", str(n)), "_")[0] for n in clmns]
@@ -467,7 +544,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [i for i in range(len(clmns)) if column_roles.get(clmns[i], "both") in ("metadata", "both")]
-        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
             field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in stored_indices}
         else:
             field_map = {clmns_map[i][0]: clmns_map[i][1] for i in stored_indices}
@@ -528,12 +605,21 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 if role in ("indexing", "vectorize", "both"):
                     text_fields.append((col_name, row[col_name]))
                 if role in ("metadata", "both"):
-                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                         stored[str(col_name)] = row[col_name]
                     else:
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
-                            stored[fld] = row[col_name]
+                            val = row[col_name]
+                            # If a string value ended up in a non-text column,
+                            # it was preserved from a failed conversion in
+                            # column_data_type. Skip storing in the typed ES
+                            # field to avoid type mapping errors; the value is
+                            # already in text_fields for chunk content.
+                            if isinstance(val, str):
+                                pass
+                            else:
+                                stored[fld] = val
                         else:
                             cell = row[col_name]
                             stored[fld] = rag_tokenizer.tokenize(cell)
@@ -542,7 +628,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                                 stored[f"{py_clmns[j].lower()}_raw"] = raw_s
             if not text_fields and not stored:
                 continue
-            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                 if stored:
                     d["chunk_data"] = stored
             else:
@@ -553,7 +639,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk content_with_weight length: {len(d.get('content_with_weight', '') or '')}")
                 _cd = d.get("chunk_data")
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk chunk_data keys: {list(_cd.keys()) if isinstance(_cd, dict) else 'N/A'}")
-                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
+                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB):
                     _extra = [k for k in d if k not in ("docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks")]
                     logger.debug(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)

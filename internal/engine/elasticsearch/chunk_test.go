@@ -459,10 +459,7 @@ func paginate(total, size, topK int) (window, capN int, surfaced []int) {
 			block = append(block, i)
 		}
 		begin := globalOffset % window
-		end := begin + size
-		if end > len(block) {
-			end = len(block)
-		}
+		end := min(begin+size, len(block))
 		surfaced = append(surfaced, block[begin:end]...)
 	}
 	return window, capN, surfaced

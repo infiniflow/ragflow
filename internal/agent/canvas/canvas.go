@@ -38,8 +38,8 @@ var legacyNoOpNames = map[string]bool{
 type CanvasState = runtime.CanvasState
 
 // NewCanvasState re-exports runtime.NewCanvasState.
-func NewCanvasState(runID, taskID string) *CanvasState {
-	return runtime.NewCanvasState(runID, taskID)
+func NewCanvasState(runID, sessionID string) *CanvasState {
+	return runtime.NewCanvasState(runID, sessionID)
 }
 
 // Canvas is the in-memory DSL representation loaded from a user_canvas row.
@@ -48,6 +48,7 @@ type Canvas struct {
 	Components map[string]CanvasComponent `json:"components"`
 	Path       []string                   `json:"path"`
 	History    []map[string]any           `json:"history,omitempty"`
+	Memory     []map[string]any           `json:"memory,omitempty"`
 	Retrieval  map[string]any             `json:"retrieval,omitempty"`
 	Globals    map[string]any             `json:"globals,omitempty"`
 	// NodeParents preserves the front-end graph's grouping metadata

@@ -194,12 +194,12 @@ func relationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
 // When embModel is nil, returns text-only match expression.
 // When embModel is non-nil, embeds the question and returns hybrid
 // (text + dense + fusion) expressions for vector+keyword search.
-func buildSearchExprs(embModel *modelModule.EmbeddingModel, matchText *types.MatchTextExpr, simThreshold float64, denseTopK int) []interface{} {
+func buildSearchExprs(ctx context.Context, embModel *modelModule.EmbeddingModel, matchText *types.MatchTextExpr, simThreshold float64, denseTopK int) []interface{} {
 	if embModel == nil || embModel.ModelDriver == nil {
 		return []interface{}{matchText}
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{matchText.MatchingText}, embModel.APIConfig, embeddingConfig)
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, []string{matchText.MatchingText}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil || len(embeddings) == 0 {
 		return []interface{}{matchText}
 	}
@@ -233,7 +233,7 @@ func buildFusionExpr(textWeight, vectorWeight float64, topN int) *types.FusionEx
 }
 
 // queryRewrite attempts LLM-based query rewrite, falling back to raw question.
-func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON string) (typeKeywords, entities []string) {
+func queryRewrite(ctx context.Context, chatModel *modelModule.ChatModel, question string, ty2entsJSON string) (typeKeywords, entities []string) {
 	if question == "" {
 		return nil, nil
 	}
@@ -243,7 +243,7 @@ func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: "Output:"},
 		}
-		response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, nil)
+		response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
 		if err == nil && response != nil && response.Answer != nil {
 			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
 			if parseErr == nil && result != nil {

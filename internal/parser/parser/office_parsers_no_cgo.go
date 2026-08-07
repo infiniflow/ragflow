@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -17,28 +18,28 @@ import (
 // shape used by the rest of the package.
 var ErrOfficeCGORequired = errors.New("parser: office family requires CGO (office_oxide)")
 
-func (p *DOCXParser) ParseWithResult(filename string, _ []byte) ParseResult {
+func (p *DOCXParser) ParseWithResult(_ context.Context, filename string, _ []byte) ParseResult {
 	return ParseResult{
 		File: map[string]any{"name": filename},
 		Err:  fmt.Errorf("%w: docx", ErrOfficeCGORequired),
 	}
 }
 
-func (p *DOCParser) ParseWithResult(filename string, _ []byte) ParseResult {
+func (p *DOCParser) ParseWithResult(_ context.Context, filename string, _ []byte) ParseResult {
 	return ParseResult{
 		File: map[string]any{"name": filename},
 		Err:  fmt.Errorf("%w: doc", ErrOfficeCGORequired),
 	}
 }
 
-func (p *PPTParser) ParseWithResult(filename string, _ []byte) ParseResult {
+func (p *PPTParser) ParseWithResult(_ context.Context, filename string, _ []byte) ParseResult {
 	return ParseResult{
 		File: map[string]any{"name": filename},
 		Err:  fmt.Errorf("%w: ppt", ErrOfficeCGORequired),
 	}
 }
 
-func (p *PPTXParser) ParseWithResult(filename string, _ []byte) ParseResult {
+func (p *PPTXParser) ParseWithResult(_ context.Context, filename string, _ []byte) ParseResult {
 	return ParseResult{
 		File: map[string]any{"name": filename},
 		Err:  fmt.Errorf("%w: pptx", ErrOfficeCGORequired),
@@ -59,6 +60,11 @@ type DOCXParser struct{}
 
 func NewDOCXParser() *DOCXParser {
 	return &DOCXParser{}
+}
+
+func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
+	// No-op in the no-CGO stub: the real implementation in
+	// docx_parser.go reads output_format from setup.
 }
 
 func (p *DOCXParser) String() string {

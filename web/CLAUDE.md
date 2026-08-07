@@ -18,7 +18,8 @@ RAGFlow frontend is a React/TypeScript application built with UmiJS:
 npm install
 npm run dev        # Development server
 npm run build      # Production build
-npm run lint       # ESLint
+npm run lint       # oxlint
+npm run format     # oxfmt
 npm run test       # Jest tests
 ```
 
@@ -80,6 +81,14 @@ queryClient.invalidateQueries({
 For React Query / cache invalidation bugs, **carefully compare query keys across all consuming components and mutation hooks**. Mismatched keys (e.g., with/without `refreshCount`) are a common root cause of stale data or duplicate requests.
 
 - Systematically: (1) list every component/hook that calls `useQuery` for this data, (2) compare their query keys character-for-character, (3) check every mutation's `onSuccess` for cache invalidation, and (4) verify no parent re-renders are remounting the observer.
+
+#### Colocate Queries with the Consuming View
+
+**Fire a query in the component that renders its data — not in a parent page.** When a page switches between mutually exclusive views (tabs, view modes), extract each view into its own component that issues its own requests on mount. Conditional rendering then provides lazy loading for free.
+
+- Do not hoist child-view queries into the page component — it fires requests the user may never need (e.g., fetching the skill tree on page entry while the default view is the LLM wiki).
+- Do not thread `enabled` flags or view-mode props through hooks to gate a hoisted query; that is a sign the query lives at the wrong level. Split the view instead.
+- Remember the trade-off: with `gcTime: 0`, unmounting a view drops its cache, so switching back refetches. That is usually desirable for always-fresh data — do not reintroduce eager hoisting just to avoid the refetch.
 
 ### Network Request Layering
 
