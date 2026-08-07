@@ -189,8 +189,7 @@ func (dao *CompilationTemplateDAO) UpdateFields(ctx context.Context, db *gorm.DB
 		Where("id = ?", id).Updates(m).Error
 }
 
-// UpdateStatusByGroup flips the status of every valid template in a group,
-// mirroring Python group delete's child cascade.
+// UpdateStatusByGroup flips the status of every valid template in a group
 func (dao *CompilationTemplateDAO) UpdateStatusByGroup(ctx context.Context, db *gorm.DB, groupID, status string) error {
 	return db.WithContext(ctx).Model(&entity.CompilationTemplate{}).
 		Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).
@@ -206,7 +205,7 @@ func (dao *CompilationTemplateDAO) UpdateStatusByID(ctx context.Context, db *gor
 
 // HardDeleteOrphansByName physically removes stale, invalid, non-built-in
 // templates of the given name within the group, mirroring Python
-// _purge_stale_invalid_children (which DELETEs orphaned duplicate names after a
+// _purge_stale_invalid_children (which Deletes orphaned duplicate names after a
 // group child is soft-deleted). The deletion is scoped to the group so a
 // same-named template in another group is never affected. These rows were
 // soft-deleted in a prior operation but must be permanently purged to keep the

@@ -82,10 +82,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -96,23 +94,9 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 const ComponentNameTokenizer = "Tokenizer"
-
-// embeddingBatchSize returns the embedding batch size, matching Python's
-// settings.EMBEDDING_BATCH_SIZE. Reads TOKENIZER_EMBEDDING_BATCH_SIZE env
-// var; defaults to 16. Invalid / non-positive values fall back to the
-// default (diff Tokenizer Omission-3).
-func embeddingBatchSize() int {
-	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return 16
-}
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
 // upstream document name before tokenizing it. Mirrors the python
@@ -135,6 +119,7 @@ type EmbeddingResult struct {
 // Embedder is the testability seam for the embedding branch.
 type Embedder interface {
 	MaxTokens() int
+	BatchSize() int
 	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
@@ -448,8 +433,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	}
 
 	contentResults := make([]EmbeddingResult, 0, len(texts))
-	for start := 0; start < len(texts); start += embeddingBatchSize() {
-		end := start + embeddingBatchSize()
+	batchSize := embedder.BatchSize()
+	if batchSize <= 0 {
+		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
+	}
+	for start := 0; start < len(texts); start += batchSize {
+		end := start + batchSize
 		if end > len(texts) {
 			end = len(texts)
 		}
@@ -698,7 +687,14 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			if err = ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
+			// A2: split on the ENGLISH COMMA only, matching the DSL tokenizer
+			// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`) and
+			// the keyword_prompt contract ("delimited by ENGLISH COMMA"). CJK
+			// commas/semicolons and newlines stay part of the keyword so the
+			// Go index is byte-compatible with the Python-DSL-built index.
+			// strings.Split preserves empty elements, matching Python's
+			// "a,,b".split(",") == ["a","","b"].
+			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tok.Tokenize(kw)

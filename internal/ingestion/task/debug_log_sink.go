@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/utility"
 )
 
 // DebugLogTTL is the Redis expiry for a debug-run log. It mirrors the Python
@@ -170,7 +171,7 @@ func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.Progre
 		message = "[ERROR] " + message
 	}
 	// Clamp the message so a runaway component cannot blow up the stored entry.
-	message = truncateRunes(message, maxMessageRunes)
+	message = utility.TruncateRunes(message, maxMessageRunes)
 
 	entry := debugTrace{
 		Progress:    progress,
@@ -271,7 +272,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 // `json.dumps(self.get_component_obj(self.path[-1]).output())`
 // (rag/flow/pipeline.py:171). The last executed component is the sink's final
 // entry (path[-1] always emits its exit progress last). Raw embedding vectors
-// are stripped (deepCopyStrip) so the Redis log stays at Python-scale size.
+// are stripped (deepCopy(out, true)) so the Redis log stays at Python-scale size.
 // Returns "" when no output is available; the caller then keeps the
 // plain-text fallback and the front-end export button stays disabled (empty
 // output, matching Python's isEmpty check).
@@ -284,24 +285,11 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 	if !ok || len(out) == 0 {
 		return ""
 	}
-	b, err := json.Marshal(deepCopyStrip(out))
+	b, err := json.Marshal(deepCopy(out, true))
 	if err != nil {
 		return ""
 	}
 	return string(b)
-}
-
-// truncateRunes returns s truncated to at most max runes, preserving the original
-// bytes when shorter. Mirrors internal/service/agent_sessions.go's truncateRunes.
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	return string(r[:max])
 }
 
 // trimToPayloadBudget collapses the middle of the log (keeping the first few

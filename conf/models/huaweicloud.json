@@ -218,7 +218,8 @@
       "max_tokens": 8000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 32
     },
     {
       "name": "bge-reranker-v2-m3",

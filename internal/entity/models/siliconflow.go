@@ -139,9 +139,6 @@ type siliconflowEmbeddingResponse struct {
 	} `json:"usage"`
 }
 
-// siliconflowMaxBatchSize is the per-request input limit documented at
-const siliconflowMaxBatchSize = 32
-
 // Embed embeds a list of texts into embeddings
 func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -151,8 +148,16 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts [
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	if len(texts) > siliconflowMaxBatchSize {
-		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", siliconflowMaxBatchSize)
+	// Per-request input cap: resolved from the provider capability (batch_size
+	// added to all_models.json by #17877/#17878) and falling back to a safe
+	// default. This defends against callers that bypass batch splitting upstream.
+	var modelNameStr string
+	if modelName != nil {
+		modelNameStr = *modelName
+	}
+	maxBatch := GetEmbeddingBatchSize(modelNameStr)
+	if len(texts) > maxBatch {
+		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", maxBatch)
 	}
 
 	if modelName == nil || *modelName == "" {

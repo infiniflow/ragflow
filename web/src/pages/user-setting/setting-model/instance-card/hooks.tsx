@@ -602,14 +602,35 @@ export function useInstanceSaveState({
   // `getSavePayload()` is the imperative entry point the parent calls
   // when the user clicks the top Save button. For drafts it always
   // returns a payload (provided the name is non-empty); for saved
-  // cards it returns `null` when the card hasn't been touched by the
-  // user, so the parent skips both validation and the no-op PUT.
+  // cards it returns `null` when the current payload matches the
+  // last-synced baseline, so the parent skips the no-op PUT.
+  //
+  // Two guards skip cards that should not participate in the batch:
+  //
+  // 1. `!instanceDetails` - collapsed cards never lazy-fetch their
+  //    details (see `useLazyInstanceDetails`), so their form is empty
+  //    (api_key defaults to ''). Including them would (a) fail
+  //    validation on the required api_key field and abort the entire
+  //    batch, and (b) potentially send an empty api_key to the
+  //    backend. A user cannot have edited a card they never opened,
+  //    so skipping is always safe. Cards that were opened and then
+  //    collapsed still retain their cached `instanceDetails`, so
+  //    in-flight edits are not lost.
+  //
+  // 2. Signature comparison - the reliable dirty check. We
+  //    intentionally do NOT short-circuit on `form.formState.isDirty`
+  //    here. RHF only updates `_formState.isDirty` on field changes
+  //    when a component subscribes to `isDirty` in a render (via the
+  //    formState Proxy). This card reads `isDirty` only through the
+  //    imperative ref (in the parent's click handler), so the
+  //    subscription is never established and `_formState.isDirty`
+  //    stays stale at its post-`reset` value (`false`) - causing
+  //    api_key / base_url edits to be silently skipped. The signature
+  //    comparison compares the actual payload (api_key, base_url,
+  //    model_info, instance_name, etc.) against the baseline captured
+  //    at last sync, so it catches every real edit.
   const getSavePayload = useCallback((): InstanceSavePayload | null => {
-    if (!isDraft) {
-      const formDirty = formRef.current?.isDirty() ?? false;
-      const renamed = editedNameRef.current !== instanceName;
-      if (!formDirty && !renamed) return null;
-    }
+    if (!isDraft && !instanceDetails) return null;
     const payload = buildPayload();
     if (!payload) return null;
     if (!isDraft) {
@@ -627,7 +648,7 @@ export function useInstanceSaveState({
       // `IUpdateProviderInstanceRequestBody`).
       apiKind: isDraft ? 'add' : 'update',
     };
-  }, [buildPayload, isDraft, instanceName, formRef]);
+  }, [buildPayload, isDraft, instanceDetails]);
 
   // After a successful save the parent calls `markSaved()` so the
   // baseline catches up to the just-persisted values. Without this,

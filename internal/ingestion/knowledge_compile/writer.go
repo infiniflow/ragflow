@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -70,7 +71,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	// Shard the rows and drive the inserts through the shared global pool
 	// (docengine-bounded) instead of one monolithic InsertChunks call.
-	jobs := make([]compilerJob, 0, (len(products)+writeMergedBatchSize-1)/writeMergedBatchSize)
+	jobs := make([]CompilerJob, 0, (len(products)+writeMergedBatchSize-1)/writeMergedBatchSize)
 	for start := 0; start < len(products); start += writeMergedBatchSize {
 		end := start + writeMergedBatchSize
 		if end > len(products) {
@@ -107,6 +108,47 @@ func mergedChunkMap(tenant, kb string, p kccommon.Product) map[string]interface{
 		"kc_payload":          p.Content, // raw payload, for Reader reconstruction
 		"source_doc_ids":      srcDocIDs,
 		"source_chunk_ids":    srcChunkIDs,
+	}
+	// Carry the wiki page metadata onto the merged row so the dataset-level
+	// products keep the fields the artifact API (ListArtifacts/ListWikiTopics)
+	// and page renderers read. Without this the merged rows lose page_type_kwd /
+	// topic_kwd / title_kwd and the compilation page would show no wiki pages
+	// even though per-document products carry them.
+	//
+	// slug_kwd follows the Python writer contract (api/db/db_models.py): it is
+	// stored as the full "<page_type>/<slug>" form so GetWikiPage's filter
+	// (page_type + "/" + slug) matches directly.
+	pageType := metaString(p.Meta, "page_type")
+	if slug := metaString(p.Meta, "slug"); slug != "" {
+		// Normalize to the full "<page_type>/<slug>" form (Python writer
+		// contract). Idempotent: slugs that already carry the prefix are kept.
+		fullSlug := slug
+		if pageType != "" && !strings.Contains(slug, "/") {
+			fullSlug = pageType + "/" + slug
+		}
+		m["slug_kwd"] = fullSlug
+		m["artifact_slug_kwd"] = fullSlug
+	}
+	if v := metaString(p.Meta, "title"); v != "" {
+		m["title_kwd"] = v
+	}
+	if pageType != "" {
+		m["page_type_kwd"] = pageType
+	}
+	if v := metaString(p.Meta, "topic"); v != "" {
+		m["topic_kwd"] = v
+	}
+	if v := metaString(p.Meta, "summary"); v != "" {
+		m["summary_with_weight"] = v
+	}
+	if v := metaStringSlice(p.Meta, "entity_names"); len(v) > 0 {
+		m["entity_names_kwd"] = v
+	}
+	if v := metaStringSlice(p.Meta, "related_kb_pages"); len(v) > 0 {
+		m["related_kb_pages_kwd"] = v
+	}
+	if v := metaStringSlice(p.Meta, "outlinks"); len(v) > 0 {
+		m["outlinks_kwd"] = v
 	}
 	// Persist the merged product's embedding under the dimension-suffixed column
 	// used elsewhere in the index, so dataset-level rows remain vector-searchable
@@ -166,7 +208,7 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 
 	const batchSize = 2000
 	var toDeleteIDs []string
-	var jobs []compilerJob
+	var jobs []CompilerJob
 	offset := 0
 	for {
 		res, err := eng.Search(ctx, &types.SearchRequest{
@@ -267,6 +309,15 @@ func hashStr(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// metaString extracts a string from a map value, tolerating a missing or
+// non-string entry.
+func metaString(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
 func metaStringSlice(m map[string]any, key string) []string {
 	switch v := m[key].(type) {
 	case []string:
@@ -281,4 +332,24 @@ func metaStringSlice(m map[string]any, key string) []string {
 		return out
 	}
 	return nil
+}
+
+// metaInt extracts an integer from a map value that may be boxed as float64
+// (JSON number), int64, string, or a typed int — the engine/JSON round-trip does
+// not guarantee a single numeric type.
+func metaInt(m map[string]any, key string) (int64, bool) {
+	switch v := m[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
 }

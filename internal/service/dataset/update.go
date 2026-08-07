@@ -287,6 +287,23 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				updates["parser_config"] = preserveDatasetParserConfigMetadata(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
+
+		effectiveParserConfig := parserConfigJSONMap(updates["parser_config"])
+		if effectiveParserConfig == nil && embdIDProvided {
+			effectiveParserConfig = cloneJSONMap(lockedKB.ParserConfig)
+		}
+		if effectiveParserConfig != nil {
+			llmID := ""
+			if ownerTenant, tenantErr := d.tenantDAO.GetByID(ctx, tx, lockedKB.TenantID); tenantErr == nil && ownerTenant != nil {
+				llmID = ownerTenant.LLMID
+			}
+			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
+				effectiveParserConfig,
+				llmID,
+			)
+			updates["parser_config"] = effectiveParserConfig
+		}
+
 		if len(updates) > 0 {
 			if err = tx.Model(&entity.Knowledgebase{}).Where("id = ?", lockedKB.ID).Updates(updates).Error; err != nil {
 				if dao.IsDuplicateKeyErr(err) {

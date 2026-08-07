@@ -45,7 +45,7 @@ func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOC
 	}
 }
 
-func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (p *PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewPaddleOCRModel(baseURL, p.baseModel.URLSuffix)
 }
 

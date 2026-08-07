@@ -166,6 +166,13 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+			if tenantErr == nil && tenant != nil {
+				cleaned = service.ApplyComponentScopedParserConfig(
+					cleaned,
+					tenant.LLMID,
+				)
+			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {
