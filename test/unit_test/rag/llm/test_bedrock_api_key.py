@@ -22,7 +22,7 @@ from rag.llm.cv_model import BedrockCV
 from rag.llm.embedding_model import BedrockEmbed
 from rag.llm.model_meta import Bedrock as BedrockModelMeta
 from rag.llm.rerank_model import BedrockRerank
-from rag.utils.bedrock_endpoint import normalize_bedrock_endpoint, resolve_bedrock_endpoint, validate_bedrock_region
+from rag.utils.bedrock_endpoint import normalize_bedrock_endpoint, resolve_bedrock_endpoint, validate_bedrock_endpoint_target, validate_bedrock_region
 
 
 def test_bedrock_model_list_api_key_maps_extensions():
@@ -145,6 +145,69 @@ def test_verify_bedrock_api_key_without_models_uses_discovery():
     assert model_results == {}
 
 
+def test_verify_bedrock_api_key_without_models_uses_default_for_invalid_timeout(monkeypatch):
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "invalid")
+
+    class SuccessfulBedrockDiscovery:
+        def __init__(self, _api_key, _base_url):
+            pass
+
+        async def get_model_list(self):
+            return [{"name": "anthropic.claude", "model_types": ["chat"]}]
+
+    api_key = json.dumps(
+        {
+            "auth_mode": "bedrock_api_key",
+            "bedrock_api_key": "token",
+            "bedrock_region": "ap-northeast-1",
+        }
+    )
+    with (
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_id", return_value=(False, None)),
+        patch.dict("api.apps.services.provider_api_service.ModelMeta", {"Bedrock": SuccessfulBedrockDiscovery}),
+    ):
+        success, message, model_results = asyncio.run(verify_api_key("Bedrock", api_key, "", "ap-northeast-1", []))
+
+    assert success is True
+    assert message == "success"
+    assert model_results == {}
+
+
+def test_verify_selected_bedrock_model_uses_default_for_invalid_timeout(monkeypatch):
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "invalid")
+
+    class SuccessfulBedrockChat:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "ok"
+
+    async def run_verification(_label, awaitable, timeout_seconds):
+        assert timeout_seconds == 10
+        awaitable.close()
+        return True, True
+
+    api_key = json.dumps(
+        {
+            "auth_mode": "bedrock_api_key",
+            "bedrock_api_key": "token",
+            "bedrock_region": "ap-northeast-1",
+        }
+    )
+    model_info = [{"model_name": "anthropic.claude", "model_type": ["chat"]}]
+    with (
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_id", return_value=(False, None)),
+        patch.dict("api.apps.services.provider_api_service.ChatModel", {"Bedrock": SuccessfulBedrockChat}),
+        patch("api.apps.services.provider_api_service._run_verification", side_effect=run_verification),
+    ):
+        success, message, model_results = asyncio.run(verify_api_key("Bedrock", api_key, "", "ap-northeast-1", model_info))
+
+    assert success is True
+    assert message == "success"
+    assert model_results == {"anthropic.claude": "success"}
+
+
 def test_verify_bedrock_api_key_without_models_reports_discovery_error():
     class FailedBedrockDiscovery:
         def __init__(self, _api_key, _base_url):
@@ -240,6 +303,15 @@ def test_rejects_untrusted_mantle_endpoint():
         resolve_bedrock_endpoint("bedrock_api_key", "mantle_openai", "https://example.com/v1")
 
 
+def test_rejects_non_default_bedrock_endpoint_port():
+    with pytest.raises(ValueError, match="non-default port"):
+        validate_bedrock_endpoint_target("https://bedrock-runtime.us-east-1.amazonaws.com:8443")
+
+
+def test_allows_explicit_https_bedrock_endpoint_port():
+    validate_bedrock_endpoint_target("https://bedrock-runtime.us-east-1.amazonaws.com:443")
+
+
 @pytest.mark.parametrize("region", ["attacker.example?ignored=", "ap_northeast_1", "-us-east-1", "us-east-1-"])
 def test_rejects_region_values_that_can_escape_the_aws_hostname(region):
     with pytest.raises(ValueError, match="valid AWS region identifier"):
@@ -272,6 +344,18 @@ def test_runtime_chat_uses_bearer_header_without_ambient_aws_credentials():
     assert "api_key" not in args
 
 
+def test_runtime_chat_trims_bedrock_api_key():
+    model = LiteLLMBase(
+        '{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":" token "}',
+        "anthropic.claude-sonnet-current",
+        provider=SupportedLiteLLMProvider.Bedrock,
+    )
+
+    args = model._construct_completion_args([{"role": "user", "content": "hi"}], False, False)
+
+    assert args["extra_headers"]["Authorization"] == "Bearer token"
+
+
 def test_runtime_vision_uses_bearer_header_without_ambient_aws_credentials():
     model = BedrockCV(
         '{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}',
@@ -284,6 +368,17 @@ def test_runtime_vision_uses_bearer_header_without_ambient_aws_credentials():
     assert args["aws_access_key_id"] == "bedrock-api-key"
     assert args["aws_secret_access_key"] == "bedrock-api-key"
     assert "api_key" not in args
+
+
+def test_runtime_vision_trims_bedrock_api_key():
+    model = BedrockCV(
+        '{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":" token "}',
+        "anthropic.claude-sonnet-current",
+    )
+
+    args = model._get_aws_creds()
+
+    assert args["extra_headers"]["Authorization"] == "Bearer token"
 
 
 @patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")

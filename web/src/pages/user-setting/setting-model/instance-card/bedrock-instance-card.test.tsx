@@ -14,7 +14,7 @@ import {
 } from './bedrock-instance-utils';
 import type { BedrockFormValues } from './bedrock-instance-utils';
 
-const values: BedrockFormValues = {
+const Values: BedrockFormValues = {
   auth_mode: 'access_key_secret',
   bedrock_ak: 'ak',
   bedrock_sk: 'sk',
@@ -36,11 +36,11 @@ describe('Bedrock catalog credential scope', () => {
     ['aws_role_arn', 'changed-role'],
   ] as const)('changes when %s changes', (field, value) => {
     expect(
-      getBedrockCatalogCredentialScope({ ...values, [field]: value }),
-    ).not.toBe(getBedrockCatalogCredentialScope(values));
+      getBedrockCatalogCredentialScope({ ...Values, [field]: value }),
+    ).not.toBe(getBedrockCatalogCredentialScope(Values));
   });
 
   it('does not reset for an identical instance-details refetch', () => {
-    expect(shouldResetBedrockForm(values, { ...values })).toBe(false);
+    expect(shouldResetBedrockForm(Values, { ...Values })).toBe(false);
   });
 });

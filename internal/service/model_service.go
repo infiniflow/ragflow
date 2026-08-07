@@ -572,7 +572,10 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 
 	// Verify the API key against the provider.
 	// Mirrors Python's verify_api_key (provider_api_service.py:596).
-	modelVerifyResult := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+	modelVerifyResult, err := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+	if err != nil {
+		return common.CodeServerError, err
+	}
 
 	instanceID := utility.GenerateToken()
 
@@ -700,8 +703,9 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 
 // verifyProviderAPIKey verifies the API key against the provider by calling
 // the driver's CheckConnection. It returns a map from model name to verify
-// status (success/fail/unknown).
-func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
+// status (success/fail/unknown) and prevents persistence when the connection
+// check itself fails.
+func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) (map[string]string, error) {
 	result := make(map[string]string)
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
@@ -710,33 +714,30 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 		for _, model := range modelInfo {
 			result[model.ModelName] = entity.ModelVerifyUnknown
 		}
-		return result
+		return result, nil
 	}
 
 	apiKey = strings.TrimSpace(apiKey)
 	region = strings.TrimSpace(region)
 	baseURL = strings.TrimSpace(baseURL)
-	if region == "" {
-		region = "default"
-	}
 
 	driver := providerInfo.ModelDriver
 	if strings.EqualFold(providerInfo.Class, "local") {
+		driverRegion := region
+		if driverRegion == "" {
+			driverRegion = "default"
+		}
 		var err error
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		driver, err = newModelDriverForBaseURL(driver, providerName, driverRegion, baseURL)
 		if err != nil {
 			for _, model := range modelInfo {
 				result[model.ModelName] = entity.ModelVerifyFail
 			}
-			return result
+			return result, err
 		}
 	}
 
-	apiConfig := &modelModule.APIConfig{
-		ApiKey:  &apiKey,
-		Region:  &region,
-		BaseURL: &baseURL,
-	}
+	apiConfig := buildProviderAPIConfig(providerName, apiKey, region, baseURL)
 
 	verifyErr := driver.CheckConnection(ctx, apiConfig)
 	verifyStatus := entity.ModelVerifySuccess
@@ -747,7 +748,10 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 	for _, model := range modelInfo {
 		result[model.ModelName] = verifyStatus
 	}
-	return result
+	if verifyErr != nil {
+		return result, fmt.Errorf("provider %s connection verification failed: %w", providerName, verifyErr)
+	}
+	return result, nil
 }
 
 // addModelToInstance creates a single model under the given provider instance.
@@ -989,19 +993,25 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 	return result, common.CodeSuccess, nil
 }
 
-func buildCheckConnectionAPIConfig(providerName, apiKey, region, baseURL string, modelInfo []CheckConnectionModelInfo) (*modelModule.APIConfig, bool) {
-	verifyBedrockAPIKey := shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey, modelInfo)
+func buildProviderAPIConfig(providerName, apiKey, region, baseURL string) *modelModule.APIConfig {
 	apiConfig := &modelModule.APIConfig{
 		ApiKey:  &apiKey,
-		Region:  &region,
 		BaseURL: &baseURL,
 	}
-	if verifyBedrockAPIKey {
-		// The API key JSON owns the Bedrock region. Do not let the generic
-		// "default" placeholder override it during discovery-based validation.
-		apiConfig.Region = nil
+	if strings.EqualFold(providerName, "Bedrock") && region == "" {
+		// Bedrock credentials carry their own region. An omitted generic
+		// override must not mask that value with the "default" placeholder.
+		return apiConfig
 	}
-	return apiConfig, verifyBedrockAPIKey
+	if region == "" {
+		region = "default"
+	}
+	apiConfig.Region = &region
+	return apiConfig
+}
+
+func buildCheckConnectionAPIConfig(providerName, apiKey, region, baseURL string, modelInfo []CheckConnectionModelInfo) (*modelModule.APIConfig, bool) {
+	return buildProviderAPIConfig(providerName, apiKey, region, baseURL), shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey, modelInfo)
 }
 
 func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName, apiKey, region, baseURL, instanceID, userID string, modelInfo []CheckConnectionModelInfo) (common.ErrorCode, error) {
@@ -1013,9 +1023,6 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	apiKey = strings.TrimSpace(apiKey)
 	region = strings.TrimSpace(region)
 	baseURL = strings.TrimSpace(baseURL)
-	if region == "" {
-		region = "default"
-	}
 
 	driver := providerInfo.ModelDriver
 	if strings.EqualFold(providerInfo.Class, "local") {
@@ -1024,7 +1031,11 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		}
 
 		var err error
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		driverRegion := region
+		if driverRegion == "" {
+			driverRegion = "default"
+		}
+		driver, err = newModelDriverForBaseURL(driver, providerName, driverRegion, baseURL)
 		if err != nil {
 			return common.CodeServerError, err
 		}
@@ -2040,7 +2051,10 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	// Verify API key if requested.
 	modelVerifyResult := make(map[string]string)
 	if verify {
-		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+		modelVerifyResult, err = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+		if err != nil {
+			return common.CodeServerError, err
+		}
 	}
 
 	// Update instance record.

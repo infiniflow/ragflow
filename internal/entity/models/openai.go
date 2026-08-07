@@ -40,11 +40,15 @@ type OpenAIModel struct {
 
 // NewOpenAIModel creates a new OpenAI model instance.
 func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel {
+	return newOpenAIModel(baseURL, urlSuffix, NewDriverHTTPClient(false))
+}
+
+func newOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix, httpClient *http.Client) *OpenAIModel {
 	return &OpenAIModel{
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: httpClient,
 		},
 	}
 }

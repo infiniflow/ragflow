@@ -723,7 +723,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     if _should_verify_bedrock_api_key_without_models(provider_name, api_key, model_info):
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
-        timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
+        timeout_seconds = max(1, _to_int(os.environ.get("LLM_TIMEOUT_SECONDS"), 10))
         ok, result = await _run_verification(
             "Bedrock model discovery",
             ModelMeta[provider_name](api_key_str, base_url).get_model_list(),
@@ -770,7 +770,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     model_verify_result = {}
     # test if api key works
-    timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
+    timeout_seconds = max(1, _to_int(os.environ.get("LLM_TIMEOUT_SECONDS"), 10))
     extra = {"provider": provider_name}
     msg = ""
     if provider_name == "BaiduYiyan":

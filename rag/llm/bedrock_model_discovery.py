@@ -24,7 +24,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from common.constants import LLMType
-from rag.utils.bedrock_endpoint import mantle_model_catalog_url, resolve_bedrock_endpoint, validate_bedrock_endpoint_target, validate_bedrock_region
+from rag.utils.bedrock_endpoint import mantle_model_catalog_url, resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_endpoint_target, validate_bedrock_region
 
 
 DEFAULT_BEDROCK_MAX_TOKENS = 8192
@@ -58,17 +58,10 @@ class DiscoveredBedrockModel(TypedDict):
     features: list[str]
 
 
-def _validated_bedrock_api_key(api_key: str) -> str:
-    api_key = api_key.strip()
-    if not api_key or not api_key.isprintable():
-        raise ValueError("Bedrock API key must not be empty or contain control characters")
-    return api_key
-
-
 def create_bedrock_bearer_client(service_name: str, api_key: str, region_name: str, endpoint_url: str = "") -> BaseClient:
     import boto3
 
-    api_key = _validated_bedrock_api_key(api_key)
+    api_key = validate_bedrock_api_key(api_key)
 
     client_args: dict[str, object] = {
         "service_name": service_name,
@@ -148,7 +141,7 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
     api_key = config.get("bedrock_api_key")
     if not api_key:
         raise ValueError("Bedrock API key must be provided")
-    api_key = _validated_bedrock_api_key(api_key)
+    api_key = validate_bedrock_api_key(api_key)
     region_name = config.get("bedrock_region")
     if not region_name:
         raise ValueError("Bedrock region must be provided in the key")

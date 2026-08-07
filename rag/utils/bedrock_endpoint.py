@@ -29,6 +29,13 @@ _AWS_BEDROCK_HOST_PATTERNS = (
 _AWS_REGION_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
+def validate_bedrock_api_key(api_key: str) -> str:
+    api_key = api_key.strip()
+    if not api_key or not api_key.isprintable():
+        raise ValueError("Bedrock API key must not be empty or contain control characters")
+    return api_key
+
+
 def validate_bedrock_region(region_name: str) -> None:
     if not _AWS_REGION_PATTERN.fullmatch(region_name):
         raise ValueError("Bedrock region must be a valid AWS region identifier")
@@ -102,6 +109,12 @@ def validate_bedrock_endpoint_target(endpoint_url: str) -> None:
         raise ValueError("Bedrock endpoint URL must not contain credentials")
     if parsed.query or parsed.fragment:
         raise ValueError("Bedrock endpoint URL must not contain a query or fragment")
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise ValueError("Bedrock endpoint URL must specify a valid port") from error
+    if port not in (None, 443):
+        raise ValueError("Bedrock endpoint URL must not specify a non-default port")
     hostname = parsed.hostname.rstrip(".").lower()
     if not _is_allowed_bedrock_hostname(hostname):
         raise ValueError("Bedrock endpoint hostname is not allowed; configure BEDROCK_ENDPOINT_HOST_ALLOWLIST for a trusted proxy")

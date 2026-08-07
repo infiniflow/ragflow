@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,6 +20,17 @@ type remoteModelProbeDriver struct {
 	*modelModule.DummyModel
 	remoteModels []modelModule.ListModelResponse
 	embedCalls   int
+}
+
+type connectionProbeDriver struct {
+	*modelModule.DummyModel
+	err        error
+	lastConfig *modelModule.APIConfig
+}
+
+func (d *connectionProbeDriver) CheckConnection(_ context.Context, config *modelModule.APIConfig) error {
+	d.lastConfig = config
+	return d.err
 }
 
 func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
@@ -199,7 +211,7 @@ func TestShouldVerifyBedrockAPIKeyWithoutModels(t *testing.T) {
 
 func TestBuildCheckConnectionAPIConfigUsesBedrockKeyRegion(t *testing.T) {
 	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`
-	config, verifyByDiscovery := buildCheckConnectionAPIConfig("Bedrock", apiKey, "default", "", nil)
+	config, verifyByDiscovery := buildCheckConnectionAPIConfig("Bedrock", apiKey, "", "", nil)
 	if !verifyByDiscovery {
 		t.Fatal("verifyByDiscovery = false, want true")
 	}
@@ -207,12 +219,103 @@ func TestBuildCheckConnectionAPIConfigUsesBedrockKeyRegion(t *testing.T) {
 		t.Fatalf("config.Region = %q, want nil so the key JSON region is used", *config.Region)
 	}
 
-	config, verifyByDiscovery = buildCheckConnectionAPIConfig("OpenAI", "token", "default", "", nil)
+	config, verifyByDiscovery = buildCheckConnectionAPIConfig("Bedrock", apiKey, "", "", []CheckConnectionModelInfo{{ModelName: "model"}})
+	if verifyByDiscovery {
+		t.Fatal("verifyByDiscovery = true with a selected model")
+	}
+	if config.Region != nil {
+		t.Fatalf("config.Region = %q with a selected model, want nil so the key JSON region is used", *config.Region)
+	}
+
+	config, verifyByDiscovery = buildCheckConnectionAPIConfig("OpenAI", "token", "", "", nil)
 	if verifyByDiscovery {
 		t.Fatal("verifyByDiscovery = true for OpenAI")
 	}
 	if config.Region == nil || *config.Region != "default" {
 		t.Fatalf("config.Region = %v, want default", config.Region)
+	}
+}
+
+func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "user-tenant-bedrock", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-bedrock", TenantID: "tenant-1", ProviderName: "Bedrock"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not registered")
+	}
+	originalDriver := provider.ModelDriver
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`
+	modelInfo := []CreateInstanceModelInfo{{ModelName: "test-model", ModelTypes: []string{"chat"}, MaxTokens: 8192}}
+	tests := []struct {
+		name          string
+		connectionErr error
+		region        string
+		wantNilRegion bool
+		wantErr       bool
+		wantInstances int64
+	}{
+		{name: "rejects failed connection", connectionErr: errors.New("invalid credentials"), region: "ap-northeast-1", wantErr: true, wantInstances: 0},
+		{name: "creates using credential region", wantNilRegion: true, wantInstances: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := db.Exec("DELETE FROM tenant_models").Error; err != nil {
+				t.Fatalf("failed to clear models: %v", err)
+			}
+			if err := db.Exec("DELETE FROM tenant_model_instances").Error; err != nil {
+				t.Fatalf("failed to clear instances: %v", err)
+			}
+			driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}), err: tt.connectionErr}
+			provider.ModelDriver = driver
+
+			code, err := NewModelProviderService().CreateProviderInstance(
+				t.Context(),
+				"Bedrock",
+				"bedrock-instance",
+				apiKey,
+				"",
+				tt.region,
+				"user-1",
+				modelInfo,
+			)
+			if driver.lastConfig == nil {
+				t.Fatal("CheckConnection was not called")
+			}
+			if tt.wantNilRegion && driver.lastConfig.Region != nil {
+				t.Fatalf("config.Region = %q, want nil so the credential region is used", *driver.lastConfig.Region)
+			}
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "invalid credentials") {
+					t.Fatalf("CreateProviderInstance() error = %v, want invalid credentials", err)
+				}
+				if code != common.CodeServerError {
+					t.Fatalf("code = %v, want %v", code, common.CodeServerError)
+				}
+			} else if err != nil || code != common.CodeSuccess {
+				t.Fatalf("CreateProviderInstance() = (%v, %v), want success", code, err)
+			}
+
+			var count int64
+			if err := db.Model(&entity.TenantModelInstance{}).Count(&count).Error; err != nil {
+				t.Fatalf("failed to count instances: %v", err)
+			}
+			if count != tt.wantInstances {
+				t.Fatalf("instance count = %d, want %d", count, tt.wantInstances)
+			}
+		})
 	}
 }
 

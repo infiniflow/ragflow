@@ -182,7 +182,6 @@ export const useFetchInstanceModels = (
 ) => {
   const { data, isFetching: loading } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
-    initialData: [],
     gcTime: 0,
     enabled: !!providerName && !!instanceName && instanceName !== '__draft__',
     queryFn: async () => {

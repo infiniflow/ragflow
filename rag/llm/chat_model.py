@@ -2370,7 +2370,7 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
             from botocore.exceptions import BotoCoreError, ClientError
-            from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_region
+            from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_region
 
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
@@ -2395,6 +2395,7 @@ class LiteLLMBase(ABC):
                 bedrock_api_key = bedrock_key.get("bedrock_api_key")
                 if not bedrock_api_key:
                     raise ValueError("Bedrock API key must be provided")
+                bedrock_api_key = validate_bedrock_api_key(bedrock_api_key)
                 if endpoint_type == "runtime":
                     # LiteLLM's Bedrock adapter always constructs a SigV4
                     # request before restoring an explicit Authorization

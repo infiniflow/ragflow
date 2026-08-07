@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 	"testing"
@@ -121,6 +122,16 @@ func TestParseBedrockAPIKeyRequiresToken(t *testing.T) {
 	}
 }
 
+func TestParseBedrockAPIKeyTrimsToken(t *testing.T) {
+	key, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":" token "}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if key.BedrockAPIKey != "token" {
+		t.Fatalf("BedrockAPIKey=%q", key.BedrockAPIKey)
+	}
+}
+
 func TestParseBedrockAPIKeyNormalizesMantleEndpoint(t *testing.T) {
 	key, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":"https://bedrock-mantle.ap-northeast-1.api.aws/v1/models"}`)
 	if err != nil {
@@ -203,6 +214,31 @@ func TestResolveBedrockEndpointRejectsUntrustedHost(t *testing.T) {
 	_, _, err := resolveBedrockEndpoint(bedrockAuthAPIKey, bedrockEndpointMantleOpenAI, "https://example.com/v1")
 	if err == nil || !strings.Contains(err.Error(), "hostname is not allowed") {
 		t.Fatalf("untrusted endpoint: got %v", err)
+	}
+}
+
+func TestValidateBedrockEndpointRejectsNonDefaultPort(t *testing.T) {
+	err := validateBedrockEndpointTarget("https://bedrock-runtime.us-east-1.amazonaws.com:8443")
+	if err == nil || !strings.Contains(err.Error(), "non-default port") {
+		t.Fatalf("non-default port: got %v", err)
+	}
+}
+
+func TestValidateBedrockEndpointAllowsHTTPSPort(t *testing.T) {
+	if err := validateBedrockEndpointTarget("https://bedrock-runtime.us-east-1.amazonaws.com:443"); err != nil {
+		t.Fatalf("HTTPS port: %v", err)
+	}
+}
+
+func TestBedrockMantleDriversReuseHTTPClient(t *testing.T) {
+	bedrock := newBedrockForTest("http://unused")
+	key := &bedrockKey{EndpointURL: "https://bedrock-mantle.us-east-1.api.aws"}
+
+	if got := bedrock.mantleOpenAI(key).baseModel.httpClient; got != bedrock.baseModel.httpClient {
+		t.Fatal("Mantle OpenAI driver did not reuse the Bedrock HTTP client")
+	}
+	if got := bedrock.mantleAnthropic(key).baseModel.httpClient; got != bedrock.baseModel.httpClient {
+		t.Fatal("Mantle Anthropic driver did not reuse the Bedrock HTTP client")
 	}
 }
 
@@ -475,7 +511,7 @@ func TestBedrockChatRequiresAPIKey(t *testing.T) {
 
 func TestBedrockMantleAnthropicUsesAPIKeyHeader(t *testing.T) {
 	withSSRFBypass(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/anthropic/v1/messages" {
 			t.Errorf("path=%q want /anthropic/v1/messages", r.URL.Path)
 		}
@@ -493,11 +529,21 @@ func TestBedrockMantleAnthropicUsesAPIKeyHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	testURL, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	key := fmt.Sprintf(
 		`{"auth_mode":"bedrock_api_key","bedrock_region":"us-east-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":%q}`,
-		srv.URL,
+		"https://bedrock-mantle.us-east-1.api.aws",
 	)
 	m := NewBedrockModel(nil, URLSuffix{})
+	m.baseModel.httpClient = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		req = req.Clone(req.Context())
+		req.URL.Scheme = testURL.Scheme
+		req.URL.Host = testURL.Host
+		return srv.Client().Transport.RoundTrip(req)
+	})}
 	resp, err := m.ChatWithMessages(
 		t.Context(),
 		"anthropic.claude-sonnet-current",

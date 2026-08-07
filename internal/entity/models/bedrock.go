@@ -162,6 +162,7 @@ func parseBedrockKey(raw string) (*bedrockKey, error) {
 		// Default credential chain handles its own validation when
 		// we ask config.LoadDefaultConfig to materialize credentials.
 	case bedrockAuthAPIKey:
+		key.BedrockAPIKey = strings.TrimSpace(key.BedrockAPIKey)
 		if key.BedrockAPIKey == "" {
 			return nil, fmt.Errorf("bedrock: bedrock_api_key mode requires bedrock_api_key")
 		}
@@ -238,6 +239,9 @@ func validateBedrockEndpointTarget(endpointURL string) error {
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("bedrock: endpoint URL must not contain credentials, a query, or a fragment")
+	}
+	if port := parsed.Port(); port != "" && port != "443" {
+		return fmt.Errorf("bedrock: endpoint URL must not specify a non-default port")
 	}
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 	for _, pattern := range awsBedrockHostPatterns {
@@ -674,16 +678,18 @@ func authorizeBedrockRequest(ctx context.Context, req *http.Request, body []byte
 }
 
 func (b *BedrockModel) mantleOpenAI(key *bedrockKey) *OpenAIModel {
-	return NewOpenAIModel(
+	return newOpenAIModel(
 		map[string]string{"default": key.EndpointURL},
 		URLSuffix{Chat: "chat/completions", Models: "models"},
+		b.baseModel.httpClient,
 	)
 }
 
 func (b *BedrockModel) mantleAnthropic(key *bedrockKey) *AnthropicModel {
-	return NewAnthropicModel(
+	return newAnthropicModel(
 		map[string]string{"default": key.EndpointURL},
 		URLSuffix{Chat: "v1/messages", Models: "v1/models"},
+		b.baseModel.httpClient,
 	)
 }
 

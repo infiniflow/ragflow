@@ -37,11 +37,15 @@ type AnthropicModel struct {
 }
 
 func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *AnthropicModel {
+	return newAnthropicModel(baseURL, urlSuffix, NewDriverHTTPClient(false))
+}
+
+func newAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix, httpClient *http.Client) *AnthropicModel {
 	return &AnthropicModel{
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: httpClient,
 			// Anthropic authenticates with the "x-api-key" header instead
 			// of the default "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {
