@@ -395,3 +395,72 @@ func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
 		t.Errorf("text_html: expected empty for plain-text email, got %q", v)
 	}
 }
+
+// TestEmailParser_AttachmentsWithoutBody aligns Go with the Python flow
+// parser contract: attachments are extracted whenever "attachments" is in
+// fields, independently of whether "body" is requested. The Python _email
+// attachment block is separate from the body block, so a config that selects
+// only attachments must still yield them. Previously Go silently returned an
+// empty list because attachment extraction was coupled to the body branch
+// (the "else if needAttachments" fallback set an empty slice instead of
+// walking the message).
+func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
+	ctx := t.Context()
+	attachmentContent := "SECRET attachment payload"
+	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	boundary := "mixedbound"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Attach Test",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Hello body.",
+		"--" + boundary,
+		"Content-Type: application/octet-stream; name=\"a.txt\"",
+		"Content-Disposition: attachment; filename=\"a.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		encoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		// NOTE: "body" is intentionally NOT in fields.
+		"fields": []string{"from", "attachments"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	// text/text_html must be absent (gated by "body"), matching Python.
+	if _, ok := item["text"]; ok {
+		t.Error("text should be absent when body not in fields")
+	}
+	if _, ok := item["text_html"]; ok {
+		t.Error("text_html should be absent when body not in fields")
+	}
+
+	// attachments must be extracted even without body.
+	atts, ok := item["attachments"].([]map[string]any)
+	if !ok {
+		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+	}
+	if len(atts) != 1 {
+		t.Fatalf("expected 1 attachment without body, got %d (bug: attachments silently dropped)", len(atts))
+	}
+	if fn, _ := atts[0]["filename"].(string); fn != "a.txt" {
+		t.Errorf("filename = %q, want a.txt", fn)
+	}
+	if pl, _ := atts[0]["payload"].(string); pl != attachmentContent {
+		t.Errorf("payload = %q, want %q", pl, attachmentContent)
+	}
+}
