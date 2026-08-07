@@ -277,6 +277,59 @@ def test_json_delimiter_mode_pdf_positions_retained():
         assert chunks[0].get("pdf_positions") == [[1, 0, 10, 0, 5], [2, 0, 20, 0, 8]]
 
 
+def test_json_no_delimiter_mode_merges_to_token_cap():
+    # Regression for #17979: with no active (backtick) delimiter, the JSON path
+    # must merge per-item text chunks up to chunk_token_size -- mirroring the old
+    # "token_size" mode and the Go JSON path. Concatenating every item into a
+    # single chunk before the merge would defeat the cap and emit one oversized
+    # chunk. The per-token stub (num_tokens_from_string -> 1) makes the cap easy
+    # to exceed: 12 one-token items under a cap of 5 must yield several chunks.
+    for _module, chunker in _build_json_chunker(
+        {"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5}
+    ):
+        kwargs = {
+            "name": "token_chunker",
+            "output_format": "json",
+            "json_result": [{"text": f"item{i}"} for i in range(12)],
+        }
+        asyncio.run(chunker._invoke(**kwargs))
+        chunks = chunker._outputs["chunks"]
+        # 12 one-token items under a cap of 5 must NOT collapse into one chunk.
+        assert len(chunks) > 1, f"cap not enforced: 12 items collapsed to {len(chunks)} chunk(s)"
+        # Each merged chunk holds at most one overflow unit past the cap (<= 6
+        # items); the final output drops tk_nums, so count item markers instead.
+        for c in chunks:
+            assert c["text"].count("item") <= 6, f"chunk exceeds cap: {c['text'].count('item')} items"
+        # No text lost: all 12 items must survive, joined by the "\n" glue.
+        joined = "\n".join(c["text"] for c in chunks)
+        for i in range(12):
+            assert f"item{i}" in joined, f"item{i} dropped from output"
+
+
+def test_json_no_delimiter_mode_media_breaks_merge():
+    # A non-text (media) chunk interleaved between text items must stay as its
+    # own chunk and reset the merge, so text before/after it are sized separately.
+    for _module, chunker in _build_json_chunker(
+        {"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5}
+    ):
+        kwargs = {
+            "name": "token_chunker",
+            "output_format": "json",
+            "json_result": [
+                {"text": f"t{i}", "doc_type_kwd": "text"} for i in range(6)
+            ]
+            + [{"text": "IMG", "doc_type_kwd": "image", "img_id": "im1"}]
+            + [{"text": f"u{i}", "doc_type_kwd": "text"} for i in range(12)],
+        }
+        asyncio.run(chunker._invoke(**kwargs))
+        chunks = chunker._outputs["chunks"]
+        doc_types = [c["doc_type_kwd"] for c in chunks]
+        # The media chunk is preserved and breaks the text merge.
+        assert doc_types.count("image") == 1, doc_types
+        # Several text chunks on each side of the media boundary.
+        assert doc_types.count("text") > 2, doc_types
+
+
 def test_json_delimiter_mode_pdf_positions_per_segment_not_broadcast():
     # Regression for #3 (PDF coordinate leak): when consecutive text items from
     # different pages are buffered and then split by a custom delimiter, each

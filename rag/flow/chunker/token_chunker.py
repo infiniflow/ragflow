@@ -356,35 +356,41 @@ class TokenChunker(ProcessBase):
             self.callback(1, "Done.")
             return
 
+        # Both branches start from per-item chunks (no pre-split by the
+        # delimiter pattern). The delimiter branch splits the buffered text
+        # stream while preserving per-segment PDF positions; the no-delimiter
+        # branch merges adjacent text items to chunk_token_size (the removed
+        # "token_size" behaviour, and a parity match with the Go JSON path).
         text_chunks = _build_json_chunks(json_result, "")
-        chunks = []
-        text_buffer = []
-        text_buffer_pos = []
 
-        def flush_text_buffer():
-            if not text_buffer:
-                return
-            # Join buffered text items with "\n" so adjacent item text is not
-            # glued together (e.g. "hello" + "world" must not become "helloworld").
-            # The delimiter is then applied to the combined text; a segment may
-            # span across item boundaries (the "\n" glue is not itself a
-            # delimiter), so each segment carries only the PDF positions of the
-            # buffered item(s) whose text contributed to it -- never the union of
-            # every item (which previously leaked page-N coordinates into
-            # page-M chunks and made all segments share one preview image).
-            parts = []
-            item_ranges = []  # (start, end) of each buffered item in combined_text
-            offset = 0
-            for text in text_buffer:
-                start = offset
-                parts.append(text)
-                offset += len(text)
-                item_ranges.append((start, offset))
-                parts.append("\n")
-                offset += 1
-            combined_text = "".join(parts[:-1])  # drop the trailing glue
+        if delimiter_pattern:
+            chunks = []
+            text_buffer = []
+            text_buffer_pos = []
 
-            if delimiter_pattern:
+            def flush_text_buffer():
+                if not text_buffer:
+                    return
+                # Join buffered text items with "\n" so adjacent item text is not
+                # glued together (e.g. "hello" + "world" must not become "helloworld").
+                # The delimiter is then applied to the combined text; a segment may
+                # span across item boundaries (the "\n" glue is not itself a
+                # delimiter), so each segment carries only the PDF positions of the
+                # item(s) that contributed to it -- never the union of every item
+                # (which previously leaked page-N coordinates into page-M chunks and
+                # made all segments share one preview image).
+                parts = []
+                item_ranges = []  # (start, end) of each buffered item in combined_text
+                offset = 0
+                for text in text_buffer:
+                    start = offset
+                    parts.append(text)
+                    offset += len(text)
+                    item_ranges.append((start, offset))
+                    parts.append("\n")
+                    offset += 1
+                combined_text = "".join(parts[:-1])  # drop the trailing glue
+
                 raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
                 segments = []  # (text, start, end) within combined_text
                 pos = 0
@@ -397,45 +403,52 @@ class TokenChunker(ProcessBase):
                     pos = seg_end
                     if i + 1 < len(raw):
                         pos += len(raw[i + 1])
-            else:
-                segments = [(combined_text, 0, len(combined_text))]
 
-            for text, seg_start, seg_end in segments:
-                if not text.strip():
-                    continue
-                seg_pos = []
-                for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos):
-                    # A segment overlaps an item when their character ranges
-                    # intersect; collect that item's coordinates.
-                    if seg_start < iend and istart < seg_end:
-                        seg_pos.extend(item_pos or [])
-                chunks.append(
-                    {
-                        "text": text,
-                        "doc_type_kwd": "text",
-                        "ck_type": "text",
-                        PDF_POSITIONS_KEY: deepcopy(seg_pos),
-                        "tk_nums": num_tokens_from_string(text),
-                    }
-                )
-            text_buffer.clear()
-            text_buffer_pos.clear()
+                for text, seg_start, seg_end in segments:
+                    if not text.strip():
+                        continue
+                    seg_pos = []
+                    for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos, strict=True):
+                        # A segment overlaps an item when their character ranges
+                        # intersect; collect that item's coordinates.
+                        if seg_start < iend and istart < seg_end:
+                            seg_pos.extend(item_pos or [])
+                    chunks.append(
+                        {
+                            "text": text,
+                            "doc_type_kwd": "text",
+                            "ck_type": "text",
+                            PDF_POSITIONS_KEY: deepcopy(seg_pos),
+                            "tk_nums": num_tokens_from_string(text),
+                        }
+                    )
+                text_buffer.clear()
+                text_buffer_pos.clear()
 
-        for chunk in text_chunks:
-            if chunk["ck_type"] == "text":
-                text_buffer.append(chunk["text"])
-                text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
-            else:
-                flush_text_buffer()
-                chunks.append(chunk)
-        flush_text_buffer()
-        if not delimiter_pattern:
-            # 无分隔符时按 token cap 合并（吸收旧 token_size 行为）
-            chunks = _merge_text_chunks_by_token_size(chunks, self._param.chunk_token_size, overlapped_percent)
-        # Apply children_delimiters (secondary split) before finalizing.
-        if custom_pattern:
-            chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
-        _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
+            for chunk in text_chunks:
+                if chunk["ck_type"] == "text":
+                    text_buffer.append(chunk["text"])
+                    text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
+                else:
+                    flush_text_buffer()
+                    chunks.append(chunk)
+            flush_text_buffer()
+            # Apply children_delimiters (secondary split) before finalizing.
+            if custom_pattern:
+                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
+            _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
+        else:
+            # No active delimiter: merge adjacent text items to chunk_token_size.
+            # This runs on the per-item chunks (NOT a single concatenated chunk),
+            # so the token cap is actually enforced -- matching the previous
+            # "token_size" mode and the Go JSON path. Media chunks break the merge.
+            # Media context is attached on the per-item chunks before merging, as
+            # the removed "token_size" branch did, to preserve context windows.
+            _attach_context_to_media_chunks(text_chunks, self._param.table_context_size, self._param.image_context_size)
+            chunks = _merge_text_chunks_by_token_size(text_chunks, self._param.chunk_token_size, overlapped_percent)
+            if custom_pattern:
+                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
+
         await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
         self.set_output("chunks", _finalize_json_chunks(chunks))
         self.callback(1, "Done.")
