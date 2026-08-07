@@ -1022,7 +1022,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       createChunk: 'Create chunk',
       editChunk: 'Edit chunk',
       bulk: 'Bulk',
-      selectAll: 'Select all',
+      selectAll: 'Select page',
       enabledSelected: 'Enable selected',
       disabledSelected: 'Disable selected',
       deleteSelected: 'Delete selected',

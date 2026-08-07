@@ -43,6 +43,30 @@ from rag.prompts.generator import form_message, kb_prompt, message_fit_in
 
 _LOG = logging.getLogger(__name__)
 
+_ANSWER_TARGET_SYSTEM = """You are an answer-target verifier for a multi-hop RAG system.
+Resolve what entity, value, or fact the user's question is asking for.
+Do not choose bridge entities that merely explain a clue. In inverse-relation
+questions, a later clue may identify the target's partner, relative, employer,
+team, or source; keep tracing until the requested answer role is satisfied.
+Return JSON only."""
+
+_ANSWER_TARGET_USER = """Question:
+{question}
+
+Research summary:
+{pre_summary}
+
+Evidence:
+{evidence}
+
+Return JSON:
+{{
+  "target_role": "the role the final answer must satisfy",
+  "must_satisfy": ["short evidence-backed condition the answer must meet"],
+  "bridge_entities": ["entities that are useful clues but should not be the answer unless they also satisfy target_role"],
+  "reason": "one short explanation of the answer shape"
+}}"""
+
 
 def _snip(value: Any, limit: int = 240) -> str:
     try:
@@ -53,6 +77,79 @@ def _snip(value: Any, limit: int = 240) -> str:
     if len(s) > limit:
         s = s[:limit] + f"...(+{len(s) - limit} chars)"
     return s
+
+
+def _extract_json(text: str) -> dict:
+    text = re.sub(r"^.*</think>", "", text or "", flags=re.DOTALL).strip()
+    text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+    try:
+        import json_repair
+
+        return json_repair.loads(text)
+    except Exception:
+        try:
+            return json.loads(text)
+        except Exception:
+            return {}
+
+
+def _compact_text(text: str, limit: int) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n...(+{len(text) - limit} chars)"
+
+
+def _string_items(value) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _format_answer_target_contract(contract: dict) -> str:
+    target_role = str(contract.get("target_role") or "").strip()
+    reason = str(contract.get("reason") or "").strip()
+    lines = []
+    if target_role:
+        lines.append(f"Final answer must satisfy: {target_role}")
+    must = _string_items(contract.get("must_satisfy"))
+    if must:
+        lines.append("Must meet these conditions:")
+        lines.extend(f"- {item}" for item in must)
+    bridges = _string_items(contract.get("bridge_entities"))
+    if bridges:
+        lines.append("Bridge entities to verify but not answer with:")
+        lines.extend(f"- {item}" for item in bridges)
+    if reason:
+        lines.append(f"Reasoning guard: {reason}")
+    lines.append("Do not answer with an intermediate clue entity unless it also satisfies the final answer role.")
+    return "\n".join(lines)
+
+
+async def _answer_target_contract(tools, question: str, kbinfos: dict, evidence: str) -> str:
+    """Build a compact guardrail that tells final synthesis what to answer."""
+    fallback = "Final answer must directly satisfy the user's top-level who/what request. Use bridge entities only as clues, and verify any proposed answer against the evidence."
+    pre_summary = kbinfos.get("pre_summary") or ""
+    if not question or not pre_summary:
+        return fallback
+    try:
+        user = _ANSWER_TARGET_USER.format(
+            question=question,
+            pre_summary=_compact_text(pre_summary, 2400),
+            evidence=_compact_text(evidence, 6000),
+        )
+        msg = await tools._fit_messages(_ANSWER_TARGET_SYSTEM, user)
+        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.0})
+        if isinstance(ans, tuple):
+            ans = ans[0]
+        parsed = _extract_json(ans)
+        formatted = _format_answer_target_contract(parsed) if parsed else ""
+        return formatted or fallback
+    except Exception:
+        _LOG.exception("[Composing the answer] Failed to build answer-target contract")
+        return fallback
 
 
 class AgenticState(TypedDict, total=False):
@@ -70,6 +167,7 @@ class AgenticState(TypedDict, total=False):
     empty_result: bool
     final_answer: str
     loop: int
+    max_loops: int
     feedback: str  # replanning feedback
 
 
@@ -263,8 +361,13 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
             return {"final_answer": tools.empty_response}
 
         # Build evidence
-        evidence = kb_prompt(kbinfos, tools.chat_mdl.max_length)
+        evidence_blocks = kb_prompt(kbinfos, tools.chat_mdl.max_length)
+        evidence = "\n".join(evidence_blocks) if isinstance(evidence_blocks, list) else str(evidence_blocks)
         parts = [f"Question:\n{question}\n"]
+
+        answer_target = await _answer_target_contract(tools, question, kbinfos, evidence)
+        if answer_target:
+            parts.append(f"Answer Target Contract:\n{answer_target}\n")
 
         if no_evidence:
             parts.append("No supporting evidence was retrieved. State clearly that the available sources are insufficient, and do not answer from general knowledge.\n")
@@ -335,7 +438,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     async def _drive():
         try:
             holder["state"] = await graph.ainvoke(
-                {"messages": messages},
+                {"messages": messages, "max_loops": max_loops},
                 {"recursion_limit": max(25, max_loops * 8)},
             )
         except Exception:
