@@ -323,10 +323,11 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	normalizeChunkTextFallback(chunks)
 
-	// chunk_order_int = 该块在（过滤后）阅读序列中的序号。无条件为每块设置，
-	// 使所有召回块都带稳定阅读顺序索引（用户价值：每条路径都能按阅读序排序，
-	// 而非仅 chunks+full_text）。偏离 Python（tokenizer.py:146 仅在 full_text 块内设）；
-	// 因在过滤后枚举，序号在 Go 内连续。
+	// chunk_order_int is the position of the chunk in the (post-filter) reading
+	// sequence. It is set unconditionally on every surviving chunk so that all
+	// retrievable chunks carry a stable reading-order index on every path, not
+	// just chunks+full_text. Because it enumerates the slice after filtering,
+	// the values are contiguous and 0-based within Go.
 	for i := range chunks {
 		chunks[i].ChunkOrderInt = intPtr(i)
 	}
@@ -558,11 +559,12 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 	default:
 		raw = cloneChunkDocs(in.JSONResult)
 	}
-	// 仅保留能返回检索内容的块：text 与 content_with_weight 皆空才丢——
-	// 不再把 image/summary/questions 当救命字段（它们不产生可返回内容）。
-	// 含 ContentWithWeight 以覆盖 Parser 路径（其块带 content_with_weight 不带 text），
-	// 避免 normalizeChunkTextFallback 回填前误杀合法块。
-	// 偏离 Python（tokenizer.py:131 只过滤 None）——用户价值优先。
+	// Keep only chunks that have retrievable content: a chunk is dropped only
+	// when both text and content_with_weight are empty. The ContentWithWeight
+	// guard preserves the Parser path, whose blocks carry content_with_weight
+	// without text; normalizeChunkTextFallback backfills text afterwards, so
+	// this guard is required to avoid dropping legitimate Parser blocks before
+	// the backfill runs.
 	filtered := raw[:0]
 	for _, ck := range raw {
 		if ck.Text == "" && ck.ContentWithWeight == "" {
