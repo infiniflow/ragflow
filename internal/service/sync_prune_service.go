@@ -19,7 +19,6 @@ package service
 import (
 	"context"
 	"errors"
-	"ragflow/internal/dao"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
 
@@ -32,36 +31,25 @@ type SyncDocumentDeleter interface {
 	DeleteDocument(ctx context.Context, docID string) error
 }
 
-// SyncPruneService owns prune snapshots and stale document deletion.
+// SyncPruneService owns stale document deletion for complete prune snapshots.
 type SyncPruneService struct {
-	snapshotDAO *dao.SyncPruneSnapshotDAO
-	deleter     SyncDocumentDeleter
-	store       DocumentStore
+	deleter SyncDocumentDeleter
+	store   DocumentStore
 }
 
 // NewSyncPruneService creates a prune service.
-func NewSyncPruneService(snapshotDAO *dao.SyncPruneSnapshotDAO, deleter SyncDocumentDeleter, store DocumentStore) *SyncPruneService {
+func NewSyncPruneService(deleter SyncDocumentDeleter, store DocumentStore) *SyncPruneService {
 	if store == nil {
 		store = NewGormDocumentStore()
 	}
-	return &SyncPruneService{snapshotDAO: snapshotDAO, deleter: deleter, store: store}
-}
-
-// ClearSnapshot removes temporary snapshot rows.
-func (s *SyncPruneService) ClearSnapshot(ctx context.Context, taskID string) error {
-	return s.snapshotDAO.Clear(ctx, taskID)
-}
-
-// AddSnapshotBatch writes one slim snapshot batch.
-func (s *SyncPruneService) AddSnapshotBatch(ctx context.Context, taskID string, documents []syncerconnector.SlimDocument) error {
-	return s.snapshotDAO.InsertBatch(ctx, taskID, documents)
+	return &SyncPruneService{deleter: deleter, store: store}
 }
 
 // DeleteStale removes documents missing from the complete source snapshot.
-func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTaskContext) (int64, error) {
-	sourceIDs, err := s.snapshotDAO.ListSourceIDs(ctx, taskContext.Task.ID)
-	if err != nil {
-		return 0, err
+func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTaskContext, documents []syncerconnector.SlimDocument) (int64, error) {
+	sourceIDs := make([]string, 0, len(documents))
+	for _, doc := range documents {
+		sourceIDs = append(sourceIDs, doc.SourceID)
 	}
 	sourceType := SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
 	retain := RetainDocumentIDs(taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceIDs)
@@ -81,9 +69,6 @@ func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTask
 			return removed, err
 		}
 		removed++
-	}
-	if err = s.snapshotDAO.Clear(ctx, taskContext.Task.ID); err != nil {
-		return removed, err
 	}
 	return removed, nil
 }
