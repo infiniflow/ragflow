@@ -2039,6 +2039,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         answer_started = False
         think_closed = False
         outer_tool_started = False
+        pending_outer_text = []
 
         async def _close_think_and_flush_answer():
             nonlocal answer_started, think_closed
@@ -2064,6 +2065,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                     continue
                 if item[0] == "tool_started":
                     outer_tool_started = True
+                    for value in pending_outer_text:
+                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
+                    pending_outer_text.clear()
                     continue
                 if item[0] == "answer":
                     if not answer_started:
@@ -2080,6 +2084,13 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                         yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
                     continue
                 if item[0] == "stream_done":
+                    if not outer_tool_started and pending_outer_text:
+                        async for output in _close_think_and_flush_answer():
+                            yield output
+                        for value in pending_outer_text:
+                            answer_deltas.append(value)
+                            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+                        pending_outer_text.clear()
                     break
                 _, kind, value, state = item
                 if kind != "text" or not value:
@@ -2099,11 +2110,12 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                         yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
                 elif not outer_tool_started:
                     # Some providers omit explicit reasoning metadata and
-                    # emit plain text before the tool call. Preserve it as
-                    # outer thinking for compatibility with async_chat.
+                    # emit plain text before the tool call. Keep it pending
+                    # until we know whether a tool call or a direct answer
+                    # follows, so a direct answer is not left in <think>.
                     value = re.sub(r"</?think>", "", value)
                     if value:
-                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
+                        pending_outer_text.append(value)
             if not think_closed:
                 async for output in _close_think_and_flush_answer():
                     yield output
