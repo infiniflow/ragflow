@@ -2027,7 +2027,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                 else:
                     stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), agent_messages, gen_conf, images=image_files)
                 async for kind, value, state in _stream_with_think_delta(stream_iter):
-                    event_queue.put_nowait(("stream", kind, value, state))
+                    event_queue.put_nowait(("stream", kind, value, state.in_think if state is not None else False))
             except Exception:
                 logging.exception("rag_agent: agentic stream failed")
             finally:
@@ -2092,7 +2092,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
                         pending_outer_text.clear()
                     break
-                _, kind, value, state = item
+                _, kind, value, in_think = item
                 if kind != "text" or not value:
                     # The outer model's think markers are folded into the one
                     # block opened above; they must not create extra markers.
@@ -2104,7 +2104,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                 # Once that section is closed and the terminal tool has
                 # started, subsequent text is the aggregate tool result and is
                 # intentionally ignored.
-                if state is not None and state.in_think:
+                if in_think:
                     value = re.sub(r"</?think>", "", value)
                     if value:
                         yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
