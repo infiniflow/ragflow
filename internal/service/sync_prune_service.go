@@ -19,7 +19,6 @@ package service
 import (
 	"context"
 	"errors"
-	syncerconnector "ragflow/internal/syncer/connector"
 )
 
 // ErrSyncDocumentDeleterNotConfigured reports a missing production delete service.
@@ -46,13 +45,8 @@ func NewSyncPruneService(deleter SyncDocumentDeleter, store DocumentStore) *Sync
 }
 
 // DeleteStale removes documents missing from the complete source snapshot.
-func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTaskContext, documents []syncerconnector.SlimDocument) (int64, error) {
-	sourceIDs := make([]string, 0, len(documents))
-	for _, doc := range documents {
-		sourceIDs = append(sourceIDs, doc.SourceID)
-	}
+func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTaskContext, retain map[string]struct{}) (int64, error) {
 	sourceType := SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
-	retain := RetainDocumentIDs(taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceIDs)
 	existing, err := s.store.ListIDs(ctx, taskContext.Knowledgebase.ID, sourceType)
 	if err != nil {
 		return 0, err
@@ -77,8 +71,13 @@ func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTask
 func RetainDocumentIDs(kbID, connectorID string, sourceIDs []string) map[string]struct{} {
 	retain := make(map[string]struct{}, len(sourceIDs)*2)
 	for _, sourceID := range sourceIDs {
-		retain[Hash128(connectorID+":"+sourceID)] = struct{}{}
-		retain[Hash128(kbID+":"+connectorID+":"+sourceID)] = struct{}{}
+		AddRetainDocumentID(retain, kbID, connectorID, sourceID)
 	}
 	return retain
+}
+
+// AddRetainDocumentID adds both legacy and current document IDs for one source ID.
+func AddRetainDocumentID(retain map[string]struct{}, kbID, connectorID, sourceID string) {
+	retain[Hash128(connectorID+":"+sourceID)] = struct{}{}
+	retain[Hash128(kbID+":"+connectorID+":"+sourceID)] = struct{}{}
 }

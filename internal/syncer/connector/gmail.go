@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -55,6 +56,8 @@ type GmailConnector struct {
 	primaryAdminEmail string
 	credentials       map[string]any
 	batchSize         int
+	clientMu          sync.Mutex
+	clients           map[string]*http.Client
 	httpClientForUser func(ctx context.Context, userEmail string) (*http.Client, error)
 	listUsers         func(ctx context.Context) ([]string, error)
 	listThreadPage    func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error)
@@ -68,6 +71,7 @@ func NewGmailConnector(config map[string]any) (*GmailConnector, error) {
 		primaryAdminEmail: strings.TrimSpace(stringConfig(credentials["google_primary_admin"])),
 		credentials:       credentials,
 		batchSize:         configInt(config["batch_size"], defaultGmailBatchSize),
+		clients:           map[string]*http.Client{},
 	}, nil
 }
 
@@ -201,14 +205,31 @@ func (c *GmailConnector) loadThread(ctx context.Context, userEmail, threadID str
 
 // clientForUser builds an authenticated Google client for a user.
 func (c *GmailConnector) clientForUser(ctx context.Context, userEmail string) (*http.Client, error) {
-	if c.httpClientForUser != nil {
-		return c.httpClientForUser(ctx, userEmail)
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+	if c.clients == nil {
+		c.clients = map[string]*http.Client{}
 	}
-	tokenSource, err := c.tokenSource(ctx, userEmail)
+	if client := c.clients[userEmail]; client != nil {
+		return client, nil
+	}
+
+	var client *http.Client
+	var err error
+	if c.httpClientForUser != nil {
+		client, err = c.httpClientForUser(ctx, userEmail)
+	} else {
+		var tokenSource oauth2.TokenSource
+		tokenSource, err = c.tokenSource(ctx, userEmail)
+		if err == nil {
+			client = oauth2.NewClient(ctx, tokenSource)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	return oauth2.NewClient(ctx, tokenSource), nil
+	c.clients[userEmail] = client
+	return client, nil
 }
 
 // tokenSource returns a Google OAuth token source for stored connector credentials.
@@ -249,13 +270,14 @@ func (c *GmailConnector) tokenSource(ctx context.Context, userEmail string) (oau
 
 // getJSON fetches and decodes a Google JSON API response.
 func (c *GmailConnector) getJSON(ctx context.Context, client *http.Client, apiURL string, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, gmailRequestTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return err
 	}
-	if client.Timeout == 0 {
-		client.Timeout = gmailRequestTimeout
-	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -481,7 +503,7 @@ func (t gmailThread) toSourceDocument(userEmail string) (SourceDocument, bool) {
 			semanticIdentifier = sanitizeGmailName(stringConfig(messageMetadata["subject"]))
 		}
 		if value := stringConfig(messageMetadata["updated_at"]); value != "" {
-			if parsed, err := mail.ParseDate(value); err == nil {
+			if parsed, err := mail.ParseDate(value); err == nil && parsed.UTC().After(updatedAt) {
 				updatedAt = parsed.UTC()
 			}
 		}
@@ -534,8 +556,8 @@ func (m gmailMessage) toTextSection() (string, map[string]any) {
 
 	var builder strings.Builder
 	builder.WriteString(gmailPayloadText(m.Payload))
-	for key, value := range metadata {
-		if key != "updated_at" {
+	for _, key := range []string{"from", "to", "cc", "bcc", "subject", "labels"} {
+		if value, ok := metadata[key]; ok {
 			builder.WriteString(fmt.Sprintf("%s: %v\n", key, value))
 		}
 	}

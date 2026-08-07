@@ -51,7 +51,7 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 	}
 	defer session.Close()
 
-	documents := []syncerconnector.SlimDocument{}
+	retain := map[string]struct{}{}
 	for {
 		batch, nextErr := session.NextBatch(ctx)
 		if errors.Is(nextErr, io.EOF) {
@@ -60,10 +60,12 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 		if nextErr != nil {
 			return nextErr
 		}
-		documents = append(documents, batch.Documents...)
+		for _, doc := range batch.Documents {
+			service.AddRetainDocumentID(retain, taskContext.Knowledgebase.ID, taskContext.Connector.ID, doc.SourceID)
+		}
 	}
 
-	removed, err := r.pruneService.DeleteStale(ctx, taskContext, documents)
+	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain)
 	if err != nil {
 		return err
 	}

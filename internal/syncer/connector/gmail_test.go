@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -68,6 +69,38 @@ func TestGmailConnectorOpenPrune(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "thread-1" {
 		t.Fatalf("unexpected prune batch: %+v", batch.Documents)
+	}
+}
+
+// TestGmailConnectorClientForUserCachesByMailbox verifies clients are reused per user.
+func TestGmailConnectorClientForUserCachesByMailbox(t *testing.T) {
+	connector := &GmailConnector{}
+	calls := map[string]int{}
+	connector.httpClientForUser = func(ctx context.Context, userEmail string) (*http.Client, error) {
+		calls[userEmail]++
+		return &http.Client{}, nil
+	}
+
+	first, err := connector.clientForUser(context.Background(), "a@example.com")
+	if err != nil {
+		t.Fatalf("first client: %v", err)
+	}
+	second, err := connector.clientForUser(context.Background(), "a@example.com")
+	if err != nil {
+		t.Fatalf("second client: %v", err)
+	}
+	other, err := connector.clientForUser(context.Background(), "b@example.com")
+	if err != nil {
+		t.Fatalf("other client: %v", err)
+	}
+	if first != second {
+		t.Fatalf("same mailbox did not reuse client")
+	}
+	if first == other {
+		t.Fatalf("different mailboxes shared client")
+	}
+	if calls["a@example.com"] != 1 || calls["b@example.com"] != 1 {
+		t.Fatalf("client creation calls = %+v", calls)
 	}
 }
 
