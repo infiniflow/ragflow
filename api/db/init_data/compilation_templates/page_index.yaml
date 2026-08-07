@@ -27,6 +27,10 @@ config:
         rule: |
           - Identify and emit every explicit heading or chapter marker first, in source order, including 第N回 even without Markdown syntax.
           - Copy the clean heading text; do not invent, paraphrase, or promote facts into titles.
+          - Assign source_chunk_ids yourself: include every source chunk covered by the title's
+            section, not only the chunk containing the heading. A parent title includes the
+            chunks of its nested child sections; a child title includes only its own subtree.
+            Stop at the next title of the same or an ancestor level.
           - A line beginning with 第N回/第N章/第N节 or Chapter N is a title when it appears in the source.
           - Do not emit the same chapter heading as a fact or conclusion.
           - Only after title extraction, emit facts or conclusions under the corresponding titles.

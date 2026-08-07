@@ -556,50 +556,6 @@ def _struct_payload_chunk_ids(payload: dict, batch_ids: list) -> list:
     return selected or list(batch_ids)
 
 
-def assign_page_index_title_chunk_spans(docs: list[dict], chunks: dict[str, str]) -> None:
-    """Attach every source chunk in a chapter span to its PageIndex title.
-
-    PageIndex extraction runs in independent LLM batches, so a title can only
-    initially carry the chunk in which the heading was found. Once all batches
-    are available, source order lets us extend that title through the chunk
-    immediately before the next title.
-    """
-    if not docs or not chunks:
-        return
-
-    ordered_chunk_ids = list(chunks)
-    chunk_positions = {chunk_id: position for position, chunk_id in enumerate(ordered_chunk_ids)}
-    title_docs: list[tuple[int, dict, dict]] = []
-    for doc in docs:
-        try:
-            payload = json.loads(doc.get("content_with_weight") or "{}")
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(payload, dict) or str(payload.get("type", "")).strip().casefold() != "title":
-            continue
-        source_ids = payload.get("source_chunk_ids") or doc.get("source_chunk_ids") or []
-        if isinstance(source_ids, str):
-            source_ids = [source_ids]
-        positions = [chunk_positions[str(chunk_id)] for chunk_id in source_ids if str(chunk_id) in chunk_positions]
-        if positions:
-            title_docs.append((min(positions), doc, payload))
-
-    if not title_docs:
-        return
-
-    title_docs.sort(key=lambda item: item[0])
-    for index, (start, doc, payload) in enumerate(title_docs):
-        end = title_docs[index + 1][0] if index + 1 < len(title_docs) else len(ordered_chunk_ids)
-        span_ids = ordered_chunk_ids[start:end]
-        existing_ids = payload.get("source_chunk_ids") or doc.get("source_chunk_ids") or []
-        if isinstance(existing_ids, str):
-            existing_ids = [existing_ids]
-        merged_ids = _struct_union_chunk_ids(existing_ids, span_ids)
-        payload["source_chunk_ids"] = merged_ids
-        doc["source_chunk_ids"] = merged_ids
-        doc["content_with_weight"] = json.dumps(payload, ensure_ascii=False)
-
-
 _struct_embed = _encode
 
 
