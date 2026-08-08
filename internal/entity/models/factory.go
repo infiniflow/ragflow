@@ -147,6 +147,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewN1NModel(baseURL, urlSuffix), nil
 	case "bedrock":
 		return NewBedrockModel(baseURL, urlSuffix), nil
+	case "deerapi":
+		return NewDeerAPIModel(baseURL, urlSuffix), nil
 	case "paddleocr":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	case "orcarouter":
