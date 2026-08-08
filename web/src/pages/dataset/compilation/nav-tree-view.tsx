@@ -14,6 +14,9 @@ export function NavTreeView() {
   const {
     navList,
     navLoading,
+    navError,
+    loadingParent,
+    childrenErrorParents,
     childrenMap,
     selectedNode,
     deleteNavLoading,
@@ -31,6 +34,9 @@ export function NavTreeView() {
           <NavTreeLeftPanel
             navList={navList}
             navLoading={navLoading}
+            navError={navError}
+            loadingParent={loadingParent}
+            childrenErrorParents={childrenErrorParents}
             childrenMap={childrenMap}
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}
