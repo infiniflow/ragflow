@@ -73,12 +73,21 @@ class Base(ABC):
         (Cohere, Jina, Voyage, ...) are returned unchanged, so their absolute
         magnitudes, ``similarity_threshold`` semantics and reported
         ``vector_similarity`` are preserved. Only out-of-range output (e.g.
-        NVIDIA's unbounded, often negative logits) is rescaled: a batch with a
-        usable spread is min-max mapped onto ``[0, 1]`` (which stops a negative
-        logit from dragging a relevant chunk below pure keyword matches once
-        weighted by ``vtweight``), while a spreadless batch (including a single
-        candidate) has no relative signal and is clamped instead, so a lone
-        high score is not silently zeroed.
+        NVIDIA's unbounded logits) is rescaled: a batch with a usable spread is
+        min-max mapped onto ``[0, 1]`` (which stops a negative logit from
+        dragging a relevant chunk below pure keyword matches once weighted by
+        ``vtweight``), while a spreadless batch (including a single candidate)
+        has no relative signal and is clamped instead, so a lone high score is
+        not silently zeroed.
+
+        A special case guards against manufacturing false confidence: when the
+        *best* raw score in the batch is non-positive (``max_rank <= 0``), the
+        entire batch represents weak or absent matches. Applying min-max
+        rescaling in that situation would map the least-bad score to 1.0,
+        presenting uniformly-poor results as highly confident to the downstream
+        fusion step. Instead, scores are clipped to ``[0, 1]`` directly, so
+        they all land at (or near) zero and signal "nothing strong was found"
+        (issue #16621).
         """
         if rank.size == 0:
             return rank
@@ -87,6 +96,11 @@ class Base(ABC):
 
         if min_rank >= 0.0 and max_rank <= 1.0:
             return rank
+        # All scores are non-positive: the whole batch is a weak/absent match.
+        # Clip rather than rescale to avoid forcing max → 1.0 when no chunk
+        # actually has high similarity (issue #16621).
+        if max_rank <= 0.0:
+            return np.clip(rank, 0.0, 1.0)
         span = max_rank - min_rank
         if span < 1e-3:
             return np.clip(rank, 0.0, 1.0)
