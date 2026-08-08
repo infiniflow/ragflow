@@ -158,7 +158,7 @@ func FilenameType(filename string) FileType {
 
 	visualExtensions := []string{
 		"jpg", "jpeg", "png", "tif", "gif", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
-		"pcd", "dxf", "ufo", "eps", "ai", "raw", "WMF", "webp", "avif", "apng", "icon", "ico",
+		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
 		"mpg", "mpeg", "avi", "rm", "rmvb", "mov", "wmv", "asf", "dat", "asx", "wvx", "mpe",
 		"mpa", "mp4", "mkv",
 	}
