@@ -110,6 +110,7 @@ const svgIcons = [
   LLMFactory.FunASR,
   LLMFactory.AIMLAPI,
   LLMFactory.GreenPT,
+  LLMFactory.MWS,
 ];
 
 export const LlmIcon = ({
