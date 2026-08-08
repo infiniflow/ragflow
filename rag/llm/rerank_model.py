@@ -27,6 +27,7 @@ from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.llm.key_utils import _resolve_qianfan_credentials
 
 
 class Base(ABC):
@@ -478,7 +479,14 @@ class BaiduYiyanRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         from qianfan.resources import Reranker
 
-        key = json.loads(key)
+        # Parse the key via the shared helper (added in PR #17390 for
+        # the chat side and PR #17505 for the embed side; this PR wires
+        # the rerank side through the same helper). Pre-fix, the bare
+        # ``json.loads(key).get(...)`` calls crashed with AttributeError
+        # on any non-JSON or JSON non-object input (e.g. "[1,2,3]",
+        # "42", "null"). The provider REQUIRES a JSON object so the
+        # helper raises a clear ModelException instead. See #17660.
+        key = _resolve_qianfan_credentials(key)
         ak = key.get("yiyan_ak", "")
         sk = key.get("yiyan_sk", "")
         self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
