@@ -96,7 +96,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	switch method {
 	case "tcadp":
 		return parseSpreadsheetWithTCADP(
-			filename, data, "XLSX",
+			ctx, filename, data, "XLSX",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
