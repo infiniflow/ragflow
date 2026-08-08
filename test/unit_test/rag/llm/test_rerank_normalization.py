@@ -61,18 +61,28 @@ class _RawRerank(Base):
 @pytest.mark.parametrize(
     "raw, expected",
     [
-        # Unbounded NVIDIA-style logits, including negatives -> rescaled.
-        ([10.0, -3.0, 0.0], [1.0, 0.0, 3.0 / 13.0]),
-        # Large positive logits -> rescaled.
-        ([100.0, 50.0, 75.0], [1.0, 0.0, 0.5]),
-        # Negative-only logits -> rescaled.
-        ([-1.0, -5.0, -3.0], [1.0, 0.0, 0.5]),
+        # Centred sigmoid: each value mapped through 1/(1+exp(-(x - midpoint))).
+        # Midpoint = (max + min) / 2. Old min-max stretch would have mapped
+        # any of these to a false-confidence [1.0, ...]; the centred sigmoid
+        # stays bounded by ~0.62 on a uniform-spread batch.
+        ([10.0, -3.0, 0.0], [1.0 / (1.0 + np.exp(-(10.0 - 3.5))),
+                             1.0 / (1.0 + np.exp(-(-3.0 - 3.5))),
+                             1.0 / (1.0 + np.exp(-(0.0 - 3.5)))]),
+        ([100.0, 50.0, 75.0], [1.0 / (1.0 + np.exp(-25.0)),
+                                1.0 / (1.0 + np.exp(25.0)),
+                                0.5]),
+        ([-1.0, -5.0, -3.0], [1.0 / (1.0 + np.exp(-(-1.0 + 3.0))),
+                              1.0 / (1.0 + np.exp(-(-5.0 + 3.0))),
+                              0.5]),
     ],
 )
 def test_out_of_range_scores_are_rescaled(raw, expected):
     rank, _ = _RawRerank(raw).similarity("q", ["a", "b", "c"])
     assert np.allclose(rank, expected)
-    assert rank.min() >= 0.0 and rank.max() <= 1.0
+    # Centred sigmoid never saturates to the endpoints (0 or 1) on a finite
+    # batch, which is exactly the property that prevents manufactured top
+    # confidence on uniformly-weak out-of-range batches.
+    assert rank.min() > 0.0 and rank.max() < 1.0
 
 
 @pytest.mark.parametrize(
@@ -142,9 +152,47 @@ def test_nvidia_logits_are_normalized():
     with _mock_post(payload):
         raw, _ = nv._compute_rank("q", ["a", "b", "c"])
     assert raw.min() < 0  # genuinely unbounded/negative
-    # ...but the public contract normalizes them.
-    assert np.allclose(rank, [1.0, 0.0, 5.0 / 12.0])
-    assert rank.min() >= 0.0 and rank.max() <= 1.0
+    # ...but the public contract normalizes them via centred sigmoid. With
+    # midpoint (8 + (-4)) / 2 = 2, expected values are sigmoid of each input
+    # shifted to the midpoint.
+    assert np.allclose(rank, [1.0 / (1.0 + np.exp(-(8.0 - 2.0))),
+                              1.0 / (1.0 + np.exp(-(-4.0 - 2.0))),
+                              1.0 / (1.0 + np.exp(-(1.0 - 2.0)))])
+    assert rank.min() > 0.0 and rank.max() < 1.0
+
+
+# --- The actual bug fix: false-confidence on uniformly-weak out-of-range batches
+
+
+@pytest.mark.parametrize(
+    "raw, max_old",
+    [
+        # Issue's failure signature: a uniformly-weak batch used to min-max
+        # stretch to [1.0, ...], letting the top chunk dominate the hybrid
+        # blend despite no chunk actually matching strongly. The centred
+        # sigmoid keeps the top bounded well below the previous 1.0.
+        ([-1.0, -1.5, -2.0], 1.0),
+        ([-0.1, -0.2, -0.3], 1.0),
+        ([1.0, -1.0, 0.0], 1.0),
+    ],
+)
+def test_uniformly_weak_out_of_range_does_not_manufacture_top_confidence(raw, max_old):
+    rank, _ = _RawRerank(raw).similarity("q", ["a", "b", "c"])
+    # The previous min-max path would have set the top to exactly 1.0;
+    # the centred sigmoid keeps it bounded (~0.62 on a uniform-spread batch).
+    assert rank.max() < max_old
+    # And ordering is still preserved within the batch.
+    raw_arr = np.asarray(raw, dtype=float)
+    assert list(np.argsort(-rank)) == list(np.argsort(-raw_arr))
+
+
+def test_centred_sigmoid_centers_at_batch_mean():
+    # The midpoint of an out-of-range batch maps to exactly 0.5.
+    rank, _ = _RawRerank([-2.0, -1.0, 0.0, 1.0, 2.0]).similarity("q", ["a"] * 5)
+    # Midpoint of [-2, 2] is 0; the centred value of 0 maps to sigmoid(0) = 0.5.
+    assert np.isclose(rank[2], 0.5)
+    # And the result is strictly monotone across the batch.
+    assert all(rank[i] < rank[i + 1] for i in range(4))
 
 
 def test_calibrated_relevance_scores_are_preserved():
