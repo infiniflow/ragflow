@@ -50,6 +50,12 @@ class _FakeField:
     def not_in(self, other):
         return self
 
+    def asc(self):
+        return self
+
+    def desc(self):
+        return self
+
 
 class _FakeQuery:
     def __init__(self, docs):
@@ -77,6 +83,64 @@ class _FakeQuery:
 
     def dicts(self):
         return list(self._current)
+
+
+class _PagingFakeQuery:
+    def __init__(self, docs, ordered=False, order_by_args=()):
+        self._all = list(docs)
+        self._offset = 0
+        self._limit = len(docs)
+        self.ordered = ordered
+        self.order_by_args = order_by_args
+
+    def join(self, *args, **kwargs):
+        return self
+
+    def where(self, *args, **kwargs):
+        return self
+
+    def order_by(self, *args, **kwargs):
+        return _PagingFakeQuery(self._all, ordered=True, order_by_args=args)
+
+    def offset(self, offset):
+        self._offset = offset
+        return self
+
+    def limit(self, limit):
+        self._limit = limit
+        return self
+
+    def dicts(self):
+        return self._all[self._offset : self._offset + self._limit]
+
+
+def _install_paging_model(monkeypatch, sample_docs):
+    paging_queries = []
+
+    class _RecordingPagingQuery(_PagingFakeQuery):
+        def order_by(self, *args, **kwargs):
+            return _RecordingPagingQuery(self._all, ordered=True, order_by_args=args)
+
+        def offset(self, offset):
+            paging_queries.append(self)
+            return super().offset(offset)
+
+    model = SimpleNamespace(
+        select=lambda *args, **kwargs: _RecordingPagingQuery(sample_docs),
+        id=_FakeField(),
+        kb_id=_FakeField(),
+        token_num=_FakeField(),
+        chunk_num=_FakeField(),
+        created_by=_FakeField(),
+        create_time=_FakeOrderField(),
+        getter_by=lambda *_args, **_kwargs: _FakeOrderField(),
+    )
+
+    monkeypatch.setattr(document_service.DB, "connect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(document_service.DB, "close", lambda *args, **kwargs: None)
+    monkeypatch.setattr(document_service.DocumentService, "model", model)
+
+    return paging_queries
 
 
 @pytest.fixture
@@ -192,3 +256,42 @@ def test_get_by_kb_id_return_empty_metadata_keeps_dataset_wide_lookup(metadata_c
     assert count == 3
     assert docs[0]["meta_fields"] == {}
     assert metadata_calls == [(None, "kb-1")]
+
+
+@pytest.mark.p2
+def test_get_all_doc_ids_by_kb_ids_applies_create_time_order(monkeypatch):
+    sample_docs = [
+        {"id": "doc-1", "kb_id": "kb-1"},
+        {"id": "doc-2", "kb_id": "kb-1"},
+    ]
+    paging_queries = _install_paging_model(monkeypatch, sample_docs)
+
+    result = document_service.DocumentService.get_all_doc_ids_by_kb_ids(["kb-1"])
+
+    assert result == sample_docs
+    assert paging_queries
+    model = document_service.DocumentService.model
+    expected_order = (model.create_time.asc(), model.id.asc())
+    assert all(query.order_by_args == expected_order for query in paging_queries)
+
+
+@pytest.mark.p2
+def test_get_all_docs_by_creator_id_applies_create_time_order(monkeypatch):
+    sample_docs = [
+        {
+            "id": "doc-1",
+            "kb_id": "kb-1",
+            "token_num": 1,
+            "chunk_num": 1,
+            "tenant_id": "tenant-1",
+        }
+    ]
+    paging_queries = _install_paging_model(monkeypatch, sample_docs)
+
+    result = document_service.DocumentService.get_all_docs_by_creator_id("user-1")
+
+    assert result == sample_docs
+    assert paging_queries
+    model = document_service.DocumentService.model
+    expected_order = (model.create_time.asc(), model.id.asc())
+    assert all(query.order_by_args == expected_order for query in paging_queries)
