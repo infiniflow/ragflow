@@ -87,7 +87,7 @@ class Pdf(PdfParser):
                 # pn_index in tbls is absolute page number
                 current_page_num = int(pn_index) + 1
             except Exception as e:
-                print(f"Error parsing position: {e}")
+                logging.warning(f"Error parsing position in {filename}: {e}")
                 continue
 
             if not (from_page < current_page_num <= to_page + from_page):

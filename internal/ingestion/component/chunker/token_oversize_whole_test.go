@@ -74,14 +74,14 @@ func TestTokenChunker_OversizeUnitKeptWhole(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit exercises the
-// mergeDecision oversize branch (incomingTokens > target -> startNewChunk),
-// which TestTokenChunker_OversizeUnitKeptWhole never reaches because its lone
-// oversize unit goes through the len(cks)==0 path of addChunk. A short
-// in-budget sentence precedes the oversize paragraph; after the sentence
-// delimiter split the oversize unit must stand alone as its own chunk
-// (matching Python OVER_CAP), not be merged into or atom-split across the
-// previous chunk.
+// TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit pins the #17799
+// contract under the unified algorithm: an oversize unit (single paragraph >
+// chunk_token_size) STANDS ALONE as its own chunk, even when an in-budget
+// sentence precedes it. The unified merge decision depends only on
+// prev.tk_nums > threshold for merging, but an over-budget unit never merges
+// into the previous chunk (#17799 retained on purpose to avoid a product-wide
+// behaviour change). The lone oversize case is pinned by
+// TestTokenChunker_OversizeUnitKeptWhole.
 func TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit(t *testing.T) {
 	var longLine = strings.Repeat("word ", 400) // ~400 tokens, far above the 32 budget
 	inBudget := "Hello world."                  // ASCII period is not a sentence delimiter; fits 32
