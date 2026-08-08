@@ -2247,6 +2247,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      toolTimeout: '工具调用超时',
+      toolTimeoutTip:
+        '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       maxSteps: '最大步数',
       headless: '无头模式',
       enableDefaultExtensions: '启用默认扩展',
