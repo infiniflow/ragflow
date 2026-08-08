@@ -528,9 +528,11 @@ class TenantModelInstanceStage(MigrationStage):
 
         # Get records from tenant_llm with provider_id lookup
         # Group by tenant_id, llm_factory, api_key to get distinct records
-        # instance_name = llm_factory, provider_id from tenant_model_provider, api_key from tenant_llm
+        # instance_name = derived from group position (first = "default", subsequent = "default-{hash8}")
+        # extra = {"base_url": <tenant_llm.api_base>} when api_base is non-null/non-empty
         cursor = self.db.execute_sql(
-            "SELECT tl.tenant_id, tl.llm_factory, tl.api_key, MAX(tl.status) as status, tmp.id as provider_id "
+            "SELECT tl.tenant_id, tl.llm_factory, tl.api_key, MAX(tl.status) as status, tmp.id as provider_id, "
+            "       MAX(tl.api_base) as api_base "
             "FROM tenant_llm tl "
             "INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
             "WHERE NOT EXISTS ("
@@ -552,12 +554,19 @@ class TenantModelInstanceStage(MigrationStage):
         # only differ in the is_tools field. We merge these by stripping is_tools for comparison.
         records = self._dedup_api_key_records(records)
 
+        # Derive a unique instance_name per (tenant_id, llm_factory, provider_id) group.
+        # The first record in each group gets "default" (backward compat for the common
+        # case of one api_key per provider); subsequent records get a stable
+        # "default-{hash8}" suffix derived from sha256(api_key). The hash is stable
+        # across runs so the migration is idempotent.
+        records = self._assign_instance_names(records)
+
         logger.info(f"Migrating {len(records)} tenant_model_instance records...")
 
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
-            for tenant_id, llm_factory, api_key, status, provider_id in records[:5]:
-                logger.info(f"  instance_name=default, provider_id={provider_id}, api_key=***")
+            for tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name in records[:5]:
+                logger.info(f"  instance_name={instance_name}, provider_id={provider_id}, api_key=***")
             if len(records) > 5:
                 logger.info(f"  ... and {len(records) - 5} more records")
             return len(records), self.target_tables
@@ -567,21 +576,22 @@ class TenantModelInstanceStage(MigrationStage):
         for i in range(0, len(records), batch_size):
             batch = records[i : i + batch_size]
             values = []
-            for tenant_id, llm_factory, api_key, status, provider_id in batch:
+            for tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name in batch:
                 record_id = self.generate_uuid()
-                instance_name = "default"
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
                 status_val = "active" if status in ["1", "active", "enable"] else "inactive"
+                extra = self._build_instance_extra(api_base)
+                extra_escaped = extra.replace("'", "''")
                 values.append(
                     f"('{record_id}', '{instance_name}', '{provider_id}', "
-                    f"'{api_key_escaped}', '{status_val}', "
+                    f"'{api_key_escaped}', '{status_val}', '{extra_escaped}', "
                     f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
                     f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))"
                 )
 
             insert_sql = f"""
                 INSERT INTO tenant_model_instance
-                (id, instance_name, provider_id, api_key, status, create_time, create_date, update_time, update_date)
+                (id, instance_name, provider_id, api_key, status, extra, create_time, create_date, update_time, update_date)
                 VALUES {", ".join(values)}
             """
             self.db.execute_sql(insert_sql)
@@ -589,6 +599,59 @@ class TenantModelInstanceStage(MigrationStage):
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
 
         return rows_inserted, self.target_tables
+
+    @staticmethod
+    def _build_instance_extra(api_base):
+        """Build the ``extra`` JSON string for a ``tenant_model_instance`` row.
+
+        Returns ``'{"base_url": "<api_base>"}'`` when ``api_base`` is a non-empty
+        string, otherwise returns ``'{}'``. The runtime reads
+        ``extra_fields.get("base_url", "")`` in
+        ``api/db/joint_services/tenant_model_service.py`` to look up the
+        provider's API base URL.
+        """
+        if isinstance(api_base, str) and api_base.strip():
+            return json.dumps({"base_url": api_base}, ensure_ascii=False)
+        return "{}"
+
+    @staticmethod
+    def _assign_instance_names(records):
+        """Return ``records`` with an extra ``instance_name`` field per row.
+
+        Within each ``(tenant_id, llm_factory, provider_id)`` group, the
+        first record gets ``"default"`` (preserves the previous single-key
+        behavior for the common case); subsequent records get
+        ``"default-{hash8}"`` where ``hash8`` is the first 8 hex chars of
+        ``sha256(api_key)``. The hash is stable across runs so the
+        migration is idempotent. Input records are tuples of
+        ``(tenant_id, llm_factory, api_key, status, provider_id, api_base)``;
+        output records are tuples of
+        ``(tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name)``.
+        """
+        import hashlib
+
+        from collections import defaultdict
+
+        if not records:
+            return []
+
+        # Group preserving input order so the first record per group gets "default".
+        groups = defaultdict(list)
+        for rec in records:
+            tenant_id, llm_factory, _api_key, _status, provider_id, _api_base = rec
+            groups[(tenant_id, llm_factory, provider_id)].append(rec)
+
+        out = []
+        for group in groups.values():
+            for idx, rec in enumerate(group):
+                tenant_id, llm_factory, api_key, status, provider_id, api_base = rec
+                if idx == 0:
+                    instance_name = "default"
+                else:
+                    digest = hashlib.sha256((api_key or "").encode("utf-8")).hexdigest()[:8]
+                    instance_name = f"default-{digest}"
+                out.append((tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name))
+        return out
 
     @staticmethod
     def _strip_is_tools_from_api_key(api_key: str) -> str:
