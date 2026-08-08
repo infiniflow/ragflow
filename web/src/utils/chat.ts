@@ -86,7 +86,7 @@ export function replaceThinkToSection(
 
   const result = text.replace(
     pattern,
-    `<details class="think"><summary>${summary}</summary>$1</details>`,
+    `\n\n<details class="think"><summary>${summary}</summary>$1</details>\n\n`,
   );
 
   return result;
@@ -97,7 +97,7 @@ export function replaceRetrievingToSection(text: string = '') {
 
   const result = text.replace(
     pattern,
-    '<details class="retrieving"><summary>Retrieving...</summary>$1</details>',
+    '\n\n<details class="retrieving"><summary>Retrieving...</summary>$1</details>\n\n',
   );
 
   return result;
