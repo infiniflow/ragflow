@@ -15,7 +15,10 @@
 #
 
 import math
-from common.float_utils import get_float
+
+import pytest
+
+from common.float_utils import get_float, normalize_overlapped_percent
 
 
 class TestGetFloat:
@@ -86,3 +89,33 @@ class TestGetFloat:
         result = get_float("  invalid  ")
         assert math.isinf(result)
         assert result < 0
+
+
+class TestNormalizeOverlappedPercent:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (0, 0),
+            (0.1, 10),
+            (0.29, 29),
+            (0.3, 30),
+            (0.5, 50),
+            (0.57, 57),
+            (0.93, 90),
+            (0.95, 90),
+            (15, 15),
+            (33.3, 33),
+            (95, 90),
+            (-5, 0),
+            (-0.1, 0),
+            ("10", 10),
+            ("0.1", 10),
+            ("0.29", 29),
+            ("abc", 0),
+            (None, 0),
+            (1e300, 90),
+            (-1e300, 0),
+        ],
+    )
+    def test_normalize_overlapped_percent(self, value, expected):
+        assert normalize_overlapped_percent(value) == expected

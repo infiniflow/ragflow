@@ -15,6 +15,9 @@
 #
 
 
+import math
+
+
 def get_float(v):
     """
     Convert a value to float, handling None and exceptions gracefully.
@@ -54,5 +57,9 @@ def normalize_overlapped_percent(overlapped_percent):
         return 0
     if 0 < value < 1:
         value *= 100
-    value = int(value)
-    return max(0, min(value, 90))
+    if value < 0:
+        value = 0
+    if value > 90:
+        value = 90
+    # Match Go's math.Round (away from zero at .5) rather than Python round().
+    return math.floor(value + 0.5)
