@@ -22,6 +22,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -318,38 +319,85 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
+
+        # Retry on transient errors (connect/read timeouts, conn errors, 5xx).
+        # Non-transient failures (4xx, malformed response, OS errors) raise on
+        # the first attempt — retrying them wastes minutes per task.
+        # Parse env vars defensively: a malformed value should fall back to
+        # safe defaults and log a warning rather than aborting the parse.
+        raw_max_attempts = os.environ.get("MINERU_MAX_ATTEMPTS", "3")
+        raw_backoff = os.environ.get("MINERU_BACKOFF_SECONDS", "2")
         try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
-            if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
-            with open(pdf_file_path, "rb") as pdf_file:
-                files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
-                with requests.post(
-                    url=f"{self.mineru_api}/file_parse",
-                    files=files,
-                    data=data,
-                    headers=headers,
-                    timeout=1800,
-                    stream=True,
-                ) as response:
-                    response.raise_for_status()
-                    content_type = response.headers.get("Content-Type", "")
-                    if not content_type.startswith("application/zip"):
-                        raise RuntimeError(f"[MinerU] not zip returned from api: {content_type}")
-                    self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
+            max_attempts = max(1, int(raw_max_attempts))
+        except (TypeError, ValueError):
+            self.logger.warning("[MinerU] Invalid MINERU_MAX_ATTEMPTS=%r; fallback to 3", raw_max_attempts)
+            max_attempts = 3
+        try:
+            backoff_base = max(0.0, float(raw_backoff))
+        except (TypeError, ValueError):
+            self.logger.warning("[MinerU] Invalid MINERU_BACKOFF_SECONDS=%r; fallback to 2.0", raw_backoff)
+            backoff_base = 2.0
+
+        def _is_transient(exc: Exception) -> bool:
+            if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+                return True
+            if isinstance(exc, requests.HTTPError):
+                resp = getattr(exc, "response", None)
+                status = getattr(resp, "status_code", None) if resp is not None else None
+                return status is not None and 500 <= status < 600
+            return False
+
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.logger.info(
+                    f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} "
+                    f"server_url={data.get('server_url')} attempt={attempt}/{max_attempts}"
+                )
+                if callback:
+                    callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse (attempt {attempt}/{max_attempts})")
+                with open(pdf_file_path, "rb") as pdf_file:
+                    files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
+                    with requests.post(
+                        url=f"{self.mineru_api}/file_parse",
+                        files=files,
+                        data=data,
+                        headers=headers,
+                        timeout=1800,
+                        stream=True,
+                    ) as response:
+                        response.raise_for_status()
+                        content_type = response.headers.get("Content-Type", "")
+                        if not content_type.startswith("application/zip"):
+                            raise RuntimeError(f"[MinerU] not zip returned from api: {content_type}")
+                        self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                        if callback:
+                            callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                        with open(output_zip_path, "wb") as f:
+                            response.raw.decode_content = True
+                            shutil.copyfileobj(response.raw, f)
+                        self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                        self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                        if callback:
+                            callback(0.40, f"[MinerU] Unzip to {output_path}...")
+                self.logger.info("[MinerU] Api completed successfully.")
+                return Path(output_path)
+            except requests.RequestException as e:
+                last_exc = e
+                if attempt < max_attempts and _is_transient(e):
+                    delay = backoff_base * (2 ** (attempt - 1))
+                    self.logger.warning(
+                        f"[MinerU] transient api failure on attempt {attempt}/{max_attempts}: {e}; "
+                        f"retrying in {delay:.1f}s"
+                    )
                     if callback:
-                        callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
-                    with open(output_zip_path, "wb") as f:
-                        response.raw.decode_content = True
-                        shutil.copyfileobj(response.raw, f)
-                    self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                    self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
-                    if callback:
-                        callback(0.40, f"[MinerU] Unzip to {output_path}...")
-            self.logger.info("[MinerU] Api completed successfully.")
-            return Path(output_path)
-        except requests.RequestException as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+                        callback(0.20, f"[MinerU] transient failure ({e}); retrying in {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                raise RuntimeError(f"[MinerU] api failed with exception {e}") from e
+
+        # Should be unreachable: loop either returns or raises above.
+        raise RuntimeError(f"[MinerU] api failed after {max_attempts} attempts: {last_exc}")
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
