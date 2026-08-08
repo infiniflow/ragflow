@@ -46,6 +46,7 @@ export enum DataSourceKey {
   RSS = 'rss',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
+  HUBSPOT = 'hubspot',
   SALESFORCE = 'salesforce',
   AZURE_BLOB = 'azure_blob',
   TEAMS = 'teams',
@@ -138,6 +139,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.OUTLOOK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.HUBSPOT]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.SALESFORCE]: {
@@ -352,6 +356,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
     },
+    [DataSourceKey.HUBSPOT]: {
+      name: 'HubSpot',
+      description: t(`setting.${DataSourceKey.HUBSPOT}Description`),
+      icon: <SvgIcon name={'data-source/hubspot'} width={38} />,
+    },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
       description: t(`setting.${DataSourceKey.SALESFORCE}Description`),
@@ -541,6 +550,47 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         message: t('setting.dataSourceValidationMinOne', {
           label: t('setting.dataSourceFieldBatchSize'),
         }),
+      },
+    },
+  ],
+  [DataSourceKey.HUBSPOT]: [
+    {
+      label: 'Access Token',
+      name: 'config.credentials.access_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.hubspotAccessTokenTip'),
+    },
+    {
+      label: 'Objects',
+      name: 'config.objects',
+      type: FormFieldType.MultiSelect,
+      required: false,
+      options: [
+        { label: 'Contacts', value: 'contacts' },
+        { label: 'Companies', value: 'companies' },
+        { label: 'Deals', value: 'deals' },
+        { label: 'Tickets', value: 'tickets' },
+      ],
+      placeholder: 'contacts, companies, deals, tickets',
+      tooltip: t('setting.hubspotObjectsTip'),
+    },
+    {
+      label: 'Include Knowledge Base',
+      name: 'config.include_knowledge_base',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+      tooltip: t('setting.hubspotKnowledgeBaseTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
       },
     },
   ],
@@ -2390,6 +2440,18 @@ export const DataSourceFormDefaultValues = {
         tenant_id: '',
         client_id: '',
         client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.HUBSPOT]: {
+    name: '',
+    source: DataSourceKey.HUBSPOT,
+    config: {
+      objects: ['contacts', 'companies', 'deals', 'tickets'],
+      include_knowledge_base: true,
+      batch_size: 2,
+      credentials: {
+        access_token: '',
       },
     },
   },
