@@ -172,7 +172,7 @@ class ConversationService(CommonService):
     @DB.connection_context()
     def get_all_conversation_by_dialog_ids(cls, dialog_ids):
         sessions = cls.model.select().where(cls.model.dialog_id.in_(dialog_ids))
-        sessions.order_by(cls.model.create_time.asc())
+        sessions = sessions.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:

@@ -186,7 +186,7 @@ class FileService(CommonService):
     def get_all_file_ids_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         files = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        files.order_by(cls.model.create_time.asc())
+        files = files.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
