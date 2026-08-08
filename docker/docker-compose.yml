@@ -25,6 +25,13 @@ services:
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+      nproc:
+        soft: 65535
+        hard: 65535
     # Example configuration to set up an MCP server:
     # command:
     #   - --enable-mcpserver
@@ -76,6 +83,13 @@ services:
     profiles:
       - gpu
     image: ${RAGFLOW_IMAGE}
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+      nproc:
+        soft: 65535
+        hard: 65535
     # Example configuration to set up an MCP server:
     # command:
     #   - --enable-mcpserver
