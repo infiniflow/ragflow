@@ -13,7 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -170,3 +172,43 @@ def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
     assert used_tokens == expected_total
     assert trimmed[0]["content"] == "s" * system_len
     assert trimmed[-1]["content"] == user_content
+
+
+@pytest.mark.p1
+def test_gen_metadata_uses_json_schema_explicit_prompt_and_zero_temperature(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "META_DATA", "CONTENT={{ content }}\nSCHEMA={{ schema }}")
+
+    class FakeChatModel:
+        max_length = 8192
+
+        def __init__(self):
+            self.call = None
+
+        async def async_chat(self, system_prompt, messages, gen_conf=None):
+            self.call = (system_prompt, messages, gen_conf)
+            return '{"year": 2026}'
+
+    model = FakeChatModel()
+    schema = {
+        "type": "object",
+        "properties": {"year": {"description": "Reporting year", "enum": ["2026"]}},
+        "additionalProperties": False,
+    }
+    original_schema = json.loads(json.dumps(schema))
+
+    answer = asyncio.run(generator.gen_metadata(model, schema, "Reporting year: 2026"))
+
+    assert model.call is not None
+    system_prompt, messages, gen_conf = model.call
+    rendered_schema = system_prompt.split("SCHEMA=", 1)[1]
+    rendered_schema_obj = json.loads(rendered_schema)
+    assert rendered_schema_obj["properties"]["year"]["enum"] == ["2026"]
+    assert "Extracted values must strictly match" in rendered_schema_obj["properties"]["year"]["description"]
+    assert schema == original_schema
+    assert "'additionalProperties': False" not in rendered_schema
+    assert "single flat JSON object" in messages[0]["content"]
+    assert "Do not output Markdown or explanations" in messages[0]["content"]
+    assert "must not return {}" in messages[0]["content"]
+    assert gen_conf == {"temperature": 0}
+    assert answer == '{"year": 2026}'

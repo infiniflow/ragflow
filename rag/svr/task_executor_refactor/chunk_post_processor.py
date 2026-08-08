@@ -33,7 +33,7 @@ from timeit import default_timer as timer
 from typing import Dict, List
 
 from common.constants import TAG_FLD, LLMType
-from common.metadata_utils import turn2jsonschema, update_metadata_to
+from common.metadata_utils import normalize_extracted_metadata, turn2jsonschema, update_metadata_to
 from common import settings
 from rag.nlp import rag_tokenizer
 from rag.svr.task_executor_refactor.task_context import TaskContext
@@ -209,7 +209,7 @@ async def generate_metadata(docs: List[Dict], ctx: TaskContext) -> None:
         metadata = {}
         for doc in docs:
             if "metadata_obj" in doc:
-                metadata = update_metadata_to(metadata, doc["metadata_obj"])
+                metadata = update_metadata_to(metadata, normalize_extracted_metadata(doc["metadata_obj"]))
                 del doc["metadata_obj"]
         if metadata:
             existing_meta = DocMetadataService.get_document_metadata(ctx.doc_id)
