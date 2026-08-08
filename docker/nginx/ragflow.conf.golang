@@ -30,8 +30,16 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Cache-Control: max-age Expires
-    location ~ ^/static/(css|js|media)/ {
+    # index.html must always be revalidated: it references hashed chunks,
+    # a stale copy points at chunk files that no longer exist after upgrades.
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+    }
+
+    # Hashed build assets: cache aggressively, and return 404 instead of
+    # falling back to index.html (HTML breaks dynamic import()).
+    location ~* \.(?:js|mjs|css|png|jpg|jpeg|gif|ico|svg|webp|woff2?|ttf|eot|map)$ {
+        try_files $uri =404;
         expires 10y;
         access_log off;
     }
