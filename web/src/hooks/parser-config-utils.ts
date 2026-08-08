@@ -4,6 +4,43 @@
  * and merge unknown fields into the `ext` field for flexible configuration.
  */
 
+type ParentChildConfig = {
+  use_parent_child?: boolean;
+  children_delimiter?: string;
+};
+
+/**
+ * Normalize parser_config from the API for react-hook-form.
+ * The backend stores parent-child chunking under `parent_child` and/or
+ * flattened `enable_children` + `children_delimiter`; the UI only edits
+ * the flattened fields (issue #15578).
+ */
+export const normalizeInboundParserConfig = (
+  parserConfig: Record<string, any> | undefined,
+) => {
+  if (!parserConfig) {
+    return parserConfig;
+  }
+
+  const parentChild = parserConfig.parent_child as
+    | ParentChildConfig
+    | undefined;
+  const enable_children = Boolean(
+    parserConfig.enable_children ?? parentChild?.use_parent_child ?? false,
+  );
+  const children_delimiter =
+    (enable_children
+      ? (parserConfig.children_delimiter ?? parentChild?.children_delimiter)
+      : (parserConfig.children_delimiter ?? parentChild?.children_delimiter)) ??
+    '\n';
+
+  return {
+    ...parserConfig,
+    enable_children,
+    children_delimiter,
+  };
+};
+
 /**
  * Pipeline parser configs are keyed by operator id (e.g. "Parser:xxx"), so a
  * top-level key containing ":" marks the pipeline structure, which must be
@@ -73,6 +110,7 @@ export const extractParserConfigExt = (
   parserConfig: Record<string, any> | undefined,
 ) => {
   if (!parserConfig) return parserConfig;
+  const normalized = normalizeInboundParserConfig(parserConfig);
   const {
     auto_keywords,
     auto_questions,
@@ -92,7 +130,7 @@ export const extractParserConfigExt = (
     enable_children,
     ext,
     ...parserExt
-  } = parserConfig;
+  } = normalized;
   return {
     auto_keywords,
     auto_questions,

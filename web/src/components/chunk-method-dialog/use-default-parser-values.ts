@@ -1,3 +1,4 @@
+import { normalizeInboundParserConfig } from '@/hooks/parser-config-utils';
 import { IParserConfig } from '@/interfaces/database/document';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -55,10 +56,13 @@ export function useFillDefaultValueOnMount() {
 
   const fillDefaultValue = useCallback(
     (parserConfig: IParserConfig) => {
+      const normalized = normalizeInboundParserConfig(
+        parserConfig as Record<string, any>,
+      ) as IParserConfig;
       return Object.entries(defaultParserValues).reduce<Record<string, any>>(
         (pre, [key, value]) => {
-          if (key in parserConfig) {
-            pre[key] = parserConfig[key as keyof IParserConfig];
+          if (key in normalized) {
+            pre[key] = normalized[key as keyof IParserConfig];
           } else {
             pre[key] = value;
           }
