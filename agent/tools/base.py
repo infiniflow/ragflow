@@ -48,14 +48,16 @@ class ToolMeta(TypedDict):
 
 
 class LLMToolPluginCallSession(ToolCallSession):
-    def __init__(self, tools_map: dict[str, object], callback: partial):
+    def __init__(self, tools_map: dict[str, object], callback: partial, default_timeout: float | int = 10):
         self.tools_map = tools_map
         self.callback = callback
+        self.default_timeout = default_timeout
 
-    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> Any:
+    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int | None = None) -> Any:
         return asyncio.run(self.tool_call_async(name, arguments, request_timeout=timeout))
 
-    async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 10) -> Any:
+    async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int | None = None) -> Any:
+        request_timeout = self.default_timeout if request_timeout is None else request_timeout
         assert name in self.tools_map, f"LLM tool {name} does not exist"
         logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]}")
         if not isinstance(arguments, Mapping):

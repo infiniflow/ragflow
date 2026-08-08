@@ -2614,6 +2614,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       maxRounds: 'Max reflection rounds',
       delayAfterError: 'Delay after error',
       maxRetries: 'Max retry rounds',
+      toolTimeout: 'Tool timeout',
+      toolTimeoutTip:
+        'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
       maxSteps: 'Max steps',
       headless: 'Headless',
       enableDefaultExtensions: 'Enable default extensions',
