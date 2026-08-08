@@ -324,21 +324,24 @@ export const useListProviderModels = () => {
   const { isPending: loading, mutateAsync } = useMutation({
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
-      const { provider_name, api_key, base_url } = params;
-      // GET /api/v1/providers/<provider_name>/models
-      // The API accepts api_key and base_url as optional query parameters.
-      // api_key is expected as a string; values in {} object form must be
-      // JSON-stringified before being sent.
-      const queryParams: Record<string, string> = {};
+      const { provider_name, api_key, base_url, region, extensions } = params;
+      // POST keeps API keys out of URLs, browser history, and
+      // access logs. The backend retains GET only for API compatibility.
+      const requestData: Record<string, unknown> = {};
       if (api_key) {
-        queryParams.api_key =
-          typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
+        requestData.api_key = api_key;
       }
       if (base_url) {
-        queryParams.base_url = base_url;
+        requestData.base_url = base_url;
+      }
+      if (region) {
+        requestData.region = region;
+      }
+      if (extensions) {
+        requestData.extensions = extensions;
       }
       const { data } = await llmService.listProviderModels(
-        { provider_name, params: queryParams },
+        { provider_name, data: requestData },
         true,
       );
       return data;

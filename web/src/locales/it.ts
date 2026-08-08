@@ -1183,6 +1183,20 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       awsAuthModeAccessKeySecret: 'ACCESS KEY',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
+      awsAuthModeBedrockAPIKey: 'Chiave API Bedrock',
+      bedrockAPIKey: 'Chiave API Bedrock',
+      bedrockAPIKeyMessage: 'Inserisci la tua chiave API Bedrock',
+      bedrockEndpointType: 'Tipo di endpoint',
+      bedrockEndpointRuntime: 'Bedrock Runtime',
+      bedrockEndpointMantleOpenAI: 'Mantle (compatibile con OpenAI)',
+      bedrockEndpointMantleAnthropic: 'Mantle (compatibile con Anthropic)',
+      bedrockEndpointURL: "URL dell'endpoint",
+      bedrockEndpointURLMessage:
+        'Inserisci un endpoint HTTPS Bedrock attendibile',
+      bedrockDiscoveryEndpointURL:
+        "URL dell'endpoint per il rilevamento dei modelli",
+      bedrockDiscoveryEndpointURLMessage:
+        'Endpoint Bedrock facoltativo del piano di controllo per elencare i modelli',
       awsAccessKeyId: 'AWS ACCESS KEY ID',
       awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',

@@ -91,7 +91,31 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
  *  field (e.g. VolcEngine, Google Cloud) so the auto-fetch gate can
  *  distinguish "no base_url field" from "base_url field exists but is
  *  empty". */
-export type ResolvedCreds = { apiKey: string; baseUrl: string | undefined };
+export type ResolvedCreds = {
+  apiKey: string;
+  baseUrl: string | undefined;
+  region: string;
+  extensions: Record<string, unknown>;
+};
+
+export const areCatalogCredentialsReady = (
+  providerName: string,
+  apiKeyValue: string,
+  regionValue = '',
+  authMode?: unknown,
+): boolean => {
+  if (providerName === LLMFactory.VolcEngine) return !!apiKeyValue;
+  if (providerName !== LLMFactory.Bedrock) return true;
+  return authMode !== 'bedrock_api_key' || (!!apiKeyValue && !!regionValue);
+};
+
+export const isCatalogBaseURLReady = (
+  providerName: string,
+  baseUrl: string | undefined,
+): boolean =>
+  providerName === LLMFactory.Bedrock ||
+  baseUrl === undefined ||
+  !!baseUrl;
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
@@ -109,6 +133,9 @@ export function useResolveCreds(
     return {
       apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
       baseUrl: (fv.base_url as string) ?? instance?.base_url,
+      region: (fv.region as string) ?? instance?.region ?? '',
+      extensions:
+        (fv.extensions as Record<string, unknown> | undefined) ?? {},
     };
   }, [getFormValues, instance]);
 
@@ -127,10 +154,10 @@ interface UseModelsCatalogArgs {
   instanceModels: IInstanceModel[] | undefined;
 
   apiKeyValue: string;
-
   baseUrlValue: string | undefined;
-
   instanceDetailsLoaded?: boolean;
+  regionValue: string;
+  authMode?: unknown;
 }
 
 export function useModelsCatalog({
@@ -142,6 +169,8 @@ export function useModelsCatalog({
   apiKeyValue,
   baseUrlValue,
   instanceDetailsLoaded,
+  regionValue,
+  authMode,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -202,7 +231,7 @@ export function useModelsCatalog({
   // The result is merged into `catalog`; the displayed list then becomes
   // the union of catalog + instance models.
   const handleListModels = async () => {
-    const { apiKey, baseUrl } = resolveCreds();
+    const { apiKey, baseUrl, region, extensions } = resolveCreds();
     if (providerName === LLMFactory.VolcEngine && !apiKey) {
       setHasFetched(true);
       return;
@@ -211,8 +240,10 @@ export function useModelsCatalog({
     try {
       const ret = await listProviderModels({
         provider_name: providerName,
-        api_key: apiKey as any,
+        api_key: apiKey,
         base_url: baseUrl,
+        region,
+        extensions,
       });
       if (ret?.code === 0) {
         setCatalog(
@@ -243,8 +274,6 @@ export function useModelsCatalog({
   // reset `base_url` / `api_key` values, whereas reading them during
   // render would see the stale (pre-reset) values and defer forever.
 
-  const requiresApiKey = providerName === LLMFactory.VolcEngine;
-
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
@@ -252,13 +281,20 @@ export function useModelsCatalog({
     if (!providerName) return;
 
     const creds = resolveCreds();
-    const hasBaseUrlField = creds.baseUrl !== undefined;
     const ready =
-      (!requiresApiKey || !!creds.apiKey) &&
-      (!hasBaseUrlField || !!creds.baseUrl);
+      areCatalogCredentialsReady(
+        providerName,
+        creds.apiKey,
+        creds.region,
+        creds.extensions.auth_mode,
+      ) && isCatalogBaseURLReady(providerName, creds.baseUrl);
     if (!ready) return;
-    hasAutoFetchedRef.current = true;
-    handleListModels();
+    const delay = providerName === LLMFactory.Bedrock ? 500 : 0;
+    const timer = window.setTimeout(() => {
+      hasAutoFetchedRef.current = true;
+      handleListModels();
+    }, delay);
+    return () => window.clearTimeout(timer);
     // oxlint-disable-next-line react/exhaustive-deps
   }, [
     providerName,
@@ -267,6 +303,8 @@ export function useModelsCatalog({
     apiKeyValue,
     baseUrlValue,
     instanceDetailsLoaded,
+    regionValue,
+    authMode,
   ]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
@@ -499,7 +537,7 @@ interface UseModelVerifyArgs {
  * per-model `handleVerify` and batch `handleBatchVerify` so both paths
  * use identical credential resolution logic.
  */
-function buildVerifyArgs(
+export function buildVerifyArgs(
   model: IProviderModelItem,
   providerName: string,
   resolveCreds: () => ResolvedCreds,
@@ -529,6 +567,7 @@ function buildVerifyArgs(
     const creds = resolveCreds();
     apiKey = creds.apiKey;
     baseUrl = creds.baseUrl;
+    region = creds.region;
   }
 
   // `api_key` is typed `string` on the service signature, but

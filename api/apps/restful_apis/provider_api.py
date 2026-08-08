@@ -197,7 +197,7 @@ def delete_provider(tenant_id: str = None, provider_id_or_name: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_id_or_name>/models", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/models", methods=["GET", "POST"])  # noqa: F821
 @login_required
 async def list_provider_models(provider_id_or_name: str):
     """
@@ -218,6 +218,21 @@ async def list_provider_models(provider_id_or_name: str):
         type: string
         required: true
         description: Bearer token for authentication.
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            api_key:
+              type: string
+            base_url:
+              type: string
+            region:
+              type: string
+            extensions:
+              type: object
+              description: Provider-specific extension parameters.
     responses:
       200:
         description: List of models for the provider.
@@ -230,9 +245,24 @@ async def list_provider_models(provider_id_or_name: str):
                 type: object
     """
     try:
-        api_key = request.args.get("api_key")
-        base_url = request.args.get("base_url")
-        success, result = await provider_api_service.list_provider_models(provider_id_or_name, api_key, base_url)
+        if request.method == "POST":
+            logging.info("Listing models for provider %s via POST", provider_id_or_name)
+        body = await request.get_json(silent=True) if request.method == "POST" else {}
+        if body is None:
+            body = {}
+        elif not isinstance(body, dict):
+            return get_error_argument_result(message="request body must be an object")
+        for field in ("api_key", "base_url", "region"):
+            if body.get(field) is not None and not isinstance(body[field], str):
+                return get_error_argument_result(message=f"{field} must be a string")
+        api_key = body.get("api_key")
+        extensions = body.get("extensions")
+        if extensions is not None and not isinstance(extensions, dict):
+            return get_error_argument_result(message="extensions must be an object")
+        api_key = api_key or request.args.get("api_key")
+        base_url = body.get("base_url") or request.args.get("base_url")
+        region = body.get("region") or request.args.get("region")
+        success, result = await provider_api_service.list_provider_models(provider_id_or_name, api_key, base_url, region, extensions)
         if success:
             return get_result(data=result)
         else:

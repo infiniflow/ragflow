@@ -2369,6 +2369,8 @@ class LiteLLMBase(ABC):
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
+            from botocore.exceptions import BotoCoreError, ClientError
+            from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_region
 
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
@@ -2380,22 +2382,65 @@ class LiteLLMBase(ABC):
                 raise ValueError("Bedrock auth_mode must be provided in the key")
 
             bedrock_region = bedrock_key.get("bedrock_region")
+            if not bedrock_region:
+                raise ValueError("Bedrock region must be provided in the key")
+            validate_bedrock_region(bedrock_region)
+            endpoint_type, endpoint_url = resolve_bedrock_endpoint(
+                mode,
+                bedrock_key.get("bedrock_endpoint_type"),
+                bedrock_key.get("bedrock_endpoint_url") or "",
+            )
 
-            if mode == "access_key_secret":
-                completion_args.update({"aws_region_name": bedrock_region})
-                completion_args.update({"aws_access_key_id": bedrock_key.get("bedrock_ak")})
-                completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
+            if mode == "bedrock_api_key":
+                bedrock_api_key = bedrock_key.get("bedrock_api_key")
+                if not bedrock_api_key:
+                    raise ValueError("Bedrock API key must be provided")
+                if endpoint_type == "runtime":
+                    # LiteLLM's Bedrock adapter always constructs a SigV4
+                    # request before restoring an explicit Authorization
+                    # header. Supplying inert credentials prevents it from
+                    # consulting the ambient AWS credential chain; the final
+                    # request uses the Bedrock API key as a Bearer token.
+                    completion_args.update(
+                        {
+                            "aws_region_name": bedrock_region,
+                            "aws_access_key_id": "bedrock-api-key",
+                            "aws_secret_access_key": "bedrock-api-key",
+                            "extra_headers": {"Authorization": f"Bearer {bedrock_api_key}"},
+                        }
+                    )
+                    if endpoint_url:
+                        completion_args["aws_bedrock_runtime_endpoint"] = endpoint_url
+                else:
+                    model_name = self.model_name.removeprefix("bedrock/")
+                    provider_prefix = "openai" if endpoint_type == "mantle_openai" else "anthropic"
+                    completion_args.update({"model": f"{provider_prefix}/{model_name}", "api_base": endpoint_url, "api_key": bedrock_api_key})
+            elif mode == "access_key_secret":
+                bedrock_ak = bedrock_key.get("bedrock_ak")
+                bedrock_sk = bedrock_key.get("bedrock_sk")
+                if not bedrock_ak or not bedrock_sk:
+                    raise ValueError("Bedrock access key and secret key must be provided")
+                completion_args.update({"aws_region_name": bedrock_region, "aws_access_key_id": bedrock_ak, "aws_secret_access_key": bedrock_sk})
             elif mode == "iam_role":
                 aws_role_arn = bedrock_key.get("aws_role_arn")
-                sts_client = boto3.client("sts", region_name=bedrock_region)
-                resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
+                if not aws_role_arn:
+                    raise ValueError("Bedrock AWS role ARN must be provided")
+                try:
+                    resp = boto3.client("sts", region_name=bedrock_region).assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
+                except (BotoCoreError, ClientError) as error:
+                    raise ValueError("Failed to assume Bedrock AWS role") from error
                 creds = resp["Credentials"]
                 completion_args.update({"aws_region_name": bedrock_region})
                 completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
                 completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
                 completion_args.update({"aws_session_token": creds["SessionToken"]})
-            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
+            elif mode == "assume_role":
                 completion_args.update({"aws_region_name": bedrock_region})
+            else:
+                raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
+
+            if mode != "bedrock_api_key" and endpoint_url:
+                completion_args["aws_bedrock_runtime_endpoint"] = endpoint_url
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             if self.provider_order:

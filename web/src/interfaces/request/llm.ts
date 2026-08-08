@@ -157,5 +157,6 @@ export interface IListProviderModelsRequestBody {
   api_key?: string;
   base_url?: string;
   region?: string;
+  extensions?: Record<string, unknown>;
   model_info?: IModelInfo[];
 }

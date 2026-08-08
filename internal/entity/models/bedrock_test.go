@@ -19,6 +19,7 @@ package models
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,98 @@ func TestParseBedrockKeyAssumeRoleAcceptsBareConfig(t *testing.T) {
 	// chain, so parseBedrockKey must accept a blob with no AK/SK/ARN.
 	if _, err := parseBedrockKey(`{"auth_mode":"assume_role","bedrock_region":"us-east-1"}`); err != nil {
 		t.Errorf("assume_role: want no error, got %v", err)
+	}
+}
+
+func TestParseBedrockAPIKeyRequiresToken(t *testing.T) {
+	_, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1"}`)
+	if err == nil || !strings.Contains(err.Error(), "requires bedrock_api_key") {
+		t.Fatalf("missing Bedrock API key: got %v", err)
+	}
+}
+
+func TestParseBedrockAPIKeyNormalizesMantleEndpoint(t *testing.T) {
+	key, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":"https://bedrock-mantle.ap-northeast-1.api.aws/v1/models"}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if key.EndpointURL != "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic" {
+		t.Fatalf("EndpointURL=%q", key.EndpointURL)
+	}
+}
+
+func TestNormalizeBedrockEndpointStopsAfterFirstSuffix(t *testing.T) {
+	got := normalizeBedrockEndpoint(bedrockEndpointMantleOpenAI, "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic/v1/models")
+	want := "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic/v1"
+	if got != want {
+		t.Fatalf("normalizeBedrockEndpoint() = %q, want %q", got, want)
+	}
+}
+
+func TestAuthorizeBedrockRequestUsesBearerWithoutSigV4(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://bedrock.ap-northeast-1.amazonaws.com/foundation-models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := &bedrockKey{AuthMode: bedrockAuthAPIKey, BedrockAPIKey: "test-token"}
+	if err = authorizeBedrockRequest(t.Context(), req, nil, key, bedrockControlService, "ap-northeast-1"); err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Fatalf("Authorization=%q", got)
+	}
+	if got := req.Header.Get("X-Amz-Date"); got != "" {
+		t.Fatalf("request was unexpectedly SigV4-signed: X-Amz-Date=%q", got)
+	}
+}
+
+func TestAuthorizeBedrockRequestRejectsUntrustedEndpointBeforeAddingBearer(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://attacker.example.com/model/test/converse", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := &bedrockKey{AuthMode: bedrockAuthAPIKey, BedrockAPIKey: "test-token"}
+	err = authorizeBedrockRequest(t.Context(), req, nil, key, bedrockRuntimeService, "ap-northeast-1")
+	if err == nil || !strings.Contains(err.Error(), "untrusted endpoint") {
+		t.Fatalf("authorize untrusted endpoint: got %v", err)
+	}
+	if got := req.Header.Get("Authorization"); got != "" {
+		t.Fatalf("Authorization leaked to untrusted endpoint: %q", got)
+	}
+}
+
+func TestAuthorizeBedrockRequestAllowsOnDemandCatalogFilter(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://bedrock.ap-northeast-1.amazonaws.com/foundation-models?byInferenceType=ON_DEMAND", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := &bedrockKey{AuthMode: bedrockAuthAPIKey, BedrockAPIKey: "test-token"}
+	if err = authorizeBedrockRequest(t.Context(), req, nil, key, bedrockControlService, "ap-northeast-1"); err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Fatalf("Authorization=%q", got)
+	}
+}
+
+func TestAuthorizeBedrockRequestRejectsUnexpectedCatalogQuery(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://bedrock.ap-northeast-1.amazonaws.com/foundation-models?target=example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := &bedrockKey{AuthMode: bedrockAuthAPIKey, BedrockAPIKey: "test-token"}
+	if err = authorizeBedrockRequest(t.Context(), req, nil, key, bedrockControlService, "ap-northeast-1"); err == nil {
+		t.Fatal("unexpected catalog query was accepted")
+	}
+	if got := req.Header.Get("Authorization"); got != "" {
+		t.Fatalf("Bearer token was added before target validation: %q", got)
+	}
+}
+
+func TestResolveBedrockEndpointRejectsUntrustedHost(t *testing.T) {
+	_, _, err := resolveBedrockEndpoint(bedrockAuthAPIKey, bedrockEndpointMantleOpenAI, "https://example.com/v1")
+	if err == nil || !strings.Contains(err.Error(), "hostname is not allowed") {
+		t.Fatalf("untrusted endpoint: got %v", err)
 	}
 }
 
@@ -380,6 +473,47 @@ func TestBedrockChatRequiresAPIKey(t *testing.T) {
 	}
 }
 
+func TestBedrockMantleAnthropicUsesAPIKeyHeader(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/anthropic/v1/messages" {
+			t.Errorf("path=%q want /anthropic/v1/messages", r.URL.Path)
+		}
+		if got := r.Header.Get("x-api-key"); got != "token" {
+			t.Errorf("x-api-key=%q want token", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization=%q want empty", got)
+		}
+		if got := r.Header.Get("anthropic-version"); got != anthropicVersion {
+			t.Errorf("anthropic-version=%q want %q", got, anthropicVersion)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"pong"}]}`))
+	}))
+	defer srv.Close()
+
+	key := fmt.Sprintf(
+		`{"auth_mode":"bedrock_api_key","bedrock_region":"us-east-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":%q}`,
+		srv.URL,
+	)
+	m := NewBedrockModel(nil, URLSuffix{})
+	resp, err := m.ChatWithMessages(
+		t.Context(),
+		"anthropic.claude-sonnet-current",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &key},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Fatalf("answer=%v want pong", resp.Answer)
+	}
+}
+
 func TestBedrockChatRequiresModelID(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -422,11 +556,17 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 	srv := newBedrockServer(t, http.MethodGet,
 		"/foundation-models",
 		func(w http.ResponseWriter, r *http.Request) {
+			if got := r.URL.Query().Get("byInferenceType"); got != "ON_DEMAND" {
+				t.Errorf("byInferenceType=%q, want ON_DEMAND", got)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"modelSummaries": [
-					{"modelId":"anthropic.claude-3-haiku-20240307-v1:0"},
-					{"modelId":"amazon.nova-lite-v1:0"},
+					{"modelId":"anthropic.claude-3-haiku-20240307-v1:0","inputModalities":["TEXT"],"outputModalities":["TEXT"],"inferenceTypesSupported":["ON_DEMAND"],"modelLifecycle":{"status":"ACTIVE"}},
+					{"modelId":"amazon.nova-lite-v1:0","inputModalities":["TEXT","IMAGE"],"outputModalities":["TEXT"],"inferenceTypesSupported":["ON_DEMAND","PROVISIONED"],"modelLifecycle":{"status":"ACTIVE"}},
+					{"modelId":"anthropic.provisioned-only","inputModalities":["TEXT"],"outputModalities":["TEXT"],"inferenceTypesSupported":["PROVISIONED"],"modelLifecycle":{"status":"ACTIVE"}},
+					{"modelId":"anthropic.legacy-model","inputModalities":["TEXT"],"outputModalities":["TEXT"],"inferenceTypesSupported":["ON_DEMAND"],"modelLifecycle":{"status":"LEGACY"}},
+					{"modelId":"missing-modalities"},
 					{"modelId":""}
 				]
 			}`))
@@ -453,6 +593,19 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 			t.Errorf("got[%d]=%s want %q", i, got[i].Name, want[i])
 		}
 	}
+	if diff := strings.Join(got[0].ModelTypes, ","); diff != "chat" {
+		t.Errorf("Claude model types=%q, want chat", diff)
+	}
+	if diff := strings.Join(got[1].ModelTypes, ","); diff != "chat" {
+		t.Errorf("Nova model types=%q, want chat", diff)
+	}
+}
+
+func TestBedrockModelTypesDoesNotAdvertiseUnsupportedVision(t *testing.T) {
+	got := bedrockModelTypes("amazon.nova-lite-v1:0", []string{"TEXT", "IMAGE"}, []string{"TEXT"})
+	if diff := strings.Join(got, ","); diff != "chat" {
+		t.Fatalf("model types=%q, want chat", diff)
+	}
 }
 
 func TestBedrockCheckConnectionDelegates(t *testing.T) {
@@ -468,6 +621,24 @@ func TestBedrockCheckConnectionDelegates(t *testing.T) {
 	key := validBedrockKey()
 	if err := m.CheckConnection(ctx, &APIConfig{ApiKey: &key}); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("want 403 surfaced via ListModels, got %v", err)
+	}
+}
+
+func TestBedrockCheckConnectionRejectsEmptyCompatibleCatalog(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newBedrockServer(t, http.MethodGet,
+		"/foundation-models",
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"modelSummaries":[]}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	err := m.CheckConnection(t.Context(), &APIConfig{ApiKey: &key})
+	if err == nil || !strings.Contains(err.Error(), "no compatible Bedrock") {
+		t.Fatalf("want empty-catalog error, got %v", err)
 	}
 }
 

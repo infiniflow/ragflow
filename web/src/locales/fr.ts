@@ -1401,6 +1401,20 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       awsAuthModeAccessKeySecret: "Clé d'accès",
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
+      awsAuthModeBedrockAPIKey: 'Clé API Bedrock',
+      bedrockAPIKey: 'Clé API Bedrock',
+      bedrockAPIKeyMessage: 'Saisissez votre clé API Bedrock',
+      bedrockEndpointType: 'Type de point de terminaison',
+      bedrockEndpointRuntime: 'Bedrock Runtime',
+      bedrockEndpointMantleOpenAI: 'Mantle (compatible OpenAI)',
+      bedrockEndpointMantleAnthropic: 'Mantle (compatible Anthropic)',
+      bedrockEndpointURL: 'URL du point de terminaison',
+      bedrockEndpointURLMessage:
+        'Saisissez un point de terminaison HTTPS Bedrock de confiance',
+      bedrockDiscoveryEndpointURL:
+        'URL du point de terminaison de découverte des modèles',
+      bedrockDiscoveryEndpointURLMessage:
+        'Point de terminaison facultatif du plan de contrôle Bedrock pour lister les modèles',
       awsAuthModeProfile: 'Profil AWS',
       awsAuthModeKey: 'Clé AWS',
       awsAccessKeyId: "ID de clé d'accès AWS",
