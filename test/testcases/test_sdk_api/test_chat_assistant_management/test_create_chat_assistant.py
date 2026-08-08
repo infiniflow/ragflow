@@ -185,7 +185,8 @@ class TestChatAssistantCreate:
         else:
             chat_assistant = client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt_config=prompt_config)
             for k, v in prompt_config.items():
-                assert getattr(chat_assistant.prompt_config, k) == v
+                expected = [{"key": "date", "optional": True}] if k == "parameters" and not v else v
+                assert getattr(chat_assistant.prompt_config, k) == expected
 
 
 class TestChatAssistantCreate2:
