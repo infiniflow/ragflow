@@ -751,7 +751,10 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
+	resultStr, ok := result.(string)
+	if !ok {
+		resultStr = formatStructuredExtraction(result, "keywords", ",")
+	}
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -787,7 +790,10 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
+	resultStr, ok := result.(string)
+	if !ok {
+		resultStr = formatStructuredExtraction(result, "questions", "\n")
+	}
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -1038,6 +1044,31 @@ func cleanExtractionResult(s string) string {
 		return ""
 	}
 	return s
+}
+
+func formatStructuredExtraction(result any, field, separator string) string {
+	m, ok := result.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, exists := m[field]
+	if !exists {
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	if value == nil {
+		return ""
+	}
+	if values, ok := value.([]any); ok {
+		parts := make([]string, 0, len(values))
+		for _, item := range values {
+			if item != nil {
+				parts = append(parts, fmt.Sprint(item))
+			}
+		}
+		return strings.Join(parts, separator)
+	}
+	return fmt.Sprint(value)
 }
 
 // splitKeywords splits a comma-delimited keyword string.
