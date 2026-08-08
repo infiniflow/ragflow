@@ -145,6 +145,9 @@ const GenericProviderInstanceCard = forwardRef<
     initialValues,
     baseUrlOptions,
     hideWhenInstanceExists,
+    // Saved cards with a persisted key render the api_key field through
+    // the fixed-length masked input (see useFormFields).
+    !isDraft && Boolean(instanceDetails?.api_key),
   );
   useFormResetOnDetailsLoad(
     formRef,
