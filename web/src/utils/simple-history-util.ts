@@ -105,7 +105,7 @@ class GlobalHistory {
       pathname: window.location.pathname,
       search: window.location.search,
       hash: window.location.hash,
-      state: history.state,
+      state: window.history.state,
     };
   }
 
