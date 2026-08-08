@@ -112,9 +112,7 @@ class Agent(LLM, ToolBase):
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
                 self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
-        self.toolcall_session = LLMToolPluginCallSession(
-            self.tools, self.callback, default_timeout=float(self._param.tool_timeout or 10)
-        )
+        self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback, default_timeout=self._param.tool_timeout)
         if self.tool_meta:
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 

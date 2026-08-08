@@ -16,20 +16,20 @@
 """Verify that LLMToolPluginCallSession applies its configurable default timeout to MCP tool calls."""
 
 import asyncio
-import time
 from functools import partial
 
 from agent.tools.base import LLMToolPluginCallSession
 from common.mcp_tool_call_conn import MCPToolBinding
 
 
-class _BlockingSession:
-    """Fake MCP session that waits until the caller-provided timeout elapses, mimicking MCPToolCallSession."""
+class _RecordingSession:
+    """Fake MCP session that records the timeout supplied by each call."""
+
+    def __init__(self):
+        self.timeouts = []
 
     def tool_call(self, name: str, arguments: dict, timeout: float = 10) -> str:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            time.sleep(0.005)
+        self.timeouts.append(timeout)
         return "done"
 
 
@@ -37,28 +37,39 @@ def _noop_callback(*args, **kwargs):
     pass
 
 
-def _make_session(default_timeout):
-    return LLMToolPluginCallSession(
-        {"transcribe_0": MCPToolBinding(_BlockingSession(), "transcribe")},
+def _make_session(default_timeout=None):
+    recording = _RecordingSession()
+    session = LLMToolPluginCallSession(
+        {"transcribe_0": MCPToolBinding(recording, "transcribe")},
         partial(_noop_callback),
         default_timeout=default_timeout,
     )
+    return session, recording
 
 
 def test_default_timeout_is_applied_to_mcp_tool_call():
-    session = _make_session(default_timeout=0.1)
-    start = time.monotonic()
+    session, recording = _make_session(default_timeout=3)
     result = asyncio.run(session.tool_call_async("transcribe_0", {}))
-    elapsed = time.monotonic() - start
     assert result == "done"
-    # Without the session default the 10s tool_call default would run far longer.
-    assert elapsed < 1.0
+    assert recording.timeouts == [3]
 
 
 def test_explicit_request_timeout_overrides_default():
-    session = _make_session(default_timeout=0.5)
-    start = time.monotonic()
-    result = asyncio.run(session.tool_call_async("transcribe_0", {}, request_timeout=0.05))
-    elapsed = time.monotonic() - start
+    session, recording = _make_session(default_timeout=5)
+    result = asyncio.run(session.tool_call_async("transcribe_0", {}, request_timeout=2))
     assert result == "done"
-    assert elapsed < 0.3
+    assert recording.timeouts == [2]
+
+
+def test_constructor_default_timeout_is_ten_seconds():
+    session, recording = _make_session()
+    result = asyncio.run(session.tool_call_async("transcribe_0", {}))
+    assert result == "done"
+    assert recording.timeouts == [10]
+
+
+def test_tool_call_wrapper_uses_default_timeout():
+    session, recording = _make_session(default_timeout=4)
+    result = session.tool_call("transcribe_0", {})
+    assert result == "done"
+    assert recording.timeouts == [4]
