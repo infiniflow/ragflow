@@ -35,6 +35,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   index: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
+  isPendingPlaceholder?: boolean;
 }
 
 const MessageItem = ({
@@ -51,6 +52,7 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  isPendingPlaceholder = false,
   nickname,
 }: IProps) => {
   const { theme } = useTheme();
@@ -125,6 +127,7 @@ const MessageItem = ({
                   showLikeButton={showLikeButton}
                   audioBinary={item.audio_binary}
                   showLoudspeaker={showLoudspeaker}
+                  isPendingPlaceholder={isPendingPlaceholder}
                 ></AssistantGroupButton>
               )
             ) : (

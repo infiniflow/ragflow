@@ -118,6 +118,52 @@ export function SingleChatBox({
               sendLoading={sendLoading}
             />
           ))}
+          {/*
+            Business rule: when the user hits send, derivedMessages already
+            contains a pending assistant row appended by addNewestQuestion
+            (content=''), so MessageItem would normally render the waiting
+            bubble on its own. However, when the backend is slow or the SSE
+            first event is delayed (>1s), there is a noticeable gap between
+            "user pressed send" and "first token appears".
+
+            As an explicit fallback we render an optimistic placeholder
+            MessageItem whenever sendLoading=true and the last message in
+            the list is NOT an assistant row. This guarantees the click-to-
+            feedback interval stays below one frame (<16ms). The placeholder
+            is replaced by the real streaming message once the backend emits
+            its first event.
+
+            The id="__optimistic_assistant_placeholder__" is a synthetic
+            client-side string that the backend has no record of, so we must
+            hide all assistant toolbar actions (copy / read / like / dislike /
+            prompt) on this row. That is done via isPendingPlaceholder,
+            which AssistantGroupButton uses to short-circuit its render.
+          */}
+          {sendLoading &&
+            (!derivedMessages?.length ||
+              derivedMessages[derivedMessages.length - 1].role !==
+                MessageType.Assistant) && (
+              <MessageItem
+                loading={true}
+                key="__optimistic_assistant_placeholder__"
+                item={{
+                  id: '__optimistic_assistant_placeholder__',
+                  role: MessageType.Assistant,
+                  content: '',
+                  conversationId: conversationId ?? '',
+                }}
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                reference={{ chunks: [], doc_aggs: [], total: 0 }}
+                clickDocumentButton={clickDocumentButton}
+                index={derivedMessages?.length ?? 0}
+                removeMessageById={removeMessageById}
+                regenerateMessage={regenerateMessage}
+                sendLoading={true}
+                isPendingPlaceholder={true}
+              />
+            )}
         </div>
         <div ref={scrollRef} />
       </div>
