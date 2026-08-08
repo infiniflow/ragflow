@@ -140,9 +140,12 @@ def _apply_model_family_policies(
 
     def _merge_extra_body(target: dict, extra: dict) -> None:
         body = target.get("extra_body")
-        if not isinstance(body, dict):
-            body = {}
-        body.update(extra)
+        body = dict(body) if isinstance(body, dict) else {}
+        for key, value in extra.items():
+            if isinstance(body.get(key), dict) and isinstance(value, dict):
+                body[key] = {**body[key], **value}
+            else:
+                body[key] = value
         target["extra_body"] = body
 
     thinking_type = _thinking_type()
@@ -162,7 +165,14 @@ def _apply_model_family_policies(
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
         else:
-            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
+            _merge_extra_body(sanitized_kwargs, {"chat_template_kwargs": {"enable_thinking": enable_thinking}})
+            logging.debug(
+                "Applied Qwen3 thinking policy: backend=%s provider=%s enable_thinking=%s payload_path=%s",
+                backend,
+                provider,
+                enable_thinking,
+                "extra_body.chat_template_kwargs.enable_thinking",
+            )
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
