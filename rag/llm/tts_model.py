@@ -41,6 +41,7 @@ from pydantic import BaseModel, conint
 from common.http_client import sync_request
 from common.token_utils import num_tokens_from_string
 from rag.utils.url_utils import ensure_v1
+from rag.llm.key_utils import _resolve_provider_credentials
 
 
 class ServeReferenceAudio(BaseModel):
@@ -144,7 +145,10 @@ class FishAudioTTS(Base):
     def __init__(self, key, model_name, base_url="https://api.fish.audio/v1/tts"):
         if not base_url:
             base_url = "https://api.fish.audio/v1/tts"
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         self.headers = {
             "api-key": key.get("fish_audio_ak"),
             "content-type": "application/msgpack",
@@ -253,7 +257,10 @@ class SparkTTS(Base):
     STATUS_LAST_FRAME = 2
 
     def __init__(self, key, model_name, base_url=""):
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         self.APPID = key.get("spark_app_id", "xxxxxxx")
         self.APISecret = key.get("spark_api_secret", "xxxxxxx")
         self.APIKey = key.get("spark_api_key", "xxxxxx")
