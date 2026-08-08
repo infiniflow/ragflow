@@ -121,6 +121,55 @@ def test_build_error_result_maps_internal_ret_codes():
         assert resp.status_code >= 200
 
 
+def test_build_error_result_falls_back_to_500_for_unmapped_sub_200_codes(caplog):
+    # NOT_EFFECTIVE is 10: below 200 and absent from RET_CODE_TO_HTTP_STATUS, so
+    # it must not reach the wire as an HTTP status of its own.
+    import logging
+
+    from common.constants import RetCode
+
+    caplog.set_level(logging.DEBUG)
+    resp = _build_error_result_in_app_context(RetCode.NOT_EFFECTIVE)
+
+    assert resp.status_code == 500
+
+    fallback_logs = [r for r in caplog.records if r.levelno == logging.WARNING and "unmapped ret code" in r.getMessage()]
+    assert fallback_logs, "the fallback branch must warn about the unmapped ret code"
+
+
+def test_build_error_result_status_logs_never_echo_the_message(caplog):
+    # `message` is caller-supplied and reaches the client verbatim; keep it out of
+    # the logs on every branch (mapped, passed through, and fallback).
+    import logging
+
+    from common.constants import RetCode
+
+    caplog.set_level(logging.DEBUG)
+    for code in (RetCode.ARGUMENT_ERROR, RetCode.NOT_FOUND, RetCode.NOT_EFFECTIVE):
+        _build_error_result_in_app_context(code)
+
+    status_logs = [r for r in caplog.records if "build_error_result:" in r.getMessage()]
+    assert len(status_logs) == 3, "every branch must log exactly one status line"
+    for record in status_logs:
+        assert "boom" not in record.getMessage(), "status logs must not echo the error message"
+
+
+def test_build_error_result_default_code_is_a_valid_http_status():
+    # The signature default (FORBIDDEN) has to survive the mapping unchanged;
+    # callers that omit `code` must still get a sendable status.
+    import asyncio
+
+    from quart import Quart
+
+    app = Quart(__name__)
+
+    async def run():
+        async with app.app_context():
+            return api_utils.build_error_result(message="boom")
+
+    assert asyncio.run(run()).status_code == 403
+
+
 def test_build_error_result_keeps_valid_http_codes_and_body():
     import asyncio
 

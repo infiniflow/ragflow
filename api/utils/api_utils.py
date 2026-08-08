@@ -277,9 +277,17 @@ def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        http_status = RET_CODE_TO_HTTP_STATUS.get(code)
-        if http_status is None:
-            http_status = int(code) if 200 <= int(code) <= 599 else 500
+        ret_code = int(code)
+        http_status = RET_CODE_TO_HTTP_STATUS.get(ret_code)
+        # The status logs below carry the ret code only; `message` can hold user input.
+        if http_status is not None:
+            logging.debug("build_error_result: ret code %s mapped to HTTP %s", ret_code, http_status)
+        elif 200 <= ret_code <= 599:
+            http_status = ret_code
+            logging.debug("build_error_result: ret code %s used as HTTP status", ret_code)
+        else:
+            http_status = 500
+            logging.warning("build_error_result: unmapped ret code %s, falling back to HTTP 500", ret_code)
         response.status_code = http_status
     return response
 
