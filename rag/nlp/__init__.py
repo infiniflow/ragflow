@@ -1193,14 +1193,23 @@ class MergeStrategy(Enum):
     OVER_CAP = "over_cap"
 
 
-def _merge_paragraph_groups(paragraphs, token_size, strategy, size):
+def _merge_paragraph_groups(paragraphs, token_size, strategy, size, overlapped_percent=0):
     """Return index groups of ``paragraphs`` per ``strategy``.
 
     ``paragraphs`` are already split on the delimiter and contain no delimiter
     text. No atom-split is ever performed: a paragraph larger than ``token_size``
     becomes its own chunk. ``size(paragraph)`` returns the token count.
+
+    The OVER_CAP merge decision uses the overlap-scaled threshold
+    ``token_size * (100 - overlapped_percent) / 100`` so the grouping reserves
+    room for the unconditional overlap prefix (unified JSON strategy). At
+    ``overlapped_percent == 0`` the threshold equals ``token_size``, so grouping
+    is identical to the prior ``prev_t + cur_t <= token_size`` rule — including
+    the one-boundary-overflow close — keeping ``merge_paragraphs``/``txt_parser``
+    output unchanged.
     """
     cap = token_size
+    threshold = token_size * (100 - overlapped_percent) / 100.0
     n = len(paragraphs)
     groups = []
 
@@ -1232,11 +1241,13 @@ def _merge_paragraph_groups(paragraphs, token_size, strategy, size):
             groups.append(cur)
         return groups
 
-    # OVER_CAP (default): greedily accumulate adjacent paragraphs while the
-    # projected total stays within ``token_size``; when the next paragraph would
-    # exceed ``token_size``, merge it anyway (one boundary overflow allowed),
-    # then close the chunk. A paragraph larger than ``token_size`` always stands
-    # alone. Never pair into fixed-size twos.
+    # OVER_CAP (default): a new chunk starts when the current chunk's running
+    # token sum exceeds the (overlap-scaled) ``threshold``; an over-budget unit
+    # always stands alone (#17799). The scaled threshold reserves room for the
+    # unconditional overlap prefix (unified JSON strategy). At overlap=0 the
+    # threshold equals ``token_size``, so grouping is identical to the prior
+    # ``prev_t + cur_t <= token_size`` rule (incl. the one-boundary-overflow
+    # close).
     cur, cur_t = [], 0
     for i in range(n):
         pt = size(paragraphs[i])
@@ -1249,22 +1260,18 @@ def _merge_paragraph_groups(paragraphs, token_size, strategy, size):
         if not cur:
             cur, cur_t = [i], pt
             continue
-        if cur_t + pt <= cap:
-            cur.append(i)
-            cur_t += pt
-        else:
-            # Boundary overflow allowed: merge this one in, then close the chunk
-            # so a chunk can exceed cap by at most ~one paragraph (not unbounded).
-            cur.append(i)
-            cur_t += pt
+        if cur_t > threshold:
             groups.append(cur)
-            cur, cur_t = [], 0
+            cur, cur_t = [i], pt
+        else:
+            cur.append(i)
+            cur_t += pt
     if cur:
         groups.append(cur)
     return groups
 
 
-def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, size=None):
+def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, size=None, overlapped_percent=0):
     """Group delimiter-split ``paragraphs`` into chunks using ``strategy``.
 
     Pure function: no pos / PDF coordinate handling, no atom-split. Returns a
@@ -1292,7 +1299,7 @@ def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, si
     """
     if size is None:
         size = num_tokens_from_string
-    groups = _merge_paragraph_groups(paragraphs, token_size, strategy, size)
+    groups = _merge_paragraph_groups(paragraphs, token_size, strategy, size, overlapped_percent)
     return [[paragraphs[i] for i in g] for g in groups]
 
 
@@ -1328,9 +1335,12 @@ def _reconstruct_image_chunk(paragraphs, group):
     return text, image
 
 
-def _apply_overlap_to_chunks(chunks, overlapped_percent, chunk_token_num):
+def _apply_overlap_unconditional(chunks, overlapped_percent):
     """Prepend an overlap prefix from the previous chunk at each new-chunk
-    boundary, but only when it still fits the soft ``chunk_token_num`` target.
+    boundary, UNCONDITIONALLY when ``overlapped_percent > 0`` (unified JSON
+    strategy). The prefix is never dropped for not fitting the budget, so
+    context is continuous across every chunk boundary; a chunk may therefore
+    exceed ``chunk_token_num`` by up to the overlap amount.
     """
     if overlapped_percent <= 0:
         return chunks
@@ -1340,7 +1350,7 @@ def _apply_overlap_to_chunks(chunks, overlapped_percent, chunk_token_num):
             out.append(c)
             continue
         overlap_text, _ = _compute_overlap_prefix(out[-1], overlapped_percent)
-        if overlap_text and num_tokens_from_string(overlap_text) + num_tokens_from_string(c) <= chunk_token_num:
+        if overlap_text:
             out.append(overlap_text + c)
         else:
             out.append(c)
@@ -1404,10 +1414,10 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
                 continue
             paragraphs.append(("\n" + sub_sec, pos))
 
-    groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string)
+    groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
     cks = [_reconstruct_text_chunk(paragraphs, g) for g in groups]
     logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
-    return _apply_overlap_to_chunks(cks, overlapped_percent, chunk_token_num)
+    return _apply_overlap_unconditional(cks, overlapped_percent)
 
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
@@ -1469,14 +1479,14 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 continue
             paragraphs.append(("\n" + sub_sec, text_pos, image))
 
-    groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string)
+    groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
     cks, result_images = [], []
     for g in groups:
         text, image = _reconstruct_image_chunk(paragraphs, g)
         cks.append(text)
         result_images.append(image)
     logging.debug("naive_merge_with_images: %d texts -> %d chunks (delimiter=%r)", len(texts), len(cks), delimiter)
-    return _apply_overlap_to_chunks(cks, overlapped_percent, chunk_token_num), result_images
+    return _apply_overlap_unconditional(cks, overlapped_percent), result_images
 
 
 def docx_question_level(p, bull=-1):

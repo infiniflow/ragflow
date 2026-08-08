@@ -16,6 +16,7 @@ from rag.advanced_rag.harness.sufficiency import (
     compute_fusion_score,
     route_sufficiency_verdict,
 )
+from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
 
 _LOG = logging.getLogger(__name__)
 CLAIM_RESEARCH_TIMEOUT_SECONDS = 180
@@ -65,6 +66,16 @@ async def agentic_research(state: dict, tools) -> dict:
     ctx = OrchestratorContext(question=question, claims=claims, mode=mode_label)
     pipeline = Pipeline(tools, compilation_map)
 
+    # Stagnation guard: if the fusion score stops improving across consecutive
+    # rounds, further searching is unlikely to help (e.g. the corpus simply lacks
+    # the data, and follow-ups keep returning nothing). Without this, a
+    # persistently INSUFFICIENT verdict burns every remaining cycle and, in the
+    # worst case, feeds a long empty loop (see check.log Q4: AutoRater said
+    # "not in corpus", follow-ups found nothing, yet the loop kept spinning).
+    prev_score: float | None = None
+    _STAGNATION_CYCLES = 2  # rounds with no meaningful gain before giving up
+    _STAGNATION_GAIN = 0.05  # minimum fusion-score improvement to count
+
     for cycle in range(mode.max_orchestrator_cycles):
         ctx.iteration = cycle
         _LOG.info("[Agentic research] Research round %d of %d — %d step(s) still unanswered.", cycle + 1, mode.max_orchestrator_cycles, sum(1 for c in ctx.claims if not c.is_verified))
@@ -73,6 +84,23 @@ async def agentic_research(state: dict, tools) -> dict:
         unverified = [c for c in ctx.claims if not c.is_verified]
 
         if unverified:
+            # Consume Phase-2 follow-up queries (missing-pieces feedback) ONCE for
+            # this round and hand the SAME list to every claim in the batch.
+            # Reading the shared ``ctx.pending_followups`` inside
+            # research_agent_loop would race under ``asyncio.gather``: the first
+            # claim to execute would clear it, starving the parallel siblings.
+            # We only consume/clear here — inside ``if unverified`` — because a
+            # research task must actually dispatch to use them. When everything
+            # is already verified no task runs, so we retain the queries for the
+            # next cycle instead of discarding them.
+            followups: list[str] = []
+            if ctx.pending_followups:
+                followups = [str(q.get("query") or q.get("question") or "") for q in ctx.pending_followups if q]
+                followups = [q for q in followups if q.strip()]
+                ctx.pending_followups = []
+                if followups:
+                    _LOG.info("[Agentic research] Round %d: injecting %d follow-up query(ies) to all claims: %s", cycle + 1, len(followups), followups)
+
             # Process in batches of max_parallel_agents
             batch_size = mode.max_parallel_agents
             for i in range(0, len(unverified), batch_size):
@@ -83,7 +111,7 @@ async def agentic_research(state: dict, tools) -> dict:
                     len(batch),
                     "; ".join(f'"{c.description}"' for c in batch),
                 )
-                tasks = [_run_claim_research(c, tools, pipeline, ctx, mode, compilation_map) for c in batch]
+                tasks = [_run_claim_research(c, tools, pipeline, ctx, mode, compilation_map, followups=followups) for c in batch]
                 agent_results = await asyncio.gather(*tasks)
                 _LOG.info(
                     "[Agentic research] Round %d: finished researching %d step(s).",
@@ -95,6 +123,15 @@ async def agentic_research(state: dict, tools) -> dict:
                     is_verified = result.get("is_verified", False)
                     c.is_verified = is_verified
                     c.confidence = result.get("confidence", 0.0)
+                    grounded = result.get("grounded", [])
+                    numbers = result.get("numbers", [])
+                    if "grounded" not in result or "numbers" not in result:
+                        _LOG.warning(
+                            "[Agentic research] claim=%s report omitted the schema-required grounded/numbers fields (grounded=%r numbers=%r) — verification for it is degraded",
+                            c.claim_id,
+                            grounded,
+                            numbers,
+                        )
                     c.agent_result = AgentResult(
                         claim_id=c.claim_id,
                         report=result.get("report", ""),
@@ -103,6 +140,8 @@ async def agentic_research(state: dict, tools) -> dict:
                         evidence_ids=result.get("evidence_ids", []),
                         gaps=result.get("gaps", []),
                         discovered_claims=result.get("discovered_claims", []),
+                        grounded=grounded,
+                        numbers=numbers,
                     )
 
                     # Ultra: dynamic claim expansion
@@ -124,17 +163,75 @@ async def agentic_research(state: dict, tools) -> dict:
         # ── Step B: Sufficiency Check ──
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
         agent_results_list = [c.agent_result for c in ctx.claims if c.agent_result]
+        _LOG.info(
+            "[Sufficiency] Round %d: evidence pool=%d chunk(s), %d claim(s) with agent results: %s",
+            cycle + 1,
+            len(all_chunks),
+            len(agent_results_list),
+            [
+                {
+                    "claim_id": r.claim_id,
+                    "self_verified": r.is_verified,
+                    "self_confidence": round(r.confidence, 3),
+                    "evidence_ids": len(r.evidence_ids),
+                }
+                for r in agent_results_list
+            ],
+        )
         cross_results = [cross_check_claim(r, all_chunks) for r in agent_results_list]
 
-        verdict = compute_fusion_score(agent_results_list, cross_results, mode)
+        verdict = compute_fusion_score(
+            agent_results_list,
+            cross_results,
+            mode,
+            question=ctx.question,
+            claims=ctx.claims,
+            all_chunks=all_chunks,
+        )
         ctx.verdict = verdict
 
-        action, should_continue = route_sufficiency_verdict(
+        # Decision ladder: the LLM Sufficient Context AutoRater is the primary
+        # sufficiency judge (invoked every round in high/ultra). Its verdict is
+        # combined with the code-level signals (hard vetoes + agent confidence)
+        # inside ``route_sufficiency_verdict`` → ``sufficiency_ladder``. The
+        # AutoRater's missing-pieces feedback is saved for the next round.
+        cited_ids: list[str] = []
+        for r in agent_results_list:
+            cited_ids.extend(r.evidence_ids or [])
+        boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=cited_ids)
+        if boost and boost.get("followups"):
+            # Missing pieces → targeted follow-up searches for the next round.
+            ctx.pending_followups = boost.get("followups", [])
+            _LOG.info("[Agentic research] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
+        if boost:
+            _LOG.info("[Agentic research] Round %d: AutoRater is_sufficient=%s confidence=%.2f", cycle + 1, boost.get("is_sufficient"), boost.get("confidence", 1.0))
+
+        action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
             cycle,
             mode.max_orchestrator_cycles,
+            auto=boost,
         )
+        if caveat:
+            _LOG.info("[Agentic research] Round %d: caveat=%s", cycle + 1, caveat)
+
+        # Stagnation guard: when the verdict is not (yet) sufficient and the
+        # fusion score has not meaningfully improved for a couple of rounds,
+        # stop instead of burning the remaining cycle budget on unproductive
+        # re-searches. Override the CONTINUE decision with a partial answer.
+        if should_continue and verdict.status in ("INSUFFICIENT", "USEFUL_BUT_INCOMPLETE"):
+            if prev_score is not None and cycle >= _STAGNATION_CYCLES and verdict.score - prev_score < _STAGNATION_GAIN:
+                _LOG.info(
+                    "[Agentic research] Round %d: score stagnant (%.3f → %.3f) — early-stopping to partial answer",
+                    cycle + 1,
+                    prev_score,
+                    verdict.score,
+                )
+                action = "ANSWER_PARTIAL"
+                should_continue = False
+            else:
+                prev_score = verdict.score
 
         _LOG.info("[Agentic research] Round %d: evidence looks %s (confidence %.0f%%) — next: %s", cycle + 1, verdict.status, verdict.score * 100, action)
 
@@ -179,11 +276,12 @@ async def _run_claim_research(
     ctx: OrchestratorContext,
     mode,
     compilation_map: dict,
+    followups: list[str] | None = None,
 ) -> dict:
     _LOG.info('[Agentic research] Researching: "%s"', _snip(claim.description))
     try:
         result = await asyncio.wait_for(
-            research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map),
+            research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map, followups=followups),
             timeout=CLAIM_RESEARCH_TIMEOUT_SECONDS,
         )
     except asyncio.CancelledError:
