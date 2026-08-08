@@ -146,7 +146,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
 
         Accepts ``service_account_json`` as either a dict or a JSON string.
         """
-        logging.debug("Loading credentials for BigQuery project: %s", self.project_id)
+        logging.debug("Loading credentials for BigQuery connector.")
 
         raw = (credentials or {}).get("service_account_json")
         if not raw:
@@ -201,6 +201,9 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         if self.query:
             return self.query.rstrip(";")
         if self.dataset_id and self.table_id:
+            for _name, _val in (("project_id", self.project_id), ("dataset_id", self.dataset_id), ("table_id", self.table_id)):
+                if "`" in _val:
+                    raise ConnectorValidationError(f"Invalid character in BigQuery identifier '{_name}'.")
             return f"SELECT * FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`"
         raise ConnectorValidationError("BigQuery requires either a custom query or both dataset_id and table_id.")
 
@@ -388,7 +391,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         if self.id_column and self.id_column in row_dict and row_dict[self.id_column] is not None:
             return f"{prefix}:{row_dict[self.id_column]}"
         content = self._build_content(row_dict)
-        content_hash = hashlib.md5(content.encode()).hexdigest()
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
         return f"{prefix}:{content_hash}"
 
     def _row_to_document(self, row_dict: Dict[str, Any]) -> Document:
