@@ -29,7 +29,8 @@ from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
 
-ATTEMPT_TIME = 2
+MAX_RETRIES = 3
+ATTEMPT_TIME = MAX_RETRIES
 
 
 @singleton
@@ -382,7 +383,7 @@ class ESConnection(ESConnectionBase):
             operations.append({"index": {"_index": index_name, "_id": meta_id}})
             operations.append(d_copy)
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 res = []
                 r = self.es.bulk(index=index_name, operations=operations, refresh=False, timeout="60s")
@@ -395,13 +396,15 @@ class ESConnection(ESConnectionBase):
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
             except ConnectionTimeout:
-                self.logger.exception("ES request timeout")
-                time.sleep(3)
+                self.logger.exception("ESConnection.insert bulk request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self._connect()
+                time.sleep(2 ** attempt)
                 continue
             except Exception as e:
-                res.append(str(e))
-                self.logger.warning("ESConnection.insert got exception: " + str(e))
+                self.logger.exception("ESConnection.insert got exception: " + str(e))
+                raise
 
         return res
 
@@ -416,7 +419,7 @@ class ESConnection(ESConnectionBase):
         if "id" in condition_dict and isinstance(condition_dict["id"], str):
             # update specific single document
             message_id = condition_dict["id"]
-            for i in range(ATTEMPT_TIME):
+            for attempt in range(MAX_RETRIES):
                 for k in update_dict.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
@@ -427,9 +430,16 @@ class ESConnection(ESConnectionBase):
                 try:
                     self.es.update(index=index_name, id=message_id, doc=update_dict)
                     return True
+                except ConnectionTimeout:
+                    self.logger.exception("ESConnection.update single-message request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                    if attempt == MAX_RETRIES - 1:
+                        raise
+                    self._connect()
+                    time.sleep(2 ** attempt)
+                    continue
                 except Exception as e:
                     self.logger.exception(f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(e))
-                    break
+                    raise
             return False
 
         # update unspecific maybe-multiple documents
@@ -481,18 +491,21 @@ class ESConnection(ESConnectionBase):
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
         ubq = ubq.params(conflicts="proceed")
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 _ = ubq.execute()
                 return True
             except ConnectionTimeout:
-                self.logger.exception("ES request timeout")
-                time.sleep(3)
+                self.logger.exception("ESConnection.update request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self._connect()
+                time.sleep(2 ** attempt)
                 continue
             except Exception as e:
                 self.logger.error("ESConnection.update got exception: " + str(e) + "\n".join(scripts))
-                break
+                raise
+
         return False
 
     def delete(self, condition: dict, index_name: str, memory_id: str) -> int:
@@ -526,19 +539,22 @@ class ESConnection(ESConnectionBase):
                 else:
                     raise Exception("Condition value must be int, str or list.")
         self.logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 res = self.es.delete_by_query(index=index_name, body=Search().query(qry).to_dict(), refresh=True)
                 return res["deleted"]
             except ConnectionTimeout:
-                self.logger.exception("ES request timeout")
-                time.sleep(3)
+                self.logger.exception("ESConnection.delete request timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self._connect()
+                time.sleep(2 ** attempt)
                 continue
             except Exception as e:
                 self.logger.warning("ESConnection.delete got exception: " + str(e))
                 if re.search(r"(not_found)", str(e), re.IGNORECASE):
                     return 0
+                raise
         return 0
 
     """
