@@ -56,9 +56,9 @@ export function formatSecondsToHumanReadable(seconds: number): string {
   const s = seconds % 60;
   const formattedSeconds = s === 0 ? '0' : s.toFixed(3).replace(/\.?0+$/, '');
   const parts = [];
-  if (h > 0) parts.push(`${h}h `);
-  if (m > 0) parts.push(`${m}m `);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
   if (s || parts.length === 0) parts.push(`${formattedSeconds}s`);
 
-  return parts.join('');
+  return parts.join(' ');
 }
