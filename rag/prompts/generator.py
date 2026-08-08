@@ -162,9 +162,14 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
         cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
-        cnt += draw_node("URL", ck.get("url", ""))
         meta = ck.get("document_metadata") or {}
+        # Fall back to the document's canonical source_url. docnm_kwd is an
+        # internal filename, so a chunk without `url` leaves the model nothing
+        # citable and it tends to cite that filename as though it were a link.
+        cnt += draw_node("URL", ck.get("url") or meta.get("source_url", ""))
         for k, v in meta.items():
+            if k == "source_url":
+                continue  # already emitted above as URL
             cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
         cnt += get_value(ck, "content", "content_with_weight")

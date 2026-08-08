@@ -794,13 +794,16 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
+    # source_url is what makes a chunk citable, so always fetch it. The richer
+    # reference metadata stays opt-in via include_reference_metadata.
+    enrich_fields = metadata_fields if include_reference_metadata else {"source_url"}
     if include_reference_metadata:
         logging.debug(
             "reference_metadata enrichment enabled for async_chat: chunk_count=%d metadata_fields=%s",
             len(kbinfos.get("chunks", [])),
             metadata_fields,
         )
-        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
+    _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), enrich_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
@@ -1769,13 +1772,15 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
     )
+    # As in async_chat: source_url is always needed for citable references.
+    enrich_fields = metadata_fields if include_reference_metadata else {"source_url"}
     if include_reference_metadata:
         logging.debug(
             "reference_metadata enrichment enabled for async_ask: chunk_count=%d metadata_fields=%s",
             len(kbinfos.get("chunks", [])),
             metadata_fields,
         )
-        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
+    _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), enrich_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
