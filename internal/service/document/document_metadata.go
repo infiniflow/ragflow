@@ -77,7 +77,7 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	}
 
 	// Delete metadata using the document engine
-	err = s.docEngine.DeleteMetadataKeys(nil, docID, doc.KbID, keys, tenantID)
+	err = s.docEngine.DeleteMetadataKeys(ctx, docID, doc.KbID, keys, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete metadata: %w", err)
 	}
@@ -106,7 +106,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID s
 	}
 
 	// Delete entire document metadata
-	_, err = s.docEngine.DeleteMetadata(nil, condition, tenantID)
+	_, err = s.docEngine.DeleteMetadata(ctx, condition, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete document metadata: %w", err)
 	}
