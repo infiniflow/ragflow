@@ -1,4 +1,5 @@
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import { rehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import classNames from 'classnames';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -38,7 +39,11 @@ const HighLightMarkdown = ({
     <div dir={dir} className={classNames(styles.text)}>
       <Markdown
         remarkPlugins={MarkdownRemarkPlugins}
-        rehypePlugins={[rehypeRaw, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          rehypeSanitizeAssistantMarkdown,
+          rehypeKatex,
+        ]}
         components={
           {
             p: ({ children, ...props }: any) => (
