@@ -120,7 +120,15 @@ export default function TestingForm({
             render={({ field }) => (
               <FormItem>
                 <FormControl>
-                  <Textarea {...field}></Textarea>
+                  <Textarea
+                    {...field}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        form.handleSubmit(onSubmit)();
+                      }
+                    }}
+                  ></Textarea>
                 </FormControl>
 
                 <FormMessage />
