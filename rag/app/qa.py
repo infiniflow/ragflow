@@ -50,7 +50,7 @@ class Excel(ExcelParser):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
-                    if not cell.value:
+                    if cell.value is None or str(cell.value).strip() == "":
                         continue
                     if not q:
                         q = str(cell.value)
