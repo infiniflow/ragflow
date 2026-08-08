@@ -256,11 +256,39 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
     return _safe_jsonify(response)
 
 
+_INTERNAL_RET_CODE_HTTP_STATUS_MAP = {
+    RetCode.EXCEPTION_ERROR: RetCode.SERVER_ERROR,
+    RetCode.ARGUMENT_ERROR: RetCode.BAD_REQUEST,
+    RetCode.DATA_ERROR: RetCode.BAD_REQUEST,
+    RetCode.OPERATING_ERROR: RetCode.BAD_REQUEST,
+    RetCode.CONNECTION_ERROR: RetCode.SERVER_ERROR,
+    RetCode.PERMISSION_ERROR: RetCode.FORBIDDEN,
+    RetCode.AUTHENTICATION_ERROR: RetCode.UNAUTHORIZED,
+}
+
+
+def _resolve_error_http_status(code) -> int:
+    try:
+        numeric_code = int(code)
+    except (TypeError, ValueError):
+        logging.debug("build_error_result: falling back to 400 for non-numeric code=%r", code)
+        return RetCode.BAD_REQUEST
+
+    ret_code = RetCode._value2member_map_.get(numeric_code)
+    if ret_code in _INTERNAL_RET_CODE_HTTP_STATUS_MAP:
+        return _INTERNAL_RET_CODE_HTTP_STATUS_MAP[ret_code]
+
+    if 200 <= numeric_code <= 599:
+        return numeric_code
+    logging.debug("build_error_result: falling back to 400 for out-of-range/internal code=%s", numeric_code)
+    return RetCode.BAD_REQUEST
+
+
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        response.status_code = _resolve_error_http_status(code)
     return response
 
 
