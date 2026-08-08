@@ -54,7 +54,6 @@ type KCCompileEvent struct {
 	DatasetID string `json:"dataset_id"` // the KB scope
 	DocID     string `json:"doc_id"`     // the contributing document
 	EventType string `json:"event_type"` // EventType value
-	Seq       uint64 `json:"seq"`        // per-doc monotonic sequence, for out-of-order correction
 	Timestamp int64  `json:"ts"`
 }
 
@@ -107,18 +106,18 @@ func DefaultClaimer() Claimer { return defaultClaimer }
 // KB's durable MySQL backlog and wakes idle workers over NATS. It is a no-op
 // when no Publisher has been installed (e.g. DB unavailable). A failure is
 // returned so callers can log but never fail the pipeline on it.
-func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
+func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), seq)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted))
 }
 
 // PublishDeleted records a doc_deleted event the same way (Publish handles the
 // append + notify pairing).
-func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
+func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), seq)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted))
 }

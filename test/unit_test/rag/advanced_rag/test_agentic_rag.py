@@ -1,5 +1,3 @@
-from copy import deepcopy
-
 import pytest
 
 from rag.advanced_rag.agentic_rag import RAGTools
@@ -13,11 +11,10 @@ class FakeChatModel:
 
 
 @pytest.mark.asyncio
-async def test_rag_tool_adds_text_attachment_as_evidence(monkeypatch):
+async def test_rag_tool_adds_text_attachment_to_user_question(monkeypatch):
     captured = {}
 
     async def fake_run_agentic_rag(tools, messages):
-        captured["kbinfos"] = deepcopy(tools.kbinfos)
         captured["messages"] = messages
         yield "answer"
 
@@ -26,6 +23,4 @@ async def test_rag_tool_adds_text_attachment_as_evidence(monkeypatch):
     tools = RAGTools([], FakeChatModel(), text_attachments_content="attached facts")
 
     assert await tools.rag("What is attached?") == "answer"
-    assert captured["messages"] == [{"role": "user", "content": "What is attached?"}]
-    assert captured["kbinfos"]["chunks"][0]["docnm_kwd"] == "Chat attachment"
-    assert captured["kbinfos"]["chunks"][0]["content_with_weight"] == "attached facts"
+    assert captured["messages"] == [{"role": "user", "content": "What is attached?attached facts"}]

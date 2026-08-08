@@ -1,3 +1,4 @@
+import trim from 'lodash/trim';
 import { type TreeDataItem } from '@/components/ui/tree-view';
 import {
   type IArtifactGraph,
@@ -17,7 +18,7 @@ declare module '@/components/ui/tree-view' {
 }
 
 export function getEntityDisplayName(entity: IStructureGraphEntity) {
-  return entity.name ?? entity.id ?? '';
+  return trim(entity.name ?? entity.id ?? '');
 }
 
 function normalizeEntity(entity: IStructureGraphEntity) {
@@ -150,37 +151,6 @@ export function adaptTreeToTreeData(
   template: IStructureGraphTemplate,
 ): TreeDataItem[] {
   return buildTreeDataItems(template.entities, template.relations, ['child']);
-}
-
-function filterTreeDataItems(
-  items: TreeDataItem[],
-  keyword: string,
-): TreeDataItem[] {
-  const lowerKeyword = keyword.toLowerCase();
-
-  return items.reduce<TreeDataItem[]>((acc, item) => {
-    const children = item.children
-      ? filterTreeDataItems(item.children, keyword)
-      : [];
-    const matches = item.name.toLowerCase().includes(lowerKeyword);
-
-    if (matches || children.length > 0) {
-      acc.push({
-        ...item,
-        children: children.length > 0 ? children : item.children,
-      });
-    }
-
-    return acc;
-  }, []);
-}
-
-export function filterTreeDataByKeyword(
-  data: TreeDataItem[],
-  keyword: string,
-): TreeDataItem[] {
-  if (!keyword.trim()) return data;
-  return filterTreeDataItems(data, keyword);
 }
 
 export function adaptKnowledgeGraphToForceGraph(

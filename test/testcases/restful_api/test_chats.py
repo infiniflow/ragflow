@@ -1957,6 +1957,42 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     target_payload = target_res.json()
     assert target_payload["code"] == 0, target_payload
     chat_id = target_payload["data"]["id"]
+    original_parameters = target_payload["data"]["prompt_config"]["parameters"]
+
+    duplicate_create_res = rest_client.post(
+        "/chats",
+        json={
+            "name": "restful_chat_update_mapping_duplicate_parameters",
+            "dataset_ids": [],
+            "prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]},
+        },
+    )
+    assert duplicate_create_res.status_code == 200
+    duplicate_create_payload = duplicate_create_res.json()
+    assert duplicate_create_payload["code"] == 102, duplicate_create_payload
+    assert duplicate_create_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_create_payload
+
+    duplicate_parameters_res = rest_client.put(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_res.status_code == 200
+    duplicate_parameters_payload = duplicate_parameters_res.json()
+    assert duplicate_parameters_payload["code"] == 102, duplicate_parameters_payload
+    assert duplicate_parameters_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_payload
+    get_after_put_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_put_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
+
+    duplicate_parameters_patch_res = rest_client.patch(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_patch_res.status_code == 200
+    duplicate_parameters_patch_payload = duplicate_parameters_patch_res.json()
+    assert duplicate_parameters_patch_payload["code"] == 102, duplicate_parameters_patch_payload
+    assert duplicate_parameters_patch_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_patch_payload
+    get_after_patch_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_patch_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
 
     unauthorized = rest_client.patch("/chats/invalid-chat-id", json={"name": "anything"})
     assert unauthorized.status_code == 200

@@ -10,12 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/server"
 	"ragflow/internal/service/nav"
-
-	"go.uber.org/zap"
 )
 
 // repoRootOf walks up from the package directory to the repository root (the
@@ -72,12 +71,14 @@ func findNavRow(t *testing.T, tenantID, kbID, docID string) map[string]interface
 //
 // Run with: bash build.sh --test-integration ./internal/service/nlp/...
 func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
-	server.SetLogger(zap.NewNop())
+	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
 	configPath := filepath.Join(repoRootOf(t), "conf", "service_conf.yaml")
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config: %v", err)
 	}
-	if err := engine.Init(); err != nil {
+	if err := engine.InitDocEngine(); err != nil {
 		t.Fatalf("init document engine: %v", err)
 	}
 	if engine.Get() == nil {

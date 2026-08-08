@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/utility"
 )
 
 // DebugLogTTL is the Redis expiry for a debug-run log. It mirrors the Python
@@ -170,7 +171,7 @@ func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.Progre
 		message = "[ERROR] " + message
 	}
 	// Clamp the message so a runaway component cannot blow up the stored entry.
-	message = truncateRunes(message, maxMessageRunes)
+	message = utility.TruncateRunes(message, maxMessageRunes)
 
 	entry := debugTrace{
 		Progress:    progress,
@@ -289,19 +290,6 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 		return ""
 	}
 	return string(b)
-}
-
-// truncateRunes returns s truncated to at most max runes, preserving the original
-// bytes when shorter. Mirrors internal/service/agent_sessions.go's truncateRunes.
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	return string(r[:max])
 }
 
 // trimToPayloadBudget collapses the middle of the log (keeping the first few

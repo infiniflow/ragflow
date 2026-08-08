@@ -33,7 +33,7 @@ import (
 type docStateSvc interface {
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error)
 	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error
-	IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
+	ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
 }
 
 // docStateUpdater applies a pipeline run's results to document state: it
@@ -61,8 +61,8 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
-	if err := u.docSvc.IncrementChunkNum(ctx, r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
-		common.Warn(fmt.Sprintf("failed to increment chunk num: %v", err))
+	if err := u.docSvc.ApplyDocCounts(ctx, r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
+		common.Warn(fmt.Sprintf("failed to apply doc counts: %v", err))
 	}
 }
 

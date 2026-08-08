@@ -59,6 +59,7 @@ export function BlueprintSection({
               name={examplePath}
               label={t('setting.example')}
               className="flex h-[50vh] min-h-0 flex-col"
+              valueClassName="flex-1 min-h-0"
             >
               {(field) => (
                 <MarkdownEditor
