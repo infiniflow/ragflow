@@ -543,6 +543,10 @@ func pdfVisionPromptsBaseDir() (string, error) {
 	return pdfVisionPromptsBase, nil
 }
 
+// renderPDFVisionPrompt only renders page metadata. The full-page PDF vision
+// prompt is a transcription contract that preserves the document's original
+// language; dataset-language instructions apply to figure descriptions in
+// maybeDispatchPDFVisionEnhancement instead.
 func renderPDFVisionPrompt(template string, page int) string {
 	rendered := strings.ReplaceAll(template, "{{ page }}", fmt.Sprintf("%d", page))
 	rendered = strings.ReplaceAll(rendered, "{{page}}", fmt.Sprintf("%d", page))
@@ -587,6 +591,7 @@ func maybeDispatchPDFVisionEnhancement(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
+	language := resolveVisionLanguage(inputs, "")
 	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	if err != nil {
 		return dispatched, false, nil
@@ -620,7 +625,7 @@ func maybeDispatchPDFVisionEnhancement(
 			if img == "" {
 				return
 			}
-			prompt, perr := docxVisionPromptBuilder("", "")
+			prompt, perr := figureVisionPromptBuilder("", "", language)
 			if perr != nil {
 				return
 			}
