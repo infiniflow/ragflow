@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_URL="${RAGFLOW_REPO_URL:-https://gitlab.citysense.ru/ragflow-ecosystem/ragflow}"
-BRANCH="${RAGFLOW_BRANCH:-feature/yandex-disk}"
+BRANCH="${RAGFLOW_BRANCH:-main}"
 TAG="${RAGFLOW_IMAGE_TAG:-infiniflow/ragflow:nightly}"
 DATA_DIR="${RAGFLOW_DATA_DIR:-$HOME/ragflow}"
 DEPLOY=0
@@ -24,7 +24,7 @@ Usage: $0 [options]
 
 Options:
   --repo <url>       Git repository to pull (default: \$RAGFLOW_REPO_URL or the GitLab repo)
-  --branch <name>    Branch to build (default: \$RAGFLOW_BRANCH or feature/yandex-disk)
+  --branch <name>    Branch to build (default: \$RAGFLOW_BRANCH or main)
   --tag <image:tag>  Result image tag (default: \$RAGFLOW_IMAGE_TAG or infiniflow/ragflow:nightly)
   --data-dir <path>  Where the repo lives on this server (default: \$RAGFLOW_DATA_DIR or ~/ragflow)
   --deploy           After building, (re)create the ragflow-cpu container via docker compose
