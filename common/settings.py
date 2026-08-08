@@ -364,16 +364,19 @@ def init_settings():
 
     # Check if encryption is enabled
     if crypto_enabled:
-        try:
-            from rag.utils.encrypted_storage import create_encrypted_storage
+        # Do not fall back to the unencrypted storage impl when the crypto config
+        # is broken. The operator asked for encryption at rest, so silently
+        # serving plaintext writes is the one outcome they cannot detect: reads
+        # keep working, because decrypt() passes data without the "RAGF" magic
+        # header straight through, so a plaintext object stays readable even
+        # after the config is fixed. Fail fast instead, like the unsupported
+        # doc-engine branch above.
+        from rag.utils.encrypted_storage import create_encrypted_storage
 
-            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
-            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+        algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+        crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
 
-            STORAGE_IMPL = create_encrypted_storage(storage_impl, algorithm=algorithm, key=crypto_key, encryption_enabled=crypto_enabled)
-        except Exception as e:
-            logging.error(f"Failed to initialize encrypted storage: {e}")
-            STORAGE_IMPL = storage_impl
+        STORAGE_IMPL = create_encrypted_storage(storage_impl, algorithm=algorithm, key=crypto_key, encryption_enabled=crypto_enabled)
     else:
         STORAGE_IMPL = storage_impl
 
