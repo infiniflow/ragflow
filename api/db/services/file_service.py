@@ -63,7 +63,12 @@ class FileService(CommonService):
         # Returns:
         #     Tuple of (file_list, total_count)
         if keywords:
-            files = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == pf_id), (fn.LOWER(cls.model.name).contains(keywords.lower())), ~(cls.model.id == pf_id))
+            # Keyword search covers the whole subtree under pf_id so files and
+            # folders nested in sub-folders can be found too.
+            subtree_ids = cls.get_subtree_ids(tenant_id, pf_id)
+            files = cls.model.select().where(
+                (cls.model.tenant_id == tenant_id), (cls.model.parent_id.in_(subtree_ids)), (fn.LOWER(cls.model.name).contains(keywords.lower())), ~(cls.model.id == pf_id)
+            )
         else:
             files = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == pf_id), ~(cls.model.id == pf_id))
         count = files.count()
@@ -103,6 +108,29 @@ class FileService(CommonService):
             file["kbs_info"] = kbs_info
 
         return res_files, count
+
+    @classmethod
+    @DB.connection_context()
+    def get_subtree_ids(cls, tenant_id, pf_id):
+        # Return pf_id itself plus the IDs of all entries nested under it
+        # (folders and files), used to scope recursive keyword searches.
+        rows = list(cls.model.select(cls.model.id, cls.model.parent_id).where(cls.model.tenant_id == tenant_id).dicts())
+        children = {}
+        for row in rows:
+            children.setdefault(row["parent_id"], []).append(row["id"])
+
+        ids = [pf_id]
+        in_tree = {pf_id}
+        queue = [pf_id]
+        while queue:
+            current = queue.pop(0)
+            for child in children.get(current, []):
+                if child in in_tree:
+                    continue
+                in_tree.add(child)
+                ids.append(child)
+                queue.append(child)
+        return ids
 
     @classmethod
     @DB.connection_context()
