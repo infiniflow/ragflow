@@ -520,12 +520,28 @@ def _keyword_path(field_path: str) -> str:
 def _term_or_match(field_path: str, value: Any) -> Dict[str, Any]:
     """Exact-match clause that respects how dynamic mapping indexes the value.
 
-    String values target the ``.keyword`` sub-field with ``case_insensitive``
-    so phrase values still match (the in-memory path lower-cases before
-    comparing). Numeric / bool values target the parent path because numeric
-    fields have no ``.keyword`` sub-field under default dynamic mapping.
+    String values normally target the ``.keyword`` sub-field with
+    ``case_insensitive`` so multi-word phrases still match (the in-memory path
+    lower-cases before comparing). ISO-date values (``YYYY-MM-DD``) are the
+    exception: ES dynamic date detection types such a field as ``date``, which
+    has no ``.keyword`` sub-field, so a ``.keyword``-only term silently matches
+    nothing. For a date value, match both the parent (``date``/``keyword``
+    mappings) and ``.keyword`` (``text`` mappings) via a ``should`` — a date
+    string is a single exact token, so this adds no false positives. Numeric /
+    bool values target the parent path because numeric fields have no
+    ``.keyword`` sub-field under default dynamic mapping.
     """
     if isinstance(value, str):
+        if _DATE_RE.match(value):
+            return {
+                "bool": {
+                    "should": [
+                        {"term": {field_path: value}},
+                        {"term": {_keyword_path(field_path): {"value": value, "case_insensitive": True}}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
         return {
             "term": {
                 _keyword_path(field_path): {

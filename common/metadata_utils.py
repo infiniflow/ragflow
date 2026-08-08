@@ -20,11 +20,31 @@ from typing import Any, Callable, Dict
 import json_repair
 
 
+# The three comparison operators that both convert_conditions() (the metadata_condition
+# input format) and _OP_ALIASES (LLM/user ASCII operators) normalise identically. Kept as
+# a shared base so the two mappings cannot diverge on the overlapping operators.
+_COMPARISON_OP_ALIASES = {">=": "≥", "<=": "≤", "!=": "≠"}
+
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
-    op_mapping = {"is": "=", "not is": "≠", ">=": "≥", "<=": "≤", "!=": "≠"}
+    op_mapping = {"is": "=", "not is": "≠", **_COMPARISON_OP_ALIASES}
     return [{"op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]), "key": cond["name"], "value": cond["value"]} for cond in metadata_condition.get("conditions", [])]
+
+
+# ASCII -> Unicode comparison-operator aliases. LLM-generated (auto/semi_auto) and
+# user-supplied filter conditions may carry ASCII operators, but both the ES push-down
+# (SUPPORTED_OPERATORS) and the in-memory path only recognise the Unicode set. An
+# un-normalised operator is silently dropped (push-down raises UnsupportedMetaFilter and
+# the in-memory path matches nothing), losing the whole filter. Extends the shared
+# _COMPARISON_OP_ALIASES with the extra ASCII spellings (==, =>, =<) this path also sees.
+_OP_ALIASES = {**_COMPARISON_OP_ALIASES, "==": "=", "=>": "≥", "=<": "≤"}
+
+
+def normalize_condition_operators(conditions: list[dict]) -> list[dict]:
+    """Return ``conditions`` with ASCII comparison operators normalised to Unicode."""
+    return [{**c, "op": _OP_ALIASES.get(str(c.get("op", "")), c.get("op"))} for c in (conditions or []) if isinstance(c, dict)]
 
 
 def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
@@ -182,8 +202,10 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        The filtered doc_ids. ``["-999"]`` (the "no results" sentinel) when a
+        manual, auto, or semi_auto filter generated conditions that matched no
+        document; ``None`` when auto/semi_auto produced no conditions, i.e. no
+        effective filter, leaving retrieval unrestricted.
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
@@ -207,6 +229,7 @@ async def apply_meta_data_filter(
 
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
+        conditions = normalize_condition_operators(conditions)
         if conditions and kb_ids:
             try:
                 from api.db.services.doc_metadata_service import DocMetadataService
@@ -227,7 +250,11 @@ async def apply_meta_data_filter(
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
-            return None
+            # Conditions were generated but matched no document: return the "no results"
+            # sentinel (as `manual` does below), NOT None. None means "no metadata filter"
+            # and falls back to unrestricted retrieval, so a query that legitimately matches
+            # nothing (e.g. an exact date with no documents) would surface arbitrary results.
+            return ["-999"] if filters.get("conditions") else None
     elif method == "semi_auto":
         selected_keys = []
         constraints = {}
@@ -249,7 +276,11 @@ async def apply_meta_data_filter(
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
                 doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
-                    return None
+                    # Conditions were generated but matched no document: return the "no results"
+                    # sentinel (as `manual` does below), NOT None. None means "no metadata filter"
+                    # and falls back to unrestricted retrieval, so a query that legitimately matches
+                    # nothing (e.g. an exact date with no documents) would surface arbitrary results.
+                    return ["-999"] if filters.get("conditions") else None
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
