@@ -134,7 +134,8 @@ def test_build_error_result_falls_back_to_500_for_unmapped_sub_200_codes(caplog)
     assert resp.status_code == 500
 
     fallback_logs = [r for r in caplog.records if r.levelno == logging.WARNING and "unmapped ret code" in r.getMessage()]
-    assert fallback_logs, "the fallback branch must warn about the unmapped ret code"
+    assert len(fallback_logs) == 1, "the fallback branch must warn once about the unmapped ret code"
+    assert "unmapped ret code 10, falling back to HTTP 500" in fallback_logs[0].getMessage()
 
 
 def test_build_error_result_status_logs_never_echo_the_message(caplog):
@@ -145,13 +146,24 @@ def test_build_error_result_status_logs_never_echo_the_message(caplog):
     from common.constants import RetCode
 
     caplog.set_level(logging.DEBUG)
-    for code in (RetCode.ARGUMENT_ERROR, RetCode.NOT_FOUND, RetCode.NOT_EFFECTIVE):
-        _build_error_result_in_app_context(code)
 
-    status_logs = [r for r in caplog.records if "build_error_result:" in r.getMessage()]
-    assert len(status_logs) == 3, "every branch must log exactly one status line"
-    for record in status_logs:
-        assert "boom" not in record.getMessage(), "status logs must not echo the error message"
+    # (code, resolved status, level, branch marker) — one row per branch.
+    branches = [
+        (RetCode.ARGUMENT_ERROR, 400, logging.DEBUG, "mapped to HTTP"),
+        (RetCode.NOT_FOUND, 404, logging.DEBUG, "used as HTTP status"),
+        (RetCode.NOT_EFFECTIVE, 500, logging.WARNING, "falling back to HTTP"),
+    ]
+    for code, http_status, level, marker in branches:
+        caplog.clear()
+        assert _build_error_result_in_app_context(code).status_code == http_status
+
+        status_logs = [r for r in caplog.records if "build_error_result:" in r.getMessage()]
+        assert len(status_logs) == 1, f"{code!r} must log exactly one status line, got {len(status_logs)}"
+        rendered = status_logs[0].getMessage()
+        assert status_logs[0].levelno == level, f"{code!r} logged at the wrong level: {rendered}"
+        assert marker in rendered, f"{code!r} took the wrong branch: {rendered}"
+        assert str(int(code)) in rendered, f"{code!r} must log its ret code: {rendered}"
+        assert "boom" not in rendered, "status logs must not echo the error message"
 
 
 def test_build_error_result_default_code_is_a_valid_http_status():
