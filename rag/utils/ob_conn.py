@@ -46,6 +46,7 @@ from rag.nlp import rag_tokenizer
 logger = logging.getLogger("ragflow.ob_conn")
 
 column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk order id for maintaining sequence")
+column_chunk_order_int = Column("chunk_order_int", Integer, nullable=True, comment="chunk order index for retrieval sorting")
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
 column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chunk id")
 column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
@@ -96,6 +97,7 @@ column_definitions: list[Column] = [
     Column("metadata", JSON, nullable=True, comment="metadata for this chunk"),
     Column("extra", JSON, nullable=True, comment="extra information of non-general chunk"),
     column_order_id,
+    column_chunk_order_int,
     column_group_id,
     column_mom_id,
 ]
@@ -135,6 +137,7 @@ FTS_COLUMNS_TKS: list[str] = [
 # Extra columns to add after table creation (for migration)
 EXTRA_COLUMNS: list[Column] = [
     column_order_id,
+    column_chunk_order_int,
     column_group_id,
     column_mom_id,
     column_chunk_data,
@@ -188,10 +191,18 @@ def get_default_value(column_name: str) -> Any:
         return 1
     elif column_name == "removed_kwd":
         return "N"
-    elif column_name == "_order_id":
+    elif column_name in ["_order_id", "chunk_order_int"]:
         return 0
     else:
         return None
+
+
+def _get_entity_value(column_name: str, value: Any) -> Any:
+    if value is None:
+        if column_name not in {"_order_id", "chunk_order_int"}:
+            return None
+        value = get_default_value(column_name)
+    return get_column_value(column_name, value)
 
 
 def get_metadata_filter_expression(metadata_filtering_conditions: dict) -> str:
@@ -1207,19 +1218,20 @@ class OBConnection(OBConnectionBase):
     def _row_to_entity(self, data: Row, fields: list[str]) -> dict:
         entity = {}
         for i, field in enumerate(fields):
-            value = data[i]
+            value = _get_entity_value(field, data[i])
             if value is None:
                 continue
-            entity[field] = get_column_value(field, value)
+            entity[field] = value
         return entity
 
     @staticmethod
     def _es_row_to_entity(data: dict) -> dict:
         entity = {}
         for k, v in data.items():
-            if v is None:
+            value = _get_entity_value(k, v)
+            if value is None:
                 continue
-            entity[k] = get_column_value(k, v)
+            entity[k] = value
         return entity
 
     """
