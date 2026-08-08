@@ -347,16 +347,19 @@ class KnowledgebaseService(CommonService):
             raise LookupError(f"dataset({id}) not found.")
 
         def dfs_update(old, new):
-            # Deep update of nested configuration
             for k, v in new.items():
-                if k not in old:
+                # If key missing or value is None, treat as missing (overwrite)
+                if k not in old or old[k] is None:
                     old[k] = v
-                    continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                elif isinstance(v, dict):
+                    if not isinstance(old[k], dict):
+                        old[k] = {}
                     dfs_update(old[k], v)
                 elif isinstance(v, list):
-                    assert isinstance(old[k], list)
+                    # If old[k] is not a list, convert? But should be list if not None.
+                    # However, after the first branch, old[k] is a list if v is list.
+                    if not isinstance(old[k], list):
+                        old[k] = []
                     old[k] = list(set(old[k] + v))
                 else:
                     old[k] = v
