@@ -12,6 +12,7 @@ export function CardContainer({ children, className }: CardContainerProps) {
       )}
     >
       {children}
+      <div className="col-span-full h-6" aria-hidden="true" />
     </div>
   );
 }
