@@ -561,6 +561,11 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       <p>
       <li>Verwenden eines Erkennungsmodells, um die Texte in kleinere Segmente aufzuteilen.</li>
       <li>Dann werden benachbarte Segmente kombiniert, bis die Token-Anzahl den durch 'Chunk-Token-Anzahl' festgelegten Schwellenwert überschreitet, woraufhin ein Chunk erstellt wird.</li></p>`,
+      general: `<p>Unterstützte Dateiformate sind <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      <p>Diese Methode teilt Dateien mit einer 'naiven' Methode auf: </p>
+      <p>
+      <li>Verwenden eines Erkennungsmodells, um die Texte in kleinere Segmente aufzuteilen.</li>
+      <li>Dann werden benachbarte Segmente kombiniert, bis die Token-Anzahl den durch 'Chunk-Token-Anzahl' festgelegten Schwellenwert überschreitet, woraufhin ein Chunk erstellt wird.</li></p>`,
       paper: `<p>Nur <b>PDF</b>-Dateien werden unterstützt.</p><p>
       Papers werden nach Abschnitten wie <i>abstract, 1.1, 1.2</i> aufgeteilt. </p><p>
       Dieser Ansatz ermöglicht es dem LLM, das Paper effektiver zusammenzufassen und umfassendere, verständlichere Antworten zu liefern.

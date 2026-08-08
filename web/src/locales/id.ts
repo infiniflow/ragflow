@@ -223,6 +223,11 @@ export default {
           <p>
           <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>
           <li>Selanjutnya, potongan berturut-turut ini digabungkan menjadi potongan yang jumlah tokennya tidak lebih dari 'Jumlah token'.</li></p>`,
+      general: `<p>Format file yang didukung adalah <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+          <p>Metode ini menerapkan cara naif untuk memotong file: </p>
+          <p>
+          <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>
+          <li>Selanjutnya, potongan berturut-turut ini digabungkan menjadi potongan yang jumlah tokennya tidak lebih dari 'Jumlah token'.</li></p>`,
       paper: `<p>Hanya file <b>PDF</b> yang didukung.</p><p>
           Jika model kami bekerja dengan baik, makalah akan dipotong berdasarkan bagiannya, seperti <i>abstrak, 1.1, 1.2</i>, dll. </p><p>
           Manfaat dari melakukan ini adalah LLM dapat lebih baik merangkum konten bagian yang relevan dalam makalah,
