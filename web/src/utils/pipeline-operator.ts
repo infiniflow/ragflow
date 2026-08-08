@@ -94,9 +94,13 @@ function transformTokenChunkerConfigToForm(
 
   const result = { ...config };
 
-  // Convert string array delimiters to object array
+  // Convert string array delimiters to object array; seed the default '\n'
+  // row when the saved list is empty (legacy token_size nodes saved []).
   if (Array.isArray(config.delimiters)) {
     result.delimiters = config.delimiters.map((d: string) => ({ value: d }));
+    if (result.delimiters.length === 0) {
+      result.delimiters = [{ value: '\n' }];
+    }
   }
   if (Array.isArray(config.children_delimiters)) {
     result.children_delimiters = config.children_delimiters.map(
@@ -114,12 +118,9 @@ function transformTokenChunkerConfigToForm(
   const imageSize = Number(config.image_context_size ?? 0);
   result.image_table_context_window = Math.max(tableSize, imageSize);
 
-  // Derive delimiter_mode from data
-  if (config.delimiter_mode === undefined) {
-    const hasDelimiters =
-      Array.isArray(config.delimiters) && config.delimiters.length > 0;
-    result.delimiter_mode = hasDelimiters ? 'delimiter' : 'token_size';
-  }
+  // Normalize delimiter_mode: the 'token_size' tab was removed from the form,
+  // so legacy configs (explicit 'token_size' or absent) load as 'delimiter'.
+  result.delimiter_mode = config.delimiter_mode === 'one' ? 'one' : 'delimiter';
 
   // Derive enable_children from presence of children_delimiters
   if (config.enable_children === undefined) {
