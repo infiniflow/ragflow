@@ -313,13 +313,16 @@ func emptyPDFResult(filename string) ParseResult {
 func deepDocAnalyzerFromEnv() deepdoctype.DocAnalyzer {
 	baseURL := strings.TrimSpace(common.GetEnv(common.EnvDeepDocURL))
 	if baseURL == "" {
+		slog.Warn("deepdoc analyzer: DEEPDOC_URL is not set; OCR/DLA disabled, garbled or scanned PDF pages yield no text")
 		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
 	}
 	client, err := inference.NewClient(baseURL)
 	if err != nil {
+		slog.Warn("deepdoc analyzer: client init failed; OCR/DLA disabled", "url", baseURL, "err", err)
 		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
 	}
 	if !client.Health() {
+		slog.Warn("deepdoc analyzer: service unhealthy; OCR/DLA disabled", "url", baseURL)
 		return &deepdocpdf.MockDocAnalyzer{Healthy: true}
 	}
 	// Wrap with Redis-backed cache (1h TTL) so repeated
