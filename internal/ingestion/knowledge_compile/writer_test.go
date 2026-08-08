@@ -2,6 +2,7 @@ package knowledge_compile
 
 import (
 	"testing"
+	"time"
 
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -28,7 +29,8 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 			"source_chunk_ids": []string{"c1"},
 		},
 	}
-	m := mergedChunkMap("t1", "kb1", p)
+	now := time.Now()
+	m := mergedChunkMap("t1", "kb1", "run-abc", "hash-123", now, p)
 
 	cases := map[string]string{
 		"slug_kwd":            "entity/alpha",
@@ -37,6 +39,15 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		"page_type_kwd":       "entity",
 		"topic_kwd":           "Alpha",
 		"summary_with_weight": "A page about Alpha",
+		"plan_kwd":            "run-abc",
+		"input_hash_kwd":      "hash-123",
+	}
+	// The wall-clock audit fields must be stamped from `now`, not omitted.
+	if m["create_time"] != now.Format("2006-01-02 15:04:05") {
+		t.Errorf("create_time = %v, want %v", m["create_time"], now.Format("2006-01-02 15:04:05"))
+	}
+	if m["create_timestamp_flt"] != float64(now.Unix()) {
+		t.Errorf("create_timestamp_flt = %v, want %v", m["create_timestamp_flt"], float64(now.Unix()))
 	}
 	for k, want := range cases {
 		if got, _ := m[k].(string); got != want {
@@ -46,8 +57,11 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 	if v, _ := m["entity_names_kwd"].([]string); len(v) != 1 || v[0] != "Alpha" {
 		t.Errorf("entity_names_kwd = %#v, want [Alpha]", m["entity_names_kwd"])
 	}
-	if m["doc_id"] != "kb1" || m["kc_merged"] != 1 || m["available_int"] != 1 {
-		t.Errorf("merged flags wrong: doc_id=%v kc_merged=%v available_int=%v", m["doc_id"], m["kc_merged"], m["available_int"])
+	if m["doc_id"] != "kb1" || m["available_int"] != 1 {
+		t.Errorf("merged flags wrong: doc_id=%v available_int=%v", m["doc_id"], m["available_int"])
+	}
+	if _, ok := m["kc_merged"]; ok {
+		t.Errorf("merged row must not persist undefined kc_merged field")
 	}
 	if m["q_3_vec"] == nil {
 		t.Errorf("vector column missing")

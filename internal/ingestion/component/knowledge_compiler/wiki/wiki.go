@@ -17,8 +17,11 @@ import (
 	"sort"
 	"strings"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
+
+	"go.uber.org/zap"
 )
 
 // batchSubmitter fans out the MAP-stage extraction jobs on the process-wide
@@ -68,6 +71,16 @@ func wikiMapMaxTokens(modelContextLen int) int {
 		modelContextLen = common.DefaultLLMContextLength
 	}
 	return max(modelContextLen-wikiMapTokenBudget, wikiMapTokenBudget)
+}
+
+// wikiRefineMaxTokens gives the page writer (REFINE step) a generous but
+// bounded output cap so a long page body is not cut off mid-stream by a small
+// default completion limit. It reuses the map/extraction budget derivation:
+// once the input budget is consumed, the rest of the model window is handed to
+// the output. modelContextLen is the model's total context window in tokens (0
+// means unknown).
+func wikiRefineMaxTokens(modelContextLen int) int {
+	return wikiMapMaxTokens(modelContextLen)
 }
 
 type wikiPipeline struct {
@@ -196,6 +209,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if docID == "" {
 		docID = "unknown"
 	}
+	appcommon.Info("wiki: Run start",
+		zap.String("dataset_id", deps.DatasetID),
+		zap.String("doc_id", docID),
+		zap.Int("chunks", len(inputs.Chunks)),
+		zap.Bool("chat_ready", deps.Chat != nil),
+		zap.Bool("embed_ready", deps.Embed != nil))
 	p := &wikiPipeline{
 		ctx:       ctx,
 		deps:      deps,
@@ -207,10 +226,23 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		llmID:     llmID,
 	}
 	if err := p.run(); err != nil {
+		appcommon.Error("wiki: Run pipeline failed", err,
+			zap.String("dataset_id", deps.DatasetID),
+			zap.String("doc_id", docID))
 		return common.Outputs{}, err
 	}
+	appcommon.Info("wiki: pipeline done",
+		zap.String("dataset_id", deps.DatasetID),
+		zap.String("doc_id", docID),
+		zap.Int("extracted_entities", len(p.reduced.Entities)),
+		zap.Int("plan_pages", len(p.plan.Pages)),
+		zap.Int("refined_pages", len(p.pages)))
 
 	products := buildWikiPageProducts(p.tenantID, p.docID, p.pages)
+	appcommon.Info("wiki: built page products",
+		zap.String("dataset_id", deps.DatasetID),
+		zap.String("doc_id", docID),
+		zap.Int("products", len(products)))
 	for i := range products {
 		if products[i].Meta == nil {
 			products[i].Meta = map[string]any{}
@@ -271,6 +303,21 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	return out, nil
 }
 
+// runKey returns a stable identity for this wiki run's log lines. In a
+// per-document run docID is populated; in a dataset-level run (the
+// knowledge_compile aggregator) docID is empty, so fall back to a dataset
+// scope prefix. This avoids masking which dataset a MAP/REDUCE pass ran for
+// behind an uninformative "unknown".
+func (p *wikiPipeline) runKey() string {
+	if p.docID != "" {
+		return p.docID
+	}
+	if p.datasetID != "" {
+		return "dataset:" + p.datasetID
+	}
+	return "unknown"
+}
+
 func (p *wikiPipeline) run() error {
 	if len(p.inputs.Chunks) == 0 {
 		return nil
@@ -278,22 +325,50 @@ func (p *wikiPipeline) run() error {
 	if err := p.runMap(); err != nil {
 		return err
 	}
+	appcommon.Info("wiki: MAP done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("batches", len(p.mapExtracts)),
+		zap.Int("raw_entities", countExtractEntities(p.mapExtracts)))
 	p.reduced = reduceExtracts(p.mapExtracts)
 	// Layer embedding + LLM disambiguation onto the exact-merged entities
 	// (REDUCE enhancement; concepts keep exact dedup). Degrades to a no-op when
 	// the embedder/chat seams are unavailable.
 	p.reduced.Entities = p.dedupeEntities(p.reduced.Entities)
+	appcommon.Info("wiki: REDUCE done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("entities", len(p.reduced.Entities)),
+		zap.Int("claims", len(p.reduced.Claims)))
 	plan, err := p.runPlan()
 	if err != nil {
 		return err
 	}
 	p.plan = plan
+	appcommon.Info("wiki: PLAN done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("plan_pages", len(plan.Pages)),
+		zap.Int("capacity_excluded", p.planCapacityExcluded))
 	pages, err := p.runRefine()
 	if err != nil {
 		return err
 	}
 	p.pages = pages
+	appcommon.Info("wiki: REFINE done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("refined_pages", len(pages)))
 	return nil
+}
+
+// countExtractEntities sums the entity count across a list of map extracts.
+func countExtractEntities(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Entities)
+	}
+	return n
 }
 
 func (p *wikiPipeline) runMap() error {
@@ -406,7 +481,7 @@ func (p *wikiPipeline) runPlan() (wikiPlan, error) {
 			if err := p.ctx.Err(); err != nil {
 				return err
 			}
-			plan, err := p.runPlanBatch(batch, i+1, len(batches), quota)
+			plan, err := p.runPlanBatch(batch, i+1, len(batches), quota, p.planBudget.MaxTokens)
 			if err != nil {
 				return err
 			}
@@ -540,10 +615,15 @@ func (p *wikiPipeline) runRefinePage(
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
 		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
 	})
+	// wikiRefineMaxTokens gives the page writer a generous but bounded output
+	// cap so a long page is not cut off mid-stream by a small default completion
+	// limit (which would yield an unusable/cut page body).
+	rmt := wikiRefineMaxTokens(p.deps.ModelContextLen)
 	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: buildWikiRefineWriterSystem(""),
 		UserPrompt:   user,
+		MaxTokens:    &rmt,
 	})
 	if err != nil {
 		return wikiPageResult{}, err
@@ -598,7 +678,7 @@ func maxPagesForBatch(quota int) int {
 	return quota
 }
 
-func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, quota int) (wikiPlan, error) {
+func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, quota, maxTokens int) (wikiPlan, error) {
 	user := renderWikiTemplate(wikiPlanBatchUserTemplate, map[string]string{
 		"doc_id":      p.docID,
 		"batch_index": fmt.Sprintf("%d", batchIndex),
@@ -614,6 +694,7 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, q
 		LLMID:        p.llmID,
 		SystemPrompt: wikiPlanSystem,
 		UserPrompt:   user,
+		MaxTokens:    &maxTokens,
 	})
 	if err != nil {
 		return wikiPlan{}, err
@@ -1239,6 +1320,11 @@ func normalizeWikiPlanPage(page wikiPlanPage) wikiPlanPage {
 	if page.Slug == "" {
 		page.Slug = slugify(page.Title)
 	}
+	// Canonicalize the slug to the hyphen style used by slug_kwd / outlinks /
+	// artifact links. The LLM freely mixes "dong_zhuo" and "dong-zhuo", so this
+	// single choke point makes plan slugs, slugToPageType/pageTitles keys and
+	// the writer's bare/full reverse index all agree.
+	page.Slug = normalizeWikiSlugHyphens(page.Slug)
 	page.Title = strings.TrimSpace(page.Title)
 	if page.Title == "" {
 		page.Title = page.Slug
@@ -1895,10 +1981,55 @@ func pageTypeOf(slug string, slugToPageType map[string]string) string {
 
 func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
 	kbID = strings.TrimSpace(kbID)
+	// Resolve a wikitext slug (which may be a bare "name" or a full
+	// "<page_type>/<slug>") to the canonical full slug used as the page
+	// identifier (slug_kwd). This mirrors Python's _wiki_resolve_dead_slug:
+	// plain names / titles are reverse-mapped to the full pid, and slugs that
+	// cannot be resolved are dropped (dead links). Without this, bare slugs
+	// written by the LLM never match the full-slug page index, so wiki
+	// relations (edges) are silently lost.
+	bareToSlug := map[string]string{}
+	titleToSlug := map[string]string{}
+	// Plan slugs are canonicalized to the hyphen style upstream
+	// (normalizeWikiPlanPage -> normalizeWikiSlugHyphens), so slugToPageType /
+	// pageTitles keys are already hyphen full-slugs. LLM-authored wikitext
+	// links may still carry underscores (e.g. "dong_zhuo"); normalize both
+	// sides to hyphens so the reverse lookup matches, and always emit the
+	// resolved outlink in the canonical hyphen full-slug form.
+	for fullSlug := range slugToPageType {
+		bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(fullSlug))] = fullSlug
+	}
+	for fullSlug, title := range pageTitles {
+		if t := strings.TrimSpace(title); t != "" {
+			titleToSlug[t] = fullSlug
+		}
+	}
+	resolveSlug := func(slug string) string {
+		slug = strings.TrimSpace(slug)
+		if slug == "" {
+			return ""
+		}
+		if _, ok := slugToPageType[slug]; ok {
+			return slug
+		}
+		if full, ok := bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(slug))]; ok {
+			return full
+		}
+		if full, ok := titleToSlug[slug]; ok {
+			return full
+		}
+		return ""
+	}
 	seen := map[string]bool{}
 	var outlinks []string
 	track := func(slug string) {
-		slug = strings.TrimSpace(slug)
+		slug = resolveSlug(slug)
+		// Emit the canonical hyphen full-slug so outlinks_kwd and slug_kwd
+		// always agree in format (guards against a resolved slug that still
+		// carries underscores, e.g. from an old existing page).
+		if slug != "" {
+			slug = normalizeWikiSlugHyphens(slug)
+		}
 		if slug == "" || seen[slug] {
 			return
 		}
@@ -1945,10 +2076,16 @@ func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[str
 	// <page_type>/<name> prefix, in which case that prefix is reused as the
 	// page_type and the name is emitted as the bare slug.
 	link := func(label, slug string) string {
-		bareSlug := slug
-		pageType := pageTypeOf(slug, slugToPageType)
-		if idx := strings.Index(slug, "/"); idx >= 0 && slug[:idx] == pageType {
-			bareSlug = slug[idx+1:]
+		fullSlug := resolveSlug(slug)
+		if fullSlug == "" {
+			// Unresolved (dead) slug: keep the label as plain text so the
+			// frontend does not render a broken artifact link.
+			return strings.TrimSpace(label)
+		}
+		bareSlug := fullSlug
+		pageType := pageTypeOf(fullSlug, slugToPageType)
+		if idx := strings.Index(fullSlug, "/"); idx >= 0 && fullSlug[:idx] == pageType {
+			bareSlug = fullSlug[idx+1:]
 		}
 		if pageType == "" {
 			pageType = "page"
@@ -1988,7 +2125,23 @@ func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[str
 		track(slug)
 		return link(displayText(slug, slug), slug)
 	})
+	// rawLinks counts the model-authored wikilinks in the source content. It
+	// must be counted against content, not out: by this point every [[...]] has
+	// been rewritten to markdown, so counting on out would always report zero.
+	rawLinks := wikiWikilinkSimpleRe.FindAllString(content, -1)
+	appcommon.Info("knowledge_compiler: transformWikiLinks resolved outlinks",
+		zap.Int("raw_wikilinks", len(rawLinks)),
+		zap.Int("resolved_outlinks", len(outlinks)),
+		zap.Strings("sample_resolved", firstN(outlinks, 5)),
+		zap.Strings("sample_raw", firstN(rawLinks, 5)))
 	return out, outlinks
+}
+
+func firstN(s []string, n int) []string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func lastPathSlug(slug string) string {
