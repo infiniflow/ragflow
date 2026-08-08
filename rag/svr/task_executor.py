@@ -298,10 +298,14 @@ async def get_storage_binary(bucket, name):
 @timed_with_recording
 @timeout(60 * 80, 1)
 async def build_chunks(task, progress_callback):
-    if task["size"] > settings.DOC_MAXIMUM_SIZE:
-        set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" % (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
-        get_recording_context().record("file_size_exceeded", True)
-        return []
+    # NOTE: The DOC_MAXIMUM_SIZE check has been removed from here.
+    # task["size"] is the FULL document size (from Document.size via
+    # TaskService.get_task JOIN), not the page-range size. For large PDFs,
+    # queue_tasks() already splits the document into per-page-range sub-tasks
+    # (e.g. 12 pages each), so the full-file size check blocks every sub-task
+    # for files >128MB even though the work is properly chunked.
+    # If a hard size limit is still desired, add it to the file-upload step or
+    # in queue_tasks() before producing page-range sub-tasks.
     get_recording_context().record("file_size_exceeded", False)
     get_recording_context().record("parser_id", task["parser_id"])
 
