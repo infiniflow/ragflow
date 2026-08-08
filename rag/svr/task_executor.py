@@ -1435,7 +1435,13 @@ async def do_handle_task(task):
     raptor_cleanup_chunks = []
 
     # prepare the progress callback function
-    progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
+    task_failed = False
+
+    def progress_callback(prog=None, msg="Processing..."):
+        nonlocal task_failed
+        if prog is not None and prog < 0:
+            task_failed = True
+        set_progress(task_id, task_from_page, task_to_page, prog, msg)
 
     task_canceled = has_canceled(task_id)
     if task_canceled:
@@ -1593,7 +1599,8 @@ async def do_handle_task(task):
         # Record chunks array for content comparison (first, middle, last, random)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
         if not chunks:
-            progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
+            if not task_failed:
+                progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
             return
         progress_callback(msg="Generate {} chunks".format(len(chunks)))
         start_ts = timer()
