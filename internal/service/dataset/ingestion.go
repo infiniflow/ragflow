@@ -108,7 +108,7 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
 	}
 
-	return datasetIngestionLogToMap(log), common.CodeSuccess, nil
+	return fileIngestionLogToMap(log), common.CodeSuccess, nil
 }
 
 func datasetIngestionLogToMap(log *entity.PipelineOperationLog) map[string]interface{} {
