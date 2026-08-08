@@ -257,6 +257,12 @@ class DocMetadataService:
                     page_docs = df.to_dict("records")
                 else:
                     page_docs = list(df) if df else []
+            # Check for OceanBase SearchResult format (has chunks + total)
+            elif hasattr(results, 'chunks') and hasattr(results, 'total'):
+                logging.debug("_search_metadata: OceanBase SearchResult detected, chunks=%s total=%s",
+                              len(results.chunks) if results.chunks else 0, results.total)
+                page_docs = results.chunks
+                total_count = results.total
             # Check for ES format (dict with 'hits' key)
             elif hasattr(results, "get") and "hits" in results:
                 hits_obj = results.get("hits", {})
