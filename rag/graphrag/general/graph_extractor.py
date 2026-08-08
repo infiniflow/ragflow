@@ -30,7 +30,10 @@ class GraphExtractionResult:
     output: nx.Graph
     source_docs: dict[Any, Any]
 
+from rag.graphrag.extractor_registry import register_graphrag_extractor
 
+
+@register_graphrag_extractor("general")
 class GraphExtractor(Extractor):
     """Unipartite graph extractor class definition."""
 

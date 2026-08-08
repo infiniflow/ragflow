@@ -28,6 +28,9 @@ class GraphExtractionResult:
     source_docs: dict[Any, Any]
 
 
+from rag.graphrag.extractor_registry import register_graphrag_extractor
+
+@register_graphrag_extractor("light")
 class GraphExtractor(Extractor):
     _max_gleanings: int
 
