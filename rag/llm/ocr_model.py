@@ -24,6 +24,28 @@ from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
 from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.somark_parser import SoMarkParser
+from rag.llm.key_utils import _resolve_ocr_credentials
+
+
+def _is_raw_secret_key(key) -> bool:
+    """True if ``key`` is a plain string that does NOT parse as JSON.
+
+    Used by the OCR providers that support a raw secret key as a
+    documented fallback for the api_key (``SoMarkOcrModel`` and
+    ``MistralOcrModel``). A pre-check on the JSON-parsability is more
+    reliable than a ``not key.lstrip().startswith("{")`` heuristic,
+    which misclassifies valid JSON arrays (``["..."]``) and strings
+    (``"..."``) as raw keys because they don't start with ``{``.
+
+    See #17681.
+    """
+    if not isinstance(key, str) or not key:
+        return False
+    try:
+        json.loads(key)
+    except (json.JSONDecodeError, TypeError):
+        return True
+    return False
 
 
 class Base:
@@ -39,12 +61,11 @@ class MinerUOcrModel(Base, MinerUParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config = {}
-        if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``try: json.loads(key) except Exception: raw_config = {}`` silently
+        # dropped a pasted plain key and fell back to host env vars.
+        # See #17681.
+        raw_config = _resolve_ocr_credentials(key)
 
         # nested {"api_key": {...}} from UI
         # flat {"MINERU_*": "..."} payload auto-provisioned from env vars
@@ -103,12 +124,8 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config = {}
-        if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
+        # See #17681.
+        raw_config = _resolve_ocr_credentials(key)
 
         # nested {"api_key": {...}} from UI
         # flat {"PADDLEOCR_*": "..."} payload auto-provisioned from env vars
@@ -167,12 +184,8 @@ class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config = {}
-        if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
+        # See #17681.
+        raw_config = _resolve_ocr_credentials(key)
 
         config = raw_config.get("api_key", raw_config)
         if not isinstance(config, dict):
@@ -223,23 +236,25 @@ class SoMarkOcrModel(Base, SoMarkParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config: dict = {}
-        if isinstance(key, dict):
-            # API verify path passes the form dict directly; no JSON to parse.
-            raw_config = key
-        elif key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
+        # SoMark supports a raw secret key as a documented fallback for
+        # the api_key (the most common user input). Detect a non-JSON
+        # plain string and treat it as the raw api_key, skipping the
+        # helper's strict JSON validation. See #17681.
+        if _is_raw_secret_key(key):
+            key_as_secret = key
+            raw_config = {}
+        else:
+            # Route JSON-or-dict key parsing through the shared helper.
+            # The helper raises ModelException for non-JSON / non-dict
+            # input. See #17681.
+            key_as_secret = ""
+            raw_config = _resolve_ocr_credentials(key)
 
         # nested {"api_key": {...}} from UI
         # flat {"SOMARK_*": "..."} payload auto-provisioned from env vars
         config = raw_config.get("api_key", raw_config)
         if not isinstance(config, dict):
             config = {}
-
-        key_as_secret = key if isinstance(key, str) and key and not key.lstrip().startswith("{") else ""
 
         def _resolve(ui_key: str, env_key: str, default=""):
             return config.get(
@@ -334,14 +349,19 @@ class MistralOcrModel(Base, MistralParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config: dict = {}
-        if isinstance(key, dict):
-            raw_config = key
-        elif key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
+        # Mistral supports a raw secret key as a documented fallback for
+        # the api_key (the most common user input). Detect a non-JSON
+        # plain string and treat it as the raw api_key, skipping the
+        # helper's strict JSON validation. See #17681.
+        if _is_raw_secret_key(key):
+            key_as_secret = key
+            raw_config = {}
+        else:
+            # Route JSON-or-dict key parsing through the shared helper.
+            # The helper raises ModelException for non-JSON / non-dict
+            # input. See #17681.
+            key_as_secret = ""
+            raw_config = _resolve_ocr_credentials(key)
 
         # Only unwrap a nested {"api_key": {...}} config object; a flat config
         # whose "api_key" is a string must be preserved so the key is not lost.
@@ -349,8 +369,6 @@ class MistralOcrModel(Base, MistralParser):
         config = nested_config if isinstance(nested_config, dict) else raw_config
         if not isinstance(config, dict):
             config = {}
-
-        key_as_secret = key if isinstance(key, str) and key and not key.lstrip().startswith("{") else ""
 
         def _resolve(ui_key: str, env_key: str, default=""):
             return config.get(ui_key, config.get(env_key, kwargs.get(ui_key, kwargs.get(env_key, os.environ.get(env_key, default)))))
