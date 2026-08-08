@@ -498,6 +498,7 @@ class Dealer:
             if isinstance(sres.field[i].get("important_kwd", []), str):
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
+        rerank_docs = []
         for i in sres.ids:
             # content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             content_ltks = sres.field[i][cfield].split()
@@ -505,14 +506,20 @@ class Dealer:
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
-
-        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+            # Feed the reranker the natural chunk text (markup preserved), not the
+            # tokenized content_ltks. Neural rerankers score stemmed / accent-split
+            # tokens far lower, which collapses relevance scores and forces an
+            # artificially low similarity_threshold. Fall back to the tokenized
+            # form when content_with_weight is absent. Per-provider truncation to
+            # the model window stays the reranker connector's responsibility.
+            natural = sres.field[i].get("content_with_weight") or " ".join(tks)
+            rerank_docs.append(remove_redundant_spaces(natural))
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
         # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
         # provider (see RerankModel.Base.similarity), so the blend below stays
         # on a single scale regardless of the configured reranker.
-        vtsim, _ = rerank_mdl.similarity(query, docs)
+        vtsim, _ = rerank_mdl.similarity(query, rerank_docs)
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
