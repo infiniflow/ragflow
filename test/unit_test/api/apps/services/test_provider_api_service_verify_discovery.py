@@ -131,6 +131,55 @@ async def test_discovery_that_simply_finds_nothing_stays_terse(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_credentials_in_the_base_url_never_reach_the_caller(monkeypatch):
+    """Users paste endpoints carrying secrets, as userinfo or as a query token.
+    The reported URL keeps only what makes the failure diagnosable."""
+    secret_url = "https://svc:s3cr3t-token@models.internal:8443/v1?api-key=AKIA-SECRET#frag"
+
+    async def _refused():
+        raise ConnectionRefusedError(f"Cannot connect to {secret_url}")
+
+    module = _load_service(monkeypatch, _refused)
+    _, message, _ = await module.verify_api_key(PROVIDER, "sk-test", base_url=secret_url)
+
+    assert "s3cr3t-token" not in message
+    assert "AKIA-SECRET" not in message
+    assert "svc:" not in message
+    assert "https://***@models.internal:8443/v1" in message
+
+
+def test_redact_url_keeps_what_makes_a_failure_diagnosable():
+    repo_root = Path(__file__).resolve().parents[5]
+    source = (repo_root / "api" / "apps" / "services" / "provider_api_service.py").read_text()
+    namespace: dict = {}
+    exec(compile(_extract_function(source, "_redact_url"), "provider_api_service.py", "exec"), namespace)
+    redact = namespace["_redact_url"]
+
+    assert redact("http://127.0.0.1:1234/v1") == "http://127.0.0.1:1234/v1"
+    assert redact("https://user:pw@host/v1") == "https://***@host/v1"
+    assert redact("https://host/v1?api-key=SECRET") == "https://host/v1"
+    assert redact("https://host/v1#tok=SECRET") == "https://host/v1"
+    assert redact("") == ""
+    assert redact(None) == ""
+
+
+def _extract_function(source: str, name: str):
+    """Compile just one top-level function out of the service module.
+
+    `_redact_url` depends on nothing but `urllib.parse`, so pulling the single
+    definition out avoids stubbing the module's whole dependency graph for what
+    is a pure string transform.
+    """
+    import ast
+
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return ast.Module(body=[ast.parse("from urllib.parse import urlparse, urlunparse").body[0], node], type_ignores=[])
+    raise AssertionError(f"{name} not found in provider_api_service.py")
+
+
+@pytest.mark.asyncio
 async def test_discovery_failure_does_not_abort_the_request(monkeypatch):
     """A raising probe still yields a normal (False, message, {}) result rather
     than propagating out of verify_api_key."""

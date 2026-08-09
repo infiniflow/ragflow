@@ -17,6 +17,7 @@ import os
 import json
 import logging
 import asyncio
+from urllib.parse import urlparse, urlunparse
 
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
@@ -50,6 +51,30 @@ def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     if not base_url.endswith("/v1"):
         base_url += "/v1"
     return base_url
+
+
+def _redact_url(url: str | None) -> str:
+    """Drop credentials from a user-supplied URL before it reaches a log or a response.
+
+    Provider base URLs are typed by the user and routinely carry secrets, either as
+    userinfo (`https://user:token@host/v1`) or as a query token
+    (`https://host/v1?api-key=...`). Keep the scheme, host, port and path, which is
+    what makes a discovery failure diagnosable, and drop the rest.
+    """
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return "<unparsable url>"
+    if not parsed.netloc:
+        return url
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    if parsed.username or parsed.password:
+        netloc = f"***@{netloc}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
 
 
 def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
@@ -687,8 +712,12 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 # Discovery reaches a user-supplied base URL, so it fails for mundane reasons:
                 # the host is unreachable from inside the container, TLS is wrong, the port is
                 # closed. Reporting only "no models found" sends people hunting for a bad key.
-                logging.exception("Model discovery failed for provider %s at %s", provider_name, model_base_url)
-                discovery_error = f" Discovery against {model_base_url} failed: {e}"
+                safe_url = _redact_url(model_base_url)
+                logging.exception("Model discovery failed for provider %s at %s", provider_name, safe_url)
+                # aiohttp echoes the URL it was handed, so scrub the raw form out of the
+                # exception text too rather than only out of our own interpolation.
+                reason = str(e).replace(model_base_url, safe_url) if model_base_url else str(e)
+                discovery_error = f" Discovery against {safe_url} failed: {reason}"
             if not factory_llms:
                 return False, f"No models found for provider '{provider_id_or_name}'.{discovery_error}", {}
 
