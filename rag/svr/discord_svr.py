@@ -53,10 +53,13 @@ async def on_message(message):
         if len(message.content.split('> ')) == 1:
             await message.channel.send("Hi~ How can I help you? ")
         else:
-            JSON_DATA['word'] = message.content.split('> ')[1]
+            # Now that the request is awaited, two overlapping `on_message`
+            # handlers would race on a shared dict: one could overwrite `word`
+            # before the other's request is sent. Build a per-request payload.
+            payload = {**JSON_DATA, 'word': message.content.split('> ')[1]}
             started_at = time.monotonic()
             async with aiohttp.ClientSession() as session:
-                async with session.post(URL, json=JSON_DATA) as response:
+                async with session.post(URL, json=payload) as response:
                     elapsed = time.monotonic() - started_at
                     logger.info(
                         'Completion request finished with status %s in %.3fs',
