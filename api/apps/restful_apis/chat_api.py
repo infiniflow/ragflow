@@ -195,12 +195,15 @@ def _resolve_session_user_id(req: dict) -> tuple[str | None, str | None]:
     to create a session attributed to somebody else, and the field is ignored
     entirely rather than validated, so a malformed one cannot fail their request.
     """
-    if getattr(g, "auth_type", None) != AUTH_API:
-        return current_user.id, None
-    requested = req.get("user_id")
+    auth_type = getattr(g, "auth_type", None)
+    requested = req.get("user_id") if auth_type == AUTH_API else None
     if requested is not None and not isinstance(requested, str):
         return None, "`user_id` must be a string"
-    return (requested or "").strip()[:255] or current_user.id, None
+    resolved = (requested or "").strip()[:255]
+    # The stored owner alone cannot say which path ran, since a client may send the
+    # principal's own id. Record the decision, never the id, which identifies an end user.
+    logging.info("chat session attribution: auth_type=%s owner=%s", auth_type, "client" if resolved else "principal")
+    return resolved or current_user.id, None
 
 
 async def _ensure_owned_chat(chat_id):
