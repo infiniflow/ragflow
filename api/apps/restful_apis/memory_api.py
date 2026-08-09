@@ -200,10 +200,15 @@ async def add_message():
     except RuntimeError:
         trust_client_subject = False
     effective_user_id = current_user.id
+    from_client = False
     if trust_client_subject:
         requested_user_id = req.get("user_id")
         if isinstance(requested_user_id, str) and requested_user_id.strip():
             effective_user_id = requested_user_id.strip()
+            from_client = True
+    # The stored subject alone cannot say which path ran, since a client may send the
+    # principal's own id. Record the decision, never the id, which identifies an end user.
+    logging.info("memory message attribution: trusted_client=%s subject=%s", trust_client_subject, "client" if from_client else "principal")
 
     message_dict = {
         "user_id": effective_user_id,
