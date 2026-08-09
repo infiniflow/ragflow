@@ -86,10 +86,12 @@ func TestTextParser_ParseWithResult_Empty(t *testing.T) {
 	}
 }
 
-// TestTextParser_ParseWithResult_LongParagraphSlicing pins the
-// maxItemBytes boundary behaviour. A single paragraph longer
-// than 8192 bytes is sliced at the nearest line boundary.
-func TestTextParser_ParseWithResult_LongParagraphSlicing(t *testing.T) {
+// TestTextParser_ParseWithResult_NoSizeCap pins that the parser performs no
+// per-item byte slicing: a single continuous run longer than any prior cap
+// (here 9000 'a's with no delimiter) stays as one item whose full content is
+// preserved. Sizing is delegated to the chunker / embedding truncation, matching
+// python's parser_txt (which also does no size slicing).
+func TestTextParser_ParseWithResult_NoSizeCap(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
 	long := strings.Repeat("a", 9000)
@@ -97,13 +99,11 @@ func TestTextParser_ParseWithResult_LongParagraphSlicing(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) < 2 {
-		t.Errorf("JSON len = %d, want >=2 (sliced at maxItemBytes)", len(res.JSON))
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1 (no per-item size cap)", len(res.JSON))
 	}
-	for i, it := range res.JSON {
-		if txt, _ := it["text"].(string); len(txt) > 8192 {
-			t.Errorf("JSON[%d].text len = %d, exceeds maxItemBytes=8192", i, len(txt))
-		}
+	if txt, _ := res.JSON[0]["text"].(string); txt != long {
+		t.Errorf("text len = %d, want %d (full content preserved, not sliced)", len(txt), len(long))
 	}
 }
 

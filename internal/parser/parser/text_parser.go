@@ -42,18 +42,11 @@ import (
 
 // TextParser is the text&code family parser. It implements the
 // structured ParseResultProducer contract directly.
-type TextParser struct {
-	// maxItemBytes caps each emitted item's text length. The
-	// python TxtParser uses similar paragraph-style chunking;
-	// 8192 bytes is a conservative ceiling that prevents the
-	// downstream chunker from receiving oversized inputs.
-	maxItemBytes int
-}
+type TextParser struct{}
 
-// NewTextParser constructs a TextParser with the default
-// paragraph-sized chunking ceiling.
+// NewTextParser constructs a TextParser.
 func NewTextParser() *TextParser {
-	return &TextParser{maxItemBytes: 8192}
+	return &TextParser{}
 }
 
 // ParseWithResult emits one item per non-empty paragraph. The
@@ -67,7 +60,7 @@ func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !utf8Valid(data) {
 		return ParseResult{Err: errInvalidUTF8}
 	}
-	items := textParserItems(data, p.maxItemBytes)
+	items := textParserItems(data)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -213,17 +206,15 @@ func splitCapturingDelims(s string, re *regexp.Regexp) []string {
 // Unlike the python signature default keep_delimiters=False, the flow _code
 // path calls TxtParser with keep_delimiters=True, so each segment keeps its
 // trailing delimiter attached (sentence-ending punctuation preserved for code
-// and prose). An over-long single segment (no delimiter within maxItemBytes) is
-// sliced at the nearest line boundary as a defensive cap before it reaches the
-// chunker: the downstream chunker keeps any single oversized item whole and the
-// embedding step truncates it, so without this cap a minified / no-newline file
-// would collapse to one mega-chunk and lose most of its content (token.go
-// mergeByTokenSizeFromJSON). The slice is byte-based, so for pathological inputs
-// (a continuous run longer than maxItemBytes with no delimiter) Go emits several
-// items where Python keeps one — a bounded divergence that only affects inputs
-// the python flow also cannot chunk, and which the alignment golden avoids by
-// using realistic text.
-func textParserItems(data []byte, maxItemBytes int) []map[string]any {
+// and prose).
+//
+// No per-item byte cap is applied: the parser is a pure delimiter splitter, just
+// like python's parser_txt (which also does no size slicing). Sizing belongs to
+// the chunker and the embedding truncation step, so a continuous run longer than
+// the embedding token budget (e.g. a minified / no-newline file) is kept as one
+// item here and collapsed to one chunk downstream — matching python's behaviour
+// rather than diverging from it.
+func textParserItems(data []byte) []map[string]any {
 	txt := normalizeTextNewlines(string(data))
 	secs := splitCapturingDelims(txt, textDelimiterSplitRe)
 
@@ -248,22 +239,6 @@ func textParserItems(data []byte, maxItemBytes int) []map[string]any {
 		text := strings.TrimSpace(para)
 		if text == "" {
 			continue
-		}
-		if maxItemBytes > 0 && len(text) > maxItemBytes {
-			// Slice at the nearest newline below maxItemBytes;
-			// falls back to a hard slice when no newline exists.
-			cut := strings.LastIndex(text[:maxItemBytes], "\n")
-			if cut <= 0 {
-				cut = maxItemBytes
-			}
-			items = append(items, map[string]any{
-				"text":         strings.TrimSpace(text[:cut]),
-				"doc_type_kwd": "text",
-			})
-			text = strings.TrimSpace(text[cut:])
-			if text == "" {
-				continue
-			}
 		}
 		items = append(items, map[string]any{
 			"text":         text,
