@@ -18,7 +18,10 @@ import discord
 import aiohttp
 import base64
 import io
+import time
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 URL = '{YOUR_IP_ADDRESS:PORT}/v1/api/completion_aibotk'  # Default: https://cloud.ragflow.io/v1/api/completion_aibotk
 
@@ -37,7 +40,7 @@ client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    logging.info(f'We have logged in as {client.user}')
+    logger.info(f'We have logged in as {client.user}')
 
 
 @client.event
@@ -51,8 +54,14 @@ async def on_message(message):
             await message.channel.send("Hi~ How can I help you? ")
         else:
             JSON_DATA['word'] = message.content.split('> ')[1]
+            started_at = time.monotonic()
             async with aiohttp.ClientSession() as session:
                 async with session.post(URL, json=JSON_DATA) as response:
+                    elapsed = time.monotonic() - started_at
+                    logger.info(
+                        'Completion request finished with status %s in %.3fs',
+                        response.status, elapsed
+                    )
                     response_data = (await response.json()).get('data', [])
             image_bool = False
 
@@ -63,11 +72,17 @@ async def on_message(message):
                     image_bool = True
                     image_data = base64.b64decode(i['url'])
                     image = discord.File(io.BytesIO(image_data), filename='image.png')
+                    logger.info('Built image attachment of %d bytes', len(image_data))
 
             await message.channel.send(f"{message.author.mention}{res}")
 
             if image_bool:
-                await message.channel.send(file=image)
+                try:
+                    await message.channel.send(file=image)
+                except Exception:
+                    logger.exception('Failed to send the image attachment')
+                else:
+                    logger.info('Image attachment sent')
 
 
 loop = asyncio.get_event_loop()
