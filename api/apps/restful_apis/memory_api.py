@@ -20,7 +20,7 @@ import time
 from quart import request, g
 from common.constants import RetCode
 from common.exceptions import ArgumentException, NotFoundException
-from api.apps import login_required, current_user
+from api.apps import AUTH_API, login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
 from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
@@ -196,13 +196,14 @@ async def add_message():
 
     # JWT / session users cannot spoof attribution; API-key callers may supply an external subject id.
     try:
-        trust_client_subject = bool(getattr(g, "auth_via_api_token", False))
+        trust_client_subject = getattr(g, "auth_type", None) == AUTH_API
     except RuntimeError:
         trust_client_subject = False
+    effective_user_id = current_user.id
     if trust_client_subject:
-        effective_user_id = req.get("user_id", "")
-    else:
-        effective_user_id = current_user.id
+        requested_user_id = req.get("user_id")
+        if isinstance(requested_user_id, str) and requested_user_id.strip():
+            effective_user_id = requested_user_id.strip()
 
     message_dict = {
         "user_id": effective_user_id,
