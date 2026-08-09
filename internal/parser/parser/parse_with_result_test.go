@@ -33,6 +33,7 @@
 package parser
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -280,5 +281,82 @@ func TestGetParser_RoutesTextAndCode(t *testing.T) {
 	}
 	if _, ok := p.(ParseResultProducer); !ok {
 		t.Fatal("TextParser does not implement ParseResultProducer")
+	}
+}
+
+// TestTextParser_ParseWithResult_DefaultDelimiter pins the alignment fix:
+// TextParser now splits on the flow parser's default delimiter set
+// ("\n!?;。；！？"), mirroring deepdoc TxtParser.parser_txt, instead of only on
+// blank lines. keep_delimiters=True (the flow _code path) keeps each trailing
+// delimiter attached, so sentence-ending punctuation survives the split.
+func TestTextParser_ParseWithResult_DefaultDelimiter(t *testing.T) {
+	ctx := t.Context()
+	p := NewTextParser()
+
+	// Single newlines now split too (previously only "\n\n" did).
+	src := []byte("First line.\nSecond line.\nThird line.")
+	res := p.ParseWithResult(ctx, "doc.txt", src)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("JSON len = %d, want 3 (single-newline split)", len(res.JSON))
+	}
+
+	// Sentence delimiters split and keep the delimiter attached. The period
+	// "." is NOT in the default set, so "Foo. Bar" stays joined until the ";".
+	// TrimSpace drops the incidental leading space before each delimiter (the
+	// package's established convention, also used by markdown leafText).
+	src = []byte("Hello! World? Foo. Bar; Baz。 Qux！")
+	res = p.ParseWithResult(ctx, "doc.txt", src)
+	want := []string{"Hello!", "World?", "Foo. Bar;", "Baz。", "Qux！"}
+	if len(res.JSON) != len(want) {
+		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
+	}
+	for i, w := range want {
+		if got := res.JSON[i]["text"]; got != w {
+			t.Errorf("JSON[%d].text = %v, want %v", i, got, w)
+		}
+	}
+
+	// Chinese sentence delimiters split the same way.
+	src = []byte("这是第一句。这是第二句！第三句？结尾。")
+	res = p.ParseWithResult(ctx, "doc.txt", src)
+	if len(res.JSON) != 4 {
+		t.Fatalf("JSON len = %d, want 4 (CJK delimiter split)", len(res.JSON))
+	}
+}
+
+// TestTextParser_AlignmentGolden verifies Go's ParseWithResult output is
+// content-equivalent to Python's _code on the shared sample, using the shared
+// concatenation-normalization alignment tool (align_test.go). Python applies
+// the OVER_CAP token merge (chunking ownership retained by the Go Chunker per
+// PARSER_ALIGNMENT_HANDOFF.md §2.3, decision 1), so item counts differ; the
+// comparison normalizes both (delimiters stripped, whitespace collapsed) and
+// joins on whitespace, reconciling the boundary difference.
+//
+// Regenerate the baseline with:
+//
+//	.venv/bin/python internal/parser/parser/testdata/gen_textcode_golden.py
+func TestTextParser_AlignmentGolden(t *testing.T) {
+	ctx := t.Context()
+	p := NewTextParser()
+
+	sample, err := os.ReadFile("testdata/textcode.sample.txt")
+	if err != nil {
+		t.Fatalf("read sample: %v", err)
+	}
+	res := p.ParseWithResult(ctx, "textcode.sample.txt", sample)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	golden := LoadGolden(t, "testdata/textcode.python.golden.json")
+
+	goText := FilterByDocType(res.JSON, "text")
+	pyText := FilterByDocType(golden, "text")
+
+	if ok, diff := CompareAlignment(goText, pyText, TextCodeAlignOptions(DefaultTextCodeDelimiter)); !ok {
+		t.Fatalf("text&code parser not aligned with Python golden:%s", diff)
 	}
 }

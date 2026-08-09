@@ -22,19 +22,21 @@
 // side needs a parser for these families so `text&code` resolves to a
 // real ParseResultProducer.
 //
-// TextParser fills that gap with a minimal but real implementation:
-// it splits the input into paragraph-sized items and emits the
-// python-compatible `{text, doc_type_kwd:"text"}` shape. The
-// python TxtParser additionally does layout-aware section
-// detection; the Go version is intentionally simpler because (a)
-// no production template currently relies on text&code for richer
-// structure than paragraph items.
+// TextParser fills that gap with a real implementation: it splits the
+// input into fine segments on the flow parser's default delimiter set and
+// emits the python-compatible `{text, doc_type_kwd:"text"}` shape. Block
+// boundaries converge to the Python flow TxtParser (which uses the same
+// delimiter set); the OVER_CAP token merge that Python applies afterwards is
+// intentionally NOT performed here — chunking ownership stays with the
+// downstream Chunker per PARSER_ALIGNMENT_HANDOFF.md §2.3 (decision 1), so
+// item counts differ from Python's merged chunks and are reconciled by the
+// stitch-compare alignment test (align_test.go).
 
 package parser
 
 import (
-	"bytes"
 	"context"
+	"regexp"
 	"strings"
 )
 
@@ -140,13 +142,110 @@ func decodeRune(p []byte) (rune, int) {
 	return 0xFFFD, 1
 }
 
-// textParserItems splits `data` into paragraph-sized chunks. The
-// split rule mirrors the python TxtParser: blank lines separate
-// paragraphs; long paragraphs are sliced at maxItemBytes boundaries.
+// defaultTextDelimiter is the flow parser's default delimiter set for the
+// text&code family (rag/flow/parser/parser.py:_code → deepdoc TxtParser default
+// "\n!?;。；！？"). The Parser component has no user-facing delimiter config
+// entry (see PARSER_ALIGNMENT_HANDOFF.md §3.3), so this hard-coded default is
+// exactly what the python flow always splits on.
+const defaultTextDelimiter = "\n!?;。；！？"
+
+// defaultTextDelimiterPattern is the regexp alternation of the default
+// delimiter set, each rune re.escape'd to mirror
+// rag/nlp/delim.compile_delimiter_pattern. Go's regexp.Split drops captured
+// delimiters, so splitCapturingDelims walks the match indexes manually to
+// reproduce python's re.split(r"(%s)" % pattern, txt) interleaving.
+var (
+	defaultTextDelimiterPattern = buildDelimiterPattern(defaultTextDelimiter)
+	textDelimiterSplitRe        = regexp.MustCompile(defaultTextDelimiterPattern)
+	textDelimiterExactRe        = regexp.MustCompile("^(?:" + defaultTextDelimiterPattern + ")$")
+)
+
+// buildDelimiterPattern builds an alternation of re.escape'd delimiter runes
+// (longest-first is a no-op here: every delimiter in the default set is a
+// single rune, so insertion order is preserved like python's stable sort).
+func buildDelimiterPattern(delims string) string {
+	parts := make([]string, 0, len(delims))
+	for _, r := range delims {
+		parts = append(parts, regexp.QuoteMeta(string(r)))
+	}
+	return strings.Join(parts, "|")
+}
+
+// normalizeTextNewlines folds CRLF and standalone CR to LF, mirroring
+// rag/nlp/delim.normalize_text_newlines so Windows-line-ending documents split
+// identically to Unix ones.
+func normalizeTextNewlines(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
+}
+
+// splitCapturingDelims reproduces python re.split(r"(%s)" % pattern, s): it
+// splits on the regexp and includes each matched delimiter as its own element
+// (with empty strings between adjacent delimiters) so callers can keep or drop
+// them. Go's regexp.Split discards captured groups, hence the manual walk.
+func splitCapturingDelims(s string, re *regexp.Regexp) []string {
+	locs := re.FindAllStringIndex(s, -1)
+	if len(locs) == 0 {
+		return []string{s}
+	}
+	out := make([]string, 0, 2*len(locs)+1)
+	prev := 0
+	for _, loc := range locs {
+		out = append(out, s[prev:loc[0]])
+		out = append(out, s[loc[0]:loc[1]])
+		prev = loc[1]
+	}
+	out = append(out, s[prev:])
+	return out
+}
+
+// textParserItems splits data into fine segments on the flow parser's default
+// delimiter set, mirroring deepdoc.parser.txt_parser.TxtParser.parser_txt up to
+// (but not including) the OVER_CAP token merge. The token merge is intentionally
+// NOT performed here — chunking ownership stays with the downstream Chunker per
+// PARSER_ALIGNMENT_HANDOFF.md §2.3 (decision 1) — so item counts differ from the
+// python flow's merged chunks and are reconciled by the stitch-compare alignment
+// test (align_test.go).
+//
+// Unlike the python signature default keep_delimiters=False, the flow _code
+// path calls TxtParser with keep_delimiters=True, so each segment keeps its
+// trailing delimiter attached (sentence-ending punctuation preserved for code
+// and prose). An over-long single segment (no delimiter within maxItemBytes) is
+// sliced at the nearest line boundary as a defensive cap before it reaches the
+// chunker: the downstream chunker keeps any single oversized item whole and the
+// embedding step truncates it, so without this cap a minified / no-newline file
+// would collapse to one mega-chunk and lose most of its content (token.go
+// mergeByTokenSizeFromJSON). The slice is byte-based, so for pathological inputs
+// (a continuous run longer than maxItemBytes with no delimiter) Go emits several
+// items where Python keeps one — a bounded divergence that only affects inputs
+// the python flow also cannot chunk, and which the alignment golden avoids by
+// using realistic text.
 func textParserItems(data []byte, maxItemBytes int) []map[string]any {
+	txt := normalizeTextNewlines(string(data))
+	secs := splitCapturingDelims(txt, textDelimiterSplitRe)
+
+	var paras []string
+	for i, sec := range secs {
+		if textDelimiterExactRe.MatchString(sec) {
+			continue
+		}
+		if sec == "" {
+			continue
+		}
+		// keep_delimiters=True: append the delimiter to the segment it
+		// follows, mirroring python's parser_txt.
+		if i+1 < len(secs) && textDelimiterExactRe.MatchString(secs[i+1]) {
+			sec += secs[i+1]
+		}
+		paras = append(paras, sec)
+	}
+
 	var items []map[string]any
-	for _, raw := range bytes.Split(data, []byte("\n\n")) {
-		text := strings.TrimSpace(string(raw))
+	for _, para := range paras {
+		text := strings.TrimSpace(para)
 		if text == "" {
 			continue
 		}

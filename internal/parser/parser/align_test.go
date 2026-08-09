@@ -235,3 +235,28 @@ func MarkdownAlignOptions(delimiter string) AlignOptions {
 // DefaultMarkdownDelimiter is the flow parser's default markdown delimiter
 // set, used when generating/loading the golden baseline.
 const DefaultMarkdownDelimiter = "\n!?;。；！？"
+
+// DefaultTextCodeDelimiter is the flow parser's default text&code delimiter
+// set, used when generating/loading the golden baseline.
+const DefaultTextCodeDelimiter = "\n!?;。；！？"
+
+// TextCodeAlignOptions returns the normalizer preset for the text&code family.
+// Unlike markdown it has no syntax or HTML markup to strip, so only the
+// delimiter-set replacement and whitespace collapse run:
+//   - WithDelimiterStrip: replace the delimiter runes Python consumes at split
+//     points (kept inline on the Go side via keep_delimiters=True) with a space
+//     so both sides keep the same token separation.
+//   - CollapseWhitespace last: folds the introduced spaces and any inter-segment
+//     gaps into single spaces.
+//
+// Reused by every text&code alignment test; shares CompareAlignment with the
+// other format presets (MarkdownAlignOptions).
+func TextCodeAlignOptions(delimiter string) AlignOptions {
+	return AlignOptions{
+		Normalizers: []Normalizer{
+			WithDelimiterStrip(delimiter),
+			CollapseWhitespace(),
+		},
+		ItemKey: "text",
+	}
+}
