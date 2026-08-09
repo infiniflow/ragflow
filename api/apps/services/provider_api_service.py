@@ -670,6 +670,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
         factory_llms = factory_info[0]["llm"]
         if not factory_llms:
             model_base_url = base_url or factory_info[0].get("url", "")
+            discovery_error = ""
             try:
                 if provider_name in ModelMeta:
                     remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
@@ -682,10 +683,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                             for m in remote_models
                             for mt in m.get("model_types", [])
                         ]
-            except Exception:
-                pass
+            except Exception as e:
+                # Discovery reaches a user-supplied base URL, so it fails for mundane reasons:
+                # the host is unreachable from inside the container, TLS is wrong, the port is
+                # closed. Reporting only "no models found" sends people hunting for a bad key.
+                logging.exception("Model discovery failed for provider %s at %s", provider_name, model_base_url)
+                discovery_error = f" Discovery against {model_base_url} failed: {e}"
             if not factory_llms:
-                return False, f"No models found for provider '{provider_id_or_name}'", {}
+                return False, f"No models found for provider '{provider_id_or_name}'.{discovery_error}", {}
 
     model_verify_result = {}
     # test if api key works
