@@ -14,8 +14,10 @@
 #  limitations under the License.
 #
 
+import json
 import os
 import re
+from json.decoder import JSONDecodeError
 from urllib.parse import urlsplit
 
 
@@ -36,8 +38,18 @@ def validate_bedrock_api_key(api_key: str) -> str:
     return api_key
 
 
-def validate_bedrock_region(region_name: str) -> None:
-    if not _AWS_REGION_PATTERN.fullmatch(region_name):
+def parse_bedrock_credentials(value: str) -> dict[str, object]:
+    try:
+        config = json.loads(value)
+    except (JSONDecodeError, TypeError) as error:
+        raise ValueError("Bedrock API key must be a JSON object") from error
+    if not isinstance(config, dict):
+        raise ValueError("Bedrock API key must be a JSON object")
+    return config
+
+
+def validate_bedrock_region(region_name: object) -> None:
+    if not isinstance(region_name, str) or not _AWS_REGION_PATTERN.fullmatch(region_name):
         raise ValueError("Bedrock region must be a valid AWS region identifier")
 
 
@@ -50,7 +62,7 @@ def _mantle_root_url(endpoint_url: str) -> str:
 
 
 def normalize_bedrock_endpoint(endpoint_type: str, endpoint_url: str) -> str:
-    endpoint_url = endpoint_url.rstrip("/")
+    endpoint_url = endpoint_url.strip().rstrip("/")
     if not endpoint_url or endpoint_type == "runtime":
         return endpoint_url
     root_url = _mantle_root_url(endpoint_url)

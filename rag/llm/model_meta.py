@@ -67,13 +67,9 @@ class Bedrock(Base):
 
     async def get_model_list(self):
         from rag.llm.bedrock_model_discovery import discover_bedrock_models
+        from rag.utils.bedrock_endpoint import parse_bedrock_credentials
 
-        try:
-            config = json.loads(self.api_key)
-        except (JSONDecodeError, TypeError) as error:
-            raise ValueError("Bedrock API key must be a JSON object") from error
-        if not isinstance(config, dict):
-            raise ValueError("Bedrock API key must be a JSON object")
+        config = parse_bedrock_credentials(self.api_key)
         if config.get("auth_mode") != "bedrock_api_key":
             return []
         return await asyncio.to_thread(discover_bedrock_models, config)

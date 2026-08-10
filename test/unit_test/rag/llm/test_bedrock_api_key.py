@@ -292,10 +292,20 @@ def test_bedrock_model_meta_rejects_non_object_api_key():
         asyncio.run(BedrockModelMeta("12345").get_model_list())
 
 
+def test_bedrock_model_meta_rejects_malformed_api_key() -> None:
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        asyncio.run(BedrockModelMeta("{").get_model_list())
+
+
 def test_normalize_mantle_endpoint_from_models_url():
     endpoint = "https://bedrock-mantle.ap-northeast-1.api.aws/v1/models"
     assert normalize_bedrock_endpoint("mantle_openai", endpoint) == "https://bedrock-mantle.ap-northeast-1.api.aws/v1"
     assert normalize_bedrock_endpoint("mantle_anthropic", endpoint) == "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic"
+
+
+def test_normalize_mantle_endpoint_trims_surrounding_whitespace() -> None:
+    endpoint = "  https://bedrock-mantle.ap-northeast-1.api.aws/v1/models/  "
+    assert normalize_bedrock_endpoint("mantle_openai", endpoint) == "https://bedrock-mantle.ap-northeast-1.api.aws/v1"
 
 
 def test_rejects_untrusted_mantle_endpoint():
@@ -329,6 +339,12 @@ def test_rejects_region_values_that_can_escape_the_aws_hostname(region):
         validate_bedrock_region(region)
 
 
+@pytest.mark.parametrize("region", [None, 123, []])
+def test_rejects_non_string_bedrock_region(region: object) -> None:
+    with pytest.raises(ValueError, match="valid AWS region identifier"):
+        validate_bedrock_region(region)
+
+
 def test_runtime_chat_rejects_malicious_region_before_litellm_request():
     model = LiteLLMBase(
         '{"auth_mode":"bedrock_api_key","bedrock_region":"attacker.example?ignored=","bedrock_api_key":"token"}',
@@ -338,6 +354,21 @@ def test_runtime_chat_rejects_malicious_region_before_litellm_request():
 
     with pytest.raises(ValueError, match="valid AWS region identifier"):
         model._construct_completion_args([{"role": "user", "content": "hi"}], False, False)
+
+
+@pytest.mark.parametrize("credential", ["{", "[]"])
+@pytest.mark.parametrize("driver", ["chat", "vision", "embedding", "rerank"])
+def test_bedrock_drivers_reject_non_object_credentials(credential: str, driver: str) -> None:
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        if driver == "chat":
+            model = LiteLLMBase(credential, "anthropic.claude-sonnet-current", provider=SupportedLiteLLMProvider.Bedrock)
+            model._construct_completion_args([{"role": "user", "content": "hi"}], False, False)
+        elif driver == "vision":
+            BedrockCV(credential, "anthropic.claude-sonnet-current")
+        elif driver == "embedding":
+            BedrockEmbed(credential, "amazon.titan-embed-text-v2:0")
+        else:
+            BedrockRerank(credential, "amazon.rerank-v1:0")
 
 
 def test_runtime_chat_uses_bearer_header_without_ambient_aws_credentials():
@@ -457,6 +488,23 @@ def test_runtime_discovery_uses_remote_modalities(mock_create_client):
         },
     ]
     mock_create_client.return_value.list_foundation_models.assert_called_once_with(byInferenceType="ON_DEMAND")
+
+
+@patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")
+def test_runtime_discovery_normalizes_catalog_endpoint(mock_create_client) -> None:
+    mock_create_client.return_value.list_foundation_models.return_value = {"modelSummaries": []}
+
+    with pytest.raises(ValueError, match="No compatible Bedrock"):
+        discover_bedrock_models(
+            {
+                "bedrock_api_key": "token",
+                "bedrock_region": "ap-northeast-1",
+                "bedrock_endpoint_type": "runtime",
+                "bedrock_discovery_endpoint_url": "  https://bedrock.ap-northeast-1.amazonaws.com/  ",
+            }
+        )
+
+    mock_create_client.assert_called_once_with("bedrock", "token", "ap-northeast-1", "https://bedrock.ap-northeast-1.amazonaws.com")
 
 
 @patch("openai.OpenAI")

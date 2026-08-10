@@ -99,6 +99,20 @@ def test_missing_auth_mode_raises():
             BedrockRerank(json.dumps({"bedrock_region": "eu-central-1"}), "amazon.rerank-v1:0")
 
 
+def test_missing_region_raises_before_client_creation() -> None:
+    with patch("boto3.client") as client_factory:
+        with pytest.raises(ValueError, match="region must be provided"):
+            BedrockRerank(json.dumps({"auth_mode": "assume_role"}), "amazon.rerank-v1:0")
+    client_factory.assert_not_called()
+
+
+def test_invalid_region_raises_before_client_creation() -> None:
+    with patch("boto3.client") as client_factory:
+        with pytest.raises(ValueError, match="valid AWS region identifier"):
+            BedrockRerank(json.dumps({"auth_mode": "assume_role", "bedrock_region": "invalid_region"}), "amazon.rerank-v1:0")
+    client_factory.assert_not_called()
+
+
 def test_access_key_secret_mode_wires_the_client():
     with patch("boto3.client") as client_factory:
         client_factory.return_value = MagicMock()

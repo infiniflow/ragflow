@@ -1372,9 +1372,9 @@ class BedrockCV(Base):
         Base.__init__(self, **kwargs)
 
     def _parse_credentials(self, key):
-        from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_region
+        from rag.utils.bedrock_endpoint import parse_bedrock_credentials, resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_region
 
-        bedrock_key = json.loads(key)
+        bedrock_key = parse_bedrock_credentials(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
         self.aws_region = bedrock_key.get("bedrock_region")
         if not self.aws_region:

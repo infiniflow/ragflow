@@ -2370,12 +2370,12 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
             from botocore.exceptions import BotoCoreError, ClientError
-            from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_region
+            from rag.utils.bedrock_endpoint import parse_bedrock_credentials, resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_region
 
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
 
-            bedrock_key = json.loads(self.api_key)
+            bedrock_key = parse_bedrock_credentials(self.api_key)
             mode = bedrock_key.get("auth_mode")
             if not mode:
                 logging.error("Bedrock auth_mode is not provided in the key")

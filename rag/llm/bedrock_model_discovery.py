@@ -24,7 +24,14 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from common.constants import LLMType
-from rag.utils.bedrock_endpoint import mantle_model_catalog_url, resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_endpoint_target, validate_bedrock_region
+from rag.utils.bedrock_endpoint import (
+    mantle_model_catalog_url,
+    normalize_bedrock_endpoint,
+    resolve_bedrock_endpoint,
+    validate_bedrock_api_key,
+    validate_bedrock_endpoint_target,
+    validate_bedrock_region,
+)
 
 
 DEFAULT_BEDROCK_MAX_TOKENS = 8192
@@ -147,7 +154,7 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
         raise ValueError("Bedrock region must be provided in the key")
     validate_bedrock_region(region_name)
     endpoint_type, endpoint_url = resolve_bedrock_endpoint("bedrock_api_key", config.get("bedrock_endpoint_type"), config.get("bedrock_endpoint_url"))
-    catalog_endpoint_url = config.get("bedrock_discovery_endpoint_url") or ""
+    catalog_endpoint_url = normalize_bedrock_endpoint("runtime", config.get("bedrock_discovery_endpoint_url") or "")
     validate_bedrock_endpoint_target(catalog_endpoint_url)
     logging.info("Discovering Bedrock models using endpoint type %s", endpoint_type)
     if endpoint_type == "runtime":

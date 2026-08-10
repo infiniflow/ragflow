@@ -326,8 +326,9 @@ class BedrockRerank(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        from rag.utils.bedrock_endpoint import parse_bedrock_credentials, validate_bedrock_region
 
-        key = json.loads(key)
+        key = parse_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")
@@ -336,6 +337,9 @@ class BedrockRerank(Base):
         self.bedrock_region = key.get("bedrock_region")
         if mode == "bedrock_api_key":
             raise ValueError("Bedrock API keys do not support the bedrock-agent-runtime rerank API")
+        if not self.bedrock_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_bedrock_region(self.bedrock_region)
         self.model_name = model_name
         # On-demand foundation-model ARN; works for amazon.rerank-v1:0 / cohere.rerank-*.
         self.model_arn = f"arn:aws:bedrock:{self.bedrock_region}::foundation-model/{self.model_name}"

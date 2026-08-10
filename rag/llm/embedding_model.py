@@ -665,7 +665,7 @@ class BedrockEmbed(Base):
     def __init__(self, key, model_name, **kwargs):
         import boto3
         from rag.llm.bedrock_model_discovery import create_bedrock_bearer_client
-        from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_region
+        from rag.utils.bedrock_endpoint import parse_bedrock_credentials, resolve_bedrock_endpoint, validate_bedrock_region
 
         # `key` protocol (backend stores as JSON string in `api_key`):
         # - Must decode into a dict.
@@ -675,7 +675,7 @@ class BedrockEmbed(Base):
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
         #   - "assume_role": uses the default AWS credential chain.
         #   - "bedrock_api_key": uses a request-scoped Bearer token.
-        key = json.loads(key)
+        key = parse_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")
