@@ -31,6 +31,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"ragflow/internal/server"
+
 	// Import image decoders for common formats.
 	_ "image/gif"
 	_ "image/jpeg"
@@ -40,8 +42,7 @@ import (
 	"sort"
 	"strings"
 
-	"ragflow/internal/common"
-	inference "ragflow/internal/deepdoc/parser/pdf/inference"
+	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -436,9 +437,10 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(binary []byte) (string, error) {
-	deepdocURL := common.GetEnv(common.EnvDeepDocURL)
+	globalConfig := server.GetConfig()
+	deepdocURL := globalConfig.GetDeepDocURL()
 	if deepdocURL == "" {
-		deepdocURL = common.GetEnv(common.EnvTensorrtDLAServer)
+		deepdocURL = globalConfig.GetTensorRTDLAServer()
 	}
 	if deepdocURL == "" {
 		return "", fmt.Errorf("local OCR: DEEPDOC_URL not configured")
