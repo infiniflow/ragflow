@@ -101,20 +101,28 @@ class Graph:
 
     def load(self):
         self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
+        for cpn in self.components.values():
             cpn["obj"]["params"]["custom_header"] = self.custom_header
+
+        component_params = self.validate_component_parameters(self.dsl)
+        for k, cpn in self.components.items():
+            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
+
+        self.path = self.dsl["path"]
+
+    @staticmethod
+    def validate_component_parameters(dsl):
+        component_params = {}
+        for k, cpn in dsl["components"].items():
+            param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
             except Exception as e:
-                raise ValueError(self.get_component_name(k) + f": {e}")
-
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-
-        self.path = self.dsl["path"]
+                component_name = next((n["data"]["name"] for n in dsl.get("graph", {}).get("nodes", []) if k == n["id"]), "")
+                raise ValueError(component_name + f": {e}")
+            component_params[k] = param
+        return component_params
 
     def __str__(self):
         self.dsl["path"] = self.path
