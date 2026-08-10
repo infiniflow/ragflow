@@ -737,7 +737,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
         return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-    # ── keywords mode: global KNN → the top-1 entity's focused subgraph ──
+    # ── keywords mode: name matching/KNN → matched entities' subgraph ──
     if keywords:
         try:
             embd_id = DocumentService.get_embd_id(document_id)

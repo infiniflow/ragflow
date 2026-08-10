@@ -1819,7 +1819,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     across documents.
 
     ``keywords`` (optional): return the single best-matching entity's 1-hop
-    subgraph (top-1 + neighbors + touching relations) across the kind, via KNN.
+    subgraph (matched entities + neighbors + touching relations) across the kind.
 
     Returns ``(True, {"kind": <kind>, "templates": [...]})`` or
     ``(False, message)`` on auth/validation failure.
@@ -1993,7 +1993,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         resolved_kind,
     )
 
-    # ── keywords mode: global KNN across the kind → top-1's focused subgraph. ──
+    # ── keywords mode: name matching/KNN across the kind → matched subgraph. ──
     if keywords:
         if not kind_template_ids:
             return True, empty
