@@ -95,6 +95,9 @@ func (c *Config) GetMode() string {
 }
 
 func (c *Config) DatabaseType() string {
+	if c.environments.DatabaseType != "" {
+		return c.environments.DatabaseType
+	}
 	return c.general.Database
 }
 

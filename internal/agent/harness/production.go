@@ -65,7 +65,7 @@ func NewProductionRunner(db *gorm.DB, tenantID string, datasetIDs []string) (*Pr
 		return nil, fmt.Errorf("hybrid_search is not invokable")
 	}
 	r := &ProductionRunner{db: db, tenantID: tenantID, datasetIDs: datasetIDs, searchTool: search}
-	if common.GetEnv(common.EnvTavilyApiKey) != "" {
+	if common.GetEnv(common.EnvTavilyAPIKey) != "" {
 		r.webTool = tool.NewTavilyTool()
 	}
 	return r, nil

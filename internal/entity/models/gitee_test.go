@@ -235,7 +235,7 @@ func TestGiteeListModelsIntegration(t *testing.T) {
 		baseURL = "https://api.moark.ai/v1"
 	}
 	apiConfig := &APIConfig{}
-	if apiKey := common.GetEnv(common.EnvGiteeApiKey); apiKey != "" {
+	if apiKey := common.GetEnv(common.EnvGiteeAPIKey); apiKey != "" {
 		apiConfig.ApiKey = &apiKey
 	}
 

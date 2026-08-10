@@ -5,6 +5,8 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigatePage } from './logic-hooks/navigate-hooks';
 
+let isWarningVisible = false;
+
 export const useWarnEmptyModel = (
   showEmptyModelWarn: boolean,
   embdId?: string,
@@ -19,12 +21,14 @@ export const useWarnEmptyModel = (
     if (
       showEmptyModelWarn &&
       !warnedRef.current &&
+      !isWarningVisible &&
       !loading &&
       (isEmpty(embdId) || isEmpty(llmId)) &&
       typeof embdId === 'string' &&
       typeof llmId === 'string'
     ) {
       warnedRef.current = true;
+      isWarningVisible = true;
       Modal.warning({
         title: t('common.warn'),
         content: (
@@ -37,6 +41,7 @@ export const useWarnEmptyModel = (
         closable: false,
         showCancel: false,
         onOk() {
+          isWarningVisible = false;
           navigateToModelSetting();
         },
       });
