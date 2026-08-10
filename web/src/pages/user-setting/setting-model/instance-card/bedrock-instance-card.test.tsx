@@ -9,6 +9,7 @@
  */
 
 import {
+  getBedrockCatalogResetDecision,
   getBedrockCatalogCredentialScope,
   getBedrockModelListRequest,
   shouldResetBedrockForm,
@@ -43,6 +44,42 @@ describe('Bedrock catalog credential scope', () => {
 
   it('does not reset for an identical instance-details refetch', () => {
     expect(shouldResetBedrockForm(Values, { ...Values })).toBe(false);
+  });
+
+  it('does not leave a pending reset when the refetched scope is current', () => {
+    expect(getBedrockCatalogResetDecision('scope', 'scope', 'scope')).toEqual({
+      pendingReset: null,
+      invalidateCatalogImmediately: false,
+    });
+  });
+
+  it('invalidates immediately when a new persisted scope is already current', () => {
+    expect(
+      getBedrockCatalogResetDecision(
+        'persisted-scope',
+        'next-scope',
+        'next-scope',
+      ),
+    ).toEqual({
+      pendingReset: null,
+      invalidateCatalogImmediately: true,
+    });
+  });
+
+  it('defers a reset until a different watched scope is applied', () => {
+    expect(
+      getBedrockCatalogResetDecision(
+        'persisted-scope',
+        'current-scope',
+        'next-scope',
+      ),
+    ).toEqual({
+      pendingReset: {
+        scope: 'next-scope',
+        invalidateCatalog: true,
+      },
+      invalidateCatalogImmediately: false,
+    });
   });
 });
 

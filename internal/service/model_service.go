@@ -1046,8 +1046,8 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 
 	driver := providerInfo.ModelDriver
 	if strings.EqualFold(providerInfo.Class, "local") {
-		if baseURL == "" {
-			return common.CodeDataError, fmt.Errorf("base_url is required for local provider %s", providerName)
+		if err := validateLocalProviderBaseURL(providerInfo, providerName, baseURL); err != nil {
+			return common.CodeDataError, err
 		}
 
 		var err error

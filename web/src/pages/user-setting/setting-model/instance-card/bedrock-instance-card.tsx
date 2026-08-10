@@ -57,9 +57,13 @@ import { z } from 'zod';
 import { BedrockRegionList } from '../constants';
 import { VerifyResult } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
-import { parseApiKeyAsObject } from '../provider-schema/field-config/utils';
+import {
+  parseApiKeyAsObject,
+  serializeProviderAPIKey,
+} from '../provider-schema/field-config/utils';
 import {
   getBedrockCatalogCredentialScope,
+  getBedrockCatalogResetDecision,
   getBedrockModelListRequest,
   shouldResetBedrockForm,
 } from './bedrock-instance-utils';
@@ -277,11 +281,16 @@ export const BedrockInstanceCard = forwardRef<
     )
       return;
     const nextScope = getBedrockCatalogCredentialScope(initialValues);
-    pendingCatalogResetRef.current = {
-      scope: nextScope,
-      invalidateCatalog:
-        persistedCatalogCredentialScopeRef.current !== nextScope,
-    };
+    const resetDecision = getBedrockCatalogResetDecision(
+      persistedCatalogCredentialScopeRef.current,
+      catalogCredentialScopeRef.current,
+      nextScope,
+    );
+    pendingCatalogResetRef.current = resetDecision.pendingReset;
+    if (resetDecision.invalidateCatalogImmediately) {
+      setSelectedModelInfo([]);
+      setCatalogRevision((revision) => revision + 1);
+    }
     previousInitialValuesRef.current = initialValues;
     persistedCatalogCredentialScopeRef.current = nextScope;
     setCatalogCredentialsDirty(false);
@@ -434,7 +443,7 @@ export const BedrockInstanceCard = forwardRef<
         draftName.trim() || instance.instance_name,
       );
       return {
-        apiKey: JSON.stringify(payload.api_key ?? ''),
+        apiKey: serializeProviderAPIKey(payload.api_key),
         baseUrl: payload.base_url,
         region: payload.region,
       };
@@ -458,7 +467,7 @@ export const BedrockInstanceCard = forwardRef<
       );
       const ret = await verifyProviderConnection({
         provider_name: providerName,
-        api_key: JSON.stringify(payload.api_key),
+        api_key: serializeProviderAPIKey(payload.api_key),
         base_url: payload.base_url,
         region: payload.region,
         model_info: payload.model_info,
@@ -663,10 +672,17 @@ export const BedrockInstanceCard = forwardRef<
     [],
   );
 
+  const handleFormSubmit = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+    },
+    [],
+  );
+
   // ──────────────── Field group rendered in both modes ────────────────
   const renderFields = () => (
     <Form {...form}>
-      <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+      <form className="space-y-6" onSubmit={handleFormSubmit}>
         {authMode !== 'bedrock_api_key' && (
           <>
             <RAGFlowFormItem

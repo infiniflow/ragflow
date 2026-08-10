@@ -265,6 +265,22 @@ func TestValidateBedrockEndpointRequiresExactProxyPort(t *testing.T) {
 	}
 }
 
+func TestValidateBedrockEndpointWildcardAllowlist(t *testing.T) {
+	t.Setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "*.example.com")
+
+	if err := validateBedrockEndpointTarget("https://bedrock-proxy.example.com"); err != nil {
+		t.Fatalf("wildcard subdomain: %v", err)
+	}
+	for _, endpointURL := range []string{
+		"https://example.com",
+		"https://badexample.com",
+	} {
+		if err := validateBedrockEndpointTarget(endpointURL); err == nil || !strings.Contains(err.Error(), "hostname is not allowed") {
+			t.Fatalf("non-subdomain endpoint %q: got %v", endpointURL, err)
+		}
+	}
+}
+
 func TestBedrockMantleDriversReuseHTTPClient(t *testing.T) {
 	bedrock := newBedrockForTest("http://unused")
 	key := &bedrockKey{EndpointURL: "https://bedrock-mantle.us-east-1.api.aws"}

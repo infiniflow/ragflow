@@ -66,6 +66,24 @@ export const shouldResetBedrockForm = (
   nextValues: BedrockFormValues,
 ) => !isEqual(previousValues, nextValues);
 
+export const getBedrockCatalogResetDecision = (
+  persistedScope: string,
+  currentScope: string,
+  nextScope: string,
+) => {
+  const invalidateCatalog = persistedScope !== nextScope;
+  if (nextScope === currentScope) {
+    return {
+      pendingReset: null,
+      invalidateCatalogImmediately: invalidateCatalog,
+    };
+  }
+  return {
+    pendingReset: { scope: nextScope, invalidateCatalog },
+    invalidateCatalogImmediately: false,
+  };
+};
+
 export const getBedrockCatalogCredentialScope = (
   values: Pick<
     BedrockFormValues,
