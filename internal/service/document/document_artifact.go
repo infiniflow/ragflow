@@ -25,7 +25,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	return storageImpl.Get(parts[0], parts[1])
+	return storageImpl.Get(ctx, parts[0], parts[1])
 }
 
 // GetDocumentArtifact retrieves a sandbox artifact from object storage.
@@ -61,11 +61,11 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 	}
 
 	bucket := sandboxArtifactBucket()
-	if !storageImpl.ObjExist(bucket, basename) {
+	if !storageImpl.ObjExist(ctx, bucket, basename) {
 		return nil, ErrArtifactNotFound
 	}
 
-	data, err := storageImpl.Get(bucket, basename)
+	data, err := storageImpl.Get(ctx, bucket, basename)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	data, err := storageImpl.Get(bucket, name)
+	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
 	}

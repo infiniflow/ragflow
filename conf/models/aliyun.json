@@ -10,12 +10,14 @@
     "chat": "compatible-mode/v1/chat/completions",
     "embedding": "compatible-mode/v1/embeddings",
     "rerank": "compatible-api/v1/reranks",
-    "models": "api/v1/deployments/models"
+    "models": "compatible-mode/v1/models",
+    "tts": "compatible-mode/v1/audio/speech"
   },
   "models": [
     {
       "name": "qwen-flash",
-      "max_tokens": 995904,
+      "content_length": 1048576,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -28,11 +30,13 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 10
     },
     {
       "name": "qwen3-vl-plus",
-      "max_tokens": 256000,
+      "content_length": 262144,
+      "max_output": 8192,
       "model_types": [
         "vision",
         "chat"
@@ -64,7 +68,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 10
     },
     {
       "name": "qwen3-rerank",

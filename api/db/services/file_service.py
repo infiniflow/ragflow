@@ -684,7 +684,7 @@ class FileService(CommonService):
             try:
                 e, doc = DocumentService.get_by_id(doc_id)
                 if not e:
-                    raise Exception("Document not found!")
+                    raise Exception("document not found")
                 tenant_id = DocumentService.get_tenant_id(doc_id)
                 if not tenant_id:
                     raise Exception("Tenant not found!")

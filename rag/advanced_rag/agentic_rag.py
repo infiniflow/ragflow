@@ -32,6 +32,7 @@ the fast non-tool-calling path.
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, List
 
 import json_repair
@@ -42,7 +43,7 @@ from api.db.services.llm_service import LLMBundle
 from common import settings
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
-from rag.advanced_rag.agentic_rag_graph import _strip_think_stream
+from rag.advanced_rag.agentic_rag_graph import _split_think_stream
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -55,7 +56,7 @@ from rag.prompts.generator import (
     sufficiency_select,
 )
 from api.db.db_models import Document, Knowledgebase
-from rag.utils.tavily_conn import Tavily
+from rag.utils.web_search_conn import WebSearchProvider
 
 
 # Tokens held back from the model's context when fitting retrieved evidence
@@ -66,6 +67,73 @@ from rag.utils.tavily_conn import Tavily
 # lets us trim the evidence up front instead.
 _EVIDENCE_PROMPT_RESERVE_TOKENS = 1024
 
+# Fixed evidence budget for ``_fit_evidence`` (sufficiency judge / follow-ups /
+# formalize-answer evidence trimming). Kept far below the model context so a
+# large retrieval pool never fills the window with evidence; each call stays
+# cheap. ~8000 tokens ≈ 32K chars is enough to support a grounded answer.
+_EVIDENCE_BUDGET_TOKENS = 8000
+
+_LOG = logging.getLogger(__name__)
+
+# P0: significant-keyword overlap above which a new `rag` question reuses a
+# cached answer. Overlap = |shared| / min(|a|, |b|) over the question's
+# significant words (stopwords dropped). 0.6 + ">=2 shared words" collapses the
+# re-ask pattern in the logs ("legal population" → "estimated population of
+# Paris in 2019", both overlap 0.75) while leaving genuinely different questions
+# (Paris vs. Brown County = 0.25) untouched.
+_RAG_CACHE_MIN_OVERLAP = 0.6
+_RAG_CACHE_MIN_SHARED = 2
+
+# Lightweight stopwords for the cross-`rag`-call dedup only. Never reused for
+# retrieval/answer quality.
+_RAG_CACHE_STOPWORDS = frozenset(
+    "the a an is was were what which when where who how of in to for and or but on at by be as it that this"
+    " about with their its have has had been being from over under do does did not no yes can could should would"
+    " also only very much more most some any".split()
+)
+
+
+def _question_keywords(question: str) -> tuple[set[str], set[str]]:
+    """(significant words, numeric tokens) of a question.
+
+    For English (the observed re-ask pattern) plain tokenisation suffices; CJK
+    text falls back to the whole-token as a single significant unit. Numeric
+    tokens (years, figures) are returned separately so ``_cache_similar`` can
+    refuse to collapse questions that differ in the number being asked about
+    (e.g. "Paris population in 2019" vs "in 2015").
+    """
+    tokens = re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]+", (question or "").lower())
+    numbers = {t for t in tokens if t.isdigit()}
+    sig = {t for t in tokens if t not in _RAG_CACHE_STOPWORDS and len(t) > 1 and not t.isdigit()}
+    if not sig:
+        sig = {t for t in tokens if len(t) > 1 and not t.isdigit()}
+    return sig, numbers
+
+
+def _cache_similar(
+    a: tuple[set[str], set[str]],
+    b: tuple[set[str], set[str]],
+) -> bool:
+    """True when a new question's significant words mostly overlap a cached one.
+
+    Uses word overlap (shared / min cardinality) so "legal population of Paris
+    2019" (5 sig words) is caught by "population of Paris 2019" (3 sig words)
+    and vice-versa, while requiring >= 2 shared words. The numeric sets must
+    either be both empty or identical: if the two questions name different
+    years/figures they are NOT the same question and must not share an answer.
+    """
+    aw, an = a
+    bw, bn = b
+    if not aw or not bw:
+        return False
+    if an or bn:  # a question with an explicit number must match on it exactly
+        if an != bn:
+            return False
+    shared = len(aw & bw)
+    if shared < _RAG_CACHE_MIN_SHARED:
+        return False
+    return shared / min(len(aw), len(bw)) >= _RAG_CACHE_MIN_OVERLAP
+
 
 class RAGTools:
     def __init__(
@@ -75,11 +143,14 @@ class RAGTools:
         embed_mdl: LLMBundle | None = None,
         kb_ids: List[str] | None = None,
         kbs: list[Knowledgebase] | None = None,
-        tav: Tavily | None = None,
+        web_search: WebSearchProvider | None = None,
         meta_data_filter: dict | None = None,
+        doc_scope: List[str] | None = None,
         user_defined_prompts: dict | None = None,
+        empty_response: str = "",
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
+        text_attachments_content: str = "",
     ):
         self.tenant_ids = tenant_ids
         self.chat_mdl = chat_mdl.clone()
@@ -105,15 +176,32 @@ class RAGTools:
             for kb in kbs:
                 _exclude_sql_kb(kb)
 
-        self.tav = tav
+        self.web_search = web_search
         self.meta_data_filter = meta_data_filter
+        self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
         self.user_defined_prompts = user_defined_prompts or {}
-        self.kbinfos = {"chunks": [], "doc_aggs": []}
+        self.empty_response = empty_response
         self.do_refer = do_refer
+        self.text_attachments_content = text_attachments_content or ""
+        # Optional sink used by the outer agent stream to preserve the final
+        # answer deltas produced by the inner research graph.  The tool API
+        # still returns the complete string to the caller, but the stream
+        # endpoint can forward the original deltas instead of that aggregate.
+        self.answer_sink: Callable[[str, bool], None] | None = None
+        self.tool_started_sink: Callable[[], None] | None = None
         # Citation pool shared with the final-answer node: the graph publishes
         # the chunks it actually used here (in the SAME order the answer's
         # ``[ID:n]`` markers index), so the caller can resolve references.
         self.kbinfos: dict[str, list] = {"chunks": [], "doc_aggs": []}
+
+        # P0: cross-`rag`-call result cache keyed by a character n-gram digest of
+        # the question. When a new sub-question is near-identical to one already
+        # researched this turn (e.g. the user re-asks a Paris figure as
+        # "legal population" then "commune inhabitants"), we reuse the cached
+        # answer instead of re-running the whole agentic graph. Conservative
+        # threshold (≥0.85 n-gram Jaccard) so near-identical phrasing is caught
+        # without confusing genuinely different questions.
+        self._rag_cache: dict[str, tuple[str, set[str]]] = {}
 
         # Per-request retrieval cache keyed by the effective query + scope, so
         # the same question is never retrieved twice within one turn (e.g.
@@ -135,10 +223,18 @@ class RAGTools:
         return bool(self.sql_kbs and self.field_map)
 
     def has_web(self) -> bool:
-        return self.tav is not None
+        return self.web_search is not None
 
     def has_llm(self) -> bool:
         return self.chat_mdl is not None
+
+    def scoped_doc_ids(self, doc_scope: List[str] | None = None) -> List[str] | None:
+        if self.doc_scope is None:
+            return doc_scope
+        if not doc_scope:
+            return list(self.doc_scope)
+        allowed = set(self.doc_scope)
+        return [doc_id for doc_id in doc_scope if doc_id in allowed]
 
     async def _fit_messages(self, system: str, user: str) -> list:
         """Fit system+user messages into the model's context window."""
@@ -369,6 +465,9 @@ class RAGTools:
             keywords = ",".join(keywords)
         logging.info(f"@retrieve: {question}@{keywords}")
 
+        doc_scope = self.scoped_doc_ids(doc_scope)
+        if doc_scope == ["-999"]:
+            return {"chunks": [], "doc_aggs": []}
         if doc_scope:
             candidates = [d for d in doc_scope if isinstance(d, str)]
             known = await thread_pool_exec(self._filter_known_doc_ids, candidates)
@@ -376,6 +475,8 @@ class RAGTools:
             if valid:
                 doc_scope = valid
             else:
+                if self.doc_scope is not None:
+                    return {"chunks": [], "doc_aggs": []}
                 if candidates:
                     logging.warning("retrieve: every supplied doc ID was unknown; falling back to unfiltered retrieval")
                 doc_scope = None
@@ -408,15 +509,15 @@ class RAGTools:
         return {"chunks": kbinfos.get("chunks", []), "doc_aggs": kbinfos.get("doc_aggs", [])}
 
     async def web_retrieve(self, query: str) -> dict[str, list]:
-        """Retrieve chunks from the public web (Tavily). Raw kbinfos shape."""
-        if self.tav is None:
+        """Retrieve chunks from the public web. Raw kbinfos shape."""
+        if self.web_search is None:
             return {"chunks": [], "doc_aggs": []}
         try:
-            tav_res = await thread_pool_exec(self.tav.retrieve_chunks, query)
+            web_res = await thread_pool_exec(self.web_search.retrieve_chunks, query)
         except Exception:
             logging.exception("web_retrieve failed")
             return {"chunks": [], "doc_aggs": []}
-        return {"chunks": tav_res.get("chunks", []), "doc_aggs": tav_res.get("doc_aggs", [])}
+        return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
 
     async def structured_retrieve(self, question: str) -> dict[str, Any]:
         """Query the structured (tabular) KBs by translating to SQL.
@@ -434,7 +535,7 @@ class RAGTools:
         sql_kb_ids = [kb.id for kb in self.sql_kbs]
         tenant_id = self.sql_kbs[0].tenant_id
         try:
-            ans = await use_sql(question, self.field_map, tenant_id, self.chat_mdl, quota=True, kb_ids=sql_kb_ids)
+            ans = await use_sql(question, self.field_map, tenant_id, self.chat_mdl, quota=True, kb_ids=sql_kb_ids, doc_ids=self.scoped_doc_ids())
         except Exception as e:
             logging.exception(f"structured_retrieve: use_sql failed: {e}")
             return {"answer": "", "chunks": [], "doc_aggs": []}
@@ -449,15 +550,18 @@ class RAGTools:
 
     def _fit_evidence(self, question: str, evidence_md: str) -> str:
         """Trim ``evidence_md`` so ``question`` + evidence + the prompt template
-        stay inside the model's context window.
+        stay inside a *bounded* budget.
 
         ``message_fit_in`` keeps the small side (the question) whole and trims
-        the large side (the evidence); we shrink the budget by a reserve so the
-        template skeleton and JSON output rules still fit afterwards.
+        the large side (the evidence). We use a FIXED budget (not the full model
+        context) so a large retrieval pool can never fill the whole context
+        window with evidence — each sufficiency/answer call stays cheap. Callers
+        that want snippet-based evidence (``_narrow_by_keywords``) do so at the
+        source; this is the final safety cap.
         """
         if not evidence_md:
             return evidence_md
-        budget = max(256, self.chat_mdl.max_length - _EVIDENCE_PROMPT_RESERVE_TOKENS)
+        budget = _EVIDENCE_BUDGET_TOKENS
         _, msg = message_fit_in(form_message(question, evidence_md), budget)
         return msg[-1]["content"]
 
@@ -490,6 +594,8 @@ class RAGTools:
     async def fetch_full_document(self, doc_id: str) -> dict[str, list]:
         """Fetch a whole document's chunks in reading order (raw kbinfos)."""
         if not self.kb_ids:
+            return {"chunks": [], "doc_aggs": []}
+        if self.doc_scope is not None and doc_id not in self.doc_scope:
             return {"chunks": [], "doc_aggs": []}
         resolved = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
         if resolved is None:
@@ -545,13 +651,37 @@ class RAGTools:
         """
         from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
+        if self.tool_started_sink is not None:
+            self.tool_started_sink()
+        # P0: reuse a near-identical question's cached answer instead of re-running
+        # the whole agentic graph. Significant-keyword overlap (>= min_overlap AND
+        # >=2 shared words, and matching numbers) collapses the re-ask pattern
+        # while leaving genuinely different questions untouched. Attachments bypass
+        # the cache (their content is appended to the question message below).
+        if question and not self.text_attachments_content:
+            qk = _question_keywords(question)
+            if self._rag_cache:
+                for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
+                    if cached_gram and _cache_similar(qk, cached_gram):
+                        shared = len(qk[0] & cached_gram[0])
+                        _LOG.info("[rag] Reusing cached answer for near-identical question %r (%d shared words); skipping re-research.", question, shared)
+                        return cached_answer
+
         messages = [{"role": "user", "content": question}] if question else []
+        if self.text_attachments_content and messages:
+            messages[-1]["content"] += self.text_attachments_content
         final = ""
-        async for delta in _strip_think_stream(run_agentic_rag(self, messages)):
-            if isinstance(delta, str):
+        async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
+            if kind == "answer":
                 final += delta
+            if self.answer_sink is not None:
+                self.answer_sink(delta, kind == "think")
         for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
             final = re.sub(p, r, final)
+
+        # Cache the freshly produced answer for later near-identical questions.
+        if question and final and not self.text_attachments_content:
+            self._rag_cache[question] = (final, _question_keywords(question))
         return final
 
     @tool

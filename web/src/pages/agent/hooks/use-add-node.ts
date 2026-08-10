@@ -185,7 +185,7 @@ export const useInitializeOperatorParams = () => {
         sys_prompt: t('flow.prompts.system.summary'),
         prompts: t('flow.prompts.user.summary'),
       },
-      [Operator.Compiler]: initialCompilationValues,
+      [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,

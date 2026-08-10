@@ -118,15 +118,15 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 // LLM id lazily filled in, mirroring the Python list_builtins blueprint flow
 // (list from DB; if empty, seed from files and retry; then fill default LLM).
 func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID string) ([]*BuiltinTemplate, error) {
-	templates, err := s.templateDAO.ListBuiltins(ctx)
+	templates, err := s.templateDAO.ListBuiltins(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
 	if len(templates) == 0 {
-		if err := s.seedBuiltins(ctx); err != nil {
+		if err = s.seedBuiltins(ctx); err != nil {
 			return nil, err
 		}
-		templates, err = s.templateDAO.ListBuiltins(ctx)
+		templates, err = s.templateDAO.ListBuiltins(ctx, dao.DB)
 		if err != nil {
 			return nil, err
 		}
@@ -188,34 +188,34 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 	if requireAll {
 		for _, key := range []string{"name", "kind", "config"} {
 			if _, ok := req[key]; !ok {
-				return fmt.Errorf("missing required field: %s.", key)
+				return fmt.Errorf("missing required field: %s", key)
 			}
 		}
 	}
 	if name, ok := req["name"]; ok {
 		nameStr, ok2 := name.(string)
 		if !ok2 || strings.TrimSpace(nameStr) == "" || len([]byte(nameStr)) > 128 {
-			return errors.New("invalid template name.")
+			return errors.New("invalid template name")
 		}
 	}
 	if desc, ok := req["description"]; ok {
 		if descStr, ok2 := desc.(string); !ok2 || len(descStr) > 1024 {
-			return errors.New("invalid template description.")
+			return errors.New("invalid template description")
 		}
 	}
 	if kind, ok := req["kind"]; ok {
 		if kindStr, ok2 := kind.(string); !ok2 || kindStr == "" {
-			return errors.New("invalid template kind.")
+			return errors.New("invalid template kind")
 		}
 	}
 	config, hasConfig := req["config"]
 	if hasConfig {
 		configMap, ok := config.(map[string]interface{})
 		if !ok {
-			return errors.New("invalid template config.")
+			return errors.New("invalid template config")
 		}
 		if len(fmt.Sprint(configMap["global_rules"])) > 4096 {
-			return errors.New("global compilation rules is too long.")
+			return errors.New("global compilation rules is too long")
 		}
 		for _, section := range []string{"entity", "relation"} {
 			sec, _ := configMap[section].(map[string]interface{})
@@ -225,20 +225,20 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 				fm, _ := f.(map[string]interface{})
 				fieldType := strings.TrimSpace(yamlStr(fm["type"]))
 				if fieldType == "" {
-					return fmt.Errorf("%s type is required.", capitalizeTitle(section))
+					return fmt.Errorf("%s type is required", capitalizeTitle(section))
 				}
 				if _, dup := seen[fieldType]; dup {
-					return fmt.Errorf("%s type can not be duplicated.", capitalizeTitle(section))
+					return fmt.Errorf("%s type can not be duplicated", capitalizeTitle(section))
 				}
 				seen[fieldType] = struct{}{}
 				if strings.TrimSpace(yamlStr(fm["description"])) == "" {
-					return fmt.Errorf("%s field description is required.", capitalizeTitle(section))
+					return fmt.Errorf("%s field description is required", capitalizeTitle(section))
 				}
 				if len(yamlStr(fm["description"])) > 1024 {
-					return fmt.Errorf("%s field description is too long.", capitalizeTitle(section))
+					return fmt.Errorf("%s field description is too long", capitalizeTitle(section))
 				}
 				if len(yamlStr(fm["rule"])) > 1024 {
-					return fmt.Errorf("%s field rule is too long.", capitalizeTitle(section))
+					return fmt.Errorf("%s field rule is too long", capitalizeTitle(section))
 				}
 			}
 		}
@@ -251,29 +251,29 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 					switch group {
 					case "claim":
 						if strings.TrimSpace(yamlStr(fm["statement"])) == "" {
-							return errors.New("claim statement is required.")
+							return errors.New("claim statement is required")
 						}
 						if strings.TrimSpace(yamlStr(fm["subject"])) == "" {
-							return errors.New("claim subject is required.")
+							return errors.New("claim subject is required")
 						}
 						if len(yamlStr(fm["statement"])) > 1024 {
-							return errors.New("claim statement is too long.")
+							return errors.New("claim statement is too long")
 						}
 						if len(yamlStr(fm["subject"])) > 1024 {
-							return errors.New("claim subject is too long.")
+							return errors.New("claim subject is too long")
 						}
 					case "concept":
 						if strings.TrimSpace(yamlStr(fm["term"])) == "" {
-							return errors.New("concept term is required.")
+							return errors.New("concept term is required")
 						}
 						if strings.TrimSpace(yamlStr(fm["definition_excerpt"])) == "" {
-							return errors.New("concept definition excerpt is required.")
+							return errors.New("concept definition excerpt is required")
 						}
 						if len(yamlStr(fm["term"])) > 1024 {
-							return errors.New("concept term is too long.")
+							return errors.New("concept term is too long")
 						}
 						if len(yamlStr(fm["definition_excerpt"])) > 1024 {
-							return errors.New("concept definition excerpt is too long.")
+							return errors.New("concept definition excerpt is too long")
 						}
 					}
 				}
@@ -347,7 +347,7 @@ func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
 }
 
 func (s *CompilationTemplateService) upsertBuiltin(ctx context.Context, t *entity.CompilationTemplate) error {
-	existing, err := s.templateDAO.GetByID(ctx, t.ID)
+	existing, err := s.templateDAO.GetByID(ctx, dao.DB, t.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return s.templateDAO.Save(ctx, dao.DB, t)
 	}

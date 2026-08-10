@@ -291,3 +291,176 @@ func TestEmailParser_Multipart(t *testing.T) {
 		t.Errorf("text_html: got %q", v)
 	}
 }
+
+// TestEmailParser_MetadataAlwaysPresent aligns Go with the Python flow parser
+// contract: metadata is emitted unconditionally and every non-basic header is
+// collected into it, even when "metadata" is NOT listed in fields.
+func TestEmailParser_MetadataAlwaysPresent(t *testing.T) {
+	ctx := t.Context()
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"To: recipient@example.com",
+		"Cc: cc@example.com",
+		"Date: Mon, 07 Jul 2025 10:00:00 +0000",
+		"Subject: Test Email",
+		"Message-ID: <abc@def.example>",
+		"X-Custom-Header: custom-value",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"This is the body of the test email.",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		// Note: "metadata" is intentionally NOT in fields.
+		"fields": []string{"from", "subject", "body"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	// metadata must exist even though it is not in fields (Python contract).
+	meta, ok := item["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata missing or wrong type (must always be present): %T", item["metadata"])
+	}
+	if v, ok := meta["x-custom-header"].(string); !ok || v != "custom-value" {
+		t.Errorf("metadata x-custom-header: got %q", v)
+	}
+	if v, ok := meta["message-id"].(string); !ok || v != "<abc@def.example>" {
+		t.Errorf("metadata message-id: got %q", v)
+	}
+	if v, ok := meta["content-type"].(string); !ok || !strings.Contains(v, "text/plain") {
+		t.Errorf("metadata content-type: got %q", v)
+	}
+
+	// Basic fields requested in fields appear at top level.
+	if v, ok := item["from"].(string); !ok || v != "sender@example.com" {
+		t.Errorf("from: got %q", v)
+	}
+	if v, ok := item["subject"].(string); !ok || v != "Test Email" {
+		t.Errorf("subject: got %q", v)
+	}
+
+	// Basic fields NOT in fields are dropped (neither top-level nor metadata).
+	for _, dropped := range []string{"to", "cc", "date"} {
+		if _, ok := item[dropped]; ok {
+			t.Errorf("%s should be dropped when not in fields, but was present", dropped)
+		}
+		if _, ok := meta[dropped]; ok {
+			t.Errorf("%s should not leak into metadata when not in fields", dropped)
+		}
+	}
+}
+
+// TestEmailParser_TextHTMLAlwaysPresent aligns Go with the Python flow parser
+// contract: text and text_html are always emitted (empty string when the part
+// is missing), not omitted when empty.
+func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
+	ctx := t.Context()
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"To: recipient@example.com",
+		"Subject: Plain only",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Plain body, no html part.",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "Plain body") {
+		t.Errorf("text: got %q", v)
+	}
+	// text_html must be present (empty) for a plain-text email.
+	v, ok := item["text_html"].(string)
+	if !ok {
+		t.Fatalf("text_html should always be present (even empty), got %T", item["text_html"])
+	}
+	if v != "" {
+		t.Errorf("text_html: expected empty for plain-text email, got %q", v)
+	}
+}
+
+// TestEmailParser_AttachmentsWithoutBody aligns Go with the Python flow
+// parser contract: attachments are extracted whenever "attachments" is in
+// fields, independently of whether "body" is requested. The Python _email
+// attachment block is separate from the body block, so a config that selects
+// only attachments must still yield them. Previously Go silently returned an
+// empty list because attachment extraction was coupled to the body branch
+// (the "else if needAttachments" fallback set an empty slice instead of
+// walking the message).
+func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
+	ctx := t.Context()
+	attachmentContent := "SECRET attachment payload"
+	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	boundary := "mixedbound"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Attach Test",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Hello body.",
+		"--" + boundary,
+		"Content-Type: application/octet-stream; name=\"a.txt\"",
+		"Content-Disposition: attachment; filename=\"a.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		encoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		// NOTE: "body" is intentionally NOT in fields.
+		"fields": []string{"from", "attachments"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	// text/text_html must be absent (gated by "body"), matching Python.
+	if _, ok := item["text"]; ok {
+		t.Error("text should be absent when body not in fields")
+	}
+	if _, ok := item["text_html"]; ok {
+		t.Error("text_html should be absent when body not in fields")
+	}
+
+	// attachments must be extracted even without body.
+	atts, ok := item["attachments"].([]map[string]any)
+	if !ok {
+		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+	}
+	if len(atts) != 1 {
+		t.Fatalf("expected 1 attachment without body, got %d (bug: attachments silently dropped)", len(atts))
+	}
+	if fn, _ := atts[0]["filename"].(string); fn != "a.txt" {
+		t.Errorf("filename = %q, want a.txt", fn)
+	}
+	if pl, _ := atts[0]["payload"].(string); pl != attachmentContent {
+		t.Errorf("payload = %q, want %q", pl, attachmentContent)
+	}
+}

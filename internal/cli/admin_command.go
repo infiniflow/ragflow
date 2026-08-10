@@ -586,9 +586,12 @@ func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("POST", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -604,9 +607,12 @@ func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("PUT", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -622,9 +628,12 @@ func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -640,9 +649,12 @@ func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -794,6 +806,27 @@ func (c *CLI) AdminSetLicenseCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonDataResponse(resp, "set license")
+}
+
+func (c *CLI) AdminSetSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	softFingerprint, ok := cmd.Params["soft_fingerprint"].(string)
+	if !ok {
+		return nil, fmt.Errorf("soft_fingerprint not provided")
+	}
+
+	payload := map[string]interface{}{
+		"fingerprint": softFingerprint,
+	}
+	resp, err := c.AdminServerClient.Request("POST", "/admin/system/soft-fingerprint", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set soft fingerprint: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, "set soft fingerprint")
 }
 
 func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
@@ -1334,6 +1367,22 @@ func (c *CLI) AdminShowFingerprintCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonDataResponse(resp, "show fingerprint")
+}
+
+// AdminShowSoftFingerprintCommand show soft fingerprint command (admin mode only)
+func (c *CLI) AdminShowSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	apiURL := fmt.Sprintf("/admin/system/soft-fingerprint")
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show soft fingerprint: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "show soft fingerprint")
 }
 
 // AdminShowLicenseCommand show license command (admin mode only)
@@ -2812,6 +2861,23 @@ func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonDataResponse(resp, fmt.Sprintf("remove model %s", modelNames))
+}
+
+// AdminDeleteSoftFingerprintCommand delete soft fingerprint
+func (c *CLI) AdminDeleteSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	apiURL := fmt.Sprintf("/admin/system/soft-fingerprint")
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove soft fingerprint: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, fmt.Sprintf("remove soft fingerprint"))
 }
 
 func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {

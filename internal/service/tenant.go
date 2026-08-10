@@ -449,17 +449,6 @@ func ptrStringValue(s *string) string {
 	return *s
 }
 
-func factoryModelTypeName(modelType string) string {
-	switch modelType {
-	case "image2text":
-		return "vision"
-	case "speech2text":
-		return "asr"
-	default:
-		return modelType
-	}
-}
-
 // GetDefaultModelName returns the full default model ID for a tenant and model type
 // Format: modelName@instanceName@providerName or modelName@providerName
 // Returns empty string if no default model is set
@@ -537,17 +526,10 @@ func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defau
 		return nil, nil, nil, false, err
 	}
 
-	// Validate that the factory model supports this model type.
-	modelSchema, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		return nil, nil, nil, false, err
-	}
-	factoryModelType := factoryModelTypeName(modelType)
-	if !modelSchema.ModelTypeMap[factoryModelType] {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't a %s model", modelName, modelType)
-	}
-
-	// Check if the model exists and is active.
+	// Check if the model exists and is active. The tenant_model row is the
+	// source of truth here — providers with an empty factory catalog (e.g.
+	// OpenAI-API-Compatible, whose models are user-defined) cannot be
+	// validated against the catalog. Mirrors Python's _get_model_info.
 	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {

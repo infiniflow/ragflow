@@ -43,7 +43,7 @@ func ResolvePageSpan(pageNum int, bottom float64, pageHeights map[int]float64) (
 	return
 }
 
-// boxesToSections converts layout boxes to section format with position tags.
+// BoxesToSections converts layout boxes to section format with position tags.
 //
 // pageHeights provides the PDF-point height of each page (image height / zoom).
 // Boxes that extend beyond their page produce multi-page position tags

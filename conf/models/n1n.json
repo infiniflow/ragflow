@@ -13,7 +13,8 @@
   "models": [
     {
       "name": "gpt-4o-mini",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -24,7 +25,8 @@
     },
     {
       "name": "gpt-4o",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -35,7 +37,8 @@
     },
     {
       "name": "gpt-5.2",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -46,7 +49,8 @@
     },
     {
       "name": "claude-sonnet-4-6",
-      "max_tokens": 200000,
+      "content_length": 1000000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -57,7 +61,8 @@
     },
     {
       "name": "deepseek-v3-0324",
-      "max_tokens": 128000,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -67,7 +72,8 @@
     },
     {
       "name": "deepseek-v3-1-250821",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -77,7 +83,8 @@
     },
     {
       "name": "deepseek-v3-1-think-250821",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -87,7 +94,8 @@
     },
     {
       "name": "kimi-k2-250905",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -97,7 +105,8 @@
     },
     {
       "name": "qwen3-coder-plus",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],
@@ -110,21 +119,24 @@
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-3-large",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-ada-002",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "BAAI/bge-reranker-v2-m3",

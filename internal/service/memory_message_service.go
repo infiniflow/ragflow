@@ -54,15 +54,18 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
 // MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
@@ -148,7 +151,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// keeps the same field set as Python:344-386 so the
 		// downstream extractor can consume the row without
 		// schema changes.
-		rawMessageID := generateRawMessageID()
+		rawMessageID := generateRawMessageID(ctx)
 		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
@@ -167,7 +170,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			})
 			continue
 		}
-		if err := queueMemoryTask(memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
+		if err = queueMemoryTask(ctx, memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
 				FailMsg:  err.Error(),
@@ -179,9 +182,9 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python
 // side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
-func generateRawMessageID() int64 {
+func generateRawMessageID(ctx context.Context) int64 {
 	if redisClient := redisengine.Get(); redisClient != nil {
-		if id := redisClient.GenerateAutoIncrementID("id_generator", "memory", 1, nil); id > 0 {
+		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}
 	}
@@ -335,7 +338,7 @@ func taskFromRow(row map[string]any) *entity.Task {
 	}
 }
 
-func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
+func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
 	taskID := fmt.Sprint(task["id"])
 	message := map[string]any{
 		"id":        taskID,
@@ -352,14 +355,32 @@ func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[str
 			"agent_response": msg.AgentResponse,
 		},
 	}
-	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(memoryTaskQueueName(0), message) {
-		return errors.New("Can't access Redis.")
+	// Publish the memory-extraction task to NATS (tasks.RAGFLOW) so it is
+	// consumed by the Ingestor's shared consumer + worker pool, dispatched by
+	// TaskType=="memory" in processMessage. This keeps Go out of the Python
+	// te.*.common Redis stream entirely, removing the cross-consumer
+	// contention that previously stole Python dataflow tasks.
+	mq := engine.GetMessageQueueEngine()
+	if mq == nil {
+		return errors.New("can't access message queue engine")
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("marshal memory task payload: %w", err)
+	}
+	taskMessage := common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeMemory,
+		Payload:  payload,
+	}
+	tmPayload, err := json.Marshal(taskMessage)
+	if err != nil {
+		return fmt.Errorf("marshal memory task message: %w", err)
+	}
+	if err := mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
+		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil
-}
-
-func memoryTaskQueueName(priority int) string {
-	return fmt.Sprintf("te.%d.common", priority)
 }
 
 func mapStringAny(in map[string]any) map[string]interface{} {

@@ -167,8 +167,8 @@ github.com/clbanning/mxj/v2 v2.7.0/go.mod h1:hNiWqW14h+kc+MdF9C6/YoRfjEJoR3ou6tn
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cloudwego/base64x v0.1.7 h1:NppS+Fgzg5ovhn4NkUXaDT3x9jldgH5ToMCqzBSi2zI=
 github.com/cloudwego/base64x v0.1.7/go.mod h1:Cu1PV9zfrSf7ET2tIbWbbEy7jO7HHJ13q4X2SQ8aWYg=
-github.com/cloudwego/eino v0.9.12 h1:mHAMo5k7GdvnVD8Lc2sLyfpkxEm0S/y3PkEMhsSYt78=
-github.com/cloudwego/eino v0.9.12/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
+github.com/cloudwego/eino v0.9.13 h1:iD/ETS+lxnNp1VeNPqWVGPWdND6Dbf4LyINbLUlDRcM=
+github.com/cloudwego/eino v0.9.13/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
@@ -311,8 +311,6 @@ github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/infiniflow/infinity/go v0.0.0-20260723093510-ceb4bc518010 h1:TKHL99MrpO2d+q6zRUSPRWsxTXo+pojFr3teiK8HLWw=
 github.com/infiniflow/infinity/go v0.0.0-20260723093510-ceb4bc518010/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
-github.com/iromli/go-itsdangerous v0.0.0-20220223194502-9c8bef8dac6a h1:Inib12UR9HAfBubrGNraPjKt/Cu8xPbTJbC50+0wP5U=
-github.com/iromli/go-itsdangerous v0.0.0-20220223194502-9c8bef8dac6a/go.mod h1:8N0Hlye5Lzw+H/yHWpZMkT0QLA+iOHG7KLdvAm95DZg=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=

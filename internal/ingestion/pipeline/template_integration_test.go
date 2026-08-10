@@ -48,6 +48,7 @@ import (
 type fixedEmbedder struct{}
 
 func (fixedEmbedder) MaxTokens() int { return 2048 }
+func (fixedEmbedder) BatchSize() int { return 16 }
 
 func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
@@ -691,7 +692,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
@@ -821,8 +822,8 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "TagChunker") {
 				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
-			if templateUsesComponent(t, templateBytes, "KnowledgeCompiler") {
-				t.Skip("template uses KnowledgeCompiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
+			if templateUsesComponent(t, templateBytes, "Compiler") {
+				t.Skip("template uses Compiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
 			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
@@ -911,7 +912,7 @@ func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path,
 
 func seedTemplateDocumentBytes(t *testing.T, stg storage.Storage, name, bucket, path string, content []byte) string {
 	t.Helper()
-	if err := stg.Put(bucket, path, content); err != nil {
+	if err := stg.Put(context.Background(), bucket, path, content); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	if registerTemplateDocumentRef == nil {

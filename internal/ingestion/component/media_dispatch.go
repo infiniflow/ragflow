@@ -31,6 +31,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"ragflow/internal/common"
+
 	// Import image decoders for common formats.
 	_ "image/gif"
 	_ "image/jpeg"
@@ -40,8 +42,7 @@ import (
 	"sort"
 	"strings"
 
-	"ragflow/internal/common"
-	inference "ragflow/internal/deepdoc/parser/pdf/inference"
+	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"

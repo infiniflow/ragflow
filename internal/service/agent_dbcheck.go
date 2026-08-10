@@ -68,7 +68,7 @@ func allowAnyHost() bool {
 func AssertHostIsSafe(host string) (string, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
-		return "", errors.New("Host must not be empty.")
+		return "", errors.New("host must not be empty")
 	}
 	if allowAnyHost() {
 		zap.L().Warn("SSRF guard bypass enabled via AllowAnyHostForTest; allowing host without validation",
@@ -83,13 +83,13 @@ func AssertHostIsSafe(host string) (string, error) {
 			zap.String("host", host),
 			zap.Error(err),
 		)
-		return "", fmt.Errorf("Could not resolve host %q: %w", host, err)
+		return "", fmt.Errorf("could not resolve host %q: %w", host, err)
 	}
 	if len(ips) == 0 {
 		zap.L().Warn("SSRF guard blocked host: resolved to no addresses",
 			zap.String("host", host),
 		)
-		return "", fmt.Errorf("Host %q resolved to no addresses.", host)
+		return "", fmt.Errorf("host %q resolved to no addresses", host)
 	}
 
 	var resolvedIP string
@@ -106,14 +106,14 @@ func AssertHostIsSafe(host string) (string, error) {
 				zap.String("host", host),
 				zap.String("resolved_ip", addr.String()),
 			)
-			return "", fmt.Errorf("Host resolves to a non-public address (%s), which is not allowed.", addr.String())
+			return "", fmt.Errorf("host resolves to a non-public address (%s), which is not allowed", addr.String())
 		}
 		if resolvedIP == "" {
 			resolvedIP = addr.String()
 		}
 	}
 	if resolvedIP == "" {
-		return "", fmt.Errorf("Host %q resolved to no addresses.", host)
+		return "", fmt.Errorf("host %q resolved to no addresses", host)
 	}
 	return resolvedIP, nil
 }
@@ -256,7 +256,8 @@ func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequ
 			Timeout:              dbProbeTimeout,
 			AllowNativePasswords: true,
 		}
-		db, err := sql.Open("mysql", config.FormatDSN())
+		var db *sql.DB
+		db, err = sql.Open("mysql", config.FormatDSN())
 		if err != nil {
 			return common.CodeExceptionError, err
 		}
@@ -265,14 +266,14 @@ func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequ
 		ctx, cancel := context.WithTimeout(context.Background(), dbProbeTimeout)
 		defer cancel()
 
-		if err := db.PingContext(ctx); err != nil {
+		if err = db.PingContext(ctx); err != nil {
 			return common.CodeExceptionError, err
 		}
-		if _, err := db.ExecContext(ctx, "SELECT 1"); err != nil {
+		if _, err = db.ExecContext(ctx, "SELECT 1"); err != nil {
 			return common.CodeExceptionError, err
 		}
 	default:
-		return common.CodeExceptionError, errors.New("Unsupported database type.")
+		return common.CodeExceptionError, errors.New("unsupported database type")
 	}
 
 	return common.CodeSuccess, nil

@@ -68,7 +68,7 @@ func NewEngine(esConfig config.ElasticsearchConfig) (*Engine, error) {
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
 	engine := &Engine{

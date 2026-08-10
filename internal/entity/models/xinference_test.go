@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func newXinferenceForTest(baseURL string) *XinferenceModel {
@@ -20,15 +19,6 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 			Rerank:    "v1/rerank",
 		},
 	)
-}
-
-func withXinferenceIdleTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	original := xinferenceStreamIdleTimeout
-	xinferenceStreamIdleTimeout = d
-	t.Cleanup(func() {
-		xinferenceStreamIdleTimeout = original
-	})
 }
 
 func TestXinferenceName(t *testing.T) {
@@ -104,9 +94,6 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	}
 	if seen["stream"] != false {
 		t.Errorf("stream=%v, want false", seen["stream"])
-	}
-	if seen["max_tokens"] != float64(32) {
-		t.Errorf("max_tokens=%v, want 32", seen["max_tokens"])
 	}
 	if seen["temperature"] != 0.2 {
 		t.Errorf("temperature=%v, want 0.2", seen["temperature"])
@@ -226,38 +213,6 @@ func TestXinferenceStreamRejectsFalseStreamConfig(t *testing.T) {
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-must-be-true error, got %v", err)
-	}
-}
-
-func TestXinferenceStreamCancelsOnIdle(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	withXinferenceIdleTimeout(t, 200*time.Millisecond)
-
-	hold := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"hi"}}]}`+"\n")
-			f.Flush()
-		}
-		select {
-		case <-hold:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(srv.Close)
-	t.Cleanup(func() { close(hold) })
-
-	x := newXinferenceForTest(srv.URL)
-	err := x.ChatStreamlyWithSender(ctx, "qwen2.5-instruct",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
-		nil,
-		func(*string, *string) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "stream idle") {
-		t.Errorf("expected stream-idle error, got %v", err)
 	}
 }
 

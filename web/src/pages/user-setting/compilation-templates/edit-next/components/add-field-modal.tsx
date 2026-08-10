@@ -2,6 +2,7 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
+import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { ICompilationTemplateSection } from '@/interfaces/database/compilation-template';
@@ -9,7 +10,7 @@ import { startCase } from 'lodash';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldLabelKeyMap } from '../constant';
+import { FieldLabelKeyMap, FieldRequiredMessageKeyMap } from '../constant';
 
 import { useAddFieldForm } from '../hooks/use-add-field-form';
 
@@ -18,6 +19,7 @@ type AddFieldModalProps = {
   onOpenChange: (open: boolean) => void;
   sectionName: string;
   builtinSection?: ICompilationTemplateSection;
+  existingFields?: Record<string, string>[];
   initialField?: Record<string, string>;
   onAdd: (field: Record<string, string>) => void;
 };
@@ -27,6 +29,7 @@ export function AddFieldModal({
   onOpenChange,
   sectionName,
   builtinSection,
+  existingFields,
   initialField,
   onAdd,
 }: AddFieldModalProps) {
@@ -35,12 +38,14 @@ export function AddFieldModal({
     form,
     fieldKeys,
     hasTypeField,
+    requiredKeys,
     typeOptions,
     handleTypeChange,
     handleSubmit,
   } = useAddFieldForm({
     open,
     builtinSection,
+    existingFields,
     initialField,
   });
 
@@ -65,6 +70,34 @@ export function AddFieldModal({
     [t],
   );
 
+  const getRequiredMessage = useCallback(
+    (key: string) => {
+      return FieldRequiredMessageKeyMap[key]
+        ? t(FieldRequiredMessageKeyMap[key])
+        : t('common.pleaseInput');
+    },
+    [t],
+  );
+
+  const isDuplicateType = useCallback(
+    (typeValue: string) => {
+      if (!typeValue || typeValue === initialField?.type) return false;
+      return (existingFields ?? []).some((field) => field.type === typeValue);
+    },
+    [existingFields, initialField],
+  );
+
+  const handleNoMatchEnter = useCallback(
+    (searchValue: string) => {
+      if (isDuplicateType(searchValue)) {
+        message.warning(t('setting.fieldTypeExists'));
+        return false;
+      }
+      return true;
+    },
+    [isDuplicateType, t],
+  );
+
   return (
     <Modal
       open={open}
@@ -85,7 +118,16 @@ export function AddFieldModal({
       <Form {...form}>
         <div className="space-y-4">
           {hasTypeField && (
-            <RAGFlowFormItem name="type" label={getFieldLabel('type')}>
+            <RAGFlowFormItem
+              name="type"
+              label={getFieldLabel('type')}
+              required
+              rules={{
+                required: getRequiredMessage('type'),
+                validate: (value: string) =>
+                  !isDuplicateType(value) || t('setting.fieldTypeExists'),
+              }}
+            >
               {(field) => (
                 <SelectWithSearch
                   {...field}
@@ -95,6 +137,7 @@ export function AddFieldModal({
                     field.onChange(value);
                     handleTypeChange(value);
                   }}
+                  onNoMatchEnter={handleNoMatchEnter}
                   placeholder={t('setting.selectFieldType')}
                   allowCustomValue
                 />
@@ -103,7 +146,17 @@ export function AddFieldModal({
           )}
 
           {nonTypeKeys.map((key) => (
-            <RAGFlowFormItem key={key} name={key} label={getFieldLabel(key)}>
+            <RAGFlowFormItem
+              key={key}
+              name={key}
+              label={getFieldLabel(key)}
+              required={requiredKeys.includes(key)}
+              rules={
+                requiredKeys.includes(key)
+                  ? { required: getRequiredMessage(key) }
+                  : undefined
+              }
+            >
               <Textarea
                 placeholder={t('setting.descriptionPlaceholder')}
                 rows={key === 'description' ? 4 : 10}

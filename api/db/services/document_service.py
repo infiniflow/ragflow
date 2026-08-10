@@ -43,6 +43,11 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    @DB.connection_context()
+    def get_disabled_doc_ids_by_kb_id(cls, kb_id) -> set[str]:
+        return {str(doc_id) for doc_id in cls.model.select(cls.model.id).where((cls.model.kb_id == kb_id) & (cls.model.status == "0")).tuples()}
+
+    @classmethod
     def get_cls_model_fields(cls):
         return [
             cls.model.id,
@@ -676,6 +681,32 @@ class DocumentService(CommonService):
                 {"remove": {"source_doc_ids": doc.id}},
                 index,
                 doc.kb_id,
+            )
+
+        # 3. Clean up doc_page_source tracking rows (new incremental design).
+        try:
+            doc_page_kwd = "wiki_doc_page_source"
+            res = settings.docStoreConn.search(
+                ["id"],
+                [],
+                {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                [],
+                OrderByExpr(),
+                0,
+                10,
+                index,
+                doc.kb_id,
+            )
+            if settings.docStoreConn.get_fields(res, ["id"]):
+                settings.docStoreConn.delete(
+                    {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                    index,
+                    doc.kb_id,
+                )
+        except Exception:
+            logging.exception(
+                "DocumentService.remove_wiki_products: doc_page_source cleanup failed for doc %s",
+                doc.id,
             )
 
     @classmethod

@@ -32,7 +32,19 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"ragflow/internal/parser/chunk"
 )
+
+func getDelimiters(delimiters string) string {
+	// Mirror the live path: backtick-wrapped entries contribute their inner
+	// content (see chunk.CompileDelimiterPatternList).
+	p := chunk.CompileDelimiterPatternList([]string{delimiters}, true)
+	if p == nil {
+		return ""
+	}
+	return p.String()
+}
 
 func TestGetDelimiters_BareCharAReturnsLiteralPattern(t *testing.T) {
 	// Bare-char delimiter "a" must produce the pattern "a", not "a|A".
@@ -169,9 +181,9 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// splitKeepingDelim glues the matched delimiter onto the preceding
-	// segment: "the end" | " and End and END come"
-	want := []string{"the end", "and End and END come"}
+	// Python's _split_text_by_pattern drops the matched delimiter and
+	// .strip()s each segment: "the" | "and End and END come"
+	want := []string{"the", "and End and END come"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}
@@ -207,8 +219,9 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// "B" + "a" glued → "Ba"; remainder "Ab"
-	want := []string{"Ba", "Ab"}
+	// "B" + "a" glued → "Ba"; remainder "Ab". Python drops the matched
+	// delimiter and .strip()s, leaving "B" | "Ab".
+	want := []string{"B", "Ab"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}
@@ -219,15 +232,16 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	}
 }
 
-func TestBacktickDelimRE_HasNoIgnoreCaseFlag(t *testing.T) {
-	// Structural guard: the shared backtick extractor must stay case-sensitive.
-	src := backtickDelimRE.String()
-	if strings.Contains(src, "(?i)") || strings.HasPrefix(src, "(?i)") {
-		t.Fatalf("backtickDelimRE must not use (?i); got %q", src)
+func TestBacktickDelimiterIsCaseSensitive(t *testing.T) {
+	// Extraction and compiled pattern must both preserve letter casing.
+	p := chunk.CompileDelimiterPatternList([]string{"`End`"}, true)
+	if p == nil {
+		t.Fatal("CompileDelimiterPatternList returned nil")
 	}
-	// Sanity: the pattern still extracts backtick contents.
-	m := backtickDelimRE.FindStringSubmatch("`End`")
-	if len(m) < 2 || m[1] != "End" {
-		t.Fatalf("backtickDelimRE(`End`) = %#v, want group1=End", m)
+	if !p.MatchString("End") || p.MatchString("end") || p.MatchString("END") {
+		t.Fatalf("pattern %q is not case-sensitive", p.String())
+	}
+	if strings.Contains(p.String(), "(?i)") {
+		t.Fatalf("compiled pattern must not carry (?i); got %q", p.String())
 	}
 }

@@ -87,7 +87,7 @@ import (
 // against https://www.bbc.com/news/world — returns a non-empty
 // summary string in ~10s.
 func TestStagehandRuntime_Extract(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
@@ -190,7 +190,7 @@ func cacheDirGuess() string {
 //
 // Skipped unless OPENAI_* env vars are configured.
 func TestBrowser_E2E_Extract(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {

@@ -402,6 +402,23 @@ func (s *Service) UpdateSystemLicenseConfig(timeRecordSaveInterval, timeRecordTa
 	return result, nil
 }
 
+func (s *Service) SetSoftFingerprint(softFingerprint string) error {
+	return errors.New("set soft fingerprint is not supported")
+}
+
+func (s *Service) GetSoftFingerprint() (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "show_soft_fingerprint",
+		"error":   "'show soft fingerprint' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) DeleteSoftFingerprint() error {
+	return errors.New("delete soft fingerprint is not supported")
+}
+
 // ShowUserActivity show user activity for enterprise edition
 func (s *Service) ShowUserActivity(email string, days int) (map[string]interface{}, error) {
 	// Query user by email
@@ -1350,4 +1367,8 @@ func (s *Service) ListLogs(ctx context.Context, userName string, days int) ([]ma
 		},
 	}
 	return result, nil
+}
+
+func (s *Service) GetEEServicesStatus() []ServiceStatus {
+	return []ServiceStatus{}
 }

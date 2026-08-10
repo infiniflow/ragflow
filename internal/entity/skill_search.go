@@ -60,7 +60,7 @@ type SkillSearchConfig struct {
 }
 
 // TableName returns the table name for SkillSearchConfig model
-func (SkillSearchConfig) TableName() string {
+func (s *SkillSearchConfig) TableName() string {
 	return "skill_search_configs"
 }
 

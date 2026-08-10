@@ -15,7 +15,8 @@
   "models": [
     {
       "name": "gpt-5.5",
-      "max_tokens": 400000,
+      "content_length": 1050000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -30,7 +31,8 @@
     },
     {
       "name": "gpt-5.4-mini",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -45,7 +47,8 @@
     },
     {
       "name": "gpt-5",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -60,7 +63,8 @@
     },
     {
       "name": "gpt-4o",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -71,7 +75,8 @@
     },
     {
       "name": "claude-sonnet-4-6",
-      "max_tokens": 200000,
+      "content_length": 1000000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -82,7 +87,8 @@
     },
     {
       "name": "gemini-3-pro-preview",
-      "max_tokens": 1048576,
+      "content_length": 1048576,
+      "max_output": 65536,
       "model_types": [
         "chat",
         "vision"
@@ -93,7 +99,8 @@
     },
     {
       "name": "deepseek-v3.2",
-      "max_tokens": 128000,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -103,7 +110,8 @@
     },
     {
       "name": "qwen3-235b-a22b",
-      "max_tokens": 128000,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -116,21 +124,24 @@
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-3-large",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-ada-002",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "whisper-1",

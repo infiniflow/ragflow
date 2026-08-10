@@ -134,9 +134,6 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(128) {
-			t.Errorf("max_tokens=%v want 128", body["max_tokens"])
-		}
 		if body["temperature"] != 0.2 {
 			t.Errorf("temperature=%v want 0.2", body["temperature"])
 		}
@@ -224,23 +221,6 @@ func TestJinaChatValidation(t *testing.T) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
 		})
-	}
-}
-
-func TestJinaChatStreamIsNotSupported(t *testing.T) {
-	withSSRFBypass(t)
-	apiKey := "test-key"
-	err := newJinaForTest("http://unused").ChatStreamlyWithSender(
-		t.Context(),
-		"jina-vlm",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey},
-		nil,
-		nil,
-		func(*string, *string) error { return nil },
-	)
-	if err == nil || !strings.Contains(err.Error(), "ChatStreamlyWithSender") {
-		t.Fatalf("expected unsupported streaming error, got %v", err)
 	}
 }
 

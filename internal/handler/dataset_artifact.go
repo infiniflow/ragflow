@@ -76,7 +76,7 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 	return user, kb.TenantID, msg
 }
 
-// HEAD /artifacts — any wiki artifact present?
+// AnyArtifact handles HEAD /artifacts — any wiki artifact present?
 func (h *DatasetArtifactHandler) AnyArtifact(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -94,7 +94,7 @@ func (h *DatasetArtifactHandler) AnyArtifact(c *gin.Context) {
 	}
 }
 
-// GET /artifacts — list wiki pages.
+// ListArtifacts handles GET /artifacts — list wiki pages.
 func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -119,10 +119,12 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "pages": items}, "success")
+	// Python's list_wiki_pages returns {total, items}; align the Go port so the
+	// shared frontend (which reads data.items) stays compatible.
+	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
-// PUT /artifacts/<page_type>/<slug> — edit a wiki page.
+// UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
 func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	user, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -192,7 +194,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	common.SuccessWithData(c, detail, "success")
 }
 
-// GET /artifacts/<page_type>/<slug> — single wiki page.
+// GetArtifact handles GET /artifacts/<page_type>/<slug> — single wiki page.
 func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -213,7 +215,7 @@ func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 	common.SuccessWithData(c, detail, "success")
 }
 
-// DELETE /artifacts — clear all wiki artifacts.
+// DeleteArtifacts handles DELETE /artifacts — clear all wiki artifacts.
 func (h *DatasetArtifactHandler) DeleteArtifacts(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -227,7 +229,7 @@ func (h *DatasetArtifactHandler) DeleteArtifacts(c *gin.Context) {
 	common.SuccessWithData(c, deleted, "success")
 }
 
-// GET /artifacts/topics — list wiki topics.
+// ListArtifactTopics handles GET /artifacts/topics — list wiki topics.
 func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -239,10 +241,12 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "topics": items}, "success")
+	// Python's list_wiki_topics returns {total, items}; align the Go port so the
+	// shared frontend (which reads data.items) stays compatible.
+	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
-// GET /artifacts/alteration — wiki alteration summary.
+// GetArtifactAlteration handles GET /artifacts/alteration — wiki alteration summary.
 func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -257,7 +261,7 @@ func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 	common.SuccessWithData(c, alt, "success")
 }
 
-// GET /artifacts/graph — wiki entity/relation graph.
+// GetArtifactGraph handles GET /artifacts/graph — wiki entity/relation graph.
 func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -272,7 +276,7 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	common.SuccessWithData(c, graph, "success")
 }
 
-// GET /artifacts/structure — list compiled structures of a dataset.
+// ListStructures handles GET /artifacts/structure — list compiled structures of a dataset.
 func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -289,7 +293,7 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "structures": items}, "success")
 }
 
-// DELETE /artifacts/structure — delete compiled structures of a dataset.
+// DeleteStructures handles DELETE /artifacts/structure — delete compiled structures of a dataset.
 func (h *DatasetArtifactHandler) DeleteStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -306,7 +310,7 @@ func (h *DatasetArtifactHandler) DeleteStructures(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
-// HEAD /skills — any skill artifact present?
+// AnySkill handles HEAD /skills — any skill artifact present?
 func (h *DatasetArtifactHandler) AnySkill(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -324,7 +328,7 @@ func (h *DatasetArtifactHandler) AnySkill(c *gin.Context) {
 	}
 }
 
-// GET /navigation — list navigation clusters.
+// ListNavigation handles GET /navigation — list navigation clusters.
 func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -338,7 +342,7 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "nav": items}, "success")
 }
 
-// DELETE /navigation — delete all navigation clusters.
+// DeleteNavigation handles DELETE /navigation — delete all navigation clusters.
 func (h *DatasetArtifactHandler) DeleteNavigation(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -352,7 +356,7 @@ func (h *DatasetArtifactHandler) DeleteNavigation(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
-// DELETE /navigation/<name> — delete a single navigation cluster.
+// DeleteNavigationNode handles DELETE /navigation/<name> — delete a single navigation cluster.
 func (h *DatasetArtifactHandler) DeleteNavigationNode(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -366,7 +370,7 @@ func (h *DatasetArtifactHandler) DeleteNavigationNode(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
-// GET /navigation/<name>/children — list children of a navigation cluster.
+// ListNavigationChildren handles GET /navigation/<name>/children — list children of a navigation cluster.
 func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -380,7 +384,7 @@ func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "children": items}, "success")
 }
 
-// GET /skills — skill tree.
+// GetSkillTree handles GET /skills — skill tree.
 func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -395,7 +399,7 @@ func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "tree": items}, "success")
 }
 
-// DELETE /skills — delete all skills.
+// DeleteSkills handles DELETE /skills — delete all skills.
 func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -409,7 +413,7 @@ func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
-// GET /skills/<skill_kwd> — single skill page.
+// GetSkillPage handles GET /skills/<skill_kwd> — single skill page.
 func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -427,7 +431,7 @@ func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 	common.SuccessWithData(c, detail, "success")
 }
 
-// DELETE /skills/<skill_kwd> — delete a single skill.
+// DeleteSkill handles DELETE /skills/<skill_kwd> — delete a single skill.
 func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -441,7 +445,7 @@ func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
-// GET /documents/<document_id>/structure/graph — document structure graph.
+// GetDocumentGraph handles GET /documents/<document_id>/structure/graph — document structure graph.
 func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -458,7 +462,7 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "graph": items}, "success")
 }
 
-// DELETE /documents/<document_id>/structure/graph — delete document structure graph.
+// DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
 func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {

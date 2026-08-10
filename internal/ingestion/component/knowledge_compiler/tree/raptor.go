@@ -195,7 +195,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		// text to a per-chunk token budget so the cluster fits the LLM context
 		// (Python: len_per_chunk = (max_length - max_token) / len(texts);
 		// truncate(t, len_per_chunk), raptor.py:389-390).
-		content := buildClusterContent(texts, task.pointIdxs, deps.LLMMaxLength, maxToken)
+		content := buildClusterContent(texts, task.pointIdxs, deps.ModelContextLen, maxToken)
 		system := raptorSystemHelper + strings.Replace(taskPrompt, "{cluster_content}", content, 1)
 		summary, err := summarizeTexts(ctx, deps, llmID, system, raptorTitleInstruction, maxToken)
 		if err != nil {
@@ -292,7 +292,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		log.Printf("tree: no top-level summaries produced, skipping root node")
 		return nil
 	}
-	rootContent := buildClusterContent(topLevelTexts, allIndices(len(topLevelTexts)), deps.LLMMaxLength, maxToken)
+	rootContent := buildClusterContent(topLevelTexts, allIndices(len(topLevelTexts)), deps.ModelContextLen, maxToken)
 	rootSummary, err := summarizeTexts(ctx, deps, llmID,
 		raptorSystemHelper+strings.Replace(taskPrompt, "{cluster_content}", rootContent, 1),
 		raptorTitleInstruction, maxToken)
@@ -389,14 +389,14 @@ func titleOf(summary string) string {
 // (max_length - max_token) / len(texts); truncate(t, len_per_chunk)). The token
 // budget uses the cl100k_base encoder, mirroring Python's truncate (token-level,
 // not character-level).
-func buildClusterContent(texts []string, idxs []int, llmMaxLength, maxToken int) string {
+func buildClusterContent(texts []string, idxs []int, modelContextLen, maxToken int) string {
 	if len(idxs) == 0 {
 		return ""
 	}
-	if llmMaxLength <= 0 {
-		llmMaxLength = common.DefaultLLMContextLength
+	if modelContextLen <= 0 {
+		modelContextLen = common.DefaultLLMContextLength
 	}
-	per := (llmMaxLength - maxToken) / len(idxs)
+	per := (modelContextLen - maxToken) / len(idxs)
 	if per < 1 {
 		per = 1
 	}

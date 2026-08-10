@@ -83,10 +83,22 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     });
   }, []);
 
+  // Selected items that are still visible under the current search filter.
+  // Batch deletion and the selected count must act on this set — selectedIds
+  // alone would include items filtered out of view by the search.
+  const visibleSelectedIds = useMemo(
+    () =>
+      conversationList.filter((x) => selectedIds.has(x.id)).map((x) => x.id),
+    [conversationList, selectedIds],
+  );
+
   // Toggle select all
   const toggleSelectAll = useCallback(() => {
     setSelectedIds((prev) => {
-      if (prev.size === conversationList.length) {
+      const allVisibleSelected =
+        conversationList.length > 0 &&
+        conversationList.every((x) => prev.has(x.id));
+      if (allVisibleSelected) {
         return new Set();
       }
       return new Set(conversationList.map((x) => x.id));
@@ -95,20 +107,19 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
-    if (selectedIds.size === 0) {
+    if (visibleSelectedIds.length === 0) {
       return;
     }
 
-    const selectedIdList = Array.from(selectedIds);
     const currentConversationDeleted = conversationId
-      ? selectedIdList.includes(conversationId)
+      ? visibleSelectedIds.includes(conversationId)
       : false;
     const temporaryIdSet = new Set(
       conversationList.filter((item) => item.is_new).map((item) => item.id),
     );
     const persistedIds: string[] = [];
 
-    selectedIdList.forEach((id) => {
+    visibleSelectedIds.forEach((id) => {
       if (temporaryIdSet.has(id)) {
         removeTemporaryConversation(id);
       } else {
@@ -131,7 +142,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     }
     exitSelectionMode();
   }, [
-    selectedIds,
+    visibleSelectedIds,
     conversationId,
     conversationList,
     setConversationBoth,
@@ -140,7 +151,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     exitSelectionMode,
   ]);
 
-  const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
+  const selectedCount = visibleSelectedIds.length;
 
   const { id } = useParams();
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =

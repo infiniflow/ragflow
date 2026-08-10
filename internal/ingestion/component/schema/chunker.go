@@ -173,9 +173,10 @@ type ChunkerOutputs struct {
 
 type TokenChunkerParam struct {
 	// DelimiterMode selects the chunking strategy.
-	// Allowed values: "token_size", "delimiter".
-	// The single-chunk "one" behavior is provided by the separate
-	// OneChunker component.
+	// Allowed value: "delimiter". The legacy "token_size" value is accepted for
+	// backward compatibility and normalized to "delimiter" (it is behaviorally
+	// identical at runtime; see Validate). The single-chunk "one" behavior is
+	// provided by the separate OneChunker component.
 	DelimiterMode string `json:"delimiter_mode"`
 
 	// ChunkTokenSize is the target chunk size in tokens.
@@ -203,12 +204,50 @@ type TokenChunkerParam struct {
 	// ImageContextSize is the number of surrounding tokens to attach
 	// to image chunks. 0 disables.
 	ImageContextSize int `json:"image_context_size"`
+
+	// UnderCap selects the merge strategy when greedily accumulating
+	// adjacent units (token_chunker UNDER_CAP vs OVER_CAP).
+	//   - false (default): OVER_CAP — mirrors Python's canonical default.
+	//     A chunk may exceed the token target by at most one incoming unit
+	//     (a boundary overflow then closes the chunk).
+	//   - true: UNDER_CAP — strictly never exceed the target; when the
+	//     projected join would overflow, start a fresh chunk instead.
+	// This is the wire-facing bool; the active strategy is exposed as
+	// MergeStrategy so callers never have to invert it.
+	UnderCap bool `json:"under_cap"`
+}
+
+// MergeStrategy selects how the TokenChunker greedily accumulates adjacent
+// units into a chunk. It mirrors Python's rag/nlp/__init__.py MergeStrategy so
+// the Go and Python implementations stay on the same vocabulary (OVER_CAP /
+// UNDER_CAP) instead of a bare inlined bool.
+type MergeStrategy int
+
+const (
+	// MergeOverCap is the canonical default (Python OVER_CAP): a chunk may
+	// exceed the token target by at most one incoming unit (a boundary
+	// overflow then closes the chunk).
+	MergeOverCap MergeStrategy = iota
+	// MergeUnderCap never exceeds the target; when the projected join would
+	// overflow, a fresh chunk is started instead (Python UNDER_CAP).
+	MergeUnderCap
+)
+
+// MergeStrategy reports the active merge strategy for this param. It is derived
+// from UnderCap so existing configs that set "under_cap" keep working without a
+// schema break, and callers read the strategy directly instead of inverting a
+// bool at every call site.
+func (p TokenChunkerParam) MergeStrategy() MergeStrategy {
+	if p.UnderCap {
+		return MergeUnderCap
+	}
+	return MergeOverCap
 }
 
 // Defaults returns the Python default TokenChunkerParam.
 func (TokenChunkerParam) Defaults() TokenChunkerParam {
 	return TokenChunkerParam{
-		DelimiterMode:      "token_size",
+		DelimiterMode:      "delimiter",
 		ChunkTokenSize:     512,
 		Delimiters:         []string{"\n"},
 		OverlappedPercent:  0,
@@ -318,8 +357,17 @@ func (p *TokenChunkerParam) Validate() error {
 		// common/float_utils.py:50-58 fix for #17418.
 		p.OverlappedPercent = math.Round(v * 100)
 	}
+	// Backward-compat: Python removed the standalone "token_size" mode and
+	// treats it as identical to "delimiter" at runtime, normalizing it in
+	// check() (rag/flow/chunker/token_chunker.py). A dataset configured under
+	// the old scheme may still carry delimiter_mode="token_size"; normalize it
+	// here instead of rejecting it so those pipelines keep working (mirrors
+	// the Python behaviour exactly).
+	if p.DelimiterMode == "token_size" {
+		p.DelimiterMode = "delimiter"
+	}
 	switch p.DelimiterMode {
-	case "token_size", "delimiter":
+	case "delimiter":
 	default:
 		return errInvalidValue{Field: "delimiter_mode", Value: p.DelimiterMode}
 	}

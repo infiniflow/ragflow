@@ -153,13 +153,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
-	// System endpoints
-	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
-	//engine.POST("/v1/user/register", r.userHandler.Register)
-
-	// User logout endpoint
-	engine.GET("/v1/user/logout", r.userHandler.Logout)
-
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
@@ -358,9 +351,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
-				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
-				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
-				datasets.DELETE("/:dataset_id/index", r.datasetsHandler.DeleteIndex)
+				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
+				// replaces the retired RunIndex/TraceIndex/DeleteIndex /index routes.
+				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
 
 				// Knowledge-compilation wiki artifacts
 				datasets.HEAD("/:dataset_id/artifacts", r.datasetArtifactHandler.AnyArtifact)
@@ -387,8 +380,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/skills/:skill_kwd", r.datasetArtifactHandler.GetSkillPage)
 				datasets.DELETE("/:dataset_id/skills/:skill_kwd", r.datasetArtifactHandler.DeleteSkill)
 
-				datasets.DELETE("/:dataset_id/:index_type", r.datasetsHandler.DeleteIndex)
-				//datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
@@ -647,14 +638,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
-			// Connector routes
-			connector := authorized.Group("/v1/connector")
-			{
-				connector.GET("/list", r.connectorHandler.ListConnectors)
-				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
-				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
-			}
-
 			// MCP server routes.
 			mcp := v1.Group("/mcp")
 			{
@@ -669,7 +652,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			system := v1.Group("/system")
 			{
-				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
 				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 

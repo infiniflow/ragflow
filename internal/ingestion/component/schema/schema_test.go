@@ -278,8 +278,8 @@ func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestTokenChunkerParamDefaults(t *testing.T) {
 	p := TokenChunkerParam{}.Defaults()
-	if p.DelimiterMode != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", p.DelimiterMode)
+	if p.DelimiterMode != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", p.DelimiterMode)
 	}
 	if p.ChunkTokenSize != 512 {
 		t.Errorf("default chunk_token_size = %d, want 512", p.ChunkTokenSize)
@@ -567,3 +567,15 @@ func TestExtractorOutputsJSONRoundTrip(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func ptrString(s string) *string { return &s }
+
+// TestTokenChunkerParamMergeStrategy locks the UnderCap bool -> MergeStrategy
+// mapping so a future refactor cannot silently flip OVER_CAP/UNDER_CAP without
+// a failing test.
+func TestTokenChunkerParamMergeStrategy(t *testing.T) {
+	if got := (TokenChunkerParam{}).MergeStrategy(); got != MergeOverCap {
+		t.Errorf("default (UnderCap=false) want MergeOverCap, got %v", got)
+	}
+	if got := (TokenChunkerParam{UnderCap: true}).MergeStrategy(); got != MergeUnderCap {
+		t.Errorf("UnderCap=true want MergeUnderCap, got %v", got)
+	}
+}

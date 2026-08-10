@@ -659,42 +659,115 @@ class Canvas(Graph):
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
+                        in_thinking = False
+                        tts_queue = asyncio.Queue(maxsize=4)
+                        tts_results = asyncio.Queue()
+                        tts_workers = []
+                        tts_sequence = 0
+                        next_audio_sequence = 0
+                        completed_tts = {}
+                        sentence_end = re.compile(r"(?:[。！？!?；;\n](?:[”’\"』」】》）)]*)|(?<=[.!?])(?=\s|$))")
                         stream = cpn_obj.output("content")()
 
+                        async def _tts_worker():
+                            while True:
+                                sequence, text = await tts_queue.get()
+                                try:
+                                    audio_binary = await asyncio.to_thread(self.tts, tts_mdl, text)
+                                    await tts_results.put((sequence, audio_binary, None))
+                                except Exception as exc:
+                                    await tts_results.put((sequence, None, exc))
+                                finally:
+                                    tts_queue.task_done()
+
+                        if tts_mdl:
+                            tts_workers = [asyncio.create_task(_tts_worker()) for _ in range(2)]
+
+                        async def _schedule_tts(text):
+                            nonlocal tts_sequence
+                            if tts_mdl and text:
+                                await tts_queue.put((tts_sequence, text))
+                                tts_sequence += 1
+
+                        async def _drain_ready_tts():
+                            nonlocal next_audio_sequence
+                            events = []
+                            while True:
+                                try:
+                                    sequence, audio_binary, error = tts_results.get_nowait()
+                                except asyncio.QueueEmpty:
+                                    break
+                                completed_tts[sequence] = (audio_binary, error)
+                            while next_audio_sequence in completed_tts:
+                                audio_binary, error = completed_tts.pop(next_audio_sequence)
+                                if error:
+                                    _logger.warning("Agent TTS failed for sentence %d: %s", next_audio_sequence, error)
+                                next_audio_sequence += 1
+                                if audio_binary:
+                                    events.append(decorate("message", {"content": "", "audio_binary": audio_binary}))
+                            return events
+
                         async def _process_stream(m):
-                            nonlocal buff_m, _m, tts_mdl
+                            nonlocal buff_m, _m, in_thinking
                             if not m:
                                 return
                             if m == "<think>":
+                                await _schedule_tts(buff_m)
+                                in_thinking = True
+                                buff_m = ""
                                 return decorate("message", {"content": "", "start_to_think": True})
 
                             elif m == "</think>":
+                                in_thinking = False
                                 return decorate("message", {"content": "", "end_to_think": True})
 
-                            buff_m += m
                             _m += m
+                            if in_thinking:
+                                return decorate("message", {"content": m})
 
-                            if len(buff_m) > 16:
-                                ev = decorate("message", {"content": m, "audio_binary": self.tts(tts_mdl, buff_m)})
-                                buff_m = ""
-                                return ev
+                            buff_m += m
+                            while True:
+                                match = sentence_end.search(buff_m)
+                                if not match:
+                                    break
+                                sentence = buff_m[: match.end()]
+                                buff_m = buff_m[match.end() :]
+                                await _schedule_tts(sentence)
 
                             return decorate("message", {"content": m})
 
-                        if inspect.isasyncgen(stream):
-                            async for m in stream:
-                                ev = await _process_stream(m)
-                                if ev:
+                        async def _stream_events():
+                            nonlocal buff_m
+                            try:
+                                if inspect.isasyncgen(stream):
+                                    async for m in stream:
+                                        for ev in await _drain_ready_tts():
+                                            yield ev
+                                        ev = await _process_stream(m)
+                                        if ev:
+                                            yield ev
+                                else:
+                                    for m in stream:
+                                        for ev in await _drain_ready_tts():
+                                            yield ev
+                                        ev = await _process_stream(m)
+                                        if ev:
+                                            yield ev
+                                if buff_m:
+                                    await _schedule_tts(buff_m)
+                                    buff_m = ""
+                                await tts_queue.join()
+                                for ev in await _drain_ready_tts():
                                     yield ev
-                        else:
-                            for m in stream:
-                                ev = await _process_stream(m)
-                                if ev:
-                                    yield ev
-                        if buff_m:
-                            yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
-                            buff_m = ""
-                        cpn_obj.set_output("content", _m)
+                                cpn_obj.set_output("content", _m)
+                            finally:
+                                for worker in tts_workers:
+                                    worker.cancel()
+                                if tts_workers:
+                                    await asyncio.gather(*tts_workers, return_exceptions=True)
+
+                        async for ev in _stream_events():
+                            yield ev
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
 
@@ -834,6 +907,8 @@ class Canvas(Graph):
                 flags=re.UNICODE,
             )
             text = emoji_pattern.sub("", text)
+
+            text = re.sub(r"<[^>]*>", "", text)
 
             text = re.sub(r"\s+", " ", text).strip()
 

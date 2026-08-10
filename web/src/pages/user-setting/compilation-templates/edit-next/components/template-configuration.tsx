@@ -90,7 +90,7 @@ export function TemplateConfiguration({
     builtins,
   });
 
-  const { activeFieldsPath, builtinSection, editingField } =
+  const { activeFieldsPath, builtinSection, existingFields, editingField } =
     useTemplateSectionData(
       form,
       selectedTemplateIndex,
@@ -193,6 +193,14 @@ export function TemplateConfiguration({
             />
           </RAGFlowFormItem>
 
+          {kind === CompilationTemplateKind.Artifacts && (
+            <SwitchFormField
+              name={`templates.${selectedTemplateIndex}.config.plan`}
+              label={t('setting.plan')}
+              vertical={false}
+            />
+          )}
+
           {kind === CompilationTemplateKind.Tree ? (
             <TreeTemplateFields index={selectedTemplateIndex} />
           ) : (
@@ -263,6 +271,7 @@ export function TemplateConfiguration({
         onOpenChange={handleModalOpenChange}
         sectionName={activeSectionTab}
         builtinSection={builtinSection}
+        existingFields={existingFields}
         initialField={editingField}
         onAdd={handleAddField}
       />

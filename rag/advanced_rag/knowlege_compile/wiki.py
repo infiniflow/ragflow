@@ -86,7 +86,7 @@ from .structure import (
 # ---------------------------------------------------------------------------
 
 WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
-DEFAULT_WIKI_MAP_WORKERS = 6
+DEFAULT_WIKI_MAP_WORKERS = 20
 DEFAULT_WIKI_MAP_TIMEOUT = 600
 
 
@@ -821,9 +821,10 @@ async def _wiki_extract_one_batch(
     language: str,
     llm_timeout: int,
     parser_config: Optional[dict] = None,
-) -> dict:
+) -> Optional[dict]:
     """Single LLM call for one packed batch. Returns the raw (label-tagged)
-    extract dict.
+    extract dict, or ``None`` on a transient LLM timeout/error so the caller
+    can avoid persisting a poisoned empty result.
 
     The entity / relation schemas and the extra rules sections of the
     prompt are rendered from ``parser_config`` when supplied (mirroring
@@ -838,22 +839,23 @@ async def _wiki_extract_one_batch(
         chunk_id_list="\n".join(f"- {label}" for label in labels),
         packed_chunks=body,
     )
+    request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1})
     try:
         res = await asyncio.wait_for(
             gen_json(
                 WIKI_MAP_SYSTEM,
                 user_prompt,
                 chat_mdl,
-                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+                gen_conf=request_conf,
             ),
             timeout=llm_timeout,
         )
     except asyncio.TimeoutError:
         logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", llm_timeout, len(packed))
-        return _wiki_empty_extract()
+        return None
     except Exception:
         logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
-        return _wiki_empty_extract()
+        return None
     _ = language  # reserved for future localization
     return _wiki_unwrap_extract(res)
 
@@ -880,6 +882,12 @@ async def _wiki_process_batch(
     the top of ``wiki_map_from_chunks``; threaded through so the
     persisted resume rows record the right hash and the next
     incremental run can compare cleanly.
+
+    On a transient LLM failure/timeout (``_wiki_extract_one_batch`` returns
+    ``None``) the batch is NOT persisted with a resume hash. The next
+    incremental run then sees those chunks as ``new`` and retries, instead of
+    replaying a permanently cached empty extract. Only a genuine LLM response
+    (even one with zero items) is persisted.
     """
     if not packed:
         return _wiki_empty_extract()
@@ -895,6 +903,10 @@ async def _wiki_process_batch(
             llm_timeout,
             parser_config=parser_config,
         )
+        if raw_extract is None:
+            # LLM call failed/timed out: leave no resume hash so the next run
+            # re-extracts these chunks instead of locking in an empty result.
+            return _wiki_empty_extract()
         merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
         await _wiki_persist_extracts(
             per_chunk,
@@ -958,7 +970,8 @@ async def wiki_map_from_chunks(
             extracted item via ``chunk_ids``.
         tenant_id, kb_id: address the doc-store index for resume reads + writes.
         language: reserved for future prompt localization.
-        max_workers: maximum concurrent batches. Defaults to 6.
+        max_workers: maximum concurrent batches. Defaults to 20, matching the
+            task-scoped Wiki LLM pool used by the task executor.
         llm_timeout: seconds per batch extraction call.
         callback: optional ``(progress: float, msg: str)`` progress callback.
         parser_config: optional YAML-style config (same shape that
@@ -974,7 +987,6 @@ async def wiki_map_from_chunks(
         performed here — that is the REDUCE phase's responsibility.
     """
     _ = embd_mdl  # noqa: F841 — accepted for symmetry with downstream phases
-
     if not chunks:
         # Even with zero chunks we still want to sweep any orphaned MAP
         # rows that point at chunks the doc no longer has — otherwise
@@ -1751,10 +1763,19 @@ Examples of BAD slugs (do NOT produce):
   - ``concept/example-name``           (just duplicate the sample)
 
 # Other rules
-- Group closely related small entities onto the same page (max 3-4 per page).
-  BUT if a primary entity is described through several distinct thematic
-  sections that appear as concepts above, prefer a separate ``concept`` page
-  for EACH such section instead of collapsing them onto the entity page.
+- Entity/concept identity is one-to-one with pages: every extracted entity and
+  concept must be represented by exactly one canonical page, and each identity
+  may appear in only one page's ``entity_names``. Never split an identity into
+  multiple pages, page types, thematic sections, aliases, language
+  transliterations, or alternate slug spellings. Put all supported sections
+  for that identity on its single canonical page.
+- A page may represent several closely related low-signal entities/concepts
+  (max 3-4 per page), but list every represented identity in ``entity_names``
+  and do not repeat any identity on another page. If the page budget is tight,
+  group identities rather than omitting one or emitting a second page for it.
+- Identity ownership does not limit linking: ``related_kb_pages`` should list
+  every directly related canonical page supported by the input (within the
+  available-page budget). Never link duplicate or non-canonical slug variants.
 - priority 1 = highest importance (process first).
 - entity_names must match the names in the entities / concepts lists above.
 - Target approximately {target_page_count} total pages (feel free to deviate
@@ -1983,13 +2004,14 @@ async def _wiki_resolve_maybe_items(
             "Return ONLY the JSON array.\n\n" + "\n".join(lines)
         )
 
+        request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0})
         try:
             res = await asyncio.wait_for(
                 gen_json(
                     WIKI_PLAN_RECONCILE_SYSTEM,
                     user_prompt,
                     chat_mdl,
-                    gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}),
+                    gen_conf=request_conf,
                 ),
                 timeout=llm_timeout,
             )
@@ -2132,16 +2154,17 @@ async def _wiki_planning_call(
         max_page_count=max_page_count,
     )
 
+    request_conf = _knowledge_compile_gen_conf(
+        chat_mdl,
+        {"temperature": 0.1, "max_tokens": output_tokens},
+    )
     try:
         res = await asyncio.wait_for(
             gen_json(
                 WIKI_PLAN_PLANNING_SYSTEM,
                 user_prompt,
                 chat_mdl,
-                gen_conf=_knowledge_compile_gen_conf(
-                    chat_mdl,
-                    {"temperature": 0.1, "max_tokens": output_tokens},
-                ),
+                gen_conf=request_conf,
             ),
             timeout=llm_timeout,
         )
@@ -2585,6 +2608,7 @@ WIKI_TEMPLATE_EXAMPLE = (
     "Each page must be a proper encyclopedic article, NOT a flat bullet list:\n"
     "1. Opening paragraph (2-4 sentences defining what this is). No heading.\n"
     "2. Sections with H2 headings, each starting with prose before sub-bullets.\n"
+    "   Put every heading on its own line and separate every paragraph with a blank line.\n"
     "3. Bold key terms on first use; link them with [[ ]] wikilinks.\n"
     "4. Examples or implications where the source provides them.\n"
     "5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n\n"
@@ -2624,7 +2648,9 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "- Prose that just rephrases what was already said.\n\n"
     "# Language\n"
     "Write in the SAME LANGUAGE as the source text. Never translate content.\n\n"
-    "# Page structure — CRITICAL\n"
+    "# Additional writing instructions — CRITICAL\n"
+    "{template_instruction}\n\n"
+    "# Page structure example — CRITICAL\n"
     "{template_example}\n\n"
     "# What NOT to do\n"
     "- Do NOT dump raw bullet points from the source as the entire content.\n"
@@ -2642,18 +2668,20 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
 )
 
 
-def _build_refine_writer_system(example: str | None) -> str:
-    """Return the writer system prompt with the configured page-structure
-    example (or ``WIKI_TEMPLATE_EXAMPLE`` when ``example`` is empty /
-    whitespace-only). Used by the REFINE phase to let each compilation
-    template override just the page-structure section.
+def _build_refine_writer_system(instruction: str | None = None, example: str | None = None) -> str:
+    """Return the writer system prompt with separate instruction and page
+    example overrides. Empty values use the built-in defaults.
 
     The default-filled form is also exposed as
     ``WIKI_REFINE_WRITER_SYSTEM`` for callers that don't have an
     override to apply.
     """
-    body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
-    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
+    instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
+    example_body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(
+        template_instruction=instruction_body,
+        template_example=example_body,
+    )
 
 
 WIKI_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
@@ -2687,6 +2715,7 @@ But also look for additional relevant information in the source text above.
 
 ## Instructions
 Write the complete wiki page in markdown based on the source text above.
+Put every heading on its own line and separate every paragraph with a blank line. Do not return the page as one line.
 Cross-link to other pages using [[slug]] or [[slug|display text]] — ONLY
 use slugs from the "Available pages" list. Do NOT invent new slugs.
 Do NOT include Citations or Footnotes sections.
@@ -3227,12 +3256,13 @@ async def _wiki_chat_text(
         _, msg = message_fit_in(msg, chat_mdl.max_length)
     except Exception:
         logging.exception("wiki_refine: message_fit_in failed; sending untrimmed")
+    request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature})
     try:
         raw = await asyncio.wait_for(
             chat_mdl.async_chat(
                 msg[0]["content"],
                 msg[1:],
-                _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature}),
+                request_conf,
             ),
             timeout=llm_timeout,
         )
@@ -3255,13 +3285,13 @@ async def _wiki_write_page_simple(
     all_plan_slugs: list[str],
     chat_mdl,
     llm_timeout: int,
+    instruction: Optional[str] = None,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
 
-    ``example`` is the per-template ``parser_config.example`` override
-    for the writer's page-structure section. Falsy / whitespace-only
-    values fall through to ``WIKI_TEMPLATE_EXAMPLE``.
+    ``instruction`` and ``example`` are the separate per-template writer
+    overrides.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -3284,13 +3314,17 @@ async def _wiki_write_page_simple(
         evidence_blocks=_wiki_format_evidence_blocks(evidence),
     )
 
-    return await _wiki_chat_text(
+    content = await _wiki_chat_text(
         chat_mdl,
-        _build_refine_writer_system(example),
+        _build_refine_writer_system(
+            instruction=instruction,
+            example=example,
+        ),
         user_prompt,
         temperature=0.15,
         llm_timeout=llm_timeout,
     )
+    return content
 
 
 async def _wiki_merge_page_content(
@@ -3368,16 +3402,25 @@ async def _wiki_persist_draft(
     tenant_id: str,
     kb_id: str,
     plan_input_hash: str = "",
+    embd_mdl=None,
 ) -> None:
-    """Upsert one non-searchable wiki_page_draft row (resume cache).
+    """Upsert one wiki_page_draft row (resume cache + searchable page).
 
     ``plan_input_hash`` is the PLAN's ``input_hash_kwd`` at the time this
     draft was produced. The next REFINE re-entry compares it against the
     current PLAN hash to decide whether the cached draft is still
     valid; a mismatch forces a rewrite for that slug.
+
+    When ``embd_mdl`` is provided the row is made searchable: the title/body are
+    tokenized (``title_tks`` / ``content_ltks`` / ``content_sm_ltks``) and a
+    ``q_<dim>_vec`` page embedding is attached, with ``available_int=1`` so the
+    agent's ``wiki_query`` tool can retrieve it. Without an embedder the row stays
+    a non-searchable resume cache. ``content_with_weight`` is left as the page
+    JSON either way, so ``_wiki_load_refine_resume`` still restores the draft.
     """
     from common import settings
     from rag.nlp import search as _rag_search
+    from rag.nlp import rag_tokenizer
 
     slug = page.get("slug") or ""
     if not slug:
@@ -3394,8 +3437,37 @@ async def _wiki_persist_draft(
         "source_doc_ids": draft_doc_ids,
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
-        "available_int": 0,  # non-searchable
+        "available_int": 0,  # non-searchable unless made searchable below
     }
+
+    # Make the draft searchable when an embedder is available. content_with_weight
+    # is deliberately left untouched (the page JSON) — the tokenized fields drive
+    # BM25 and q_<dim>_vec drives dense retrieval.
+    if embd_mdl is not None:
+        title = str(page.get("title") or slug)
+        body = str(page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or "")
+        summary = str(page.get("summary") or "")
+        content_ltks = rag_tokenizer.tokenize(body)
+        row.update(
+            {
+                "docnm_kwd": title,
+                "title_kwd": title,
+                "title_tks": rag_tokenizer.tokenize(title),
+                "content_ltks": content_ltks,
+                "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
+            }
+        )
+        try:
+            emb_text = (summary or f"{title}\n{body}").strip()[:2048] or title
+            vectors, _ = await thread_pool_exec(embd_mdl.encode, [emb_text])
+            vec = vectors[0]
+            vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
+            if vec_list:
+                row[f"q_{len(vec_list)}_vec"] = vec_list
+                row["available_int"] = 1
+        except Exception:
+            logging.exception("wiki_refine: draft embedding failed slug=%s; row stays non-searchable", slug)
+
     try:
         try:
             await thread_pool_exec(
@@ -3487,6 +3559,7 @@ async def wiki_refine_from_plan(
     merge_shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
+    instruction: Optional[str] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
@@ -3681,6 +3754,7 @@ async def wiki_refine_from_plan(
                     all_plan_slugs,
                     chat_mdl,
                     llm_timeout,
+                    instruction=instruction,
                     example=example,
                 )
                 if not content_md_raw:
@@ -3743,6 +3817,7 @@ async def wiki_refine_from_plan(
                     tenant_id,
                     kb_id,
                     plan_input_hash=plan_input_hash,
+                    embd_mdl=embd_mdl,
                 )
             except Exception:
                 logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
@@ -3813,6 +3888,7 @@ async def wiki_refine_from_plan(
                 tenant_id,
                 kb_id,
                 plan_input_hash=plan_input_hash,
+                embd_mdl=embd_mdl,
             )
         except Exception:
             logging.exception("wiki_refine: persist cleaned draft failed for slug=%s", page.get("slug"))

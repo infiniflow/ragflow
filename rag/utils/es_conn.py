@@ -102,6 +102,10 @@ class ESConnection(ESConnectionBase):
     CRUD operations
     """
 
+    def refresh_idx(self, index_name: str) -> bool:
+        self.es.indices.refresh(index=index_name)
+        return True
+
     def _es_search_once(self, index_names: list[str], query: dict, track_total_hits: bool):
         return self.es.search(index=index_names, body=query, timeout="600s", track_total_hits=track_total_hits)
 
@@ -334,7 +338,7 @@ class ESConnection(ESConnectionBase):
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
-    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None, refresh: str | bool = "wait_for") -> list[str]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
@@ -351,7 +355,7 @@ class ESConnection(ESConnectionBase):
         for _ in range(ATTEMPT_TIME):
             try:
                 res = []
-                r = self.es.bulk(index=index_name, operations=operations, refresh="wait_for", timeout="60s")
+                r = self.es.bulk(index=index_name, operations=operations, refresh=refresh, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 

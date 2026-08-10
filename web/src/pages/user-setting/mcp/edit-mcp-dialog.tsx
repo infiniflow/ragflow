@@ -1,7 +1,7 @@
 import { Collapse } from '@/components/collapse';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { DialogClose, DialogFooter } from '@/components/ui/dialog';
+import { DialogFooter } from '@/components/ui/dialog';
 import { Modal } from '@/components/ui/modal/modal';
 import { useGetMcpServer, useTestMcpServer } from '@/hooks/use-mcp-request';
 import { IModalProps } from '@/interfaces/common';
@@ -64,9 +64,13 @@ export function EditMcpDialog({
   const { data } = useGetMcpServer(id);
   const [fieldChanged, setFieldChanged] = useState(false);
 
-  const tools = useMemo(() => {
-    return testData?.data || [];
-  }, [testData?.data]);
+  const tools = useMemo<IMCPTool[]>(() => {
+    const tested = testData?.data;
+    if (tested?.length) {
+      return tested;
+    }
+    return transferToolToArray(data.variables?.tools || {});
+  }, [testData?.data, data.variables?.tools]);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -115,75 +119,9 @@ export function EditMcpDialog({
     }
   }, [data, form]);
 
-  const nextTools = useMemo(() => {
-    return isEmpty(tools)
-      ? transferToolToArray(data.variables?.tools || {})
-      : tools;
-  }, [data.variables?.tools, tools]);
-
   const disabled = !tools?.length || testLoading || fieldChanged;
 
   return (
-    // <Dialog open onOpenChange={hideModal}>
-    //   <DialogContent>
-    //     <DialogHeader>
-    //       <DialogTitle>{id ? t('mcp.editMCP') : t('mcp.addMCP')}</DialogTitle>
-    //     </DialogHeader>
-    //     <EditMcpForm
-    //       onOk={handleOk}
-    //       form={form}
-    //       setFieldChanged={setFieldChanged}
-    //     ></EditMcpForm>
-    //     <Card className="bg-transparent">
-    //       <CardContent className="p-3">
-    //         <Collapse
-    //           title={
-    //             <div>
-    //               {nextTools?.length || 0} {t('mcp.toolsAvailable')}
-    //             </div>
-    //           }
-    //           open={collapseOpen}
-    //           onOpenChange={setCollapseOpen}
-    //           rightContent={
-    //             <Button
-    //               variant={'transparent'}
-    //               form={FormId}
-    //               type="submit"
-    //               onClick={handleTest}
-    //               className="border-none p-0 hover:bg-transparent"
-    //             >
-    //               <RefreshCw
-    //                 className={cn('text-text-secondary', {
-    //                   'animate-spin': testLoading,
-    //                 })}
-    //               />
-    //             </Button>
-    //           }
-    //         >
-    //           <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">
-    //             {nextTools?.map((x) => (
-    //               <McpToolCard key={x.name} data={x}></McpToolCard>
-    //             ))}
-    //           </div>
-    //         </Collapse>
-    //       </CardContent>
-    //     </Card>
-    //     <DialogFooter>
-    //       <DialogClose asChild>
-    //         <Button variant="outline">{t('common.cancel')}</Button>
-    //       </DialogClose>
-    //       <ButtonLoading
-    //         type="submit"
-    //         form={FormId}
-    //         loading={loading}
-    //         onClick={handleSave}
-    //         disabled={disabled}
-    //       >
-    //         {t('common.save')}
-    //       </ButtonLoading>
-    //     </DialogFooter>
-    //   </DialogContent>
-    // </Dialog>
     <Modal
       title={id ? t('mcp.editMCP') : t('mcp.addMCP')}
       open={true}
@@ -193,9 +131,9 @@ export function EditMcpDialog({
       maskClosable={false}
       footer={
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">{t('common.cancel')}</Button>
-          </DialogClose>
+          <Button variant="outline" type="button" onClick={hideModal}>
+            {t('common.cancel')}
+          </Button>
           <ButtonLoading
             type="submit"
             form={FormId}
@@ -218,7 +156,7 @@ export function EditMcpDialog({
           <Collapse
             title={
               <div>
-                {nextTools?.length || 0} {t('mcp.toolsAvailable')}
+                {tools?.length || 0} {t('mcp.toolsAvailable')}
               </div>
             }
             open={collapseOpen}
@@ -240,7 +178,7 @@ export function EditMcpDialog({
             }
           >
             <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">
-              {nextTools?.map((x) => (
+              {tools?.map((x) => (
                 <McpToolCard key={x.name} data={x}></McpToolCard>
               ))}
             </div>

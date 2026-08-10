@@ -1,200 +1,10 @@
-# base stage
-FROM ubuntu:24.04 AS base
+# builder stage
+FROM infiniflow/ragflow-base:v2.1 AS builder
 USER root
 SHELL ["/bin/bash", "-c"]
-
 ARG NEED_MIRROR=0
 
 WORKDIR /ragflow
-
-# copy models downloaded via download_deps.py
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    tar --exclude='.*' -cf - \
-        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
-        /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
-
-# https://github.com/chrismattmann/tika-python
-# This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    cp -r /deps/nltk_data /root/ && \
-    cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
-    cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
-
-ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Setup apt
-# Python package and implicit dependencies:
-# opencv-python: libglib2.0-0 libglx-mesa0 libgl1
-# python-pptx:   default-jdk                              tika-server-standard-3.3.0.jar
-# selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
-# Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        # CI runners may inject a proxy whose TLS certificate is not trusted inside
-        # the fresh Ubuntu base image yet. Keep the Ubuntu mirror on HTTP here so
-        # the mirror switch remains usable before the full CA store is available.
-        sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
-        sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
-    fi; \
-    rm -f /etc/apt/apt.conf.d/docker-clean && \
-    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
-    chmod 1777 /tmp && \
-    apt update && \
-    apt --no-install-recommends install -y ca-certificates \
-    libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 \
-    libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less \
-    ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
-    fonts-freefont-ttf fonts-noto-cjk postgresql-client
-
-# Download resource from GitHub to /usr/share/infinity
-RUN --mount=type=secret,id=gitee_token \
-    mkdir -p /usr/share/infinity/resource && \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        GITEE_TOKEN=$(cat /run/secrets/gitee_token 2>/dev/null || echo ""); \
-        if [ -n "$GITEE_TOKEN" ]; then \
-            git clone --depth 1 --single-branch "https://oauth2:${GITEE_TOKEN}@gitee.com/infiniflow/resource" /tmp/resource; \
-        else \
-            git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
-        fi; \
-    else \
-        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
-    fi && \
-    cp -r /tmp/resource/* /usr/share/infinity/resource && \
-    rm -rf /tmp/resource
-
-ARG NGINX_VERSION=1.31.3-1~noble
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    mkdir -p /etc/apt/keyrings && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
-    apt -o Acquire::Retries=5 update && \
-    apt -o Acquire::Retries=5 install -y nginx=${NGINX_VERSION} && \
-    apt-mark hold nginx
-
-# Install uv
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        mkdir -p /etc/uv && \
-        echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
-        echo '[[index]]' >> /etc/uv/uv.toml && \
-        echo 'url = "https://mirrors.aliyun.com/pypi/simple"' >> /etc/uv/uv.toml && \
-        echo 'default = true' >> /etc/uv/uv.toml; \
-    fi; \
-    arch="$(uname -m)"; \
-    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
-    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
-    && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
-    && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
-    && uv python install 3.13
-
-ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
-    UV_HTTP_TIMEOUT=200 \
-    UV_HTTP_RETRIES=3
-ENV PATH=/root/.local/bin:$PATH
-
-# nodejs 12.22 on Ubuntu 22.04 is too old
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt purge -y nodejs npm && \
-    apt autoremove -y && \
-    apt update && \
-    apt install -y nodejs
-
-# stagehand-server-v3 (Node.js SEA binary used by Browser component
-# in local mode).
-#
-# The `v3.21.0` value below is the `stagehand-go/v3` Go module
-# version pinned in `go.mod`. It is used here only to compute the
-# `go_<ver>/` subdirectory that `local.go:cacheDir()` will look in
-# for the binary at runtime — that subdirectory name is keyed by
-# the Go module's own `internal.PackageVersion`, NOT by the server
-# binary's release tag.
-#
-# The server binary itself is fetched separately by `download_deps.py`
-# from the browserbase/stagehand GitHub releases. The two are
-# LOOSELY MATCHED — both stay on the v3.x line and remain protocol-
-# compatible, but the version numbers do NOT track each other (Go
-# SDK is at v3.21.0, server binary is at v3.7.2 today). On every
-# go.mod bump, refresh the server binary pin in `download_deps.py`
-# to the current latest server release; no version correspondence
-# is required to maintain.
-#
-# Drift on the Go SDK pin (this ARG vs go.mod) forces a fresh
-# GitHub download at process boot — a hard failure in air-gapped
-# deployments. CI cross-checks the two values.
-#
-# The binary is pre-fetched by `download_deps.py` and shipped via
-# the ragflow_deps image, then written directly to the stagehand-go
-# cache path that `local.go:cacheDir()` constructs at runtime —
-# `/root/.cache/stagehand/lib/go_<ver>/stagehand-server-v3-<arch>`.
-ARG STAGEHAND_GO_VERSION=v3.21.0
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64) stagehand_arch=x64 ;; \
-        aarch64|arm64) stagehand_arch=arm64 ;; \
-        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac; \
-    stagehand_version="${STAGEHAND_GO_VERSION#v}"; \
-    stagehand_cache_dir="/root/.cache/stagehand/lib/go_${stagehand_version}"; \
-    mkdir -p "${stagehand_cache_dir}"; \
-    cp "/deps/stagehand-server-v3-linux-${stagehand_arch}" \
-       "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"; \
-    chmod +x "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"
-
-# Add msssql ODBC driver
-# macOS ARM64 environment, install msodbcsql18.
-# general x86_64 environment, install msodbcsql17.
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt update && \
-    arch="$(uname -m)"; \
-    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
-        # ARM64 (macOS/Apple Silicon or Linux aarch64) \
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
-    else \
-        # x86_64 or others \
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
-    fi || \
-    { echo "Failed to install ODBC driver"; exit 1; }
-
-
-
-# Add dependencies of selenium
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
-    unzip /chrome-linux64.zip && \
-    mv chrome-linux64 /opt/chrome && \
-    ln -s /opt/chrome/chrome /usr/local/bin/
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
-    unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \
-    mv chromedriver /usr/local/bin/ && \
-    rm -f /usr/bin/google-chrome
-
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    if [ "$(uname -m)" = "x86_64" ]; then \
-        dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
-    elif [ "$(uname -m)" = "aarch64" ]; then \
-        dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
-    fi
-
-
-# builder stage
-FROM base AS builder
-USER root
-
-WORKDIR /ragflow
-
-# Install build-only dependencies for compiling Python C extensions.
-# These are not inherited from base to keep the production image smaller.
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt-get update --fix-missing && \
-    apt-get install -y build-essential libpython3-dev libicu-dev libgbm-dev && \
-    rm -rf /var/lib/apt/lists/*
 
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
@@ -238,12 +48,14 @@ COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
 
+# Get version from git (mount .git directory to compute version dynamically)
 RUN --mount=type=bind,source=.git,target=/ragflow/.git \
-    version_info=$(git describe --tags --match=v* --first-parent --always) && \
+    version_info=$(git describe --tags --match=v* --first-parent --always); \
+    echo "RAGFlow version: $version_info"; \
     echo "$version_info" > /ragflow/VERSION
 
 # production stage
-FROM base AS production
+FROM infiniflow/ragflow-base:v2.1 AS production
 USER root
 
 WORKDIR /ragflow
@@ -254,6 +66,33 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
+# copy entrypoint.sh and entrypoint-pasar.sh
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY docker/entrypoint*.sh ./
+RUN chmod +x ./entrypoint*.sh
+
+
+ARG NGINX_VERSION=1.31.3-1~noble
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    mkdir -p /etc/apt/keyrings && \
+    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y nginx=${NGINX_VERSION} && \
+    apt-mark hold nginx
+
+
+# Copy nginx configuration for frontend serving
+# OpenResty installs to /usr/local/openresty/nginx/; create /etc/nginx/ symlink tree
+RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
+
+COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
+COPY docker/nginx/ragflow.conf.golang \
+     docker/nginx/ragflow.conf.python \
+     docker/nginx/ragflow.conf.hybrid \
+     /etc/nginx/conf.d/
+
+RUN rm -f /etc/nginx/sites-enabled/default
 
 COPY admin admin
 COPY api api
@@ -268,19 +107,13 @@ COPY memory memory
 COPY bin bin
 COPY tools/scripts tools/scripts
 
-COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint.sh ./
-RUN chmod +x ./entrypoint*.sh
-
-# Copy nginx configuration for frontend serving
-COPY docker/nginx/ragflow.conf.golang docker/nginx/ragflow.conf.python docker/nginx/ragflow.conf.hybrid docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
-RUN mv /etc/nginx/ragflow.conf.golang /etc/nginx/conf.d/ragflow.conf.golang && \
-    mv /etc/nginx/ragflow.conf.python /etc/nginx/conf.d/ragflow.conf.python && \
-    mv /etc/nginx/ragflow.conf.hybrid /etc/nginx/conf.d/ragflow.conf.hybrid && \
-    rm -f /etc/nginx/sites-enabled/default
-
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
+# Copy version info
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+
+# Set environment variables
+ENV HF_ENDPOINT=https://hf-mirror.com
+
 ENTRYPOINT ["./entrypoint.sh"]

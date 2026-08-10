@@ -121,6 +121,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	// unique within the tenant.
 	name = d.dedupeDatasetName(ctx, name, tenantID)
 
+	parserConfig = service.ApplyComponentScopedParserConfig(
+		parserConfig,
+		tenant.LLMID,
+	)
+
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
 		Name:         name,
@@ -328,8 +333,11 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 	})
 }
 
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
+	if id != "" && len(ids) > 0 {
+		return nil, 0, common.CodeDataError, fmt.Errorf("should not provide both 'id':%s and 'ids':%s", id, pythonStringListRepr(ids))
+	}
 	if id != "" {
 		normalizedID, err := normalizeDatasetID(id)
 		if err != nil {
@@ -380,6 +388,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		}
 	}
 	queryUserID := userID
+	var joinedTenantIDs []string
 	if len(tenantIDs) > 0 {
 		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 		if err != nil {
@@ -391,6 +400,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 				continue
 			}
 			allowedTenantIDs[joinedTenant.TenantID] = struct{}{}
+			joinedTenantIDs = append(joinedTenantIDs, joinedTenant.TenantID)
 		}
 		filteredTenantIDs := tenantIDs[:0]
 		queryUserID = ""
@@ -414,10 +424,33 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 				continue
 			}
 			tenantIDs = append(tenantIDs, joinedTenant.TenantID)
+			joinedTenantIDs = append(joinedTenantIDs, joinedTenant.TenantID)
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name)
+	// Mirror Python: ids are checked for accessibility against the joined
+	// tenants (not the owner-filtered tenant list) before filtering.
+	if len(ids) > 0 {
+		accessibleIDs, err := d.kbDAO.GetAccessibleIDs(ctx, dao.DB, joinedTenantIDs, userID, ids)
+		if err != nil {
+			return nil, 0, common.CodeServerError, errors.New("database operation failed")
+		}
+		accessible := make(map[string]struct{}, len(accessibleIDs))
+		for _, accessibleID := range accessibleIDs {
+			accessible[accessibleID] = struct{}{}
+		}
+		deniedIDs := make([]string, 0, len(ids))
+		for _, datasetID := range ids {
+			if _, ok := accessible[datasetID]; !ok {
+				deniedIDs = append(deniedIDs, datasetID)
+			}
+		}
+		if len(deniedIDs) > 0 {
+			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for datasets: '%s'", userID, strings.Join(deniedIDs, ", "))
+		}
+	}
+
+	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name, ids)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
 	}
@@ -456,7 +489,7 @@ func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID string) 
 		tenantIDs = append(tenantIDs, joinedTenant.TenantID)
 	}
 
-	owners, err := d.kbDAO.GetOwnerFilter(tenantIDs, userID)
+	owners, err := d.kbDAO.GetOwnerFilter(ctx, dao.DB, tenantIDs, userID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
@@ -493,6 +526,21 @@ func stringPtrIfNotEmpty(s string) *string {
 }
 
 // extractDocIDs returns the document IDs from a slice of documents.
+// datasetIndexTaskIDs returns the deduplicated set of dataset-level index task
+// ids recorded on the KB (graphrag/raptor/mindmap legacy task fields). It is
+// used by deleteDataset to clear residual entity.Task rows when a KB is deleted.
+// Kept here because it belongs to the dataset delete lifecycle, not the retired
+// RunIndex scheduling path.
+func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
+	taskIDs := make([]string, 0, 3)
+	for _, taskID := range []*string{kb.GraphragTaskID, kb.RaptorTaskID, kb.MindmapTaskID} {
+		if taskID != nil && *taskID != "" {
+			taskIDs = append(taskIDs, *taskID)
+		}
+	}
+	return common.Deduplicate(taskIDs)
+}
+
 func extractDocIDs(docs []entity.Document) []string {
 	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {

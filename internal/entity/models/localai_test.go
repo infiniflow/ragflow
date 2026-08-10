@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 )
 
 func newLocalAIForTest(baseURL string) *LocalAIModel {
@@ -23,130 +21,10 @@ func newLocalAIForTest(baseURL string) *LocalAIModel {
 	)
 }
 
-// withLocalAIIdleTimeout swaps the package-level idle timeout for the
-// duration of the test. Tests that exercise the stall watchdog use a
-// sub-second value so they finish quickly.
-func withLocalAIIdleTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	original := localAIStreamIdleTimeout
-	localAIStreamIdleTimeout = d
-	t.Cleanup(func() {
-		localAIStreamIdleTimeout = original
-	})
-}
-
 func TestLocalAIName(t *testing.T) {
 	l := newLocalAIForTest("http://unused")
 	if got := l.Name(); got != "LocalAI" {
 		t.Errorf("Name()=%q, want %q", got, "LocalAI")
-	}
-}
-
-func TestLocalAIStreamCancelsOnIdle(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	// The server emits one valid chunk and then stalls. Without the
-	// watchdog, scanner.Scan() would hang forever. With the watchdog
-	// at 200ms, it must return a clear "stream idle" error in well
-	// under a second.
-	withLocalAIIdleTimeout(t, 200*time.Millisecond)
-
-	// hold blocks the handler until the test closes it. Register
-	// close(hold) FIRST so it runs LAST (defers are LIFO) — wait,
-	// that's the opposite. We want close(hold) to run BEFORE
-	// srv.Close() so the handler can return. Use t.Cleanup, which
-	// runs in reverse-registration order: register srv.Close first
-	// so it runs last, then close(hold) so it runs first.
-	hold := make(chan struct{})
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"hi"}}]}`+"\n")
-			f.Flush()
-		}
-		// Hang until either the client disconnects (watchdog cancels
-		// the request, which causes r.Context() to fire) or the test
-		// teardown signals via `hold`.
-		select {
-		case <-hold:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(srv.Close)
-	t.Cleanup(func() { close(hold) })
-
-	l := newLocalAIForTest(srv.URL)
-	var got []string
-	var mu sync.Mutex
-	err := l.ChatStreamlyWithSender(ctx, "gpt-4",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil,
-		func(content *string, _ *string) error {
-			if content == nil || *content == "" {
-				return nil
-			}
-			mu.Lock()
-			got = append(got, *content)
-			mu.Unlock()
-			return nil
-		},
-	)
-
-	if err == nil {
-		t.Fatal("expected an idle-timeout error, got nil")
-	}
-	if !strings.Contains(err.Error(), "idle for more than") {
-		t.Errorf("expected idle-timeout error, got %v", err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(got) == 0 || got[0] != "hi" {
-		t.Errorf("expected first chunk before stall, got %v", got)
-	}
-}
-
-func TestLocalAIStreamCompletesWithoutTriggeringWatchdog(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	// Sanity check: a fast, complete stream should not trip the
-	// watchdog even with a moderately tight idle window.
-	withLocalAIIdleTimeout(t, 500*time.Millisecond)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		f, _ := w.(http.Flusher)
-		_, _ = io.WriteString(w,
-			`data: {"choices":[{"delta":{"content":"a"}}]}`+"\n"+
-				`data: {"choices":[{"delta":{"content":"b"}}]}`+"\n"+
-				`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`+"\n"+
-				`data: [DONE]`+"\n",
-		)
-		if f != nil {
-			f.Flush()
-		}
-	}))
-	defer srv.Close()
-
-	l := newLocalAIForTest(srv.URL)
-	var chunks []string
-	err := l.ChatStreamlyWithSender(ctx, "gpt-4",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil,
-		func(content *string, _ *string) error {
-			if content != nil && *content != "" && *content != "[DONE]" {
-				chunks = append(chunks, *content)
-			}
-			return nil
-		},
-	)
-	if err != nil {
-		t.Fatalf("stream: %v", err)
-	}
-	if strings.Join(chunks, "") != "ab" {
-		t.Errorf("chunks=%v want [a b]", chunks)
 	}
 }
 
@@ -335,54 +213,7 @@ func TestLocalAIEmbedEmptyInputShortCircuits(t *testing.T) {
 	}
 }
 
-// ---------- reasoning extraction (multi-field) ----------
-
-// Table-driven unit coverage of the helper. Mirrors the priority order
-// reasoning_content > reasoning > thinking declared in
-// localAIReasoningFields. New upstream field names can be added by
-// extending that slice without touching call sites.
-func TestExtractLocalAIReasoning(t *testing.T) {
-	cases := []struct {
-		name string
-		in   map[string]interface{}
-		want string
-	}{
-		{"empty map", map[string]interface{}{}, ""},
-		{"reasoning_content wins", map[string]interface{}{
-			"reasoning_content": "rc",
-			"reasoning":         "r",
-			"thinking":          "t",
-		}, "rc"},
-		{"reasoning when no reasoning_content", map[string]interface{}{
-			"reasoning": "r",
-			"thinking":  "t",
-		}, "r"},
-		{"thinking when only that is set", map[string]interface{}{
-			"thinking": "qwen3-thought",
-		}, "qwen3-thought"},
-		{"empty string treated as absent", map[string]interface{}{
-			"reasoning_content": "",
-			"reasoning":         "fallback",
-		}, "fallback"},
-		{"non-string ignored", map[string]interface{}{
-			"reasoning_content": 42,
-			"reasoning":         "fallback",
-		}, "fallback"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := extractLocalAIReasoning(tc.in)
-			if got != tc.want {
-				t.Errorf("got=%q want=%q", got, tc.want)
-			}
-		})
-	}
-}
-
-// Non-streaming chat against an upstream that puts the trace in
-// message.reasoning_content (kimi-k2.6, OpenAI o-series, DeepSeek-R1
-// when proxied through OpenAI-shim). The driver must surface it on
-// ChatResponse.ReasonContent.
+// ---------- reasoning content (message.reasoning_content) ----------
 func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -408,33 +239,6 @@ func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
 	}
 	if *resp.ReasonContent != "15% = 0.15; 0.15 * 80 = 12." {
 		t.Errorf("ReasonContent=%q", *resp.ReasonContent)
-	}
-}
-
-// Non-streaming chat that uses message.thinking (Qwen3 via Ollama-shim
-// inside LocalAI). The driver must surface it on ReasonContent too.
-func TestLocalAIChatExtractsThinking(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"choices":[{"message":{
-			"role":"assistant",
-			"content":"12",
-			"thinking":"Compute 15/100 * 80"
-		}}]}`)
-	}))
-	defer srv.Close()
-
-	l := newLocalAIForTest(srv.URL)
-	resp, err := l.ChatWithMessages(ctx, "qwen3-32b",
-		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{}, nil, nil,
-	)
-	if err != nil {
-		t.Fatalf("Chat: %v", err)
-	}
-	if *resp.ReasonContent != "Compute 15/100 * 80" {
-		t.Errorf("ReasonContent=%q want %q", *resp.ReasonContent, "Compute 15/100 * 80")
 	}
 }
 
@@ -512,46 +316,6 @@ func TestLocalAIStreamExtractsReasoningContentDelta(t *testing.T) {
 	}
 	if got := strings.Join(content, ""); got != "Answer." {
 		t.Errorf("content joined=%q", got)
-	}
-}
-
-// Streaming chat where the upstream uses delta.thinking (Qwen3 shape).
-// The same handler must work.
-func TestLocalAIStreamExtractsThinkingDelta(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w,
-			`data: {"choices":[{"index":0,"delta":{"thinking":"qwen-trace"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"final"},"finish_reason":"stop"}]}`+"\n"+
-				`data: [DONE]`+"\n",
-		)
-	}))
-	defer srv.Close()
-
-	l := newLocalAIForTest(srv.URL)
-	var got []string
-	err := l.ChatStreamlyWithSender(ctx, "qwen3-32b",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil,
-		func(c *string, r *string) error {
-			if r != nil && *r != "" {
-				got = append(got, "R:"+*r)
-			}
-			if c != nil && *c != "" && *c != "[DONE]" {
-				got = append(got, "C:"+*c)
-			}
-			return nil
-		},
-	)
-	if err != nil {
-		t.Fatalf("stream: %v", err)
-	}
-	want := []string{"R:qwen-trace", "C:final"}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Errorf("seq=%v want %v", got, want)
 	}
 }
 

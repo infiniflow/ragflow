@@ -1183,7 +1183,6 @@ class CompilationTemplateGroup(DataBaseModel):
 
     class Meta:
         db_table = "compilation_template_group"
-        indexes = ((("tenant_id", "name", "status"), True),)
 
 
 class Search(DataBaseModel):
@@ -1206,13 +1205,16 @@ class Search(DataBaseModel):
             "top_k": 1024,
             # chat settings
             "summary": False,
-            "chat_id": "",
-            # Leave it here for reference, don't need to set default values
+            "chat_id": "",  # id of chat model in tenant_model table
             "llm_setting": {
-                # "temperature": 0.1,
-                # "top_p": 0.3,
-                # "frequency_penalty": 0.7,
-                # "presence_penalty": 0.4,
+                "temperature": 0.1,
+                "top_p": 0.3,
+                "frequency_penalty": 0.7,
+                "presence_penalty": 0.4,
+                "temperature_enabled": True,
+                "top_p_enabled": True,
+                "frequency_penalty_enabled": True,
+                "presence_penalty_enabled": True,
             },
             "chat_settingcross_languages": [],
             "highlight": False,
@@ -1822,6 +1824,9 @@ def migrate_db():
         ("compilation_template", "compilationtemplate_tenant_id_name_is_builtin_status"),
         ("compilation_template", "compilation_template_tenant_id_name_is_builtin_status"),
         ("compilation_template", "idx_compilation_template_tenant_id_name_is_builtin_status"),
+        ("compilation_template_group", "compilationtemplategroup_tenant_id_name_status"),
+        ("compilation_template_group", "compilation_template_group_tenant_id_name_status"),
+        ("compilation_template_group", "idx_compilation_template_group_tenant_id_name_status"),
     ]
     for table_name, index_name in legacy_indexes:
         try:

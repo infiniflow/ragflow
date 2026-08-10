@@ -20,6 +20,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
@@ -85,13 +86,14 @@ const FloatingChatWidgetMarkdown = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
         if (!documentId) return;
-        if (!isPdf && documentUrl) {
-          window.open(documentUrl, '_blank');
+        if (fileExtension !== 'pdf' && documentUrl) {
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else if (clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
         }
@@ -214,7 +216,7 @@ const FloatingChatWidgetMarkdown = ({
                       onClick={handleDocumentButtonClick(
                         documentId,
                         chunkItem,
-                        fileExtension === 'pdf',
+                        fileExtension,
                         documentUrl,
                       )}
                       disabled={!documentUrl && fileExtension !== 'pdf'}
@@ -269,7 +271,7 @@ const FloatingChatWidgetMarkdown = ({
               onClick={handleDocumentButtonClick(
                 documentId,
                 chunkItem,
-                fileExtension === 'pdf',
+                fileExtension,
                 documentUrl,
               )}
             />
@@ -281,7 +283,14 @@ const FloatingChatWidgetMarkdown = ({
             <HoverCardTrigger asChild>
               <InfoCircleOutlined className={styles.referenceIcon} />
             </HoverCardTrigger>
-            <HoverCardContent>{getPopoverContent(chunkIndex)}</HoverCardContent>
+            <HoverCardPrimitive.Portal>
+              <HoverCardContent
+                collisionPadding={8}
+                className="max-h-[var(--radix-hover-card-content-available-height)]"
+              >
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            </HoverCardPrimitive.Portal>
           </HoverCard>
         );
       });

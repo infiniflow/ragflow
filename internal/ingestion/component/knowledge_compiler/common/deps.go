@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // DefaultLLMContextLength is the fallback chat-model context window (tokens)
@@ -104,10 +106,11 @@ type Deps struct {
 	Redis         RedisClient   // optional (datasetnav)
 	TenantID      string
 	DatasetID     string
-	// LLMMaxLength is the chat model's context window in tokens. RAPTOR uses it
-	// to truncate each cluster's texts so the summary prompt fits the window
-	// (mirrors Python self._llm_model.max_length).
-	LLMMaxLength int
+	// ModelContextLen is the chat model's context window in tokens
+	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
+	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
+	// quotas (mirrors Python self._llm_model.max_length).
+	ModelContextLen int
 }
 
 // DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.
@@ -151,7 +154,7 @@ func ResolveDeps(tenantID, llmID, embeddingModel string) (Deps, error) {
 // compilation_template_group_id but no GroupResolver is installed, the
 // component fails loudly instead of silently emitting rows that miss
 // compilation_template_ids (a data-loss path).
-type GroupResolver func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error)
+type GroupResolver func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error)
 
 var (
 	groupResolverMu sync.RWMutex
@@ -172,7 +175,7 @@ func SetGroupResolver(r GroupResolver) {
 // resolve. Returns an error if group ids are requested but no resolver is
 // installed, surfacing the misconfiguration instead of silently dropping the
 // compilation_template_ids stamp.
-func ResolveGroupTemplateIDs(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
+func ResolveGroupTemplateIDs(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
 	if len(groupIDs) == 0 {
 		return nil, nil
 	}
@@ -182,11 +185,11 @@ func ResolveGroupTemplateIDs(ctx context.Context, tenantID string, groupIDs []st
 	if r == nil {
 		return nil, fmt.Errorf("knowledge_compiler: compilation_template_group_id provided but no GroupResolver installed (production wiring must call common.SetGroupResolver)")
 	}
-	return r(ctx, tenantID, groupIDs)
+	return r(ctx, db, tenantID, groupIDs)
 }
 
 // TemplateResolver loads a single compilation template by id for the tenant.
-type TemplateResolver func(ctx context.Context, tenantID, templateID string) (TemplateInfo, error)
+type TemplateResolver func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (TemplateInfo, error)
 
 // TemplateInfo is a resolved compilation template: its id, the kind that
 // selects the Go compiler variant (see KindToVariant), and its config blob (the
@@ -216,12 +219,12 @@ func SetTemplateResolver(r TemplateResolver) {
 // ResolveTemplate loads a single compilation template by id via the installed
 // resolver. Returns an error when no resolver is installed (compilation_template_id
 // provided but unwired) rather than silently compiling with no template config.
-func ResolveTemplate(ctx context.Context, tenantID, templateID string) (TemplateInfo, error) {
+func ResolveTemplate(ctx context.Context, db *gorm.DB, tenantID, templateID string) (TemplateInfo, error) {
 	templateResolverMu.RLock()
 	r := templateResolver
 	templateResolverMu.RUnlock()
 	if r == nil {
 		return TemplateInfo{}, fmt.Errorf("knowledge_compiler: compilation_template_id provided but no TemplateResolver installed (production wiring must call common.SetTemplateResolver)")
 	}
-	return r(ctx, tenantID, templateID)
+	return r(ctx, db, tenantID, templateID)
 }

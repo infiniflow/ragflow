@@ -28,11 +28,27 @@ from rag.flow.parser.pdf_chunk_metadata import (
 )
 from rag.nlp import naive_merge
 
+# _TAG_RE matches parser-emitted coordinate tags of the form
+# ``@@<page>\t<left>\t<right>\t<top>\t<bottom>##``. Mirrors Go's
+# posTagRemove (internal/ingestion/component/chunker/group.go) so the two
+# languages strip tags identically.
+_TAG_RE = re.compile(r"@@[\t0-9.-]+?##")
+
+
+def remove_tag(text):
+    """Strip ``@@...##`` coordinate tags from text.
+
+    Used both when measuring the overlap prefix (so the cut lands on the
+    tag-free visible text, matching Go's computeOverlapPrefix) and on the
+    final chunk text (so coordinate tags never reach embedding/index).
+    """
+    return _TAG_RE.sub("", text or "")
+
 
 class TokenChunkerParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
-        self.delimiter_mode = "token_size"
+        self.delimiter_mode = "delimiter"
         self.chunk_token_size = 512
         self.delimiters = ["\n"]
         self.overlapped_percent = 0
@@ -41,7 +57,13 @@ class TokenChunkerParam(ProcessParamBase):
         self.image_context_size = 0
 
     def check(self):
-        self.check_valid_value(self.delimiter_mode, "Delimiter mode abnormal.", ["token_size", "delimiter", "one"])
+        # Backward-compat: "token_size" was removed but is behaviorally identical
+        # to "delimiter" at runtime (both route through the same code path), so
+        # accept and coerce it instead of rejecting legacy configs / pre-fix
+        # frontends. Only genuinely unknown values are rejected.
+        if self.delimiter_mode == "token_size":
+            self.delimiter_mode = "delimiter"
+        self.check_valid_value(self.delimiter_mode, "Delimiter mode abnormal.", ["delimiter", "one"])
         if self.delimiters is None:
             self.delimiters = []
         elif isinstance(self.delimiters, str):
@@ -77,7 +99,10 @@ def _compile_delimiter_pattern(delimiters):
 
 
 def _split_text_by_pattern(text, pattern):
-    # Split text by the compiled delimiter pattern and keep delimiter text in each chunk.
+    # Split text by the compiled delimiter pattern and discard delimiters.
+    # No atom-split is performed; empty segments between consecutive delimiters
+    # are dropped but whitespace-only segments are preserved (the delimiter is
+    # the boundary, not stripped away).
     if not pattern:
         return [text or ""]
 
@@ -85,11 +110,7 @@ def _split_text_by_pattern(text, pattern):
     chunks = []
     for i in range(0, len(split_texts), 2):
         chunk = split_texts[i]
-        if not chunk:
-            continue
-        if i + 1 < len(split_texts):
-            chunk += split_texts[i + 1]
-        if chunk.strip():
+        if chunk:
             chunks.append(chunk)
     return chunks
 
@@ -223,11 +244,27 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
 
         current = deepcopy(chunk)
         should_start_new = prev_text_idx < 0 or merged[prev_text_idx]["tk_nums"] > threshold
+        # #17799: an over-budget unit stands alone — never merged into the
+        # previous chunk. This matches Python naive_merge and the Go
+        # TokenChunker (all three paths stand the over-budget unit alone), so
+        # the Python JSON path, Python text path, and Go TokenChunker share one
+        # contract.
+        if current["tk_nums"] > chunk_token_size:
+            should_start_new = True
         if should_start_new:
             if prev_text_idx >= 0 and overlapped_percent > 0 and merged[prev_text_idx]["text"]:
-                overlapped = merged[prev_text_idx]["text"]
-                overlap_start = int(len(overlapped) * (100 - overlapped_percent) / 100.0)
-                current["text"] = overlapped[overlap_start:] + current["text"]
+                # Mirror Go computeOverlapPrefix: measure the overlap cut on the
+                # tag-free *visible* text, never on the raw text that still
+                # carries @@...## coordinate tags. This keeps the overlap prefix
+                # aligned with Go and prevents a partial tag from leaking into
+                # the next chunk when the cut would land inside a tag.
+                visible = remove_tag(merged[prev_text_idx]["text"])
+                overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
+                if 0 <= overlap_start < len(visible):
+                    overlap_text = visible[overlap_start:]
+                else:
+                    overlap_text = ""
+                current["text"] = overlap_text + current["text"]
                 current["tk_nums"] = num_tokens_from_string(current["text"])
             merged.append(current)
             prev_text_idx = len(merged) - 1
@@ -247,7 +284,11 @@ def _finalize_json_chunks(chunks):
     # Convert internal chunks into the final token chunker output format.
     docs = []
     for chunk in chunks:
-        text = (chunk.get("context_above") or "") + (chunk.get("text") or "") + (chunk.get("context_below") or "")
+        # Strip parser coordinate tags from the final text so they never
+        # reach embedding/index (coordinates already live in the structured
+        # PDF_POSITIONS_KEY field). Mirrors Go's removeTag at the chunker
+        # output boundary (token.go:544).
+        text = remove_tag((chunk.get("context_above") or "") + (chunk.get("text") or "") + (chunk.get("context_below") or ""))
         if not text.strip():
             continue
 
@@ -314,19 +355,20 @@ class TokenChunker(ProcessBase):
         if from_upstream.output_format in ["markdown", "text", "html"]:
             payload = getattr(from_upstream, f"{from_upstream.output_format}_result") or ""
             if self._param.delimiter_mode == "one":
-                self.set_output("chunks", [{"text": payload}] if payload.strip() else [])
+                # Strip parser coordinate tags so they never reach
+                # embedding/index (consistent with the JSON merge path).
+                self.set_output("chunks", [{"text": remove_tag(payload)}] if payload.strip() else [])
                 self.callback(1, "Done.")
                 return
-            cks = (
-                _split_text_by_pattern(payload, delimiter_pattern)
-                if delimiter_pattern
-                else naive_merge(
+            if delimiter_pattern:
+                cks = _split_text_by_pattern(payload, delimiter_pattern)
+            else:
+                cks = naive_merge(
                     payload,
                     self._param.chunk_token_size,
-                    "",
+                    "".join(self._param.delimiters),
                     overlapped_percent,
                 )
-            )
             if custom_pattern:
                 docs = []
                 for c in cks:
@@ -352,22 +394,108 @@ class TokenChunker(ProcessBase):
                 if not isinstance(text, str):
                     text = item.get("content_with_weight")
                 if isinstance(text, str) and text.strip():
-                    sections.append(text)
+                    # Strip parser coordinate tags so they never reach
+                    # embedding/index (consistent with the JSON merge path).
+                    sections.append(remove_tag(text))
             merged_text = "\n".join(sections)
             self.set_output("chunks", [{"text": merged_text}] if merged_text.strip() else [])
             self.callback(1, "Done.")
             return
-        # Structured JSON input is normalized first, then optionally enriched with
-        # media context, and finally merged only when delimiter splitting is inactive.
-        chunks = _build_json_chunks(json_result, delimiter_pattern)
-        _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
-        if not delimiter_pattern:
-            chunks = _merge_text_chunks_by_token_size(chunks, self._param.chunk_token_size, overlapped_percent)
 
-        if custom_pattern:
-            chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
+        # Both branches start from per-item chunks (no pre-split by the
+        # delimiter pattern). The delimiter branch splits the buffered text
+        # stream while preserving per-segment PDF positions; the no-delimiter
+        # branch merges adjacent text items to chunk_token_size (the removed
+        # "token_size" behaviour, and a parity match with the Go JSON path).
+        text_chunks = _build_json_chunks(json_result, "")
+
+        if delimiter_pattern:
+            chunks = []
+            text_buffer = []
+            text_buffer_pos = []
+
+            def flush_text_buffer():
+                if not text_buffer:
+                    return
+                # Join buffered text items with "\n" so adjacent item text is not
+                # glued together (e.g. "hello" + "world" must not become "helloworld").
+                # The delimiter is then applied to the combined text; a segment may
+                # span across item boundaries (the "\n" glue is not itself a
+                # delimiter), so each segment carries only the PDF positions of the
+                # item(s) that contributed to it -- never the union of every item
+                # (which previously leaked page-N coordinates into page-M chunks and
+                # made all segments share one preview image).
+                parts = []
+                item_ranges = []  # (start, end) of each buffered item in combined_text
+                offset = 0
+                for text in text_buffer:
+                    start = offset
+                    parts.append(text)
+                    offset += len(text)
+                    item_ranges.append((start, offset))
+                    parts.append("\n")
+                    offset += 1
+                combined_text = "".join(parts[:-1])  # drop the trailing glue
+
+                raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
+                segments = []  # (text, start, end) within combined_text
+                pos = 0
+                for i in range(0, len(raw), 2):
+                    seg = raw[i]
+                    seg_start = pos
+                    seg_end = pos + len(seg)
+                    if seg:
+                        segments.append((seg, seg_start, seg_end))
+                    pos = seg_end
+                    if i + 1 < len(raw):
+                        pos += len(raw[i + 1])
+
+                for text, seg_start, seg_end in segments:
+                    if not text.strip():
+                        continue
+                    seg_pos = []
+                    for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos, strict=True):
+                        # A segment overlaps an item when their character ranges
+                        # intersect; collect that item's coordinates.
+                        if seg_start < iend and istart < seg_end:
+                            seg_pos.extend(item_pos or [])
+                    chunks.append(
+                        {
+                            "text": text,
+                            "doc_type_kwd": "text",
+                            "ck_type": "text",
+                            PDF_POSITIONS_KEY: deepcopy(seg_pos),
+                            "tk_nums": num_tokens_from_string(text),
+                        }
+                    )
+                text_buffer.clear()
+                text_buffer_pos.clear()
+
+            for chunk in text_chunks:
+                if chunk["ck_type"] == "text":
+                    text_buffer.append(chunk["text"])
+                    text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
+                else:
+                    flush_text_buffer()
+                    chunks.append(chunk)
+            flush_text_buffer()
+            # Apply children_delimiters (secondary split) before finalizing.
+            if custom_pattern:
+                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
+            _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
+        else:
+            # No active delimiter: merge adjacent text items to chunk_token_size.
+            # This runs on the per-item chunks (NOT a single concatenated chunk),
+            # so the token cap is actually enforced -- matching the previous
+            # "token_size" mode and the Go JSON path. Media chunks break the merge.
+            # Media context is attached on the per-item chunks before merging, as
+            # the removed "token_size" branch did, to preserve context windows.
+            _attach_context_to_media_chunks(text_chunks, self._param.table_context_size, self._param.image_context_size)
+            chunks = _merge_text_chunks_by_token_size(text_chunks, self._param.chunk_token_size, overlapped_percent)
+            if custom_pattern:
+                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
 
         await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
-        cks = _finalize_json_chunks(chunks)
-        self.set_output("chunks", cks)
+        self.set_output("chunks", _finalize_json_chunks(chunks))
         self.callback(1, "Done.")
+        return

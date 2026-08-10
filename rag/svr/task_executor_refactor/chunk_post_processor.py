@@ -944,8 +944,6 @@ async def run_tree_templates(
                 raptor_config=raptor_config,
                 chat_mdl=chat_mdl_by_tid[template_id],
                 embd_mdl=embedding_model,
-                tree_builder="raptor",
-                clustering_method="ahc",
                 max_errors=3,
             )
         except Exception:
