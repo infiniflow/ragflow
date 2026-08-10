@@ -452,9 +452,12 @@ def list_datasets(tenant_id: str, args: dict):
         query_user_id = tenant_id
     if kb_ids:
         accessible_ids = KnowledgebaseService.get_accessible_ids([m["tenant_id"] for m in tenants], tenant_id, kb_ids)
-        if len(accessible_ids) != len(kb_ids):
-            denied_ids = [kb_id for kb_id in kb_ids if kb_id not in accessible_ids]
-            return False, f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(denied_ids)}'"""
+        denied_ids = [kb_id for kb_id in kb_ids if kb_id not in accessible_ids]
+        if denied_ids:
+            logging.warning("User '%s' lacks permission for datasets: '%s'", tenant_id, ", ".join(denied_ids))
+        kb_ids = [kb_id for kb_id in kb_ids if kb_id in accessible_ids]
+        if not kb_ids:
+            return True, {"data": [], "total": 0}
     kbs, total = KnowledgebaseService.get_list(tenant_ids, query_user_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id, kb_ids)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
