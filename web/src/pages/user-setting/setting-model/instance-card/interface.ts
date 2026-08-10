@@ -59,11 +59,12 @@ export interface ProviderInstanceCardRef {
    */
   getSavePayload: () => InstanceSavePayload | null;
   /**
-   * Update the card's dirty-tracking baseline to the current form
-   * values. Called by the parent after a successful save so the next
-   * `getSavePayload()` call short-circuits as a no-op.
+   * Update the card's dirty-tracking baseline to the exact request body
+   * acknowledged by the server. The form may have changed while the
+   * request was in flight, so callers must pass the sent snapshot rather
+   * than asking the card to rebuild it from live state.
    */
-  markSaved: () => void;
+  markSaved: (savedPayload: Readonly<Record<string, any>>) => void;
 }
 
 /** Payload returned by {@link ProviderInstanceCardRef.getSavePayload}. */
@@ -145,7 +146,7 @@ export interface SavedModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
-  handleInstanceModelsEdited: () => void;
+  handleInstanceModelsEdited: (modelInfo: IModelInfo[]) => void;
   providerName: string;
   /** Persisted instance name (from the backend). */
   instanceName: string;
@@ -174,7 +175,7 @@ export interface DraftModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
-  handleInstanceModelsEdited: () => void;
+  handleInstanceModelsEdited: (modelInfo: IModelInfo[]) => void;
   providerName: string;
   instanceName: string;
   instance: IProviderInstance;

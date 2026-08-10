@@ -63,8 +63,11 @@ import {
 } from '../provider-schema/field-config/utils';
 import {
   getBedrockCatalogCredentialScope,
+  getBedrockCatalogCredentialScopeFromPayload,
   getBedrockCatalogResetDecision,
   getBedrockModelListRequest,
+  replaceBedrockBaselineModels,
+  shouldAcknowledgeBedrockInstanceModels,
   shouldResetBedrockForm,
 } from './bedrock-instance-utils';
 import type {
@@ -109,6 +112,9 @@ export const BedrockInstanceCard = forwardRef<
   const [draftName, setDraftName] = useState('');
   const [selectedModelInfo, setSelectedModelInfo] = useState<IModelInfo[]>([]);
   const [catalogRevision, setCatalogRevision] = useState(0);
+  const baselinePayloadRef = useRef<string>('');
+  const baselineInitialValuesRef = useRef<BedrockFormValues | null>(null);
+  const persistedModelInfoRef = useRef<IModelInfo[]>([]);
 
   useEffect(() => {
     if (isDraft) {
@@ -369,8 +375,12 @@ export const BedrockInstanceCard = forwardRef<
   );
 
   // Build a Bedrock-shaped payload for both submit and verify flows.
-  const buildPayload = useCallback(
-    (values: BedrockFormValues, instanceName: string) => {
+  const buildPayloadWithModels = useCallback(
+    (
+      values: BedrockFormValues,
+      instanceName: string,
+      modelInfo: IModelInfo[],
+    ) => {
       const cleaned: Record<string, any> = { ...values };
       const fieldsByMode: Record<AuthMode, string[]> = {
         access_key_secret: ['bedrock_ak', 'bedrock_sk'],
@@ -411,12 +421,42 @@ export const BedrockInstanceCard = forwardRef<
         ...instancePayload,
         max_tokens: modelPayload.max_tokens,
         model_info:
-          values.auth_mode === 'bedrock_api_key'
-            ? selectedModelInfo
-            : [modelPayload],
+          values.auth_mode === 'bedrock_api_key' ? modelInfo : [modelPayload],
       } as IAddProviderInstanceRequestBody;
     },
-    [providerName, selectedModelInfo],
+    [providerName],
+  );
+
+  const buildPayload = useCallback(
+    (values: BedrockFormValues, instanceName: string) =>
+      buildPayloadWithModels(values, instanceName, selectedModelInfo),
+    [buildPayloadWithModels, selectedModelInfo],
+  );
+
+  const handleInstanceModelsChange = useCallback(
+    (modelInfo: IModelInfo[]) => {
+      setSelectedModelInfo(modelInfo);
+      if (
+        !shouldAcknowledgeBedrockInstanceModels(
+          form.getValues('auth_mode'),
+          isDraft,
+          catalogCredentialsDirty,
+        )
+      )
+        return;
+
+      persistedModelInfoRef.current = modelInfo;
+      if (!baselinePayloadRef.current) return;
+      try {
+        baselinePayloadRef.current = replaceBedrockBaselineModels(
+          baselinePayloadRef.current,
+          modelInfo,
+        );
+      } catch {
+        // A later instance-details seed will replace an invalid baseline.
+      }
+    },
+    [catalogCredentialsDirty, form, isDraft],
   );
 
   const { verifyProviderConnection } = useVerifyProviderConnection();
@@ -511,7 +551,6 @@ export const BedrockInstanceCard = forwardRef<
   // Baseline signature mirrors the persisted state so `getSavePayload`
   // can skip redundant saves. For drafts the baseline stays empty
   // (drafts are always dirty once a name is typed).
-  const baselinePayloadRef = useRef<string>('');
   const draftNameRef = useRef(draftName);
   useEffect(() => {
     draftNameRef.current = draftName;
@@ -520,11 +559,24 @@ export const BedrockInstanceCard = forwardRef<
   useEffect(() => {
     if (isDraft) {
       baselinePayloadRef.current = '';
+      baselineInitialValuesRef.current = null;
+      persistedModelInfoRef.current = [];
       return;
     }
     if (!instanceDetails && !instance.id) return;
-    const baselineValues = initialValues;
-    const baseline = buildPayload(baselineValues, instance.instance_name);
+    const previousValues = baselineInitialValuesRef.current;
+    if (
+      previousValues &&
+      !shouldResetBedrockForm(previousValues, initialValues)
+    ) {
+      return;
+    }
+    baselineInitialValuesRef.current = initialValues;
+    const baseline = buildPayloadWithModels(
+      initialValues,
+      instance.instance_name,
+      persistedModelInfoRef.current,
+    );
     const finalBaseline = {
       ...baseline,
       provider_name: providerName,
@@ -535,7 +587,7 @@ export const BedrockInstanceCard = forwardRef<
   }, [
     isDraft,
     initialValues,
-    buildPayload,
+    buildPayloadWithModels,
     instance.instance_name,
     instance.id,
     instanceDetails,
@@ -589,16 +641,22 @@ export const BedrockInstanceCard = forwardRef<
     providerName,
   ]);
 
-  const markSaved = useCallback(() => {
-    const result = getSavePayload();
-    if (result) {
-      baselinePayloadRef.current = JSON.stringify(result.payload);
-    }
-    persistedCatalogCredentialScopeRef.current =
-      catalogCredentialScopeRef.current;
-    setCatalogCredentialsDirty(false);
-    setCatalogRevision((revision) => revision + 1);
-  }, [getSavePayload]);
+  const markSaved = useCallback(
+    (savedPayload: Readonly<Record<string, any>>) => {
+      baselinePayloadRef.current = JSON.stringify(savedPayload);
+      persistedModelInfoRef.current = Array.isArray(savedPayload.model_info)
+        ? savedPayload.model_info
+        : [];
+
+      const savedScope =
+        getBedrockCatalogCredentialScopeFromPayload(savedPayload);
+      const liveScope = getBedrockCatalogCredentialScope(form.getValues());
+      persistedCatalogCredentialScopeRef.current = savedScope;
+      catalogCredentialScopeRef.current = liveScope;
+      setCatalogCredentialsDirty(!isDraft && liveScope !== savedScope);
+    },
+    [form, isDraft],
+  );
 
   const modelsSectionInstanceName = instance.instance_name || '__draft__';
 
@@ -927,7 +985,7 @@ export const BedrockInstanceCard = forwardRef<
               hideIfEmpty={false}
               getFormValues={getModelsSectionValues}
               verifyTransform={transformModelVerify}
-              onInstanceModelsChange={setSelectedModelInfo}
+              onInstanceModelsChange={handleInstanceModelsChange}
             />
           </div>
         </div>
@@ -991,7 +1049,7 @@ export const BedrockInstanceCard = forwardRef<
                   hideIfEmpty={false}
                   getFormValues={getModelsSectionValues}
                   verifyTransform={transformModelVerify}
-                  onInstanceModelsChange={setSelectedModelInfo}
+                  onInstanceModelsChange={handleInstanceModelsChange}
                 />
               </div>
             </div>

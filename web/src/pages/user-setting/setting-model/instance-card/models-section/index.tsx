@@ -179,7 +179,6 @@ export function ModelsSection(props: ModelsSectionProps) {
     draftModels,
     isDraftInstance: useLocalModels,
     onInstanceModelsChange,
-    onInstanceModelsEdited,
   });
 
   // 5. Search + tag filter.
@@ -285,6 +284,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     updateCatalogModel,
     clearCatalogOverride,
     updateDraftModel,
+    onInstanceModelsEdited,
   });
 
   // Add-custom-model dialog open state (local UI state).

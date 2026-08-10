@@ -255,7 +255,9 @@ export const useAddProviderInstance = () => {
             (i: IProviderInstance) => i.instance_name === params.instance_name,
           );
           if (instanceExists && !params.verify) {
-            return { code: 0, data: null };
+            // Preserve the legacy idempotent result while distinguishing it
+            // from an acknowledged write for batch-save callers.
+            return { code: 0, data: null, skippedExisting: true as const };
           }
         }
       } catch {
@@ -570,6 +572,30 @@ export const useUpdateProviderInstance = () => {
     mutationFn: async (params: IUpdateProviderInstanceRequestBody) => {
       const { data } = await llmService.updateProviderInstance(params);
       if (data.code === 0) {
+        if (Array.isArray(params.model_info)) {
+          queryClient.setQueryData<IInstanceModel[]>(
+            LlmKeys.instanceModels(params.provider_name, params.instance_name),
+            (previous) =>
+              params.model_info!.map((model) => {
+                const persisted = previous?.find(
+                  (item) => item.name === model.model_name,
+                );
+                return {
+                  ...persisted,
+                  name: model.model_name,
+                  max_tokens: model.max_tokens,
+                  model_type: Array.isArray(model.model_type)
+                    ? model.model_type
+                    : model.model_type
+                      ? [model.model_type]
+                      : [],
+                  status: persisted?.status ?? 'active',
+                  is_tools: Boolean(model.extra?.is_tools),
+                  extra: model.extra,
+                };
+              }),
+          );
+        }
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
           exact: true,

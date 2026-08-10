@@ -9,27 +9,50 @@
  */
 
 const mockListProviderModels = jest.fn();
+const mockPatchInstanceModel = jest.fn();
 jest.mock('@/hooks/use-llm-request', () => ({
+  LlmKeys: {
+    instanceModels: (providerName: string, instanceName: string) => [
+      'addedProviders',
+      providerName,
+      instanceName,
+      'models',
+    ],
+  },
   useListProviderModels: () => ({
     listProviderModels: mockListProviderModels,
+  }),
+  usePatchInstanceModel: () => ({
+    loading: false,
+    patchInstanceModel: async (...args: unknown[]) =>
+      (await mockPatchInstanceModel(...args)).data,
   }),
 }));
 jest.mock('@/services/llm-service', () => ({
   __esModule: true,
-  default: {},
+  default: {
+    patchInstanceModel: (...args: unknown[]) => mockPatchInstanceModel(...args),
+  },
 }));
 jest.mock('../available-models', () => ({
   sortModelTypes: (types: string[]) => types,
 }));
+jest.mock('../use-custom-model-fields', () => ({
+  useCustomModelFields: () => [],
+}));
 
 import { LLMFactory } from '@/constants/llm';
+import { LlmKeys } from '@/hooks/use-llm-request';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
+import { createElement } from 'react';
 import {
   areCatalogCredentialsReady,
   buildVerifyArgs,
   isCatalogBaseURLReady,
   useModelsCatalog,
   useModelsDerived,
+  useModelEdit,
 } from './hooks';
 
 describe('areCatalogCredentialsReady', () => {
@@ -280,5 +303,154 @@ describe('useModelsDerived', () => {
     expect(onInstanceModelsChange).toHaveBeenLastCalledWith([
       expect.objectContaining({ model_name: 'model-a' }),
     ]);
+  });
+});
+
+describe('useModelEdit acknowledgements', () => {
+  const createWrapper = (queryClient: any) =>
+    function Wrapper({ children }: any) {
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
+    };
+
+  beforeEach(() => {
+    mockPatchInstanceModel.mockReset();
+  });
+
+  it('updates the baseline callback only after PATCH succeeds', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(LlmKeys.instanceModels('OpenAI', 'instance'), [
+      {
+        name: 'model-a',
+        model_type: ['chat'],
+        max_tokens: 1024,
+        status: 'active',
+      },
+      {
+        name: 'model-b',
+        model_type: ['chat'],
+        max_tokens: 1024,
+        status: 'active',
+      },
+    ]);
+    let resolvePatch!: (value: unknown) => void;
+    mockPatchInstanceModel.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePatch = resolve;
+      }),
+    );
+    const onInstanceModelsEdited = jest.fn();
+    const { result } = renderHook(
+      () =>
+        useModelEdit({
+          providerName: 'OpenAI',
+          instanceName: 'instance',
+          addedSet: new Set(['model-a']),
+          updateCatalogModel: jest.fn(),
+          clearCatalogOverride: jest.fn(),
+          onInstanceModelsEdited,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model-a',
+        model_types: ['chat'],
+        max_tokens: 1024,
+        features: null,
+      });
+    });
+
+    let submitPromise!: Promise<void>;
+    act(() => {
+      submitPromise = result.current.handleEditSubmit({
+        name: 'model-a',
+        model_types: ['chat'],
+        max_tokens: 2048,
+        features: null,
+      });
+    });
+    expect(onInstanceModelsEdited).not.toHaveBeenCalled();
+
+    queryClient.setQueryData<any[]>(
+      LlmKeys.instanceModels('OpenAI', 'instance'),
+      (current) =>
+        current?.map((model) =>
+          model.name === 'model-b' ? { ...model, max_tokens: 4096 } : model,
+        ),
+    );
+
+    await act(async () => {
+      resolvePatch({ data: { code: 0 } });
+      await submitPromise;
+    });
+
+    expect(onInstanceModelsEdited).toHaveBeenCalledWith([
+      expect.objectContaining({
+        model_name: 'model-a',
+        max_tokens: 2048,
+      }),
+      expect.objectContaining({
+        model_name: 'model-b',
+        max_tokens: 4096,
+      }),
+    ]);
+  });
+
+  it('does not acknowledge a failed PATCH', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(LlmKeys.instanceModels('OpenAI', 'instance'), [
+      {
+        name: 'model-a',
+        model_type: ['chat'],
+        max_tokens: 1024,
+        status: 'active',
+      },
+    ]);
+    mockPatchInstanceModel.mockResolvedValue({ data: { code: 1 } });
+    const onInstanceModelsEdited = jest.fn();
+    const { result } = renderHook(
+      () =>
+        useModelEdit({
+          providerName: 'OpenAI',
+          instanceName: 'instance',
+          addedSet: new Set(['model-a']),
+          updateCatalogModel: jest.fn(),
+          clearCatalogOverride: jest.fn(),
+          onInstanceModelsEdited,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model-a',
+        model_types: ['chat'],
+        max_tokens: 1024,
+        features: null,
+      });
+    });
+
+    await act(async () => {
+      await result.current.handleEditSubmit({
+        name: 'model-a',
+        model_types: ['chat'],
+        max_tokens: 2048,
+        features: null,
+      });
+    });
+
+    expect(onInstanceModelsEdited).not.toHaveBeenCalled();
+    expect(
+      queryClient.getQueryData<any[]>(
+        LlmKeys.instanceModels('OpenAI', 'instance'),
+      )?.[0].max_tokens,
+    ).toBe(1024);
   });
 });

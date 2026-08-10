@@ -117,7 +117,7 @@ export interface ModelsSectionProps {
    * the host can suppress its next auto-save for an already-persisted
    * change.
    */
-  onInstanceModelsEdited?: () => void;
+  onInstanceModelsEdited?: (modelInfo: IModelInfo[]) => void;
 }
 
 export interface ModelTypeBadgesProps {
