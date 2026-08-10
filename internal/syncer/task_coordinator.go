@@ -57,7 +57,7 @@ func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncT
 		config.ItemRetryBaseDelay = time.Second
 	}
 	if executor == nil {
-		executor = NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1})
+		panic("task coordinator executor must not be nil")
 	}
 
 	return &TaskCoordinator{config: config, taskService: taskService, registry: registry, sink: sink, pruneService: pruneService, idResolver: idResolver, executor: executor}

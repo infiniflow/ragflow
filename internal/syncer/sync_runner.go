@@ -29,6 +29,8 @@ import (
 
 var errSyncTaskCanceled = errors.New("sync task canceled")
 
+const syncCancelCheckInterval = time.Second
+
 // SyncRunner executes one SYNC task by submitting source batches as BatchJobs.
 type SyncRunner struct {
 	config      TaskCoordinatorConfig
@@ -107,7 +109,12 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 	// run sync Job
 	var firstErr error
 	for _, resultChan := range resultChans {
-		jobResult := <-resultChan
+		var jobResult syncJobResult
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case jobResult = <-resultChan:
+		}
 		stats.Add(jobResult.stats)
 		if jobResult.err != nil && firstErr == nil {
 			firstErr = jobResult.err
@@ -142,9 +149,16 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext service.S
 	stats := service.SyncStats{}
 
 	var firstErr error
+	lastCancelCheck := time.Time{}
 	for _, sourceDocument := range documents {
-		if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil { // check if the task has been canceled
+		if err := ctx.Err(); err != nil {
 			return stats, err
+		}
+		if lastCancelCheck.IsZero() || time.Since(lastCancelCheck) >= syncCancelCheckInterval {
+			if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+				return stats, err
+			}
+			lastCancelCheck = time.Now()
 		}
 		result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
 		if err != nil {
@@ -162,7 +176,7 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext service.S
 func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= r.config.ItemRetryCount; attempt++ {
-		if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+		if err := ctx.Err(); err != nil {
 			return service.DocumentUpsertResult{}, err
 		}
 		result, err := r.processDocument(ctx, taskContext, sourceType, session, sourceDocument)

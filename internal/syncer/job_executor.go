@@ -213,6 +213,7 @@ func (e *SyncJobExecutor) dispatch() {
 		if pending == nil {
 			select {
 			case <-e.stop:
+				settleQueuedJobs(nil, tasks)
 				close(e.jobs)
 				return
 			case command := <-e.commands:
@@ -224,13 +225,36 @@ func (e *SyncJobExecutor) dispatch() {
 
 		select {
 		case <-e.stop:
-			pending.done <- syncJobResult{err: errSyncJobExecutorClosed}
+			settleQueuedJobs(pending, tasks)
 			close(e.jobs)
 			return
 		case command := <-e.commands:
 			order = applyExecutorCommand(command, tasks, order, &cursor)
 		case e.jobs <- pending:
 			pending = nil
+		}
+	}
+}
+
+func settleQueuedJobs(pending *syncJob, tasks map[string]*syncTaskState) {
+	if pending != nil {
+		pending.done <- syncJobResult{err: errSyncJobExecutorClosed}
+	}
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		settleTaskJobs(task)
+	}
+}
+
+func settleTaskJobs(task *syncTaskState) {
+	for {
+		select {
+		case job := <-task.jobs:
+			job.done <- syncJobResult{err: errSyncJobExecutorClosed}
+		default:
+			return
 		}
 	}
 }

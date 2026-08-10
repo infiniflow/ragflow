@@ -62,29 +62,12 @@ func NewNATSScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, tas
 	}
 }
 
-// Run starts the NATS listener, or falls back to DB polling when no broker is configured.
+// Run starts the NATS listener.
 func (s *Scheduler) Run(ctx context.Context) error {
-	// run with nats
 	if s.broker != nil {
 		return s.runNATS(ctx)
 	}
-
-	// TODO DB scan will be deleted soon
-	if err := s.scan(ctx); err != nil && ctx.Err() == nil {
-		common.Error("syncer scheduler scan failed", err)
-	}
-	ticker := time.NewTicker(s.pollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := s.scan(ctx); err != nil && ctx.Err() == nil {
-				common.Error("syncer scheduler scan failed", err)
-			}
-		}
-	}
+	return errors.New("syncer scheduler requires a NATS broker")
 }
 
 func (s *Scheduler) runNATS(ctx context.Context) error {
@@ -155,7 +138,7 @@ func waitNATSFetchCapacity(ctx context.Context) error {
 
 // enqueueHandles put task to `scheduler`'s task queue
 func (s *Scheduler) enqueueHandles(ctx context.Context, handles []common.TaskHandle) error {
-	for _, handle := range handles {
+	for index, handle := range handles {
 		message := handle.GetMessage()
 		if message.TaskID == "" {
 			_ = handle.Ack()
@@ -166,7 +149,9 @@ func (s *Scheduler) enqueueHandles(ctx context.Context, handles []common.TaskHan
 		select {
 		case <-ctx.Done():
 			stopHeartbeat()
-			_ = handle.Nack()
+			for _, pending := range handles[index:] {
+				_ = pending.Nack()
+			}
 			return ctx.Err()
 		case s.queue <- TaskEnvelope{TaskID: message.TaskID, Handle: handle, stopHeartbeat: stopHeartbeat}:
 		}
@@ -176,35 +161,6 @@ func (s *Scheduler) enqueueHandles(ctx context.Context, handles []common.TaskHan
 
 func (s *Scheduler) queueAvailable() int {
 	return cap(s.queue) - len(s.queue)
-}
-
-// scan claims due tasks and places their IDs on the bounded queue.
-func (s *Scheduler) scan(ctx context.Context) error {
-	now := time.Now()
-	if err := s.taskService.RecoverStaleRunning(ctx, now); err != nil {
-		return err
-	}
-	tasks, err := s.taskService.ListDueTasks(ctx, now)
-	if err != nil {
-		return err
-	}
-	var claimErr error
-	for _, task := range tasks {
-		claimed, err := s.taskService.Claim(ctx, task.ID)
-		if err != nil {
-			claimErr = errors.Join(claimErr, err)
-			continue
-		}
-		if !claimed {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case s.queue <- TaskEnvelope{TaskID: task.ID}:
-		}
-	}
-	return claimErr
 }
 
 // publishStartupTasks scan DB for first time run

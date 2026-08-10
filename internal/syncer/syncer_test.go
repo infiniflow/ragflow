@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 	connectormock "ragflow/internal/syncer/connector/mock"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -121,6 +122,7 @@ type fakeDeleter struct {
 }
 
 type fakeTaskHandle struct {
+	mu         sync.Mutex
 	msg        common.TaskMessage
 	acks       int
 	nacks      int
@@ -129,16 +131,28 @@ type fakeTaskHandle struct {
 
 func (h *fakeTaskHandle) GetMessage() common.TaskMessage { return h.msg }
 func (h *fakeTaskHandle) Ack() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.acks++
 	return nil
 }
 func (h *fakeTaskHandle) Nack() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.nacks++
 	return nil
 }
 func (h *fakeTaskHandle) InProgress() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.inProgress++
 	return nil
+}
+
+func (h *fakeTaskHandle) counts() (int, int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.acks, h.nacks
 }
 
 type fakeSyncTaskBroker struct {
@@ -244,6 +258,44 @@ func insertTaskContext(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, tas
 	}
 }
 
+func insertKnowledgebaseMapping(t *testing.T, db *gorm.DB, connectorID, kbID string) {
+	t.Helper()
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           kbID,
+		TenantID:     "tenant-1",
+		Name:         kbID,
+		EmbdID:       "embd",
+		CreatedBy:    "tenant-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: connectorID + kbID, ConnectorID: connectorID, KbID: kbID, AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("insert mapping: %v", err)
+	}
+}
+
+func insertSyncLog(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, taskType string) {
+	t.Helper()
+	now := time.Now().Add(-time.Hour).Truncate(time.Second)
+	ts := now.UnixMilli()
+	fromBeginning := "0"
+	if err := db.Create(&entity.SyncLogs{
+		ID:            taskID,
+		ConnectorID:   connectorID,
+		KbID:          kbID,
+		TaskType:      taskType,
+		Status:        dao.SyncStatusSchedule,
+		FromBeginning: &fromBeginning,
+		TimeStarted:   &now,
+		ErrorMsg:      "",
+		BaseModel:     entity.BaseModel{UpdateDate: &now, UpdateTime: &ts},
+	}).Error; err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+}
+
 // newTestRegistry creates a mock connector registry.
 func newTestRegistry(connectors map[string]*connectormock.Connector) *syncerconnector.Registry {
 	registry := syncerconnector.NewRegistry()
@@ -260,26 +312,52 @@ func newCoordinator(taskService *service.SyncTaskService, registry *syncerconnec
 	return NewTaskCoordinator(TaskCoordinatorConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor)
 }
 
-// TestSchedulerClaimsDueTasks verifies conditional task claiming.
-func TestSchedulerClaimsDueTasks(t *testing.T) {
+// TestClaimBlocksSameConnectorKBRunningTasks verifies DB-backed task mutual exclusion.
+func TestClaimBlocksSameConnectorKBRunningTasks(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	insertSyncLog(t, db, "conn-1", "kb-1", "task-2", dao.TaskTypePrune)
 	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
-	queue := make(chan TaskEnvelope, 1)
-	scheduler := NewScheduler(time.Hour, queue, taskService)
-	if err := scheduler.scan(t.Context()); err != nil {
-		t.Fatalf("scan: %v", err)
+	claimed, err := taskService.Claim(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("claim task-1: %v", err)
 	}
-	envelope := <-queue
-	if envelope.TaskID != "task-1" {
-		t.Fatalf("TaskID = %s, want task-1", envelope.TaskID)
+	if !claimed {
+		t.Fatalf("task-1 not claimed")
 	}
-	var task entity.SyncLogs
-	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
-		t.Fatalf("load task: %v", err)
+	claimed, err = taskService.Claim(t.Context(), "task-2")
+	if err != nil {
+		t.Fatalf("claim task-2: %v", err)
 	}
-	if task.Status != dao.SyncStatusRunning {
-		t.Fatalf("status = %s, want running", task.Status)
+	if claimed {
+		t.Fatalf("task-2 claimed while task-1 is running")
+	}
+}
+
+// TestClaimAllowsSameConnectorDifferentKB verifies connector work can run for different KBs.
+func TestClaimAllowsSameConnectorDifferentKB(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	insertKnowledgebaseMapping(t, db, "conn-1", "kb-2")
+	insertSyncLog(t, db, "conn-1", "kb-2", "task-2", dao.TaskTypeSync)
+	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	for _, taskID := range []string{"task-1", "task-2"} {
+		claimed, err := taskService.Claim(t.Context(), taskID)
+		if err != nil {
+			t.Fatalf("claim %s: %v", taskID, err)
+		}
+		if !claimed {
+			t.Fatalf("%s not claimed", taskID)
+		}
+	}
+}
+
+// TestSchedulerRequiresBroker verifies JetStream is mandatory for the scheduler.
+func TestSchedulerRequiresBroker(t *testing.T) {
+	scheduler := NewScheduler(time.Hour, make(chan TaskEnvelope, 1), service.NewSyncTaskService(dao.NewSyncTaskDAO(nil)))
+	err := scheduler.Run(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "NATS broker") {
+		t.Fatalf("Run error = %v, want missing broker", err)
 	}
 }
 
@@ -665,8 +743,11 @@ func TestSyncRunnerProcessesBatchJobsInParallel(t *testing.T) {
 	if err := coordinator.Execute(t.Context(), taskContext); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if sink.maxConcurrent < 2 {
-		t.Fatalf("max concurrent batches = %d, want >= 2", sink.maxConcurrent)
+	sink.mu.Lock()
+	maxConcurrent := sink.maxConcurrent
+	sink.mu.Unlock()
+	if maxConcurrent < 2 {
+		t.Fatalf("max concurrent batches = %d, want >= 2", maxConcurrent)
 	}
 }
 
@@ -781,6 +862,7 @@ func TestCancelStopsRunningSync(t *testing.T) {
 				if err := db.Model(&entity.Connector{}).Where("id = ?", input.TaskContext.Connector.ID).Update("status", dao.SyncStatusCancel).Error; err != nil {
 					t.Errorf("cancel connector: %v", err)
 				}
+				time.Sleep(syncCancelCheckInterval)
 			})
 		},
 	}
@@ -812,6 +894,43 @@ func TestCancelStopsRunningSync(t *testing.T) {
 	}
 	if connectorRow.Status != dao.SyncStatusCancel {
 		t.Fatalf("connector status = %s, want cancel", connectorRow.Status)
+	}
+}
+
+// TestSyncRunnerResultWaitHonorsCancel verifies Run does not block forever waiting for job results after cancellation.
+func TestSyncRunnerResultWaitHonorsCancel(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskContext, err := taskService.GetContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
+	queue := &SyncJobQueue{taskID: "task-1", jobs: make(chan *syncJob, 1)}
+	runner := NewSyncRunner(TaskCoordinatorConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskService, &fakeSink{}, service.NewDocumentIDResolver(fakeStore{}), queue)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- runner.Run(ctx, taskContext, connector)
+	}()
+
+	select {
+	case <-queue.jobs:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for submitted job")
+	}
+	cancel()
+
+	select {
+	case err = <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run error = %v, want context canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("Run did not return after cancellation")
 	}
 }
 

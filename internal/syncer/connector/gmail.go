@@ -704,10 +704,64 @@ func isGmailDisabled(err error) bool {
 
 // isGoogleForbiddenOrNotFound reports item-level Google visibility failures.
 func isGoogleForbiddenOrNotFound(err error) bool {
+	return isGooglePermissionDeniedOrNotFound(err)
+}
+
+func isGooglePermissionDeniedOrNotFound(err error) bool {
 	if httpErr, ok := err.(googleHTTPError); ok {
-		return httpErr.status == http.StatusForbidden || httpErr.status == http.StatusNotFound
+		if httpErr.status == http.StatusNotFound {
+			return true
+		}
+		return httpErr.status == http.StatusForbidden && !isGoogleRateLimited(err)
 	}
 	return false
+}
+
+func isGoogleRateLimited(err error) bool {
+	httpErr, ok := err.(googleHTTPError)
+	if !ok {
+		return false
+	}
+	if httpErr.status == http.StatusTooManyRequests {
+		return true
+	}
+	if httpErr.status != http.StatusForbidden {
+		return false
+	}
+	if strings.Contains(httpErr.body, "rateLimitExceeded") || strings.Contains(httpErr.body, "userRateLimitExceeded") || strings.Contains(httpErr.body, "quotaExceeded") {
+		return true
+	}
+	for _, reason := range googleErrorReasons(httpErr.body) {
+		switch reason {
+		case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded":
+			return true
+		}
+	}
+	return false
+}
+
+func googleErrorReasons(body string) []string {
+	var response struct {
+		Error struct {
+			Errors []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+			Status string `json:"status"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		return nil
+	}
+	reasons := make([]string, 0, len(response.Error.Errors)+1)
+	for _, item := range response.Error.Errors {
+		if item.Reason != "" {
+			reasons = append(reasons, item.Reason)
+		}
+	}
+	if response.Error.Status != "" {
+		reasons = append(reasons, response.Error.Status)
+	}
+	return reasons
 }
 
 type googleHTTPError struct {

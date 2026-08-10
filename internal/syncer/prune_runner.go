@@ -75,9 +75,6 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 	if err != nil {
 		return err
 	}
-	if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
-		return err
-	}
 	return r.taskService.CompletePrune(ctx, taskContext, removed)
 }
 

@@ -17,8 +17,12 @@
 package syncer
 
 import (
+	"context"
 	"fmt"
+	"ragflow/internal/engine/redis"
+	"ragflow/internal/utility"
 	"sync"
+	"time"
 )
 
 // ConnectorLocker serializes work for one connector and knowledge base.
@@ -27,37 +31,67 @@ type ConnectorLocker interface {
 	Unlock(connectorID, kbID string)
 }
 
-// ConnectorLock is a process-local connector/KB mutex registry.
+const connectorLockTTL = 24 * time.Hour
+
+// ConnectorLock serializes connector/KB work through Redis when available.
 type ConnectorLock struct {
+	holder string
 	mu     sync.Mutex
-	locked map[string]struct{}
+	local  map[string]struct{}
+	redis  map[string]*redis.DistributedLock
 }
 
-// NewConnectorLock creates an empty process-local connector/KB lock.
+// NewConnectorLock creates an empty connector/KB lock.
 func NewConnectorLock() *ConnectorLock {
-	return &ConnectorLock{locked: map[string]struct{}{}}
+	return &ConnectorLock{holder: utility.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*redis.DistributedLock{}}
 }
 
 // TryLock attempts to acquire the connector/KB lock without blocking.
 func (l *ConnectorLock) TryLock(connectorID, kbID string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	key := connectorLockKey(connectorID, kbID)
-	if _, ok := l.locked[key]; ok {
+	if l == nil {
 		return false
 	}
-	l.locked[key] = struct{}{}
+	key := connectorLockKey(connectorID, kbID)
+	l.mu.Lock()
+	if _, ok := l.local[key]; ok {
+		l.mu.Unlock()
+		return false
+	}
+	l.local[key] = struct{}{}
+	l.mu.Unlock()
+
+	if client := redis.Get(); client != nil {
+		lock := redis.NewDistributedLock(key, l.holder, connectorLockTTL, 0)
+		if lock == nil || !lock.Acquire(context.Background()) {
+			l.mu.Lock()
+			delete(l.local, key)
+			l.mu.Unlock()
+			return false
+		}
+		l.mu.Lock()
+		l.redis[key] = lock
+		l.mu.Unlock()
+		return true
+	}
 	return true
 }
 
 // Unlock releases the connector/KB lock.
 func (l *ConnectorLock) Unlock(connectorID, kbID string) {
+	if l == nil {
+		return
+	}
+	key := connectorLockKey(connectorID, kbID)
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.locked, connectorLockKey(connectorID, kbID))
+	lock := l.redis[key]
+	delete(l.redis, key)
+	delete(l.local, key)
+	l.mu.Unlock()
+	if lock != nil {
+		lock.Release(context.Background())
+	}
 }
 
 func connectorLockKey(connectorID, kbID string) string {
-	return fmt.Sprintf("%s/%s", connectorID, kbID)
+	return fmt.Sprintf("syncer:connector-lock:%s:%s", connectorID, kbID)
 }

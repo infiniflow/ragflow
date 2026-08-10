@@ -139,13 +139,43 @@ func (d *SyncTaskDAO) ListStartupTasks(ctx context.Context, limit int) ([]entity
 
 // ClaimTask conditionally marks a scheduled task as running.
 func (d *SyncTaskDAO) ClaimTask(ctx context.Context, taskID string, now time.Time) (bool, error) {
-	result := d.db.WithContext(ctx).Model(&entity.SyncLogs{}).
-		Where("id = ? AND status = ?", taskID, SyncStatusSchedule).
-		Updates(map[string]any{"status": SyncStatusRunning, "time_started": now})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
+	var claimed bool
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task entity.SyncLogs
+		query := tx.WithContext(ctx)
+		if tx.Dialector.Name() != "sqlite" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.Where("id = ?", taskID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if task.Status != SyncStatusSchedule {
+			return nil
+		}
+
+		var running int64
+		if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
+			Where("id <> ? AND connector_id = ? AND kb_id = ? AND status = ? AND task_type IN ?", taskID, task.ConnectorID, task.KbID, SyncStatusRunning, []string{TaskTypeSync, TaskTypePrune}).
+			Count(&running).Error; err != nil {
+			return err
+		}
+		if running > 0 {
+			return nil
+		}
+
+		result := tx.Model(&entity.SyncLogs{}).
+			Where("id = ? AND status = ?", taskID, SyncStatusSchedule).
+			Updates(map[string]any{"status": SyncStatusRunning, "time_started": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		claimed = result.RowsAffected == 1
+		return nil
+	})
+	return claimed, err
 }
 
 // GetTaskContext loads a task with connector, mapping, and knowledgebase rows.

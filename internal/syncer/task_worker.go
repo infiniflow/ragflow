@@ -95,6 +95,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		if failErr := w.taskService.Fail(ctx, envelope.TaskID, "", err); failErr != nil { // getContext failed
+			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), envelope.TaskID)
 			nackEnvelope(envelope)
 			return
 		}
@@ -123,6 +124,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		if failErr := w.taskService.Fail(ctx, taskContext.Task.ID, taskContext.Connector.ID, fmt.Errorf("sync task failed: %w", err)); failErr != nil {
+			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 			nackEnvelope(envelope)
 			return
 		}

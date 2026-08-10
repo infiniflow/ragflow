@@ -380,39 +380,26 @@ func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, t
 }
 
 func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) (string, error) {
-	var active entity.SyncLogs
+	var scheduled entity.SyncLogs
 	err := tx.WithContext(ctx).
-		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status IN ?", connectorID, kbID, taskType, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusSchedule)).
 		Order("update_time DESC").
-		First(&active).Error
+		First(&scheduled).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", err
 	}
 	if err == nil {
-		if active.Status == string(entity.TaskStatusSchedule) {
-			return active.ID, nil
-		}
-		return "", nil
+		return scheduled.ID, nil
 	}
 
-	var duplicate int64
+	var running int64
 	if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
-		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status IN ?", connectorID, kbID, taskType, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
-		Count(&duplicate).Error; err != nil {
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusRunning)).
+		Count(&running).Error; err != nil {
 		return "", err
 	}
-	if duplicate > 0 {
-		var scheduled entity.SyncLogs
-		if err := tx.WithContext(ctx).
-			Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusSchedule)).
-			Order("update_time DESC").
-			First(&scheduled).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return "", nil
-			}
-			return "", err
-		}
-		return scheduled.ID, nil
+	if running > 0 {
+		return "", nil
 	}
 
 	var pollRangeStart *time.Time

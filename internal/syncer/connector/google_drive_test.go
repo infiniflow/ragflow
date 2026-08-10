@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,53 @@ func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "https://drive.google.com/file/d/child-file" {
 		t.Fatalf("unexpected recursive documents: %+v", batch.Documents)
+	}
+}
+
+// TestGoogleDriveRateLimitRetries verifies rate limits do not truncate a scope.
+func TestGoogleDriveRateLimitRetries(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"batch_size":      10,
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+	calls := 0
+	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
+		calls++
+		if calls == 1 {
+			return googleDriveFilePage{}, googleHTTPError{
+				status: http.StatusForbidden,
+				body:   `{"error":{"errors":[{"reason":"rateLimitExceeded"}],"status":"RESOURCE_EXHAUSTED"}}`,
+			}
+		}
+		return googleDriveFilePage{Files: []googleDriveFile{{
+			ID:           "file-1",
+			Name:         "Plan.txt",
+			MimeType:     "text/plain",
+			ModifiedTime: "2026-01-03T00:00:00Z",
+			WebViewLink:  "https://drive.google.com/file/d/file-1/view",
+		}}}, nil
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("list calls = %d, want retry", calls)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(batch.Documents))
 	}
 }
 

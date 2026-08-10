@@ -41,9 +41,17 @@ const (
 
 // InitSyncerStream creates the datasource syncer task stream.
 func (n *NatsEngine) InitSyncerStream() error {
-	// do basic check
+	n.syncerMu.Lock()
+	defer n.syncerMu.Unlock()
+	return n.initSyncerStreamLocked()
+}
+
+func (n *NatsEngine) initSyncerStreamLocked() error {
 	if n.jetStream == nil {
 		return fmt.Errorf("syncer: jetStream not initialized")
+	}
+	if n.syncerStream != nil {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -73,10 +81,10 @@ func (n *NatsEngine) InitSyncerStream() error {
 
 // InitSyncerConsumer creates the durable pull consumer for syncer tasks.
 func (n *NatsEngine) InitSyncerConsumer() error {
-	if n.syncerStream == nil {
-		if err := n.InitSyncerStream(); err != nil {
-			return err
-		}
+	n.syncerMu.Lock()
+	defer n.syncerMu.Unlock()
+	if err := n.initSyncerStreamLocked(); err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -105,14 +113,8 @@ func (n *NatsEngine) InitSyncerConsumer() error {
 
 // PublishSyncerTask publishes one sync_logs task wake-up.
 func (n *NatsEngine) PublishSyncerTask(taskID string) error {
-	// check jetStream and syncerStream
-	if n.jetStream == nil {
-		return fmt.Errorf("syncer: jetStream not initialized")
-	}
-	if n.syncerStream == nil {
-		if err := n.InitSyncerStream(); err != nil {
-			return err
-		}
+	if err := n.InitSyncerStream(); err != nil {
+		return err
 	}
 
 	payload, err := json.Marshal(common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeSyncer})
@@ -129,11 +131,14 @@ func (n *NatsEngine) PublishSyncerTask(taskID string) error {
 
 // FetchSyncerTasks pulls syncer task messages from JetStream.
 func (n *NatsEngine) FetchSyncerTasks(batchSize int) ([]common.TaskHandle, error) {
-	if n.syncerConsumer == nil {
+	n.syncerMu.Lock()
+	consumer := n.syncerConsumer
+	n.syncerMu.Unlock()
+	if consumer == nil {
 		return nil, fmt.Errorf("syncer: consumer not initialized")
 	}
 	// fetch task from nats(jetStream)
-	messages, err := n.syncerConsumer.Fetch(batchSize, jetstream.FetchMaxWait(1*time.Second))
+	messages, err := consumer.Fetch(batchSize, jetstream.FetchMaxWait(1*time.Second))
 	if err != nil {
 		if errors.Is(err, nats.ErrTimeout) {
 			return nil, nil
@@ -144,6 +149,9 @@ func (n *NatsEngine) FetchSyncerTasks(batchSize int) ([]common.TaskHandle, error
 	handles := make([]common.TaskHandle, 0, batchSize)
 	for msg := range messages.Messages() {
 		handles = append(handles, NewNatsMessageHandle(msg))
+	}
+	if err = messages.Error(); err != nil {
+		return handles, err
 	}
 	return handles, nil
 }

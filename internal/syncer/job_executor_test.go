@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"context"
+	"errors"
 	"ragflow/internal/service"
 	"testing"
 	"time"
@@ -108,6 +109,66 @@ func TestSyncJobExecutorDispatchesRoundRobin(t *testing.T) {
 	}
 	if item := <-task1Result; item.err != nil || item.stats.Skipped != 1 {
 		t.Fatalf("second task-1 result = %+v", item)
+	}
+}
+
+// TestSyncJobExecutorCloseSettlesQueuedJobs verifies shutdown replies to jobs still in task queues.
+func TestSyncJobExecutorCloseSettlesQueuedJobs(t *testing.T) {
+	executor := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1, JobQueueSize: 1, PerTaskQueueSize: 4})
+	queue, err := executor.RegisterTask(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("register task: %v", err)
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	results := make([]<-chan syncJobResult, 0, 4)
+	first, err := queue.Submit(t.Context(), func(ctx context.Context) (service.SyncStats, error) {
+		close(started)
+		<-release
+		return service.SyncStats{Added: 1}, nil
+	})
+	if err != nil {
+		t.Fatalf("submit first: %v", err)
+	}
+	results = append(results, first)
+	<-started
+
+	for i := 0; i < 3; i++ {
+		result, err := queue.Submit(t.Context(), func(ctx context.Context) (service.SyncStats, error) {
+			return service.SyncStats{Updated: 1}, nil
+		})
+		if err != nil {
+			t.Fatalf("submit queued %d: %v", i, err)
+		}
+		results = append(results, result)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		executor.Close()
+		close(closed)
+	}()
+	close(release)
+
+	closedErrs := 0
+	for _, result := range results {
+		select {
+		case item := <-result:
+			if errors.Is(item.err, errSyncJobExecutorClosed) {
+				closedErrs++
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for shutdown result")
+		}
+	}
+	if closedErrs == 0 {
+		t.Fatalf("queued jobs were not settled with closed error")
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatalf("executor did not close")
 	}
 }
 

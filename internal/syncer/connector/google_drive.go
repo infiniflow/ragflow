@@ -42,6 +42,8 @@ const (
 	googleDriveItemsPerPage         = 100
 	googleDriveRequestTimeout       = 60 * time.Second
 	googleDriveOAuthTokenURL        = "https://oauth2.googleapis.com/token"
+	googleDriveListRetryCount       = 4
+	googleDriveListRetryBaseDelay   = 200 * time.Millisecond
 
 	googleDriveFolderMimeType   = "application/vnd.google-apps.folder"
 	googleDriveShortcutMimeType = "application/vnd.google-apps.shortcut"
@@ -340,6 +342,27 @@ func (c *GoogleDriveConnector) listFilePage(ctx context.Context, scope googleDri
 	return page, err
 }
 
+func (c *GoogleDriveConnector) listFilePageWithRetry(ctx context.Context, scope googleDriveScope, pageToken string, windowStart *time.Time, windowEnd time.Time) (googleDriveFilePage, error) {
+	var lastErr error
+	for attempt := 1; attempt <= googleDriveListRetryCount; attempt++ {
+		page, err := c.listFilePage(ctx, scope, pageToken, windowStart, windowEnd)
+		if err == nil {
+			return page, nil
+		}
+		lastErr = err
+		if !isGoogleRateLimited(err) || attempt == googleDriveListRetryCount {
+			break
+		}
+		delay := googleDriveListRetryBaseDelay * time.Duration(1<<(attempt-1))
+		select {
+		case <-ctx.Done():
+			return googleDriveFilePage{}, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return googleDriveFilePage{}, lastErr
+}
+
 func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, parentID string) ([]string, error) {
 	if c.listFolders != nil {
 		return c.listFolders(ctx, userEmail, parentID)
@@ -567,9 +590,9 @@ func (s *googleDriveSyncSession) NextBatch(ctx context.Context) (SyncBatch, erro
 
 func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocument, error) {
 	scope := s.scopes[s.scopeIndex]
-	page, err := s.connector.listFilePage(ctx, scope, s.pageToken, s.windowStart, s.windowEnd)
+	page, err := s.connector.listFilePageWithRetry(ctx, scope, s.pageToken, s.windowStart, s.windowEnd)
 	if err != nil {
-		if isGoogleForbiddenOrNotFound(err) {
+		if isGooglePermissionDeniedOrNotFound(err) {
 			s.advanceScope()
 			return nil, nil
 		}
@@ -601,7 +624,7 @@ func (s *googleDriveSyncSession) finishScope(ctx context.Context, scope googleDr
 	if scope.corpora == "folder" {
 		childIDs, err := s.connector.listFolderIDs(ctx, scope.userEmail, scope.folderID)
 		if err != nil {
-			if !isGoogleForbiddenOrNotFound(err) {
+			if !isGooglePermissionDeniedOrNotFound(err) {
 				return err
 			}
 		}
@@ -681,9 +704,9 @@ func (s *googleDrivePruneSession) NextBatch(ctx context.Context) (PruneBatch, er
 
 func (s *googleDrivePruneSession) nextSlimPage(ctx context.Context) ([]SlimDocument, error) {
 	scope := s.scopes[s.scopeIndex]
-	page, err := s.connector.listFilePage(ctx, scope, s.pageToken, nil, time.Time{})
+	page, err := s.connector.listFilePageWithRetry(ctx, scope, s.pageToken, nil, time.Time{})
 	if err != nil {
-		if isGoogleForbiddenOrNotFound(err) {
+		if isGooglePermissionDeniedOrNotFound(err) {
 			s.advanceScope()
 			return nil, nil
 		}
@@ -715,7 +738,7 @@ func (s *googleDrivePruneSession) finishScope(ctx context.Context, scope googleD
 	if scope.corpora == "folder" {
 		childIDs, err := s.connector.listFolderIDs(ctx, scope.userEmail, scope.folderID)
 		if err != nil {
-			if !isGoogleForbiddenOrNotFound(err) {
+			if !isGooglePermissionDeniedOrNotFound(err) {
 				return err
 			}
 		}
@@ -939,10 +962,15 @@ type googleDriveExport struct {
 	extension string
 }
 
+func googleDriveQuoteLiteral(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	return strings.ReplaceAll(value, `'`, `\'`)
+}
+
 func googleDriveFileQuery(scope googleDriveScope, windowStart *time.Time, windowEnd time.Time) string {
 	parts := []string{fmt.Sprintf("mimeType != '%s'", googleDriveFolderMimeType), "trashed = false"}
 	if scope.corpora == "folder" {
-		parts = append(parts, fmt.Sprintf("'%s' in parents", scope.folderID))
+		parts = append(parts, fmt.Sprintf("'%s' in parents", googleDriveQuoteLiteral(scope.folderID)))
 	}
 	if scope.corpora == "user" {
 		if scope.sharedWithMeOnly {

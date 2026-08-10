@@ -21,7 +21,7 @@ func (p *fakeSyncerTaskPublisher) PublishSyncerTask(taskID string) error {
 func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{}); err != nil {
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}); err != nil {
 		t.Fatalf("migrate connector tables: %v", err)
 	}
 
