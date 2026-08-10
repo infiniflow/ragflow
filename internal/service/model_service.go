@@ -158,12 +158,7 @@ type ModelProviderService struct {
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
 // for checking provider connectivity without creating a new model instance.
-type CheckConnectionModelInfo struct {
-	ModelName  string                 `json:"model_name"`
-	ModelTypes []string               `json:"model_type"`
-	MaxTokens  int                    `json:"max_tokens"`
-	Extra      map[string]interface{} `json:"extra"`
-}
+type CheckConnectionModelInfo = CreateInstanceModelInfo
 
 type CheckConnectionRequest struct {
 	// APIKey may be a JSON string or a JSON object (credential bundles such
@@ -1114,6 +1109,11 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	apiKey = strings.TrimSpace(apiKey)
 	region = strings.TrimSpace(region)
 	baseURL = strings.TrimSpace(baseURL)
+	var normalizeErr error
+	modelInfo, normalizeErr = normalizeCreateInstanceModelInfo(modelInfo)
+	if normalizeErr != nil {
+		return common.CodeDataError, normalizeErr
+	}
 
 	driver := providerInfo.ModelDriver
 	if strings.EqualFold(providerInfo.Class, "local") {

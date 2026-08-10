@@ -20,8 +20,8 @@ const mockUpdateProviderInstance = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockMessageError = jest.fn();
 const mockValidate = jest.fn();
-const mockGetSavePayload = jest.fn();
-let mockMutationCount = 0;
+const MockGetSavePayload = jest.fn();
+let MockMutationCount = 0;
 
 jest.mock('@/components/spotlight', () => () => null);
 jest.mock('@/components/ui/message', () => ({
@@ -30,6 +30,9 @@ jest.mock('@/components/ui/message', () => ({
 }));
 jest.mock('@/hooks/common-hooks', () => ({
   useTranslate: () => ({ t: (key: string) => key }),
+}));
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
 }));
 jest.mock('@/hooks/use-llm-request', () => ({
   LlmKeys: {
@@ -51,7 +54,7 @@ jest.mock('@/hooks/use-llm-request', () => ({
 }));
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
-  useIsMutating: () => mockMutationCount,
+  useIsMutating: () => MockMutationCount,
 }));
 jest.mock('./instance-card/provider-instance-card', () => {
   const React = jest.requireActual('react');
@@ -66,7 +69,7 @@ jest.mock('./instance-card/provider-instance-card', () => {
       }
       const instanceName = `draft-${draftNumberRef.current}`;
       React.useImperativeHandle(ref, () => ({
-        getSavePayload: () => mockGetSavePayload(instanceName),
+        getSavePayload: () => MockGetSavePayload(instanceName),
         validate: () => mockValidate(instanceName),
         markSaved: jest.fn(),
       }));
@@ -90,6 +93,8 @@ jest.mock('./layout/provider-header-bar', () => ({
 jest.mock('./layout/sidebar', () => ({
   Sidebar: ({ onSelect }: { onSelect: (value: string) => void }) => {
     const React = jest.requireActual('react');
+    const handleSelectOpenAI = () => onSelect('OpenAI');
+    const handleSelectAnthropic = () => onSelect('Anthropic');
     return React.createElement(
       React.Fragment,
       null,
@@ -97,7 +102,7 @@ jest.mock('./layout/sidebar', () => ({
         'button',
         {
           type: 'button',
-          onClick: () => onSelect('OpenAI'),
+          onClick: handleSelectOpenAI,
           'data-testid': 'select-provider',
         },
         'OpenAI',
@@ -106,7 +111,7 @@ jest.mock('./layout/sidebar', () => ({
         'button',
         {
           type: 'button',
-          onClick: () => onSelect('Anthropic'),
+          onClick: handleSelectAnthropic,
           'data-testid': 'select-other-provider',
         },
         'Anthropic',
@@ -136,16 +141,16 @@ describe('SettingModelV2 batch save', () => {
   });
 
   beforeEach(() => {
-    mockMutationCount = 0;
+    MockMutationCount = 0;
     mockDraftSequence = 0;
     mockAddProviderInstance.mockReset();
     mockUpdateProviderInstance.mockReset();
     mockInvalidateQueries.mockReset();
     mockMessageError.mockReset();
     mockValidate.mockReset();
-    mockGetSavePayload.mockReset();
+    MockGetSavePayload.mockReset();
     mockValidate.mockResolvedValue(true);
-    mockGetSavePayload.mockImplementation((instanceName: string) => ({
+    MockGetSavePayload.mockImplementation((instanceName: string) => ({
       payload: { llm_factory: 'OpenAI', instance_name: instanceName },
       instanceName,
       isDraft: true,
@@ -183,7 +188,7 @@ describe('SettingModelV2 batch save', () => {
   });
 
   it('validates an empty draft even though it has no save payload', async () => {
-    mockGetSavePayload.mockReturnValue(null);
+    MockGetSavePayload.mockReturnValue(null);
     mockValidate.mockResolvedValue(false);
 
     render(React.createElement(SettingModelV2));
@@ -196,7 +201,7 @@ describe('SettingModelV2 batch save', () => {
   });
 
   it('does not partially save valid drafts when another draft is empty', async () => {
-    mockGetSavePayload.mockImplementation((instanceName: string) =>
+    MockGetSavePayload.mockImplementation((instanceName: string) =>
       instanceName === 'draft-2'
         ? null
         : {
@@ -267,14 +272,14 @@ describe('SettingModelV2 batch save', () => {
   });
 
   it('does not capture a save payload while a model mutation is pending', async () => {
-    mockMutationCount = 1;
+    MockMutationCount = 1;
 
     render(React.createElement(SettingModelV2));
     fireEvent.click(screen.getByTestId('select-provider'));
     await waitFor(() => expect(screen.getByTestId('draft-card')).toBeVisible());
     fireEvent.click(screen.getByTestId('save-all'));
 
-    expect(mockGetSavePayload).not.toHaveBeenCalled();
+    expect(MockGetSavePayload).not.toHaveBeenCalled();
     expect(mockAddProviderInstance).not.toHaveBeenCalled();
   });
 });

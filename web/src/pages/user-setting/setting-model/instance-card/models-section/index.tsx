@@ -313,6 +313,18 @@ export function ModelsSection(props: ModelsSectionProps) {
     setEditingModel(model);
   };
 
+  const createToggleHandler = (modelName: string) => () => {
+    toggleModel(modelName);
+  };
+
+  const createVerifyHandler = (model: IProviderModelItem) => () => {
+    handleVerify(model);
+  };
+
+  const createRemoveHandler = (model: IProviderModelItem) => () => {
+    handleRemoveModel(model);
+  };
+
   const handleEditDialogOpenChange = (open: boolean) => {
     if (open || editDialogLoading) return;
     setCandidateAddName(null);
@@ -515,16 +527,16 @@ export function ModelsSection(props: ModelsSectionProps) {
                   }
                   onToggleSelect={
                     hasKnownModelTypes(model)
-                      ? () => toggleModel(model.name)
+                      ? createToggleHandler(model.name)
                       : undefined
                   }
                   onVerify={
                     hasKnownModelTypes(model)
-                      ? () => handleVerify(model)
+                      ? createVerifyHandler(model)
                       : undefined
                   }
                   onAdd={createAddHandler(model)}
-                  onRemove={() => handleRemoveModel(model)}
+                  onRemove={createRemoveHandler(model)}
                   onEdit={
                     addedSet.has(model.name) || hasKnownModelTypes(model)
                       ? createEditHandler(model)

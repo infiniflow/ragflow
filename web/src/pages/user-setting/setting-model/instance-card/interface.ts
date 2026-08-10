@@ -146,6 +146,7 @@ export interface SavedModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
+  handleInstanceModelsChange: (modelInfo: IModelInfo[]) => void;
   handleInstanceModelsEdited: (modelInfo: IModelInfo[]) => void;
   providerName: string;
   /** Persisted instance name (from the backend). */
@@ -160,7 +161,7 @@ export interface SavedModeCardProps {
   onRename: (name: string) => void;
   instance: IProviderInstance;
   instanceDetailsLoaded: boolean;
-  modelInfoRef: React.MutableRefObject<IModelInfo[]>;
+  modelInfoLoaded: boolean;
   draftName: string;
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -179,11 +180,11 @@ export interface DraftModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
+  handleInstanceModelsChange: (modelInfo: IModelInfo[]) => void;
   handleInstanceModelsEdited: (modelInfo: IModelInfo[]) => void;
   providerName: string;
   instanceName: string;
   instance: IProviderInstance;
-  modelInfoRef: React.MutableRefObject<IModelInfo[]>;
   draftName: string;
   setDraftName: (name: string) => void;
   /** Provider-specific transform forwarded to ModelsSection for per-model verify. */

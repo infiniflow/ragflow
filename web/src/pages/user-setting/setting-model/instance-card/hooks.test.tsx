@@ -139,11 +139,9 @@ describe('useInstanceSaveState acknowledgements', () => {
       }),
     );
 
-    const savedPayload = {
-      ...result.current.getSavePayload()!.payload,
-      api_key: 'persisted',
-      model_info: [model('model-a', 1024)],
-    };
+    const savedPayload = result.current.buildInstanceUpdatePayload([
+      model('model-a', 1024),
+    ])!;
     act(() => result.current.markSaved(savedPayload));
 
     values = { ...values, api_key: 'unsaved-credential' };
@@ -232,6 +230,58 @@ describe('useInstanceSaveState acknowledgements', () => {
     rerender({ initialValues: values });
 
     expect(result.current.getSavePayload()).toBeNull();
+  });
+
+  it('distinguishes an unloaded saved model list from an authoritative empty list', () => {
+    let values = { api_key: 'persisted', base_url: '', region: 'default' };
+    const formRef = {
+      current: { getValues: () => values },
+    } as any;
+    const modelInfoRef = { current: [] as ReturnType<typeof model>[] };
+
+    const { result, rerender } = renderHook(
+      ({ modelInfoLoaded }) =>
+        useInstanceSaveState({
+          formRef,
+          providerName: 'OpenAI',
+          instanceName: 'instance',
+          instanceId: 'instance-id',
+          isDraft: false,
+          draftName: '',
+          instanceDetails: { id: 'instance-id' } as any,
+          initialValues: {
+            api_key: 'persisted',
+            base_url: '',
+            region: 'default',
+          },
+          modelInfoRef,
+          modelInfoLoaded,
+        }),
+      { initialProps: { modelInfoLoaded: false } },
+    );
+
+    values = { ...values, api_key: 'edited-before-models-load' };
+    expect(result.current.getSavePayload()?.payload).not.toHaveProperty(
+      'model_info',
+    );
+    expect(
+      result.current.buildInstanceUpdatePayload([model('model-a', 2048)]),
+    ).toBeNull();
+
+    modelInfoRef.current = [model('model-a', 1024)];
+    values = { api_key: 'persisted', base_url: '', region: 'default' };
+    rerender({ modelInfoLoaded: true });
+    expect(result.current.getSavePayload()).toBeNull();
+
+    values = { ...values, api_key: 'edited-after-models-load' };
+    expect(result.current.getSavePayload()?.payload.model_info).toEqual([
+      model('model-a', 1024),
+    ]);
+
+    modelInfoRef.current = [];
+    act(() => result.current.markModelsEdited([]));
+    values = { ...values, api_key: 'edited-with-authoritative-empty-list' };
+    expect(result.current.getSavePayload()?.payload.model_info).toEqual([]);
   });
 
   it('uses a top-level submit transform for both baseline and live payloads', () => {

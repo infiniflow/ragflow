@@ -110,6 +110,18 @@ class _ModelPersistenceError(Exception):
         super().__init__(message)
 
 
+def _load_model_extra(model) -> dict:
+    if not model.extra:
+        return {}
+    try:
+        extra = json.loads(model.extra)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise _ModelPersistenceError(f"Invalid stored extra for model '{model.model_name}'") from error
+    if not isinstance(extra, dict):
+        raise _ModelPersistenceError(f"Invalid stored extra for model '{model.model_name}'")
+    return extra
+
+
 def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     if provider_name != "VLLM" or not base_url:
         return base_url
@@ -399,7 +411,7 @@ async def update_provider_instance(
     api_key: str | dict,
     base_url: str,
     region: str | None,
-    model_info: list[dict] = None,
+    model_info: list[dict] | None = None,
     verify: bool = True,
 ):
     """
@@ -519,18 +531,17 @@ async def update_provider_instance(
 
                     if model_name in existing_model_names:
                         # Update existing model
-                        update_dict = {}
+                        model_updates = {}
                         if isinstance(model.get("model_type"), (str, list)):
                             target_model_type = calculate_model_type(model["model_type"])
                             if target_model_type != existing_model_names[model_name].model_type:
-                                update_dict["model_type"] = target_model_type
-                        merged_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
-                        merged_extra.update(model["extra"])
+                                model_updates["model_type"] = target_model_type
+                        merged_extra = _load_model_extra(existing_model_names[model_name])
+                        merged_extra.update(model.get("extra") or {})
                         if "max_tokens" in model:
                             merged_extra.update({"max_tokens": model["max_tokens"]})
-                        update_dict["extra"] = json.dumps(merged_extra)
-                        if update_dict:
-                            TenantModelService.update_model(existing_model_names[model_name].id, update_dict)
+                        model_updates["extra"] = json.dumps(merged_extra)
+                        TenantModelService.update_model(existing_model_names[model_name].id, model_updates)
                     else:
                         # Add new model
                         success, msg = add_model_to_instance(tenant_id, provider_name, effective_instance_name, **model)
@@ -548,7 +559,7 @@ async def update_provider_instance(
                         target_model_type = calculate_model_type(_factory_model_types(llm))
                         if target_model_type != existing_model_names[llm_name].model_type:
                             update_dict["model_type"] = target_model_type
-                        db_extra = json.loads(existing_model_names[llm_name].extra) if existing_model_names[llm_name].extra else {}
+                        db_extra = _load_model_extra(existing_model_names[llm_name])
                         db_extra_fields = {
                             "max_tokens": llm["max_tokens"],
                             "is_tools": llm.get("is_tools", False),
@@ -1348,9 +1359,6 @@ def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
     llms = factory_info[0].get("llm", [])
-    if isinstance(model_type, str):
-        model_type = [model_type]
-
     model_type_bin = calculate_model_type(model_type)
     extra_fields = {"max_tokens": max_tokens}
     target_model = [llm for llm in llms if llm["llm_name"] == model_name]

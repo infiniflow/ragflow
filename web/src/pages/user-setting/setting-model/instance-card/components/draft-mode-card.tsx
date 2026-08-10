@@ -39,11 +39,11 @@ export function DraftModeCard({
   formRef,
   handleVerify,
   handleDelete,
+  handleInstanceModelsChange,
   handleInstanceModelsEdited,
   providerName,
   instanceName,
   instance,
-  modelInfoRef,
   draftName,
   setDraftName,
   verifyTransform,
@@ -98,9 +98,7 @@ export function DraftModeCard({
           hideIfEmpty={false}
           getFormValues={getModelsSectionValues}
           verifyTransform={verifyTransform}
-          onInstanceModelsChange={(info) => {
-            modelInfoRef.current = info;
-          }}
+          onInstanceModelsChange={handleInstanceModelsChange}
           onInstanceModelsEdited={handleInstanceModelsEdited}
         />
       </div>

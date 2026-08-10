@@ -29,6 +29,7 @@ import { IProviderInstance } from '@/interfaces/database/llm';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ProviderInstanceCardRef } from './instance-card/interface';
 import { ProviderInstanceCard } from './instance-card/provider-instance-card';
 import { ProviderHeaderBar } from './layout/provider-header-bar';
@@ -61,7 +62,9 @@ import SystemSetting from './layout/system-setting';
  */
 const SettingModelV2: FC = () => {
   const { t: tSetting } = useTranslate('setting');
-  const { t: tFlow } = useTranslate('flow');
+  const { t: tFlow } = useTranslation('translation', {
+    keyPrefix: 'flow',
+  });
   const [selection, setSelection] = useState<SidebarSelection>('default');
   // Stack of draft-instance identifiers, rendered as `ProviderInstanceCard`
   // entries below the persisted instances. Each draft can be cancelled
@@ -344,7 +347,7 @@ const SettingModelV2: FC = () => {
               )}
               {instances.map((instance, index) => (
                 <ProviderInstanceCard
-                  key={instance.instance_name}
+                  key={`${selection}:${instance.instance_name}`}
                   ref={setCardRef(instance.instance_name)}
                   providerName={selection as string}
                   instance={instance}

@@ -54,6 +54,7 @@ export function SavedModeCard({
   formRef,
   handleVerify,
   handleDelete,
+  handleInstanceModelsChange,
   handleInstanceModelsEdited,
   providerName,
   instanceName,
@@ -61,7 +62,7 @@ export function SavedModeCard({
   onRename,
   instance,
   instanceDetailsLoaded,
-  modelInfoRef,
+  modelInfoLoaded,
   draftName,
   open,
   setOpen,
@@ -216,11 +217,11 @@ export function SavedModeCard({
                 getFormValues={getModelsSectionValues}
                 verifyTransform={verifyTransform}
                 buildInstanceUpdatePayload={
-                  instanceDetailsLoaded ? buildInstanceUpdatePayload : undefined
+                  instanceDetailsLoaded && modelInfoLoaded
+                    ? buildInstanceUpdatePayload
+                    : undefined
                 }
-                onInstanceModelsChange={(info) => {
-                  modelInfoRef.current = info;
-                }}
+                onInstanceModelsChange={handleInstanceModelsChange}
                 onInstanceModelsEdited={handleInstanceModelsEdited}
               />
             </div>

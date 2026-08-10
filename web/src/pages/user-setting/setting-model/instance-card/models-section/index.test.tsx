@@ -8,13 +8,13 @@
  *      http://www.apache.org/licenses/LICENSE-2.0
  */
 
-const mockHandleVerify = jest.fn();
-const mockHandleAddModel = jest.fn();
-const mockHandleEditSubmit = jest.fn();
-const mockUpdateCatalogModel = jest.fn();
-let mockCanBatchToggle = false;
-let mockSubmittedModelTypes = ['chat'];
-let mockModels = [
+const MockHandleVerify = jest.fn();
+const MockHandleAddModel = jest.fn();
+const MockHandleEditSubmit = jest.fn();
+const MockUpdateCatalogModel = jest.fn();
+let MockCanBatchToggle = false;
+let MockSubmittedModelTypes = ['chat'];
+let MockModels = [
   {
     name: 'future-model',
     model_types: [] as string[],
@@ -71,6 +71,14 @@ jest.mock('../add-custom-model-dialog', () => ({
   }: any) => {
     if (!open) return null;
     const typeField = fields.find((field: any) => field.name === 'model_types');
+    const handleConfirm = () =>
+      onSubmit({
+        name: 'future-model',
+        model_types: MockSubmittedModelTypes,
+        max_tokens: 8192,
+        features: [],
+      });
+    const handleCancel = () => onOpenChange(false);
     return (
       <div data-testid="model-dialog">
         <span data-testid="model-types-required">
@@ -80,14 +88,7 @@ jest.mock('../add-custom-model-dialog', () => ({
           type="button"
           data-testid="confirm-model"
           disabled={loading}
-          onClick={() =>
-            onSubmit({
-              name: 'future-model',
-              model_types: mockSubmittedModelTypes,
-              max_tokens: 8192,
-              features: [],
-            })
-          }
+          onClick={handleConfirm}
         >
           confirm
         </button>
@@ -95,7 +96,7 @@ jest.mock('../add-custom-model-dialog', () => ({
           type="button"
           data-testid="cancel-model"
           disabled={loading}
-          onClick={() => onOpenChange(false)}
+          onClick={handleCancel}
         >
           cancel
         </button>
@@ -152,9 +153,9 @@ jest.mock('./hooks', () => {
       }),
     }),
     useModelsCatalog: () => ({
-      catalog: mockModels,
+      catalog: MockModels,
       setCatalog: jest.fn(),
-      updateCatalogModel: mockUpdateCatalogModel,
+      updateCatalogModel: MockUpdateCatalogModel,
       clearCatalogOverride: jest.fn(),
       manualListLoading: false,
       hasFetched: true,
@@ -162,7 +163,7 @@ jest.mock('./hooks', () => {
     }),
     useModelsDerived: () => ({
       instanceItems: [],
-      models: mockModels,
+      models: MockModels,
       addedSet: new Set<string>(),
     }),
     useModelsFilter: () => ({
@@ -170,19 +171,19 @@ jest.mock('./hooks', () => {
       tag: null,
       setSearch: jest.fn(),
       setTag: jest.fn(),
-      filteredModels: mockModels,
+      filteredModels: MockModels,
       allTags: [],
     }),
     useModelVerify: () => ({
       verify: {},
-      handleVerify: mockHandleVerify,
+      handleVerify: MockHandleVerify,
       batchVerifying: false,
       handleBatchVerify: jest.fn(),
     }),
     useModelMutations: () => ({
       allFilteredAdded: false,
-      canBatchToggle: mockCanBatchToggle,
-      handleAddModel: mockHandleAddModel,
+      canBatchToggle: MockCanBatchToggle,
+      handleAddModel: MockHandleAddModel,
       handleRemoveModel: jest.fn(),
       handleAddCustom: jest.fn(),
       handleBatchToggleModels: jest.fn(),
@@ -198,7 +199,7 @@ jest.mock('./hooks', () => {
           { name: 'model_types', type: 'multi-select', required: true },
         ],
         editDefaultValues: editingModel ?? undefined,
-        handleEditSubmit: mockHandleEditSubmit,
+        handleEditSubmit: MockHandleEditSubmit,
         editLoading: false,
         customModelDialogFields: [],
         providerFeatureKeys: [],
@@ -211,7 +212,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ModelsSection } from './index';
 
-const renderSection = () =>
+const RenderSection = () =>
   render(
     React.createElement(ModelsSection, {
       providerName: 'Bedrock',
@@ -237,9 +238,9 @@ describe('ModelsSection availability-only candidates', () => {
   });
 
   beforeEach(() => {
-    mockCanBatchToggle = false;
-    mockSubmittedModelTypes = ['chat'];
-    mockModels = [
+    MockCanBatchToggle = false;
+    MockSubmittedModelTypes = ['chat'];
+    MockModels = [
       {
         name: 'future-model',
         model_types: [],
@@ -247,16 +248,16 @@ describe('ModelsSection availability-only candidates', () => {
         features: [],
       },
     ];
-    mockHandleVerify.mockReset();
-    mockHandleVerify.mockResolvedValue(true);
-    mockHandleAddModel.mockReset();
-    mockHandleAddModel.mockResolvedValue(true);
-    mockHandleEditSubmit.mockReset();
-    mockUpdateCatalogModel.mockReset();
+    MockHandleVerify.mockReset();
+    MockHandleVerify.mockResolvedValue(true);
+    MockHandleAddModel.mockReset();
+    MockHandleAddModel.mockResolvedValue(true);
+    MockHandleEditSubmit.mockReset();
+    MockUpdateCatalogModel.mockReset();
   });
 
   it('requires a type and verifies the candidate before adding it once', async () => {
-    renderSection();
+    RenderSection();
 
     expect(screen.queryByTestId('verify-model')).not.toBeInTheDocument();
     expect(screen.queryByTestId('select-model')).not.toBeInTheDocument();
@@ -268,56 +269,56 @@ describe('ModelsSection availability-only candidates', () => {
     );
     fireEvent.click(screen.getByTestId('confirm-model'));
 
-    await waitFor(() => expect(mockHandleVerify).toHaveBeenCalledTimes(1));
-    expect(mockUpdateCatalogModel).not.toHaveBeenCalled();
-    expect(mockHandleAddModel).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(MockHandleVerify).toHaveBeenCalledTimes(1));
+    expect(MockUpdateCatalogModel).not.toHaveBeenCalled();
+    expect(MockHandleAddModel).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(screen.queryByTestId('model-dialog')).not.toBeInTheDocument(),
     );
   });
 
   it('keeps an unverified candidate unattached', async () => {
-    mockHandleVerify.mockResolvedValue(false);
-    renderSection();
+    MockHandleVerify.mockResolvedValue(false);
+    RenderSection();
 
     fireEvent.click(screen.getByTestId('add-model'));
     fireEvent.click(screen.getByTestId('confirm-model'));
 
-    await waitFor(() => expect(mockHandleVerify).toHaveBeenCalledTimes(1));
-    expect(mockUpdateCatalogModel).not.toHaveBeenCalled();
-    expect(mockHandleAddModel).not.toHaveBeenCalled();
+    await waitFor(() => expect(MockHandleVerify).toHaveBeenCalledTimes(1));
+    expect(MockUpdateCatalogModel).not.toHaveBeenCalled();
+    expect(MockHandleAddModel).not.toHaveBeenCalled();
     expect(screen.getByTestId('model-dialog')).toBeInTheDocument();
   });
 
   it('requires every selected capability to pass singleton verification', async () => {
-    mockSubmittedModelTypes = ['chat', 'embedding'];
-    mockHandleVerify.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-    renderSection();
+    MockSubmittedModelTypes = ['chat', 'embedding'];
+    MockHandleVerify.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    RenderSection();
 
     fireEvent.click(screen.getByTestId('add-model'));
     fireEvent.click(screen.getByTestId('confirm-model'));
 
-    await waitFor(() => expect(mockHandleVerify).toHaveBeenCalledTimes(2));
-    expect(mockHandleVerify).toHaveBeenNthCalledWith(
+    await waitFor(() => expect(MockHandleVerify).toHaveBeenCalledTimes(2));
+    expect(MockHandleVerify).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ model_types: ['chat'] }),
     );
-    expect(mockHandleVerify).toHaveBeenNthCalledWith(
+    expect(MockHandleVerify).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ model_types: ['embedding'] }),
     );
-    expect(mockHandleAddModel).not.toHaveBeenCalled();
+    expect(MockHandleAddModel).not.toHaveBeenCalled();
     expect(screen.getByTestId('model-dialog')).toBeInTheDocument();
   });
 
   it('locks the dialog while verification and add are pending', async () => {
     let resolveVerify!: (value: boolean) => void;
-    mockHandleVerify.mockReturnValue(
+    MockHandleVerify.mockReturnValue(
       new Promise<boolean>((resolve) => {
         resolveVerify = resolve;
       }),
     );
-    renderSection();
+    RenderSection();
 
     fireEvent.click(screen.getByTestId('add-model'));
     fireEvent.click(screen.getByTestId('confirm-model'));
@@ -327,35 +328,35 @@ describe('ModelsSection availability-only candidates', () => {
     );
     fireEvent.click(screen.getByTestId('confirm-model'));
     fireEvent.click(screen.getByTestId('cancel-model'));
-    expect(mockHandleVerify).toHaveBeenCalledTimes(1);
+    expect(MockHandleVerify).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('model-dialog')).toBeInTheDocument();
 
     resolveVerify(true);
-    await waitFor(() => expect(mockHandleAddModel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(MockHandleAddModel).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(screen.queryByTestId('model-dialog')).not.toBeInTheDocument(),
     );
   });
 
   it('keeps the candidate dialog open when persistence is not acknowledged', async () => {
-    mockHandleAddModel.mockResolvedValue(false);
-    renderSection();
+    MockHandleAddModel.mockResolvedValue(false);
+    RenderSection();
 
     fireEvent.click(screen.getByTestId('add-model'));
     fireEvent.click(screen.getByTestId('confirm-model'));
 
-    await waitFor(() => expect(mockHandleAddModel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(MockHandleAddModel).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('model-dialog')).toBeInTheDocument();
   });
 
   it('cancels candidate configuration without adding it', () => {
-    renderSection();
+    RenderSection();
 
     fireEvent.click(screen.getByTestId('add-model'));
     fireEvent.click(screen.getByTestId('cancel-model'));
 
-    expect(mockHandleVerify).not.toHaveBeenCalled();
-    expect(mockHandleAddModel).not.toHaveBeenCalled();
+    expect(MockHandleVerify).not.toHaveBeenCalled();
+    expect(MockHandleAddModel).not.toHaveBeenCalled();
     expect(screen.queryByTestId('model-dialog')).not.toBeInTheDocument();
   });
 });

@@ -430,6 +430,8 @@ interface UseInstanceSaveStateArgs {
   instanceDetails: IProviderInstance | undefined;
   initialValues: Record<string, any>;
   modelInfoRef: { current: IModelInfo[] };
+  /** Whether the saved instance's model query has produced an authoritative snapshot. */
+  modelInfoLoaded?: boolean;
   /**
    * Optional provider-specific transform that maps form values to the
    * submit API body (e.g. OpenDataLoader's nested
@@ -472,6 +474,7 @@ export function useInstanceSaveState({
   instanceDetails,
   initialValues,
   modelInfoRef,
+  modelInfoLoaded = true,
   submitTransform,
   baseUrlRegionMaps,
 }: UseInstanceSaveStateArgs) {
@@ -494,16 +497,20 @@ export function useInstanceSaveState({
   const buildPayloadFromValues = useCallback(
     (
       values: Record<string, any>,
-      modelInfo: IModelInfo[],
+      modelInfo: IModelInfo[] | undefined,
       targetInstanceName: string,
     ): Record<string, any> | null => {
       const region =
         resolveRegionFromValues(values, baseUrlRegionMaps) ?? values.region;
       if (submitTransform) {
-        const transformed = submitTransform({
-          ...values,
-          model_info: modelInfo,
-        }) as Record<string, any>;
+        const transformed = submitTransform(
+          modelInfo === undefined
+            ? values
+            : { ...values, model_info: modelInfo },
+        ) as Record<string, any>;
+        if (modelInfo === undefined) {
+          delete transformed.model_info;
+        }
         if (isDraft) {
           if (!targetInstanceName) return null;
           return {
@@ -511,7 +518,7 @@ export function useInstanceSaveState({
             llm_factory: providerName,
             instance_name: targetInstanceName,
             region,
-            model_info: modelInfo,
+            ...(modelInfo === undefined ? {} : { model_info: modelInfo }),
           };
         }
         return {
@@ -521,7 +528,7 @@ export function useInstanceSaveState({
           id: instanceDetails?.id || instanceId,
           base_url: transformed.base_url ?? '',
           region: region || 'default',
-          model_info: modelInfo,
+          ...(modelInfo === undefined ? {} : { model_info: modelInfo }),
           verify: false,
         };
       }
@@ -535,7 +542,7 @@ export function useInstanceSaveState({
           base_url: values.base_url,
           region,
         };
-        if (modelInfo.length > 0) {
+        if (modelInfo && modelInfo.length > 0) {
           payload.model_info = modelInfo;
         }
         return payload;
@@ -548,7 +555,7 @@ export function useInstanceSaveState({
         api_key: buildApiKeyValue(values) ?? '',
         base_url: values.base_url,
         region: region || 'default',
-        model_info: modelInfo,
+        ...(modelInfo === undefined ? {} : { model_info: modelInfo }),
         verify: false,
       };
     },
@@ -575,24 +582,30 @@ export function useInstanceSaveState({
       any
     >;
     const modelInfo =
-      modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
+      isDraft || modelInfoLoaded ? modelInfoRef.current : undefined;
 
     const targetInstanceName = isDraft
       ? draftNameRef.current.trim()
       : editedNameRef.current;
     return buildPayloadFromValues(values, modelInfo, targetInstanceName);
-  }, [buildPayloadFromValues, formRef, isDraft, modelInfoRef]);
+  }, [buildPayloadFromValues, formRef, isDraft, modelInfoLoaded, modelInfoRef]);
 
   const buildInstanceUpdatePayload = useCallback(
     (modelInfo: IModelInfo[]): Record<string, any> | null => {
-      if (isDraft || !instanceDetails) return null;
+      if (isDraft || !instanceDetails || !modelInfoLoaded) return null;
       const values = (formRef.current?.getValues?.() ?? {}) as Record<
         string,
         any
       >;
       return buildPayloadFromValues(values, modelInfo, editedNameRef.current);
     },
-    [buildPayloadFromValues, formRef, instanceDetails, isDraft],
+    [
+      buildPayloadFromValues,
+      formRef,
+      instanceDetails,
+      isDraft,
+      modelInfoLoaded,
+    ],
   );
 
   // Seed the "last saved" baseline once instance details (or the
@@ -606,11 +619,11 @@ export function useInstanceSaveState({
       baselineSeedSignatureRef.current = '';
       return;
     }
-    if (!instanceDetails) return;
+    if (!instanceDetails || !modelInfoLoaded) return;
     const seedSignature = JSON.stringify({ instanceDetails, initialValues });
     if (seedSignature === baselineSeedSignatureRef.current) return;
     baselineSeedSignatureRef.current = seedSignature;
-    let persistedModelInfo: IModelInfo[] = [];
+    let persistedModelInfo: IModelInfo[] = modelInfoRef.current;
     try {
       const currentBaseline = JSON.parse(
         baselinePayloadRef.current || '{}',
@@ -634,6 +647,8 @@ export function useInstanceSaveState({
     instanceName,
     instanceDetails,
     initialValues,
+    modelInfoLoaded,
+    modelInfoRef,
     buildPayloadFromValues,
   ]);
 

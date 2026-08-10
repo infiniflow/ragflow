@@ -446,8 +446,9 @@ export function useModelsDerived({
   // are emitted by the mutation acknowledgement path below; a derived
   // cache shape alone cannot prove that a PATCH succeeded.
   useEffect(() => {
+    if (!isDraftInstance && instanceModels === undefined) return;
     onChangeRef.current?.(buildModelInfo(instanceItems));
-  }, [instanceItems]);
+  }, [instanceItems, instanceModels, isDraftInstance]);
 
   return { instanceItems, models, addedSet };
 }

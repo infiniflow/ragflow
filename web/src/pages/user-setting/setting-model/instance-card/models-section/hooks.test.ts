@@ -10,9 +10,9 @@
 
 const mockListProviderModels = jest.fn();
 const mockPatchInstanceModel = jest.fn();
-const mockAddInstanceModel = jest.fn();
-const mockDeleteInstanceModels = jest.fn();
-const mockUpdateProviderInstance = jest.fn();
+const MockAddInstanceModel = jest.fn();
+const MockDeleteInstanceModels = jest.fn();
+const MockUpdateProviderInstance = jest.fn();
 jest.mock('@/hooks/use-llm-request', () => ({
   LlmKeys: {
     instanceModels: (providerName: string, instanceName: string) => [
@@ -31,14 +31,14 @@ jest.mock('@/hooks/use-llm-request', () => ({
       (await mockPatchInstanceModel(...args)).data,
   }),
   useAddInstanceModel: () => ({
-    addInstanceModel: mockAddInstanceModel,
+    addInstanceModel: MockAddInstanceModel,
   }),
   useDeleteInstanceModels: () => ({
-    deleteInstanceModels: mockDeleteInstanceModels,
+    deleteInstanceModels: MockDeleteInstanceModels,
   }),
   useUpdateProviderInstance: () => ({
     loading: false,
-    updateProviderInstance: mockUpdateProviderInstance,
+    updateProviderInstance: MockUpdateProviderInstance,
   }),
 }));
 jest.mock('@/services/llm-service', () => ({
@@ -154,7 +154,7 @@ describe('useModelMutations', () => {
       model_info: modelInfo,
       verify: false,
     }));
-    mockUpdateProviderInstance.mockResolvedValue({ code: 0 });
+    MockUpdateProviderInstance.mockResolvedValue({ code: 0 });
     const model = {
       name: 'ernie',
       model_types: ['chat'],
@@ -182,7 +182,7 @@ describe('useModelMutations', () => {
     expect(buildInstanceUpdatePayload).toHaveBeenCalledWith([
       expect.objectContaining({ model_name: 'ernie', model_type: ['chat'] }),
     ]);
-    expect(mockUpdateProviderInstance).toHaveBeenCalledWith(
+    expect(MockUpdateProviderInstance).toHaveBeenCalledWith(
       expect.objectContaining({
         api_key: { yiyan_ak: 'ak', yiyan_sk: 'sk' },
       }),
@@ -195,7 +195,7 @@ describe('useModelMutations', () => {
 
   it('keeps catalog overrides when a batch update is rejected', async () => {
     const clearCatalogOverride = jest.fn();
-    mockUpdateProviderInstance.mockResolvedValue({ code: 1 });
+    MockUpdateProviderInstance.mockResolvedValue({ code: 1 });
     const model = {
       name: 'model-a',
       model_types: ['chat'],
@@ -479,6 +479,25 @@ describe('useModelsCatalog', () => {
 });
 
 describe('useModelsDerived', () => {
+  it('does not publish a saved empty list before the instance query resolves', () => {
+    const onInstanceModelsChange = jest.fn();
+    const { rerender } = renderHook(
+      ({ instanceModels }) =>
+        useModelsDerived({
+          catalog: [],
+          instanceModels,
+          draftModels: [],
+          isDraftInstance: false,
+          onInstanceModelsChange,
+        }),
+      { initialProps: { instanceModels: undefined as any[] | undefined } },
+    );
+
+    expect(onInstanceModelsChange).not.toHaveBeenCalled();
+    rerender({ instanceModels: [] });
+    expect(onInstanceModelsChange).toHaveBeenCalledWith([]);
+  });
+
   it('keeps a draft selection instead of selecting the full catalog', () => {
     const onInstanceModelsChange = jest.fn();
     const persistedModels = [

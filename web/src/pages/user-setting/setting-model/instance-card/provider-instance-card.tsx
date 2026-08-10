@@ -94,6 +94,11 @@ const GenericProviderInstanceCard = forwardRef<
   // via `setModelInfo`, read by the payload builder.
   const { t } = useTranslation();
   const modelInfoRef = useRef<IModelInfo[]>([]);
+  const [modelInfoLoaded, setModelInfoLoaded] = useState(isDraft);
+  const handleInstanceModelsChange = useCallback((modelInfo: IModelInfo[]) => {
+    modelInfoRef.current = modelInfo;
+    setModelInfoLoaded(true);
+  }, []);
 
   // Provider-specific config: carries `verifyTransform` / `submitTransform`
   // for providers whose form field names don't map directly onto
@@ -194,6 +199,7 @@ const GenericProviderInstanceCard = forwardRef<
     instanceDetails,
     initialValues,
     modelInfoRef,
+    modelInfoLoaded,
     submitTransform: providerConfig.submitTransform,
     baseUrlRegionMaps,
   });
@@ -210,6 +216,7 @@ const GenericProviderInstanceCard = forwardRef<
         // catch it). For both drafts and saved cards, run the form's
         // own validation so errors surface in the UI.
         if (isDraft && !draftName.trim()) return false;
+        if (!isDraft && !modelInfoLoaded) return false;
         // List-model providers (list picker) require at least one selected model.
         if (
           LIST_MODEL_PROVIDERS.has(providerName) &&
@@ -224,7 +231,15 @@ const GenericProviderInstanceCard = forwardRef<
       getSavePayload,
       markSaved,
     }),
-    [isDraft, draftName, getSavePayload, markSaved, providerName, t],
+    [
+      isDraft,
+      draftName,
+      getSavePayload,
+      markSaved,
+      modelInfoLoaded,
+      providerName,
+      t,
+    ],
   );
 
   return (
@@ -239,11 +254,11 @@ const GenericProviderInstanceCard = forwardRef<
           formRef={formRef}
           handleVerify={handleVerify}
           handleDelete={handleDelete}
+          handleInstanceModelsChange={handleInstanceModelsChange}
           handleInstanceModelsEdited={markModelsEdited}
           providerName={providerName}
           instanceName={instance.instance_name}
           instance={instance}
-          modelInfoRef={modelInfoRef}
           draftName={draftName}
           setDraftName={setDraftName}
           verifyTransform={providerConfig.verifyTransform}
@@ -256,6 +271,7 @@ const GenericProviderInstanceCard = forwardRef<
           formRef={formRef}
           handleVerify={handleVerify}
           handleDelete={handleDelete}
+          handleInstanceModelsChange={handleInstanceModelsChange}
           handleInstanceModelsEdited={markModelsEdited}
           providerName={providerName}
           instanceName={instance.instance_name}
@@ -263,7 +279,7 @@ const GenericProviderInstanceCard = forwardRef<
           onRename={setEditedInstanceName}
           instance={instance}
           instanceDetailsLoaded={Boolean(instanceDetails)}
-          modelInfoRef={modelInfoRef}
+          modelInfoLoaded={modelInfoLoaded}
           draftName={draftName}
           open={open}
           setOpen={setOpen}

@@ -189,7 +189,10 @@ export const useFetchInstanceModels = (
         { provider_name: providerName, instance_name: instanceName },
         true,
       );
-      return data?.data ?? [];
+      if (data.code !== 0) {
+        throw new Error(data.message || 'Failed to load instance models');
+      }
+      return data.data ?? [];
     },
   });
 

@@ -38,6 +38,10 @@ function makeWrapper() {
 }
 
 describe('useFetchInstanceModels', () => {
+  beforeEach(() => {
+    mockListInstanceModels.mockReset();
+  });
+
   it('keeps data undefined until persisted models are loaded', async () => {
     let resolveRequest: (value: unknown) => void = () => undefined;
     mockListInstanceModels.mockReturnValue(
@@ -56,6 +60,7 @@ describe('useFetchInstanceModels', () => {
     await act(async () => {
       resolveRequest({
         data: {
+          code: 0,
           data: [{ name: 'model-a', model_type: 'chat', max_tokens: 8192 }],
         },
       });
@@ -66,5 +71,19 @@ describe('useFetchInstanceModels', () => {
         'model-a',
       ]),
     );
+  });
+
+  it('keeps data non-authoritative when the backend rejects the request', async () => {
+    mockListInstanceModels.mockResolvedValue({
+      data: { code: 1, data: null, message: 'list failed' },
+    } as never);
+
+    const { result } = renderHook(
+      () => useFetchInstanceModels('Bedrock', 'saved-instance'),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toBeUndefined();
   });
 });

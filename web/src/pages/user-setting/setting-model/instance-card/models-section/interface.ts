@@ -101,19 +101,17 @@ export interface ModelsSectionProps {
    * The list is delivered already converted to the `IModelInfo[]`
    * shape expected by the update / add-provider-instance endpoints,
    * so the host can forward it verbatim in its auto-save payload.
-   * Fires once on mount with `[]` (initial empty state) and again
-   * whenever the per-instance fetch resolves or an add/remove mutation
-   * settles and the cache invalidates.
+   * Drafts publish their initial empty state immediately. Saved instances
+   * publish only after their model query has produced an authoritative
+   * snapshot, then again whenever a mutation updates that snapshot.
    */
   onInstanceModelsChange?: (modelInfo: IModelInfo[]) => void;
   /**
-   * Optional callback fired when the per-instance model list changes
-   * in a way that does NOT need the host to re-sync via its own
-   * auto-save — i.e. an existing model was patched (max_tokens /
-   * model_type / features changed via the edit dialog) but the model
-   * set stayed the same.
+   * Optional callback fired after a model mutation has been acknowledged
+   * by the backend, either through an individual PATCH or a batch instance
+   * update.
    *
-   * The PATCH endpoint already persisted the change server-side, so
+   * The mutation endpoint already persisted the change server-side, so
    * the host uses this signal to absorb the resulting model_info diff
    * into its last-saved baseline. The next blur-driven auto-save will
    * then short-circuit as a no-op (signature matches), avoiding a
@@ -121,9 +119,8 @@ export interface ModelsSectionProps {
    *
    * Pair with `onInstanceModelsChange`: that callback fires for every
    * change (add/remove/patch) so the host can keep its `modelInfoRef`
-   * current, while `onInstanceModelsEdited` fires ONLY for patches so
-   * the host can suppress its next auto-save for an already-persisted
-   * change.
+   * current, while `onInstanceModelsEdited` only fires for acknowledged
+   * mutations so the host can suppress a redundant follow-up save.
    */
   onInstanceModelsEdited?: (modelInfo: IModelInfo[]) => void;
 }

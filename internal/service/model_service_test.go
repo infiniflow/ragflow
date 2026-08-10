@@ -643,6 +643,69 @@ func TestCheckConnectionPersistsVerifyStatusInOwnedInstanceTenant(t *testing.T) 
 	}
 }
 
+func TestCheckConnectionRejectsInvalidModelInfoAsDataError(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "owner-relation", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "Bedrock"},
+		&entity.TenantModelInstance{ID: "instance-1", InstanceName: "bedrock-instance", ProviderID: "provider-1", APIKey: "token", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-1", ModelName: "model-a", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active", Extra: `{"verify":"unchanged"}`},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not registered")
+	}
+	originalDriver := provider.ModelDriver
+	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	provider.ModelDriver = driver
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	for _, test := range []struct {
+		name       string
+		modelTypes []string
+	}{
+		{name: "missing type"},
+		{name: "unsupported type", modelTypes: []string{"future-type"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			modelInfo := []CheckConnectionModelInfo{
+				{ModelName: "model-a", ModelTypes: []string{"chat"}},
+				{ModelName: "model-b", ModelTypes: test.modelTypes},
+			}
+			code, err := NewModelProviderService().CheckConnection(
+				t.Context(),
+				"Bedrock",
+				`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`,
+				"ap-northeast-1",
+				"",
+				"instance-1",
+				"user-1",
+				modelInfo,
+			)
+			if code != common.CodeDataError || err == nil {
+				t.Fatalf("CheckConnection() = (%v, %v), want data error", code, err)
+			}
+		})
+	}
+	if driver.checkCalls != 0 || driver.chatCalls != 0 {
+		t.Fatalf("driver calls = check:%d chat:%d, want none", driver.checkCalls, driver.chatCalls)
+	}
+	var persisted entity.TenantModel
+	if err := db.First(&persisted, "id = ?", "model-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Extra != `{"verify":"unchanged"}` {
+		t.Fatalf("model extra = %q, want unchanged", persisted.Extra)
+	}
+}
+
 func TestVerifyProviderAPIKeyRequiresBaseURLForLocalProvider(t *testing.T) {
 	provider := dao.GetModelProviderManager().FindProvider("Ollama")
 	if provider == nil {

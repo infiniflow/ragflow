@@ -173,6 +173,66 @@ def test_update_provider_instance_clears_empty_endpoint_overrides() -> None:
     assert update_extra == {"preserved": True}
 
 
+@pytest.mark.parametrize(("include_extra", "submitted_extra"), [(False, None), (True, None), (True, {})])
+def test_update_provider_instance_preserves_existing_extra_when_optional_extra_is_missing(include_extra, submitted_extra) -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    instance = SimpleNamespace(id="instance-id", provider_id="provider-id", instance_name="instance", extra="{}")
+    existing_model = SimpleNamespace(id="model-id", model_name="model-a", model_type=1, extra=json.dumps({"verify": "success", "preserved": True}))
+    update_model = MagicMock()
+    model = {"model_name": "model-a", "model_type": ["chat"], "max_tokens": 4096}
+    if include_extra:
+        model["extra"] = submitted_extra
+
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id"),
+        patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[existing_model]),
+        patch("api.apps.services.provider_api_service.TenantModelService.update_model", update_model),
+    ):
+        success, message = asyncio.run(update_provider_instance("tenant", "Bedrock", "instance-id", "instance", "token", "", None, [model], verify=False))
+
+    assert success is True
+    assert message == "success"
+    update_extra = json.loads(update_model.call_args.args[1]["extra"])
+    assert update_extra == {"verify": "success", "preserved": True, "max_tokens": 4096}
+
+
+def test_update_provider_instance_rolls_back_when_existing_model_extra_is_invalid() -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    instance = SimpleNamespace(id="instance-id", provider_id="provider-id", instance_name="instance", extra="{}")
+    existing_model = SimpleNamespace(id="model-id", model_name="model-a", model_type=1, extra="{invalid-json")
+    update_by_id = MagicMock()
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id", update_by_id),
+        patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[existing_model]),
+    ):
+        success, message = asyncio.run(
+            update_provider_instance(
+                "tenant",
+                "Bedrock",
+                "instance-id",
+                "instance",
+                "token",
+                "",
+                None,
+                [{"model_name": "model-a", "model_type": ["chat"]}],
+                verify=False,
+            )
+        )
+
+    assert success is False
+    assert message == "Invalid stored extra for model 'model-a'"
+    assert atomic.error_type.__name__ == "_ModelPersistenceError"
+    update_by_id.assert_called_once()
+
+
 def test_verify_rejects_mixed_unclassified_models_before_driver_calls() -> None:
     success, message, model_results = asyncio.run(
         verify_api_key(

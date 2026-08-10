@@ -192,6 +192,13 @@ export const AddCustomModelDialog = ({
                 {field.options?.map((opt, index) => {
                   const isChecked = currentValues.includes(opt.value);
                   const switchId = `${field.name}-${opt.value}`;
+                  const handleCheckedChange = (checked: boolean) => {
+                    if (loading || field.disabled) return;
+                    const next = checked
+                      ? [...currentValues, opt.value]
+                      : currentValues.filter((value) => value !== opt.value);
+                    fieldProps.onChange(next);
+                  };
                   return (
                     <div
                       key={opt.value}
@@ -209,13 +216,7 @@ export const AddCustomModelDialog = ({
                         id={switchId}
                         checked={isChecked}
                         disabled={loading || field.disabled}
-                        onCheckedChange={(checked) => {
-                          if (loading || field.disabled) return;
-                          const next = checked
-                            ? [...currentValues, opt.value]
-                            : currentValues.filter((v) => v !== opt.value);
-                          fieldProps.onChange(next);
-                        }}
+                        onCheckedChange={handleCheckedChange}
                       />
                     </div>
                   );
