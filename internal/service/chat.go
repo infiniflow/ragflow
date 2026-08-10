@@ -256,8 +256,12 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	}
 
 	if promptConfigValue, ok := req["prompt_config"]; ok {
-		if _, ok := mapFromValue(promptConfigValue); !ok {
+		promptConfig, ok := mapFromValue(promptConfigValue)
+		if !ok {
 			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
+		}
+		if err := validatePromptConfigParameters(promptConfig); err != nil {
+			return nil, common.CodeDataError, err
 		}
 	}
 
@@ -915,6 +919,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		if !ok {
 			return nil, errors.New("`prompt_config` should be an object")
 		}
+		if err := validatePromptConfigParameters(promptConfig); err != nil {
+			return nil, err
+		}
 		if patch {
 			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
 		} else {
@@ -978,6 +985,30 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		return nil, errors.New("failed to retrieve updated chat")
 	}
 	return s.buildRESTChatResponse(ctx, updatedChat), nil
+}
+
+func validatePromptConfigParameters(promptConfig map[string]interface{}) error {
+	parameters, ok := promptConfig["parameters"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(parameters))
+	for _, value := range parameters {
+		parameter, ok := mapFromValue(value)
+		if !ok {
+			continue
+		}
+		key, ok := parameter["key"].(string)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("`parameters` contains duplicate key: %s", key)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
 
 func validateRESTChatName(value interface{}, required bool) (string, bool, error) {

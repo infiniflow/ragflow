@@ -424,19 +424,19 @@ export default function FloatingSelectionToolbar() {
       >
         &lt;/&gt;
       </button>
-      <div
+      {/* <div
         style={{
           width: 1,
           height: 16,
           background: 'var(--nim-border)',
           margin: '0 3px',
         }}
-      />
+      /> */}
 
       {/* Link */}
-      <button style={btnStyle} onClick={toggleLink} title="Link">
+      {/* <button style={btnStyle} onClick={toggleLink} title="Link">
         🔗
-      </button>
+      </button> */}
     </div>
   );
 }

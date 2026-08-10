@@ -130,7 +130,7 @@ func setupSyncerDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err = db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.Document{}, &dao.SyncPruneSnapshot{}); err != nil {
+	if err = db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.Document{}); err != nil {
 		t.Fatalf("migrate sqlite: %v", err)
 	}
 	orig := dao.DB
@@ -455,27 +455,20 @@ func TestRecoverStaleRunningTasks(t *testing.T) {
 	}
 }
 
-// TestPruneSnapshotFailureDoesNotDelete verifies incomplete snapshots never delete.
-func TestPruneSnapshotFailureDoesNotDelete(t *testing.T) {
+// TestPruneSourceFailureDoesNotDelete verifies incomplete source listings never delete.
+func TestPruneSourceFailureDoesNotDelete(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypePrune)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
 	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
 	deleter := &fakeDeleter{}
-	pruneService := service.NewSyncPruneService(dao.NewSyncPruneSnapshotDAO(db), deleter, fakeStore{ids: map[string]struct{}{"stale": {}}})
+	pruneService := service.NewSyncPruneService(deleter, fakeStore{ids: map[string]struct{}{"stale": {}}})
 	connector := &connectormock.Connector{PruneErrAt: 1, PruneBatches: []syncerconnector.PruneBatch{{Documents: []syncerconnector.SlimDocument{{SourceID: "keep"}}}}}
 	queue := make(chan TaskEnvelope, 1)
 	worker := NewTaskWorker(queue, taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, pruneService, fakeStore{}, 1), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 	if len(deleter.deleted) != 0 {
 		t.Fatalf("deleted %v despite incomplete snapshot", deleter.deleted)
-	}
-	var count int64
-	if err := db.Model(&dao.SyncPruneSnapshot{}).Where("task_id = ?", "task-1").Count(&count).Error; err != nil {
-		t.Fatalf("count snapshot: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("snapshot rows = %d, want cleared", count)
 	}
 }
 

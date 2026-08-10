@@ -828,7 +828,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         kwargs.setdefault("knowledge", "")
     gen_conf = dialog.llm_setting
 
-    system_content = prompt_config["system"].format(**kwargs) + text_attachments_content
+    system_content = prompt_config["system"].format(**kwargs)
     # If knowledge was retrieved but the template has no {knowledge}
     # placeholder, auto-append it so the LLM still sees the context.
     if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
@@ -838,6 +838,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
+    if text_attachments_content and msg:
+        msg[-1]["content"] += text_attachments_content
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
@@ -1882,6 +1884,8 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
     agent_messages = deepcopy(messages)
+    if text_attachments_content and agent_messages:
+        agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
@@ -2023,7 +2027,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                 else:
                     stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), agent_messages, gen_conf, images=image_files)
                 async for kind, value, state in _stream_with_think_delta(stream_iter):
-                    event_queue.put_nowait(("stream", kind, value, state))
+                    event_queue.put_nowait(("stream", kind, value, state.in_think if state is not None else False))
             except Exception:
                 logging.exception("rag_agent: agentic stream failed")
             finally:
@@ -2035,6 +2039,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         answer_started = False
         think_closed = False
         outer_tool_started = False
+        pending_outer_text = []
 
         async def _close_think_and_flush_answer():
             nonlocal answer_started, think_closed
@@ -2060,6 +2065,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                     continue
                 if item[0] == "tool_started":
                     outer_tool_started = True
+                    for value in pending_outer_text:
+                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
+                    pending_outer_text.clear()
                     continue
                 if item[0] == "answer":
                     if not answer_started:
@@ -2076,8 +2084,15 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                         yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
                     continue
                 if item[0] == "stream_done":
+                    if not outer_tool_started and pending_outer_text:
+                        async for output in _close_think_and_flush_answer():
+                            yield output
+                        for value in pending_outer_text:
+                            answer_deltas.append(value)
+                            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+                        pending_outer_text.clear()
                     break
-                _, kind, value, state = item
+                _, kind, value, in_think = item
                 if kind != "text" or not value:
                     # The outer model's think markers are folded into the one
                     # block opened above; they must not create extra markers.
@@ -2089,17 +2104,18 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                 # Once that section is closed and the terminal tool has
                 # started, subsequent text is the aggregate tool result and is
                 # intentionally ignored.
-                if state is not None and state.in_think:
+                if in_think:
                     value = re.sub(r"</?think>", "", value)
                     if value:
                         yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
                 elif not outer_tool_started:
                     # Some providers omit explicit reasoning metadata and
-                    # emit plain text before the tool call. Preserve it as
-                    # outer thinking for compatibility with async_chat.
+                    # emit plain text before the tool call. Keep it pending
+                    # until we know whether a tool call or a direct answer
+                    # follows, so a direct answer is not left in <think>.
                     value = re.sub(r"</?think>", "", value)
                     if value:
-                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
+                        pending_outer_text.append(value)
             if not think_closed:
                 async for output in _close_think_and_flush_answer():
                     yield output

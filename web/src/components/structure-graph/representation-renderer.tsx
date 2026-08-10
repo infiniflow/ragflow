@@ -16,7 +16,6 @@ import {
   adaptPageIndexToTreeData,
   adaptTimelineToX6Data,
   adaptTreeToTreeData,
-  filterTreeDataByKeyword,
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
 import TimelineX6Graph from './timeline-x6-graph';
@@ -31,7 +30,6 @@ const EmptyForceGraphData: IArtifactGraph = { entities: [], relations: [] };
 
 interface RepresentationRendererProps {
   template?: IStructureGraphTemplate;
-  searchKeyword?: string;
   onNodeClick?: (node: ClickableNode) => void;
   highlightNodeId?: string | null;
 }
@@ -51,7 +49,6 @@ function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
 
 export function RepresentationRenderer({
   template,
-  searchKeyword = '',
   onNodeClick,
   highlightNodeId,
 }: RepresentationRendererProps) {
@@ -104,22 +101,16 @@ export function RepresentationRenderer({
     [],
   );
 
-  const filteredTreeData = useMemo<TreeDataItem[]>(() => {
+  const treeData = useMemo<TreeDataItem[]>(() => {
     if (!template) return [];
     if (template.kind === CompilationTemplateKind.PageIndex) {
-      const data = adaptPageIndexToTreeData(template);
-      return searchKeyword.trim()
-        ? filterTreeDataByKeyword(data, searchKeyword)
-        : data;
+      return adaptPageIndexToTreeData(template);
     }
     if (template.kind === CompilationTemplateKind.Tree) {
-      const data = adaptTreeToTreeData(template);
-      return searchKeyword.trim()
-        ? filterTreeDataByKeyword(data, searchKeyword)
-        : data;
+      return adaptTreeToTreeData(template);
     }
     return [];
-  }, [template, searchKeyword]);
+  }, [template]);
 
   // Keep a stable reference across re-renders so the memoized ArtifactForceGraph
   // does not restart its force simulation when only highlightNodeId changes
@@ -140,7 +131,7 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 overflow-auto scrollbar-auto">
           <TreeView
-            data={filteredTreeData}
+            data={treeData}
             expandAll
             onSelectChange={handleTreeItemClick}
           />
@@ -150,7 +141,7 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 overflow-auto scrollbar-auto">
           <TreeView
-            data={filteredTreeData}
+            data={treeData}
             expandAll
             onSelectChange={handleTreeItemClick}
           />

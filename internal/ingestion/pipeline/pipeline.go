@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
 )
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
@@ -652,6 +653,34 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			} else {
 				msg = ev.Component + " Error"
 			}
+		}
+		// Surface every component lifecycle event as a structured log line so
+		// a component failure (e.g. an LLM/client error) is captured in
+		// ingestor_server.log even if the wrapped error never reaches the
+		// higher-level "Task ... failed" branch.
+		switch ev.Phase {
+		case runtime.PhaseError:
+			if ev.Err != nil {
+				common.Error("component progress: error", ev.Err,
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			} else {
+				common.Info("component progress: error",
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			}
+		default:
+			// Keep the message constant: msg may carry component names or
+			// error-derived text, and a newline in it could forge a log record
+			// (CWE-117). Pass msg and the phase as structured fields instead.
+			common.Info("component progress",
+				zap.String("message", msg),
+				zap.Int("phase", int(ev.Phase)),
+				zap.String("component", ev.Component),
+				zap.String("task_id", p.taskID),
+				zap.String("document_id", p.documentID))
 		}
 		p.sink.OnComponentProgress(ctx, ProgressEvent{
 			TaskID:     p.taskID,

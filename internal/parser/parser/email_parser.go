@@ -175,28 +175,35 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 			meta[keyLower] = val
 		}
 	}
-	if target["metadata"] {
-		content["metadata"] = meta
-	}
+	// Always emit metadata to match the Python flow parser contract
+	// (rag/flow/parser/parser.py:_email), which unconditionally builds a
+	// metadata dict and collects every non-basic header into it regardless
+	// of whether "metadata" is present in the configured fields.
+	content["metadata"] = meta
 
 	// Body and attachments — readMailBody walks all multipart parts
 	// and collects text/html bodies alongside attachment parts whose
 	// Content-Disposition starts with "attachment".
 	needAttachments := target["attachments"]
-	if target["body"] {
+	// Attachments are extracted independently of "body" (mirrors the Python
+	// flow parser _email, whose attachment block is separate from the body
+	// block). Walk the body whenever either is requested, then gate each key
+	// by its own field so text/text_html stay absent when "body" is not in
+	// fields while attachments are still extracted when "attachments" is.
+	if target["body"] || needAttachments {
 		contentType := msg.Header.Get("Content-Type")
 		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, needAttachments)
-		if bodyText != "" {
+		// Always emit text/text_html when "body" is requested, to match the
+		// Python flow parser contract (rag/flow/parser/parser.py:_email),
+		// which sets both unconditionally (empty string for a missing part)
+		// rather than omitting the key.
+		if target["body"] {
 			content["text"] = bodyText
-		}
-		if bodyHTML != "" {
 			content["text_html"] = bodyHTML
 		}
 		if needAttachments {
 			content["attachments"] = attachments
 		}
-	} else if needAttachments {
-		content["attachments"] = []map[string]any{}
 	}
 
 	return content

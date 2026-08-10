@@ -155,8 +155,19 @@ Return a JSON compilation plan with one or more page entries:
 
 Rules:
 - Return at most {max_pages} page entries for this batch.
-- Prefer one page per high-signal entity or concept when the batch supports it.
-- Merge minor or weakly-supported facts into broader topic pages instead of emitting tiny standalone pages.
+- Entity/concept identity is one-to-one with pages: every extracted entity and
+  concept must be represented by exactly one canonical page and may appear in
+  only that page's entity_names. Never split one identity across multiple
+  pages, page types, thematic sections, aliases, language transliterations, or
+  alternate slug spellings. Put all supported sections for that identity on
+  its single canonical page.
+- A page may represent several closely related low-signal entities/concepts,
+  but list every represented identity in entity_names and do not repeat any of
+  them on another page. Merge minor or weakly-supported facts into such a page
+  instead of emitting tiny standalone pages.
+- Identity ownership does not limit linking: related_kb_pages should include
+  every directly related canonical page supported by the input (up to the
+  available-page budget), and links must target canonical slugs only.
 - Use page_type=entity for entity pages, page_type=concept for concept pages, and page_type=topic for cross-cutting themes.
 - entity_names must name the entities and concepts that justify the page.
 - related_kb_pages should list other slugs from the same plan that the page should cross-link to.

@@ -90,6 +90,8 @@ class MemoryService(CommonService):
             cls.model.create_date,
         ]
         memories = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id))
+        if filter_dict.get("ids"):
+            memories = memories.where(cls.model.id.in_(filter_dict["ids"]))
         if filter_dict.get("tenant_id"):
             memories = memories.where(cls.model.tenant_id.in_(filter_dict["tenant_id"]))
         if filter_dict.get("accessible_user_id"):

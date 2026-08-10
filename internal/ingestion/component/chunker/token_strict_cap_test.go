@@ -125,7 +125,7 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 		b.WriteString("\n\n")
 	}
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
@@ -159,7 +159,7 @@ func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
 	// run is one unit that still exceeds the budget and must stay whole.
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
@@ -196,7 +196,7 @@ func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
 
 	run := func(underCap bool) []map[string]any {
 		comp, err := NewTokenChunker(map[string]any{
-			"delimiter_mode":   "token_size",
+			"delimiter_mode":   "delimiter",
 			"chunk_token_size": budget,
 			"under_cap":        underCap,
 		})
@@ -250,7 +250,7 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 		b.WriteByte('\n')
 	}
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
@@ -372,24 +372,40 @@ func TestMergeDecisionOverCapVsUnderCapBoundary(t *testing.T) {
 		t.Fatalf("bad fixture: incoming unit must fit target (incT=%d target=%d)", incT, target)
 	}
 
-	_, overAct := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeOverCap, prevT, incT)
-	if overAct != mergeThenClose {
-		t.Errorf("OVER_CAP at boundary: want mergeThenClose, got %v", overAct)
+	units := []schema.ChunkDoc{
+		{Text: "prev text", TKNums: intPtr(prevT), CKType: "text"},
+		{Text: "incoming text", TKNums: intPtr(incT), CKType: "text"},
 	}
 
-	_, underAct := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeUnderCap, prevT, incT)
-	if underAct != startNewChunk {
-		t.Errorf("UNDER_CAP at boundary: want startNewChunk, got %v", underAct)
+	// OVER_CAP at the boundary: the overflowing incoming is merged into the
+	// previous chunk (merge-then-close) — a single merged chunk carrying the
+	// running sum prevT+incT.
+	over := mergeUnits(units, target, 0, schema.MergeOverCap, "\n")
+	if len(over) != 1 {
+		t.Fatalf("OVER_CAP at boundary: want 1 merged chunk, got %d", len(over))
+	}
+	if got := intValue(over[0].TKNums); got != prevT+incT {
+		t.Errorf("OVER_CAP merged chunk running sum: want %d, got %d", prevT+incT, got)
+	}
+
+	// UNDER_CAP at the boundary: the overflowing incoming starts a fresh chunk.
+	under := mergeUnits(units, target, 0, schema.MergeUnderCap, "\n")
+	if len(under) != 2 {
+		t.Fatalf("UNDER_CAP at boundary: want 2 chunks, got %d", len(under))
 	}
 
 	// Both strategies must still refuse to merge an incoming unit that
 	// already exceeds target — it stands alone as its own chunk.
-	_, overBig := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeOverCap, prevT, target+5)
-	if overBig != startNewChunk {
-		t.Errorf("OVER_CAP with oversized incoming: want startNewChunk, got %v", overBig)
+	big := []schema.ChunkDoc{
+		{Text: "prev text", TKNums: intPtr(prevT), CKType: "text"},
+		{Text: "incoming text", TKNums: intPtr(target + 5), CKType: "text"},
 	}
-	_, underBig := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeUnderCap, prevT, target+5)
-	if underBig != startNewChunk {
-		t.Errorf("UNDER_CAP with oversized incoming: want startNewChunk, got %v", underBig)
+	overBig := mergeUnits(big, target, 0, schema.MergeOverCap, "\n")
+	if len(overBig) != 2 {
+		t.Errorf("OVER_CAP with oversized incoming: want 2 chunks (stands alone), got %d", len(overBig))
+	}
+	underBig := mergeUnits(big, target, 0, schema.MergeUnderCap, "\n")
+	if len(underBig) != 2 {
+		t.Errorf("UNDER_CAP with oversized incoming: want 2 chunks (stands alone), got %d", len(underBig))
 	}
 }

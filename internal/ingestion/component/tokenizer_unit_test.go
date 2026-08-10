@@ -361,30 +361,6 @@ func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	}
 }
 
-// TestIsPhantomChunk verifies that zero-value ChunkDocs (no Text, no
-// Image, no ContentWithWeight, no Summary) are identified as phantom,
-// while any one of those fields being present keeps the chunk.
-func TestIsPhantomChunk(t *testing.T) {
-	if !isPhantomChunk(schema.ChunkDoc{}) {
-		t.Error("empty ChunkDoc must be phantom")
-	}
-	if !isPhantomChunk(schema.ChunkDoc{Text: ""}) {
-		t.Error("ChunkDoc with empty Text only must be phantom")
-	}
-	if isPhantomChunk(schema.ChunkDoc{Text: "hello"}) {
-		t.Error("ChunkDoc with Text must not be phantom")
-	}
-	if isPhantomChunk(schema.ChunkDoc{Image: "data:image/png;base64,abc"}) {
-		t.Error("ChunkDoc with Image must not be phantom")
-	}
-	if isPhantomChunk(schema.ChunkDoc{ContentWithWeight: "weight"}) {
-		t.Error("ChunkDoc with ContentWithWeight must not be phantom")
-	}
-	if isPhantomChunk(schema.ChunkDoc{Summary: "a summary"}) {
-		t.Error("ChunkDoc with Summary must not be phantom")
-	}
-}
-
 // TestTruncateForEmbedding_SmallMaxTokens covers Tokenizer Diff-14. For any
 // positive maxTokens, truncateForEmbedding keeps the first maxTokens tokens
 // (non-empty) and the result is strictly shorter than the input.
@@ -500,18 +476,23 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 	}
 }
 
-// TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers Tokenizer
-// Omission-2 at the pipeline level: when upstream input contains a
-// zero-value ChunkDoc (no Text, no Image, no ContentWithWeight), it must
-// be silently dropped from the output before tokenization and embedding.
-// This mirrors Python's `if not text and not d.get("image"): continue`
-// in tokenizer.py:80-82.
+// TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers A5 at the
+// pipeline level: a chunk is dropped only when BOTH text and
+// content_with_weight are empty. Blocks that carry only image / summary /
+// questions / nothing are dropped (they produce no retrievable content),
+// while a content_with_weight-only block is kept (Parser path; normalize
+// backfills text). Deliberate deviation from Python's "filter None only"
+// rule — user value (retrievable content) wins.
 func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
-	// JSON path: three items, the middle one is a phantom.
+	// JSON path: 6 items. Only the text block and the content_with_weight
+	// block survive; the other four are dropped by the A5 gate.
 	items := []map[string]any{
-		{"text": "valid chunk", "doc_type_kwd": "text"},
-		{}, // phantom: no text, no image, no content_with_weight
-		{"text": "another valid", "doc_type_kwd": "text"},
+		{"text": "valid chunk", "doc_type_kwd": "text"}, // keep
+		{"image": "data:image/png;base64,abc"},          // drop: no text, no content_with_weight
+		{"summary": "a summary"},                        // drop
+		{"questions": "q1"},                             // drop
+		{"content_with_weight": "weighted"},             // keep (text backfilled by normalize)
+		{},                                              // drop: empty
 	}
 	// Use embedding-only mode to avoid CGo tokenizer dependency.
 	stub := newStubEmbedder(3)
@@ -531,16 +512,142 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := out["chunks"].([]map[string]any)
-	// Must drop the phantom — only 2 valid chunks remain.
+	// A5 keeps only the text block and the content_with_weight block.
 	if len(chunks) != 2 {
-		t.Fatalf("want 2 chunks (phantom filtered), got %d", len(chunks))
+		t.Fatalf("want 2 chunks (4 phantoms filtered), got %d: %#v", len(chunks), chunks)
 	}
-	// Verify the surviving chunks are the valid ones.
+	// Surviving chunks, in upstream order.
 	if chunks[0]["text"] != "valid chunk" {
 		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
 	}
-	if chunks[1]["text"] != "another valid" {
-		t.Errorf("chunk 1 text = %q, want %q", chunks[1]["text"], "another valid")
+	if chunks[1]["text"] != "weighted" {
+		t.Errorf("chunk 1 text = %q, want %q (content_with_weight backfilled to text)", chunks[1]["text"], "weighted")
+	}
+}
+
+// TestChunkOrderInt_AllPathsUnconditional is the A6 regression gate: every
+// surviving chunk must carry chunk_order_int, equal to its index in the
+// (post-filter) reading sequence — on every output_format and every
+// search_method combination. Go sets it unconditionally (deviation from
+// Python's chunks+full_text-only rule) so every retrieval path can sort by
+// reading order.
+func TestChunkOrderInt_AllPathsUnconditional(t *testing.T) {
+	// identity tokenizer: Tokenize returns input unchanged — no CGo pool.
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	stub := newStubEmbedder(8)
+	textChunks := []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}}
+	jsonChunks := []map[string]any{
+		{"text": "a", "doc_type_kwd": "text"},
+		{"text": "b", "doc_type_kwd": "text"},
+		{"text": "c", "doc_type_kwd": "text"},
+	}
+	cases := []struct {
+		name         string
+		searchMethod []string
+		inputs       map[string]any
+		wantChunks   int
+	}{
+		{"chunks/full_text", []string{"full_text"},
+			map[string]any{"output_format": "chunks", "chunks": textChunks}, 3},
+		{"chunks/embedding", []string{"embedding"},
+			map[string]any{"output_format": "chunks", "chunks": textChunks}, 3},
+		{"chunks/full_text+embedding", []string{"full_text", "embedding"},
+			map[string]any{"output_format": "chunks", "chunks": textChunks}, 3},
+		{"json/full_text", []string{"full_text"},
+			map[string]any{"output_format": "json", "json": jsonChunks}, 3},
+		{"markdown/full_text", []string{"full_text"},
+			map[string]any{"output_format": "markdown", "markdown": "# H\n\nbody one\n\nbody two"}, 1},
+		{"text/full_text", []string{"full_text"},
+			map[string]any{"output_format": "text", "text": "body text"}, 1},
+		{"html/full_text", []string{"full_text"},
+			map[string]any{"output_format": "html", "html": "<p>body text</p>"}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, err := NewTokenizerComponentWithResolver(
+				map[string]any{"search_method": tc.searchMethod, "fields": []string{"text"}},
+				func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+			)
+			if err != nil {
+				t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+			}
+			out, err := comp.Invoke(context.Background(), nil, tc.inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := out["chunks"].([]map[string]any)
+			if len(chunks) != tc.wantChunks {
+				t.Fatalf("want %d chunks, got %d: %#v", tc.wantChunks, len(chunks), chunks)
+			}
+			for i, ck := range chunks {
+				coi, ok := ck["chunk_order_int"]
+				if !ok {
+					t.Errorf("chunk %d: chunk_order_int missing", i)
+					continue
+				}
+				got, ok := coi.(float64)
+				if !ok {
+					t.Errorf("chunk %d: chunk_order_int type %T, want number", i, coi)
+					continue
+				}
+				if int(got) != i {
+					t.Errorf("chunk %d: chunk_order_int = %v, want %d", i, got, i)
+				}
+			}
+		})
+	}
+}
+
+// TestChunkOrderInt_A5FilterKeepsSequenceContiguous is the A5+A6 joint gate:
+// when an upstream text-empty chunk is dropped by the A5 gate, the surviving
+// text chunks still receive contiguous 0-based chunk_order_int values (Go
+// indexes the post-filter slice, so no gap is left by the dropped chunk).
+func TestChunkOrderInt_A5FilterKeepsSequenceContiguous(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	stub := newStubEmbedder(8)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"full_text", "embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	// Middle chunk has empty text and no content_with_weight -> dropped by A5.
+	items := []map[string]any{
+		{"text": "first"},
+		{"questions": "orphan question"}, // dropped: no retrievable content
+		{"text": "second"},
+	}
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks":        items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 surviving chunks, got %d: %#v", len(chunks), chunks)
+	}
+	for i, ck := range chunks {
+		coi, ok := ck["chunk_order_int"]
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int missing", i)
+			continue
+		}
+		got, ok := coi.(float64)
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int type %T, want number", i, coi)
+			continue
+		}
+		if int(got) != i {
+			t.Errorf("chunk %d: chunk_order_int = %v, want %d (contiguous after A5 drop)", i, got, i)
+		}
 	}
 }
 

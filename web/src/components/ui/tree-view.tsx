@@ -40,7 +40,9 @@ type TreeProps = React.HTMLAttributes<HTMLDivElement> & {
 
 const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
   if (!item.entityType) {
-    return <span className="flex-grow truncate text-sm">{item.name}</span>;
+    return (
+      <span className="flex-grow truncate text-sm text-left">{item.name}</span>
+    );
   }
 
   const isTitle = item.entityType === 'title';

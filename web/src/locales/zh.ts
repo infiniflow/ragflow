@@ -920,7 +920,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       createChunk: '创建解析块',
       editChunk: '编辑解析块',
       bulk: '批量',
-      selectAll: '选择所有',
+      selectAll: '选择当前页',
       enabledSelected: '启用选定的',
       disabledSelected: '禁用选定的',
       deleteSelected: '删除选定的',
@@ -1632,6 +1632,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addFieldModalTitle: '添加字段',
       editFieldModalTitle: '编辑字段',
       selectFieldType: '选择字段类型',
+      fieldTypeExists: '该字段类型已存在',
       blueprintsPlaceholder: '蓝图占位',
       blueprintsPlaceholderDescription:
         '从左侧的 Blueprint 库中选择或自定义特定结构，以定义您的 Wiki 内容框架和视觉呈现。',
