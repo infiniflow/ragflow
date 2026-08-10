@@ -16,39 +16,48 @@
 
 package syncer
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
-// ConnectorLocker serializes work for a connector.
+// ConnectorLocker serializes work for one connector and knowledge base.
 type ConnectorLocker interface {
-	TryLock(connectorID string) bool
-	Unlock(connectorID string)
+	TryLock(connectorID, kbID string) bool
+	Unlock(connectorID, kbID string)
 }
 
-// ConnectorLock is a process-local connector mutex registry.
+// ConnectorLock is a process-local connector/KB mutex registry.
 type ConnectorLock struct {
 	mu     sync.Mutex
 	locked map[string]struct{}
 }
 
-// NewConnectorLock creates an empty process-local connector lock.
+// NewConnectorLock creates an empty process-local connector/KB lock.
 func NewConnectorLock() *ConnectorLock {
 	return &ConnectorLock{locked: map[string]struct{}{}}
 }
 
-// TryLock attempts to acquire the connector lock without blocking.
-func (l *ConnectorLock) TryLock(connectorID string) bool {
+// TryLock attempts to acquire the connector/KB lock without blocking.
+func (l *ConnectorLock) TryLock(connectorID, kbID string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if _, ok := l.locked[connectorID]; ok {
+
+	key := connectorLockKey(connectorID, kbID)
+	if _, ok := l.locked[key]; ok {
 		return false
 	}
-	l.locked[connectorID] = struct{}{}
+	l.locked[key] = struct{}{}
 	return true
 }
 
-// Unlock releases the connector lock.
-func (l *ConnectorLock) Unlock(connectorID string) {
+// Unlock releases the connector/KB lock.
+func (l *ConnectorLock) Unlock(connectorID, kbID string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.locked, connectorID)
+	delete(l.locked, connectorLockKey(connectorID, kbID))
+}
+
+func connectorLockKey(connectorID, kbID string) string {
+	return fmt.Sprintf("%s/%s", connectorID, kbID)
 }

@@ -42,6 +42,9 @@ type NatsEngine struct {
 	knowledgeCompileStream   jetstream.Stream
 	knowledgeCompileConsumer jetstream.Consumer
 	kv                       jetstream.KeyValue
+
+	syncerStream   jetstream.Stream
+	syncerConsumer jetstream.Consumer
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {

@@ -26,6 +26,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -46,10 +47,6 @@ var gmailScopes = []string{
 	"https://www.googleapis.com/auth/admin.directory.user.readonly",
 	"https://www.googleapis.com/auth/admin.directory.group.readonly",
 }
-
-// FIXME: IDK why everytime, gmail do sync, It will update all file's Metadata.
-// FIXME: I think this need to be checked or fixed after all data syncer is done
-// FIXME: Some file sync from gmail have no content, this need to be checked too
 
 // GmailConnector reads Gmail threads from a Workspace domain or one Gmail account.
 type GmailConnector struct {
@@ -526,6 +523,12 @@ func (t gmailThread) toSourceDocument(userEmail string) (SourceDocument, bool) {
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
+		Fingerprint: stableFingerprint(map[string]any{
+			"thread_id":  t.ID,
+			"updated_at": updatedAt,
+			"blob":       string(blob),
+			"metadata":   metadata,
+		}),
 	}, true
 }
 
@@ -659,7 +662,13 @@ func parseGmailAddress(value string) (string, string) {
 // gmailOwnersMetadata converts email owners to compact metadata.
 func gmailOwnersMetadata(owners map[string]string) []map[string]string {
 	out := make([]map[string]string, 0, len(owners))
-	for email, name := range owners {
+	emails := make([]string, 0, len(owners))
+	for email := range owners {
+		emails = append(emails, email)
+	}
+	sort.Strings(emails)
+	for _, email := range emails {
+		name := owners[email]
 		item := map[string]string{"email": email}
 		if name != "" {
 			parts := strings.Fields(name)

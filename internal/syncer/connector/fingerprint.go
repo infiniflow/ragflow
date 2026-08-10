@@ -14,15 +14,21 @@
 // limitations under the License.
 //
 
-package syncer
+package connector
 
 import (
-	"context"
-	"ragflow/internal/service"
-	"time"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+
+	"github.com/zeebo/xxh3"
 )
 
-// RecoverStaleRunning restores timed-out running sync tasks to schedule.
-func RecoverStaleRunning(ctx context.Context, taskService *service.SyncTaskService, now time.Time) error {
-	return taskService.RecoverStaleRunning(ctx, now)
+func stableFingerprint(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		data = []byte(fmt.Sprint(value))
+	}
+	sum := xxh3.Hash128(data).Bytes()
+	return hex.EncodeToString(sum[:])
 }
