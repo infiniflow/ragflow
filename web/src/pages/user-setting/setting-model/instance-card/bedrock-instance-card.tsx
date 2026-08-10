@@ -621,6 +621,27 @@ export const BedrockInstanceCard = forwardRef<
     ],
   );
 
+  const createEndpointTypeChangeHandler = useCallback(
+    (onChange: (value: string) => void) =>
+      function handleEndpointTypeChange(value: string) {
+        if (value !== 'runtime') {
+          form.setValue('bedrock_discovery_endpoint_url', '');
+        }
+        onChange(value);
+      },
+    [form],
+  );
+
+  const createMaxTokensChangeHandler = useCallback(
+    (onChange: (value: number) => void) =>
+      function handleMaxTokensChange(
+        event: React.ChangeEvent<HTMLInputElement>,
+      ) {
+        onChange(Number(event.target.value));
+      },
+    [],
+  );
+
   // ──────────────── Field group rendered in both modes ────────────────
   const renderFields = () => (
     <Form {...form}>
@@ -750,12 +771,7 @@ export const BedrockInstanceCard = forwardRef<
               {(field) => (
                 <SelectWithSearch
                   value={field.value}
-                  onChange={(value) => {
-                    if (value !== 'runtime') {
-                      form.setValue('bedrock_discovery_endpoint_url', '');
-                    }
-                    field.onChange(value);
-                  }}
+                  onChange={createEndpointTypeChangeHandler(field.onChange)}
                   options={[
                     {
                       value: 'runtime',
@@ -820,7 +836,7 @@ export const BedrockInstanceCard = forwardRef<
                 type="number"
                 placeholder={tSetting('maxTokensTip')}
                 value={field.value}
-                onChange={(e) => field.onChange(Number(e.target.value))}
+                onChange={createMaxTokensChangeHandler(field.onChange)}
               />
             )}
           </RAGFlowFormItem>

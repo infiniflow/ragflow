@@ -230,6 +230,13 @@ func TestResolveBedrockEndpointRejectsUntrustedHost(t *testing.T) {
 	}
 }
 
+func TestResolveBedrockEndpointRequiresAPIKeyForMantle(t *testing.T) {
+	_, _, err := resolveBedrockEndpoint(bedrockAuthAccessKey, bedrockEndpointMantleOpenAI, "https://bedrock-mantle.us-east-1.api.aws/v1")
+	if err == nil || !strings.Contains(err.Error(), "require Bedrock API key authentication") {
+		t.Fatalf("non-API-key Mantle auth: got %v", err)
+	}
+}
+
 func TestValidateBedrockEndpointRejectsNonDefaultPort(t *testing.T) {
 	err := validateBedrockEndpointTarget("https://bedrock-runtime.us-east-1.amazonaws.com:8443")
 	if err == nil || !strings.Contains(err.Error(), "non-default port") {
