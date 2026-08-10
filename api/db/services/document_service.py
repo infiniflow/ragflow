@@ -43,6 +43,11 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    @DB.connection_context()
+    def get_disabled_doc_ids_by_kb_id(cls, kb_id) -> set[str]:
+        return {str(doc_id) for doc_id in cls.model.select(cls.model.id).where((cls.model.kb_id == kb_id) & (cls.model.status == "0")).tuples()}
+
+    @classmethod
     def get_cls_model_fields(cls):
         return [
             cls.model.id,
