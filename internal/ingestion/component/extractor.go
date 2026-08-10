@@ -696,23 +696,17 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
-			callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
 			// buildExtractorMessages appends chunkText to the user message
-			// unconditionally. Suppress that append only when a content-bearing
-			// placeholder was actually replaced — i.e. the chunk body is
-			// already in the prompt.
-			// "Present before substitution, gone after" is more precise than
-			// substring-matching the original prompt: it avoids suppressing
-			// on non-content placeholders like {title} (whose replacement
-			// must not drop the document body).
+			// unconditionally. Substitute first; if a content-bearing
+			// placeholder ({text}/{chunks}/{content_with_weight}) was actually
+			// replaced, the chunk body is already in the prompt — suppress
+			// the append to avoid duplication.
+			var subP, subS bool
+			callIn.prompt, subP = substituteChunkPlaceholders(in.prompt, ck, text)
+			callIn.systemPrompt, subS = substituteChunkPlaceholders(in.systemPrompt, ck, text)
 			callChunkText := text
-			for _, ph := range contentPlaceholders {
-				if (strings.Contains(in.prompt, ph) && !strings.Contains(callIn.prompt, ph)) ||
-					(strings.Contains(in.systemPrompt, ph) && !strings.Contains(callIn.systemPrompt, ph)) {
-					callChunkText = ""
-					break
-				}
+			if subP || subS {
+				callChunkText = ""
 			}
 			ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
 			if callErr != nil {
@@ -1407,31 +1401,36 @@ var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
 // (agent/component/base.py:602-609).
 var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
 
-// contentPlaceholders is the set of simple placeholders whose successful
-// substitution indicates the chunk body is already embedded in the prompt
-// — so the automatic append in buildExtractorMessages must be suppressed to
-// avoid duplication. "text" resolves to chunkText (the primary chunk body),
-// "chunks" is an alias for chunkText, and "content_with_weight" is a chunk
-// field carrying the weighted body. Any content-bearing placeholder added
-// to substituteChunkPlaceholders' lookup must also be added here.
-var contentPlaceholders = []string{"{text}", "{chunks}", "{content_with_weight}"}
+// contentPlaceholders are the simple placeholders that resolve to the
+// chunk body. Substituting any of them indicates the chunk body is
+// already embedded in the prompt — so the automatic append in
+// buildExtractorMessages must be suppressed to avoid duplication.
+// "text" and "chunks" both map to chunkText (the primary chunk body);
+// "content_with_weight" is a chunk field carrying the weighted body.
+var contentPlaceholders = map[string]bool{
+	"text":                true,
+	"chunks":              true,
+	"content_with_weight": true,
+}
 
 // substituteChunkPlaceholders replaces {field_name} placeholders in
 // the prompt with values from the current chunk map. The special
-// alias "chunks" maps to chunkText (the current chunk's primary
-// text), matching Python's `args[chunks_key] = ck["text"]` at
+// aliases "text" and "chunks" map to chunkText (the current chunk's
+// primary text), matching Python's `args[chunks_key] = ck["text"]` at
 // extractor.py:102. Unmatched placeholders are left as-is.
-func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
+//
+// The "text" placeholder falls back to chunkText when the chunk has no
+// explicit "text" field — e.g. when only content_with_weight is present.
+// This makes {text}'s resolved value match the append path's `text`
+// variable (which also falls back content_with_weight → text).
+//
+// Returns the substituted prompt and whether any content-bearing
+// placeholder was replaced (i.e. the chunk body is now in the prompt).
+func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) (string, bool) {
 	if prompt == "" || ck == nil {
-		return prompt
+		return prompt, false
 	}
 	// Build lookup: chunk fields + "chunks" alias + "text" fallback.
-	// "text" resolves to chunkText (the primary chunk body) when the chunk
-	// has no explicit "text" field — e.g. when only content_with_weight is
-	// present. This makes {text}'s semantics match the append path's
-	// `text` variable (which also falls back content_with_weight → text),
-	// so the "did substitution change anything?" check sees a resolved
-	// {text} and correctly suppresses the append.
 	lookup := make(map[string]string, len(ck)+2)
 	for k, v := range ck {
 		lookup[k] = fmt.Sprintf("%v", v)
@@ -1442,13 +1441,18 @@ func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText str
 	if _, has := lookup["chunks"]; !has {
 		lookup["chunks"] = chunkText
 	}
-	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
+	var substituted bool
+	out := simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
 		key := match[1 : len(match)-1] // strip { }
 		if val, ok := lookup[key]; ok {
+			if contentPlaceholders[key] {
+				substituted = true
+			}
 			return val
 		}
 		return match // leave unknown placeholders as-is
 	})
+	return out, substituted
 }
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns

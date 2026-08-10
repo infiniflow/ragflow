@@ -1616,3 +1616,96 @@ func TestExtractorComponent_Invoke_ResumeTemplateChunksPath(t *testing.T) {
 		t.Errorf("chunk body missing from LLM call — resume path broken: %q", userContent)
 	}
 }
+
+// TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend
+// verifies that a content-bearing placeholder in systemPrompt (not just
+// prompt) also suppresses the automatic chunk-text append. The chunk body
+// is delivered via systemPrompt substitution; since the append is also
+// suppressed, it must NOT appear a second time in the user message.
+func TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName:    "out",
+		Prompt:       "Extract:",
+		SystemPrompt: "Context: {text}",
+		LLMID:        "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "system prompt body"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var sysContent, userContent string
+	for _, msg := range stub.lastReq.Messages {
+		switch msg.Role {
+		case eschema.System:
+			sysContent = msg.Content
+		case eschema.User:
+			userContent = msg.Content
+		}
+	}
+	// {text} in systemPrompt must be resolved to the chunk body.
+	if !strings.Contains(sysContent, "system prompt body") {
+		t.Errorf("system message missing chunk body: %q", sysContent)
+	}
+	// The append must be suppressed: the user message should NOT also
+	// contain the chunk body (otherwise it is duplicated).
+	if strings.Contains(userContent, "system prompt body") {
+		t.Errorf("chunk body duplicated into user message (append not suppressed): %q", userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring
+// verifies that a chunk field whose value happens to contain a content
+// placeholder substring (e.g. title = "{text}") does not fool the
+// suppression check. {text} in prompt is resolved to "body"; {title}
+// is resolved to "{text}" literally — the substitution function knows
+// {text} was actually replaced (title's replacement is a different
+// placeholder), so suppression triggers correctly.
+func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Body: {text}\nLabel: {title}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{
+			"text":  "the document body",
+			"title": "{text}",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	// {text} resolved to body → append suppressed. The body should appear
+	// exactly once (from {text} substitution), not twice.
+	if n := strings.Count(userContent, "the document body"); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
+	}
+	// {title} was substituted to the literal "{text}" — this is the tricky
+	// case: the substituted prompt now contains "{text}" as a value, but
+	// the suppression must still have triggered because {text} was resolved.
+	if !strings.Contains(userContent, "Label: {text}") {
+		t.Errorf("expected title substitution to produce literal '{text}' label: %q", userContent)
+	}
+}
