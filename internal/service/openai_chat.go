@@ -268,7 +268,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			_ = lfClient.Shutdown(shutdownCtx)
 		}()

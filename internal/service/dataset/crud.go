@@ -552,11 +552,10 @@ func extractDocIDs(docs []entity.Document) []string {
 // deleteDatasetEngineData cleans up engine-level chunks and metadata for all
 // documents in a dataset being deleted. Called before the DB transaction
 // because engine operations are not transactional.
-func (d *DatasetService) deleteDatasetEngineData(kb *entity.Knowledgebase, docIDs []string) {
+func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity.Knowledgebase, docIDs []string) {
 	if d.docEngine == nil || len(docIDs) == 0 {
 		return
 	}
-	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 
 	if _, err := d.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docIDs}, indexName, kb.ID); err != nil {

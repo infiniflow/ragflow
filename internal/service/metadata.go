@@ -105,7 +105,7 @@ type SearchMetadataResponse struct {
 }
 
 // SearchMetadata searches the metadata index with the given parameters
-func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
+func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
 	searchReq := &types.SearchMetadataRequest{
 		TenantID: tenantID,
 		Offset:   0,
@@ -116,7 +116,7 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 		},
 	}
 
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}

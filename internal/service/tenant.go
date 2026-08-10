@@ -320,9 +320,9 @@ func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*Te
 }
 
 // CreateMetadataStore creates the metadata store for a tenant
-func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) CreateMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
 	// Call document engine to create doc meta table
-	err := s.docEngine.CreateMetadataStore(context.Background(), tenantID)
+	err := s.docEngine.CreateMetadataStore(ctx, tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to create metadata table: %w", err)
 	}
@@ -331,9 +331,9 @@ func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, 
 }
 
 // DeleteMetadataStore deletes the metadata store for a tenant
-func (s *TenantService) DeleteMetadataStore(tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) DeleteMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
 	// Call document engine to delete doc meta table
-	err := s.docEngine.DropMetadataStore(context.Background(), tenantID)
+	err := s.docEngine.DropMetadataStore(ctx, tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
 	}

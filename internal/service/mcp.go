@@ -636,7 +636,7 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 			}
 		}
 
-		mcpCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 		tools, fetchErr := utility.FetchTools(mcpCtx, utility.FetchOptions{
 			URL:        url,
 			ServerType: stype,
@@ -738,8 +738,9 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 			vars[k] = sv
 		}
 	}
+	ctx := context.Background()
 
-	mcpCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	tools, err := utility.FetchTools(mcpCtx, utility.FetchOptions{
 		URL:        req.URL,

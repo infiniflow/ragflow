@@ -226,7 +226,7 @@ func dbConnectionPort(port interface{}) string {
 // short timeout to keep the API responsive when targets are unreachable.
 // The "required argument are missing" message has a trailing semicolon
 // and space to stay byte-identical with the Python implementation.
-func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequest) (common.ErrorCode, error) {
+func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req *TestDBConnectionRequest) (common.ErrorCode, error) {
 	if missing := missingDBConnectionFields(req); len(missing) > 0 {
 		return common.CodeArgumentError, fmt.Errorf("required argument are missing: %s; ", strings.Join(missing, ","))
 	}
@@ -263,13 +263,13 @@ func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequ
 		}
 		defer db.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), dbProbeTimeout)
+		newCtx, cancel := context.WithTimeout(ctx, dbProbeTimeout)
 		defer cancel()
 
-		if err = db.PingContext(ctx); err != nil {
+		if err = db.PingContext(newCtx); err != nil {
 			return common.CodeExceptionError, err
 		}
-		if _, err = db.ExecContext(ctx, "SELECT 1"); err != nil {
+		if _, err = db.ExecContext(newCtx, "SELECT 1"); err != nil {
 			return common.CodeExceptionError, err
 		}
 	default:
