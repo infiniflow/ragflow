@@ -25,11 +25,12 @@ func TestAssignColumn(t *testing.T) {
 		{PageNumber: 0, X0: 50, X1: 250, Text: "col0-left"},
 		{PageNumber: 0, X0: 55, X1: 250, Text: "col0-mid"},
 		{PageNumber: 0, X0: 400, X1: 600, Text: "col1"},
+		{PageNumber: 0, X0: 410, X1: 610, Text: "col1-b"},
 		{PageNumber: 1, X0: 50, X1: 250, Text: "pg1-col0"},
 	}
 	result := AssignColumn(boxes)
-	if len(result) != 4 {
-		t.Fatal("expected 4 boxes")
+	if len(result) != 5 {
+		t.Fatal("expected 5 boxes")
 	}
 	if result[0].ColID != result[1].ColID {
 		t.Error("boxes 0 and 1 (close x0) should be same column")

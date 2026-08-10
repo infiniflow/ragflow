@@ -10,20 +10,31 @@ import (
 )
 
 // AssignColumn groups boxes into columns using the hybrid gap + KMeans
-// strategy that beats KMeans-only column detection on real documents.
+// strategy that beats gap-only column detection on real documents.
 //
-// It mirrors tool-py/column_detectors.py:gap_kmeans_combined_column_counts:
-//  1. Geometric gap (whitespace gutter voting) is the safe base: it never
-//     over-splits a single column, so when it reports >=2 gutters we trust it.
+// Decision per page (mirrors tool-py/diagnose_combined.py):
+//  1. Geometric gap (whitespace gutter voting) finds candidate column
+//     separators. But "gap >= 2" is NOT blindly trusted:
+//     - If the resulting columns are NARROW (max column width <
+//     tableMaxColFrac of the page), they are table cells, not text columns:
+//     the page is a single reading block -> return 1 directly (and do NOT
+//     fall through to the balance gate, which would re-split the table's
+//     bimodal x0 into 2).
+//     - If gap == 2, the separator is unreliable (it is often a fake gutter
+//     from indentation/line-width variation, not a real column). Defer to
+//     the balance gate below.
+//     - If gap >= 3 with WIDE columns, it is a real multi-column layout:
+//     trust it and partition by KMeans(g).
 //  2. When gap reports 1 (single column OR a double column whose gutter is
-//     bridged by full-width front matter), a forced k=2 KMeans on the BODY x0
-//     decides whether the lines form TWO BALANCED clusters (each holding >=
-//     minModeFrac of body lines, separated by >= minSepFrac*width). A balanced
-//     split is a real second column; an unbalanced split (the usual KMeans
-//     false-split on a single page) is dropped -> stays 1.
+//     bridged by full-width front matter), or gap == 2 was deferred, a forced
+//     k=2 KMeans on the BODY x0 decides whether the lines form TWO clusters
+//     each holding >= minModeFrac of body lines, separated by >=
+//     minSepFrac*width. A balanced split is a real second column; an
+//     unbalanced split (the usual KMeans false-split on a single page) is
+//     dropped -> stays 1.
 //
-// Net effect: gap's zero false-split on single pages is preserved while the
-// double-column pages that gap alone misses are recovered.
+// Net effect: tables and fake gutters no longer over-split, while the
+// double-column pages that gap alone misses are recovered by the balance gate.
 func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
@@ -39,9 +50,14 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	return result
 }
 
+// tableMaxColFrac: a column narrower than this fraction of the page width is
+// treated as a table cell, not a text column. Above this, the columns are
+// wide enough to be real reading columns.
+const tableMaxColFrac = 0.22
+
 // detectColumnCount returns (columnCount, centroids) for one page.
-// columnCount is currently 1 or 2; centroids are the k cluster means in x0
-// space (snapshot of the gate decision) and are reused for ColID assignment.
+// columnCount is currently 1, 2, or >=3; centroids are the k cluster means in
+// x0 space (snapshot of the gate decision) and are reused for ColID assignment.
 func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 	lines := make([]pdf.TextBox, len(indices))
 	for i, idx := range indices {
@@ -49,15 +65,84 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 	}
 	g := gapColumnCount(lines, 0.04, 0.15, 2.0)
 	if g >= 2 {
-		// Gap found real gutters: trust it, partition by KMeans(g).
 		_, width := pageExtent(lines)
-		cents := kmeansCentroids(lines, g, width)
-		return g, cents
+		if width > 0 {
+			widths := gapColumnWidths(lines)
+			maxw := 0.0
+			for _, w := range widths {
+				if w > maxw {
+					maxw = w
+				}
+			}
+			if maxw < tableMaxColFrac*width {
+				// Narrow columns => table cells, not text columns. The page
+				// is one reading block; return 1 and skip the balance gate
+				// (which would otherwise re-split the table's x0).
+				return 1, nil
+			}
+		}
+		if g > 2 {
+			// gap >= 3 with wide columns: real multi-column layout.
+			_, w := pageExtent(lines)
+			cents := kmeansCentroids(lines, g, w)
+			return g, cents
+		}
+		// g == 2: unreliable (fake gutter or real 2-col) -> defer to balance.
 	}
 	if ok, cents := balancedBodyK2(lines, 0.30, 0.10); ok {
 		return 2, cents
 	}
 	return 1, nil
+}
+
+// gapColumnWidths returns the width (in page units) of each column found by
+// the same gutter voting as gapColumnCount. Used to tell real wide text
+// columns apart from narrow table-cell columns.
+func gapColumnWidths(lines []pdf.TextBox) []float64 {
+	n := len(lines)
+	if n == 0 {
+		return nil
+	}
+	minX0, width := pageExtent(lines)
+	if width <= 0 {
+		return nil
+	}
+	binPt := 2.0
+	nb := int(width/binPt) + 1
+	cov := make([]int, nb)
+	for _, b := range lines {
+		i0 := clampInt(int((b.X0-minX0)/binPt), 0, nb-1)
+		i1 := clampInt(int((b.X1-minX0)/binPt), 0, nb-1)
+		for i := i0; i <= i1; i++ {
+			cov[i]++
+		}
+	}
+	thr := 0.15 * float64(n)
+	var widths []float64
+	i := 0
+	for i < nb {
+		if float64(cov[i]) < thr {
+			i++
+			continue
+		}
+		j := i
+		for j < nb && float64(cov[j]) >= thr {
+			j++
+		}
+		widths = append(widths, float64(j-i)*binPt)
+		i = j
+	}
+	return widths
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // gapColumnCount mirrors column_detectors.gap_column_counts: rasterize the
