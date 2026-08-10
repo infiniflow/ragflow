@@ -25,6 +25,7 @@ catalogue problem and sends people hunting for a bad API key.
 """
 
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -131,10 +132,31 @@ async def test_discovery_that_simply_finds_nothing_stays_terse(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_credentials_in_the_base_url_never_reach_the_caller(monkeypatch):
+async def test_credentials_in_the_base_url_never_reach_the_caller(monkeypatch, caplog):
     """Users paste endpoints carrying secrets, as userinfo or as a query token.
-    The reported URL keeps only what makes the failure diagnosable."""
+    Neither the response nor the application log may repeat them, and the client
+    echoes the URL it was handed back inside the exception text."""
     secret_url = "https://svc:s3cr3t-token@models.internal:8443/v1?api-key=AKIA-SECRET#frag"
+
+    async def _refused():
+        raise ConnectionRefusedError(f"Cannot connect to {secret_url}")
+
+    module = _load_service(monkeypatch, _refused)
+    with caplog.at_level(logging.DEBUG):
+        _, message, _ = await module.verify_api_key(PROVIDER, "sk-test", base_url=secret_url)
+
+    logged = caplog.text
+    for secret in ("s3cr3t-token", "AKIA-SECRET", "svc:"):
+        assert secret not in message, message
+        assert secret not in logged, logged
+    assert "https://***@models.internal:8443/v1" in message
+
+
+@pytest.mark.asyncio
+async def test_authority_less_base_url_is_not_echoed_back(monkeypatch):
+    """`urlparse` happily accepts a URL with no authority, e.g. one the user typed
+    without a scheme. There is no host to keep, so nothing may be echoed."""
+    secret_url = "models.internal/v1?api-key=AKIA-SECRET"
 
     async def _refused():
         raise ConnectionRefusedError(f"Cannot connect to {secret_url}")
@@ -142,25 +164,46 @@ async def test_credentials_in_the_base_url_never_reach_the_caller(monkeypatch):
     module = _load_service(monkeypatch, _refused)
     _, message, _ = await module.verify_api_key(PROVIDER, "sk-test", base_url=secret_url)
 
-    assert "s3cr3t-token" not in message
-    assert "AKIA-SECRET" not in message
-    assert "svc:" not in message
-    assert "https://***@models.internal:8443/v1" in message
+    assert "AKIA-SECRET" not in message, message
+    assert "<unparsable url>" in message
+
+
+@pytest.mark.asyncio
+async def test_invalid_port_does_not_propagate_out_of_the_error_handler(monkeypatch):
+    """`urlparse` defers port validation to attribute access, so a bad port raises
+    from inside the `except` block rather than at parse time."""
+    secret_url = "https://svc:s3cr3t-token@models.internal:notaport/v1"
+
+    async def _refused():
+        raise ConnectionRefusedError("Cannot connect")
+
+    module = _load_service(monkeypatch, _refused)
+    ok, message, _ = await module.verify_api_key(PROVIDER, "sk-test", base_url=secret_url)
+
+    assert ok is False
+    assert "s3cr3t-token" not in message, message
+    assert "<unparsable url>" in message
 
 
 def test_redact_url_keeps_what_makes_a_failure_diagnosable():
-    repo_root = Path(__file__).resolve().parents[5]
-    source = (repo_root / "api" / "apps" / "services" / "provider_api_service.py").read_text()
-    namespace: dict = {}
-    exec(compile(_extract_function(source, "_redact_url"), "provider_api_service.py", "exec"), namespace)
-    redact = namespace["_redact_url"]
+    redact = _load_helper("_redact_url")
 
     assert redact("http://127.0.0.1:1234/v1") == "http://127.0.0.1:1234/v1"
     assert redact("https://user:pw@host/v1") == "https://***@host/v1"
     assert redact("https://host/v1?api-key=SECRET") == "https://host/v1"
     assert redact("https://host/v1#tok=SECRET") == "https://host/v1"
+    assert redact("host/v1?api-key=SECRET") == "<unparsable url>"
+    assert redact("https://host:notaport/v1") == "<unparsable url>"
     assert redact("") == ""
     assert redact(None) == ""
+
+
+def _load_helper(name: str):
+    repo_root = Path(__file__).resolve().parents[5]
+    source = (repo_root / "api" / "apps" / "services" / "provider_api_service.py").read_text()
+    namespace: dict = {}
+    exec(compile(_extract_function(source, name), "provider_api_service.py", "exec"), namespace)
+    return namespace[name]
 
 
 def _extract_function(source: str, name: str):

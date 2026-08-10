@@ -65,16 +65,39 @@ def _redact_url(url: str | None) -> str:
         return ""
     try:
         parsed = urlparse(url)
+        # A base URL with no authority is malformed for our purposes, and `.port` only
+        # validates on access, so an unparsable port raises here rather than at parse
+        # time. Either way the input is unsafe to echo back, so give up on it entirely.
+        if not parsed.netloc:
+            return "<unparsable url>"
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
     except ValueError:
         return "<unparsable url>"
-    if not parsed.netloc:
-        return url
-    netloc = parsed.hostname or ""
-    if parsed.port:
-        netloc = f"{netloc}:{parsed.port}"
     if parsed.username or parsed.password:
         netloc = f"***@{netloc}"
     return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+
+
+def _scrub_url_secrets(text: str, url: str | None) -> str:
+    """Remove every secret-bearing fragment of *url* from provider-produced text.
+
+    A client echoes back the URL it was handed, whole or in part, so replacing only
+    the exact string it was given is not enough to keep userinfo and query tokens out
+    of a message built from an exception.
+    """
+    if not text or not url:
+        return text
+    text = text.replace(url, _redact_url(url))
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return text
+    fragments = [parsed.password, parsed.username, parsed.query, parsed.fragment]
+    for fragment in sorted((f for f in fragments if f), key=len, reverse=True):
+        text = text.replace(fragment, "***")
+    return text
 
 
 def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
@@ -713,10 +736,11 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 # the host is unreachable from inside the container, TLS is wrong, the port is
                 # closed. Reporting only "no models found" sends people hunting for a bad key.
                 safe_url = _redact_url(model_base_url)
-                logging.exception("Model discovery failed for provider %s at %s", provider_name, safe_url)
-                # aiohttp echoes the URL it was handed, so scrub the raw form out of the
-                # exception text too rather than only out of our own interpolation.
-                reason = str(e).replace(model_base_url, safe_url) if model_base_url else str(e)
+                reason = _scrub_url_secrets(str(e), model_base_url)
+                # logging.exception would write the raw `e` and its traceback, and clients
+                # echo the URL they were handed, so the credentials would land in the log
+                # even though the caller-visible message is clean. Log the scrubbed reason.
+                logging.error("Model discovery failed for provider %s at %s: %s: %s", provider_name, safe_url, type(e).__name__, reason)
                 discovery_error = f" Discovery against {safe_url} failed: {reason}"
             if not factory_llms:
                 return False, f"No models found for provider '{provider_id_or_name}'.{discovery_error}", {}
