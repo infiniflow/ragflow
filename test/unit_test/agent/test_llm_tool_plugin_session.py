@@ -62,7 +62,7 @@ def test_explicit_request_timeout_overrides_default():
 
 
 def test_constructor_default_timeout_is_ten_seconds():
-    for configured in (None, 0, -1):
+    for configured in (None, 0, 0.5, -1):
         session, recording = _make_session(default_timeout=configured)
         result = asyncio.run(session.tool_call_async("transcribe_0", {}))
         assert result == "done"
