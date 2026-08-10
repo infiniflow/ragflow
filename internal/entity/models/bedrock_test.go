@@ -705,6 +705,43 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 	}
 }
 
+func TestBedrockListModelsUsesDiscoveryEndpointOverride(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/foundation-models" {
+			t.Errorf("path=%q, want /foundation-models", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("byInferenceType"); got != "ON_DEMAND" {
+			t.Errorf("byInferenceType=%q, want ON_DEMAND", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Errorf("Authorization=%q, want Bearer token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"modelSummaries": [
+				{"modelId":"anthropic.claude-3-haiku-20240307-v1:0","inputModalities":["TEXT"],"outputModalities":["TEXT"],"inferenceTypesSupported":["ON_DEMAND"],"modelLifecycle":{"status":"ACTIVE"}}
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", strings.TrimPrefix(srv.URL, "https://"))
+	key := fmt.Sprintf(
+		`{"auth_mode":"bedrock_api_key","bedrock_region":"us-east-1","bedrock_api_key":"token","bedrock_discovery_endpoint_url":%q}`,
+		srv.URL,
+	)
+	m := NewBedrockModel(nil, URLSuffix{Models: "foundation-models"})
+	m.baseModel.httpClient = srv.Client()
+
+	models, err := m.ListModels(t.Context(), &APIConfig{ApiKey: &key})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "anthropic.claude-3-haiku-20240307-v1:0" {
+		t.Fatalf("models=%v", models)
+	}
+}
+
 func TestBedrockModelTypesDoesNotAdvertiseUnsupportedVision(t *testing.T) {
 	got := bedrockModelTypes("amazon.nova-lite-v1:0", []string{"TEXT", "IMAGE"}, []string{"TEXT"})
 	if diff := strings.Join(got, ","); diff != "chat" {
