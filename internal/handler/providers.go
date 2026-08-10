@@ -272,7 +272,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 }
 
 func buildModelListAPIKey(providerName, apiKey, region string, extensions map[string]interface{}) (string, error) {
-	if providerName != "Bedrock" || len(extensions) == 0 {
+	if !strings.EqualFold(providerName, "Bedrock") || len(extensions) == 0 {
 		return apiKey, nil
 	}
 	bedrockKey := make(map[string]interface{}, len(extensions)+2)
@@ -306,7 +306,7 @@ func shouldListRemoteModels(apiKey, baseURL string, allowDefaultEndpoint bool) b
 }
 
 func isBedrockAPIKeyConfig(providerName, apiKey string) bool {
-	if providerName != "Bedrock" || apiKey == "" {
+	if !strings.EqualFold(providerName, "Bedrock") || apiKey == "" {
 		return false
 	}
 	var keyConfig struct {

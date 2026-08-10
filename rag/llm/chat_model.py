@@ -2396,6 +2396,8 @@ class LiteLLMBase(ABC):
                 if not bedrock_api_key:
                     raise ValueError("Bedrock API key must be provided")
                 bedrock_api_key = validate_bedrock_api_key(bedrock_api_key)
+                service = "bedrock-runtime" if endpoint_type == "runtime" else ("openai" if endpoint_type == "mantle_openai" else "anthropic")
+                logging.debug("Configuring Bedrock API-key chat path: auth_mode=%s endpoint_type=%s service=%s", mode, endpoint_type, service)
                 if endpoint_type == "runtime":
                     # LiteLLM's Bedrock adapter always constructs a SigV4
                     # request before restoring an explicit Authorization

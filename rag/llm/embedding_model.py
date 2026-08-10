@@ -705,6 +705,12 @@ class BedrockEmbed(Base):
                 max_attempts = max(0, int(os.environ.get("LLM_MAX_RETRIES", 5)))
             except (TypeError, ValueError):
                 max_attempts = 5
+            logging.debug(
+                "Configuring Bedrock API-key embedding path: auth_mode=%s endpoint_type=%s service=%s",
+                mode,
+                endpoint_type,
+                "bedrock-runtime",
+            )
             self.client = create_bedrock_bearer_client(
                 "bedrock-runtime",
                 bedrock_api_key,

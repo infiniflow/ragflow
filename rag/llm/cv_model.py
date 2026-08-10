@@ -1401,6 +1401,13 @@ class BedrockCV(Base):
         if self.auth_mode == "bedrock_api_key":
             if not self.bedrock_api_key:
                 raise ValueError("Bedrock API key must be provided")
+            service = "bedrock-runtime" if self.endpoint_type == "runtime" else ("openai" if self.endpoint_type == "mantle_openai" else "anthropic")
+            logging.debug(
+                "Configuring Bedrock API-key vision path: auth_mode=%s endpoint_type=%s service=%s",
+                self.auth_mode,
+                self.endpoint_type,
+                service,
+            )
             if self.endpoint_type == "runtime":
                 args = {
                     "aws_region_name": self.aws_region,

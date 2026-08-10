@@ -37,8 +37,10 @@ func TestListProviderModelsRequestRejectsObjectAPIKey(t *testing.T) {
 }
 
 func TestIsBedrockAPIKeyConfig(t *testing.T) {
-	if !isBedrockAPIKeyConfig("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":"token"}`) {
-		t.Fatal("Bedrock API key mode was not detected")
+	for _, providerName := range []string{"Bedrock", "bedrock", "BEDROCK"} {
+		if !isBedrockAPIKeyConfig(providerName, `{"auth_mode":"bedrock_api_key","bedrock_api_key":"token"}`) {
+			t.Fatalf("%s API key mode was not detected", providerName)
+		}
 	}
 	if isBedrockAPIKeyConfig("Bedrock", `{"auth_mode":"access_key_secret"}`) {
 		t.Fatal("SigV4 mode was misclassified as API key mode")
@@ -73,23 +75,27 @@ func TestProviderListModelItemUsesFrontendContract(t *testing.T) {
 }
 
 func TestBuildModelListAPIKeyMapsBedrockExtensions(t *testing.T) {
-	got, err := buildModelListAPIKey("Bedrock", "token", "ap-northeast-1", map[string]interface{}{
-		"auth_mode":              "bedrock_api_key",
-		"endpoint_type":          "runtime",
-		"discovery_endpoint_url": "https://bedrock.ap-northeast-1.amazonaws.com",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var key map[string]interface{}
-	if err = json.Unmarshal([]byte(got), &key); err != nil {
-		t.Fatal(err)
-	}
-	if key["bedrock_api_key"] != "token" || key["bedrock_region"] != "ap-northeast-1" || key["bedrock_endpoint_type"] != "runtime" {
-		t.Fatalf("key=%+v", key)
-	}
-	if key["bedrock_discovery_endpoint_url"] != "https://bedrock.ap-northeast-1.amazonaws.com" {
-		t.Fatalf("key=%+v", key)
+	for _, providerName := range []string{"Bedrock", "bedrock", "BEDROCK"} {
+		t.Run(providerName, func(t *testing.T) {
+			got, err := buildModelListAPIKey(providerName, "token", "ap-northeast-1", map[string]interface{}{
+				"auth_mode":              "bedrock_api_key",
+				"endpoint_type":          "runtime",
+				"discovery_endpoint_url": "https://bedrock.ap-northeast-1.amazonaws.com",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var key map[string]interface{}
+			if err = json.Unmarshal([]byte(got), &key); err != nil {
+				t.Fatal(err)
+			}
+			if key["bedrock_api_key"] != "token" || key["bedrock_region"] != "ap-northeast-1" || key["bedrock_endpoint_type"] != "runtime" {
+				t.Fatalf("key=%+v", key)
+			}
+			if key["bedrock_discovery_endpoint_url"] != "https://bedrock.ap-northeast-1.amazonaws.com" {
+				t.Fatalf("key=%+v", key)
+			}
+		})
 	}
 }
 
