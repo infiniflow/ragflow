@@ -24,11 +24,12 @@ type remoteModelProbeDriver struct {
 
 type connectionProbeDriver struct {
 	*modelModule.DummyModel
-	checkErr   error
-	chatErr    error
-	checkCalls int
-	chatCalls  int
-	lastConfig *modelModule.APIConfig
+	checkErr     error
+	chatErr      error
+	checkCalls   int
+	chatCalls    int
+	lastConfig   *modelModule.APIConfig
+	lastMessages []modelModule.Message
 }
 
 func (d *connectionProbeDriver) CheckConnection(_ context.Context, config *modelModule.APIConfig) error {
@@ -37,9 +38,10 @@ func (d *connectionProbeDriver) CheckConnection(_ context.Context, config *model
 	return d.checkErr
 }
 
-func (d *connectionProbeDriver) ChatWithMessages(_ context.Context, _ string, _ []modelModule.Message, config *modelModule.APIConfig, _ *modelModule.ChatConfig, _ *common.ModelUsage) (*modelModule.ChatResponse, error) {
+func (d *connectionProbeDriver) ChatWithMessages(_ context.Context, _ string, messages []modelModule.Message, config *modelModule.APIConfig, _ *modelModule.ChatConfig, _ *common.ModelUsage) (*modelModule.ChatResponse, error) {
 	d.chatCalls++
 	d.lastConfig = config
+	d.lastMessages = messages
 	if d.chatErr != nil {
 		return nil, d.chatErr
 	}
@@ -274,16 +276,28 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`
 	modelInfo := []CreateInstanceModelInfo{{ModelName: "test-model", ModelTypes: []string{"chat"}, MaxTokens: 8192}}
 	tests := []struct {
-		name          string
-		checkErr      error
-		chatErr       error
-		region        string
-		wantNilRegion bool
-		wantErr       bool
-		wantInstances int64
+		name             string
+		checkErr         error
+		chatErr          error
+		baseURL          string
+		region           string
+		wantBaseURL      string
+		wantConfigRegion string
+		wantRegion       string
+		wantErr          bool
+		wantInstances    int64
 	}{
 		{name: "rejects failed model verification", chatErr: errors.New("invalid credentials"), region: "ap-northeast-1", wantErr: true, wantInstances: 0},
-		{name: "creates selected model without catalog access", checkErr: errors.New("catalog access denied"), wantNilRegion: true, wantInstances: 1},
+		{
+			name:             "creates selected model without catalog access",
+			checkErr:         errors.New("catalog access denied"),
+			baseURL:          "  https://bedrock-runtime.ap-northeast-1.amazonaws.com  ",
+			region:           "  ap-northeast-1  ",
+			wantBaseURL:      "https://bedrock-runtime.ap-northeast-1.amazonaws.com",
+			wantConfigRegion: "ap-northeast-1",
+			wantRegion:       "ap-northeast-1",
+			wantInstances:    1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -306,7 +320,7 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 				"Bedrock",
 				"bedrock-instance",
 				apiKey,
-				"",
+				tt.baseURL,
 				tt.region,
 				"user-1",
 				modelInfo,
@@ -320,8 +334,11 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 			if driver.lastConfig == nil {
 				t.Fatal("model verification did not receive API config")
 			}
-			if tt.wantNilRegion && driver.lastConfig.Region != nil {
-				t.Fatalf("config.Region = %q, want nil so the credential region is used", *driver.lastConfig.Region)
+			if tt.wantConfigRegion != "" && (driver.lastConfig.Region == nil || *driver.lastConfig.Region != tt.wantConfigRegion) {
+				t.Fatalf("config.Region = %v, want %q", driver.lastConfig.Region, tt.wantConfigRegion)
+			}
+			if tt.wantBaseURL != "" && (driver.lastConfig.BaseURL == nil || *driver.lastConfig.BaseURL != tt.wantBaseURL) {
+				t.Fatalf("config.BaseURL = %v, want %q", driver.lastConfig.BaseURL, tt.wantBaseURL)
 			}
 			if tt.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "invalid credentials") {
@@ -341,7 +358,209 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 			if count != tt.wantInstances {
 				t.Fatalf("instance count = %d, want %d", count, tt.wantInstances)
 			}
+			if tt.wantErr {
+				return
+			}
+
+			var instance entity.TenantModelInstance
+			if err := db.Where("instance_name = ?", "bedrock-instance").First(&instance).Error; err != nil {
+				t.Fatalf("failed to load created instance: %v", err)
+			}
+			extra := make(map[string]string)
+			if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+				t.Fatalf("failed to decode created instance extra: %v", err)
+			}
+			if extra["base_url"] != tt.wantBaseURL || extra["region"] != tt.wantRegion {
+				t.Fatalf("created extra = %#v, want base_url=%q region=%q", extra, tt.wantBaseURL, tt.wantRegion)
+			}
+
+			updatedBaseURL := "https://bedrock-runtime.us-west-2.amazonaws.com"
+			code, err = NewModelProviderService().AlterProviderInstance(
+				t.Context(),
+				"user-1",
+				"Bedrock",
+				"bedrock-instance",
+				"",
+				apiKey,
+				"  "+updatedBaseURL+"  ",
+				"  us-west-2  ",
+				modelInfo,
+				false,
+			)
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("AlterProviderInstance() = (%v, %v), want success", code, err)
+			}
+			if err := db.Where("id = ?", instance.ID).First(&instance).Error; err != nil {
+				t.Fatalf("failed to reload altered instance: %v", err)
+			}
+			if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+				t.Fatalf("failed to decode altered instance extra: %v", err)
+			}
+			if extra["base_url"] != updatedBaseURL || extra["region"] != "us-west-2" {
+				t.Fatalf("altered extra = %#v, want base_url=%q region=%q", extra, updatedBaseURL, "us-west-2")
+			}
+
+			driver.lastConfig = nil
+			code, err = NewModelProviderService().AlterProviderInstance(
+				t.Context(),
+				"user-1",
+				"Bedrock",
+				"bedrock-instance",
+				"",
+				apiKey,
+				"",
+				"",
+				modelInfo,
+				true,
+			)
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("AlterProviderInstance() clearing overrides = (%v, %v), want success", code, err)
+			}
+			if driver.lastConfig == nil || driver.lastConfig.Region != nil {
+				t.Fatalf("config.Region = %v, want nil so the Bedrock key region is used", driver.lastConfig)
+			}
+			if err := db.Where("id = ?", instance.ID).First(&instance).Error; err != nil {
+				t.Fatalf("failed to reload instance with cleared overrides: %v", err)
+			}
+			if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+				t.Fatalf("failed to decode cleared instance extra: %v", err)
+			}
+			if _, ok := extra["base_url"]; ok {
+				t.Fatalf("cleared extra still contains base_url: %#v", extra)
+			}
+			if _, ok := extra["region"]; ok {
+				t.Fatalf("cleared extra still contains region: %#v", extra)
+			}
 		})
+	}
+}
+
+func TestProviderInstanceRejectsInvalidModelInfoBeforeMutation(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "user-tenant-model-validation", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-model-validation", TenantID: "tenant-1", ProviderName: "Bedrock"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not registered")
+	}
+	originalDriver := provider.ModelDriver
+	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	provider.ModelDriver = driver
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`
+	validModel := CreateInstanceModelInfo{ModelName: "valid-model", ModelTypes: []string{"chat"}, MaxTokens: 8192}
+	invalidModels := []CreateInstanceModelInfo{validModel, {ModelName: "unclassified-model"}}
+	service := NewModelProviderService()
+
+	code, err := service.CreateProviderInstance(t.Context(), "Bedrock", "bedrock-instance", apiKey, "", "ap-northeast-1", "user-1", invalidModels)
+	if err == nil || code != common.CodeDataError {
+		t.Fatalf("CreateProviderInstance() = (%v, %v), want data error", code, err)
+	}
+	if driver.chatCalls != 0 {
+		t.Fatalf("ChatWithMessages calls = %d, want validation before verification", driver.chatCalls)
+	}
+	var count int64
+	if err := db.Model(&entity.TenantModelInstance{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("instance count = %d, err = %v, want no mutation", count, err)
+	}
+
+	duplicateModels := []CreateInstanceModelInfo{validModel, validModel}
+	code, err = service.CreateProviderInstance(t.Context(), "Bedrock", "duplicate-instance", apiKey, "", "ap-northeast-1", "user-1", duplicateModels)
+	if err == nil || code != common.CodeDataError {
+		t.Fatalf("duplicate CreateProviderInstance() = (%v, %v), want data error", code, err)
+	}
+	if err := db.Model(&entity.TenantModelInstance{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("instance count = %d, err = %v, want duplicate rejection before mutation", count, err)
+	}
+
+	unserializableModels := []CreateInstanceModelInfo{{
+		ModelName:  "invalid-extra-model",
+		ModelTypes: []string{"chat"},
+		Extra:      map[string]interface{}{"invalid": func() {}},
+	}}
+	code, err = service.CreateProviderInstance(t.Context(), "Bedrock", "atomic-create", apiKey, "", "ap-northeast-1", "user-1", unserializableModels)
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("atomic CreateProviderInstance() = (%v, %v), want persistence error", code, err)
+	}
+	if err := db.Model(&entity.TenantModelInstance{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("instance count = %d, err = %v, want transaction rollback", count, err)
+	}
+
+	code, err = service.CreateProviderInstance(t.Context(), "Bedrock", "bedrock-instance", apiKey, "", "ap-northeast-1", "user-1", []CreateInstanceModelInfo{validModel})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("valid CreateProviderInstance() = (%v, %v)", code, err)
+	}
+	driver.chatCalls = 0
+	code, err = service.AlterProviderInstance(t.Context(), "user-1", "Bedrock", "bedrock-instance", "", "changed-token", "", "", invalidModels, false)
+	if err == nil || code != common.CodeDataError {
+		t.Fatalf("AlterProviderInstance() = (%v, %v), want data error", code, err)
+	}
+	if driver.chatCalls != 0 {
+		t.Fatalf("ChatWithMessages calls = %d, want validation before verification", driver.chatCalls)
+	}
+	var instance entity.TenantModelInstance
+	if err := db.Where("instance_name = ?", "bedrock-instance").First(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if instance.APIKey != apiKey {
+		t.Fatalf("APIKey = %q, want unchanged", instance.APIKey)
+	}
+
+	code, err = service.AlterProviderInstance(t.Context(), "user-1", "Bedrock", "bedrock-instance", "", "changed-token", "", "", []CreateInstanceModelInfo{
+		validModel,
+		{ModelName: "invalid-extra-model", ModelTypes: []string{"chat"}, Extra: map[string]interface{}{"invalid": func() {}}},
+	}, false)
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("atomic AlterProviderInstance() = (%v, %v), want persistence error", code, err)
+	}
+	if err := db.Where("instance_name = ?", "bedrock-instance").First(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if instance.APIKey != apiKey {
+		t.Fatalf("APIKey after rollback = %q, want %q", instance.APIKey, apiKey)
+	}
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", instance.ID).Count(&modelCount).Error; err != nil || modelCount != 1 {
+		t.Fatalf("model count after rollback = %d, err = %v, want 1", modelCount, err)
+	}
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ? AND model_name = ?", instance.ID, "valid-model").Update("extra", "{invalid-json").Error; err != nil {
+		t.Fatal(err)
+	}
+	code, err = service.AlterProviderInstance(t.Context(), "user-1", "Bedrock", "bedrock-instance", "", "another-token", "", "", []CreateInstanceModelInfo{validModel}, false)
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("invalid-existing-extra AlterProviderInstance() = (%v, %v), want persistence error", code, err)
+	}
+	if err := db.Where("instance_name = ?", "bedrock-instance").First(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if instance.APIKey != apiKey {
+		t.Fatalf("APIKey after existing-extra decode rollback = %q, want %q", instance.APIKey, apiKey)
+	}
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ? AND model_name = ?", instance.ID, "valid-model").Update("extra", "{}").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	code, err = service.AlterProviderInstance(t.Context(), "user-1", "Bedrock", "bedrock-instance", "", "another-token", "", "", []CreateInstanceModelInfo{
+		{ModelName: "valid-model", ModelTypes: []string{"chat"}, Extra: map[string]interface{}{"invalid": func() {}}},
+	}, false)
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("existing-model AlterProviderInstance() = (%v, %v), want persistence error", code, err)
+	}
+	if err := db.Where("instance_name = ?", "bedrock-instance").First(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if instance.APIKey != apiKey {
+		t.Fatalf("APIKey after existing-model rollback = %q, want %q", instance.APIKey, apiKey)
 	}
 }
 
@@ -370,6 +589,57 @@ func TestVerifyProviderAPIKeyWithoutModelsUsesConnectionCheck(t *testing.T) {
 	}
 	if driver.chatCalls != 0 {
 		t.Fatalf("ChatWithMessages calls = %d, want 0 without selected models", driver.chatCalls)
+	}
+}
+
+func TestCheckConnectionPersistsVerifyStatusInOwnedInstanceTenant(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "member-relation", UserID: "user-1", TenantID: "other-tenant", Role: "normal", InvitedBy: "other-owner", Status: &activeStatus},
+		&entity.UserTenant{ID: "owner-relation", UserID: "user-1", TenantID: "owned-tenant", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "owned-provider", TenantID: "owned-tenant", ProviderName: "Bedrock"},
+		&entity.TenantModelInstance{ID: "owned-instance", InstanceName: "bedrock-instance", ProviderID: "owned-provider", APIKey: "token", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "owned-model", ModelName: "model-a", ModelType: int(entity.ModelTypeChat), ProviderID: "owned-provider", InstanceID: "owned-instance", Status: "active", Extra: "{}"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not registered")
+	}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	code, err := NewModelProviderService().CheckConnection(
+		t.Context(),
+		"Bedrock",
+		`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`,
+		"ap-northeast-1",
+		"",
+		"owned-instance",
+		"user-1",
+		[]CheckConnectionModelInfo{{ModelName: "model-a", ModelTypes: []string{"chat"}}},
+	)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CheckConnection() = (%v, %v), want success", code, err)
+	}
+
+	var persisted entity.TenantModel
+	if err := db.First(&persisted, "id = ?", "owned-model").Error; err != nil {
+		t.Fatal(err)
+	}
+	var extra map[string]interface{}
+	if err := json.Unmarshal([]byte(persisted.Extra), &extra); err != nil {
+		t.Fatal(err)
+	}
+	if extra["verify"] != entity.ModelVerifySuccess {
+		t.Fatalf("verify = %#v, want %q", extra["verify"], entity.ModelVerifySuccess)
 	}
 }
 
@@ -503,6 +773,59 @@ func TestVerifyProviderModelLeavesSkippedSameTypeUnknown(t *testing.T) {
 	}
 	if _, ok := result["chat-two"]; ok {
 		t.Fatalf("chat-two status = %q, want unknown so callers apply their default", result["chat-two"])
+	}
+}
+
+func TestVerifyProviderModelRejectsExplicitModelWithoutTypes(t *testing.T) {
+	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	models := []CheckConnectionModelInfo{
+		{ModelName: "valid-model", ModelTypes: []string{"chat"}},
+		{ModelName: "future-model"},
+	}
+
+	result, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, models)
+	if err == nil || !strings.Contains(err.Error(), "at least one supported model_type is required") {
+		t.Fatalf("verifyProviderModel() error = %v, want missing model type error", err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("verification result = %#v, want empty", result)
+	}
+	if driver.chatCalls != 0 {
+		t.Fatalf("ChatWithMessages calls = %d, want no inferred verification", driver.chatCalls)
+	}
+}
+
+func TestNormalizeModelTypesPreservesDocumentParse(t *testing.T) {
+	types, err := normalizeModelTypes([]string{" doc_parse "})
+	if err != nil {
+		t.Fatalf("normalizeModelTypes() error = %v", err)
+	}
+	if len(types) != 1 || types[0] != "doc_parse" {
+		t.Fatalf("normalizeModelTypes() = %#v, want [doc_parse]", types)
+	}
+}
+
+func TestVerifyProviderModelUsesMultimodalVisionProbe(t *testing.T) {
+	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	models := []CheckConnectionModelInfo{{ModelName: "vision-model", ModelTypes: []string{"vision"}}}
+
+	result, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, models)
+	if err != nil {
+		t.Fatalf("verifyProviderModel() error = %v", err)
+	}
+	if result["vision-model"] != entity.ModelVerifySuccess {
+		t.Fatalf("vision-model status = %q, want %q", result["vision-model"], entity.ModelVerifySuccess)
+	}
+	if len(driver.lastMessages) != 1 {
+		t.Fatalf("messages = %#v, want one vision probe", driver.lastMessages)
+	}
+	parts, ok := driver.lastMessages[0].Content.([]interface{})
+	if !ok || len(parts) != 2 {
+		t.Fatalf("vision content = %#v, want text and image parts", driver.lastMessages[0].Content)
+	}
+	imagePart, ok := parts[1].(map[string]interface{})
+	if !ok || imagePart["type"] != "image_url" {
+		t.Fatalf("vision image part = %#v, want image_url", parts[1])
 	}
 }
 

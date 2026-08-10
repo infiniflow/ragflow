@@ -56,7 +56,7 @@ export function ModelRow({
         <div className="flex flex-wrap items-center gap-1">
           <ModelTypeBadges
             types={model.model_types ?? []}
-            showEdit={!hideActions}
+            showEdit={!hideActions && Boolean(onEdit)}
             onEdit={onEdit}
             editLabel={editLabel}
             editTestSuffix={model.name}
@@ -65,11 +65,13 @@ export function ModelRow({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <ModelVerifyButton
-          status={verifyStatus}
-          onVerify={onVerify}
-          modelName={model.name}
-        />
+        {onVerify && (
+          <ModelVerifyButton
+            status={verifyStatus}
+            onVerify={onVerify}
+            modelName={model.name}
+          />
+        )}
 
         {!hideActions && (
           <button

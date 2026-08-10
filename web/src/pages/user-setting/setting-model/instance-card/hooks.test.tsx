@@ -18,14 +18,71 @@ jest.mock('../provider-schema/hooks', () => ({
   useProviderFields: jest.fn(),
 }));
 
+import { useVerifyProviderConnection } from '@/hooks/use-llm-request';
 import { act, renderHook } from '@testing-library/react';
-import { useInstanceSaveState } from './hooks';
+import { useInstanceSaveState, useVerifyProvider } from './hooks';
 
 describe('useInstanceSaveState acknowledgements', () => {
   const model = (name: string, maxTokens: number) => ({
     model_name: name,
     model_type: ['chat'],
     max_tokens: maxTokens,
+  });
+
+  it('derives the submit region from an input-select base URL', () => {
+    const intlURL = 'https://api.siliconflow.com/v1';
+    const values = { api_key: 'token', base_url: intlURL };
+    const formRef = {
+      current: { getValues: () => values },
+    } as any;
+    const modelInfoRef = { current: [model('model-a', 1024)] };
+
+    const { result } = renderHook(() =>
+      useInstanceSaveState({
+        formRef,
+        providerName: 'SiliconFlow',
+        instanceName: '',
+        instanceId: undefined,
+        isDraft: true,
+        draftName: 'intl-instance',
+        instanceDetails: undefined,
+        initialValues: values,
+        modelInfoRef,
+        baseUrlRegionMaps: {
+          base_url: new Map([[intlURL, 'intl']]),
+        },
+      }),
+    );
+
+    expect(result.current.getSavePayload()?.payload.region).toBe('intl');
+  });
+
+  it('derives the verify region from an input-select base URL', async () => {
+    const intlURL = 'https://api.siliconflow.com/v1';
+    const verifyProviderConnection = jest
+      .fn()
+      .mockResolvedValue({ code: 0, message: 'success' });
+    (useVerifyProviderConnection as jest.Mock).mockReturnValue({
+      verifyProviderConnection,
+    });
+    const formRef = {
+      current: {
+        getValues: () => ({ api_key: 'token', base_url: intlURL }),
+      },
+    } as any;
+
+    const { result } = renderHook(() =>
+      useVerifyProvider('SiliconFlow', formRef, undefined, {
+        base_url: new Map([[intlURL, 'intl']]),
+      }),
+    );
+    await act(async () => {
+      await result.current({});
+    });
+
+    expect(verifyProviderConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ region: 'intl' }),
+    );
   });
 
   it('does not absorb an edit made after the saved request snapshot', () => {
@@ -212,6 +269,15 @@ describe('useInstanceSaveState acknowledgements', () => {
     );
 
     expect(result.current.getSavePayload()).toBeNull();
+
+    expect(
+      result.current.buildInstanceUpdatePayload([model('model-a', 2048)]),
+    ).toMatchObject({
+      google_project_id: 'project-a',
+      google_region: 'us-central1',
+      google_service_account_key: 'service-account-a',
+      model_info: [model('model-a', 2048)],
+    });
 
     values = { ...values, google_project_id: 'project-b' };
     expect(result.current.getSavePayload()?.payload.google_project_id).toBe(

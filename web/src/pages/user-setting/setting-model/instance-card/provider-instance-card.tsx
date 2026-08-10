@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { LIST_MODEL_PROVIDERS } from '../provider-schema/constants';
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -29,6 +30,7 @@ import {
 } from 'react';
 import { useFetchInstanceNameSet, useHideWhenInstanceExists } from '../hooks';
 import { getProviderConfig } from '../provider-schema/field-config';
+import { resolveRegionFromValues } from '../provider-schema/hooks/use-provider-modal-actions';
 import { BedrockInstanceCard } from './bedrock-instance-card';
 import { DraftModeCard } from './components/draft-mode-card';
 import { InstanceNameSection } from './components/instance-name-section';
@@ -139,7 +141,7 @@ const GenericProviderInstanceCard = forwardRef<
     baseUrlOptions,
     providerConfig.echoTransform,
   );
-  const { formFields, formDefaultValues } = useFormFields(
+  const { formFields, formDefaultValues, baseUrlRegionMaps } = useFormFields(
     providerName,
     isDraft,
     initialValues,
@@ -152,12 +154,21 @@ const GenericProviderInstanceCard = forwardRef<
     instanceDetails,
     isDraft,
   );
+  const getModelsSectionValues = useCallback(() => {
+    const values = (formRef.current?.getValues?.() ?? {}) as Record<
+      string,
+      any
+    >;
+    const region = resolveRegionFromValues(values, baseUrlRegionMaps);
+    return region === undefined ? values : { ...values, region };
+  }, [baseUrlRegionMaps]);
 
   // ── Action handlers ─────────────────────────────────────────────
   const handleVerify = useVerifyProvider(
     providerName,
     formRef,
     providerConfig.verifyTransform,
+    baseUrlRegionMaps,
   );
   const handleDelete = useDeleteInstance(
     providerName,
@@ -167,7 +178,12 @@ const GenericProviderInstanceCard = forwardRef<
   );
 
   // ── Save state (payload builder + dirty tracking) ───────────────
-  const { getSavePayload, markSaved, markModelsEdited } = useInstanceSaveState({
+  const {
+    getSavePayload,
+    markSaved,
+    markModelsEdited,
+    buildInstanceUpdatePayload,
+  } = useInstanceSaveState({
     formRef,
     providerName,
     instanceName: instance.instance_name,
@@ -179,6 +195,7 @@ const GenericProviderInstanceCard = forwardRef<
     initialValues,
     modelInfoRef,
     submitTransform: providerConfig.submitTransform,
+    baseUrlRegionMaps,
   });
 
   // Expose the imperative save API to the parent so the top-of-page
@@ -230,6 +247,7 @@ const GenericProviderInstanceCard = forwardRef<
           draftName={draftName}
           setDraftName={setDraftName}
           verifyTransform={providerConfig.verifyTransform}
+          getModelsSectionValues={getModelsSectionValues}
         />
       ) : (
         <SavedModeCard
@@ -250,6 +268,8 @@ const GenericProviderInstanceCard = forwardRef<
           open={open}
           setOpen={setOpen}
           verifyTransform={providerConfig.verifyTransform}
+          buildInstanceUpdatePayload={buildInstanceUpdatePayload}
+          getModelsSectionValues={getModelsSectionValues}
         />
       )}
     </div>

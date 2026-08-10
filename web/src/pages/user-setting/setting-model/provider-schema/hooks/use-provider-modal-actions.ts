@@ -53,7 +53,7 @@ type ActionParams = {
  * value does not match any option's URL — in those cases the caller
  * should leave `region` unset.
  */
-const resolveRegionFromValues = (
+export const resolveRegionFromValues = (
   values: Record<string, any> | undefined,
   baseUrlRegionMaps?: Record<string, Map<string, string>>,
 ): string | undefined => {

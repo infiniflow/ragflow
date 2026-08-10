@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,82 @@ func TestListProviderModelsRequestAcceptsStringAPIKeyAndExtensions(t *testing.T)
 	}
 	if request.APIKey != "token" || request.Extensions["endpoint_type"] != "runtime" {
 		t.Fatalf("request=%+v", request)
+	}
+}
+
+func TestProviderInstanceRequestsPreserveFieldPresence(t *testing.T) {
+	var complete CreateProviderInstanceRequest
+	if err := json.Unmarshal([]byte(`{"instance_name":"empty","api_key":"","base_url":"","region":"","model_info":[]}`), &complete); err != nil {
+		t.Fatal(err)
+	}
+	if complete.APIKey == nil || complete.BaseURL == nil || complete.Region == nil || complete.ModelInfo == nil {
+		t.Fatalf("explicit empty fields lost presence: %+v", complete)
+	}
+	if complete.isNameOnly() {
+		t.Fatal("explicit empty complete request was classified as name-only")
+	}
+
+	var nameOnly CreateProviderInstanceRequest
+	if err := json.Unmarshal([]byte(`{"instance_name":"name-only"}`), &nameOnly); err != nil {
+		t.Fatal(err)
+	}
+	if nameOnly.APIKey != nil || nameOnly.BaseURL != nil || nameOnly.Region != nil || nameOnly.ModelInfo != nil {
+		t.Fatalf("omitted fields unexpectedly present: %+v", nameOnly)
+	}
+	if !nameOnly.isNameOnly() {
+		t.Fatal("exact instance_name request was not classified as name-only")
+	}
+
+	var explicitNull CreateProviderInstanceRequest
+	if err := json.Unmarshal([]byte(`{"instance_name":"null-api-key","api_key":null}`), &explicitNull); err != nil {
+		t.Fatal(err)
+	}
+	if explicitNull.isNameOnly() {
+		t.Fatal("explicit null field was classified as omitted")
+	}
+
+	var alter AlterProviderInstanceRequest
+	if err := json.Unmarshal([]byte(`{"verify":false}`), &alter); err != nil {
+		t.Fatal(err)
+	}
+	if alter.InstanceName != nil || alter.APIKey != nil || alter.BaseURL != nil || alter.ModelInfo != nil {
+		t.Fatalf("omitted alter fields unexpectedly present: %+v", alter)
+	}
+	if !alter.hasField("verify") || alter.hasField("api_key") {
+		t.Fatalf("alter field presence was not preserved: %+v", alter.rawFields)
+	}
+	if region := alter.regionValue(); region != "" {
+		t.Fatalf("omitted region = %q, want empty Bedrock credential fallback", region)
+	}
+
+	var explicitRegion AlterProviderInstanceRequest
+	if err := json.Unmarshal([]byte(`{"region":"  ap-northeast-1  "}`), &explicitRegion); err != nil {
+		t.Fatal(err)
+	}
+	if region := explicitRegion.regionValue(); region != "  ap-northeast-1  " {
+		t.Fatalf("explicit region = %q", region)
+	}
+}
+
+func TestAlterProviderInstanceRejectsNullModelInfo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{
+		{Key: "provider_id_or_name", Value: "Bedrock"},
+		{Key: "instance_id_or_name", Value: "instance"},
+	}
+	ctx.Request = httptest.NewRequest(
+		http.MethodPut,
+		"/providers/Bedrock/instances/instance",
+		bytes.NewBufferString(`{"instance_name":"instance","api_key":"","base_url":"","model_info":null,"verify":false}`),
+	)
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	(&ProviderHandler{}).AlterProviderInstance(ctx)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "model_info must be an array") {
+		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 

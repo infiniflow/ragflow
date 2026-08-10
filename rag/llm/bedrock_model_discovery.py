@@ -37,22 +37,6 @@ from rag.utils.bedrock_endpoint import (
 
 DEFAULT_BEDROCK_MAX_TOKENS = 8192
 BEDROCK_DISCOVERY_TIMEOUT_SECONDS = 10
-_MANTLE_NON_CHAT_PREFIXES = (
-    "amazon.nova-canvas-",
-    "amazon.nova-2-multimodal-embeddings-",
-    "amazon.nova-multimodal-embeddings-",
-    "amazon.nova-reel-",
-    "amazon.nova-2-sonic-",
-    "amazon.nova-sonic-",
-    "amazon.rerank-",
-    "amazon.titan-embed-",
-    "amazon.titan-image-",
-    "cohere.embed-",
-    "cohere.rerank-",
-    "luma.",
-    "stability.",
-    "twelvelabs.",
-)
 
 
 class BedrockModelDiscoveryError(RuntimeError):
@@ -130,11 +114,7 @@ def _discover_runtime_models(api_key: str, region_name: str, catalog_endpoint_ur
     return models
 
 
-def _is_mantle_chat_model(model_id: str) -> bool:
-    return not model_id.lower().startswith(_MANTLE_NON_CHAT_PREFIXES)
-
-
-def _discover_mantle_models(api_key: str, endpoint_url: str, anthropic_only: bool) -> list[DiscoveredBedrockModel]:
+def _discover_mantle_models(api_key: str, endpoint_url: str) -> list[DiscoveredBedrockModel]:
     from openai import OpenAI, OpenAIError
 
     try:
@@ -146,11 +126,15 @@ def _discover_mantle_models(api_key: str, endpoint_url: str, anthropic_only: boo
         ).models.list()
     except OpenAIError as error:
         raise BedrockModelDiscoveryError("Failed to list models from Bedrock Mantle") from error
-    return [
-        {"name": model.id, "model_types": [LLMType.CHAT.value], "max_tokens": DEFAULT_BEDROCK_MAX_TOKENS, "features": []}
-        for model in response.data
-        if _is_mantle_chat_model(model.id) and (not anthropic_only or model.id.lower().startswith("anthropic."))
-    ]
+    models: list[DiscoveredBedrockModel] = []
+    for model in response.data:
+        if not isinstance(model.id, str):
+            continue
+        model_id = model.id.strip()
+        if not model_id:
+            continue
+        models.append({"name": model_id, "model_types": [], "max_tokens": DEFAULT_BEDROCK_MAX_TOKENS, "features": []})
+    return models
 
 
 def discover_bedrock_models(config: Mapping[str, object]) -> list[DiscoveredBedrockModel]:
@@ -174,9 +158,9 @@ def discover_bedrock_models(config: Mapping[str, object]) -> list[DiscoveredBedr
         validate_bedrock_endpoint_target(catalog_endpoint_url)
         models = _discover_runtime_models(api_key, region_name, catalog_endpoint_url)
     else:
-        models = _discover_mantle_models(api_key, endpoint_url, endpoint_type == "mantle_anthropic")
+        models = _discover_mantle_models(api_key, endpoint_url)
     unique_models = {model["name"]: model for model in models}
     if not unique_models:
-        raise ValueError("No compatible Bedrock chat or embedding models were discovered")
-    logging.info("Discovered %d compatible Bedrock models", len(unique_models))
+        raise ValueError("No Bedrock models were discovered")
+    logging.info("Discovered %d Bedrock models", len(unique_models))
     return list(unique_models.values())

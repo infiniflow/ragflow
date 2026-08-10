@@ -668,7 +668,7 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
     instance_name = data["instance_name"]
     api_key = data["api_key"]
     base_url = data["base_url"]
-    region = data.get("region", "default")
+    region = data.get("region")
     model_info = data["model_info"]
     verify = data.get("verify", True)
 

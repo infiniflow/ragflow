@@ -542,6 +542,58 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
+func normalizeModelTypes(modelTypes []string) ([]string, error) {
+	normalized := make([]string, 0, len(modelTypes))
+	seen := make(map[string]struct{}, len(modelTypes))
+	for _, rawType := range modelTypes {
+		normalizedType := strings.ToLower(strings.TrimSpace(rawType))
+		canonicalType := normalizedType
+		// Document parsing is a registered driver capability but intentionally has
+		// no tenant-model bit; ParseFile dispatches it through the provider catalog.
+		if normalizedType != "doc_parse" {
+			modelType := entity.ModelTypeFromString(normalizedType)
+			if modelType == 0 {
+				return nil, fmt.Errorf("unsupported model_type %q", rawType)
+			}
+			canonicalType = modelType.HumanReadable()[0]
+		}
+		if _, ok := seen[canonicalType]; ok {
+			continue
+		}
+		seen[canonicalType] = struct{}{}
+		normalized = append(normalized, canonicalType)
+	}
+	if len(normalized) == 0 {
+		return nil, errors.New("at least one supported model_type is required")
+	}
+	return normalized, nil
+}
+
+func normalizeCreateInstanceModelInfo(modelInfo []CreateInstanceModelInfo) ([]CreateInstanceModelInfo, error) {
+	if modelInfo == nil {
+		return nil, nil
+	}
+	normalized := make([]CreateInstanceModelInfo, len(modelInfo))
+	seenNames := make(map[string]struct{}, len(modelInfo))
+	for i, model := range modelInfo {
+		model.ModelName = strings.TrimSpace(model.ModelName)
+		if model.ModelName == "" {
+			return nil, errors.New("model_name is required")
+		}
+		if _, ok := seenNames[model.ModelName]; ok {
+			return nil, fmt.Errorf("duplicate model_name %q", model.ModelName)
+		}
+		seenNames[model.ModelName] = struct{}{}
+		modelTypes, err := normalizeModelTypes(model.ModelTypes)
+		if err != nil {
+			return nil, fmt.Errorf("model %q: %w", model.ModelName, err)
+		}
+		model.ModelTypes = modelTypes
+		normalized[i] = model
+	}
+	return normalized, nil
+}
+
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
@@ -552,6 +604,13 @@ func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenant
 
 func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
+	var normalizeErr error
+	modelInfo, normalizeErr = normalizeCreateInstanceModelInfo(modelInfo)
+	if normalizeErr != nil {
+		return common.CodeDataError, normalizeErr
+	}
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -606,65 +665,67 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		Status:       "active",
 		Extra:        extraStr,
 	}
-	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
-	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
-	}
-
-	// Add models with verify result in extra.
-	if len(modelInfo) > 0 {
-		for _, model := range modelInfo {
-			if model.Extra == nil {
-				model.Extra = make(map[string]interface{})
-			}
-			verifyStatus := modelVerifyResult[model.ModelName]
-			if verifyStatus == "" {
-				verifyStatus = entity.ModelVerifyUnknown
-			}
-			model.Extra["verify"] = verifyStatus
-			if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
-				return common.CodeServerError, err
-			}
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if createErr := m.modelInstanceDAO.CreateInTransaction(ctx, tx, tenantModelInstance); createErr != nil {
+			return fmt.Errorf("fail to create model instance: %s", createErr.Error())
 		}
-	} else {
+
+		// Add models with verify result in extra.
+		if len(modelInfo) > 0 {
+			for _, model := range modelInfo {
+				if model.Extra == nil {
+					model.Extra = make(map[string]interface{})
+				}
+				verifyStatus := modelVerifyResult[model.ModelName]
+				if verifyStatus == "" {
+					verifyStatus = entity.ModelVerifyUnknown
+				}
+				model.Extra["verify"] = verifyStatus
+				if addErr := m.addModelToInstanceDB(ctx, tx, tenantID, providerName, instanceName, model); addErr != nil {
+					return addErr
+				}
+			}
+			return nil
+		}
+
 		// model_info not provided — add all factory default models.
-		// Mirrors Python's create_provider_instance
-		// (api/apps/services/provider_api_service.py:506-531).
 		targetFactoryName := providerName
 		if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
 			targetFactoryName = "siliconflow_intl"
 		}
 		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
-		if factoryProvider != nil {
-			for _, llm := range factoryProvider.Models {
-				verifyStatus := modelVerifyResult[llm.Name]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				extraMap := map[string]interface{}{
-					"verify": verifyStatus,
-				}
-				if llm.Tools != nil {
-					extraMap["is_tools"] = llm.Tools.Support
-				}
-				if llm.Thinking != nil {
-					extraMap["thinking"] = llm.Thinking.DefaultValue
-				}
-				if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
-					ModelName:  llm.Name,
-					ModelTypes: llm.ModelTypes,
-					MaxTokens: func() int {
-						if llm.MaxOutput != nil {
-							return *llm.MaxOutput
-						}
-						return 8192
-					}(),
-					Extra: extraMap,
-				}); err != nil {
-					return common.CodeServerError, err
-				}
+		if factoryProvider == nil {
+			return nil
+		}
+		for _, llm := range factoryProvider.Models {
+			verifyStatus := modelVerifyResult[llm.Name]
+			if verifyStatus == "" {
+				verifyStatus = entity.ModelVerifyUnknown
+			}
+			extraMap := map[string]interface{}{"verify": verifyStatus}
+			if llm.Tools != nil {
+				extraMap["is_tools"] = llm.Tools.Support
+			}
+			if llm.Thinking != nil {
+				extraMap["thinking"] = llm.Thinking.DefaultValue
+			}
+			maxTokens := 8192
+			if llm.MaxOutput != nil {
+				maxTokens = *llm.MaxOutput
+			}
+			if addErr := m.addModelToInstanceDB(ctx, tx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
+				ModelName:  llm.Name,
+				ModelTypes: llm.ModelTypes,
+				MaxTokens:  maxTokens,
+				Extra:      extraMap,
+			}); addErr != nil {
+				return addErr
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -776,18 +837,28 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 
 // addModelToInstance creates a single model under the given provider instance.
 func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID, providerName, instanceName string, model CreateInstanceModelInfo) error {
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	return m.addModelToInstanceDB(ctx, dao.DB, tenantID, providerName, instanceName, model)
+}
+
+func (m *ModelProviderService) addModelToInstanceDB(ctx context.Context, db *gorm.DB, tenantID, providerName, instanceName string, model CreateInstanceModelInfo) error {
+	normalized, err := normalizeCreateInstanceModelInfo([]CreateInstanceModelInfo{model})
+	if err != nil {
+		return err
+	}
+	model = normalized[0]
+
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return fmt.Errorf("no provider found for provider '%s'", providerName)
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil {
 		return fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceName)
 	}
 
 	// Check for duplicate model.
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, model.ModelName)
+	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, db, provider.ID, instance.ID, model.ModelName)
 	if err == nil {
 		return fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", model.ModelName, providerName, instanceName)
 	}
@@ -826,7 +897,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 		Extra:      string(extraBytes),
 	}
 
-	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
+	if err = m.modelDAO.Create(ctx, db, tenantModel); err != nil {
 		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
 	}
 
@@ -1078,7 +1149,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	// inside the /connection/verify REST endpoint.
 	if instanceID != "" && len(modelVerifyResult) > 0 {
 		if dbErr := m.updateModelVerifyResults(ctx, userID, providerName, instanceID, modelVerifyResult); dbErr != nil {
-			common.Logger.Error("failed to persist model verify results", zap.Error(dbErr))
+			return common.CodeServerError, fmt.Errorf("failed to persist model verify results: %w", dbErr)
 		}
 	}
 
@@ -1104,17 +1175,27 @@ func shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey string, modelIn
 // /api/v1/providers/<name>/connection/verify endpoint when instance_id is
 // present in the request body.
 func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, userID, providerName, instanceID string, modelVerifyResult map[string]string) error {
-	// Resolve tenant from user.
-	userTenants, err := m.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil || len(userTenants) == 0 {
-		return fmt.Errorf("no tenant found for user %s", userID)
-	}
-	tenantID := userTenants[0].TenantID
-
-	// Resolve provider DB record from tenant + provider name.
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceID)
 	if err != nil {
-		return fmt.Errorf("provider %s not found for tenant %s: %w", providerName, tenantID, err)
+		return fmt.Errorf("instance %s not found: %w", instanceID, err)
+	}
+	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, instance.ProviderID)
+	if err != nil || !strings.EqualFold(provider.ProviderName, providerName) {
+		return fmt.Errorf("provider %s not found for instance %s", providerName, instanceID)
+	}
+	ownerTenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
+	if err != nil {
+		return err
+	}
+	owned := false
+	for _, tenant := range ownerTenants {
+		if tenant.TenantID == provider.TenantID {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return fmt.Errorf("user does not own provider instance %s", instanceID)
 	}
 
 	for modelName, verifyStatus := range modelVerifyResult {
@@ -1149,6 +1230,8 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 	return nil
 }
 
+const modelVerificationImageDataURL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+
 // verifyProviderModel mirrors Python verify_api_key's model-level verification.
 // It tries each model and returns a map of modelName → verify status
 // ("success"/"fail") so the caller can persist the results to the database.
@@ -1169,14 +1252,11 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 		for _, mi := range modelInfo {
 			modelName := strings.TrimSpace(mi.ModelName)
 			if modelName == "" {
-				continue
+				return modelVerifyResult, errors.New("model_name is required")
 			}
-			modelTypes := mi.ModelTypes
-			if len(modelTypes) == 0 {
-				// When the caller didn't supply model types, infer them from the
-				// model name using the same hint heuristics as Python's
-				// OpenAIAPICompatible._infer_model_types.
-				modelTypes = modelModule.InferModelTypes(modelName)
+			modelTypes, err := normalizeModelTypes(mi.ModelTypes)
+			if err != nil {
+				return modelVerifyResult, fmt.Errorf("model %q: %w", modelName, err)
 			}
 			modelsToVerify = append(modelsToVerify, &modelModule.Model{
 				Name:       modelName,
@@ -1241,8 +1321,17 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			var err error
 
 			switch mtLower {
-			case "chat", "vision":
+			case "chat":
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
+				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
+			case "vision":
+				msg := []modelModule.Message{{
+					Role: "user",
+					Content: []interface{}{
+						map[string]interface{}{"type": "text", "text": "Describe this image."},
+						map[string]interface{}{"type": "image_url", "image_url": map[string]interface{}{"url": modelVerificationImageDataURL}},
+					},
+				}}
 				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
 			case "embedding":
 				// Provider discovery can return models without catalog limits. Apply
@@ -2040,6 +2129,13 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 
 func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
+	var normalizeErr error
+	modelInfo, normalizeErr = normalizeCreateInstanceModelInfo(modelInfo)
+	if normalizeErr != nil {
+		return common.CodeDataError, normalizeErr
+	}
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
@@ -2082,133 +2178,148 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		}
 	}
 
-	// Update instance record.
-	instanceUpdates := map[string]interface{}{
-		"api_key": apiKey,
-	}
-	if newInstanceName != "" && newInstanceName != instance.InstanceName {
-		instanceUpdates["instance_name"] = newInstanceName
-	}
-
-	extraFields := make(map[string]interface{})
-	if baseURL != "" {
-		extraFields["base_url"] = baseURL
-	}
-	if region != "" {
-		extraFields["region"] = region
-	}
-	// Preserve existing extra fields not overwritten.
-	existingExtra := make(map[string]interface{})
-	if instance.Extra != "" {
-		if err = json.Unmarshal([]byte(instance.Extra), &existingExtra); err != nil {
-			return common.CodeServerError, err
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Update instance record.
+		instanceUpdates := map[string]interface{}{
+			"api_key": apiKey,
 		}
-	}
-	for k, v := range extraFields {
-		existingExtra[k] = v
-	}
-	extraBytes, err := json.Marshal(existingExtra)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	instanceUpdates["extra"] = string(extraBytes)
-	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
-	}
+		if newInstanceName != "" && newInstanceName != instance.InstanceName {
+			instanceUpdates["instance_name"] = newInstanceName
+		}
 
-	// Use the (possibly updated) instance_name for model operations.
-	effectiveInstanceName := instance.InstanceName
-	if newInstanceName != "" {
-		effectiveInstanceName = newInstanceName
-	}
-
-	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
-	existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	existingModelMap := make(map[string]*entity.TenantModel)
-	for _, mdl := range existingModels {
-		existingModelMap[mdl.ModelName] = mdl
-	}
-
-	// Delete models that are no longer in the submitted model_info.
-	submittedModelNames := make(map[string]bool)
-	if modelInfo != nil {
-		for _, mdl := range modelInfo {
-			if mdl.ModelName != "" {
-				submittedModelNames[mdl.ModelName] = true
+		// base_url and region are optional overrides. Empty values remove stale
+		// overrides so verification and subsequent runtime calls use the same
+		// provider configuration.
+		existingExtra := make(map[string]interface{})
+		if instance.Extra != "" {
+			if err = json.Unmarshal([]byte(instance.Extra), &existingExtra); err != nil {
+				return err
 			}
 		}
-	}
-	var idsToRemove []string
-	for name, mdl := range existingModelMap {
-		if !submittedModelNames[name] {
-			idsToRemove = append(idsToRemove, mdl.ID)
-		}
-	}
-	if len(idsToRemove) > 0 {
-		if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
-			return common.CodeServerError, err
-		}
-	}
-
-	// Add or update models from model_info.
-	if modelInfo != nil {
-		for _, mdl := range modelInfo {
-			if mdl.ModelName == "" {
-				continue
-			}
-			// Attach verify status.
-			if verify {
-				verifyStatus := modelVerifyResult[mdl.ModelName]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				if mdl.Extra == nil {
-					mdl.Extra = make(map[string]interface{})
-				}
-				mdl.Extra["verify"] = verifyStatus
-			}
-
-			if existingMdl, exists := existingModelMap[mdl.ModelName]; exists {
-				// Update existing model.
-				updates := make(map[string]interface{})
-				if len(mdl.ModelTypes) > 0 {
-					combinedType := entity.ModelType(0)
-					for _, t := range mdl.ModelTypes {
-						combinedType |= entity.ModelTypeFromString(t)
-					}
-					if int(combinedType) != existingMdl.ModelType {
-						updates["model_type"] = int(combinedType)
-					}
-				}
-				mergedExtra := make(map[string]interface{})
-				if existingMdl.Extra != "" {
-					json.Unmarshal([]byte(existingMdl.Extra), &mergedExtra)
-				}
-				if mdl.Extra != nil {
-					for k, v := range mdl.Extra {
-						mergedExtra[k] = v
-					}
-				}
-				if mdl.MaxTokens > 0 {
-					mergedExtra["max_tokens"] = mdl.MaxTokens
-				}
-				extraBytes, _ = json.Marshal(mergedExtra)
-				updates["extra"] = string(extraBytes)
-				if len(updates) > 0 {
-					if err = m.modelDAO.UpdateByID(ctx, dao.DB, existingMdl.ID, updates); err != nil {
-						return common.CodeServerError, err
-					}
-				}
+		for key, value := range map[string]string{"base_url": baseURL, "region": region} {
+			if value == "" {
+				delete(existingExtra, key)
 			} else {
-				// Add new model.
-				if err = m.addModelToInstance(ctx, tenantID, providerName, effectiveInstanceName, mdl); err != nil {
-					return common.CodeServerError, err
+				existingExtra[key] = value
+			}
+		}
+		extraBytes, err := json.Marshal(existingExtra)
+		if err != nil {
+			return err
+		}
+		instanceUpdates["extra"] = string(extraBytes)
+		if err = m.modelInstanceDAO.UpdateByID(ctx, tx, instance.ID, instanceUpdates); err != nil {
+			return fmt.Errorf("fail to update instance: %s", err.Error())
+		}
+
+		// Use the (possibly updated) instance_name for model operations.
+		effectiveInstanceName := instance.InstanceName
+		if newInstanceName != "" {
+			effectiveInstanceName = newInstanceName
+		}
+
+		// Upsert models: add new ones, update existing ones, remove ones no longer selected.
+		existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, tx, instance.ID)
+		if err != nil {
+			return err
+		}
+		existingModelMap := make(map[string]*entity.TenantModel)
+		for _, mdl := range existingModels {
+			existingModelMap[mdl.ModelName] = mdl
+		}
+
+		// Delete models that are no longer in the submitted model_info.
+		submittedModelNames := make(map[string]bool)
+		if modelInfo == nil {
+			for name := range existingModelMap {
+				submittedModelNames[name] = true
+			}
+		} else {
+			for _, mdl := range modelInfo {
+				if mdl.ModelName != "" {
+					submittedModelNames[mdl.ModelName] = true
 				}
 			}
 		}
+		var idsToRemove []string
+		for name, mdl := range existingModelMap {
+			if !submittedModelNames[name] {
+				idsToRemove = append(idsToRemove, mdl.ID)
+			}
+		}
+		if len(idsToRemove) > 0 {
+			if _, err = m.modelDAO.DeleteByIDs(ctx, tx, idsToRemove); err != nil {
+				return err
+			}
+		}
+
+		// Add or update models from model_info.
+		if modelInfo != nil {
+			for _, mdl := range modelInfo {
+				if mdl.ModelName == "" {
+					continue
+				}
+				// Attach verify status.
+				if verify {
+					verifyStatus := modelVerifyResult[mdl.ModelName]
+					if verifyStatus == "" {
+						verifyStatus = entity.ModelVerifyUnknown
+					}
+					if mdl.Extra == nil {
+						mdl.Extra = make(map[string]interface{})
+					}
+					mdl.Extra["verify"] = verifyStatus
+				}
+
+				if existingMdl, exists := existingModelMap[mdl.ModelName]; exists {
+					// Update existing model.
+					updates := make(map[string]interface{})
+					if len(mdl.ModelTypes) > 0 {
+						combinedType := entity.ModelType(0)
+						for _, t := range mdl.ModelTypes {
+							combinedType |= entity.ModelTypeFromString(t)
+						}
+						if int(combinedType) != existingMdl.ModelType {
+							updates["model_type"] = int(combinedType)
+						}
+					}
+					mergedExtra := make(map[string]interface{})
+					if existingMdl.Extra != "" {
+						if err = json.Unmarshal([]byte(existingMdl.Extra), &mergedExtra); err != nil {
+							return err
+						}
+					}
+					if mdl.Extra != nil {
+						for k, v := range mdl.Extra {
+							mergedExtra[k] = v
+						}
+					}
+					if mdl.MaxTokens > 0 {
+						mergedExtra["max_tokens"] = mdl.MaxTokens
+					}
+					extraBytes, err = json.Marshal(mergedExtra)
+					if err != nil {
+						return err
+					}
+					updates["extra"] = string(extraBytes)
+					if len(updates) > 0 {
+						if err = m.modelDAO.UpdateByID(ctx, tx, existingMdl.ID, updates); err != nil {
+							return err
+						}
+					}
+				} else {
+					// Add new model.
+					if err = m.addModelToInstanceDB(ctx, tx, tenantID, providerName, effectiveInstanceName, mdl); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -3872,6 +3983,10 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	if modelName == "" {
 		return common.CodeBadRequest, errors.New("model_name is required")
 	}
+	modelTypes, err := normalizeModelTypes(request.ModelTypes)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
@@ -3907,16 +4022,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeServerError, err
 	}
 
-	// Compute model type bitmask. Matches Python's calculate_model_type:
-	// empty and unrecognized type names are ignored, not rejected.
-	combinedType := entity.ModelType(0)
-	for _, rawType := range request.ModelTypes {
-		mt := strings.TrimSpace(rawType)
-		if mt == "" {
-			continue
-		}
-		combinedType |= entity.ModelTypeFromString(mt)
-	}
+	combinedType := entity.ModelTypeFromStrings(modelTypes)
 
 	maxTokens := request.MaxTokens
 	if maxTokens <= 0 {

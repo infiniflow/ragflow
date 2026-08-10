@@ -36,6 +36,7 @@ import { ModelRow } from './components/model-row';
 import { TagFilterButton } from './components/tag-filter-button';
 import {
   DRAFT_INSTANCE_SENTINEL,
+  hasKnownModelTypes,
   normalizeModelTypes,
   useModelEdit,
   useModelMutations,
@@ -61,6 +62,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideIfEmpty = false,
     getFormValues,
     verifyTransform,
+    buildInstanceUpdatePayload,
     instanceDetailsLoaded,
     onBlurSuppressChange,
     onInstanceModelsChange,
@@ -139,14 +141,10 @@ export function ModelsSection(props: ModelsSectionProps) {
     );
   }, [deferModelMutations, instanceModels]);
 
-  // Auto-populate the draft's model list from the catalog on first
-  // fetch so the user doesn't have to click `+` on every row when
-  // creating a new instance. The user can still remove any auto-added
-  // model via the per-row `-` button - the flag above ensures we don't
-  // re-add removed models if the catalog is refetched (e.g. via the
-  // "List models" button). Pre-existing manual additions (e.g. a
-  // custom model added before the catalog resolved) are preserved by
-  // the merge-by-name setter below.
+  // Auto-populate models whose capabilities are known. Availability-only
+  // catalog candidates stay visible but require explicit configuration.
+  // The flag prevents re-adding removed models after a catalog refetch;
+  // pre-existing manual additions are preserved by the merge below.
   useEffect(() => {
     if (!isDraftInstance) return;
     if (hasAutoPopulatedDraftRef.current) return;
@@ -154,7 +152,12 @@ export function ModelsSection(props: ModelsSectionProps) {
     hasAutoPopulatedDraftRef.current = true;
     setDraftModels((prev) => {
       const existing = new Set(prev.map((m) => m.name));
-      return [...prev, ...catalog.filter((m) => !existing.has(m.name))];
+      return [
+        ...prev,
+        ...catalog.filter(
+          (model) => hasKnownModelTypes(model) && !existing.has(model.name),
+        ),
+      ];
     });
   }, [isDraftInstance, catalog]);
 
@@ -199,6 +202,11 @@ export function ModelsSection(props: ModelsSectionProps) {
   // 6a. Model selection for batch verify.
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
 
+  const verifiableModels = useMemo(
+    () => filteredModels.filter(hasKnownModelTypes),
+    [filteredModels],
+  );
+
   const toggleModel = useCallback((name: string) => {
     setSelectedModels((prev) => {
       const next = new Set(prev);
@@ -213,49 +221,48 @@ export function ModelsSection(props: ModelsSectionProps) {
 
   const toggleAllFiltered = useCallback(() => {
     setSelectedModels((prev) => {
-      const allSelected = filteredModels.every((m) => prev.has(m.name));
+      const allSelected = verifiableModels.every((m) => prev.has(m.name));
       const next = new Set(prev);
       if (allSelected) {
-        filteredModels.forEach((m) => next.delete(m.name));
+        verifiableModels.forEach((m) => next.delete(m.name));
       } else {
-        filteredModels.forEach((m) => next.add(m.name));
+        verifiableModels.forEach((m) => next.add(m.name));
       }
       return next;
     });
-  }, [filteredModels]);
+  }, [verifiableModels]);
 
-  const filteredSelectedCount = useMemo(
-    () => filteredModels.filter((m) => selectedModels.has(m.name)).length,
-    [filteredModels, selectedModels],
+  const selectedVerifiableModels = useMemo(
+    () => verifiableModels.filter((m) => selectedModels.has(m.name)),
+    [verifiableModels, selectedModels],
   );
 
   const selectAllChecked: boolean | 'indeterminate' =
-    filteredSelectedCount === 0
+    selectedVerifiableModels.length === 0
       ? false
-      : filteredSelectedCount === filteredModels.length
+      : selectedVerifiableModels.length === verifiableModels.length
         ? true
         : 'indeterminate';
 
   const handleBatchVerifyClick = useCallback(() => {
-    const selected = filteredModels.filter((m) => selectedModels.has(m.name));
-    handleBatchVerify(selected);
-  }, [filteredModels, selectedModels, handleBatchVerify]);
+    handleBatchVerify(selectedVerifiableModels);
+  }, [selectedVerifiableModels, handleBatchVerify]);
 
   // 7. Add / remove / batch toggle / custom add.
   const {
     allFilteredAdded,
+    canBatchToggle,
     handleAddModel,
     handleRemoveModel,
     handleAddCustom,
     handleBatchToggleModels,
+    addLoading,
     batchLoading,
   } = useModelMutations({
     providerName,
     instanceName,
     isDraftInstance: useLocalModels,
     hideActions,
-    resolveCreds,
-    instance,
     instanceItems,
     filteredModels,
     addedSet,
@@ -264,6 +271,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     addDraftModel,
     removeDraftModel,
     setDraftModelsList: setDraftModels,
+    buildInstanceUpdatePayload,
+    onInstanceModelsEdited,
   });
 
   // 8. Edit dialog state + submit.
@@ -287,8 +296,70 @@ export function ModelsSection(props: ModelsSectionProps) {
     onInstanceModelsEdited,
   });
 
+  const [candidateAddName, setCandidateAddName] = useState<string | null>(null);
+  const [candidateAddLoading, setCandidateAddLoading] = useState(false);
+  const editDialogLoading = editLoading || candidateAddLoading;
+
+  const createAddHandler = (model: IProviderModelItem) => () => {
+    if (hasKnownModelTypes(model)) {
+      return handleAddModel(model);
+    }
+    setCandidateAddName(model.name);
+    setEditingModel(model);
+  };
+
+  const createEditHandler = (model: IProviderModelItem) => () => {
+    setCandidateAddName(null);
+    setEditingModel(model);
+  };
+
+  const handleEditDialogOpenChange = (open: boolean) => {
+    if (open || editDialogLoading) return;
+    setCandidateAddName(null);
+    setEditingModel(null);
+  };
+
+  const handleEditDialogSubmit = async (item: IProviderModelItem) => {
+    if (candidateAddName !== item.name) {
+      await handleEditSubmit(item);
+      return;
+    }
+    if (!hasKnownModelTypes(item)) return;
+    if (candidateAddLoading) return;
+    setCandidateAddLoading(true);
+    try {
+      for (const modelType of item.model_types) {
+        if (!(await handleVerify({ ...item, model_types: [modelType] }))) {
+          return;
+        }
+      }
+      if (!(await handleAddModel(item))) return;
+      setCandidateAddName(null);
+      setEditingModel(null);
+    } finally {
+      setCandidateAddLoading(false);
+    }
+  };
+
   // Add-custom-model dialog open state (local UI state).
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [customAddLoading, setCustomAddLoading] = useState(false);
+  const customDialogLoading = addLoading || customAddLoading;
+
+  const handleCustomDialogOpenChange = (open: boolean) => {
+    if (!open && customDialogLoading) return;
+    setDialogOpen(open);
+  };
+
+  const handleCustomDialogSubmit = async (item: IProviderModelItem) => {
+    if (customAddLoading) return;
+    setCustomAddLoading(true);
+    try {
+      if (await handleAddCustom(item)) setDialogOpen(false);
+    } finally {
+      setCustomAddLoading(false);
+    }
+  };
 
   // Mirror dialog open state up to the host so it can pause its
   // blur-driven auto-save while the dialog is open (focus shifts into a
@@ -351,7 +422,7 @@ export function ModelsSection(props: ModelsSectionProps) {
                 variant="outline"
                 size="icon-sm"
                 onClick={handleBatchToggleModels}
-                disabled={batchLoading || filteredModels.length === 0}
+                disabled={batchLoading || !canBatchToggle}
                 data-testid="models-batch-toggle"
                 aria-label={
                   allFilteredAdded
@@ -399,7 +470,7 @@ export function ModelsSection(props: ModelsSectionProps) {
           <Checkbox
             checked={selectAllChecked}
             onCheckedChange={toggleAllFiltered}
-            disabled={batchVerifying || filteredModels.length === 0}
+            disabled={batchVerifying || verifiableModels.length === 0}
             aria-label={tSetting('selectAllFiltered')}
           />
           <span className="text-sm text-text-secondary">
@@ -409,7 +480,7 @@ export function ModelsSection(props: ModelsSectionProps) {
             variant="outline"
             size="sm"
             onClick={handleBatchVerifyClick}
-            disabled={selectedModels.size === 0 || batchVerifying}
+            disabled={selectedVerifiableModels.length === 0 || batchVerifying}
             data-testid="models-batch-verify"
             className="ml-auto"
           >
@@ -418,7 +489,9 @@ export function ModelsSection(props: ModelsSectionProps) {
             ) : (
               <ShieldCheck className="size-3" />
             )}
-            {tSetting('batchVerifySelected', { count: selectedModels.size })}
+            {tSetting('batchVerifySelected', {
+              count: selectedVerifiableModels.length,
+            })}
           </Button>
         </div>
 
@@ -437,12 +510,26 @@ export function ModelsSection(props: ModelsSectionProps) {
                   isAdded={addedSet.has(model.name)}
                   verifyStatus={verify[model.name] ?? 'idle'}
                   hideActions={hideActions}
-                  isSelected={selectedModels.has(model.name)}
-                  onToggleSelect={() => toggleModel(model.name)}
-                  onVerify={() => handleVerify(model)}
-                  onAdd={() => handleAddModel(model)}
+                  isSelected={
+                    hasKnownModelTypes(model) && selectedModels.has(model.name)
+                  }
+                  onToggleSelect={
+                    hasKnownModelTypes(model)
+                      ? () => toggleModel(model.name)
+                      : undefined
+                  }
+                  onVerify={
+                    hasKnownModelTypes(model)
+                      ? () => handleVerify(model)
+                      : undefined
+                  }
+                  onAdd={createAddHandler(model)}
                   onRemove={() => handleRemoveModel(model)}
-                  onEdit={() => setEditingModel(model)}
+                  onEdit={
+                    addedSet.has(model.name) || hasKnownModelTypes(model)
+                      ? createEditHandler(model)
+                      : undefined
+                  }
                   editLabel={tSetting('editModel')}
                 />
               ))}
@@ -453,24 +540,20 @@ export function ModelsSection(props: ModelsSectionProps) {
 
       <AddCustomModelDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleCustomDialogOpenChange}
         title={tSetting('addCustomModelTitle')}
         fields={customModelDialogFields}
         existingNames={models.map((m) => m.name)}
         providerFeatureKeys={providerFeatureKeys}
-        onSubmit={async (item) => {
-          await handleAddCustom(item);
-          setDialogOpen(false);
-        }}
+        loading={customDialogLoading}
+        onSubmit={handleCustomDialogSubmit}
         submitText={tc('confirm')}
         cancelText={tc('cancel')}
       />
 
       <AddCustomModelDialog
         open={editingModel !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditingModel(null);
-        }}
+        onOpenChange={handleEditDialogOpenChange}
         title={tSetting('editModel')}
         fields={editModelDialogFields}
         existingNames={models
@@ -478,10 +561,8 @@ export function ModelsSection(props: ModelsSectionProps) {
           .map((m) => m.name)}
         providerFeatureKeys={providerFeatureKeys}
         defaultValues={editDefaultValues}
-        loading={editLoading}
-        onSubmit={async (item) => {
-          await handleEditSubmit(item);
-        }}
+        loading={editDialogLoading}
+        onSubmit={handleEditDialogSubmit}
         submitText={tc('confirm')}
         cancelText={tc('cancel')}
       />

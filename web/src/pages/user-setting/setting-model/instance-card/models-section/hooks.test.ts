@@ -10,6 +10,9 @@
 
 const mockListProviderModels = jest.fn();
 const mockPatchInstanceModel = jest.fn();
+const mockAddInstanceModel = jest.fn();
+const mockDeleteInstanceModels = jest.fn();
+const mockUpdateProviderInstance = jest.fn();
 jest.mock('@/hooks/use-llm-request', () => ({
   LlmKeys: {
     instanceModels: (providerName: string, instanceName: string) => [
@@ -26,6 +29,16 @@ jest.mock('@/hooks/use-llm-request', () => ({
     loading: false,
     patchInstanceModel: async (...args: unknown[]) =>
       (await mockPatchInstanceModel(...args)).data,
+  }),
+  useAddInstanceModel: () => ({
+    addInstanceModel: mockAddInstanceModel,
+  }),
+  useDeleteInstanceModels: () => ({
+    deleteInstanceModels: mockDeleteInstanceModels,
+  }),
+  useUpdateProviderInstance: () => ({
+    loading: false,
+    updateProviderInstance: mockUpdateProviderInstance,
   }),
 }));
 jest.mock('@/services/llm-service', () => ({
@@ -49,11 +62,172 @@ import { createElement } from 'react';
 import {
   areCatalogCredentialsReady,
   buildVerifyArgs,
+  DRAFT_INSTANCE_SENTINEL,
+  hasKnownModelTypes,
   isCatalogBaseURLReady,
   useModelsCatalog,
   useModelsDerived,
+  useModelMutations,
   useModelEdit,
 } from './hooks';
+
+describe('hasKnownModelTypes', () => {
+  it('distinguishes typed models from availability-only candidates', () => {
+    expect(
+      hasKnownModelTypes({
+        name: 'typed',
+        model_types: ['chat'],
+        max_tokens: 8192,
+        features: [],
+      }),
+    ).toBe(true);
+    expect(
+      hasKnownModelTypes({
+        name: 'candidate',
+        model_types: [],
+        max_tokens: 8192,
+        features: [],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('useModelMutations', () => {
+  it('disables batch mutations when only unclassified candidates are visible', () => {
+    const { result } = renderHook(() =>
+      useModelMutations({
+        providerName: 'Bedrock',
+        instanceName: DRAFT_INSTANCE_SENTINEL,
+        isDraftInstance: true,
+        hideActions: false,
+        instanceItems: [],
+        filteredModels: [
+          {
+            name: 'candidate',
+            model_types: [],
+            max_tokens: 8192,
+            features: [],
+          },
+        ],
+        addedSet: new Set(),
+        setCatalog: jest.fn(),
+        clearCatalogOverride: jest.fn(),
+      }),
+    );
+
+    expect(result.current.canBatchToggle).toBe(false);
+  });
+
+  it('disables saved batch mutations until the canonical payload is available', () => {
+    const { result } = renderHook(() =>
+      useModelMutations({
+        providerName: 'OpenAI',
+        instanceName: 'saved',
+        isDraftInstance: false,
+        hideActions: false,
+        instanceItems: [],
+        filteredModels: [
+          {
+            name: 'model-a',
+            model_types: ['chat'],
+            max_tokens: 8192,
+            features: [],
+          },
+        ],
+        addedSet: new Set(),
+        setCatalog: jest.fn(),
+        clearCatalogOverride: jest.fn(),
+      }),
+    );
+
+    expect(result.current.canBatchToggle).toBe(false);
+  });
+
+  it('uses the host canonical payload and acknowledges only successful batches', async () => {
+    const clearCatalogOverride = jest.fn();
+    const onInstanceModelsEdited = jest.fn();
+    const buildInstanceUpdatePayload = jest.fn((modelInfo) => ({
+      provider_name: 'BaiduYiYan',
+      instance_name: 'saved',
+      id: 'instance-id',
+      api_key: { yiyan_ak: 'ak', yiyan_sk: 'sk' },
+      model_info: modelInfo,
+      verify: false,
+    }));
+    mockUpdateProviderInstance.mockResolvedValue({ code: 0 });
+    const model = {
+      name: 'ernie',
+      model_types: ['chat'],
+      max_tokens: 8192,
+      features: [],
+    };
+    const { result } = renderHook(() =>
+      useModelMutations({
+        providerName: 'BaiduYiYan',
+        instanceName: 'saved',
+        isDraftInstance: false,
+        hideActions: false,
+        instanceItems: [],
+        filteredModels: [model],
+        addedSet: new Set(),
+        setCatalog: jest.fn(),
+        clearCatalogOverride,
+        buildInstanceUpdatePayload,
+        onInstanceModelsEdited,
+      }),
+    );
+
+    await act(async () => result.current.handleBatchToggleModels());
+
+    expect(buildInstanceUpdatePayload).toHaveBeenCalledWith([
+      expect.objectContaining({ model_name: 'ernie', model_type: ['chat'] }),
+    ]);
+    expect(mockUpdateProviderInstance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        api_key: { yiyan_ak: 'ak', yiyan_sk: 'sk' },
+      }),
+    );
+    expect(clearCatalogOverride).toHaveBeenCalledWith('ernie');
+    expect(onInstanceModelsEdited).toHaveBeenCalledWith([
+      expect.objectContaining({ model_name: 'ernie' }),
+    ]);
+  });
+
+  it('keeps catalog overrides when a batch update is rejected', async () => {
+    const clearCatalogOverride = jest.fn();
+    mockUpdateProviderInstance.mockResolvedValue({ code: 1 });
+    const model = {
+      name: 'model-a',
+      model_types: ['chat'],
+      max_tokens: 8192,
+      features: [],
+    };
+    const { result } = renderHook(() =>
+      useModelMutations({
+        providerName: 'OpenAI',
+        instanceName: 'saved',
+        isDraftInstance: false,
+        hideActions: false,
+        instanceItems: [],
+        filteredModels: [model],
+        addedSet: new Set(),
+        setCatalog: jest.fn(),
+        clearCatalogOverride,
+        buildInstanceUpdatePayload: (modelInfo) => ({
+          provider_name: 'OpenAI',
+          instance_name: 'saved',
+          id: 'instance-id',
+          api_key: 'token',
+          model_info: modelInfo,
+        }),
+      }),
+    );
+
+    await act(async () => result.current.handleBatchToggleModels());
+
+    expect(clearCatalogOverride).not.toHaveBeenCalled();
+  });
+});
 
 describe('areCatalogCredentialsReady', () => {
   it('does not treat a Bedrock API key mode without its token as ready', () => {
@@ -176,6 +350,31 @@ describe('buildVerifyArgs', () => {
     });
   });
 
+  it('uses the canonical form region when a transform omits it', () => {
+    expect(
+      buildVerifyArgs(
+        model,
+        'SiliconFlow',
+        () => ({
+          apiKey: 'token',
+          baseUrl: 'https://api.siliconflow.com/v1',
+          region: 'intl',
+          extensions: {},
+        }),
+        undefined,
+        () => ({
+          api_key: 'token',
+          base_url: 'https://api.siliconflow.com/v1',
+          region: 'intl',
+        }),
+        () => ({
+          apiKey: 'token',
+          baseUrl: 'https://api.siliconflow.com/v1',
+        }),
+      ),
+    ).toMatchObject({ region: 'intl' });
+  });
+
   it('does not persist verification when no saved instance is supplied', () => {
     const args = buildVerifyArgs(
       model,
@@ -246,6 +445,35 @@ describe('useModelsCatalog', () => {
     expect(mockListProviderModels).toHaveBeenCalledTimes(1);
     expect(mockListProviderModels).toHaveBeenCalledWith(
       expect.objectContaining({ api_key: 'second-token' }),
+    );
+  });
+
+  it('forwards the canonical input-select region when listing models', async () => {
+    const { result } = renderHook(() =>
+      useModelsCatalog({
+        providerName: 'SiliconFlow',
+        instanceName: 'intl-instance',
+        hideActions: false,
+        resolveCreds: () => ({
+          apiKey: 'token',
+          baseUrl: 'https://api.siliconflow.com/v1',
+          region: 'intl',
+          extensions: {},
+        }),
+        instanceModels: [],
+        apiKeyValue: 'token',
+        baseUrlValue: 'https://api.siliconflow.com/v1',
+        instanceDetailsLoaded: true,
+        regionValue: 'intl',
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleListModels();
+    });
+
+    expect(mockListProviderModels).toHaveBeenCalledWith(
+      expect.objectContaining({ region: 'intl' }),
     );
   });
 });

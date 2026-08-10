@@ -80,6 +80,14 @@ export interface ModelsSectionProps {
     modelInfo?: IModelInfo[];
   };
   /**
+   * Builds the host card's canonical instance-update payload with the
+   * supplied model selection. Keeping this builder in the host preserves
+   * provider-specific submit transforms during batch model changes.
+   */
+  buildInstanceUpdatePayload?: (
+    modelInfo: IModelInfo[],
+  ) => Record<string, any> | null;
+  /**
    * Notifies the host that ModelsSection has opened (or closed) a modal
    * dialog whose contents live in a React Portal outside the host's
    * `onBlurCapture` container. The host should temporarily disable its
@@ -139,10 +147,10 @@ export interface ModelRowProps {
   isAdded: boolean;
   verifyStatus: VerifyStatus;
   hideActions: boolean;
-  onVerify: () => void;
+  onVerify?: () => void;
   onAdd: () => void;
   onRemove: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
   editLabel: string;
   /** Whether this row is currently selected for batch operations. */
   isSelected?: boolean;

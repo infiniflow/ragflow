@@ -47,6 +47,7 @@ export function DraftModeCard({
   draftName,
   setDraftName,
   verifyTransform,
+  getModelsSectionValues,
 }: DraftModeCardProps) {
   // On success, fold the OAuth-issued key into the current form values so it
   // lands in the (editable) api_key field without clobbering other inputs.
@@ -95,7 +96,7 @@ export function DraftModeCard({
           instance={instance}
           hideActions={false}
           hideIfEmpty={false}
-          getFormValues={() => formRef.current?.getValues?.() ?? {}}
+          getFormValues={getModelsSectionValues}
           verifyTransform={verifyTransform}
           onInstanceModelsChange={(info) => {
             modelInfoRef.current = info;

@@ -25,6 +25,7 @@ import type { IProviderInstance } from '@/interfaces/database/llm';
 import type { IModelInfo } from '@/interfaces/request/llm';
 import { type RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useProviderFields } from '../provider-schema/hooks';
+import { resolveRegionFromValues } from '../provider-schema/hooks/use-provider-modal-actions';
 import { SelectOption } from '../provider-schema/types';
 import {
   API_KEY_NESTED_FIELDS,
@@ -323,6 +324,7 @@ export function useVerifyProvider(
   providerName: string,
   formRef: RefObject<DynamicFormRef>,
   verifyTransform?: VerifyTransform,
+  baseUrlRegionMaps?: Record<string, Map<string, string>>,
 ) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
 
@@ -350,6 +352,10 @@ export function useVerifyProvider(
           model_info: values.model_info,
         };
       }
+      const region = resolveRegionFromValues(values, baseUrlRegionMaps);
+      if (region !== undefined) {
+        verifyArgs.region = region;
+      }
       const ret = await verifyProviderConnection({
         provider_name: providerName,
         ...(verifyArgs as any),
@@ -365,7 +371,13 @@ export function useVerifyProvider(
         logs: string;
       };
     },
-    [providerName, formRef, verifyProviderConnection, verifyTransform],
+    [
+      baseUrlRegionMaps,
+      formRef,
+      providerName,
+      verifyProviderConnection,
+      verifyTransform,
+    ],
   );
 }
 
@@ -426,6 +438,7 @@ interface UseInstanceSaveStateArgs {
    * used.
    */
   submitTransform?: (values: Record<string, any>) => Record<string, any>;
+  baseUrlRegionMaps?: Record<string, Map<string, string>>;
 }
 
 /**
@@ -460,6 +473,7 @@ export function useInstanceSaveState({
   initialValues,
   modelInfoRef,
   submitTransform,
+  baseUrlRegionMaps,
 }: UseInstanceSaveStateArgs) {
   const baselinePayloadRef = useRef<string>('');
   const baselineSeedSignatureRef = useRef<string>('');
@@ -483,6 +497,8 @@ export function useInstanceSaveState({
       modelInfo: IModelInfo[],
       targetInstanceName: string,
     ): Record<string, any> | null => {
+      const region =
+        resolveRegionFromValues(values, baseUrlRegionMaps) ?? values.region;
       if (submitTransform) {
         const transformed = submitTransform({
           ...values,
@@ -494,6 +510,7 @@ export function useInstanceSaveState({
             ...transformed,
             llm_factory: providerName,
             instance_name: targetInstanceName,
+            region,
             model_info: modelInfo,
           };
         }
@@ -503,7 +520,7 @@ export function useInstanceSaveState({
           instance_name: targetInstanceName,
           id: instanceDetails?.id || instanceId,
           base_url: transformed.base_url ?? '',
-          region: values.region || 'default',
+          region: region || 'default',
           model_info: modelInfo,
           verify: false,
         };
@@ -516,6 +533,7 @@ export function useInstanceSaveState({
           instance_name: targetInstanceName,
           api_key: buildApiKeyValue(values) ?? '',
           base_url: values.base_url,
+          region,
         };
         if (modelInfo.length > 0) {
           payload.model_info = modelInfo;
@@ -529,12 +547,19 @@ export function useInstanceSaveState({
         id: instanceDetails?.id || instanceId,
         api_key: buildApiKeyValue(values) ?? '',
         base_url: values.base_url,
-        region: values.region || 'default',
+        region: region || 'default',
         model_info: modelInfo,
         verify: false,
       };
     },
-    [instanceDetails?.id, instanceId, isDraft, providerName, submitTransform],
+    [
+      baseUrlRegionMaps,
+      instanceDetails?.id,
+      instanceId,
+      isDraft,
+      providerName,
+      submitTransform,
+    ],
   );
 
   // Build the API payload from the current form values. For drafts the
@@ -557,6 +582,18 @@ export function useInstanceSaveState({
       : editedNameRef.current;
     return buildPayloadFromValues(values, modelInfo, targetInstanceName);
   }, [buildPayloadFromValues, formRef, isDraft, modelInfoRef]);
+
+  const buildInstanceUpdatePayload = useCallback(
+    (modelInfo: IModelInfo[]): Record<string, any> | null => {
+      if (isDraft || !instanceDetails) return null;
+      const values = (formRef.current?.getValues?.() ?? {}) as Record<
+        string,
+        any
+      >;
+      return buildPayloadFromValues(values, modelInfo, editedNameRef.current);
+    },
+    [buildPayloadFromValues, formRef, instanceDetails, isDraft],
+  );
 
   // Seed the "last saved" baseline once instance details (or the
   // draft's empty state) are available, so the first `getSavePayload()`
@@ -692,6 +729,7 @@ export function useInstanceSaveState({
 
   return {
     buildPayload,
+    buildInstanceUpdatePayload,
     getSavePayload,
     markSaved,
     markModelsEdited,
@@ -715,7 +753,7 @@ export function useFormFields(
   baseUrlOptions: SelectOption[] | undefined,
   hideWhenInstanceExists: (values: any) => boolean,
 ) {
-  const { fields, defaultValues } = useProviderFields({
+  const { fields, defaultValues, baseUrlRegionMaps } = useProviderFields({
     llmFactory: providerName,
     // Always seed initial values (drafts need the default base_url;
     // saved cards need the persisted api_key / base_url).
@@ -743,7 +781,7 @@ export function useFormFields(
     // oxlint-disable-next-line react/exhaustive-deps
   }, [defaultValuesKey]);
 
-  return { formFields, formDefaultValues };
+  return { formFields, formDefaultValues, baseUrlRegionMaps };
 }
 
 // Re-export ApiKeyNestedField for components that need it.

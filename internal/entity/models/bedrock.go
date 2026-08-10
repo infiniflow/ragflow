@@ -1070,11 +1070,13 @@ func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		}
 		filtered := make([]ListModelResponse, 0, len(models))
 		for _, model := range models {
-			name := strings.ToLower(model.Name)
-			if isMantleNonChatModel(name) || (key.EndpointType == bedrockEndpointMantleAnthropic && !strings.HasPrefix(name, "anthropic.")) {
+			if model.Name == "" {
 				continue
 			}
-			model.ModelTypes = []string{"chat"}
+			// Mantle's model catalog proves availability, not compatibility
+			// with a specific invocation API. Keep the candidate visible but
+			// require the caller to select and verify its capability.
+			model.ModelTypes = []string{}
 			filtered = append(filtered, model)
 		}
 		return filtered, nil
@@ -1145,37 +1147,14 @@ func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	return models, nil
 }
 
-var mantleNonChatPrefixes = []string{
-	"amazon.nova-canvas-", "amazon.nova-2-multimodal-embeddings-", "amazon.nova-multimodal-embeddings-",
-	"amazon.nova-reel-", "amazon.nova-2-sonic-", "amazon.nova-sonic-", "amazon.rerank-",
-	"amazon.titan-embed-", "amazon.titan-image-", "cohere.embed-", "cohere.rerank-", "luma.", "stability.", "twelvelabs.",
-}
-
-func isMantleNonChatModel(modelID string) bool {
-	for _, prefix := range mantleNonChatPrefixes {
-		if strings.HasPrefix(modelID, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 func bedrockModelTypes(modelID string, inputModalities, outputModalities []string) []string {
-	contains := func(values []string, target string) bool {
-		for _, value := range values {
-			if value == target {
-				return true
-			}
-		}
-		return false
-	}
-	if !contains(inputModalities, "TEXT") || strings.Contains(strings.ToLower(modelID), "rerank") {
+	if !slices.Contains(inputModalities, "TEXT") || strings.Contains(strings.ToLower(modelID), "rerank") {
 		return nil
 	}
-	if contains(outputModalities, "EMBEDDING") && (strings.HasPrefix(modelID, "amazon.titan-embed-text") || strings.HasPrefix(modelID, "cohere.embed-")) {
+	if slices.Contains(outputModalities, "EMBEDDING") && (strings.HasPrefix(modelID, "amazon.titan-embed-text") || strings.HasPrefix(modelID, "cohere.embed-")) {
 		return []string{"embedding"}
 	}
-	if contains(outputModalities, "TEXT") {
+	if slices.Contains(outputModalities, "TEXT") {
 		// Keep the advertised capabilities aligned with this driver's
 		// text-only chat implementation, even when the remote model accepts images.
 		return []string{"chat"}
@@ -1192,7 +1171,7 @@ func (b *BedrockModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 		return err
 	}
 	if len(models) == 0 {
-		return errors.New("no compatible Bedrock chat or embedding models were discovered")
+		return errors.New("no Bedrock models were discovered")
 	}
 	return nil
 }

@@ -2360,9 +2360,15 @@ class LiteLLMBase(ABC):
             import boto3
             from botocore.exceptions import BotoCoreError, ClientError
 
+            logging.debug(
+                "Refreshing Bedrock IAM-role credentials: region=%s cached=%s",
+                region_name,
+                cached is not None,
+            )
             try:
                 response = boto3.client("sts", region_name=region_name).assume_role(RoleArn=role_arn, RoleSessionName="BedrockSession")
             except (BotoCoreError, ClientError) as error:
+                logging.warning("Failed to assume Bedrock AWS role in region %s", region_name)
                 raise ValueError("Failed to assume Bedrock AWS role") from error
 
             credentials = response["Credentials"]

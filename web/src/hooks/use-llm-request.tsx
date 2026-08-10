@@ -368,6 +368,27 @@ export const useAddInstanceModel = () => {
     ) => {
       const { data } = await llmService.addInstanceModel(params);
       if (data.code === 0) {
+        queryClient.setQueryData<IInstanceModel[]>(
+          LlmKeys.instanceModels(params.provider_name, params.instance_name),
+          (previous = []) => {
+            const acknowledged: IInstanceModel = {
+              name: params.model_name,
+              model_type: params.model_type,
+              max_tokens: params.max_tokens,
+              status: 'active',
+              verify: 'unknown',
+              is_tools: Boolean(params.extra?.is_tools),
+              extra: params.extra,
+            };
+            const index = previous.findIndex(
+              (model) => model.name === params.model_name,
+            );
+            if (index < 0) return [...previous, acknowledged];
+            return previous.map((model, currentIndex) =>
+              currentIndex === index ? { ...model, ...acknowledged } : model,
+            );
+          },
+        );
         // `exact: true` keeps the invalidation to the provider summary
         // list. Without it the [AddedProviders] prefix would also match
         // every providerInstances / instanceModels query and refetch
@@ -540,6 +561,12 @@ export const useDeleteInstanceModels = () => {
     mutationFn: async (params: IDeleteInstanceModelsRequestBody) => {
       const { data } = await llmService.deleteInstanceModels(params);
       if (data.code === 0) {
+        const deletedNames = new Set(params.model_name);
+        queryClient.setQueryData<IInstanceModel[]>(
+          LlmKeys.instanceModels(params.provider_name, params.instance_name),
+          (previous = []) =>
+            previous.filter((model) => !deletedNames.has(model.name)),
+        );
         message.success(t('message.deleted'));
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),

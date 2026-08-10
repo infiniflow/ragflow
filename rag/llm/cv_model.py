@@ -1398,6 +1398,7 @@ class BedrockCV(Base):
             self.litellm_model_name = self.model_name
 
     def _get_aws_creds(self):
+        runtime_endpoint_args = {"aws_bedrock_runtime_endpoint": self.endpoint_url} if self.endpoint_url else {}
         if self.auth_mode == "bedrock_api_key":
             if not self.bedrock_api_key:
                 raise ValueError("Bedrock API key must be provided")
@@ -1414,9 +1415,8 @@ class BedrockCV(Base):
                     "aws_access_key_id": "bedrock-api-key",
                     "aws_secret_access_key": "bedrock-api-key",
                     "extra_headers": {"Authorization": f"Bearer {self.bedrock_api_key}"},
+                    **runtime_endpoint_args,
                 }
-                if self.endpoint_url:
-                    args["aws_bedrock_runtime_endpoint"] = self.endpoint_url
                 return args
             return {"api_key": self.bedrock_api_key, "api_base": self.endpoint_url}
         if self.auth_mode == "access_key_secret":
@@ -1424,6 +1424,7 @@ class BedrockCV(Base):
                 "aws_region_name": self.aws_region,
                 "aws_access_key_id": self.aws_ak,
                 "aws_secret_access_key": self.aws_sk,
+                **runtime_endpoint_args,
             }
         elif self.auth_mode == "iam_role":
             import boto3
@@ -1436,9 +1437,10 @@ class BedrockCV(Base):
                 "aws_access_key_id": creds["AccessKeyId"],
                 "aws_secret_access_key": creds["SecretAccessKey"],
                 "aws_session_token": creds["SessionToken"],
+                **runtime_endpoint_args,
             }
         elif self.auth_mode == "assume_role":
-            return {"aws_region_name": self.aws_region}
+            return {"aws_region_name": self.aws_region, **runtime_endpoint_args}
         raise ValueError(f"Unsupported Bedrock auth_mode: {self.auth_mode}")
 
     def describe_with_prompt(self, image, prompt=None):

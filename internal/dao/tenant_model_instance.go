@@ -34,9 +34,13 @@ func NewTenantModelInstanceDAO() *TenantModelInstanceDAO {
 }
 
 func (dao *TenantModelInstanceDAO) Create(ctx context.Context, db *gorm.DB, instance *entity.TenantModelInstance) error {
-	// begin tx and check if the same provider instance exists
-	tx := db.WithContext(ctx).Begin()
-	defer tx.Rollback()
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return dao.CreateInTransaction(ctx, tx, instance)
+	})
+}
+
+// CreateInTransaction inserts an instance using the caller's transaction.
+func (dao *TenantModelInstanceDAO) CreateInTransaction(ctx context.Context, tx *gorm.DB, instance *entity.TenantModelInstance) error {
 	var existingInstance entity.TenantModelInstance
 	err := tx.WithContext(ctx).Where("provider_id = ? AND instance_name = ?", instance.ProviderID, instance.InstanceName).First(&existingInstance).Error
 	if err == nil {
@@ -45,12 +49,7 @@ func (dao *TenantModelInstanceDAO) Create(ctx context.Context, db *gorm.DB, inst
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	err = tx.WithContext(ctx).Create(instance).Error
-	if err != nil {
-		return err
-	}
-	tx.Commit()
-	return nil
+	return tx.WithContext(ctx).Create(instance).Error
 }
 
 func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(ctx context.Context, db *gorm.DB, providerID string) ([]*entity.TenantModelInstance, error) {

@@ -166,6 +166,10 @@ export interface SavedModeCardProps {
   setOpen: (open: boolean) => void;
   /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
   verifyTransform?: VerifyTransform;
+  getModelsSectionValues: () => Record<string, any>;
+  buildInstanceUpdatePayload: (
+    modelInfo: IModelInfo[],
+  ) => Record<string, any> | null;
 }
 
 /** Props for the draft-mode card (instance name + form fields). */
@@ -184,4 +188,5 @@ export interface DraftModeCardProps {
   setDraftName: (name: string) => void;
   /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
   verifyTransform?: VerifyTransform;
+  getModelsSectionValues: () => Record<string, any>;
 }

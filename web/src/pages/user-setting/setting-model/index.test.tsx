@@ -20,6 +20,8 @@ const mockUpdateProviderInstance = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockMessageError = jest.fn();
 const mockValidate = jest.fn();
+const mockGetSavePayload = jest.fn();
+let mockMutationCount = 0;
 
 jest.mock('@/components/spotlight', () => () => null);
 jest.mock('@/components/ui/message', () => ({
@@ -49,6 +51,7 @@ jest.mock('@/hooks/use-llm-request', () => ({
 }));
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+  useIsMutating: () => mockMutationCount,
 }));
 jest.mock('./instance-card/provider-instance-card', () => {
   const React = jest.requireActual('react');
@@ -63,12 +66,7 @@ jest.mock('./instance-card/provider-instance-card', () => {
       }
       const instanceName = `draft-${draftNumberRef.current}`;
       React.useImperativeHandle(ref, () => ({
-        getSavePayload: () => ({
-          payload: { llm_factory: 'OpenAI', instance_name: instanceName },
-          instanceName,
-          isDraft: true,
-          apiKind: 'add',
-        }),
+        getSavePayload: () => mockGetSavePayload(instanceName),
         validate: () => mockValidate(instanceName),
         markSaved: jest.fn(),
       }));
@@ -138,13 +136,21 @@ describe('SettingModelV2 batch save', () => {
   });
 
   beforeEach(() => {
+    mockMutationCount = 0;
     mockDraftSequence = 0;
     mockAddProviderInstance.mockReset();
     mockUpdateProviderInstance.mockReset();
     mockInvalidateQueries.mockReset();
     mockMessageError.mockReset();
     mockValidate.mockReset();
+    mockGetSavePayload.mockReset();
     mockValidate.mockResolvedValue(true);
+    mockGetSavePayload.mockImplementation((instanceName: string) => ({
+      payload: { llm_factory: 'OpenAI', instance_name: instanceName },
+      instanceName,
+      isDraft: true,
+      apiKind: 'add',
+    }));
   });
 
   const renderTwoDrafts = async () => {
@@ -174,6 +180,42 @@ describe('SettingModelV2 batch save', () => {
       'data-instance-name',
       'draft-2',
     );
+  });
+
+  it('validates an empty draft even though it has no save payload', async () => {
+    mockGetSavePayload.mockReturnValue(null);
+    mockValidate.mockResolvedValue(false);
+
+    render(React.createElement(SettingModelV2));
+    fireEvent.click(screen.getByTestId('select-provider'));
+    await waitFor(() => expect(screen.getByTestId('draft-card')).toBeVisible());
+    fireEvent.click(screen.getByTestId('save-all'));
+
+    await waitFor(() => expect(mockValidate).toHaveBeenCalledWith('draft-1'));
+    expect(mockAddProviderInstance).not.toHaveBeenCalled();
+  });
+
+  it('does not partially save valid drafts when another draft is empty', async () => {
+    mockGetSavePayload.mockImplementation((instanceName: string) =>
+      instanceName === 'draft-2'
+        ? null
+        : {
+            payload: { llm_factory: 'OpenAI', instance_name: instanceName },
+            instanceName,
+            isDraft: true,
+            apiKind: 'add',
+          },
+    );
+    mockValidate.mockImplementation(
+      async (instanceName: string) => instanceName !== 'draft-2',
+    );
+
+    await renderTwoDrafts();
+    fireEvent.click(screen.getByTestId('save-all'));
+
+    await waitFor(() => expect(mockValidate).toHaveBeenCalledTimes(2));
+    expect(mockAddProviderInstance).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('draft-card')).toHaveLength(2);
   });
 
   it('retains a draft when an existing instance causes the write to be skipped', async () => {
@@ -222,5 +264,17 @@ describe('SettingModelV2 batch save', () => {
     await act(async () => resolveValidation(false));
     await waitFor(() => expect(fieldset).not.toBeDisabled());
     expect(screen.getByTestId('draft-card')).toBeVisible();
+  });
+
+  it('does not capture a save payload while a model mutation is pending', async () => {
+    mockMutationCount = 1;
+
+    render(React.createElement(SettingModelV2));
+    fireEvent.click(screen.getByTestId('select-provider'));
+    await waitFor(() => expect(screen.getByTestId('draft-card')).toBeVisible());
+    fireEvent.click(screen.getByTestId('save-all'));
+
+    expect(mockGetSavePayload).not.toHaveBeenCalled();
+    expect(mockAddProviderInstance).not.toHaveBeenCalled();
   });
 });

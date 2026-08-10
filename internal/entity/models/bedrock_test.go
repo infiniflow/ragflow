@@ -758,6 +758,42 @@ func TestBedrockListModelsUsesDiscoveryEndpointOverride(t *testing.T) {
 	}
 }
 
+func TestBedrockMantleListModelsKeepsCandidatesWithoutInferringCapabilities(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path=%q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Errorf("Authorization=%q, want Bearer token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"Anthropic.Future"},{"id":"future.responses-only"},{"id":""}]}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", strings.TrimPrefix(srv.URL, "https://"))
+	key := fmt.Sprintf(
+		`{"auth_mode":"bedrock_api_key","bedrock_region":"us-east-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":%q}`,
+		srv.URL,
+	)
+	m := NewBedrockModel(nil, URLSuffix{Models: "models"})
+	m.baseModel.httpClient = srv.Client()
+
+	models, err := m.ListModels(t.Context(), &APIConfig{ApiKey: &key})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models=%v, want two non-empty candidates", models)
+	}
+	for _, model := range models {
+		if len(model.ModelTypes) != 0 {
+			t.Errorf("model %q types=%v, want unknown capabilities", model.Name, model.ModelTypes)
+		}
+	}
+}
+
 func TestBedrockModelTypesDoesNotAdvertiseUnsupportedVision(t *testing.T) {
 	got := bedrockModelTypes("amazon.nova-lite-v1:0", []string{"TEXT", "IMAGE"}, []string{"TEXT"})
 	if diff := strings.Join(got, ","); diff != "chat" {
@@ -794,7 +830,7 @@ func TestBedrockCheckConnectionRejectsEmptyCompatibleCatalog(t *testing.T) {
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
 	err := m.CheckConnection(t.Context(), &APIConfig{ApiKey: &key})
-	if err == nil || !strings.Contains(err.Error(), "no compatible Bedrock") {
+	if err == nil || !strings.Contains(err.Error(), "no Bedrock models") {
 		t.Fatalf("want empty-catalog error, got %v", err)
 	}
 }

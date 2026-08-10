@@ -18,6 +18,7 @@ import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
+  LLMApiAction,
   LlmKeys,
   useAddProviderInstance,
   useFetchAddedProviders,
@@ -25,7 +26,7 @@ import {
   useUpdateProviderInstance,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
-import { useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProviderInstanceCardRef } from './instance-card/interface';
@@ -68,6 +69,18 @@ const SettingModelV2: FC = () => {
   const [draftIds, setDraftIds] = useState<string[]>([]);
 
   const [saving, setSaving] = useState(false);
+  const modelMutationCount = useIsMutating({
+    predicate: (mutation) => {
+      const action = mutation.options.mutationKey?.[0];
+      return (
+        action === LLMApiAction.AddInstanceModel ||
+        action === LLMApiAction.DeleteInstanceModels ||
+        action === LLMApiAction.PatchInstanceModel ||
+        action === LLMApiAction.UpdateProviderInstance
+      );
+    },
+  });
+  const modelMutationPending = modelMutationCount > 0;
 
   // Tracks the instance name that was just persisted by the top Save
   // button. The corresponding saved card mounts expanded so the user
@@ -174,19 +187,22 @@ const SettingModelV2: FC = () => {
   //      card's baseline so a later failure cannot leave acknowledged
   //      state looking editable. Finally refresh the instance list.
   const handleSaveAll = useCallback(async () => {
+    if (modelMutationPending) return;
     const refs = Array.from(cardRefs.current.entries()).flatMap(
       ([cardId, ref]) => (ref ? [{ cardId, ref }] : []),
     );
     if (refs.length === 0) return;
 
-    const dirty = refs
+    const participating = refs
       .map(({ cardId, ref }) => ({
         cardId,
         ref,
         payload: ref.getSavePayload(),
       }))
-      .filter((e) => e.payload !== null);
-    if (dirty.length === 0) return;
+      .filter(
+        (entry) => entry.payload !== null || draftIds.includes(entry.cardId),
+      );
+    if (participating.length === 0) return;
 
     // Freeze the cards before the first async boundary. Payloads above were
     // captured synchronously, so validation cannot race with later edits.
@@ -198,7 +214,7 @@ const SettingModelV2: FC = () => {
     cancelledRef.current = true;
     try {
       const validations = await Promise.all(
-        dirty.map(async (entry) => ({
+        participating.map(async (entry) => ({
           ...entry,
           valid: await entry.ref.validate(),
         })),
@@ -256,6 +272,8 @@ const SettingModelV2: FC = () => {
     updateProviderInstance,
     queryClient,
     providerQueryName,
+    draftIds,
+    modelMutationPending,
     tFlow,
   ]);
 
@@ -265,7 +283,10 @@ const SettingModelV2: FC = () => {
   // there is nothing to save, and if there is something the user can
   // always attempt a save (dirty saved cards short-circuit inside
   // `getSavePayload`). The button is disabled while a save is in flight.
-  const canSave = !saving && (draftIds.length > 0 || instances.length > 0);
+  const canSave =
+    !saving &&
+    !modelMutationPending &&
+    (draftIds.length > 0 || instances.length > 0);
 
   // User clicked Cancel on a specific draft - remove it from the list
   // and stop the auto-show effect from re-opening it for the current

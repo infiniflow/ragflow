@@ -691,6 +691,13 @@ class BedrockEmbed(Base):
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
+        runtime_client_kwargs = {
+            "service_name": "bedrock-runtime",
+            "region_name": self.bedrock_region,
+        }
+        if endpoint_url:
+            runtime_client_kwargs["endpoint_url"] = endpoint_url
+
         if mode == "bedrock_api_key":
             bedrock_api_key = key.get("bedrock_api_key")
             if not bedrock_api_key:
@@ -722,7 +729,7 @@ class BedrockEmbed(Base):
         elif mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")
-            self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+            self.client = boto3.client(**runtime_client_kwargs, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
         elif mode == "iam_role":
             self.aws_role_arn = key.get("aws_role_arn")
             sts_client = boto3.client("sts", region_name=self.bedrock_region)
@@ -730,13 +737,13 @@ class BedrockEmbed(Base):
             creds = resp["Credentials"]
 
             self.client = boto3.client(
-                service_name="bedrock-runtime",
+                **runtime_client_kwargs,
                 aws_access_key_id=creds["AccessKeyId"],
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
         elif mode == "assume_role":
-            self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
+            self.client = boto3.client(**runtime_client_kwargs)
         else:
             raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 

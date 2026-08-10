@@ -14,11 +14,11 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from api.apps.services.provider_api_service import _bedrock_model_list_api_key, list_provider_models, verify_api_key
+from api.apps.services.provider_api_service import _bedrock_model_list_api_key, _normalize_model_info, create_provider_instance, list_provider_models, update_provider_instance, verify_api_key
 from rag.llm.bedrock_model_discovery import BEDROCK_DISCOVERY_TIMEOUT_SECONDS, BedrockModelDiscoveryError, create_bedrock_bearer_client, discover_bedrock_models
 from rag.llm.chat_model import LiteLLMBase, SupportedLiteLLMProvider
 from rag.llm.cv_model import BedrockCV
@@ -47,6 +47,147 @@ def test_bedrock_model_list_api_key_maps_extensions():
         "bedrock_endpoint_type": "runtime",
         "bedrock_discovery_endpoint_url": "https://bedrock.ap-northeast-1.amazonaws.com",
     }
+
+
+def test_model_info_validation_rejects_mixed_unclassified_models() -> None:
+    normalized, error = _normalize_model_info(
+        [
+            {"model_name": "valid-model", "model_type": ["chat"]},
+            {"model_name": "future-model", "model_type": []},
+        ]
+    )
+
+    assert normalized is None
+    assert error == "Model 'future-model': At least one supported model_type is required"
+
+
+def test_model_info_validation_canonicalizes_legacy_type_aliases() -> None:
+    normalized, error = _normalize_model_info([{"model_name": " model ", "model_type": ["image2text", "speech2text", "doc_parse"]}])
+
+    assert error is None
+    assert normalized == [{"model_name": "model", "model_type": ["vision", "asr", "doc_parse"]}]
+
+
+@pytest.mark.parametrize(
+    ("model_info", "expected_error"),
+    [
+        (
+            [
+                {"model_name": " duplicate ", "model_type": ["chat"]},
+                {"model_name": "duplicate", "model_type": ["embedding"]},
+            ],
+            "Duplicate model_name 'duplicate'",
+        ),
+        (
+            [{"model_name": "model", "model_type": ["chat"], "extra": "invalid"}],
+            "Model 'model': extra must be an object",
+        ),
+    ],
+)
+def test_model_info_validation_rejects_non_atomic_inputs(model_info: list[dict], expected_error: str) -> None:
+    normalized, error = _normalize_model_info(model_info)
+
+    assert normalized is None
+    assert error == expected_error
+
+
+class _RecordingAtomic:
+    def __init__(self):
+        self.error_type = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, error_type, _error, _traceback):
+        self.error_type = error_type
+        return False
+
+
+def test_create_provider_instance_rolls_back_when_a_model_write_fails() -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    models = [
+        {"model_name": "model-a", "model_type": ["chat"]},
+        {"model_name": "model-b", "model_type": ["chat"]},
+    ]
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.FACTORY_LLM_INFOS", [{"name": "Bedrock", "llm": []}]),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.create_instance"),
+        patch("api.apps.services.provider_api_service.verify_api_key", new=AsyncMock(return_value=(True, "", {}))),
+        patch("api.apps.services.provider_api_service.add_model_to_instance", side_effect=[(True, ""), (False, "second model failed")]),
+    ):
+        success, message = asyncio.run(create_provider_instance("tenant", "Bedrock", "instance", "token", "", "default", models))
+
+    assert success is False
+    assert message == "second model failed"
+    assert atomic.error_type.__name__ == "_ModelPersistenceError"
+
+
+def test_update_provider_instance_rolls_back_when_a_model_write_fails() -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    instance = SimpleNamespace(id="instance-id", provider_id="provider-id", instance_name="instance", extra="{}")
+    models = [
+        {"model_name": "model-a", "model_type": ["chat"]},
+        {"model_name": "model-b", "model_type": ["chat"]},
+    ]
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id"),
+        patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[]),
+        patch("api.apps.services.provider_api_service.add_model_to_instance", side_effect=[(True, ""), (False, "second model failed")]),
+    ):
+        success, message = asyncio.run(update_provider_instance("tenant", "Bedrock", "instance-id", "instance", "token", "", "default", models, verify=False))
+
+    assert success is False
+    assert message == "second model failed"
+    assert atomic.error_type.__name__ == "_ModelPersistenceError"
+
+
+def test_update_provider_instance_clears_empty_endpoint_overrides() -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    instance = SimpleNamespace(
+        id="instance-id",
+        provider_id="provider-id",
+        instance_name="instance",
+        extra=json.dumps({"base_url": "https://old.example.com", "region": "us-east-1", "preserved": True}),
+    )
+    update_by_id = MagicMock()
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id", update_by_id),
+        patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[]),
+    ):
+        success, message = asyncio.run(update_provider_instance("tenant", "Bedrock", "instance-id", "instance", "token", "", None, [], verify=False))
+
+    assert success is True
+    assert message == "success"
+    update_extra = json.loads(update_by_id.call_args.args[1]["extra"])
+    assert update_extra == {"preserved": True}
+
+
+def test_verify_rejects_mixed_unclassified_models_before_driver_calls() -> None:
+    success, message, model_results = asyncio.run(
+        verify_api_key(
+            "Bedrock",
+            "token",
+            model_info=[
+                {"model_name": "valid-model", "model_type": ["chat"]},
+                {"model_name": "future-model", "model_type": []},
+            ],
+        )
+    )
+
+    assert success is False
+    assert message == "Model 'future-model': At least one supported model_type is required"
+    assert model_results == {}
 
 
 def test_bedrock_model_list_api_key_keeps_legacy_string_without_extensions():
@@ -266,7 +407,7 @@ def test_verify_bedrock_api_key_without_models_rejects_empty_discovery():
         success, message, model_results = asyncio.run(verify_api_key("Bedrock", api_key, "", "ap-northeast-1", []))
 
     assert success is False
-    assert message == "No compatible Bedrock models were discovered"
+    assert message == "No Bedrock models were discovered"
     assert model_results == {}
 
 
@@ -470,6 +611,87 @@ def test_runtime_vision_trims_bedrock_api_key():
     assert args["extra_headers"]["Authorization"] == "Bearer token"
 
 
+@pytest.mark.parametrize(
+    ("auth_mode", "credential_fields"),
+    [
+        ("access_key_secret", {"bedrock_ak": "access", "bedrock_sk": "secret"}),
+        ("iam_role", {"aws_role_arn": "arn:aws:iam::123456789012:role/Bedrock"}),
+        ("assume_role", {}),
+    ],
+)
+def test_embedding_sigv4_modes_use_resolved_runtime_endpoint(auth_mode: str, credential_fields: dict[str, str]) -> None:
+    endpoint_url = "https://bedrock-runtime.ap-northeast-1.amazonaws.com"
+    credential = json.dumps(
+        {
+            "auth_mode": auth_mode,
+            "bedrock_region": "ap-northeast-1",
+            "bedrock_endpoint_url": endpoint_url,
+            **credential_fields,
+        }
+    )
+    sts_client = MagicMock()
+    sts_client.assume_role.return_value = {
+        "Credentials": {
+            "AccessKeyId": "assumed-access",
+            "SecretAccessKey": "assumed-secret",
+            "SessionToken": "assumed-session",
+        }
+    }
+    runtime_client = MagicMock()
+
+    def create_client(*args, **kwargs):
+        service_name = kwargs.get("service_name") or args[0]
+        return sts_client if service_name == "sts" else runtime_client
+
+    with patch("boto3.client", side_effect=create_client) as mock_client:
+        model = BedrockEmbed(credential, "amazon.titan-embed-text-v2:0")
+
+    assert model.client is runtime_client
+    runtime_call = next(call for call in mock_client.call_args_list if call.kwargs.get("service_name") == "bedrock-runtime")
+    assert runtime_call.kwargs["region_name"] == "ap-northeast-1"
+    assert runtime_call.kwargs["endpoint_url"] == endpoint_url
+    if auth_mode == "iam_role":
+        assert runtime_call.kwargs["aws_access_key_id"] == "assumed-access"
+        sts_call = next(call for call in mock_client.call_args_list if call.args == ("sts",))
+        assert sts_call.kwargs == {"region_name": "ap-northeast-1"}
+
+
+@pytest.mark.parametrize(
+    ("auth_mode", "credential_fields"),
+    [
+        ("access_key_secret", {"bedrock_ak": "access", "bedrock_sk": "secret"}),
+        ("iam_role", {"aws_role_arn": "arn:aws:iam::123456789012:role/Bedrock"}),
+        ("assume_role", {}),
+    ],
+)
+def test_vision_sigv4_modes_use_resolved_runtime_endpoint(auth_mode: str, credential_fields: dict[str, str]) -> None:
+    endpoint_url = "https://bedrock-runtime.ap-northeast-1.amazonaws.com"
+    credential = json.dumps(
+        {
+            "auth_mode": auth_mode,
+            "bedrock_region": "ap-northeast-1",
+            "bedrock_endpoint_url": endpoint_url,
+            **credential_fields,
+        }
+    )
+    sts_client = MagicMock()
+    sts_client.assume_role.return_value = {
+        "Credentials": {
+            "AccessKeyId": "assumed-access",
+            "SecretAccessKey": "assumed-secret",
+            "SessionToken": "assumed-session",
+        }
+    }
+
+    with patch("boto3.client", return_value=sts_client):
+        args = BedrockCV(credential, "anthropic.claude-sonnet-current")._get_aws_creds()
+
+    assert args["aws_region_name"] == "ap-northeast-1"
+    assert args["aws_bedrock_runtime_endpoint"] == endpoint_url
+    if auth_mode == "iam_role":
+        assert args["aws_access_key_id"] == "assumed-access"
+
+
 @patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")
 def test_runtime_discovery_uses_remote_modalities(mock_create_client):
     mock_create_client.return_value.list_foundation_models.return_value = {
@@ -541,7 +763,7 @@ def test_runtime_discovery_uses_remote_modalities(mock_create_client):
 def test_runtime_discovery_normalizes_catalog_endpoint(mock_create_client) -> None:
     mock_create_client.return_value.list_foundation_models.return_value = {"modelSummaries": []}
 
-    with pytest.raises(ValueError, match="No compatible Bedrock"):
+    with pytest.raises(ValueError, match="No Bedrock models"):
         discover_bedrock_models(
             {
                 "bedrock_api_key": "token",
@@ -568,12 +790,16 @@ def test_runtime_discovery_rejects_non_string_catalog_endpoint(discovery_endpoin
 
 
 @patch("openai.OpenAI")
-def test_mantle_anthropic_discovery_filters_catalog(mock_openai):
+def test_mantle_discovery_keeps_candidates_without_inferring_capabilities(mock_openai):
     mock_openai.return_value.models.list.return_value = SimpleNamespace(
         data=[
             SimpleNamespace(id="Anthropic.claude-sonnet-current"),
             SimpleNamespace(id="amazon.nova-pro-v1:0"),
             SimpleNamespace(id="amazon.titan-embed-text-v2:0"),
+            SimpleNamespace(id="  openai.future-model  "),
+            SimpleNamespace(id="   "),
+            SimpleNamespace(id=""),
+            SimpleNamespace(id=123),
         ]
     )
 
@@ -587,7 +813,13 @@ def test_mantle_anthropic_discovery_filters_catalog(mock_openai):
         }
     )
 
-    assert [model["name"] for model in models] == ["Anthropic.claude-sonnet-current"]
+    assert [model["name"] for model in models] == [
+        "Anthropic.claude-sonnet-current",
+        "amazon.nova-pro-v1:0",
+        "amazon.titan-embed-text-v2:0",
+        "openai.future-model",
+    ]
+    assert all(model["model_types"] == [] for model in models)
     mock_openai.assert_called_once_with(
         api_key="token",
         base_url="https://bedrock-mantle.ap-northeast-1.api.aws/v1",

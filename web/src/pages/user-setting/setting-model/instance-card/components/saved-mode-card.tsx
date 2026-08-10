@@ -66,6 +66,8 @@ export function SavedModeCard({
   open,
   setOpen,
   verifyTransform,
+  buildInstanceUpdatePayload,
+  getModelsSectionValues,
 }: SavedModeCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
@@ -93,11 +95,6 @@ export function SavedModeCard({
       return () => cancelAnimationFrame(id);
     }
   }, [renaming]);
-
-  const startRename = () => {
-    setRenameValue(editedInstanceName);
-    setRenaming(true);
-  };
 
   const commitRename = () => {
     setRenaming(false);
@@ -216,8 +213,11 @@ export function SavedModeCard({
                 hideActions={false}
                 hideIfEmpty={false}
                 instanceDetailsLoaded={instanceDetailsLoaded}
-                getFormValues={() => formRef.current?.getValues?.() ?? {}}
+                getFormValues={getModelsSectionValues}
                 verifyTransform={verifyTransform}
+                buildInstanceUpdatePayload={
+                  instanceDetailsLoaded ? buildInstanceUpdatePayload : undefined
+                }
                 onInstanceModelsChange={(info) => {
                   modelInfoRef.current = info;
                 }}

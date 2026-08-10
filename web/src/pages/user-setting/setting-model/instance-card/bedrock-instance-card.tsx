@@ -473,6 +473,31 @@ export const BedrockInstanceCard = forwardRef<
     };
   }, [form, buildPayload, draftName, instance.instance_name]);
 
+  const buildInstanceUpdatePayload = useCallback(
+    (modelInfo: IModelInfo[]) => {
+      if (isDraft) return null;
+      return {
+        ...buildPayloadWithModels(
+          form.getValues(),
+          instance.instance_name,
+          modelInfo,
+        ),
+        provider_name: providerName,
+        id: instanceDetails?.id || instance.id,
+        verify: false,
+      };
+    },
+    [
+      buildPayloadWithModels,
+      form,
+      instance.id,
+      instance.instance_name,
+      instanceDetails?.id,
+      isDraft,
+      providerName,
+    ],
+  );
+
   const transformModelVerify = useCallback(
     (values: Record<string, any>) => {
       const formValues = { ...values };
@@ -975,19 +1000,21 @@ export const BedrockInstanceCard = forwardRef<
 
           {renderFields()}
 
-          <div className="pt-3">
-            <ModelsSection
-              key={catalogRevision}
-              providerName={providerName}
-              instanceName={modelsSectionInstanceName}
-              instance={instance}
-              hideActions={false}
-              hideIfEmpty={false}
-              getFormValues={getModelsSectionValues}
-              verifyTransform={transformModelVerify}
-              onInstanceModelsChange={handleInstanceModelsChange}
-            />
-          </div>
+          {authMode === 'bedrock_api_key' && (
+            <div className="pt-3">
+              <ModelsSection
+                key={catalogRevision}
+                providerName={providerName}
+                instanceName={modelsSectionInstanceName}
+                instance={instance}
+                hideActions={false}
+                hideIfEmpty={false}
+                getFormValues={getModelsSectionValues}
+                verifyTransform={transformModelVerify}
+                onInstanceModelsChange={handleInstanceModelsChange}
+              />
+            </div>
+          )}
         </div>
       ) : (
         <Collapsible open={open} onOpenChange={setOpen}>
@@ -1038,20 +1065,25 @@ export const BedrockInstanceCard = forwardRef<
             <div className="px-2 pb-4 flex flex-col gap-4">
               {renderFields()}
 
-              <div className="pt-3">
-                <ModelsSection
-                  key={catalogRevision}
-                  providerName={providerName}
-                  instanceName={modelsSectionInstanceName}
-                  instance={instance}
-                  hideActions={false}
-                  deferModelMutations={!isDraft && catalogCredentialsDirty}
-                  hideIfEmpty={false}
-                  getFormValues={getModelsSectionValues}
-                  verifyTransform={transformModelVerify}
-                  onInstanceModelsChange={handleInstanceModelsChange}
-                />
-              </div>
+              {authMode === 'bedrock_api_key' && (
+                <div className="pt-3">
+                  <ModelsSection
+                    key={catalogRevision}
+                    providerName={providerName}
+                    instanceName={modelsSectionInstanceName}
+                    instance={instance}
+                    hideActions={false}
+                    deferModelMutations={!isDraft && catalogCredentialsDirty}
+                    hideIfEmpty={false}
+                    getFormValues={getModelsSectionValues}
+                    verifyTransform={transformModelVerify}
+                    buildInstanceUpdatePayload={
+                      instanceDetails ? buildInstanceUpdatePayload : undefined
+                    }
+                    onInstanceModelsChange={handleInstanceModelsChange}
+                  />
+                </div>
+              )}
             </div>
           </CollapsibleContent>
         </Collapsible>

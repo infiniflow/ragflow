@@ -75,6 +75,9 @@ export const hasToolFeature = (
 export const normalizeModelTypes = (raw: unknown): string[] =>
   Array.isArray(raw) ? raw : raw ? [raw as string] : [];
 
+export const hasKnownModelTypes = (model: IProviderModelItem): boolean =>
+  Array.isArray(model.model_types) && model.model_types.length > 0;
+
 /**
  * Build an `IModelInfo[]` (the shape the PUT
  * `/providers/{name}/instances/{name}` endpoint expects) from a list of
@@ -536,7 +539,7 @@ export function buildVerifyArgs(
     const transformed = verifyTransform(formValues);
     apiKey = transformed.apiKey;
     baseUrl = transformed.baseUrl;
-    region = transformed.region;
+    region = transformed.region ?? (formValues.region as string | undefined);
   } else {
     const creds = resolveCreds();
     apiKey = creds.apiKey;
@@ -592,7 +595,7 @@ export function useModelVerify({
     });
   }, [instanceModels]);
 
-  const handleVerify = async (model: IProviderModelItem) => {
+  const handleVerify = async (model: IProviderModelItem): Promise<boolean> => {
     setVerify((prev) => ({ ...prev, [model.name]: 'loading' }));
     try {
       const ret = await verifyProviderConnection(
@@ -609,8 +612,10 @@ export function useModelVerify({
         ...prev,
         [model.name]: ret.code === 0 ? 'success' : 'error',
       }));
+      return ret.code === 0;
     } catch {
       setVerify((prev) => ({ ...prev, [model.name]: 'error' }));
+      return false;
     }
   };
 
@@ -685,8 +690,6 @@ interface UseModelMutationsArgs {
   instanceName: string;
   isDraftInstance: boolean;
   hideActions: boolean;
-  resolveCreds: () => ResolvedCreds;
-  instance: IProviderInstance | undefined;
   instanceItems: IProviderModelItem[];
   filteredModels: IProviderModelItem[];
   addedSet: Set<string>;
@@ -701,6 +704,10 @@ interface UseModelMutationsArgs {
   addDraftModel?: (model: IProviderModelItem) => void;
   removeDraftModel?: (name: string) => void;
   setDraftModelsList?: (models: IProviderModelItem[]) => void;
+  buildInstanceUpdatePayload?: (
+    modelInfo: IModelInfo[],
+  ) => Record<string, any> | null;
+  onInstanceModelsEdited?: (modelInfo: IModelInfo[]) => void;
 }
 
 export function useModelMutations({
@@ -708,8 +715,6 @@ export function useModelMutations({
   instanceName,
   isDraftInstance,
   hideActions,
-  resolveCreds,
-  instance,
   instanceItems,
   filteredModels,
   addedSet,
@@ -718,19 +723,27 @@ export function useModelMutations({
   addDraftModel,
   removeDraftModel,
   setDraftModelsList,
+  buildInstanceUpdatePayload,
+  onInstanceModelsEdited,
 }: UseModelMutationsArgs) {
-  const { addInstanceModel } = useAddInstanceModel();
+  const { addInstanceModel, loading: addLoading } = useAddInstanceModel();
   const { deleteInstanceModels } = useDeleteInstanceModels();
   const { updateProviderInstance, loading: batchLoading } =
     useUpdateProviderInstance();
 
   // True when every model currently shown in the filtered list is already
   // attached to the instance — drives the +/- toggle on the batch button.
+  const batchModels = useMemo(
+    () =>
+      filteredModels.filter(
+        (model) => addedSet.has(model.name) || hasKnownModelTypes(model),
+      ),
+    [filteredModels, addedSet],
+  );
   const allFilteredAdded = useMemo(
     () =>
-      filteredModels.length > 0 &&
-      filteredModels.every((m) => addedSet.has(m.name)),
-    [filteredModels, addedSet],
+      batchModels.length > 0 && batchModels.every((m) => addedSet.has(m.name)),
+    [batchModels, addedSet],
   );
 
   const handleAddModel = async (model: IProviderModelItem) => {
@@ -739,9 +752,9 @@ export function useModelMutations({
     if (isDraftInstance) {
       addDraftModel?.(model);
       clearCatalogOverride(model.name);
-      return;
+      return true;
     }
-    await addInstanceModel({
+    const result = await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: model.name,
@@ -752,7 +765,9 @@ export function useModelMutations({
         ...(model.extra ?? {}),
       },
     });
+    if (result?.code !== 0) return false;
     clearCatalogOverride(model.name);
+    return true;
   };
 
   const handleRemoveModel = async (model: IProviderModelItem) => {
@@ -768,13 +783,10 @@ export function useModelMutations({
   };
 
   const handleAddCustom = async (item: IProviderModelItem) => {
-    // Append the custom item to the local catalog so it shows up in the
-    // unioned `models` list immediately. Server-side persistence happens
-    // via `addInstanceModel` below (when there is a real instance).
-    setCatalog((prev) =>
-      prev.some((m) => m.name === item.name) ? prev : [...prev, item],
-    );
     if (hideActions || isDraftInstance) {
+      setCatalog((prev) =>
+        prev.some((m) => m.name === item.name) ? prev : [...prev, item],
+      );
       // For drafts the catalog entry alone is not enough — we also need
       // to mark the model as added so it flows into the save payload's
       // `model_info`. Without this, custom models added on a draft
@@ -784,9 +796,9 @@ export function useModelMutations({
         addDraftModel?.(item);
         clearCatalogOverride(item.name);
       }
-      return;
+      return true;
     }
-    await addInstanceModel({
+    const result = await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: item.name,
@@ -794,7 +806,12 @@ export function useModelMutations({
       max_tokens: item.max_tokens ?? 0,
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    if (result?.code !== 0) return false;
+    setCatalog((prev) =>
+      prev.some((m) => m.name === item.name) ? prev : [...prev, item],
+    );
     clearCatalogOverride(item.name);
+    return true;
   };
 
   // Batch attach/detach the currently visible (filtered) models.
@@ -803,23 +820,23 @@ export function useModelMutations({
   //  - Draft: just rewrite the local draft list. The host save handler
   //    flushes the latest snapshot through the add-instance payload.
   const handleBatchToggleModels = async () => {
-    if (filteredModels.length === 0) return;
+    if (batchModels.length === 0) return;
 
     const byName = new Map<string, IProviderModelItem>();
     instanceItems.forEach((m) => byName.set(m.name, m));
 
     let nextModels: IProviderModelItem[];
     if (allFilteredAdded) {
-      const drop = new Set(filteredModels.map((m) => m.name));
+      const drop = new Set(batchModels.map((m) => m.name));
       nextModels = Array.from(byName.values()).filter((m) => !drop.has(m.name));
     } else {
-      filteredModels.forEach((m) => byName.set(m.name, m));
+      batchModels.forEach((m) => byName.set(m.name, m));
       nextModels = Array.from(byName.values());
     }
 
     if (isDraftInstance) {
       setDraftModelsList?.(nextModels);
-      filteredModels.forEach((m) => {
+      batchModels.forEach((m) => {
         if (!addedSet.has(m.name)) {
           clearCatalogOverride(m.name);
         }
@@ -827,17 +844,13 @@ export function useModelMutations({
       return;
     }
 
-    const { apiKey, baseUrl } = resolveCreds();
-    await updateProviderInstance({
-      provider_name: providerName,
-      id: instance!.id,
-      instance_name: instanceName,
-      api_key: apiKey,
-      base_url: baseUrl,
-      region: instance?.region ?? 'default',
-      model_info: buildModelInfo(nextModels),
-    });
-    filteredModels.forEach((m) => {
+    const nextModelInfo = buildModelInfo(nextModels);
+    const payload = buildInstanceUpdatePayload?.(nextModelInfo);
+    if (!payload) return;
+    const result = await updateProviderInstance(payload as any);
+    if (result?.code !== 0) return;
+    onInstanceModelsEdited?.(nextModelInfo);
+    batchModels.forEach((m) => {
       if (!addedSet.has(m.name)) {
         clearCatalogOverride(m.name);
       }
@@ -846,10 +859,14 @@ export function useModelMutations({
 
   return {
     allFilteredAdded,
+    canBatchToggle:
+      batchModels.length > 0 &&
+      (isDraftInstance || Boolean(buildInstanceUpdatePayload)),
     handleAddModel,
     handleRemoveModel,
     handleAddCustom,
     handleBatchToggleModels,
+    addLoading,
     batchLoading,
   };
 }
@@ -981,8 +998,7 @@ export function useModelEdit({
     });
     if (result?.code !== 0) return;
 
-    let acknowledgedModelInfo: IModelInfo[] | undefined;
-    queryClient.setQueryData<IInstanceModel[]>(
+    const acknowledgedModels = queryClient.setQueryData<IInstanceModel[]>(
       LlmKeys.instanceModels(providerName, instanceName),
       (current) => {
         if (!current) return current;
@@ -1000,7 +1016,12 @@ export function useModelEdit({
               }
             : model,
         );
-        acknowledgedModelInfo = next.map((model) => ({
+        return next;
+      },
+    );
+    if (acknowledgedModels) {
+      onInstanceModelsEdited?.(
+        acknowledgedModels.map((model) => ({
           model_name: model.name,
           model_type: model.model_type,
           max_tokens: model.max_tokens,
@@ -1008,12 +1029,8 @@ export function useModelEdit({
             ...(model.extra ?? {}),
             is_tools: Boolean(model.is_tools),
           },
-        }));
-        return next;
-      },
-    );
-    if (acknowledgedModelInfo) {
-      onInstanceModelsEdited?.(acknowledgedModelInfo);
+        })),
+      );
     }
     clearCatalogOverride(targetName);
     setEditingModel(null);
