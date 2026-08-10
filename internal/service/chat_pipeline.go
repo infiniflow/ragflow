@@ -403,7 +403,7 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 					}
 					kbinfos := map[string]interface{}{"chunks": chunks}
-					s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
 				out <- AsyncChatResult{
@@ -826,7 +826,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Enrich chunks with document metadata AFTER all retrieval adds.
 		// Request values (kwargs) take precedence over config values.
 		if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta {
-			s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
 
@@ -2358,7 +2358,7 @@ func (s *ChatPipelineService) resolveReferenceMetadata(promptConfig map[string]i
 // enrichChunksWithMetadata enriches chunk records in kbinfos with document-level
 // metadata. Mirrors Python's enrich_chunks_with_document_metadata() in
 // api/utils/reference_metadata_utils.py.
-func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interface{}, tenantID string, fields []string) {
+func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbinfos map[string]interface{}, tenantID string, fields []string) {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 	if !ok || len(chunksRaw) == 0 {
 		return
@@ -2370,7 +2370,7 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interf
 		return
 	}
 
-	s.MetadataSvc.EnrichChunksWithDocMetadata(chunks, tenantID, fields)
+	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks.

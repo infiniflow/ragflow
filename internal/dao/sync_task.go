@@ -369,8 +369,3 @@ func syncConnectorConfigBool(config map[string]any, key string) bool {
 		return false
 	}
 }
-
-// IsNotFound reports whether an error is a gorm not found error.
-func IsNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound)
-}

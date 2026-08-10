@@ -17,7 +17,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -134,6 +133,7 @@ func TestResolveWebSearchProviderRequiresKeyForSelectedProvider(t *testing.T) {
 }
 
 func TestRetrieveQueritWebSearchUsesChatDefaultsAndReturnsReferenceShape(t *testing.T) {
+	ctx := t.Context()
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if got := request.Header.Get("Authorization"); got != "Bearer querit-test" {
@@ -157,7 +157,7 @@ func TestRetrieveQueritWebSearchUsesChatDefaultsAndReturnsReferenceShape(t *test
 	defer server.Close()
 
 	result, err := retrieveQueritWebSearch(
-		context.Background(),
+		ctx,
 		server.Client(),
 		server.URL,
 		"querit-test",

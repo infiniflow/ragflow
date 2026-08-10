@@ -44,7 +44,7 @@ const ChatContainer = () => {
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      changeLanguageAsync(locale);
+      changeLanguageAsync(locale, { persist: false });
     }
   }, [locale, visibleAvatar]);
 
