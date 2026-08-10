@@ -17,11 +17,11 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/service"
@@ -38,9 +38,19 @@ func (e *embedder) MaxTokens() int {
 	return e.model.MaxTokens
 }
 
-func (e *embedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error) {
+func (e *embedder) BatchSize() int {
+	if e == nil || e.model == nil {
+		return models.DefaultEmbeddingBatchSize
+	}
+	return e.model.ResolveBatchSize()
+}
+
+func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
+	if e.model.ModelDriver == nil {
+		return nil, fmt.Errorf("embedder: embedding model driver is nil for model %v", e.model.ModelName)
+	}
 	config := &models.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.model.ModelDriver.Embed(e.model.ModelName, texts, e.model.APIConfig, config)
+	embeds, err := e.model.ModelDriver.Embed(ctx, e.model.ModelName, texts, e.model.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -52,30 +62,25 @@ func (e *embedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error
 }
 
 // newEmbedderResolver builds the production embedder resolver used by the
-// Tokenizer component. It honors an explicit embedding-model id (from the
-// Tokenizer's setups) and falls back to the dataset's configured embd_id when
-// none is given. Kept as a constructor over injectable deps so the resolution
-// logic stays unit-testable without a live model provider / DB.
+// Tokenizer component. It always resolves the embedder from the dataset's
+// configured embd_id (looked up by kbID). If the dataset has no embd_id
+// configured, it returns nil (no embedding). Kept as a constructor over
+// injectable deps so the resolution logic stays unit-testable without a live
+// model provider / DB.
 func newEmbedderResolver(
-	getEmbeddingModel func(tenantID, embdID string) (*models.EmbeddingModel, error),
-	getKnowledgebaseByID func(kbID string) (*entity.Knowledgebase, error),
+	getKBEmbdID func(ctx context.Context, kbID string) (string, error),
+	getEmbeddingModel func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error),
 ) componentpkg.EmbedderResolver {
-	return func(tenantID, kbID, embeddingModel string) (componentpkg.Embedder, error) {
-		embdID := strings.TrimSpace(embeddingModel)
-		if embdID == "" {
-			if strings.TrimSpace(kbID) == "" {
-				return nil, fmt.Errorf("embedding requested but neither embedding_model nor kb_id provided")
-			}
-			kb, err := getKnowledgebaseByID(kbID)
-			if err != nil {
-				return nil, err
-			}
-			if kb == nil || strings.TrimSpace(kb.EmbdID) == "" {
-				return nil, fmt.Errorf("embedding requested but dataset has no embd_id configured")
-			}
-			embdID = kb.EmbdID
+	return func(ctx context.Context, tenantID, kbID, _ string) (componentpkg.Embedder, error) {
+		embdID, err := getKBEmbdID(ctx, kbID)
+		if err != nil {
+			return nil, fmt.Errorf("embedder: resolve kb embd_id for kb_id=%s: %w", kbID, err)
 		}
-		model, err := getEmbeddingModel(tenantID, embdID)
+		embdID = strings.TrimSpace(embdID)
+		if embdID == "" {
+			return nil, nil
+		}
+		model, err := getEmbeddingModel(ctx, tenantID, embdID)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +97,16 @@ func newEmbedderResolver(
 // composition root for ingestion runs.
 func init() {
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
+		func(ctx context.Context, kbID string) (string, error) {
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
+			if err != nil {
+				return "", err
+			}
+			if kb == nil {
+				return "", nil
+			}
+			return kb.EmbdID, nil
+		},
 		service.NewModelProviderService().GetEmbeddingModel,
-		dao.NewKnowledgebaseDAO().GetByID,
 	)
 }

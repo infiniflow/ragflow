@@ -70,7 +70,7 @@ export default function DocumentViewSwitch({
       label: (
         <div className="flex items-center gap-1">
           <LayoutList className="h-4 w-4" />
-          <span>{t('chunk.representation', 'Representation')}</span>
+          <span>Artifact</span>
         </div>
       ),
     },

@@ -171,7 +171,6 @@ func TestWencai_BuildByNameRejectsInvalidNodeParams(t *testing.T) {
 		{name: "string top_n", params: map[string]any{"top_n": "10"}},
 		{name: "invalid query_type", params: map[string]any{"query_type": "crypto"}},
 		{name: "non-string query_type", params: map[string]any{"query_type": 1}},
-		{name: "unknown key", params: map[string]any{"page": 1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,6 +179,47 @@ func TestWencai_BuildByNameRejectsInvalidNodeParams(t *testing.T) {
 				t.Fatalf("BuildByName(%v) succeeded, want validation error", tc.params)
 			}
 		})
+	}
+}
+
+func TestWencai_BuildByNameIgnoresUnrelatedCanvasParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("wencai", map[string]any{
+		"top_n":   float64(20),
+		"outputs": map[string]any{"report": map[string]any{}},
+		"setups":  map[string]any{"query": "configured query"},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	wencai := built.(*WencaiTool)
+	if wencai.defaults.TopN != 20 {
+		t.Fatalf("defaults.TopN = %d, want 20", wencai.defaults.TopN)
+	}
+}
+
+func TestWencai_ComponentContract(t *testing.T) {
+	t.Parallel()
+
+	wencai := NewWencaiTool()
+	spec := wencai.ComponentSpec()
+	if _, ok := spec.Inputs["query"]; !ok {
+		t.Fatalf("component inputs missing query: %#v", spec.Inputs)
+	}
+	if _, ok := spec.Outputs["report"]; !ok {
+		t.Fatalf("component outputs missing report: %#v", spec.Outputs)
+	}
+	query, ok := spec.InputForm["query"].(map[string]any)
+	if !ok || query["name"] != "Query" || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	outputs := wencai.BuildComponentOutputs(map[string]any{
+		"report":        "market report",
+		"tool_metadata": map[string]any{"request_id": "request-1"},
+	})
+	if outputs["report"] != "market report" {
+		t.Fatalf("component outputs = %#v", outputs)
 	}
 }
 

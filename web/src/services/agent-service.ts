@@ -27,6 +27,8 @@ const {
   prompt,
   cancelDataflow,
   cancelCanvas,
+  listBuiltinPipelines,
+  getBuiltinPipeline,
 } = api;
 
 const methods = {
@@ -121,6 +123,14 @@ const methods = {
   createAgentSession: {
     url: api.createAgentSession,
     method: 'post',
+  },
+  listBuiltinPipelines: {
+    url: listBuiltinPipelines,
+    method: 'get',
+  },
+  getBuiltinPipeline: {
+    url: getBuiltinPipeline,
+    method: 'get',
   },
 } as const;
 

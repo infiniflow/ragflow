@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -50,7 +51,8 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	)
 
 	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
-	ingestor.executeTask(taskCtx)
+	ctx := t.Context()
+	ingestor.executeTask(ctx, taskCtx)
 
 	// Corrupted run_count values are skipped by IncrementRunCount, so the task
 	// proceeds to runDocumentTask and completes normally.
@@ -59,7 +61,7 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	}
 
 	// Verify task status was set to COMPLETED
-	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load final ingestion task: %v", err)
 	}
@@ -68,11 +70,51 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	}
 }
 
-func TestDefaultRunDocumentTask_RequiresConfiguredPipelineID(t *testing.T) {
+func TestDefaultRunDocumentTask_BothPipelineAndParserMissing(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
+	// Seed a document with empty parser_id so that neither pipeline_id
+	// nor parser_id is configured — the only case that should still fail.
+	_, kbID, docID, taskID := testutil.SeedTestData(t, db,
+		testutil.WithTenantID("tenant-1"),
+		testutil.WithKBID("kb-1"),
+		testutil.WithDocID("doc-1"),
+		testutil.WithTaskID("task-1"),
+	)
+
+	// Clear parser_id on the document so both identifiers are missing.
+	if err := db.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_id", "").Error; err != nil {
+		t.Fatalf("clear parser_id: %v", err)
+	}
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
+		ID:         taskID,
+		DocumentID: docID,
+		DatasetID:  kbID,
+		Status:     common.RUNNING,
+	})
+	if err == nil {
+		t.Fatal("expected error when neither pipeline_id nor parser_id is configured")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "pipeline_id") && !strings.Contains(msg, "parser_id") {
+		t.Fatalf("error should mention pipeline_id/parser_id: %v", err)
+	}
+}
+
+// TestDefaultRunDocumentTask_ParserIDWithoutPipelineID proceeds via the
+// builtin DSL path when only parser_id is configured. The execution will
+// fail downstream (no storage engine in test), but the error must NOT be
+// about missing pipeline_id.
+func TestDefaultRunDocumentTask_ParserIDWithoutPipelineID(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	// Seed with default ParserID="naive" and no PipelineID.
 	_, kbID, docID, taskID := testutil.SeedTestData(t, db,
 		testutil.WithTenantID("tenant-1"),
 		testutil.WithKBID("kb-1"),
@@ -87,11 +129,16 @@ func TestDefaultRunDocumentTask_RequiresConfiguredPipelineID(t *testing.T) {
 		DatasetID:  kbID,
 		Status:     common.RUNNING,
 	})
+	// The builtin path resolves naive->general from the embedded registry
+	// and proceeds to execute. It will fail because there is no storage
+	// engine available in this test — but it must NOT fail with a
+	// "no pipeline_id" error.
 	if err == nil {
-		t.Fatal("expected error when no pipeline is configured")
+		t.Fatal("expected downstream error (no storage engine)")
 	}
-	if err.Error() != "ingestion task task-1: no pipeline_id configured for document doc-1 or dataset kb-1" {
-		t.Fatalf("unexpected error: %v", err)
+	msg := err.Error()
+	if strings.Contains(msg, "no pipeline_id") {
+		t.Fatalf("builtin path must not fail with missing pipeline_id: %v", err)
 	}
 }
 
@@ -127,7 +174,8 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
 	)
 
-	ingestor.executeTask(taskCtx)
+	ctx := t.Context()
+	ingestor.executeTask(ctx, taskCtx)
 
 	if !runDocumentTaskCalled {
 		t.Fatal("expected executeTask to run runDocumentTask")
@@ -135,7 +183,7 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 	if gotTaskID != taskID {
 		t.Fatalf("runDocumentTask got task ID %q, want %q", gotTaskID, taskID)
 	}
-	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load final ingestion task: %v", err)
 	}
@@ -165,7 +213,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	)
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.cancelCheck = func(taskID string) bool { return true }
+	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool { return true }
 
 	var runDocumentTaskCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -177,13 +225,14 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		context.Background(),
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
 	)
-	ingestor.executeTask(taskCtx)
+	ctx := t.Context()
+	ingestor.executeTask(ctx, taskCtx)
 
 	if runDocumentTaskCalled {
 		t.Fatal("expected runDocumentTask to NOT be called when cancel is detected before pipeline")
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, docID)
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}

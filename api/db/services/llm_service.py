@@ -27,7 +27,7 @@ from langfuse import propagate_attributes
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
-from common.token_utils import num_tokens_from_string, record_run_token_usage, langfuse_run_attrs
+from common.token_utils import langfuse_run_attrs, num_tokens_from_string, record_run_token_usage, truncate
 
 
 class LLMService(CommonService):
@@ -86,6 +86,18 @@ class LLMBundle(LLM4Tenant):
         """Release resources held by this LLMBundle instance."""
         super().close()
 
+    def clone(self):
+        kwargs = {
+            "trace_context": dict(self.trace_context or {}),
+            "langfuse_session_id": self.langfuse_session_id,
+            "verbose_tool_use": self.verbose_tool_use,
+        }
+        for attr, key in (("max_retries", "max_retries"), ("base_delay", "retry_interval"), ("max_rounds", "max_rounds")):
+            value = getattr(self.mdl, attr, None)
+            if value is not None:
+                kwargs[key] = value
+        return LLMBundle(self.tenant_id, dict(self.model_config), lang=getattr(self, "lang", "Chinese"), **kwargs)
+
     def __enter__(self):
         """Enter context manager."""
         return self
@@ -132,7 +144,14 @@ class LLMBundle(LLM4Tenant):
             token_size = num_tokens_from_string(text)
             if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
-                safe_texts.append(text[:target_len])
+                logging.debug(
+                    "LLMBundle.encode truncating input: index=%d model=%s original_tokens=%d target_tokens=%d",
+                    idx,
+                    self.model_config["llm_name"],
+                    token_size,
+                    target_len,
+                )
+                safe_texts.append(truncate(text, target_len))
             else:
                 safe_texts.append(text)
 
@@ -412,7 +431,7 @@ class LLMBundle(LLM4Tenant):
         return queue
 
     async def async_chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
-        if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_with_tools"):
+        if self.is_tools and hasattr(self.mdl, "async_chat_with_tools"):
             base_fn = self.mdl.async_chat_with_tools
         elif hasattr(self.mdl, "async_chat"):
             base_fn = self.mdl.async_chat

@@ -62,6 +62,9 @@ func (w *chunkIndexWriter) Write(ctx context.Context, chunks []map[string]any) e
 		if end > len(chunks) {
 			end = len(chunks)
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err := w.insertFunc(ctx, chunks[b:end], w.baseName, w.datasetID); err != nil {
 			return err
 		}

@@ -154,6 +154,10 @@ class TaskHandler:
 
     @staticmethod
     def _is_standard_chunking_task(task_type: str) -> bool:
+        from rag.svr.task_executor_refactor.dataset_structure_merger import (
+            STRUCTURE_MERGE_TASK_TYPES,
+        )
+
         task_type = (task_type or "").lower()
         return task_type not in {
             "memory",
@@ -165,7 +169,7 @@ class TaskHandler:
             "evaluation",
             "reembedding",
             "clone",
-        } and not task_type.startswith("dataflow")
+        } | STRUCTURE_MERGE_TASK_TYPES and not task_type.startswith("dataflow")
 
     async def handle_task(self) -> None:
         try:
@@ -241,21 +245,46 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                is_structure_merge_task,
+            )
+
             if task_type == "raptor":
                 await self._run_raptor(embedding_model, vector_size)
             elif task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
-            elif task_type == "artifact":
+            elif task_type == "wiki":
                 from rag.svr.task_executor_refactor.dataset_wiki_generator import (
-                    run_wiki,
+                    run_wiki_incremental,
                 )
 
-                await run_wiki(
+                # Parse plan: yes/no from the template config (default no-plan)
+                plan_enabled = False
+                try:
+                    from api.db.services.compilation_template_service import (
+                        CompilationTemplateService,
+                    )
+                    from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+                        _parser_config_compilation_template_ids,
+                    )
+
+                    pc = self._task_context.parser_config or {}
+                    for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
+                        tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
+                        cfg = (tpl.get("config") or {}) if tpl else {}
+                        if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
+                            plan_enabled = True
+                            break
+                except Exception:
+                    pass  # default to no-plan
+
+                await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
+                    plan=plan_enabled,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (
@@ -267,6 +296,12 @@ class TaskHandler:
                     embedding_model,
                     self._load_chunks_for_doc,
                 )
+            elif is_structure_merge_task(task_type):
+                from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                    run_structure_merge,
+                )
+
+                await run_structure_merge(self._task_context)
             elif task_type == "evaluation":
                 await self._run_evaluation()
             elif task_type == "reembedding":
@@ -360,14 +395,13 @@ class TaskHandler:
                 {
                     "raptor": {
                         "use_raptor": True,
-                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                        "max_token": 256,
-                        "threshold": 0.1,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
                         "max_cluster": 64,
                         "random_seed": 0,
                         "scope": "file",
-                        "clustering_method": "gmm",
-                        "tree_builder": "raptor",
                     },
                 }
             )
@@ -730,6 +764,7 @@ class TaskHandler:
             "content_with_weight",
             "page_num_int",
             "top_int",
+            "compile_kwd",
         ]
         order_by = OrderByExpr()
         order_by.asc("page_num_int")
@@ -742,7 +777,15 @@ class TaskHandler:
                     settings.docStoreConn.search,
                     select_fields,
                     [],
-                    {"doc_id": [doc_id], "available_int": 1},
+                    {
+                        "doc_id": [doc_id],
+                        "available_int": 1,
+                        # Compilation writes its output back to the same
+                        # document index. Exclude those rows in the query so
+                        # they cannot change offset pagination while this
+                        # task is still streaming source chunks.
+                        "must_not": {"exists": "compile_kwd"},
+                    },
                     [],
                     order_by,
                     offset,

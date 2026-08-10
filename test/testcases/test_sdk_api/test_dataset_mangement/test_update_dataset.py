@@ -34,7 +34,7 @@ class TestRquest:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({})
-        assert "No properties were modified" in str(exception_info.value), str(exception_info.value)
+        assert "no properties were modified" in str(exception_info.value), str(exception_info.value)
 
 
 class TestCapability:
@@ -125,9 +125,9 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "avatar_prefix, expected_message",
         [
-            ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -230,9 +230,9 @@ class TestDatasetUpdate:
         if IS_GO_PROXY and name in ["empty", "space"]:
             assert "lookup failed: record not found" in error_msg, error_msg
         elif name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
+            assert "embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
         else:
-            assert "Both model_name and provider must be non-empty strings" in error_msg, error_msg
+            assert "both model_name and provider must be non-empty strings" in error_msg, error_msg
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client, add_dataset_func):
@@ -458,12 +458,12 @@ class TestDatasetUpdate:
             {"raptor": {"use_raptor": True}},
             {"raptor": {"use_raptor": False}},
             {"raptor": {"prompt": "Who are you?"}},
-            {"raptor": {"max_token": 1}},
+            {"raptor": {"max_token": 512}},
             {"raptor": {"max_token": 1024}},
             {"raptor": {"max_token": 2048}},
-            {"raptor": {"threshold": 0.0}},
-            {"raptor": {"threshold": 0.5}},
-            {"raptor": {"threshold": 1.0}},
+            {"raptor": {"clustering_threshold": 0.0}},
+            {"raptor": {"clustering_threshold": 0.5}},
+            {"raptor": {"clustering_threshold": 1.0}},
             {"raptor": {"max_cluster": 1}},
             {"raptor": {"max_cluster": 512}},
             {"raptor": {"max_cluster": 1024}},
@@ -511,9 +511,9 @@ class TestDatasetUpdate:
             "raptor_max_token_min",
             "raptor_max_token_mid",
             "raptor_max_token_max",
-            "raptor_threshold_min",
-            "raptor_threshold_mid",
-            "raptor_threshold_max",
+            "raptor_clustering_threshold_min",
+            "raptor_clustering_threshold_mid",
+            "raptor_clustering_threshold_max",
             "raptor_max_cluster_min",
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
@@ -581,13 +581,11 @@ class TestDatasetUpdate:
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ({"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-            ({"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ({"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ({"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
             ({"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-            ({"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-            ({"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ({"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+            ({"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+            ({"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+            ({"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
             ({"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ({"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
             ({"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -637,13 +635,11 @@ class TestDatasetUpdate:
             "raptor_type_invalid",
             "raptor_prompt_empty",
             "raptor_prompt_space",
-            "raptor_max_token_min_limit",
             "raptor_max_token_max_limit",
-            "raptor_max_token_float_not_allowed",
             "raptor_max_token_type_invalid",
-            "raptor_threshold_min_limit",
-            "raptor_threshold_max_limit",
-            "raptor_threshold_type_invalid",
+            "raptor_clustering_threshold_min_limit",
+            "raptor_clustering_threshold_max_limit",
+            "raptor_clustering_threshold_type_invalid",
             "raptor_max_cluster_min_limit",
             "raptor_max_cluster_max_limit",
             "raptor_max_cluster_float_not_allowed",

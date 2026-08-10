@@ -10,7 +10,7 @@ import {
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
-import { useCallback, useMemo } from 'react';
+import { forwardRef, useCallback, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { TreeSelect, TreeSelectNode } from './tree-select';
@@ -62,7 +62,14 @@ export function buildModelTree(
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
         const modelName = getRealModelName(m.name);
-        const id = m.model_id;
+
+        const id =
+          m.model_id ||
+          buildModelValue({
+            model_name: modelName,
+            model_instance: m.instance_name,
+            model_provider: m.provider_name,
+          });
         if (seenLeafIds.has(id)) return acc;
         seenLeafIds.add(id);
         const leafNode: TreeSelectNode = {
@@ -109,19 +116,25 @@ export interface ModelTreeSelectProps {
   ownerTenantId?: string;
 }
 
-export function ModelTreeSelect({
-  modelTypes = ModelTypeMap.llm_id,
-  value,
-  onChange,
-  disabled,
-  placeholder,
-  showSearch = true,
-  allowClear = false,
-  className,
-  renderSelected,
-  testId,
-  ownerTenantId,
-}: ModelTreeSelectProps) {
+export const ModelTreeSelect = forwardRef<
+  HTMLButtonElement,
+  ModelTreeSelectProps
+>(function ModelTreeSelect(
+  {
+    modelTypes = ModelTypeMap.llm_id,
+    value,
+    onChange,
+    disabled,
+    placeholder,
+    showSearch = true,
+    allowClear = false,
+    className,
+    renderSelected,
+    testId,
+    ownerTenantId,
+  },
+  ref,
+) {
   const { data: allAddedModels } = useFetchAllAddedModels(
     undefined,
     ownerTenantId,
@@ -178,6 +191,7 @@ export function ModelTreeSelect({
 
   return (
     <TreeSelect
+      ref={ref}
       data={treeData}
       value={normalizedValue}
       onChange={onChange}
@@ -191,7 +205,7 @@ export function ModelTreeSelect({
       testId={testId}
     />
   );
-}
+});
 
 export interface ModelTreeSelectFormFieldProps extends ModelTreeSelectProps {
   name?: string;

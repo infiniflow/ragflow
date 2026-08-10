@@ -18,24 +18,35 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/tokenizer"
 )
 
 const (
-	pubmedToolName        = "pubmed"
+	pubmedToolName        = "pubmed_search"
 	pubmedToolDescription = "Search PubMed for life sciences and biomedical references."
 	defaultPubMedTopN     = 12
 	defaultPubMedEmail    = "A.N.Other@example.com"
+	pubmedPromptMaxTokens = 200000
 )
+
+var pubmedDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
+
+var pubmedNewlinePattern = regexp.MustCompile(`\n+`)
 
 // pubmedParams mirrors Python PubMedParam. Info() still only exposes query to
 // the LLM; top_n and email are canvas-side params merged with constructor
@@ -72,6 +83,9 @@ type PubMedTool struct {
 	defaults pubmedParams
 }
 
+var _ ToolComponent = (*PubMedTool)(nil)
+var _ ReferenceBuilder = (*PubMedTool)(nil)
+
 func NewPubMedTool() *PubMedTool {
 	return NewPubMedToolWith(NewHTTPHelper())
 }
@@ -107,6 +121,19 @@ func (p *PubMedTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 		}),
 	}, nil
+}
+
+func (p *PubMedTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{"query": "PubMed search query."},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered PubMed references for downstream prompts.",
+			"json":               "PubMed result list.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{"name": "Query", "type": "line"},
+		},
+	}
 }
 
 func buildPubMedESearchURL(query string, topN int, email string) string {
@@ -179,8 +206,7 @@ func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	params = mergePubMedDefaults(p.defaults, params)
 	params.Query = strings.TrimSpace(params.Query)
 	if params.Query == "" {
-		err := fmt.Errorf("pubmed: query is required")
-		return pubmedErrJSON(err), err
+		return pubmedJSON(pubmedEnvelope{Results: []pubmedResult{}}), nil
 	}
 
 	headers := map[string]string{
@@ -227,6 +253,96 @@ func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		results = append(results, formatPubMedResult(article))
 	}
 	return pubmedJSON(pubmedEnvelope{Results: results}), nil
+}
+
+func (p *PubMedTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildPubMedReferences(envelope)
+}
+
+func (p *PubMedTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildPubMedReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderPubMedReferences(chunks, pubmedPromptMaxTokens),
+		"json":               results,
+	}
+}
+
+func buildPubMedReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := pubmedDataImagePattern.ReplaceAllString(pubmedText(item["content"]), "")
+		content = truncatePubMedRunes(content, 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(pubmedHashInt(content, 100000000), 10)
+		displayID := strconv.FormatInt(pubmedHashInt(documentID, 500), 10)
+		title := pubmedText(item["title"])
+		resultURL := pubmedText(item["url"])
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{"doc_name": title, "doc_id": documentID, "count": 1, "url": resultURL})
+	}
+	return chunks, docAggs
+}
+
+func renderPubMedReferences(chunks []map[string]any, maxTokens int) string {
+	usedTokens := 0
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		content := pubmedText(chunk["content"])
+		usedTokens += tokenizer.NumTokensFromString(content)
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + pubmedText(chunk["id"]),
+			"├── Title: " + pubmedNewlinePattern.ReplaceAllString(pubmedText(chunk["document_name"]), " "),
+			"├── URL: " + pubmedNewlinePattern.ReplaceAllString(pubmedText(chunk["url"]), " "),
+			"└── Content:\n" + content,
+		}, "\n"))
+		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
+			break
+		}
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func pubmedText(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+func pubmedHashInt(value string, modulus int64) int64 {
+	digest := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(digest[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncatePubMedRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 func formatPubMedResult(article pubmedXMLArticle) pubmedResult {

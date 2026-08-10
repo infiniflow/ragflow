@@ -13,7 +13,8 @@ export interface ICompilationTemplateSection {
 export interface ICompilationTemplateRaptorConfig {
   prompt?: string;
   max_token?: number;
-  threshold?: number;
+  clustering_threshold?: number;
+  clustering_ratio?: number;
   rechunk?: boolean;
 }
 
@@ -24,6 +25,8 @@ export interface ICompilationTemplateConfig {
   relation?: ICompilationTemplateSection;
   raptor?: ICompilationTemplateRaptorConfig;
   global_rules?: string;
+  rechunk?: boolean;
+  rechunk_rules?: string;
   [section: string]:
     | ICompilationTemplateSection
     | ICompilationTemplateRaptorConfig
@@ -71,5 +74,5 @@ export interface IWikiPreset {
   id: string;
   topic: string;
   instruction: string;
-  page_example: string;
+  example: string;
 }

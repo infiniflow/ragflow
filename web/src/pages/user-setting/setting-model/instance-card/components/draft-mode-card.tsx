@@ -15,7 +15,9 @@
  */
 
 import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
-import { RefObject } from 'react';
+import { LLMFactory } from '@/constants/llm';
+import { useCallback, type RefObject } from 'react';
+import { AimlapiGetKeyButton } from '../aimlapi-get-key-button';
 import { DRAFT_INSTANCE_SENTINEL, DraftModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
 import VerifyButton from '../verify-button';
@@ -24,12 +26,12 @@ import { InstanceNameSection } from './instance-name-section';
 /**
  * The draft (unsaved) variant of the provider instance card.
  *
- * Renders the instance name input section at the top, followed by a
- * `<fieldset disabled>` that wraps the form fields, verify button, and
- * per-instance models section. Fields are visually locked (and
- * pointer-events disabled) until the user saves the instance name —
- * after which the parent removes this draft and replaces it with a
- * saved card.
+ * Renders the instance name input section at the top (without a Save
+ * button - the parent drives save through the imperative ref API),
+ * followed by the form fields, verify button, and per-instance models
+ * section. All fields are editable from the start; there is no
+ * fieldset lock - the user can fill in everything and submit via the
+ * top-of-page Save button.
  */
 export function DraftModeCard({
   formFields,
@@ -37,7 +39,6 @@ export function DraftModeCard({
   formRef,
   handleVerify,
   handleDelete,
-  handleSaveName,
   handleInstanceModelsEdited,
   providerName,
   instanceName,
@@ -45,53 +46,63 @@ export function DraftModeCard({
   modelInfoRef,
   draftName,
   setDraftName,
+  verifyTransform,
 }: DraftModeCardProps) {
+  // On success, fold the OAuth-issued key into the current form values so it
+  // lands in the (editable) api_key field without clobbering other inputs.
+  const handleAimlapiKey = useCallback(
+    (key: string) => {
+      const current = formRef.current?.getValues() ?? {};
+      formRef.current?.reset({ ...current, api_key: key });
+    },
+    [formRef],
+  );
+
   return (
     <div className="px-2 py-3 flex flex-col gap-4">
       <InstanceNameSection
         draftName={draftName}
         setDraftName={setDraftName}
-        handleSaveName={handleSaveName}
         handleDelete={handleDelete}
       />
 
-      <fieldset
-        disabled
-        className="contents disabled:[&_*]:pointer-events-none disabled:opacity-60"
-        data-testid="instance-locked-fields"
-      >
-        <DynamicForm.Root
-          key={`${providerName}-${instanceName}-true`}
-          ref={formRef as RefObject<DynamicFormRef>}
-          fields={formFields}
-          onSubmit={() => undefined}
-          defaultValues={formDefaultValues}
-          labelClassName="font-normal"
+      <DynamicForm.Root
+        key={`${providerName}-${instanceName}-true`}
+        ref={formRef as RefObject<DynamicFormRef>}
+        fields={formFields}
+        onSubmit={() => undefined}
+        defaultValues={formDefaultValues}
+        labelClassName="font-normal"
+        resetOptions={{ keepDirtyValues: true }}
+      />
+
+      {providerName === LLMFactory.AIMLAPI && (
+        <AimlapiGetKeyButton onKey={handleAimlapiKey} />
+      )}
+
+      <div className="pt-3">
+        <VerifyButton
+          onVerify={handleVerify}
+          isAbsolute={false}
+          formRef={formRef}
         />
+      </div>
 
-        <div className=" pt-3">
-          <VerifyButton
-            onVerify={handleVerify}
-            isAbsolute={false}
-            formRef={formRef}
-          />
-        </div>
-
-        <div className=" pt-3">
-          <ModelsSection
-            providerName={providerName}
-            instanceName={instanceName || DRAFT_INSTANCE_SENTINEL}
-            instance={instance}
-            hideActions={false}
-            hideIfEmpty={false}
-            getFormValues={() => formRef.current?.getValues?.() ?? {}}
-            onInstanceModelsChange={(info) => {
-              modelInfoRef.current = info;
-            }}
-            onInstanceModelsEdited={handleInstanceModelsEdited}
-          />
-        </div>
-      </fieldset>
+      <div className="pt-3">
+        <ModelsSection
+          providerName={providerName}
+          instanceName={instanceName || DRAFT_INSTANCE_SENTINEL}
+          instance={instance}
+          hideActions={false}
+          hideIfEmpty={false}
+          getFormValues={() => formRef.current?.getValues?.() ?? {}}
+          verifyTransform={verifyTransform}
+          onInstanceModelsChange={(info) => {
+            modelInfoRef.current = info;
+          }}
+          onInstanceModelsEdited={handleInstanceModelsEdited}
+        />
+      </div>
     </div>
   );
 }

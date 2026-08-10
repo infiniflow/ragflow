@@ -93,6 +93,15 @@ export interface FormFieldConfig {
   labelClassName?: string;
   className?: string;
   disabled?: boolean;
+  /**
+   * HTML `autocomplete` attribute forwarded to the underlying `<input>`.
+   * Use `'new-password'` to suppress browser autofill — Chrome ignores
+   * `'off'` on forms that contain a password field (treats them as login
+   * forms), so `'new-password'` is the reliable value for autofill-prone
+   * fields like api_key / instance_name / base_url / group_id.
+   */
+  autoComplete?: string;
+  fieldConfig?: Record<string, any>;
 }
 
 // Component props interface
@@ -107,6 +116,24 @@ interface DynamicFormProps<T extends FieldValues> {
   //   updatedField: Partial<FormFieldConfig>,
   // ) => void;
   labelClassName?: string;
+  /**
+   * Options forwarded to `form.reset()` when `defaultValues` change.
+   * Pass `{ keepDirtyValues: true }` to preserve user edits during
+   * background refetches / lazy detail loads. Defaults to `{}`
+   * (hard reset) to preserve the original behavior for existing
+   * consumers.
+   */
+  resetOptions?: {
+    keepValues?: boolean;
+    keepDefaultValues?: boolean;
+    keepErrors?: boolean;
+    keepDirty?: boolean;
+    keepDirtyValues?: boolean;
+    keepIsSubmitted?: boolean;
+    keepTouched?: boolean;
+    keepIsValid?: boolean;
+    keepSubmitCount?: boolean;
+  };
 }
 
 // Form ref interface
@@ -423,9 +450,11 @@ export const RenderField = ({
               : fieldProps;
             return (
               <Textarea
+                {...field.fieldConfig}
                 {...finalFieldProps}
                 placeholder={field.placeholder}
                 disabled={field.disabled}
+                // resize="vertical"
                 // className="resize-none"
               />
             );
@@ -444,7 +473,6 @@ export const RenderField = ({
               ? {
                   ...fieldProps,
                   onChange: (value: string) => {
-                    console.log('select value', value);
                     if (fieldProps.onChange) {
                       fieldProps.onChange(value);
                     }
@@ -613,6 +641,7 @@ export const RenderField = ({
                   type={field.type}
                   placeholder={field.placeholder}
                   disabled={field.disabled}
+                  autoComplete={field.autoComplete}
                 />
               </div>
             );
@@ -634,6 +663,7 @@ const DynamicForm = {
         defaultValues: formDefaultValues = {} as DefaultValues<T>,
         // onFieldUpdate,
         labelClassName,
+        resetOptions,
       }: DynamicFormProps<T>,
       ref: React.Ref<any>,
     ) => {
@@ -867,12 +897,15 @@ const DynamicForm = {
       (form as any).filterActiveValues = filterActiveValues;
       useEffect(() => {
         if (formDefaultValues && Object.keys(formDefaultValues).length > 0) {
-          form.reset({
-            ...generateDefaultValues(fields),
-            ...formDefaultValues,
-          });
+          form.reset(
+            {
+              ...generateDefaultValues(fields),
+              ...formDefaultValues,
+            },
+            resetOptions,
+          );
         }
-      }, [form, formDefaultValues, fields]);
+      }, [form, formDefaultValues, fields, resetOptions]);
 
       // Submit handler
       //   const handleSubmit = form.handleSubmit(onSubmit);

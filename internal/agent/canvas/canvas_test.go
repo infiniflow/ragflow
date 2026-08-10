@@ -17,6 +17,7 @@ package canvas
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -84,5 +85,59 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 	}
 	if got != "hello world" {
 		t.Fatalf("template resolve: got %q want %q", got, "hello world")
+	}
+}
+
+// TestBuildWorkflow_PreservesRequestSysValues verifies that per-request sys
+// values take precedence over the empty defaults stored in a real Canvas DSL.
+// The service parses uploads and sets user_id before Invoke; GenLocalState must
+// not replace that state and let the first statePre restore stale DSL values.
+func TestBuildWorkflow_PreservesRequestSysValues(t *testing.T) {
+	dsl := &Canvas{
+		Globals: map[string]any{
+			"sys.files":   []any{},
+			"sys.user_id": "",
+		},
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"message_0"},
+			},
+			"message_0": {
+				Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{
+					"text": "{{sys.files}} {{sys.user_id}}",
+				}},
+				Upstream: []string{"begin_0"},
+			},
+		},
+		Path: []string{"begin_0", "message_0"},
+	}
+
+	cc, err := Compile(context.Background(), dsl)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	state := NewCanvasState("run-request-sys", "task-request-sys")
+	state.Sys["files"] = []string{"File: notes.txt\nContent as following:\nhello"}
+	state.Sys["user_id"] = "user-1"
+	ctx := withState(context.Background(), state)
+	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "hello"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	files, err := state.GetVar("sys.files")
+	if err != nil {
+		t.Fatalf("GetVar(sys.files): %v", err)
+	}
+	if got, ok := files.([]string); !ok || len(got) != 1 || !strings.Contains(got[0], "notes.txt") {
+		t.Fatalf("sys.files = %#v, want current request upload", files)
+	}
+	userID, err := state.GetVar("sys.user_id")
+	if err != nil {
+		t.Fatalf("GetVar(sys.user_id): %v", err)
+	}
+	if userID != "user-1" {
+		t.Fatalf("sys.user_id = %#v, want %q", userID, "user-1")
 	}
 }

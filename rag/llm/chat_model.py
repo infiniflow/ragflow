@@ -27,10 +27,10 @@ from urllib.parse import urljoin
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
-import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
+from common.aimlapi_utils import attribution_headers
 from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
@@ -150,7 +150,12 @@ def _apply_model_family_policies(
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         _pop_thinking_controls()
-        enable_thinking = thinking_type == "enabled" if thinking_type else False
+        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # enable_thinking=True; the API rejects any other value.
+        if "-preview" in model_name_lower:
+            enable_thinking = True
+        else:
+            enable_thinking = thinking_type == "enabled" if thinking_type else False
         if backend == "litellm" and provider in {
             SupportedLiteLLMProvider.Tongyi_Qianwen,
             SupportedLiteLLMProvider.Dashscope,
@@ -390,6 +395,7 @@ class Base(ABC):
         hist.append(
             {
                 "role": "assistant",
+                "content": None,
                 "tool_calls": [
                     {
                         "index": getattr(tool_call, "index", None),
@@ -419,6 +425,7 @@ class Base(ABC):
         hist.append(
             {
                 "role": "assistant",
+                "content": None,
                 "tool_calls": [
                     {
                         "index": getattr(tc, "index", None),
@@ -593,7 +600,7 @@ class Base(ABC):
             try:
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
+                    logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
                         model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
@@ -653,7 +660,7 @@ class Base(ABC):
                     _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
-                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        logging.info(f"[Tool loop] Answering directly at step {_round + 1} — no tool needed.")
                         yield total_tokens
                         return
 
@@ -673,14 +680,28 @@ class Base(ABC):
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Running the {tc.function.name} tool...</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: stream a terminal tool's
+                    # result (already the final answer) and stop the loop.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
@@ -972,9 +993,9 @@ class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -986,7 +1007,7 @@ class MistralChat(Base):
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
-        response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        response = self.client.chat.complete(model=self.model_name, messages=history, **gen_conf)
         if not response.choices:
             raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
@@ -998,6 +1019,8 @@ class MistralChat(Base):
         return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        from mistralai.client.errors import MistralError
+
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1005,8 +1028,9 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
-            for resp in response:
+            response = self.client.chat.stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
+            for event in response:
+                resp = event.data
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
                 ans = resp.choices[0].delta.content
@@ -1018,7 +1042,7 @@ class MistralChat(Base):
                         ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
-        except openai.APIError as e:
+        except MistralError as e:
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
@@ -1540,6 +1564,74 @@ class FuturMixChat(Base):
         logging.info("[FuturMix] Chat initialized with model %s", model_name)
 
 
+class AIMLAPIChat(Base):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name, base_url="", **kwargs):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
+        logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
+
+
+class GreenPTChat(Base):
+    """GreenPT OpenAI-compatible chat adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
+
+
+# MiniMax models sometimes emit their bracket-delimited control/boundary tokens
+# into `content` instead of as structured control — e.g. "]<]minimax[>[" — most
+# often on tool-calling turns. The token is streamed split across many deltas,
+# so it can't be removed per-delta; it must be filtered over a window that spans
+# chunk boundaries. This pattern only matches the vendor name when it is wrapped
+# in bracket noise on BOTH sides, so ordinary prose that mentions "MiniMax" is
+# left untouched. Extend the alternation as further control tokens are observed.
+_MINIMAX_CONTROL_TOKEN_RE = re.compile(r"[\[\]<>]+\s*minimax\s*[\[\]<>]+", re.IGNORECASE)
+
+
+class _StreamSanitizer:
+    """Strip a regex from a token stream even when matches span chunk boundaries.
+
+    A control token is bracket+letter characters, and it can arrive split across
+    many deltas, so we hold back the trailing run of token-ish characters (which
+    might still be forming a match) and only ``sub`` + emit the part before it.
+    Applying ``sub`` to a partial trailing run would fire prematurely and leak the
+    unmatched remainder — hence the hold. ``flush()`` sanitizes and returns the
+    remainder at end of stream. ``keep`` caps how long a run is buffered so a very
+    long separator-less word can't stall the stream forever.
+    """
+
+    _TOKENISH = re.compile(r"[\[\]<>A-Za-z]*$")
+
+    def __init__(self, pattern: re.Pattern, keep: int = 64) -> None:
+        self._pat = pattern
+        self._keep = keep
+        self._buf = ""
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return ""
+        self._buf += text
+        match = self._TOKENISH.search(self._buf)
+        hold_start = match.start() if match else len(self._buf)
+        if len(self._buf) - hold_start > self._keep:
+            hold_start = len(self._buf) - self._keep
+        emit = self._pat.sub("", self._buf[:hold_start])
+        self._buf = self._buf[hold_start:]
+        return emit
+
+    def flush(self) -> str:
+        out = self._pat.sub("", self._buf)
+        self._buf = ""
+        return out
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1650,12 +1742,46 @@ class LiteLLMBase(ABC):
             gen_conf=gen_conf,
         )
 
-        gen_conf.pop("max_tokens", None)
+        deepseek_max_tokens = None
+        if self.provider == SupportedLiteLLMProvider.DeepSeek:
+            # DeepSeek's API uses the legacy OpenAI-compatible max_tokens field.
+            # LiteLLM accepts max_completion_tokens generically, but does not
+            # translate it for DeepSeek and the provider then falls back to 8192.
+            # Knowledge compilation supplies max_completion_tokens explicitly
+            # through its model-specific generation configuration. Otherwise,
+            # preserve the legacy max_tokens value used by existing callers.
+            raw_max_completion_tokens = gen_conf.pop("max_completion_tokens", None)
+            raw_max_tokens = gen_conf.pop("max_tokens", None)
+            raw_limit = raw_max_completion_tokens if raw_max_completion_tokens is not None else raw_max_tokens
+            if raw_limit is not None and not isinstance(raw_limit, bool):
+                try:
+                    candidate = int(raw_limit)
+                except (TypeError, ValueError):
+                    candidate = 0
+                if candidate > 0:
+                    deepseek_max_tokens = candidate
+        else:
+            gen_conf.pop("max_tokens", None)
+
         gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
+        if deepseek_max_tokens is not None:
+            gen_conf["max_tokens"] = deepseek_max_tokens
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
         return self.provider == SupportedLiteLLMProvider.DeepSeek
+
+    def _content_stream_sanitizer(self) -> "_StreamSanitizer | None":
+        """A per-stream filter for providers whose control tokens leak into content."""
+        if self.provider == SupportedLiteLLMProvider.MiniMax:
+            return _StreamSanitizer(_MINIMAX_CONTROL_TOKEN_RE)
+        return None
+
+    def _sanitize_answer(self, text: str) -> str:
+        """Strip provider control-token noise from a fully-assembled answer."""
+        if text and self.provider == SupportedLiteLLMProvider.MiniMax:
+            return _MINIMAX_CONTROL_TOKEN_RE.sub("", text)
+        return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1799,7 +1925,11 @@ class LiteLLMBase(ABC):
             logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
-        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        error_detail = str(e)
+        if self.provider == SupportedLiteLLMProvider.Nvidia and "function" in error_detail.lower() and "not found for account" in error_detail.lower():
+            model_name = self.model_name.removeprefix(self.prefix)
+            error_detail = f"NVIDIA hosted endpoint '{model_name}' is unavailable or deprecated; refresh the provider model list and select an active Free Endpoint. Original error: {error_detail}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {error_detail}"
         logging.error(f"async_chat_streamly giving up: {msg}")
         return msg
 
@@ -1817,6 +1947,7 @@ class LiteLLMBase(ABC):
     def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
         assistant_msg = {
             "role": "assistant",
+            "content": None,
             "tool_calls": [
                 {
                     "index": getattr(tool_call, "index", None),
@@ -1847,6 +1978,7 @@ class LiteLLMBase(ABC):
         """
         assistant_msg = {
             "role": "assistant",
+            "content": None,
             "tool_calls": [
                 {
                     "index": getattr(tc, "index", None),
@@ -1867,7 +1999,7 @@ class LiteLLMBase(ABC):
                 content = json.dumps(result, ensure_ascii=False)
             else:
                 content = str(result)
-            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content.replace("</think>", "") + ("</think>" if content.find("<think>") >= 0 else "")})
         return hist
 
     def bind_tools(self, toolcall_session=None, tools=None):
@@ -1925,7 +2057,7 @@ class LiteLLMBase(ABC):
             history = deepcopy(hist)
             try:
                 for _ in range(self.max_rounds + 1):
-                    logging.info(f"{self.tools=}")
+                    logging.info(f"HAS TOOL:{len(self.tools)}\n{history=}")
 
                     completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
                     response = await litellm.acompletion(
@@ -1950,7 +2082,7 @@ class LiteLLMBase(ABC):
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
-                        return ans, tk_count
+                        return self._sanitize_answer(ans), tk_count
 
                     async def _exec_tool(tc):
                         name = tc.function.name
@@ -1989,7 +2121,7 @@ class LiteLLMBase(ABC):
                 agg_usage["total_tokens"] += int(_fb.get("total_tokens", 0) or token_count)
                 tk_count = agg_usage["total_tokens"]
                 self.last_usage = dict(agg_usage)
-                return ans, tk_count
+                return self._sanitize_answer(ans), tk_count
 
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
@@ -2029,7 +2161,7 @@ class LiteLLMBase(ABC):
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
                     reasoning_content = ""
-                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
+                    logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
                     # Request authoritative usage on the final streaming chunk.
@@ -2044,6 +2176,9 @@ class LiteLLMBase(ABC):
                     answer = ""
                     round_usage = None
                     round_estimate = 0
+                    # Per-round filter for providers (MiniMax) whose control tokens
+                    # leak into content split across deltas; None for others.
+                    _sanitizer = self._content_stream_sanitizer()
 
                     async for resp in response:
                         # Usage-only final chunk may carry no choices — read it first.
@@ -2083,7 +2218,12 @@ class LiteLLMBase(ABC):
                         else:
                             reasoning_start = False
                             answer += delta.content
-                            yield delta.content
+                            if _sanitizer is not None:
+                                emitted = _sanitizer.feed(delta.content)
+                                if emitted:
+                                    yield emitted
+                            else:
+                                yield delta.content
 
                         if not _u["total_tokens"]:
                             round_estimate += num_tokens_from_string(delta.content)
@@ -2092,11 +2232,17 @@ class LiteLLMBase(ABC):
                         if finish_reason == "length":
                             yield self._length_stop("")
 
+                    # Flush any held-back (sanitized) answer content for this round.
+                    if _sanitizer is not None:
+                        tail = _sanitizer.flush()
+                        if tail:
+                            yield tail
+
                     # Commit this round's tokens to the running aggregate.
                     _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
-                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        logging.info(f"[Tool loop] Answering directly at step {_round + 1} — no tool needed.")
                         yield total_tokens
                         return
 
@@ -2116,14 +2262,29 @@ class LiteLLMBase(ABC):
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Running the {tc.function.name} tool...</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: a terminal tool already
+                    # produces the final answer, so stream its result and stop
+                    # instead of feeding it back for another LLM round.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(
                         history,
                         results,
@@ -2176,9 +2337,12 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
-            "num_retries": self.max_retries,
             **kwargs,
         }
+        if self.provider == SupportedLiteLLMProvider.Nvidia:
+            completion_args["num_retries"] = 0
+        else:
+            completion_args.setdefault("num_retries", self.max_retries)
         # Forward the originating session/user as the OpenAI-standard `user` field so
         # providers (OpenAI, OpenRouter, ...) receive it in the request body and
         # upstream activity can be correlated back to the session. An explicit

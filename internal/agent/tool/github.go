@@ -18,14 +18,21 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/tokenizer"
 )
 
 const githubToolName = "github_search"
@@ -33,9 +40,12 @@ const githubToolName = "github_search"
 const githubToolDescription = "GitHub repository search finds repositories, projects, and codebases hosted on GitHub."
 
 const (
-	defaultGitHubTopN = 10
-	maxGitHubTopN     = 100
+	defaultGitHubTopN     = 10
+	maxGitHubTopN         = 100
+	githubPromptMaxTokens = 200000
 )
+
+const githubQueryDescription = "The search keywords to execute with GitHub. Use the most important terms and synonyms from the original request."
 
 // githubParams mirrors Python GitHubParam. Info() exposes only Query to the
 // model, while TopN is a canvas-side configuration value merged with defaults.
@@ -65,6 +75,10 @@ type GitHubTool struct {
 	helper   *HTTPHelper
 	defaults githubParams
 }
+
+var _ ToolInvoker = (*GitHubTool)(nil)
+var _ ToolComponent = (*GitHubTool)(nil)
+var _ ReferenceBuilder = (*GitHubTool)(nil)
 
 // NewGitHubTool returns a GitHubTool using the default HTTPHelper.
 func NewGitHubTool() *GitHubTool {
@@ -101,7 +115,7 @@ func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "The search keywords to execute with GitHub. Use the most important terms and synonyms from the original request.",
+				Desc:     githubQueryDescription,
 				Required: true,
 			},
 		}),
@@ -130,8 +144,7 @@ func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 			fmt.Errorf("github: parse arguments: %w", err)
 	}
 	if p.Query == "" {
-		return githubErrJSON(fmt.Errorf("query is required")),
-			fmt.Errorf("github: query is required")
+		return githubJSON(githubEnvelope{Results: []map[string]any{}}), nil
 	}
 	p = mergeGitHubDefaults(g.defaults, p)
 
@@ -177,4 +190,136 @@ func githubJSON(env githubEnvelope) string {
 
 func githubErrJSON(err error) string {
 	return githubJSON(githubEnvelope{Error: err.Error()})
+}
+
+// ComponentSpec returns the Python-compatible GitHub Canvas surface.
+func (g *GitHubTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query": githubQueryDescription,
+		},
+		Outputs: map[string]string{
+			"formalized_content": "GitHub repositories formatted for downstream prompts.",
+			"json":               "Raw GitHub repository items.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{
+				"type": "line",
+				"name": "Query",
+			},
+		},
+	}
+}
+
+// BuildReferences creates the chunks and document aggregates Python's
+// ToolBase._retrieve_chunks records for GitHub results.
+func (g *GitHubTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildGitHubReferences(envelope)
+}
+
+func buildGitHubReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		repository, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := truncateGitHubRunes(githubValueString(repository["description"])+"\n stars:"+githubValueString(repository["watchers"]), 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
+		title := githubValueString(repository["name"])
+		resultURL := githubValueString(repository["html_url"])
+		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      resultURL,
+		})
+	}
+	return chunks, docAggs
+}
+
+// BuildComponentOutputs constructs GitHub's complete Canvas output map.
+func (g *GitHubTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildGitHubReferences(envelope)
+	return map[string]any{
+		"json":               results,
+		"formalized_content": renderGitHubReferences(chunks),
+	}
+}
+
+func renderGitHubReferences(chunks []map[string]any) string {
+	chunks = limitGitHubReferences(chunks, githubPromptMaxTokens)
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + githubValueString(chunk["id"]),
+			"├── Title: " + githubValueString(chunk["docnm_kwd"]),
+			"├── URL: " + githubValueString(chunk["url"]),
+			"└── Content:\n" + githubValueString(chunk["content"]),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func limitGitHubReferences(chunks []map[string]any, maxTokens int) []map[string]any {
+	if maxTokens <= 0 {
+		return nil
+	}
+	usedTokens := 0
+	for index, chunk := range chunks {
+		content := githubValueString(chunk["content"])
+		if content == "" {
+			continue
+		}
+		usedTokens += tokenizer.NumTokensFromString(content)
+		if float64(maxTokens)*0.97 < float64(usedTokens) {
+			return chunks[:index+1]
+		}
+	}
+	return chunks
+}
+
+func githubValueString(value any) string {
+	if value == nil {
+		return "None"
+	}
+	if boolean, ok := value.(bool); ok {
+		if boolean {
+			return "True"
+		}
+		return "False"
+	}
+	return fmt.Sprint(value)
+}
+
+func githubHashInt(value string, modulus int64) int64 {
+	sum := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(sum[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateGitHubRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }

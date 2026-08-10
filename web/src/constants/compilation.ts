@@ -1,11 +1,13 @@
 export const enum CompilationTemplateKind {
-  Artifacts = 'artifacts',
+  Artifacts = 'wiki',
   KnowledgeGraph = 'knowledge_graph',
   Timeline = 'timeline',
   PageIndex = 'page_index',
   Tree = 'tree',
   Empty = 'empty',
   MindMap = 'mind_map',
+  SessionGraph = 'session_graph',
+  SessionEssence = 'session_essence',
 }
 
 export const enum CompilationTemplateScope {

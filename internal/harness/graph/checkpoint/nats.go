@@ -3,6 +3,7 @@ package checkpoint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -175,7 +176,7 @@ func (s *NATSSaver) Get(ctx context.Context, config map[string]interface{}) (map
 
 	entry, err := s.kv.Get(ctx, key)
 	if err != nil {
-		if err == jetstream.ErrKeyNotFound {
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("nats kv get %q: %w", key, err)

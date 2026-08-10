@@ -407,7 +407,7 @@ class SILICONFLOWTTS(HTTPBasedTTS):
             "input": text,
             "voice": f"{self.model_name}:{voice}",
             "response_format": "mp3",
-            "sample_rate": 123,
+            "sample_rate": 32000,
             "stream": True,
             "speed": 1,
             "gain": 0,

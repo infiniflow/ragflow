@@ -42,20 +42,41 @@ from api.db.services.compilation_template_group_service import (
 )
 from api.db.services.llm_service import LLMBundle
 from common.exceptions import TaskCanceledException
+from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.knowlege_compile.structure import (
-    CHAIN_KINDS,
+    LLMCallPool,
+    MERGE_SCOPE_DATASET,
+    MERGE_SCOPE_DOC,
     compile_structure_from_text,
+    cleanup_timeline_isolated_entities,
     merge_compiled_structures,
-    validate_and_correct_chain,
+    rebuild_dataset_structure_graph_json,
+    rebuild_structure_graph_json,
 )
 
 
 # ----- tunables ------------------------------------------------------
 # Bound how many source chunks are handed to a single
-# ``compile_structure_from_text`` invocation. The call fans them out
-# across max_workers internally, so a moderate window keeps memory +
-# LLM-context pressure predictable for long docs.
+# ``compile_structure_from_text`` invocation for regular templates.
 DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
+
+# Structure compilation packs chunks up to half of the model context.
+# ``compile_structure_from_text`` applies the exact prompt-aware packing again
+# before the LLM call.
+STRUCTURE_CONTEXT_FRACTION = 0.5
+STRUCTURE_DEFAULT_CONTEXT = 100_000
+KNOWLEDGE_GRAPH_CONTEXT_FRACTION = 0.1
+KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = 2048
+KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = 4096
+
+# Bound the number of batch/template extraction calls in flight. Results are
+# committed in submission order so accumulator updates and merge flushes stay
+# deterministic while the LLM calls run concurrently.
+DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT = 15
+
+# Total task-scoped Chat LLM capacity shared by compile, chain validation and
+# merge decisions. A request waits in the priority queue when all slots are busy.
+DOC_STRUCTURE_LLM_POOL_SIZE = 20
 
 # Bound how many compiled ES-ready docs may accumulate before we flush
 # them through ``merge_compiled_structures``. The merger does pairwise
@@ -63,10 +84,7 @@ DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
 # cap the per-flush set to keep the local-dedup buckets tractable.
 DOC_STRUCTURE_MERGE_MAX_DOCS = 512
 
-# Hard wall on the chain-validator LLM correction step. ``list`` and
-# ``timeline`` kinds run this just before each merge flush; anything
-# longer than this is treated as a blocked LLM and the uncorrected
-# docs are flushed instead.
+# Hard wall on the chain-validator LLM correction step.
 STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = 120.0
 
 
@@ -81,6 +99,8 @@ def resolve_template_ids_from_groups(group_ids, tenant_id: str) -> list[str]:
     ids directly (the ``rag.flow`` Compiler carries them as a component
     parameter rather than inside ``parser_config``).
     """
+    if isinstance(group_ids, str):
+        group_ids = [group_ids]
     template_ids: list[str] = []
     seen: set[str] = set()
     for group_id in group_ids or []:
@@ -118,7 +138,7 @@ def load_active_templates(template_ids, tenant_id: str) -> list[tuple[str, dict]
             logging.warning("document_structure_compile: template %s config is invalid", template_id)
             continue
         kind = _compilation_template_kind(parser_cfg.get("kind"))
-        if not kind or kind == "artifacts":
+        if not kind or kind == "wiki":
             continue
         active_templates.append((template_id, parser_cfg))
     return active_templates
@@ -138,6 +158,112 @@ def split_tree_templates(
         else:
             non_tree_templates.append((tid, cfg))
     return tree_templates, non_tree_templates
+
+
+def _is_page_index_template(parser_cfg: dict) -> bool:
+    kind = (parser_cfg or {}).get("kind")
+    if not isinstance(kind, str):
+        return False
+    return kind.strip().lower().replace("-", "_") in {"page_index", "pageindex"}
+
+
+def _page_index_graph_summary(graph: dict, limit: int = 80) -> str:
+    entities = graph.get("entities") if isinstance(graph, dict) else None
+    if not isinstance(entities, list):
+        return ""
+
+    lines: list[str] = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("name") or "").strip()
+        description = str(entity.get("description") or entity.get("description") or "").strip()
+        text = f"{name}: {description}".strip(": ").strip()
+        if text:
+            lines.append(text)
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+async def _upsert_dataset_nav_from_page_index(
+    *,
+    active_templates: list[tuple[str, dict]],
+    chat_mdl_by_tid: dict[str, LLMBundle],
+    embedding_model: LLMBundle,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    progress_cb: Callable[..., None],
+    cancel_check: Callable[[], bool],
+) -> None:
+    page_index_templates = [(template_id, parser_cfg) for template_id, parser_cfg in active_templates if _is_page_index_template(parser_cfg)]
+    if not page_index_templates:
+        return
+
+    summaries: list[str] = []
+    chat_mdl = None
+    for template_id, _ in page_index_templates:
+        if cancel_check():
+            raise TaskCanceledException("Task was cancelled before dataset navigation update")
+        try:
+            # PageIndex rows use their preserved template kind as the
+            # compile keyword. Older rows were written as ``timeline``
+            # before compilation kinds were kept distinct, so fall back to
+            # the legacy keyword when rebuilding an existing graph.
+            graph = await rebuild_structure_graph_json(
+                tenant_id,
+                kb_id,
+                doc_id,
+                "page_index",
+                compilation_template_id=template_id,
+            )
+            summary = _page_index_graph_summary(graph)
+            if not summary:
+                graph = await rebuild_structure_graph_json(
+                    tenant_id,
+                    kb_id,
+                    doc_id,
+                    "timeline",
+                    compilation_template_id=template_id,
+                )
+                summary = _page_index_graph_summary(graph)
+        except Exception:
+            logging.exception(
+                "page_index: failed to rebuild graph summary for dataset_nav doc %s template %s",
+                doc_id,
+                template_id,
+            )
+            continue
+
+        if summary:
+            summaries.append(summary)
+            chat_mdl = chat_mdl or chat_mdl_by_tid.get(template_id)
+
+    if not summaries:
+        logging.info("page_index: no dataset_nav summary for doc %s", doc_id)
+        return
+
+    if cancel_check():
+        raise TaskCanceledException("Task was cancelled before dataset navigation upsert")
+    try:
+        from rag.advanced_rag.knowlege_compile.dataset_nav import (
+            upsert_dataset_nav_doc,
+        )
+
+        progress_cb(msg=f"page_index: updating dataset navigation for doc {doc_id} ...")
+        await upsert_dataset_nav_doc(
+            tenant_id,
+            kb_id,
+            doc_id,
+            "\n\n".join(summaries),
+            embd_mdl=embedding_model,
+            chat_mdl=chat_mdl,
+        )
+    except TaskCanceledException:
+        raise
+    except Exception:
+        logging.exception("page_index: dataset_nav upsert failed for doc %s", doc_id)
 
 
 # ----- non-tree compilation core -------------------------------------
@@ -175,92 +301,356 @@ async def run_structure_compile_over_batches(
         return {}
 
     total = len(active_templates)
+    llm_pool = LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
 
     accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
     template_kinds: dict[str, str] = {tid: _compilation_template_kind((cfg or {}).get("kind")) for tid, cfg in active_templates}
-    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0} for tid, _ in active_templates}
+    # ``dataset_merge`` hyper-parameter (per template config): when truthy the
+    # merge dedups entities/relations across the whole dataset (KB), collapsing
+    # cross-document duplicates onto one canonical row, instead of merging only
+    # within the current document.
+    merge_scope_by_tid: dict[str, str] = {tid: (MERGE_SCOPE_DATASET if bool((cfg or {}).get("dataset_merge")) else MERGE_SCOPE_DOC) for tid, cfg in active_templates}
+    # compile_kwd(s) each template actually wrote, harvested from flush results
+    # so a dataset-scope template can rebuild its dataset graph once at the end.
+    compile_kwds_by_tid: dict[str, set[str]] = {tid: set() for tid, _ in active_templates}
+    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0, "rechunked_chunks": []} for tid, _ in active_templates}
     chunks_by_id: dict[str, str] = {}
+    flush_sequence = 0
+    flush_tasks: set[asyncio.Task[None]] = set()
+    doc_storage_condition = asyncio.Condition()
+    next_doc_storage_sequence = 0
 
     async def _flush(template_id: str) -> None:
+        nonlocal flush_sequence
         acc = accumulators[template_id]
         if not acc:
             return
-        kind = template_kinds.get(template_id, "")
-        if kind in CHAIN_KINDS:
-            try:
-                acc = await asyncio.wait_for(
-                    validate_and_correct_chain(
-                        acc,
-                        chunks_by_id,
-                        chat_mdl_by_tid[template_id],
-                        kind,
-                        callback=progress_cb,
-                    ),
-                    timeout=STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
-                )
-                accumulators[template_id] = acc
-            except asyncio.TimeoutError:
-                logging.warning(
-                    "chain validate: timed out after %ss for template %s; using uncorrected docs",
-                    STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
-                    template_id,
-                )
-            except Exception:
-                logging.exception(
-                    "chain validate: unexpected failure for template %s; using uncorrected docs",
-                    template_id,
-                )
-        info = await merge_compiled_structures(
-            acc,
-            chat_mdl_by_tid[template_id],
-            embedding_model,
-            tenant_id,
-            kb_id,
-            compilation_template_id=template_id,
-            cancel_check=cancel_check,
-        )
+        docs = list(acc)
         acc.clear()
-        if isinstance(info, dict):
-            agg = agg_infos[template_id]
-            for k in ("inserted", "updated", "duplicates_dropped"):
-                agg[k] = agg.get(k, 0) + int(info.get(k, 0) or 0)
+        flush_sequence += 1
+        sequence = flush_sequence - 1
+        timing_context = f"{doc_id}:{template_id}:flush-{flush_sequence}"
+
+        async def _run_flush() -> None:
+            nonlocal next_doc_storage_sequence
+            doc_storage_acquired = False
+            doc_storage_released = False
+
+            async def _wait_for_doc_storage() -> None:
+                nonlocal doc_storage_acquired
+                async with doc_storage_condition:
+                    await doc_storage_condition.wait_for(lambda: next_doc_storage_sequence == sequence)
+                    doc_storage_acquired = True
+
+            async def _release_doc_storage() -> None:
+                nonlocal next_doc_storage_sequence, doc_storage_released
+                async with doc_storage_condition:
+                    if next_doc_storage_sequence != sequence:
+                        raise RuntimeError(f"ES sequence mismatch: expected {next_doc_storage_sequence}, releasing {sequence}")
+                    next_doc_storage_sequence += 1
+                    doc_storage_released = True
+                    doc_storage_condition.notify_all()
+
+            kind = template_kinds.get(template_id, "")
+            merge_chat_mdl = llm_pool.wrap(
+                chat_mdl_by_tid[template_id],
+                priority=20,
+                label=f"merge:{template_id}",
+                context=timing_context,
+            )
+            try:
+                info = await merge_compiled_structures(
+                    docs,
+                    merge_chat_mdl,
+                    embedding_model,
+                    tenant_id,
+                    kb_id,
+                    compilation_template_id=template_id,
+                    cancel_check=cancel_check,
+                    timing_context=timing_context,
+                    chunks_by_id=chunks_by_id,
+                    chain_kind=kind,
+                    chain_callback=progress_cb,
+                    chain_timeout_seconds=STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
+                    doc_storage_waiter=_wait_for_doc_storage,
+                    doc_storage_releaser=_release_doc_storage,
+                    merge_scope=merge_scope_by_tid[template_id],
+                )
+            finally:
+                if not doc_storage_released:
+                    if not doc_storage_acquired:
+                        await _wait_for_doc_storage()
+                    await _release_doc_storage()
+            if isinstance(info, dict):
+                agg = agg_infos[template_id]
+                for k in ("inserted", "updated", "duplicates_dropped"):
+                    agg[k] = agg.get(k, 0) + int(info.get(k, 0) or 0)
+                for compile_kwd in info.get("compile_kwds") or []:
+                    if compile_kwd:
+                        compile_kwds_by_tid[template_id].add(str(compile_kwd))
+
+        flush_tasks.add(asyncio.create_task(_run_flush()))
 
     progress_cb(msg=f"Start document knowledge compilation ({total} template(s)) ...")
 
-    batch_no = 0
-    async for batch in chunk_batches:
-        batch_no += 1
-        for chunk in batch:
-            cid = chunk.get("id")
-            if isinstance(cid, str) and cid not in chunks_by_id:
-                text = chunk.get("content_with_weight") or chunk.get("text") or ""
-                chunks_by_id[cid] = text if isinstance(text, str) else ""
-        for idx, (template_id, parser_cfg) in enumerate(active_templates):
-            progress_cb(msg=f"  compile batch {batch_no} ({len(batch)} chunks) for template ({idx + 1}/{total})")
-            docs = await compile_structure_from_text(
-                batch,
-                parser_cfg,
-                chat_mdl_by_tid[template_id],
-                embedding_model,
+    async def _compile_batch(batch_no: int, batch: list[dict], template_id: str, parser_cfg: dict) -> list[dict]:
+        context = f"{doc_id}:{template_id}:compile-batch-{batch_no}"
+        progress_cb(msg=f"  compile batch {batch_no} ({len(batch)} chunks) for template ({template_ids_by_id[template_id]}/{total})")
+        compile_chat_mdl = llm_pool.wrap(
+            chat_mdl_by_tid[template_id],
+            priority=30,
+            label=f"compile:{template_id}:batch-{batch_no}",
+            context=context,
+        )
+        return await compile_structure_from_text(
+            batch,
+            parser_cfg,
+            compile_chat_mdl,
+            embedding_model,
+            doc_id,
+            language=language,
+            callback=progress_cb,
+            max_workers=3,
+            compilation_template_id=template_id,
+        )
+
+    async def _commit_result(batch_no: int, batch_len: int, template_id: str, docs: list[dict]) -> None:
+        if docs:
+            accumulators[template_id].extend(docs)
+        rechunked_chunks = getattr(docs, "rechunked_chunks", None)
+        if rechunked_chunks:
+            known_ids = {chunk.get("id") for chunk in agg_infos[template_id]["rechunked_chunks"]}
+            agg_infos[template_id]["rechunked_chunks"].extend(chunk for chunk in rechunked_chunks if chunk.get("id") not in known_ids)
+        if len(accumulators[template_id]) >= DOC_STRUCTURE_MERGE_MAX_DOCS:
+            progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for batch {batch_no} ({batch_len} chunks) for template ({template_ids_by_id[template_id]}/{total})")
+            await _flush(template_id)
+
+    template_ids_by_id = {template_id: idx + 1 for idx, (template_id, _) in enumerate(active_templates)}
+    inflight: dict[asyncio.Task[list[dict]], tuple[int, int, int, str]] = {}
+    completed: dict[int, tuple[int, int, str, list[dict]]] = {}
+    submit_sequence = 0
+    commit_sequence = 0
+    dynamic_buffers: dict[str, list[dict]] = {template_id: [] for template_id, _ in active_templates}
+    dynamic_buffer_tokens: dict[str, int] = {template_id: 0 for template_id in dynamic_buffers}
+
+    def _dynamic_batch_budget(template_id: str) -> int:
+        max_length = getattr(chat_mdl_by_tid[template_id], "max_length", None) or STRUCTURE_DEFAULT_CONTEXT
+        if template_kinds.get(template_id) == "knowledge_graph":
+            return min(
+                max(int(max_length * KNOWLEDGE_GRAPH_CONTEXT_FRACTION), KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS),
+                KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS,
+            )
+        return max(int(max_length * STRUCTURE_CONTEXT_FRACTION), 1024)
+
+    async def _commit_ready() -> None:
+        nonlocal commit_sequence
+        while commit_sequence in completed:
+            batch_no, batch_len, template_id, docs = completed.pop(commit_sequence)
+            await _commit_result(batch_no, batch_len, template_id, docs)
+            commit_sequence += 1
+
+    async def _cancel_pending() -> None:
+        pending = [task for task in (*inflight, *flush_tasks) if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        inflight.clear()
+        flush_tasks.clear()
+
+    async def _reap_one() -> None:
+        if not inflight:
+            return
+        try:
+            done, _ = await asyncio.wait(tuple(inflight), return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            await _cancel_pending()
+            raise
+        for task in done:
+            sequence, batch_no, batch_len, template_id = inflight.pop(task)
+            try:
+                docs = task.result()
+            except BaseException:
+                await _cancel_pending()
+                raise
+            completed[sequence] = (batch_no, batch_len, template_id, docs)
+        await _commit_ready()
+
+    async def _submit_batches() -> None:
+        nonlocal submit_sequence
+        batch_no = 0
+
+        async def _submit_one(batch: list[dict], template_id: str, parser_cfg: dict) -> None:
+            nonlocal submit_sequence, batch_no
+            if not batch:
+                return
+            batch_no += 1
+            task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
+            inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
+            submit_sequence += 1
+            if len(inflight) + len(completed) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
+                await _reap_one()
+
+        try:
+            async for incoming_batch in chunk_batches:
+                for chunk in incoming_batch:
+                    cid = chunk.get("id")
+                    if isinstance(cid, str) and cid not in chunks_by_id:
+                        text = chunk.get("content_with_weight") or chunk.get("text") or ""
+                        chunks_by_id[cid] = text if isinstance(text, str) else ""
+                for template_id, parser_cfg in active_templates:
+                    if cancel_check():
+                        raise TaskCanceledException("Task was cancelled during document knowledge compilation")
+                    buffer = dynamic_buffers[template_id]
+                    budget = _dynamic_batch_budget(template_id)
+                    buffer_tokens = dynamic_buffer_tokens[template_id]
+                    for chunk in incoming_batch:
+                        text = chunk.get("content_with_weight") or chunk.get("text") or ""
+                        chunk_tokens = num_tokens_from_string(text if isinstance(text, str) else "")
+                        if buffer and buffer_tokens + chunk_tokens > budget:
+                            await _submit_one(buffer, template_id, parser_cfg)
+                            buffer = []
+                            buffer_tokens = 0
+                        buffer.append(chunk)
+                        buffer_tokens += chunk_tokens
+                        if buffer_tokens >= budget:
+                            await _submit_one(buffer, template_id, parser_cfg)
+                            buffer = []
+                            buffer_tokens = 0
+                    dynamic_buffers[template_id] = buffer
+                    dynamic_buffer_tokens[template_id] = buffer_tokens
+
+            for template_id, buffer in dynamic_buffers.items():
+                if cancel_check():
+                    raise TaskCanceledException("Task was cancelled during document knowledge compilation")
+                parser_cfg = dict(active_templates)[template_id]
+                await _submit_one(buffer, template_id, parser_cfg)
+                dynamic_buffers[template_id] = []
+                dynamic_buffer_tokens[template_id] = 0
+        except BaseException:
+            await _cancel_pending()
+            raise
+
+    await _submit_batches()
+
+    while inflight:
+        if cancel_check():
+            await _cancel_pending()
+            raise TaskCanceledException("Task was cancelled during document knowledge compilation")
+        await _reap_one()
+    await _commit_ready()
+
+    for template_id, _ in active_templates:
+        if cancel_check():
+            await _cancel_pending()
+            raise TaskCanceledException("Task was cancelled before merge flush")
+        await _flush(template_id)
+    if flush_tasks:
+        try:
+            await asyncio.gather(*flush_tasks)
+        except BaseException:
+            await _cancel_pending()
+            raise
+        finally:
+            flush_tasks.clear()
+
+    # ── Dataset structure graph ──────────────────────────────────────────
+    # For dataset-scope templates the entity/relation rows are now merged
+    # across documents, so (re)project them into a single KB-wide graph. This
+    # runs once per document-parse completion; the last document to finish
+    # produces the complete dataset graph. Best-effort — a failure here must
+    # not fail the parse.
+    for template_id, _ in active_templates:
+        if merge_scope_by_tid[template_id] != MERGE_SCOPE_DATASET:
+            continue
+        # The row is filtered by the template's *top-level* kind (e.g.
+        # ``knowledge_graph``, ``session_graph``), which — unlike ``config.kind``
+        # — distinguishes the knowledge_graph family. Resolve it from the
+        # template record; on failure leave it unstamped (the read side falls
+        # back to resolving kind from the template id).
+        structure_kind = None
+        try:
+            saved_template = CompilationTemplateService.get_saved(template_id, tenant_id)
+            if saved_template:
+                structure_kind = (saved_template.get("kind") or "").strip() or None
+        except Exception:
+            logging.exception("dataset structure graph: failed to resolve top-level kind for template %s", template_id)
+        for compile_kwd in sorted(compile_kwds_by_tid[template_id]):
+            if cancel_check():
+                raise TaskCanceledException("Task was cancelled before dataset structure graph rebuild")
+            try:
+                progress_cb(msg=f"Rebuilding dataset structure graph (compile_kwd={compile_kwd}) ...")
+                await rebuild_dataset_structure_graph_json(
+                    tenant_id,
+                    kb_id,
+                    compile_kwd,
+                    compilation_template_id=template_id,
+                    structure_kind=structure_kind,
+                )
+            except TaskCanceledException:
+                raise
+            except Exception:
+                logging.exception(
+                    "dataset structure graph rebuild failed for kb=%s compile_kwd=%s template=%s",
+                    kb_id,
+                    compile_kwd,
+                    template_id,
+                )
+
+    await _upsert_dataset_nav_from_page_index(
+        active_templates=active_templates,
+        chat_mdl_by_tid=chat_mdl_by_tid,
+        embedding_model=embedding_model,
+        tenant_id=tenant_id,
+        kb_id=kb_id,
+        doc_id=doc_id,
+        progress_cb=progress_cb,
+        cancel_check=cancel_check,
+    )
+    # Timeline entity cleanup must happen after every flush has completed;
+    # otherwise an entity can look isolated in one flush and be referenced by
+    # a relation from a later flush. Keep this scoped to timeline templates.
+    for template_id, _ in active_templates:
+        if template_kinds.get(template_id) != "timeline":
+            continue
+        try:
+            await cleanup_timeline_isolated_entities(
+                tenant_id,
+                kb_id,
                 doc_id,
-                language=language,
-                callback=progress_cb,
                 compilation_template_id=template_id,
             )
-            if docs:
-                accumulators[template_id].extend(docs)
-            if len(accumulators[template_id]) >= DOC_STRUCTURE_MERGE_MAX_DOCS:
-                progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for template ({idx + 1}/{total})")
-                await _flush(template_id)
+        except Exception:
+            logging.exception(
+                "document_structure_compile: timeline isolated-entity cleanup failed for template=%s",
+                template_id,
+            )
 
     for idx, (template_id, parser_cfg) in enumerate(active_templates):
         if cancel_check():
             raise TaskCanceledException("Task was cancelled during document knowledge compilation")
-        await _flush(template_id)
         agg = agg_infos[template_id]
         if record:
-            record(f"document_structure_compile:{template_id}", agg)
-        progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {agg}")
+            recorded_agg = {key: value for key, value in agg.items() if key != "rechunked_chunks"}
+            recorded_agg["rechunked_chunk_count"] = len(agg.get("rechunked_chunks") or [])
+            record(f"document_structure_compile:{template_id}", recorded_agg)
+        rechunked_chunks = agg.get("rechunked_chunks") or []
+        if rechunked_chunks:
+            progress_cb(
+                msg=(
+                    f"Rechunk: {len(chunks_by_id)} -> {len(rechunked_chunks)} chunks; "
+                    f"inserted={agg.get('inserted', 0)}, updated={agg.get('updated', 0)}, "
+                    f"duplicates_dropped={agg.get('duplicates_dropped', 0)}"
+                )
+            )
+        else:
+            progress_cb(
+                msg=(
+                    f"Document knowledge compilation done ({idx + 1}/{total}): "
+                    f"inserted={agg.get('inserted', 0)}, updated={agg.get('updated', 0)}, "
+                    f"duplicates_dropped={agg.get('duplicates_dropped', 0)}"
+                )
+            )
 
         # ── Synthesis phase ──────────────────────────────────────────────
         # If the template has synthesis.enabled, run wiki PLAN+REFINE
@@ -268,7 +658,7 @@ async def run_structure_compile_over_batches(
         synthesis_cfg = (parser_cfg or {}).get("synthesis") or {}
         if synthesis_cfg.get("enabled"):
             example = synthesis_cfg.get("example")
-            compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
+            compile_kwd = synthesis_cfg.get("compile_kwd", "wiki_page")
             plan_cfg = synthesis_cfg.get("plan") or {}
 
             # Reserved for future wiki_plan_from_reduction extension:
@@ -276,7 +666,8 @@ async def run_structure_compile_over_batches(
             if plan_cfg:
                 logging.debug(
                     "synthesis: template %s plan config %r reserved for future use",
-                    template_id, plan_cfg,
+                    template_id,
+                    plan_cfg,
                 )
 
             if cancel_check():
@@ -296,7 +687,12 @@ async def run_structure_compile_over_batches(
 
                     progress_cb(msg=f"Synthesis PLAN for template {template_id} (kind={compile_kwd}) ...")
                     plan = await wiki_plan_from_reduction(
-                        chat_mdl=chat_mdl_by_tid[template_id],
+                        chat_mdl=llm_pool.wrap(
+                            chat_mdl_by_tid[template_id],
+                            priority=20,
+                            label=f"synthesis-plan:{template_id}",
+                            context=f"{doc_id}:{template_id}:synthesis-plan",
+                        ),
                         embd_mdl=embedding_model,
                         tenant_id=tenant_id,
                         kb_id=kb_id,
@@ -310,7 +706,12 @@ async def run_structure_compile_over_batches(
                     else:
                         progress_cb(msg=f"Synthesis REFINE for template {template_id} ({len(plan['pages'])} page(s)) ...")
                         pages = await wiki_refine_from_plan(
-                            chat_mdl=chat_mdl_by_tid[template_id],
+                            chat_mdl=llm_pool.wrap(
+                                chat_mdl_by_tid[template_id],
+                                priority=20,
+                                label=f"synthesis-refine:{template_id}",
+                                context=f"{doc_id}:{template_id}:synthesis-refine",
+                            ),
                             embd_mdl=embedding_model,
                             tenant_id=tenant_id,
                             kb_id=kb_id,

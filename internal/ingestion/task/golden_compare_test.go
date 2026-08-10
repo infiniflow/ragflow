@@ -3,6 +3,8 @@ package task
 import (
 	"testing"
 	"time"
+
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
 
 func TestProcessPipelineOutputForGolden_Markdown(t *testing.T) {
@@ -10,7 +12,10 @@ func TestProcessPipelineOutputForGolden_Markdown(t *testing.T) {
 		"markdown": "# Title\n\nContent",
 	}
 
-	result := ProcessPipelineOutputForGolden(input, "doc-1", "kb-1", "sample.md")
+	result, err := ProcessPipelineOutputForGolden(input, "doc-1", "sample.md")
+	if err != nil {
+		t.Fatalf("ProcessPipelineOutputForGolden: %v", err)
+	}
 
 	if len(result.NormalizedChunks) != 1 {
 		t.Fatalf("normalized len = %d, want 1", len(result.NormalizedChunks))
@@ -41,7 +46,10 @@ func TestProcessChunksForPipeline_StableFields(t *testing.T) {
 		},
 	}
 
-	meta := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "sample.md", now)
+	meta, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", "sample.md", now)
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
 
 	chunk := chunks[0]
 	if chunk["doc_id"] != "doc-1" {

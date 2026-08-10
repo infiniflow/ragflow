@@ -157,11 +157,11 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
+          <LargeModelFormField></LargeModelFormField>
           {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
             <QueryVariable
               name="visual_files_var"
-              label="Visual Input File"
+              label={t('flow.visualInputFile')}
               types={[VariableType.File]}
             ></QueryVariable>
           )}

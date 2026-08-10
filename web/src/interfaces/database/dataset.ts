@@ -22,6 +22,7 @@ export interface IDataset {
   description?: string;
   document_count: number;
   embedding_model: string;
+  embedding_model_name?: string;
   size?: number;
   graphrag_task_finish_at: string;
   graphrag_task_id: Nullable<string>;
@@ -33,6 +34,7 @@ export interface IDataset {
   nickname: string;
   pagerank: number;
   parser_config: Parserconfig;
+  parser_id?: string;
   permission: string;
   pipeline_id: string;
   raptor_task_finish_at: string;
@@ -48,6 +50,14 @@ export interface IDataset {
   vector_similarity_weight: number;
   connectors: IConnector[];
 }
+
+export type IDatasetFilter = {
+  owner: Array<{
+    id: string;
+    label: string;
+    count: number;
+  }>;
+};
 
 interface Parserconfig {
   auto_keywords: number;
@@ -280,9 +290,19 @@ export interface IArtifactGraphEntity {
   source_chunk_ids?: string[];
 }
 
+export interface IArtifactAlteration {
+  removed: number;
+  newly_uploaded: number;
+  removed_doc_ids: string[];
+  newly_uploaded_doc_ids: string[];
+  involved_doc_ids: string[];
+  eligible_doc_ids: string[];
+}
+
 export interface IArtifactGraphRelation {
   from: string;
   to: string;
+  type?: string;
 }
 
 export interface IArtifactGraph {

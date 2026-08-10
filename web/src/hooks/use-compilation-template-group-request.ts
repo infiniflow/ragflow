@@ -22,6 +22,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { AgentApiAction } from './use-agent-request';
 
 export const enum CompilationTemplateGroupApiAction {
   FetchCompilationTemplateGroups = 'fetchCompilationTemplateGroups',
@@ -225,6 +226,10 @@ export const useDeleteCompilationTemplateGroup = () => {
             CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups,
           ],
         });
+        // The agents page lists groups merged into /agents results.
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentListByPage],
+        });
       }
       return data?.data ?? true;
     },
@@ -257,4 +262,13 @@ export const useFetchAllCompilationTemplateGroups = () => {
   });
 
   return { groups: data ?? [], loading };
+};
+
+export const useCompilationTemplateGroupOptions = () => {
+  const { groups } = useFetchAllCompilationTemplateGroups();
+
+  return useMemo(
+    () => groups.map((group) => ({ label: group.name, value: group.id })),
+    [groups],
+  );
 };

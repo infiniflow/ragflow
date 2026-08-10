@@ -18,23 +18,35 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"golang.org/x/net/html"
+
+	"ragflow/internal/tokenizer"
 )
 
-const googleScholarToolName = "google_scholar"
+const googleScholarToolName = "google_scholar_search"
 
 const googleScholarToolDescription = "Google Scholar provides a simple way to broadly search for scholarly literature. From one place, you can search across many disciplines and sources: articles, theses, books, abstracts and court opinions, from academic publishers, professional societies, online repositories, universities and other web sites. Google Scholar helps you find relevant work across the world of scholarly research."
 
 const defaultGoogleScholarTopN = 12
+
+const googleScholarPromptMaxTokens = 200000
+
+var googleScholarDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
+
+var googleScholarNewlinePattern = regexp.MustCompile(`\n+`)
 
 // googleScholarParams is the JSON shape the model sends into InvokableRun.
 // All fields come from the canvas node form; only query is exposed to
@@ -78,6 +90,9 @@ type GoogleScholarTool struct {
 	defaults googleScholarParams
 }
 
+var _ ToolComponent = (*GoogleScholarTool)(nil)
+var _ ReferenceBuilder = (*GoogleScholarTool)(nil)
+
 // NewGoogleScholarTool returns a GoogleScholarTool using the default
 // HTTPHelper.
 func NewGoogleScholarTool() *GoogleScholarTool {
@@ -120,6 +135,26 @@ func (g *GoogleScholarTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
+func (g *GoogleScholarTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query":     "Search query.",
+			"top_n":     "Maximum number of results.",
+			"sort_by":   "Sort order: relevance or date.",
+			"year_low":  "Earliest publication year to include.",
+			"year_high": "Latest publication year to include.",
+			"patents":   "Whether to include patents.",
+		},
+		Outputs: map[string]string{
+			"formalized_content": "Rendered Google Scholar references for downstream prompts.",
+			"json":               "Google Scholar result list.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{"name": "Query", "type": "line"},
+		},
+	}
+}
+
 // buildGoogleScholarURL composes the Scholar query URL. Centralized
 // for testability. sortBy: "relevance" (default) or "date".
 // yearLow / yearHigh: 0 means no filter. patents: nil or true includes
@@ -158,8 +193,7 @@ func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string, _
 	}
 	p = mergeGoogleScholarDefaults(g.defaults, p)
 	if strings.TrimSpace(p.Query) == "" {
-		return googleScholarErrJSON(fmt.Errorf("query is required")),
-			fmt.Errorf("google_scholar: query is required")
+		return googleScholarJSON(googleScholarEnvelope{Results: []googleScholarResult{}}), nil
 	}
 
 	endpoint := buildGoogleScholarURL(p.Query, p.TopN, p.SortBy, p.YearLow, p.YearHigh, p.Patents)
@@ -186,6 +220,103 @@ func (g *GoogleScholarTool) InvokableRun(ctx context.Context, argsJSON string, _
 			fmt.Errorf("google_scholar: parse html: %w", err)
 	}
 	return googleScholarJSON(googleScholarEnvelope{Results: results}), nil
+}
+
+func (g *GoogleScholarTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildGoogleScholarReferences(envelope)
+}
+
+func (g *GoogleScholarTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildGoogleScholarReferences(envelope)
+	return map[string]any{
+		"formalized_content": renderGoogleScholarReferences(chunks, googleScholarPromptMaxTokens),
+		"json":               results,
+	}
+}
+
+func buildGoogleScholarReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		paper, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := strings.Join([]string{
+			"Authors: " + googleScholarText(paper["authors"]),
+			"Year: " + googleScholarText(paper["year"]),
+			"Snippet: " + googleScholarText(paper["snippet"]),
+		}, "\n")
+		content = googleScholarDataImagePattern.ReplaceAllString(content, "")
+		content = truncateGoogleScholarRunes(content, 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(googleScholarHashInt(content, 100000000), 10)
+		displayID := strconv.FormatInt(googleScholarHashInt(documentID, 500), 10)
+		title := googleScholarText(paper["title"])
+		resultURL := googleScholarText(paper["link"])
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{"doc_name": title, "doc_id": documentID, "count": 1, "url": resultURL})
+	}
+	return chunks, docAggs
+}
+
+func renderGoogleScholarReferences(chunks []map[string]any, maxTokens int) string {
+	usedTokens := 0
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		content := googleScholarText(chunk["content"])
+		block := strings.Join([]string{
+			"\nID: " + googleScholarText(chunk["id"]),
+			"├── Title: " + googleScholarNewlinePattern.ReplaceAllString(googleScholarText(chunk["document_name"]), " "),
+			"├── URL: " + googleScholarNewlinePattern.ReplaceAllString(googleScholarText(chunk["url"]), " "),
+			"└── Content:\n" + content,
+		}, "\n")
+		blockTokens := tokenizer.NumTokensFromString(block)
+		if maxTokens > 0 && float64(usedTokens+blockTokens) > float64(maxTokens)*0.97 {
+			break
+		}
+		usedTokens += blockTokens
+		blocks = append(blocks, block)
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func googleScholarText(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+func googleScholarHashInt(value string, modulus int64) int64 {
+	digest := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(digest[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateGoogleScholarRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }
 
 func mergeGoogleScholarDefaults(defaults, p googleScholarParams) googleScholarParams {

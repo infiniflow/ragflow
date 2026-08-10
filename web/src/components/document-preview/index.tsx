@@ -42,7 +42,7 @@ const DocumentPreview = function ({
           <DocPreviewer className={className} url={url} />
         </section>
       )}
-      {['txt'].indexOf(fileType) > -1 && (
+      {['txt', 'json'].indexOf(fileType) > -1 && (
         <section>
           <TxtPreviewer className={className} url={url} />
         </section>

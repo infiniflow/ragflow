@@ -19,6 +19,8 @@
 // Tokenizer and title weighting runs - the q_<n>_vec first element is
 // 0.1*len(name) + 0.9*len(content), and embedding_token_consumption includes
 // the one title encode (len(name)) plus the per-chunk content encodes.
+//go:build integration
+
 package pipeline
 
 import (
@@ -37,6 +39,7 @@ import (
 	"ragflow/internal/common"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/storage"
 
 	"github.com/signintech/gopdf"
@@ -44,9 +47,10 @@ import (
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) MaxTokens() int { return 0 }
+func (fixedEmbedder) MaxTokens() int { return 2048 }
+func (fixedEmbedder) BatchSize() int { return 16 }
 
-func (fixedEmbedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error) {
+func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
 	for _, text := range texts {
 		out = append(out, componentpkg.EmbeddingResult{
@@ -61,7 +65,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 
 	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -87,7 +91,8 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -151,7 +156,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -178,7 +183,8 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -241,7 +247,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	t.Setenv("DEEPDOC_URL", "")
 	t.Setenv("OSSDEEPDOC_URL", "")
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -266,7 +272,8 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -338,7 +345,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_manual.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_manual.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -364,7 +371,8 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -435,7 +443,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_laws.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_laws.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -461,7 +469,8 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -517,7 +526,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_paper.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_paper.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -543,7 +552,8 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -597,7 +607,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_book.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_book.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -623,7 +633,8 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
-	})
+		"kb_id":  "test-kb",
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -681,14 +692,14 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
 		t.Skip("missing required env (OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL); skipping real resume extractor integration test")
 	}
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_resume.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_resume.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -745,7 +756,7 @@ func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
 		"llm_id": model + "@openai",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -787,7 +798,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 	content := "# Title\n\nIntro paragraph.\n\n## Section\n\nBody paragraph."
 	docID := seedTemplateDocument(t, mem, "template-smoke.md", bucket, path, content)
 
-	files, err := filepath.Glob(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_*.json"))
+	files, err := filepath.Glob(filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_*.json"))
 	if err != nil {
 		t.Fatalf("glob templates: %v", err)
 	}
@@ -811,6 +822,9 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "TagChunker") {
 				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
+			if templateUsesComponent(t, templateBytes, "Compiler") {
+				t.Skip("template uses Compiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
+			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
 				t.Fatalf("terminal ids = %v, want exactly 1 terminal", terminalIDs)
@@ -822,7 +836,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			attachFixedEmbedderFactory(t, pipe)
 			out, err := pipe.Run(context.Background(), map[string]any{
 				"doc_id": docID,
-			})
+			}, nil)
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
@@ -842,7 +856,7 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	t.Helper()
 	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
 		if name == componentpkg.ComponentNameTokenizer {
-			return componentpkg.NewTokenizerComponentWithResolver(params, func(_, _, _ string) (componentpkg.Embedder, error) {
+			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _, _ string) (componentpkg.Embedder, error) {
 				return fixedEmbedder{}, nil
 			})
 		}
@@ -861,6 +875,15 @@ func withRealTemplateDeps(t *testing.T) storage.Storage {
 	mem := storage.NewMemoryStorage()
 	storage.GetStorageFactory().SetStorage(mem)
 	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
+
+	// The runtime invokes every component with the package-level dao.DB
+	// (see node_body.go). These "real components" tests exercise the
+	// Parser/Extractor model-resolution paths, so wire an in-memory sqlite DB
+	// via the shared testutil helper. It has no tenant/model rows, so
+	// resolution gracefully skips — but the nil-db panic from a headless run
+	// (db never initialized) is avoided without touching production code.
+	db := testutil.SetupTestDB(t)
+	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 
 	refs := map[string]componentpkg.DocumentStorageRef{}
 	componentpkg.ResolveDocumentStorageOverride = func(docID string) (*componentpkg.DocumentStorageRef, error) {
@@ -889,7 +912,7 @@ func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path,
 
 func seedTemplateDocumentBytes(t *testing.T, stg storage.Storage, name, bucket, path string, content []byte) string {
 	t.Helper()
-	if err := stg.Put(bucket, path, content); err != nil {
+	if err := stg.Put(context.Background(), bucket, path, content); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	if registerTemplateDocumentRef == nil {
@@ -1119,7 +1142,7 @@ func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, name, wa
 }
 
 func TestTemplateFixtures_AreWrappedTemplates(t *testing.T) {
-	path := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_one.json")
+	path := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)

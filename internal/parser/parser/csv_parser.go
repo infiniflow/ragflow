@@ -31,6 +31,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"html"
@@ -113,7 +114,7 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 // Python's RAGFlowExcelParser.html().
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
-func (p *CSVParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
@@ -126,9 +127,10 @@ func (p *CSVParser) ParseWithResult(filename string, data []byte) ParseResult {
 	case "", "csv":
 		// Continue with the local CSV parser.
 	default:
-		return ParseResult{
-			Err: fmt.Errorf("unsupported CSV parse method: %q", p.ParseMethod),
-		}
+		// PDF-specific methods like "DeepDOC" / "PaddleOCR" / "MinerU"
+		// are meaningless for CSV; treat them as the default CSV path,
+		// matching Python's behaviour where parse_method is irrelevant
+		// for CSV processing.
 	}
 
 	text := string(data)
@@ -147,6 +149,7 @@ func (p *CSVParser) ParseWithResult(filename string, data []byte) ParseResult {
 	reader := csv.NewReader(strings.NewReader(text))
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
 
 	records, err := reader.ReadAll()
 	if err != nil {

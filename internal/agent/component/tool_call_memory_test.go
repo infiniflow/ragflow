@@ -32,7 +32,7 @@ func TestAddToolCallMemory_NoToolCalls(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
 	withStubInvoker(t, stub)
 
-	got, err := addToolCallMemory(context.Background(), AgentParam{ModelID: "echo"}, &schema.Message{Content: "no tools"})
+	got, err := addToolCallMemory(context.Background(), nil, AgentParam{ModelID: "echo"}, &schema.Message{Content: "no tools"})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -45,7 +45,8 @@ func TestAddToolCallMemory_NoToolCalls(t *testing.T) {
 }
 
 // TestAddToolCallMemory_SummarizesAndAppendsToState: end-to-end —
-// stub returns a summary; Agent.Invoke appends it to state.History.
+// stub returns a summary; Agent.Invoke appends it to state.Memory without
+// polluting the user/assistant conversation history.
 func TestAddToolCallMemory_SummarizesAndAppendsToState(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{
 		Content: "the assistant searched docs and found 3 results",
@@ -70,22 +71,26 @@ func TestAddToolCallMemory_SummarizesAndAppendsToState(t *testing.T) {
 	state := runtime.NewCanvasState("rid", "tid")
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
 	ctx := runtime.WithState(context.Background(), state)
-	_, err := c.Invoke(ctx, map[string]any{"user_prompt": "do it"})
+	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "do it"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if stub.calls != 1 {
 		t.Errorf("expected 1 LLM call (the memory summary), got %d", stub.calls)
 	}
-	if len(state.History) != 1 {
-		t.Fatalf("expected 1 history entry, got %d: %+v", len(state.History), state.History)
+	memory := state.SnapshotMemory()
+	if len(memory) != 1 {
+		t.Fatalf("expected 1 memory entry, got %d: %+v", len(memory), memory)
 	}
-	h := state.History[0]
-	if h["role"] != "assistant" {
-		t.Errorf("history role=%v, want assistant", h["role"])
+	if len(state.SnapshotHistory()) != 0 {
+		t.Fatalf("tool summary polluted conversation history: %+v", state.SnapshotHistory())
 	}
-	if !strings.Contains(h["content"].(string), "searched docs") {
-		t.Errorf("history content missing summary: %q", h["content"])
+	entry := memory[0]
+	if entry["user"] != "do it" {
+		t.Errorf("memory user=%v, want do it", entry["user"])
+	}
+	if !strings.Contains(entry["summary"].(string), "searched docs") {
+		t.Errorf("memory summary missing tool result: %q", entry["summary"])
 	}
 }
 
@@ -108,11 +113,11 @@ func TestAddToolCallMemory_LLMFailure(t *testing.T) {
 	state := runtime.NewCanvasState("rid", "tid")
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
 	ctx := runtime.WithState(context.Background(), state)
-	_, err := c.Invoke(ctx, map[string]any{"user_prompt": "do it"})
+	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "do it"})
 	if err != nil {
 		t.Fatalf("Invoke should not error when memory summary fails: %v", err)
 	}
-	if len(state.History) != 0 {
-		t.Errorf("expected no history entry on summary failure, got %d", len(state.History))
+	if len(state.SnapshotMemory()) != 0 {
+		t.Errorf("expected no memory entry on summary failure, got %d", len(state.SnapshotMemory()))
 	}
 }

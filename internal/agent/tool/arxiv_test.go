@@ -131,8 +131,8 @@ func TestArxiv_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "arxiv" {
-		t.Errorf("Name = %q, want arxiv", info.Name)
+	if info.Name != "arxiv_search" {
+		t.Errorf("Name = %q, want arxiv_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "arXiv") {
 		t.Errorf("Desc = %q, want to mention arXiv", info.Desc)
@@ -146,16 +146,17 @@ func TestArxiv_Info(t *testing.T) {
 	}
 }
 
-func TestArxiv_RequiresQuery(t *testing.T) {
+func TestArxiv_EmptyQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewArxivTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope arxivEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
@@ -206,5 +207,44 @@ func TestArxiv_FullRoundtrip(t *testing.T) {
 	}
 	if env.Results[0].PDFURL != "http://arxiv.org/pdf/2501.12345v1" {
 		t.Errorf("PDFURL = %q, want http://arxiv.org/pdf/2501.12345v1", env.Results[0].PDFURL)
+	}
+}
+
+func TestArxiv_ComponentReferencesAndDefaults(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("arxiv", map[string]any{
+		"top_n":   float64(7),
+		"sort_by": "relevance",
+		"outputs": map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	arxiv := built.(*ArxivTool)
+	if arxiv.defaults.TopN != 7 || arxiv.defaults.SortBy != "relevance" {
+		t.Fatalf("defaults = %+v", arxiv.defaults)
+	}
+	spec := arxiv.ComponentSpec()
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title": "Paper", "summary": "Paper summary.", "pdf_url": "https://arxiv.org/pdf/1", "entry_id": "kept",
+	}}}
+	chunks, docAggs := arxiv.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["content"] != "Paper summary." {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := arxiv.BuildComponentOutputs(envelope)
+	results := outputs["json"].([]any)
+	if results[0].(map[string]any)["entry_id"] != "kept" {
+		t.Fatalf("json output = %#v", results)
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "Paper summary.") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
 	}
 }

@@ -279,7 +279,7 @@ func (e *TOCEnhancer) Enhance(ctx context.Context, kbinfos map[string]interface{
 	}
 	indexNames := make([]string, 0, len(e.tenantIDs))
 	for _, tid := range e.tenantIDs {
-		indexNames = append(indexNames, indexName(tid))
+		indexNames = append(indexNames, getIndexName(tid))
 	}
 	tocResp, err := e.docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   indexNames,
@@ -479,7 +479,7 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 			modelName = *e.chatModel.ModelName
 		}
 		resp, err := e.chatModel.ModelDriver.ChatWithMessages(
-			modelName, msgs, e.chatModel.APIConfig, cfg,
+			ctx, modelName, msgs, e.chatModel.APIConfig, cfg, nil,
 		)
 		if err != nil {
 			return nil, err
@@ -495,7 +495,7 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 		if rerr != nil {
 			repaired = raw
 		}
-		if err := json.Unmarshal([]byte(repaired), &scores); err != nil {
+		if err = json.Unmarshal([]byte(repaired), &scores); err != nil {
 			lastErr = err.Error()
 			common.Warn("TOC enhancer: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
@@ -547,7 +547,7 @@ func (e *TOCEnhancer) fetchChunk(ctx context.Context, chunkID, docID, kbID strin
 	}
 	indexNames := make([]string, 0, len(e.tenantIDs))
 	for _, tid := range e.tenantIDs {
-		indexNames = append(indexNames, indexName(tid))
+		indexNames = append(indexNames, getIndexName(tid))
 	}
 	resp, err := e.docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   indexNames,
@@ -563,8 +563,8 @@ func (e *TOCEnhancer) fetchChunk(ctx context.Context, chunkID, docID, kbID strin
 	return resp.Chunks[0], nil
 }
 
-// indexName returns the search index name for a tenant.
-func indexName(tenantID string) string {
+// getIndexName returns the search index name for a tenant.
+func getIndexName(tenantID string) string {
 	return "ragflow_" + tenantID
 }
 

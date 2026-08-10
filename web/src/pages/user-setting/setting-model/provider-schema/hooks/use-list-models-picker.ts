@@ -156,7 +156,7 @@ export const useListModelsPicker = ({
         ];
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [visible, editMode, viewMode]);
 
   // Triggered by ToggleList's onOpenChange — fires the API call with the

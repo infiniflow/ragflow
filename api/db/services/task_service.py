@@ -392,14 +392,18 @@ class TaskService(CommonService):
                         - progress_msg (str, optional): Progress message to append
                         - progress (float, optional): Progress percentage (0.0 to 1.0)
         """
-        task = cls.model.get_by_id(id)
+        try:
+            task = cls.model.get_by_id(id)
+        except cls.model.DoesNotExist:
+            logging.info("Skip progress update for deleted task %s", id)
+            return
         if not task:
             logging.warning("Update_progress error: task not found")
             return
 
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 prog = info["progress"]
@@ -407,7 +411,7 @@ class TaskService(CommonService):
         else:
             with DB.lock("update_progress", -1):
                 if info["progress_msg"]:
-                    progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                    progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                     cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
                 if "progress" in info:
                     prog = info["progress"]
@@ -421,7 +425,9 @@ class TaskService(CommonService):
             doc_info = {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()}
             if info.get("progress_msg"):
                 doc_info["progress_msg"] = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
-            DocumentService.update_by_id(task.doc_id, doc_info)
+            DocumentService.model.update(doc_info).where(
+                (DocumentService.model.id == task.doc_id) & ((DocumentService.model.run.is_null(True)) | (DocumentService.model.run != TaskStatus.CANCEL.value))
+            ).execute()
 
     @classmethod
     @DB.connection_context()

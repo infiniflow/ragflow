@@ -96,7 +96,7 @@ func TestDocsGenerator_Invoke_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	_, _ = c.Invoke(context.Background(), map[string]any{})
+	_, _ = c.Invoke(context.Background(), nil, map[string]any{})
 	// We do not assert err == nil here because txt output requires
 	// the internal writer (which may not be available in this
 	// checkout). The test pins that the call doesn't panic.
@@ -110,7 +110,7 @@ func TestDocsGenerator_Invoke_UsesQueryWhenContentEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"query": "Hello from begin query",
 	})
 	if err != nil {
@@ -137,7 +137,7 @@ func TestDocsGenerator_Invoke_AcceptsDecorationParamNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke canonical params: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestDocsGenerator_Invoke_AcceptsDecorationParamNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator alias params): %v", err)
 	}
-	out, err = c.Invoke(context.Background(), map[string]any{})
+	out, err = c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke alias params: %v", err)
 	}
@@ -192,9 +192,9 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{})
+	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	if !ok || docID == "" {
 		t.Fatalf("doc_id = %v, want non-empty string", out["doc_id"])
 	}
-	blob, err := memStorage.Get("tenant-1-downloads", docID)
+	blob, err := memStorage.Get(ctx, "tenant-1-downloads", docID)
 	if err != nil {
 		t.Fatalf("stored blob missing: %v", err)
 	}

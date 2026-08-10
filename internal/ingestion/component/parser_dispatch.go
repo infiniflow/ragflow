@@ -24,6 +24,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"strings"
@@ -117,7 +118,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 		}
 	}
 	return "", fmt.Errorf(
-		"Parser: output_format %q for %q is not in allowed_output_format %v",
+		"parser: output_format %q for %q is not in allowed_output_format %v",
 		format, family, allowedList,
 	)
 }
@@ -138,7 +139,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -155,13 +156,13 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 
 	p, err := parser.GetParser(fileType)
 	if err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: resolve %q: %w", fileType, err)}
+		return parserDispatchResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
 
-	res := p.ParseWithResult(filename, data)
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
+		return parserDispatchResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
 	}
 	// Carry the configured parse_method on the file metadata so
 	// downstream consumers can read which provider ran.
@@ -304,19 +305,29 @@ func pythonFamilyName(raw string) string {
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
 	case "mp4", "avi", "mkv", "mov", "webm", "flv",
-		"mpeg", "mpg", "wmv", "3gp", "3gpp":
+		"mpeg", "mpg", "wmv", "3gp", "3gpp", "video":
 		return "video"
-	case "eml", "msg":
+	case "eml", "msg", "email":
 		return "email"
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus", "aural":
 		return "audio"
 	case "visual", "picture", "image",
 		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
 		"webp", "svg", "ico", "avif", "heic", "apng":
-		return "picture"
+		return "image"
 	}
 	return ""
+}
+
+// ParserFileFamily normalises a free-form file-type/extension hint to the
+// python-side family identifier used as the key into a Parser component's
+// setups (e.g. "pdf", "docx", "slides", "text&code"). It is the exported
+// entry point for callers outside this package (e.g. the ingestion task
+// executor that injects the debug page cap into override_params) that need
+// to build the canonical ParserConfig[cpnID][family]["pages"] shape.
+func ParserFileFamily(ext string) string {
+	return pythonFamilyName(ext)
 }
 
 // jsonItemsToPages reshapes a parsed JSON payload into the
@@ -382,10 +393,13 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 // at rag/flow/parser/parser.py:_invoke — the downstream chunker
 // / tokenizer / extractor components read the matching family
 // key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType) map[string]any {
+func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType, lang string) map[string]any {
 	out := map[string]any{
 		"pages": toAnyPages(parsed),
 		"name":  name,
+	}
+	if lang != "" {
+		out["lang"] = lang
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = dispatched.OutputFormat

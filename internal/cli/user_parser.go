@@ -129,8 +129,6 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
-	case TokenConfigs:
-		return p.parseAPIListConfigs()
 	case TokenDatasets:
 		return p.parseAPIListDatasets()
 	case TokenDataset:
@@ -166,17 +164,6 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
-}
-
-// LIST CONFIGS;
-func (p *Parser) parseAPIListConfigs() (*Command, error) {
-	p.nextToken()
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("api_list_configs"), nil
 }
 
 func (p *Parser) parseAPIListDatasets() (*Command, error) {
@@ -2697,7 +2684,7 @@ func (p *Parser) parseAPIDisable() (*Command, error) {
 }
 
 // region MODEL commands
-// CHAT 'model@instance@provider' 'hello world'
+// CHAT WITH 'model@instance@provider' MESSAGE 'hello world'
 // CHAT WITH 'model@instance@provider' MESSAGE 'hello world' 'who are you' IMAGE 'url1' 'file0' VIDEO "url2.mov" "file1" FILE "url" "path file2" AUDIO "file.wav"
 func (p *Parser) parseAPIChat() (*Command, error) {
 	p.nextToken() // consume CHAT

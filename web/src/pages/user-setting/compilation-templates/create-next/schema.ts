@@ -11,8 +11,9 @@ export const buildSectionSchema = (t: (key: string) => string) =>
 export const buildRaptorConfigSchema = (t: (key: string) => string) =>
   z.object({
     prompt: z.string().optional(),
-    max_token: z.number().min(1, t('setting.maxTokenRequired')),
-    threshold: z.number().min(0).max(1),
+    max_token: z.number().min(512, t('setting.maxTokenRequired')).max(2048),
+    clustering_threshold: z.number().min(0).max(1),
+    clustering_ratio: z.number().min(0).max(1),
     rechunk: z.boolean().optional(),
   });
 
@@ -28,7 +29,7 @@ export const buildSynthesisSchema = () =>
 export const buildTemplateSchema = (t: (key: string) => string) =>
   z.object({
     id: z.string().optional(),
-    name: z.string().optional(),
+    name: z.string().min(1, t('setting.templateNameRequired')),
     description: z.string().optional(),
     llm_id: z.string().min(1, t('setting.llmForExtractionRequired')),
     kind: z.string().min(1, t('setting.templateKindRequired')),

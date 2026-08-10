@@ -107,7 +107,18 @@ export default function McpServer() {
           <>
             {isSelectionMode && (
               <section className="pb-5 flex items-center">
-                <Checkbox id="all" onCheckedChange={handleSelectAll} />
+                <Checkbox
+                  id="all"
+                  checked={
+                    selectedList.length > 0 &&
+                    selectedList.length === data.mcp_servers.length
+                      ? true
+                      : selectedList.length > 0
+                        ? 'indeterminate'
+                        : false
+                  }
+                  onCheckedChange={handleSelectAll}
+                />
                 <Label
                   className="pl-2 text-text-primary cursor-pointer"
                   htmlFor="all"

@@ -19,11 +19,13 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -33,7 +35,7 @@ import { useLoadingPause } from '@/hooks/use-loading-pause';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import reactStringReplace from 'react-string-replace';
 import { LoadingDots } from '../loading-dots';
 import { Button } from '../ui/button';
@@ -172,7 +174,11 @@ function MarkdownContent({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
@@ -181,12 +187,17 @@ function MarkdownContent({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(
-      replaceThinkToSection,
-      replaceRetrievingToSection,
-      preprocessLaTeX,
-    )(nextText);
-  }, [content, t]);
+    const thinkSummary = loading
+      ? `${t('chat.thinking')}...`
+      : t('chat.thought');
+    return unescapeAngleBrackets(
+      pipe(
+        (value: string) => replaceThinkToSection(value, thinkSummary),
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+      )(nextText),
+    );
+  }, [content, loading, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -197,15 +208,16 @@ function MarkdownContent({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
+        if (fileExtension !== 'pdf') {
           if (!documentUrl) {
             return;
           }
-          window.open(documentUrl, '_blank');
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else {
           clickDocumentButton?.(documentId, chunk);
         }
@@ -315,7 +327,7 @@ function MarkdownContent({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                   className="text-ellipsis text-wrap"

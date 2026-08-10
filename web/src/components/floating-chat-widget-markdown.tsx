@@ -20,11 +20,12 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -85,13 +86,14 @@ const FloatingChatWidgetMarkdown = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
         if (!documentId) return;
-        if (!isPdf && documentUrl) {
-          window.open(documentUrl, '_blank');
+        if (fileExtension !== 'pdf' && documentUrl) {
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else if (clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
         }
@@ -214,7 +216,7 @@ const FloatingChatWidgetMarkdown = ({
                       onClick={handleDocumentButtonClick(
                         documentId,
                         chunkItem,
-                        fileExtension === 'pdf',
+                        fileExtension,
                         documentUrl,
                       )}
                       disabled={!documentUrl && fileExtension !== 'pdf'}
@@ -269,7 +271,7 @@ const FloatingChatWidgetMarkdown = ({
               onClick={handleDocumentButtonClick(
                 documentId,
                 chunkItem,
-                fileExtension === 'pdf',
+                fileExtension,
                 documentUrl,
               )}
             />
@@ -281,7 +283,14 @@ const FloatingChatWidgetMarkdown = ({
             <HoverCardTrigger asChild>
               <InfoCircleOutlined className={styles.referenceIcon} />
             </HoverCardTrigger>
-            <HoverCardContent>{getPopoverContent(chunkIndex)}</HoverCardContent>
+            <HoverCardPrimitive.Portal>
+              <HoverCardContent
+                collisionPadding={8}
+                className="max-h-[var(--radix-hover-card-content-available-height)]"
+              >
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            </HoverCardPrimitive.Portal>
           </HoverCard>
         );
       });
@@ -307,7 +316,7 @@ const FloatingChatWidgetMarkdown = ({
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // oxlint-disable-next-line typescript/no-unused-vars
               const { children, className, node, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
               return match ? (
