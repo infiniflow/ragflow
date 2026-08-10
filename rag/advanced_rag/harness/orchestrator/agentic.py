@@ -220,7 +220,13 @@ async def agentic_research(state: dict, tools) -> dict:
             [(r.claim_id, r.report or "") for r in agent_results_list if r.report],
             cited_ids,
         )
-        ungrounded_ids = [cid for cid, g in grounded.items() if g.get("ungrounded")]
+        # Treat a claim as violating when it is explicitly grounded=False OR has
+        # non-empty ungrounded assertions (covers the degenerate grounded=False /
+        # empty-ungrounded case too). Only accept IDs present in the original
+        # claims collection — the LLM may echo a bogus claim_id that must not leak
+        # into hard_violations.
+        valid_claim_ids = {r.claim_id for r in agent_results_list}
+        ungrounded_ids = [cid for cid, g in grounded.items() if cid in valid_claim_ids and (g.get("grounded") is False or g.get("ungrounded"))]
         if ungrounded_ids:
             existing = set(verdict.hard_violations or [])
             verdict.hard_violations = list(existing | set(ungrounded_ids))

@@ -89,6 +89,13 @@ async def llm_grounded_verify(
     _LOG.info("[Grounded-draft] reviewing %d claim report(s) (evidence %d chars)", len(reports), len(evidence_md))
     result = await _llm_chat_json(chat_mdl, prompt_text)
 
+    # The LLM may return a malformed payload (array / scalar / null) instead of a
+    # dict. Log and fall back to the documented empty result so we never crash
+    # with AttributeError on .get("claims").
+    if not isinstance(result, dict):
+        _LOG.info("[Grounded-draft] unexpected LLM response type=%s (expected dict); treating as no groundedness signal", type(result).__name__)
+        return {}
+
     out: dict = {}
     for item in result.get("claims") or []:
         cid = str(item.get("claim_id") or "")
