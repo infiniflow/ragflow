@@ -3425,7 +3425,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase":
+	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
 		bullets := strings.Builder{}
 		for _, n := range names {
@@ -3533,7 +3533,7 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // OpenSearch share the direct-column template. expectedCol is
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3562,7 +3562,7 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // buildExecutionErrorRepairPrompt returns the engine-specific user
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {

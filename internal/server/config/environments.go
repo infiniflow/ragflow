@@ -155,9 +155,9 @@ func (c *Config) GetEnvironments() error {
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch":
+		case "infinity", "elasticsearch", "oceanbase", "seekdb":
 			c.environments.DocumentEngineType = docEngine
-		case "opensearch", "oceanbase":
+		case "opensearch":
 			return fmt.Errorf("not implemented: %s", docEngine)
 		default:
 			return fmt.Errorf("invalid doc engine: %s", docEngine)
@@ -168,8 +168,8 @@ func (c *Config) GetEnvironments() error {
 	databaseType := common.GetEnvSmall(common.EnvDBType)
 	if databaseType != "" {
 		switch databaseType {
-		case "mysql":
-			c.environments.DatabaseType = "mysql"
+		case "mysql", "oceanbase":
+			c.environments.DatabaseType = databaseType
 		default:
 			return fmt.Errorf("invalid database type: %s", databaseType)
 		}
