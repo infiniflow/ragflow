@@ -131,32 +131,29 @@ export function NextMessageInput({
     };
   }, [isResizing]);
 
-  const thinkingOptions = useMemo(
-    () => [
-      {
-        label: t('chat.thinkingLevelUltra'),
-        value: '4',
-        description: t('chat.thinkingLevelUltraDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelHigh'),
-        value: '3',
-        description: t('chat.thinkingLevelHighDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelMedium'),
-        value: '2',
-        description: t('chat.thinkingLevelMediumDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelLow'),
-        value: '1',
-        description: t('chat.thinkingLevelLowDescription'),
-      },
-      { label: t('chat.thinkingLevelNone'), value: '0' },
-    ],
-    [t],
-  );
+  const thinkingOptions = [
+    {
+      label: t('chat.thinkingLevelUltra'),
+      value: '4',
+      description: t('chat.thinkingLevelUltraDescription'),
+    },
+    {
+      label: t('chat.thinkingLevelHigh'),
+      value: '3',
+      description: t('chat.thinkingLevelHighDescription'),
+    },
+    {
+      label: t('chat.thinkingLevelMedium'),
+      value: '2',
+      description: t('chat.thinkingLevelMediumDescription'),
+    },
+    {
+      label: t('chat.thinkingLevelLow'),
+      value: '1',
+      description: t('chat.thinkingLevelLowDescription'),
+    },
+    { label: t('chat.thinkingLevelNone'), value: '0' },
+  ];
 
   const handleThinkingChange = useCallback((value: string) => {
     setEnableThinking(value);

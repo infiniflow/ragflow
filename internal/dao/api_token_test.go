@@ -46,7 +46,8 @@ func setupAPI4ConversationTestDB(t *testing.T) *gorm.DB {
 
 func createAPI4ConversationForDAOTest(t *testing.T, id, agentID string) {
 	t.Helper()
-	if err := DB.Create(&entity.API4Conversation{
+	ctx := t.Context()
+	if err := DB.WithContext(ctx).Create(&entity.API4Conversation{
 		ID:        id,
 		DialogID:  agentID,
 		UserID:    "user-1",

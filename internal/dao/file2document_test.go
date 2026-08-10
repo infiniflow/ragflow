@@ -57,12 +57,13 @@ func pushDB(t *testing.T, testDB *gorm.DB) {
 
 func testFile2Document(t *testing.T, fileID, docID string) *entity.File2Document {
 	t.Helper()
+	ctx := t.Context()
 	f2d := &entity.File2Document{
 		ID:         fileID + "_" + docID,
 		FileID:     &fileID,
 		DocumentID: &docID,
 	}
-	if err := DB.Create(f2d).Error; err != nil {
+	if err := DB.WithContext(ctx).Create(f2d).Error; err != nil {
 		t.Fatalf("failed to create test record: %v", err)
 	}
 	return f2d
