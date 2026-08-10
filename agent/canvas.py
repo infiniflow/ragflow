@@ -119,8 +119,7 @@ class Graph:
             try:
                 param.check()
             except Exception as e:
-                component_name = next((n["data"]["name"] for n in dsl.get("graph", {}).get("nodes", []) if k == n["id"]), "")
-                raise ValueError(component_name + f": {e}")
+                raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")
             component_params[k] = param
         return component_params
 
@@ -183,11 +182,15 @@ class Graph:
                         except Exception:
                             pass
 
-    def get_component_name(self, cid):
-        for n in self.dsl.get("graph", {}).get("nodes", []):
+    @staticmethod
+    def _get_component_name(dsl, cid):
+        for n in dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
                 return n["data"]["name"]
         return ""
+
+    def get_component_name(self, cid):
+        return self._get_component_name(self.dsl, cid)
 
     def run(self, **kwargs):
         raise NotImplementedError()
