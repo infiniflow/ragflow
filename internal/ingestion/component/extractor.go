@@ -603,10 +603,27 @@ func extractorChunkInputOrder(inputs map[string]any) []string {
 	return order
 }
 
+// extractorChunkList coerces v into a []map[string]any of chunk maps. Each
+// chunk map is shallow-copied so the Extractor's writes (field_name result,
+// important_kwd/question_kwd/metadata, tag_fea) land on a private copy and do
+// not mutate the upstream chunk maps the pipeline passed in — mirroring
+// Python's deepcopy(args[k]) at extractor.py:87. Nested values (maps/slices
+// inside a chunk) remain shared references; only the top-level map is copied.
 func extractorChunkList(v any) ([]map[string]any, bool) {
+	clone := func(m map[string]any) map[string]any {
+		cp := make(map[string]any, len(m))
+		for k, val := range m {
+			cp[k] = val
+		}
+		return cp
+	}
 	switch list := v.(type) {
 	case []map[string]any:
-		return list, true
+		out := make([]map[string]any, 0, len(list))
+		for _, m := range list {
+			out = append(out, clone(m))
+		}
+		return out, true
 	case []any:
 		out := make([]map[string]any, 0, len(list))
 		for _, item := range list {
@@ -614,7 +631,7 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 			if !ok {
 				continue
 			}
-			out = append(out, m)
+			out = append(out, clone(m))
 		}
 		return out, true
 	default:

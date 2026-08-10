@@ -117,6 +117,47 @@ func TestExtractorComponent_Registered(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_Invoke_DoesNotMutateUpstream verifies that the
+// Extractor writes to shallow copies of the input chunk maps rather than
+// mutating the maps the caller passed in (mirrors Python's
+// deepcopy(args[k]) at extractor.py:87). Both the field_name result and the
+// auto keyword/question/metadata writes must land on the copy, leaving the
+// upstream chunks untouched.
+func TestExtractorComponent_Invoke_DoesNotMutateUpstream(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: "extracted summary"},
+		stubResponse{Content: "kw1,kw2"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName:     "summary",
+		AutoKeywords:  2,
+		LLMID:         "gpt-4o-mini",
+		Prompt:        "Extract:",
+		SystemPrompt:  "",
+	}}
+	upstream := []map[string]any{
+		{"text": "doc one"},
+		{"text": "doc two"},
+	}
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": upstream,
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	// Upstream chunk maps must not have been mutated by the Extractor:
+	// no field_name key, no important_kwd key.
+	for i, ck := range upstream {
+		if _, has := ck["summary"]; has {
+			t.Errorf("upstream chunk[%d] was mutated: got key %q", i, "summary")
+		}
+		if _, has := ck["important_kwd"]; has {
+			t.Errorf("upstream chunk[%d] was mutated: got key %q", i, "important_kwd")
+		}
+	}
+}
+
 // TestExtractorComponent_Invoke_HappyPath covers the per-chunk
 // fan-out: two chunks in → two LLM calls → each chunk enriched
 // with the field_name key.
