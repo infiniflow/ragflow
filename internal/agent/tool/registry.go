@@ -40,6 +40,7 @@ var registry = map[string]Factory{
 	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
 	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
+	"wiki_query":                 noConfig("wiki_query", func() einotool.BaseTool { return NewWikiQueryTool() }),
 	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
 	"duckduckgo":                 buildDuckDuckGoTool,
 	"email":                      buildEmailTool,

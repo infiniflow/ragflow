@@ -1,8 +1,9 @@
 import { ICompilationTemplateSection } from '@/interfaces/database/compilation-template';
 import {
   createEmptyField,
+  getAvailableTypeOptions,
   getFieldKeyOrder,
-  getTypeOptionsFromBuiltinSection,
+  getRequiredFieldKeys,
 } from '@/pages/user-setting/compilation-templates/create-next/utils';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -10,12 +11,14 @@ import { useForm } from 'react-hook-form';
 type UseAddFieldFormOptions = {
   open: boolean;
   builtinSection?: ICompilationTemplateSection;
+  existingFields?: Record<string, string>[];
   initialField?: Record<string, string>;
 };
 
 export const useAddFieldForm = ({
   open,
   builtinSection,
+  existingFields,
   initialField,
 }: UseAddFieldFormOptions) => {
   const form = useForm<Record<string, string>>({
@@ -32,9 +35,19 @@ export const useAddFieldForm = ({
 
   const hasTypeField = fieldKeys.includes('type');
 
+  const requiredKeys = useMemo(
+    () => getRequiredFieldKeys(fieldKeys),
+    [fieldKeys],
+  );
+
   const typeOptions = useMemo(
-    () => getTypeOptionsFromBuiltinSection(builtinSection),
-    [builtinSection],
+    () =>
+      getAvailableTypeOptions(
+        builtinSection,
+        existingFields,
+        initialField?.type,
+      ),
+    [builtinSection, existingFields, initialField],
   );
 
   const buildField = useCallback(
@@ -90,6 +103,7 @@ export const useAddFieldForm = ({
           shouldDirty: true,
           shouldTouch: true,
         });
+        if (val) form.clearErrors(key);
       });
     },
     [buildField, form, initialField],
@@ -108,6 +122,7 @@ export const useAddFieldForm = ({
     form,
     fieldKeys,
     hasTypeField,
+    requiredKeys,
     typeOptions,
     handleTypeChange,
     handleSubmit,

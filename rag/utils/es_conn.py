@@ -102,6 +102,10 @@ class ESConnection(ESConnectionBase):
     CRUD operations
     """
 
+    def refresh_idx(self, index_name: str) -> bool:
+        self.es.indices.refresh(index=index_name)
+        return True
+
     def _es_search_once(self, index_names: list[str], query: dict, track_total_hits: bool):
         return self.es.search(index=index_names, body=query, timeout="600s", track_total_hits=track_total_hits)
 

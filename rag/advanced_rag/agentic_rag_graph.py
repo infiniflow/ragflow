@@ -43,6 +43,30 @@ from rag.prompts.generator import form_message, kb_prompt, message_fit_in
 
 _LOG = logging.getLogger(__name__)
 
+_ANSWER_TARGET_SYSTEM = """You are an answer-target verifier for a multi-hop RAG system.
+Resolve what entity, value, or fact the user's question is asking for.
+Do not choose bridge entities that merely explain a clue. In inverse-relation
+questions, a later clue may identify the target's partner, relative, employer,
+team, or source; keep tracing until the requested answer role is satisfied.
+Return JSON only."""
+
+_ANSWER_TARGET_USER = """Question:
+{question}
+
+Research summary:
+{pre_summary}
+
+Evidence:
+{evidence}
+
+Return JSON:
+{{
+  "target_role": "the role the final answer must satisfy",
+  "must_satisfy": ["short evidence-backed condition the answer must meet"],
+  "bridge_entities": ["entities that are useful clues but should not be the answer unless they also satisfy target_role"],
+  "reason": "one short explanation of the answer shape"
+}}"""
+
 
 def _snip(value: Any, limit: int = 240) -> str:
     try:
@@ -53,6 +77,79 @@ def _snip(value: Any, limit: int = 240) -> str:
     if len(s) > limit:
         s = s[:limit] + f"...(+{len(s) - limit} chars)"
     return s
+
+
+def _extract_json(text: str) -> dict:
+    text = re.sub(r"^.*</think>", "", text or "", flags=re.DOTALL).strip()
+    text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+    try:
+        import json_repair
+
+        return json_repair.loads(text)
+    except Exception:
+        try:
+            return json.loads(text)
+        except Exception:
+            return {}
+
+
+def _compact_text(text: str, limit: int) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n...(+{len(text) - limit} chars)"
+
+
+def _string_items(value) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _format_answer_target_contract(contract: dict) -> str:
+    target_role = str(contract.get("target_role") or "").strip()
+    reason = str(contract.get("reason") or "").strip()
+    lines = []
+    if target_role:
+        lines.append(f"Final answer must satisfy: {target_role}")
+    must = _string_items(contract.get("must_satisfy"))
+    if must:
+        lines.append("Must meet these conditions:")
+        lines.extend(f"- {item}" for item in must)
+    bridges = _string_items(contract.get("bridge_entities"))
+    if bridges:
+        lines.append("Bridge entities to verify but not answer with:")
+        lines.extend(f"- {item}" for item in bridges)
+    if reason:
+        lines.append(f"Reasoning guard: {reason}")
+    lines.append("Do not answer with an intermediate clue entity unless it also satisfies the final answer role.")
+    return "\n".join(lines)
+
+
+async def _answer_target_contract(tools, question: str, kbinfos: dict, evidence: str) -> str:
+    """Build a compact guardrail that tells final synthesis what to answer."""
+    fallback = "Final answer must directly satisfy the user's top-level who/what request. Use bridge entities only as clues, and verify any proposed answer against the evidence."
+    pre_summary = kbinfos.get("pre_summary") or ""
+    if not question or not pre_summary:
+        return fallback
+    try:
+        user = _ANSWER_TARGET_USER.format(
+            question=question,
+            pre_summary=_compact_text(pre_summary, 2400),
+            evidence=_compact_text(evidence, 6000),
+        )
+        msg = await tools._fit_messages(_ANSWER_TARGET_SYSTEM, user)
+        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.0})
+        if isinstance(ans, tuple):
+            ans = ans[0]
+        parsed = _extract_json(ans)
+        formatted = _format_answer_target_contract(parsed) if parsed else ""
+        return formatted or fallback
+    except Exception:
+        _LOG.exception("[Composing the answer] Failed to build answer-target contract")
+        return fallback
 
 
 class AgenticState(TypedDict, total=False):
@@ -70,6 +167,7 @@ class AgenticState(TypedDict, total=False):
     empty_result: bool
     final_answer: str
     loop: int
+    max_loops: int
     feedback: str  # replanning feedback
 
 
@@ -262,9 +360,55 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
             token_queue.put_nowait(tools.empty_response)
             return {"final_answer": tools.empty_response}
 
-        # Build evidence
-        evidence = kb_prompt(kbinfos, tools.chat_mdl.max_length)
+        # Build evidence — narrow the gathered chunks to keyword-bearing
+        # snippets BEFORE feeding the answer model, instead of dumping every
+        # full chunk into the prompt. The retriever already narrows per-query,
+        # but multi-search accumulation and the "keep-all-on-no-match" fallback
+        # can still leave many full passages here (one run produced a 46-passage
+        # / 70K-token call). Re-narrowing on the final question keeps each
+        # passage a snippet and bounds the prompt, while preserving originals if
+        # nothing matches (so we never answer with empty evidence).
+        #
+        # IMPORTANT: narrowing runs on a COPY of the chunk list — we never mutate
+        # ``kbinfos["chunks"]`` because that pool is also the main-agent citation
+        # reference; in-place narrowing there would shrink what the agent can cite
+        # and make it re-ask (more sub-questions). Also, a chunk whose original
+        # carried a number but whose narrowed snippet lost every digit is kept
+        # whole (a numeric answer sentence often lacks the keyword itself).
+        kw = state.get("keywords") or ""
+        from rag.advanced_rag.harness.orchestrator.sufficiency_llm import _narrow_snippet_safe
+
+        kw_list = [k for k in re.split(r"[,\s]+", kw or "") if k]
+        evidence_chunks = []
+        for c in kbinfos.get("chunks") or []:
+            if not kw_list:
+                evidence_chunks.append(c)
+                continue
+            raw = c.get("content_with_weight") or c.get("text") or ""
+            # General informative-sentence guard (same policy as `_evidence_md`):
+            # keep the narrowed snippet, but fall back to the whole chunk when
+            # narrowing would drop every fact-bearing sentence (numbers / proper
+            # nouns / quotes) — the answer may be far from any keyword. Bounds
+            # the prompt while never losing critical evidence.
+            narrowed = _narrow_snippet_safe(raw, kw_list)
+            if narrowed:
+                evidence_chunks.append({**c, "content_with_weight": narrowed})
+            else:
+                evidence_chunks.append(c)
+        evidence_kbinfos = dict(kbinfos, chunks=evidence_chunks)
+        # Bounded evidence budget: the raw model context (``max_length``) is far
+        # too large — with a big pool it lets evidence fill the whole window
+        # (observed 141K tokens in one call). Use a fixed, modest budget so the
+        # answer model sees only a compact evidence set.
+        from rag.advanced_rag.agentic_rag import _EVIDENCE_BUDGET_TOKENS
+
+        evidence_blocks = kb_prompt(evidence_kbinfos, min(tools.chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS))
+        evidence = "\n".join(evidence_blocks) if isinstance(evidence_blocks, list) else str(evidence_blocks)
         parts = [f"Question:\n{question}\n"]
+
+        answer_target = await _answer_target_contract(tools, question, kbinfos, evidence)
+        if answer_target:
+            parts.append(f"Answer Target Contract:\n{answer_target}\n")
 
         if no_evidence:
             parts.append("No supporting evidence was retrieved. State clearly that the available sources are insufficient, and do not answer from general knowledge.\n")
@@ -288,7 +432,9 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         parts.append(f"Evidence:\n{evidence}")
         user_content = "\n".join(parts)
 
-        _, msg = message_fit_in(form_message(system, user_content), tools.chat_mdl.max_length)
+        # Same bounded budget for the final message fit — never fill the whole
+        # model context with evidence.
+        _, msg = message_fit_in(form_message(system, user_content), min(tools.chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS))
         try:
             async for tok in tools.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], answer_conf):
                 token_queue.put_nowait(tok)
@@ -335,7 +481,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     async def _drive():
         try:
             holder["state"] = await graph.ainvoke(
-                {"messages": messages},
+                {"messages": messages, "max_loops": max_loops},
                 {"recursion_limit": max(25, max_loops * 8)},
             )
         except Exception:

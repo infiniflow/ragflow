@@ -161,6 +161,24 @@ def _validate_name(name, *, required=True):
     return name, None
 
 
+def _validate_prompt_parameters(prompt_config):
+    parameters = prompt_config.get("parameters")
+    if not isinstance(parameters, list):
+        return None
+
+    keys = []
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        key = parameter.get("key")
+        if key is None:
+            continue
+        if key in keys:
+            return f"`parameters` contains duplicate key: {key}"
+        keys.append(key)
+    return None
+
+
 def _build_session_response(conv: dict) -> dict:
     conv = dict(conv)
     conv["chat_id"] = conv.pop("dialog_id", conv.get("chat_id"))
@@ -428,6 +446,9 @@ async def create():
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
@@ -602,6 +623,9 @@ async def update_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
@@ -687,6 +711,9 @@ async def patch_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             prompt_config = deepcopy(current_chat.get("prompt_config", {}))
             prompt_config.update(req["prompt_config"])
             req["prompt_config"] = prompt_config

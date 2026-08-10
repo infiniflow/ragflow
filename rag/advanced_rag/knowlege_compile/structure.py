@@ -648,6 +648,38 @@ def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
             target.get("source_chunk_ids"),
             entity.get("source_chunk_ids"),
         )
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            entity.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
+    return [merged[key] for key in order]
+
+
+def _struct_merge_graph_relations(relations: list[dict]) -> list[dict]:
+    """Deduplicate relation payloads while preserving source provenance."""
+    merged: dict[tuple[str, str, str], dict] = {}
+    order: list[tuple[str, str, str]] = []
+    for relation in relations:
+        key = (
+            str(relation.get("from") or "").strip().casefold(),
+            str(relation.get("to") or "").strip().casefold(),
+            str(relation.get("type") or "related").strip().casefold(),
+        )
+        if not key[0] or not key[1]:
+            continue
+        if key not in merged:
+            merged[key] = relation
+            order.append(key)
+            continue
+        target = merged[key]
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            relation.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
     return [merged[key] for key in order]
 
 
@@ -1165,6 +1197,71 @@ async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict |
     return merged
 
 
+def _struct_merge_exact_entity_payload(existing: dict, incoming: dict) -> dict | None:
+    """Merge same-name entity payloads without relying on vector similarity."""
+    try:
+        left = json.loads(existing.get("content_with_weight") or "{}")
+        right = json.loads(incoming.get("content_with_weight") or "{}")
+    except Exception:
+        return None
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return None
+
+    merged = dict(left)
+    for key, value in right.items():
+        if key not in merged or merged[key] in (None, "", []):
+            merged[key] = value
+
+    types = {str(left.get("type") or "").strip().casefold(), str(right.get("type") or "").strip().casefold()}
+    for preferred in ("title", "fact", "conclusion"):
+        if preferred in types:
+            merged["type"] = preferred
+            break
+
+    descriptions = [left.get("description") or "", right.get("description") or ""]
+    merged["description"] = max(descriptions, key=lambda value: len(str(value)))
+    merged["source_chunk_ids"] = _struct_union_chunk_ids(left.get("source_chunk_ids"), right.get("source_chunk_ids"))
+    return merged
+
+
+async def _struct_merge_exact_named_entities(docs: list[dict], embd_mdl) -> tuple[list[dict], int]:
+    """Collapse same-name entities before similarity-based dedup."""
+    kept: dict[str, dict] = {}
+    order: list[str] = []
+    unchanged: list[dict] = []
+    dropped = 0
+
+    for doc in docs:
+        name = _struct_entity_name(doc).strip().casefold()
+        if not name:
+            unchanged.append(doc)
+            continue
+        if name not in kept:
+            kept[name] = doc
+            order.append(name)
+            continue
+
+        existing = kept[name]
+        payload = _struct_merge_exact_entity_payload(existing, doc)
+        if payload is None:
+            unchanged.append(doc)
+            continue
+        vector = await _struct_reembed_payload(payload, embd_mdl)
+        if vector is None:
+            unchanged.append(doc)
+            continue
+        kept[name] = _struct_rebuild_doc_storage_doc(
+            payload,
+            existing,
+            vector,
+            _struct_union_chunk_ids(existing.get("source_chunk_ids"), doc.get("source_chunk_ids")),
+            preserve_id=True,
+        )
+        dropped += 1
+
+    return [kept[name] for name in order] + unchanged, dropped
+
+
 def _struct_apply_merge_invariants(existing: dict, merged_payload: dict) -> dict:
     """For relations, force the source/target fields back to the existing payload's
     values — from_entity_kwd / to_entity_kwd must not change across a merge.
@@ -1232,7 +1329,11 @@ def _struct_rebuild_doc_storage_doc(
 async def _struct_reembed_payload(payload: dict, embd_mdl):
     """Re-encode a merged payload's description with embd_mdl and return the vector."""
     text = _struct_payload_description(payload)
-    vecs = await _struct_embed(embd_mdl, [text])
+    try:
+        vecs = await _struct_embed(embd_mdl, [text])
+    except Exception:
+        logging.exception("structure merge: failed to re-embed merged payload")
+        return None
     return vecs[0] if vecs else None
 
 
@@ -1272,6 +1373,36 @@ async def _struct_doc_storage_knn_candidate(
     """Run one KNN lookup; the caller controls concurrency."""
     from common import settings
     from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
+
+    # Names are the entity identity used by the structure graph. Check the
+    # exact name before KNN so a new compile joins an existing canonical row
+    # even when title/fact/conclusion descriptions have low vector similarity.
+    if doc.get("knowledge_graph_kwd") == "entity":
+        name = str(doc.get("name_kwd") or _struct_entity_name(doc) or "").strip().casefold()
+        if name:
+            exact_condition = _struct_doc_storage_dedup_condition(doc, merge_scope)
+            exact_condition["name_kwd"] = [name]
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    select_fields,
+                    [],
+                    exact_condition,
+                    [],
+                    OrderByExpr(),
+                    0,
+                    1,
+                    index,
+                    [kb_id],
+                )
+                field_map = settings.docStoreConn.get_fields(res, select_fields)
+                if field_map:
+                    old_id, old_doc = next(iter(field_map.items()))
+                    old_doc = dict(old_doc)
+                    old_doc.setdefault("id", old_id)
+                    return old_doc
+            except Exception:
+                logging.exception("merge_compiled_structures: exact entity-name search failed")
 
     vec_field, vec = _struct_doc_vec(doc)
     if not vec_field or vec is None:
@@ -1922,8 +2053,8 @@ async def _struct_local_dedup(
             )
             new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
             if new_vec is None:
-                # Re-embed failed: keep existing, drop incoming silently.
-                dropped += 1
+                # Keep both candidates when the merged row cannot be embedded.
+                kept.append(incoming)
                 continue
             rebuilt = _struct_rebuild_doc_storage_doc(
                 merged_payload,
@@ -2027,6 +2158,7 @@ async def _struct_local_dedup_parallel(
 
     entity_docs = [doc for doc in docs if doc.get("knowledge_graph_kwd") != "relation"]
     relation_docs = [doc for doc in docs if doc.get("knowledge_graph_kwd") == "relation"]
+    entity_docs, exact_dropped = await _struct_merge_exact_named_entities(entity_docs, embd_mdl)
     entity_groups = _struct_entity_candidate_groups(entity_docs, similarity_threshold)
     group_semaphore = asyncio.Semaphore(_LOCAL_DEDUP_GROUP_CONCURRENCY)
 
@@ -2045,7 +2177,7 @@ async def _struct_local_dedup_parallel(
     entity_results = await asyncio.gather(*(dedup_group(group) for group in entity_groups))
     deduped_entities: list[dict] = []
     entity_aliases: dict[str, str] = {}
-    dropped = 0
+    dropped = exact_dropped
     for entity_result, group in zip(entity_results, entity_groups):
         group_docs, group_dropped, group_aliases = entity_result
         deduped_entities.extend(group_docs)
@@ -2100,7 +2232,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids", "doc_id"]
     # ``doc_id is None`` collects every document's entities/relations in the KB
     # for the dataset-level graph; a concrete id keeps it document-scoped.
     condition: dict = {
@@ -2125,22 +2257,35 @@ async def _struct_rebuild_graph_json(
     )
     rows = settings.docStoreConn.get_fields(res, fields)
 
+    disabled_doc_ids: set[str] = set()
+    if doc_id is None:
+        from api.db.services.document_service import DocumentService
+
+        disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
+        if str(row.get("doc_id") or "") in disabled_doc_ids:
+            continue
+        source_doc_id = str(row.get("doc_id") or "").strip()
         payload = _struct_load_payload(row)
         if row.get("knowledge_graph_kwd") == "relation":
             relation = _struct_graph_relation(payload)
             if relation:
+                if doc_id is None and source_doc_id:
+                    relation["doc_ids_kwd"] = [source_doc_id]
                 relations.append(relation)
         else:
             entity = _struct_graph_entity(payload, row.get("source_chunk_ids"))
             if entity:
+                if doc_id is None and source_doc_id:
+                    entity["doc_ids_kwd"] = [source_doc_id]
                 entities.append(entity)
 
     return {
         "entities": _struct_merge_graph_entities(entities),
-        "relations": relations,
+        "relations": _struct_merge_graph_relations(relations) if doc_id is None else relations,
     }
 
 

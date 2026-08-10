@@ -62,10 +62,21 @@ type engineReader struct {
 // stored compiled chunk document.
 var compiledSelectFields = []string{
 	"id", "doc_id", "tenant_id", "compile_kwd",
+	"available_int",
 	"content_with_weight", "kc_payload",
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
 	"slug_kwd", "type",
+}
+
+// wikiSelectFields are the additional columns a wiki page carries (beyond
+// compiledSelectFields) that must survive the doc→merge round-trip so the
+// dataset-level merged rows keep the fields the artifact API and page renderers
+// depend on (page_type_kwd/topic_kwd/title_kwd/...).
+var wikiSelectFields = []string{
+	"page_type_kwd", "topic_kwd", "title_kwd",
+	"entity_names_kwd", "summary_with_weight",
+	"related_kb_pages_kwd", "outlinks_kwd", "section_level_int",
 }
 
 // loadDocProductsLimit is the per-page size used when scrolling a single
@@ -92,7 +103,7 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
 			KbIDs:        []string{kb},
 			Filter:       map[string]interface{}{"doc_id": docID},
-			SelectFields: compiledSelectFields,
+			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 			Limit:        loadDocProductsLimit,
 			Offset:       offset,
 		})
@@ -130,7 +141,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	id, _ := c["id"].(string)
 	docID, _ := c["doc_id"].(string)
 	variant, _ := c["compile_kwd"].(string)
-	merged := isMerged(c["kc_merged"])
+	merged := isAvailable(c["available_int"])
 
 	meta := map[string]any{}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
@@ -148,7 +159,35 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 		meta["kind"] = "relation"
 	}
 	if v, ok := c["slug_kwd"].(string); ok && v != "" {
+		// slug_kwd is the full "<page_type>/<slug>" form (Python writer
+		// contract); reconstruct it verbatim so the round-trip stays full-form.
 		meta["slug"] = v
+	}
+	// Restore wiki page fields so the merged product (and hence the dataset-level
+	// merged row) retains the metadata the artifact API and page renderers read.
+	if v, ok := c["page_type_kwd"].(string); ok && v != "" {
+		meta["page_type"] = v
+	}
+	if v, ok := c["topic_kwd"].(string); ok && v != "" {
+		meta["topic"] = v
+	}
+	if v, ok := c["title_kwd"].(string); ok && v != "" {
+		meta["title"] = v
+	}
+	if v, ok := c["summary_with_weight"].(string); ok && v != "" {
+		meta["summary"] = v
+	}
+	if v := metaStringSlice(c, "entity_names_kwd"); len(v) > 0 {
+		meta["entity_names"] = v
+	}
+	if v := metaStringSlice(c, "related_kb_pages_kwd"); len(v) > 0 {
+		meta["related_kb_pages"] = v
+	}
+	if v := metaStringSlice(c, "outlinks_kwd"); len(v) > 0 {
+		meta["outlinks"] = v
+	}
+	if v, ok := metaInt(c, "section_level_int"); ok {
+		meta["section_level"] = v
 	}
 	if v, ok := c["type"].(string); ok && v != "" {
 		meta["type"] = v
@@ -178,7 +217,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	}, true
 }
 
-// SearchSimilar runs a dense KNN over the existing merged rows (kc_merged=1,
+// SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,
 // compile_kwd=variant) of the KB and returns the closest hit above minScore.
 func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error) {
 	eng := r.eng
@@ -196,12 +235,13 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
 		KbIDs:      []string{kb},
 		Limit:      topN,
-		SelectFields: []string{"id", "doc_id", "kb_id", "content_with_weight", "kc_payload",
+		SelectFields: append([]string{"id", "doc_id", "kb_id", "content_with_weight", "kc_payload",
 			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
-			"type", "source_chunk_ids", "source_doc_ids", "kc_merged", "compile_kwd"},
+			"type", "source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd"},
+			wikiSelectFields...),
 		Filter: map[string]interface{}{
-			"kc_merged":   1,
-			"compile_kwd": string(variant),
+			"available_int": 1,
+			"compile_kwd":   string(variant),
 		},
 		MatchExprs: []interface{}{
 			&types.MatchDenseExpr{
@@ -228,10 +268,10 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 	return kccommon.Product{}, 0, nil
 }
 
-// isMerged normalizes the boxed kc_merged field returned by the DocEngine,
+// isAvailable normalizes the boxed available_int field returned by the DocEngine,
 // which may be stored as a string ("1"/"0"/"true"), a bool, or a numeric,
 // depending on backend and mapping. Returns true for any positive/true form.
-func isMerged(v interface{}) bool {
+func isAvailable(v interface{}) bool {
 	switch t := v.(type) {
 	case nil:
 		return false

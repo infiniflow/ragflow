@@ -58,17 +58,19 @@ def update_progress():
     redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
     logging.info(f"update_progress lock_value: {lock_value}")
     while not stop_event.is_set():
+        acquired = False
         try:
-            if redis_lock.acquire():
+            acquired = redis_lock.acquire()
+            if acquired:
                 DocumentService.update_progress()
-                redis_lock.release()
         except Exception:
             logging.exception("update_progress exception")
         finally:
-            try:
-                redis_lock.release()
-            except Exception:
-                logging.exception("update_progress exception")
+            if acquired:
+                try:
+                    redis_lock.release()
+                except Exception:
+                    logging.exception("update_progress exception")
             stop_event.wait(6)
 
 

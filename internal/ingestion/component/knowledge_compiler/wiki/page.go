@@ -7,7 +7,10 @@ import (
 	"strings"
 	"unicode"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"go.uber.org/zap"
 )
 
 type wikiPageResult struct {
@@ -171,8 +174,15 @@ func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []
 // per heading in its markdown body.
 func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []common.Product {
 	if len(pages) == 0 {
+		appcommon.Info("wiki: buildWikiPageProducts skipped (no refined pages)",
+			zap.String("tenant_id", tenantID),
+			zap.String("doc_id", docID))
 		return nil
 	}
+	appcommon.Info("wiki: buildWikiPageProducts start",
+		zap.String("tenant_id", tenantID),
+		zap.String("doc_id", docID),
+		zap.Int("pages", len(pages)))
 	out := make([]common.Product, 0, len(pages)*2)
 	for _, page := range pages {
 		slug := strings.TrimSpace(page.Slug)
@@ -180,6 +190,10 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 			slug = slugify(page.Title)
 		}
 		if slug == "" {
+			appcommon.Warn("wiki: page dropped (empty slug)",
+				zap.String("tenant_id", tenantID),
+				zap.String("doc_id", docID),
+				zap.String("title", page.Title))
 			continue
 		}
 		title := strings.TrimSpace(page.Title)
@@ -309,4 +323,25 @@ func slugify(s string) string {
 		return "page-" + fmt.Sprintf("%08x", h.Sum32())
 	}
 	return b.String()
+}
+
+// normalizeWikiSlugHyphens canonicalizes a wiki slug to the hyphen style used
+// everywhere downstream (slug_kwd, outlinks, artifact links): the last path
+// segment's underscores become hyphens, while any "<page_type>/" prefix is
+// preserved. The LLM freely emits both "dong_zhuo" and "dong-zhuo", so this is
+// the single choke point that makes them equivalent without ad-hoc conversions
+// scattered through transformWikiLinks / the graph writer.
+func normalizeWikiSlugHyphens(slug string) string {
+	s := strings.TrimSpace(slug)
+	if s == "" {
+		return ""
+	}
+	prefix := ""
+	body := s
+	if idx := strings.LastIndex(s, "/"); idx >= 0 {
+		prefix = s[:idx+1]
+		body = s[idx+1:]
+	}
+	body = strings.ReplaceAll(body, "_", "-")
+	return prefix + body
 }

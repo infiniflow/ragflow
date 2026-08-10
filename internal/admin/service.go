@@ -463,11 +463,11 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
 	seen := make(map[string]bool)
 	var uniqueLLMs []*entity.TenantLLM
-	for _, tllm := range tenantLLMs {
-		key := fmt.Sprintf("%s|%s|%s", tllm.TenantID, tllm.LLMFactory, *tllm.LLMName)
+	for _, tenantLLM := range tenantLLMs {
+		key := fmt.Sprintf("%s|%s|%s", tenantLLM.TenantID, tenantLLM.LLMFactory, *tenantLLM.LLMName)
 		if !seen[key] {
 			seen[key] = true
-			uniqueLLMs = append(uniqueLLMs, tllm)
+			uniqueLLMs = append(uniqueLLMs, tenantLLM)
 		}
 	}
 

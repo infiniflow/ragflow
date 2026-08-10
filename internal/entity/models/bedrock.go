@@ -499,10 +499,6 @@ func mapChatConfigToInference(cfg *ChatConfig) *bedrockInferenceConfig {
 	}
 	inf := &bedrockInferenceConfig{}
 	hasField := false
-	if cfg.MaxTokens != nil {
-		inf.MaxTokens = cfg.MaxTokens
-		hasField = true
-	}
 	if cfg.Temperature != nil {
 		inf.Temperature = cfg.Temperature
 		hasField = true

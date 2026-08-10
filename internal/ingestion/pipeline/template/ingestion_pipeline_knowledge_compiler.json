@@ -6,9 +6,9 @@
         "zh": "知识编译"
     },
     "description": {
-        "en": "Compiles parsed chunks into structured knowledge units (graph/wiki/raptor/mindmap/datasetnav) via the KnowledgeCompiler component, emitting them as chunks merged into the upstream chunk stream. Ideal for building a retrievable knowledge layer on top of chunked documents.",
-        "de": "Kompiliert geparste Chunks über die KnowledgeCompiler-Komponente in strukturierte Wissenseinheiten und gibt sie als Chunks im upstream-Chunk-Strom zurück.",
-        "zh": "通过 KnowledgeCompiler 组件将解析后的分块编译为结构化知识单元（图谱/百科/RAPTOR/思维导图/数据集导航），以 chunks 形式合并进上游分块流输出，适合在分块文档之上构建可检索的知识层。"
+        "en": "Compiles parsed chunks into structured knowledge units (graph/wiki/raptor/mindmap/datasetnav) via the Compiler component, emitting them as chunks merged into the upstream chunk stream. Ideal for building a retrievable knowledge layer on top of chunked documents.",
+        "de": "Kompiliert geparste Chunks über die Compiler-Komponente in strukturierte Wissenseinheiten und gibt sie als Chunks im upstream-Chunk-Strom zurück.",
+        "zh": "通过 Compiler 组件将解析后的分块编译为结构化知识单元（图谱/百科/RAPTOR/思维导图/数据集导航），以 chunks 形式合并进上游分块流输出，适合在分块文档之上构建可检索的知识层。"
     },
     "canvas_type": "Ingestion Pipeline",
     "canvas_category": "dataflow_canvas",
@@ -150,14 +150,14 @@
             },
             "TokenChunker:SixApplesFall": {
                 "downstream": [
-                    "KnowledgeCompiler:KnownSwiftLions"
+                    "Compiler:KnownSwiftLions"
                 ],
                 "obj": {
                     "component_name": "TokenChunker",
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
@@ -182,11 +182,12 @@
                     "Parser:HipSignsRhyme"
                 ]
             },
-            "KnowledgeCompiler:KnownSwiftLions": {
+            "Compiler:KnownSwiftLions": {
                 "downstream": [],
                 "obj": {
-                    "component_name": "KnowledgeCompiler",
+                    "component_name": "Compiler",
                     "params": {
+                        "llm_id": "",
                         "variant": "structure",
                         "language": "English"
                     }
@@ -216,10 +217,10 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TokenChunker:SixApplesFallstart-KnowledgeCompiler:KnownSwiftLionsend",
+                    "id": "xy-edge__TokenChunker:SixApplesFallstart-Compiler:KnownSwiftLionsend",
                     "source": "TokenChunker:SixApplesFall",
                     "sourceHandle": "start",
-                    "target": "KnowledgeCompiler:KnownSwiftLions",
+                    "target": "Compiler:KnownSwiftLions",
                     "targetHandle": "end"
                 }
             ],
@@ -280,10 +281,10 @@
                 },
                 {
                     "data": {
-                        "label": "KnowledgeCompiler",
+                        "label": "Compiler",
                         "name": "Knowledge Compiler_0"
                     },
-                    "id": "KnowledgeCompiler:KnownSwiftLions",
+                    "id": "Compiler:KnownSwiftLions",
                     "measured": {
                         "height": 74,
                         "width": 200

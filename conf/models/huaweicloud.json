@@ -219,7 +219,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "bge-reranker-v2-m3",

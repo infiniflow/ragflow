@@ -86,13 +86,14 @@ const FloatingChatWidgetMarkdown = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
         if (!documentId) return;
-        if (!isPdf && documentUrl) {
-          window.open(documentUrl, '_blank');
+        if (fileExtension !== 'pdf' && documentUrl) {
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else if (clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
         }
@@ -215,7 +216,7 @@ const FloatingChatWidgetMarkdown = ({
                       onClick={handleDocumentButtonClick(
                         documentId,
                         chunkItem,
-                        fileExtension === 'pdf',
+                        fileExtension,
                         documentUrl,
                       )}
                       disabled={!documentUrl && fileExtension !== 'pdf'}
@@ -270,7 +271,7 @@ const FloatingChatWidgetMarkdown = ({
               onClick={handleDocumentButtonClick(
                 documentId,
                 chunkItem,
-                fileExtension === 'pdf',
+                fileExtension,
                 documentUrl,
               )}
             />

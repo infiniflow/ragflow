@@ -17,12 +17,16 @@ package knowledge_compile
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"go.uber.org/zap"
 )
 
 // Consumer is the dataset-level post-processing worker (§11.5). Multiple
@@ -44,8 +48,7 @@ type Consumer struct {
 	mergeThreshold float64 // KNN similarity threshold for "existing merged row is a duplicate"
 
 	mu    sync.Mutex
-	seqs  map[string]map[string]uint64 // dataset -> docID -> last applied seq (per-doc out-of-order guard)
-	tombs map[string]map[string]uint64 // dataset -> docID -> delete event seq (tombstone)
+	tombs map[string]map[string]uint64 // dataset -> docID -> delete marker (tombstone)
 }
 
 // NewConsumer constructs a Consumer driven by the given Claimer. Tests pass a
@@ -61,7 +64,6 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 		pollInterval:   2 * time.Second,
 		sweepInterval:  30 * time.Second,
 		mergeThreshold: 0.99,
-		seqs:           map[string]map[string]uint64{},
 		tombs:          map[string]map[string]uint64{},
 	}
 	for _, o := range opts {
@@ -183,10 +185,19 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	// must leave the claimed batch in the backlog for reclamation/retry rather
 	// than silently dropping it (C5: never ack what we failed to merge).
 	if batchErr != nil {
+		common.Error("knowledge_compile: batch processing failed, leaving batch for retry",
+			batchErr,
+			zap.String("dataset_id", datasetID),
+			zap.Int("entries", len(cr.Entries)))
+		if err := c.scheduler.SetError(ctx, datasetID, cr.Token, batchErr.Error()); err != nil {
+			common.Warn("knowledge_compile: failed to record error_msg",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+		}
 		return
 	}
 	if _, err := c.scheduler.Ack(ctx, datasetID, cr.Token, cr.Entries); err != nil {
-		_ = err
+		common.Warn("knowledge_compile: ack failed",
+			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
 }
 
@@ -195,63 +206,56 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 // returns an error if any reader/dedup/writer step fails so the caller can
 // leave the batch for reclamation instead of acking dropped work.
 func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries []BacklogEntry) error {
+	common.Info("knowledge_compile: processing claimed batch",
+		zap.String("dataset_id", kb),
+		zap.String("tenant_id", tenant),
+		zap.Int("entries", len(entries)))
 	c.mu.Lock()
 	if c.tombs == nil {
 		c.tombs = map[string]map[string]uint64{}
 	}
-	if c.seqs == nil {
-		c.seqs = map[string]map[string]uint64{}
-	}
 	tomb := c.tombs[kb]
-	docSeqs := c.seqs[kb]
-	if docSeqs == nil {
-		docSeqs = map[string]uint64{}
-		c.seqs[kb] = docSeqs
-	}
 	var completed []BacklogEntry
 	var deleted []string
-	// Per-document seq advances and tombstone clears are staged locally and
-	// committed only after the write/delete paths below return without error,
-	// so a failed batch leaves c.seqs/c.tombs untouched (except tombstones
-	// recorded for the deletion events already present in this batch) and can
-	// be retried on reclaim.
-	var pendingSeq []BacklogEntry
+	// Per-document tombstone clears are staged locally and committed only after
+	// the write/delete paths below return without error, so a failed batch
+	// leaves c.tombs untouched and can be retried on reclaim.
 	var pendingTombClear []string
-	// Reconcile each document to its highest-sequence event before classifying
-	// it as deleted or completed. A completion and a deletion for the same doc
-	// can land in the same batch, and completions/deletions can also arrive
-	// out of order across batches. The last event (by per-doc seq) wins, so we
-	// must not delete a doc that was re-ingested after its deletion, nor accept
-	// a stale completion shadowed by a later deletion.
+	// Reconcile each document to its last event before classifying it as
+	// deleted or completed. A completion and a deletion for the same doc can
+	// land in the same batch, and completions/deletions can also arrive out of
+	// order across batches. The LAST event for a doc (by backlog append order)
+	// decides its fate, so we must not delete a doc that was re-ingested after
+	// its deletion, nor merge a completion shadowed by a later deletion. No
+	// sequence number is needed: the backlog is an ordered log and the last
+	// write wins, which is exactly the re-parse (completed last) vs delete
+	// (deleted last) semantics we want.
 	type docState struct {
 		winEvent EventType
-		winSeq   uint64
 	}
 	byDoc := make(map[string]*docState, len(entries))
 	for _, e := range entries {
 		et := EventType(e.EventType)
 		st := byDoc[e.DocID]
 		if st == nil {
-			byDoc[e.DocID] = &docState{winEvent: et, winSeq: e.Seq}
+			byDoc[e.DocID] = &docState{winEvent: et}
 			continue
 		}
-		if e.Seq >= st.winSeq {
-			st.winEvent = et
-			st.winSeq = e.Seq
-		}
+		// Later entries overwrite earlier ones: last event wins.
+		st.winEvent = et
 	}
 	for docID, st := range byDoc {
 		switch st.winEvent {
 		case EventTypeDeleted:
 			// Record the tombstone for this batch's deletion so a stale
-			// completion (seq <= delete seq) is skipped. The tombstone is
-			// committed immediately (deletions are not rolled back on a
-			// failed batch because re-running the delete is idempotent).
+			// completion is skipped. The tombstone is committed immediately
+			// (deletions are not rolled back on a failed batch because
+			// re-running the delete is idempotent).
 			if tomb == nil {
 				tomb = map[string]uint64{}
 				c.tombs[kb] = tomb
 			}
-			tomb[docID] = st.winSeq
+			tomb[docID] = 1
 			deleted = append(deleted, docID)
 		case EventTypeCompleted:
 			// A re-ingest after an earlier deletion: clear the prior
@@ -259,21 +263,26 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 			if _, hadTomb := tomb[docID]; hadTomb {
 				pendingTombClear = append(pendingTombClear, docID)
 			}
-			// Seq is per-document, so the stale/duplicate check must be
-			// scoped to the document, not the whole dataset (C4).
-			if prev, ok := docSeqs[docID]; ok && st.winSeq <= prev {
-				continue // stale / duplicate completion for this doc
-			}
-			// The seq advance is deferred to after the batch succeeds (see
-			// below), so a transient reader/deduper/writer failure does not
-			// permanently drop the completion on the next reclaim+retry.
-			pendingSeq = append(pendingSeq, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Seq: st.winSeq})
-			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Seq: st.winSeq})
+			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted)})
 		}
 	}
 	// Sort for deterministic iteration in the delete/load passes below.
 	sort.Strings(deleted)
 	c.mu.Unlock()
+
+	// Per-entry detail (each claim carries a frozen, closed batch of doc events;
+	// log them on a single line so a batch can be reconstructed from the ingestor
+	// log alone).
+	entryDetails := make([]string, 0, len(entries))
+	for _, e := range entries {
+		entryDetails = append(entryDetails, fmt.Sprintf("doc=%s event=%s", e.DocID, e.EventType))
+	}
+
+	common.Info("knowledge_compile: batch merge start",
+		zap.String("dataset_id", kb),
+		zap.Int("completed_docs", len(completed)),
+		zap.Int("deleted_docs", len(deleted)),
+		zap.Strings("entries", entryDetails))
 
 	if len(deleted) == 0 && len(completed) == 0 {
 		return nil
@@ -355,7 +364,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	// fan it out across the shared global compilerPool (vCPU-sized). Output order
 	// is irrelevant: merged rows are upserted by their idempotent dataset-level
 	// id, and each candidate lands in exactly one group / the unmatched set.
-	jobs := make([]compilerJob, 0, len(candidates))
+	jobs := make([]CompilerJob, 0, len(candidates))
 	for _, cand := range candidates {
 		cand := cand
 		jobs = append(jobs, func() error {
@@ -426,16 +435,29 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 		return err
 	}
 
-	// All merge and delete paths succeeded: commit the staged per-document seq
-	// advances and tombstone clears. These are only now persisted so a failed
-	// batch leaves c.seqs/c.tombs untouched and a later reclaim can retry.
-	c.mu.Lock()
-	for _, e := range pendingSeq {
-		c.seqs[kb][e.DocID] = e.Seq
+	// Re-materialize the wiki page graph from the now-consistent merged set. This
+	// runs unconditionally after a merge: the graph is a global per-dataset
+	// projection rebuilt from a consistent read each time, so it must run even
+	// when the current batch only prunes (deletes) wiki pages, and even for a
+	// non-wiki batch where the dataset already has no wiki pages (ProjectWikiGraph
+	// then just drops any stale graph rows). The graph is reconstructible, so the
+	// cost of an occasional no-op reprojection is accepted.
+	if err := c.writer.ProjectWikiGraph(ctx, tenant, kb); err != nil {
+		return err
 	}
+
+	// All merge and delete paths succeeded: commit the staged tombstone
+	// clears. These are only now persisted so a failed batch leaves c.tombs
+	// untouched and a later reclaim can retry.
+	c.mu.Lock()
 	for _, docID := range pendingTombClear {
 		delete(c.tombs[kb], docID)
 	}
 	c.mu.Unlock()
+	common.Info("knowledge_compile: batch merge complete",
+		zap.String("dataset_id", kb),
+		zap.Int("completed_docs", len(completed)),
+		zap.Int("deleted_docs", len(deleted)),
+		zap.Int("merged_rows_written", len(mergedFinal)))
 	return nil
 }

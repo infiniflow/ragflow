@@ -60,7 +60,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 100
+      "max_batch_size": 100
     },
     {
       "name": "solar-embedding-1-large-passage",
@@ -68,7 +68,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 100
+      "max_batch_size": 100
     }
   ]
 }

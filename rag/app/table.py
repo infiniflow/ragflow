@@ -19,6 +19,7 @@ import csv
 import io
 import logging
 import re
+from datetime import datetime
 from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
@@ -364,16 +365,38 @@ def column_data_type(arr):
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]+$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
-            counts["int"] += 1
-            if int(str(a)) > 2**63 - 1:
+        if isinstance(a, float) and pd.isna(a):
+            continue  # skip NaN
+        # Check native Python type first (from openpyxl via pandas DataFrame)
+        if isinstance(a, bool):
+            counts["bool"] += 1
+            continue
+        if isinstance(a, (int, np.integer)):
+            if int(a) > 2**63 - 1:
                 float_flag = True
                 break
-        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
+            counts["int"] += 1
+            continue
+        if isinstance(a, (float, np.floating)):
             counts["float"] += 1
-        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
+            continue
+        if isinstance(a, datetime):
+            if pd.isna(a):
+                continue  # skip pd.NaT
+            counts["datetime"] += 1
+            continue
+        # Fallback to string-based regex matching
+        s = str(a)
+        if re.match(r"[+-]?[0-9]+$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+            counts["int"] += 1
+            if int(s) > 2**63 - 1:
+                float_flag = True
+                break
+        elif re.match(r"[+-]?[0-9.]{,19}$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+            counts["float"] += 1
+        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", s, flags=re.IGNORECASE):
             counts["bool"] += 1
-        elif trans_datatime(str(a)):
+        elif trans_datatime(s):
             counts["datetime"] += 1
         else:
             counts["text"] += 1
@@ -385,11 +408,20 @@ def column_data_type(arr):
     for i in range(len(arr)):
         if arr[i] is None:
             continue
+        if isinstance(arr[i], float) and pd.isna(arr[i]):
+            arr[i] = None
+            continue
+        if isinstance(arr[i], datetime) and pd.isna(arr[i]):
+            arr[i] = None
+            continue
         try:
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
             arr[i] = None
             logging.warning(f"Column {i}: {e}")
+            # Keep original value from openpyxl/pandas instead of dropping to None.
+            # This preserves cells (e.g. text in numeric columns) that would
+            # otherwise be silently discarded by forced column-level conversion.
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -578,7 +610,16 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                     else:
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
-                            stored[fld] = row[col_name]
+                            val = row[col_name]
+                            # If a string value ended up in a non-text column,
+                            # it was preserved from a failed conversion in
+                            # column_data_type. Skip storing in the typed ES
+                            # field to avoid type mapping errors; the value is
+                            # already in text_fields for chunk content.
+                            if isinstance(val, str):
+                                pass
+                            else:
+                                stored[fld] = val
                         else:
                             cell = row[col_name]
                             stored[fld] = rag_tokenizer.tokenize(cell)
