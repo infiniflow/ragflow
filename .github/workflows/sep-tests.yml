@@ -344,6 +344,9 @@ jobs:
           # fetched at the later "Build ragflow:nightly" step). Best-effort: if
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
+          # tiktoken is already installed in runner
+          mkdir -p ragflow_deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
             mkdir -p ragflow_deps
             if command -v curl >/dev/null 2>&1; then
@@ -408,9 +411,9 @@ jobs:
         working-directory: docker
         run: |
           set -euo pipefail
-          # install ss
           sudo chmod 1777 /tmp
-          sudo apt update && sudo apt install -y iproute2
+          ## ss already installed
+          ##sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
@@ -960,6 +963,9 @@ jobs:
           # fetched at the later "Build ragflow:nightly" step). Best-effort: if
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
+          # tiktoken is already installed in runner
+          mkdir -p ragflow_deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
             mkdir -p ragflow_deps
             if command -v curl >/dev/null 2>&1; then
@@ -1024,9 +1030,9 @@ jobs:
         working-directory: docker
         run: |
           set -euo pipefail
-          # install ss
           sudo chmod 1777 /tmp
-          sudo apt update && sudo apt install -y iproute2
+          ## ss already installed
+          ##sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
