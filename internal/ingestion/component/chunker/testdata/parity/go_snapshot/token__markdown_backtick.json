@@ -3,11 +3,11 @@
   "chunks": [
     {
       "doc_type_kwd": "text",
-      "text": "# Title\n"
+      "text": "# Title"
     },
     {
       "doc_type_kwd": "text",
-      "text": "Paragraph one.\n"
+      "text": "Paragraph one."
     },
     {
       "doc_type_kwd": "text",
