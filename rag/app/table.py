@@ -403,7 +403,10 @@ def column_data_type(arr):
     if float_flag:
         ty = "float"
     else:
-        counts = sorted(counts.items(), key=lambda x: x[1] * -1)
+        # When counts tie, prefer types that lose less data:
+        # text (lossless) > datetime > float > int > bool
+        type_priority = {"text": 0, "datetime": 1, "float": 2, "int": 3, "bool": 4}
+        counts = sorted(counts.items(), key=lambda x: (x[1] * -1, type_priority[x[0]]))
         ty = counts[0][0]
     for i in range(len(arr)):
         if arr[i] is None:
