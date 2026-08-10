@@ -39,12 +39,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
 	rediscli "ragflow/internal/engine/redis"
 )
@@ -287,6 +289,11 @@ func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any)
 	}
 	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			common.Warn("rate limit check ambiguous (timeout/cancel), allowing",
+				zap.String("canvas_id", canvasID), zap.Error(err))
+			return nil
+		}
 		return fmt.Errorf("rate limit error: %s", err.Error())
 	}
 	if !allowed {

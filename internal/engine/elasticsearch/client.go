@@ -57,7 +57,7 @@ func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engin
 	}
 
 	// Check connection
-	newCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	newCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	req := esapi.InfoRequest{}
