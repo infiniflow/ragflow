@@ -1139,7 +1139,7 @@ func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
 }
 
 // getESClusterStats gets Elasticsearch cluster stats
-func (s *Service) getESClusterStats(serviceType string) map[string]interface{} {
+func (s *Service) getESClusterStats(ctx context.Context, serviceType string) map[string]interface{} {
 	name := "elasticsearch"
 	startTime := time.Now()
 
@@ -1155,7 +1155,7 @@ func (s *Service) getESClusterStats(serviceType string) map[string]interface{} {
 	}
 
 	// Create ES engine and get cluster stats
-	esEngine, err := elasticsearch.NewEngine(cfg.GetElasticsearchConfig())
+	esEngine, err := elasticsearch.NewEngine(ctx, cfg.GetElasticsearchConfig())
 	if err != nil {
 		return map[string]interface{}{
 			"type":    serviceType,
@@ -1167,7 +1167,7 @@ func (s *Service) getESClusterStats(serviceType string) map[string]interface{} {
 	}
 	defer esEngine.Close()
 
-	clusterStats, err := esEngine.GetClusterStats()
+	clusterStats, err := esEngine.GetClusterStats(ctx)
 	if err != nil {
 		return map[string]interface{}{
 			"type":    serviceType,
