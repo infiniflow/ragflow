@@ -51,6 +51,9 @@ const TOOL_FEATURE_KEYS = ['is_tools', 'tool_call', 'tools', 'function_call'];
 /** Sentinel instance name used by draft (unsaved) provider cards. */
 export const DRAFT_INSTANCE_SENTINEL = '__draft__';
 
+/** Debounce Bedrock discovery until multi-field credentials settle. */
+const BEDROCK_CATALOG_AUTO_FETCH_DEBOUNCE_MS = 500;
+
 // ---------------------------------------------------------------------------
 // Pure helpers (no React state, easy to test)
 // ---------------------------------------------------------------------------
@@ -113,9 +116,7 @@ export const isCatalogBaseURLReady = (
   providerName: string,
   baseUrl: string | undefined,
 ): boolean =>
-  providerName === LLMFactory.Bedrock ||
-  baseUrl === undefined ||
-  !!baseUrl;
+  providerName === LLMFactory.Bedrock || baseUrl === undefined || !!baseUrl;
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
@@ -134,8 +135,7 @@ export function useResolveCreds(
       apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
       baseUrl: (fv.base_url as string) ?? instance?.base_url,
       region: (fv.region as string) ?? instance?.region ?? '',
-      extensions:
-        (fv.extensions as Record<string, unknown> | undefined) ?? {},
+      extensions: (fv.extensions as Record<string, unknown> | undefined) ?? {},
     };
   }, [getFormValues, instance]);
 
@@ -289,7 +289,10 @@ export function useModelsCatalog({
         creds.extensions.auth_mode,
       ) && isCatalogBaseURLReady(providerName, creds.baseUrl);
     if (!ready) return;
-    const delay = providerName === LLMFactory.Bedrock ? 500 : 0;
+    const delay =
+      providerName === LLMFactory.Bedrock
+        ? BEDROCK_CATALOG_AUTO_FETCH_DEBOUNCE_MS
+        : 0;
     const timer = window.setTimeout(() => {
       hasAutoFetchedRef.current = true;
       handleListModels();

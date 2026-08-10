@@ -10,6 +10,9 @@
 
 import asyncio
 import json
+import threading
+import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -613,7 +616,9 @@ def test_bedrock_bearer_client_rejects_control_characters():
 
 
 @patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")
-def test_embedding_uses_request_scoped_bearer_client(mock_create_client):
+def test_embedding_uses_request_scoped_bearer_client(mock_create_client, monkeypatch):
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("LLM_MAX_RETRIES", raising=False)
     client = MagicMock()
     mock_create_client.return_value = client
     model = BedrockEmbed(
@@ -629,6 +634,106 @@ def test_embedding_uses_request_scoped_bearer_client(mock_create_client):
         timeout_seconds=600,
         max_attempts=5,
     )
+
+
+def _bedrock_iam_role_model() -> LiteLLMBase:
+    return LiteLLMBase(
+        '{"auth_mode":"iam_role","bedrock_region":"ap-northeast-1","aws_role_arn":"arn:aws:iam::123456789012:role/Bedrock"}',
+        "anthropic.claude-sonnet-current",
+        provider=SupportedLiteLLMProvider.Bedrock,
+    )
+
+
+def _assumed_role_response(suffix: str, expiration: datetime) -> dict[str, object]:
+    return {
+        "Credentials": {
+            "AccessKeyId": f"access-{suffix}",
+            "SecretAccessKey": f"secret-{suffix}",
+            "SessionToken": f"session-{suffix}",
+            "Expiration": expiration,
+        }
+    }
+
+
+@patch("boto3.client")
+def test_chat_iam_role_reuses_unexpired_credentials_off_event_loop(mock_client):
+    assume_role_threads: list[int] = []
+
+    def assume_role(**_kwargs):
+        assume_role_threads.append(threading.get_ident())
+        return _assumed_role_response("one", datetime.now(timezone.utc) + timedelta(hours=1))
+
+    mock_client.return_value.assume_role.side_effect = assume_role
+    model = _bedrock_iam_role_model()
+
+    async def construct_twice():
+        event_loop_thread = threading.get_ident()
+        first = await model._construct_completion_args_async([], False, False)
+        second = await model._construct_completion_args_async([], False, False)
+        return event_loop_thread, first, second
+
+    event_loop_thread, first, second = asyncio.run(construct_twice())
+
+    assert mock_client.return_value.assume_role.call_count == 1
+    assert len(assume_role_threads) == 1
+    assert assume_role_threads[0] != event_loop_thread
+    assert first["aws_access_key_id"] == second["aws_access_key_id"] == "access-one"
+
+
+@patch("boto3.client")
+def test_chat_iam_role_refreshes_credentials_inside_expiry_window(mock_client):
+    mock_client.return_value.assume_role.side_effect = [
+        _assumed_role_response("one", datetime.fromtimestamp(2_000, timezone.utc)),
+        _assumed_role_response("two", datetime.fromtimestamp(4_000, timezone.utc)),
+    ]
+    model = _bedrock_iam_role_model()
+
+    async def construct_twice():
+        with patch("rag.llm.chat_model.time.time", side_effect=[1_000, 1_950]):
+            first = await model._construct_completion_args_async([], False, False)
+            second = await model._construct_completion_args_async([], False, False)
+        return first, second
+
+    first, second = asyncio.run(construct_twice())
+
+    assert mock_client.return_value.assume_role.call_count == 2
+    assert first["aws_access_key_id"] == "access-one"
+    assert second["aws_access_key_id"] == "access-two"
+
+
+@patch("boto3.client")
+def test_chat_iam_role_refresh_is_single_flight(mock_client):
+    def assume_role(**_kwargs):
+        time.sleep(0.05)
+        return _assumed_role_response("one", datetime.now(timezone.utc) + timedelta(hours=1))
+
+    mock_client.return_value.assume_role.side_effect = assume_role
+    model = _bedrock_iam_role_model()
+
+    async def construct_concurrently():
+        return await asyncio.gather(*(model._construct_completion_args_async([], False, False) for _ in range(3)))
+
+    results = asyncio.run(construct_concurrently())
+
+    assert mock_client.return_value.assume_role.call_count == 1
+    assert {result["aws_access_key_id"] for result in results} == {"access-one"}
+
+
+@patch("boto3.client")
+def test_chat_iam_role_failure_is_not_cached(mock_client):
+    from botocore.exceptions import ClientError
+
+    mock_client.return_value.assume_role.side_effect = ClientError(
+        {"Error": {"Code": "AccessDenied", "Message": "denied"}},
+        "AssumeRole",
+    )
+    model = _bedrock_iam_role_model()
+
+    for _ in range(2):
+        with pytest.raises(ValueError, match="Failed to assume Bedrock AWS role"):
+            asyncio.run(model._construct_completion_args_async([], False, False))
+
+    assert mock_client.return_value.assume_role.call_count == 2
 
 
 @patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")

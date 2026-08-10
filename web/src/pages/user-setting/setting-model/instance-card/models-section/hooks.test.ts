@@ -8,7 +8,12 @@
  *      http://www.apache.org/licenses/LICENSE-2.0
  */
 
-jest.mock('@/hooks/use-llm-request', () => ({}));
+const mockListProviderModels = jest.fn();
+jest.mock('@/hooks/use-llm-request', () => ({
+  useListProviderModels: () => ({
+    listProviderModels: mockListProviderModels,
+  }),
+}));
 jest.mock('@/services/llm-service', () => ({
   __esModule: true,
   default: {},
@@ -18,11 +23,12 @@ jest.mock('../available-models', () => ({
 }));
 
 import { LLMFactory } from '@/constants/llm';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import {
   areCatalogCredentialsReady,
   buildVerifyArgs,
   isCatalogBaseURLReady,
+  useModelsCatalog,
   useModelsDerived,
 } from './hooks';
 
@@ -163,6 +169,61 @@ describe('buildVerifyArgs', () => {
     );
 
     expect(args).not.toHaveProperty('instance_id');
+  });
+});
+
+describe('useModelsCatalog', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockListProviderModels.mockReset();
+    mockListProviderModels.mockResolvedValue({ code: 0, data: [] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('debounces Bedrock auto-fetch and cancels stale credentials', async () => {
+    let apiKey = 'first-token';
+    const resolveCreds = () => ({
+      apiKey,
+      baseUrl: '',
+      region: 'ap-northeast-1',
+      extensions: { auth_mode: 'bedrock_api_key' },
+    });
+    const { rerender } = renderHook(
+      ({ apiKeyValue }) =>
+        useModelsCatalog({
+          providerName: LLMFactory.Bedrock,
+          instanceName: 'bedrock-instance',
+          hideActions: false,
+          resolveCreds,
+          instanceModels: [],
+          apiKeyValue,
+          baseUrlValue: '',
+          instanceDetailsLoaded: true,
+          regionValue: 'ap-northeast-1',
+          authMode: 'bedrock_api_key',
+        }),
+      { initialProps: { apiKeyValue: apiKey } },
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(499);
+    });
+    expect(mockListProviderModels).not.toHaveBeenCalled();
+
+    apiKey = 'second-token';
+    rerender({ apiKeyValue: apiKey });
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(mockListProviderModels).toHaveBeenCalledTimes(1);
+    expect(mockListProviderModels).toHaveBeenCalledWith(
+      expect.objectContaining({ api_key: 'second-token' }),
+    );
   });
 });
 

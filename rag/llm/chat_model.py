@@ -19,9 +19,12 @@ import logging
 import os
 import random
 import re
+import threading
 import time
 from abc import ABC
 from copy import deepcopy
+from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urljoin
 
 import json_repair
@@ -63,6 +66,18 @@ class ReActMode(StrEnum):
 
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+_BEDROCK_ROLE_REFRESH_SKEW_SECONDS = 60
+
+
+@dataclass(frozen=True, repr=False)
+class _BedrockRoleCredentials:
+    scope: tuple[str, str]
+    access_key_id: str
+    secret_access_key: str
+    session_token: str
+    expires_at: float
+
+
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 # Generation parameters that are safe to forward to the underlying completion
@@ -1686,6 +1701,8 @@ class LiteLLMBase(ABC):
         # Token usage split (prompt/completion/total) of the most recent chat call.
         # Consumed by LLMBundle for accurate Langfuse reporting and run aggregation.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self._bedrock_role_credentials: _BedrockRoleCredentials | None = None
+        self._bedrock_role_credentials_lock = threading.Lock()
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
@@ -1798,7 +1815,7 @@ class LiteLLMBase(ABC):
             request_kwargs=kwargs,
         )
 
-        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
+        completion_args = await self._construct_completion_args_async(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -1835,7 +1852,7 @@ class LiteLLMBase(ABC):
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
+        completion_args = await self._construct_completion_args_async(history=history, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
@@ -2059,7 +2076,7 @@ class LiteLLMBase(ABC):
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"HAS TOOL:{len(self.tools)}\n{history=}")
 
-                    completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
+                    completion_args = await self._construct_completion_args_async(history=history, stream=False, tools=True, **gen_conf)
                     response = await litellm.acompletion(
                         **completion_args,
                         drop_params=True,
@@ -2163,7 +2180,7 @@ class LiteLLMBase(ABC):
                     reasoning_content = ""
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
-                    completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                    completion_args = await self._construct_completion_args_async(history=history, stream=True, tools=True, **gen_conf)
                     # Request authoritative usage on the final streaming chunk.
                     completion_args.setdefault("stream_options", {})["include_usage"] = True
                     response = await litellm.acompletion(
@@ -2296,7 +2313,7 @@ class LiteLLMBase(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                completion_args = await self._construct_completion_args_async(history=history, stream=True, tools=True, **gen_conf)
                 completion_args.setdefault("stream_options", {})["include_usage"] = True
                 response = await litellm.acompletion(
                     **completion_args,
@@ -2332,7 +2349,72 @@ class LiteLLMBase(ABC):
 
         assert False, "Shouldn't be here."
 
-    def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+    def _assume_bedrock_role(self, role_arn: str, region_name: str) -> _BedrockRoleCredentials:
+        scope = (role_arn, region_name)
+        with self._bedrock_role_credentials_lock:
+            now = time.time()
+            cached = self._bedrock_role_credentials
+            if cached is not None and cached.scope == scope and cached.expires_at > now + _BEDROCK_ROLE_REFRESH_SKEW_SECONDS:
+                return cached
+
+            import boto3
+            from botocore.exceptions import BotoCoreError, ClientError
+
+            try:
+                response = boto3.client("sts", region_name=region_name).assume_role(RoleArn=role_arn, RoleSessionName="BedrockSession")
+            except (BotoCoreError, ClientError) as error:
+                raise ValueError("Failed to assume Bedrock AWS role") from error
+
+            credentials = response["Credentials"]
+            expiration = credentials["Expiration"]
+            if not isinstance(expiration, datetime):
+                raise ValueError("Failed to assume Bedrock AWS role")
+            resolved = _BedrockRoleCredentials(
+                scope=scope,
+                access_key_id=credentials["AccessKeyId"],
+                secret_access_key=credentials["SecretAccessKey"],
+                session_token=credentials["SessionToken"],
+                expires_at=expiration.timestamp(),
+            )
+            self._bedrock_role_credentials = resolved
+            return resolved
+
+    async def _prepare_bedrock_role_credentials(self) -> _BedrockRoleCredentials | None:
+        if self.provider != SupportedLiteLLMProvider.Bedrock:
+            return None
+
+        from rag.utils.bedrock_endpoint import parse_bedrock_credentials, validate_bedrock_region
+
+        bedrock_key = parse_bedrock_credentials(self.api_key)
+        if bedrock_key.get("auth_mode") != "iam_role":
+            return None
+        role_arn = bedrock_key.get("aws_role_arn")
+        if not role_arn:
+            raise ValueError("Bedrock AWS role ARN must be provided")
+        region_name = bedrock_key.get("bedrock_region")
+        if not region_name:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_bedrock_region(region_name)
+        return await asyncio.to_thread(self._assume_bedrock_role, role_arn, region_name)
+
+    async def _construct_completion_args_async(self, history, stream: bool, tools: bool, **kwargs):
+        bedrock_role_credentials = await self._prepare_bedrock_role_credentials()
+        return self._construct_completion_args(
+            history,
+            stream,
+            tools,
+            bedrock_role_credentials=bedrock_role_credentials,
+            **kwargs,
+        )
+
+    def _construct_completion_args(
+        self,
+        history,
+        stream: bool,
+        tools: bool,
+        bedrock_role_credentials: _BedrockRoleCredentials | None = None,
+        **kwargs,
+    ):
         completion_args = {
             "model": self.model_name,
             "messages": history,
@@ -2368,8 +2450,6 @@ class LiteLLMBase(ABC):
         if self.provider in FACTORY_DEFAULT_BASE_URL:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
-            import boto3
-            from botocore.exceptions import BotoCoreError, ClientError
             from rag.utils.bedrock_endpoint import parse_bedrock_credentials, resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_region
 
             completion_args.pop("api_key", None)
@@ -2428,15 +2508,16 @@ class LiteLLMBase(ABC):
                 aws_role_arn = bedrock_key.get("aws_role_arn")
                 if not aws_role_arn:
                     raise ValueError("Bedrock AWS role ARN must be provided")
-                try:
-                    resp = boto3.client("sts", region_name=bedrock_region).assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
-                except (BotoCoreError, ClientError) as error:
-                    raise ValueError("Failed to assume Bedrock AWS role") from error
-                creds = resp["Credentials"]
-                completion_args.update({"aws_region_name": bedrock_region})
-                completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
-                completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
-                completion_args.update({"aws_session_token": creds["SessionToken"]})
+                if bedrock_role_credentials is None or bedrock_role_credentials.scope != (aws_role_arn, bedrock_region):
+                    raise ValueError("Bedrock AWS role credentials must be prepared asynchronously")
+                completion_args.update(
+                    {
+                        "aws_region_name": bedrock_region,
+                        "aws_access_key_id": bedrock_role_credentials.access_key_id,
+                        "aws_secret_access_key": bedrock_role_credentials.secret_access_key,
+                        "aws_session_token": bedrock_role_credentials.session_token,
+                    }
+                )
             elif mode == "assume_role":
                 completion_args.update({"aws_region_name": bedrock_region})
             else:

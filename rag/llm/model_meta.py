@@ -71,6 +71,7 @@ class Bedrock(Base):
 
         config = parse_bedrock_credentials(self.api_key)
         if config.get("auth_mode") != "bedrock_api_key":
+            logging.debug("Skipping Bedrock model discovery for auth_mode=%s", config.get("auth_mode"))
             return []
         return await asyncio.to_thread(discover_bedrock_models, config)
 
