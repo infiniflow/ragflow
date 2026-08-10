@@ -212,8 +212,11 @@ func TestKmeansK2PlusPlus_Smoke(t *testing.T) {
 	if len(uniqueInts(labels)) != 2 {
 		t.Errorf("bimodal: expected 2 clusters, got %d", len(uniqueInts(labels)))
 	}
-	if cents[0] > cents[1] {
-		t.Errorf("bimodal: centroids not ordered: %v", cents)
+	// kmeansK2PlusPlus does not guarantee centroid ordering, so assert the
+	// property it DOES guarantee: a bimodal split yields two well-separated
+	// centroids. (assignColIDs re-sorts them for ColID assignment.)
+	if math.Abs(cents[0]-cents[1]) < 50 {
+		t.Errorf("bimodal: centroids should be well separated, got %v", cents)
 	}
 	// Single tight mode -> still 2 labels after Lloyd, but minority tiny.
 	tight := []float64{10, 10, 10, 10, 11, 10, 10, 10}
