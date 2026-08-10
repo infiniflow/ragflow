@@ -1,0 +1,33 @@
+{
+  "name": "TwelveLabs",
+  "url": {
+    "default": "https://api.twelvelabs.io"
+  },
+  "url_suffix": {
+    "embedding": "v1.3/embed"
+  },
+  "class": "twelvelabs",
+  "models": [
+    {
+      "name": "marengo3.0",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "pegasus1.5",
+      "max_tokens": 2048,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "pegasus1.2",
+      "max_tokens": 2048,
+      "model_types": [
+        "image2text"
+      ]
+    }
+  ]
+}
