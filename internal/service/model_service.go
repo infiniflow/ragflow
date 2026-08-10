@@ -1838,14 +1838,14 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 // Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
 var (
 	mineruEnvKeys = []string{
-		common.EnvMineruApiServer,
+		common.EnvMineruAPIServer,
 		"MINERU_OUTPUT_DIR",
 		common.EnvMineruBackend,
 		"MINERU_SERVER_URL",
 		"MINERU_DELETE_OUTPUT",
 	}
 	mineruDefaultConfig = map[string]interface{}{
-		common.EnvMineruApiServer: "",
+		common.EnvMineruAPIServer: "",
 		"MINERU_OUTPUT_DIR":       "",
 		common.EnvMineruBackend:   "pipeline",
 		"MINERU_SERVER_URL":       "",
@@ -1853,21 +1853,21 @@ var (
 	}
 	paddleOCREnvKeys = []string{
 		common.EnvPaddleOCRBaseUrl,
-		common.EnvPaddleOCRApiURL,
+		common.EnvPaddleOCRAPIURL,
 		common.EnvPaddleOCRAccessToken,
 		common.EnvPaddleOCRAlgorithm,
 	}
 	paddleOCRDefaultConfig = map[string]interface{}{
 		common.EnvPaddleOCRBaseUrl:     "",
-		common.EnvPaddleOCRApiURL:      "",
+		common.EnvPaddleOCRAPIURL:      "",
 		common.EnvPaddleOCRAccessToken: nil,
 		common.EnvPaddleOCRAlgorithm:   "PaddleOCR-VL",
 	}
 	openDataLoaderEnvKeys = []string{
-		common.EnvOpenDataLoaderApiServer,
+		common.EnvOpenDataLoaderAPIServer,
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
-		common.EnvOpenDataLoaderApiServer: "",
+		common.EnvOpenDataLoaderAPIServer: "",
 	}
 )
 

@@ -17,6 +17,13 @@ from rag.advanced_rag.harness.sufficiency_ladder import (
 
 _LOG = logging.getLogger(__name__)
 
+# Experimental switch: when True, the lexical NER grounded-fact check
+# (``_grounded_hit`` below) runs in ``cross_check_claim``; when False it is
+# disabled and groundedness is delegated entirely to the LLM draft review
+# (``llm_grounded_verify`` in orchestrator/grounded_llm.py). Set to False to
+# trial "LLM draft instead of NER".
+_ENABLE_NER_GROUNDED = False
+
 
 # ═══════════════════════════════════════════════════════════════
 # Cross-check: code-only
@@ -456,7 +463,7 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
         return entity_hits / len(key_tokens) >= 0.5
 
     grounded_facts = [str(g) for g in (agent_result.grounded or []) if str(g).strip()]
-    if grounded_facts:
+    if _ENABLE_NER_GROUNDED and grounded_facts:
         ungounded = [g for g in grounded_facts if not _grounded_hit(g)]
         if ungounded:
             _LOG.warning(

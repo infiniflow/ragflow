@@ -49,7 +49,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	}
 	apiKey := strings.TrimSpace(parser.DoclingAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvDoclingApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvDoclingAPIKey))
 	}
 
 	baseURL := strings.TrimRight(serverURL, "/")
