@@ -15,6 +15,7 @@
 #
 
 import logging
+from collections.abc import Mapping
 from typing import TypedDict
 
 from botocore import UNSIGNED
@@ -152,7 +153,7 @@ def _discover_mantle_models(api_key: str, endpoint_url: str, anthropic_only: boo
     ]
 
 
-def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockModel]:
+def discover_bedrock_models(config: Mapping[str, object]) -> list[DiscoveredBedrockModel]:
     api_key = config.get("bedrock_api_key")
     if not api_key:
         raise ValueError("Bedrock API key must be provided")
@@ -160,11 +161,16 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
     region_name = config.get("bedrock_region")
     if not region_name:
         raise ValueError("Bedrock region must be provided in the key")
+    if not isinstance(region_name, str):
+        raise ValueError("Bedrock region must be a valid AWS region identifier")
     validate_bedrock_region(region_name)
     endpoint_type, endpoint_url = resolve_bedrock_endpoint("bedrock_api_key", config.get("bedrock_endpoint_type"), config.get("bedrock_endpoint_url"))
     logging.info("Discovering Bedrock models using endpoint type %s", endpoint_type)
     if endpoint_type == "runtime":
-        catalog_endpoint_url = normalize_bedrock_endpoint("runtime", config.get("bedrock_discovery_endpoint_url") or "")
+        raw_catalog_endpoint_url = config.get("bedrock_discovery_endpoint_url")
+        if raw_catalog_endpoint_url is not None and not isinstance(raw_catalog_endpoint_url, str):
+            raise ValueError("Bedrock discovery endpoint URL must be a string")
+        catalog_endpoint_url = normalize_bedrock_endpoint("runtime", raw_catalog_endpoint_url or "")
         validate_bedrock_endpoint_target(catalog_endpoint_url)
         models = _discover_runtime_models(api_key, region_name, catalog_endpoint_url)
     else:

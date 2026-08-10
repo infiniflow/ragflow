@@ -294,6 +294,24 @@ def test_list_bedrock_models_reports_discovery_error():
     assert message == "Failed to list models from Amazon Bedrock"
 
 
+@pytest.mark.parametrize("discovery_endpoint_url", [1, []])
+def test_list_bedrock_models_reports_non_string_discovery_endpoint(discovery_endpoint_url: object) -> None:
+    factory_info = [{"name": "Bedrock", "url": "", "llm": []}]
+    extensions = {
+        "auth_mode": "bedrock_api_key",
+        "endpoint_type": "runtime",
+        "discovery_endpoint_url": discovery_endpoint_url,
+    }
+    with (
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_id", return_value=(False, None)),
+        patch("api.apps.services.provider_api_service.FACTORY_LLM_INFOS", factory_info),
+    ):
+        success, message = asyncio.run(list_provider_models("Bedrock", "token", None, "ap-northeast-1", extensions))
+
+    assert success is False
+    assert message == "Bedrock discovery endpoint URL must be a string"
+
+
 def test_bedrock_model_meta_rejects_non_object_api_key():
     with pytest.raises(ValueError, match="must be a JSON object"):
         asyncio.run(BedrockModelMeta("12345").get_model_list())
@@ -531,6 +549,19 @@ def test_runtime_discovery_normalizes_catalog_endpoint(mock_create_client) -> No
         )
 
     mock_create_client.assert_called_once_with("bedrock", "token", "ap-northeast-1", "https://bedrock.ap-northeast-1.amazonaws.com")
+
+
+@pytest.mark.parametrize("discovery_endpoint_url", [1, []])
+def test_runtime_discovery_rejects_non_string_catalog_endpoint(discovery_endpoint_url: object) -> None:
+    with pytest.raises(ValueError, match="discovery endpoint URL must be a string"):
+        discover_bedrock_models(
+            {
+                "bedrock_api_key": "token",
+                "bedrock_region": "ap-northeast-1",
+                "bedrock_endpoint_type": "runtime",
+                "bedrock_discovery_endpoint_url": discovery_endpoint_url,
+            }
+        )
 
 
 @patch("openai.OpenAI")
