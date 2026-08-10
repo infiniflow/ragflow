@@ -22,7 +22,7 @@ from rag.llm.cv_model import BedrockCV
 from rag.llm.embedding_model import BedrockEmbed
 from rag.llm.model_meta import Bedrock as BedrockModelMeta
 from rag.llm.rerank_model import BedrockRerank
-from rag.utils.bedrock_endpoint import normalize_bedrock_endpoint, resolve_bedrock_endpoint, validate_bedrock_endpoint_target, validate_bedrock_region
+from rag.utils.bedrock_endpoint import normalize_bedrock_endpoint, resolve_bedrock_endpoint, validate_bedrock_api_key, validate_bedrock_endpoint_target, validate_bedrock_region
 
 
 def test_bedrock_model_list_api_key_maps_extensions():
@@ -318,6 +318,25 @@ def test_normalize_mantle_endpoint_trims_surrounding_whitespace() -> None:
 def test_rejects_untrusted_mantle_endpoint():
     with pytest.raises(ValueError, match="hostname is not allowed"):
         resolve_bedrock_endpoint("bedrock_api_key", "mantle_openai", "https://example.com/v1")
+
+
+@pytest.mark.parametrize("api_key", [1, ["token"], {"token": "value"}])
+def test_rejects_non_string_bedrock_api_key(api_key):
+    with pytest.raises(ValueError, match="API key must be a string"):
+        validate_bedrock_api_key(api_key)
+
+
+@pytest.mark.parametrize(
+    ("auth_mode", "endpoint_type", "endpoint_url", "message"),
+    [
+        (["bedrock_api_key"], "runtime", "", "auth_mode must be a string"),
+        ("bedrock_api_key", ["runtime"], "", "endpoint type must be a string"),
+        ("bedrock_api_key", "runtime", 1, "endpoint URL must be a string"),
+    ],
+)
+def test_rejects_non_string_bedrock_endpoint_fields(auth_mode, endpoint_type, endpoint_url, message):
+    with pytest.raises(ValueError, match=message):
+        resolve_bedrock_endpoint(auth_mode, endpoint_type, endpoint_url)
 
 
 def test_rejects_non_default_bedrock_endpoint_port():

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // ProviderHandler provider handler
@@ -224,6 +225,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 						common.ErrorWithCode(c, common.CodeConnectionError, listErr.Error())
 						return
 					}
+					common.Logger.Warn("failed to list remote provider models", zap.String("provider", providerName), zap.Error(listErr))
 				} else {
 					for _, m := range liveModels {
 						remoteModels = append(remoteModels, providerListModelItem(m))

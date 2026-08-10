@@ -31,7 +31,9 @@ _AWS_BEDROCK_HOST_PATTERNS = (
 _AWS_REGION_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
-def validate_bedrock_api_key(api_key: str) -> str:
+def validate_bedrock_api_key(api_key: object) -> str:
+    if not isinstance(api_key, str):
+        raise ValueError("Bedrock API key must be a string")
     api_key = api_key.strip()
     if not api_key or not api_key.isprintable():
         raise ValueError("Bedrock API key must not be empty or contain control characters")
@@ -77,7 +79,13 @@ def mantle_model_catalog_url(endpoint_url: str) -> str:
     return f"{_mantle_root_url(endpoint_url)}/v1"
 
 
-def resolve_bedrock_endpoint(auth_mode: str | None, endpoint_type: str | None, endpoint_url: str | None) -> tuple[str, str]:
+def resolve_bedrock_endpoint(auth_mode: object, endpoint_type: object, endpoint_url: object) -> tuple[str, str]:
+    if auth_mode is not None and not isinstance(auth_mode, str):
+        raise ValueError("Bedrock auth_mode must be a string")
+    if endpoint_type is not None and not isinstance(endpoint_type, str):
+        raise ValueError("Bedrock endpoint type must be a string")
+    if endpoint_url is not None and not isinstance(endpoint_url, str):
+        raise ValueError("Bedrock endpoint URL must be a string")
     if not auth_mode:
         raise ValueError("Bedrock auth_mode must be provided in the key")
     if auth_mode not in SUPPORTED_BEDROCK_AUTH_MODES:

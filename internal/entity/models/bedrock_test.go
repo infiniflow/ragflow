@@ -294,6 +294,29 @@ func TestResolveBedrockRegionRequiresOne(t *testing.T) {
 	}
 }
 
+func TestResolveBedrockRegionRejectsInvalidValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		apiRegion string
+		keyRegion string
+	}{
+		{name: "API config override", apiRegion: "attacker.example?ignored=", keyRegion: "us-east-1"},
+		{name: "credential region", keyRegion: "ap_northeast_1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var apiConfig APIConfig
+			if tt.apiRegion != "" {
+				apiConfig.Region = &tt.apiRegion
+			}
+			_, err := resolveBedrockRegion(&apiConfig, &bedrockKey{Region: tt.keyRegion})
+			if err == nil || !strings.Contains(err.Error(), "valid AWS region identifier") {
+				t.Fatalf("resolveBedrockRegion() error = %v, want invalid-region error", err)
+			}
+		})
+	}
+}
+
 func TestBuildConverseRequestExtractsSystem(t *testing.T) {
 	req, err := buildConverseRequest([]Message{
 		{Role: "system", Content: "You are helpful."},

@@ -193,6 +193,8 @@ var awsBedrockHostPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^vpce-[a-z0-9-]+\.bedrock(?:-mantle|-fips|-runtime(?:-fips)?)?\.[a-z0-9-]+\.vpce\.amazonaws\.com(?:\.cn)?$`),
 }
 
+var awsBedrockRegionPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+
 func resolveBedrockEndpoint(authMode, endpointType, endpointURL string) (string, string, error) {
 	if endpointType == "" {
 		endpointType = bedrockEndpointRuntime
@@ -303,13 +305,19 @@ func validateBedrockRequestTarget(requestURL *url.URL, service string) error {
 // the same instance to a different region), falling back to the
 // region declared inside the API key JSON.
 func resolveBedrockRegion(apiConfig *APIConfig, key *bedrockKey) (string, error) {
+	var region string
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		return *apiConfig.Region, nil
+		region = *apiConfig.Region
+	} else {
+		region = key.Region
 	}
-	if key.Region == "" {
+	if region == "" {
 		return "", fmt.Errorf("bedrock: region is required (set apiConfig.Region or bedrock_region in the API key)")
 	}
-	return key.Region, nil
+	if !awsBedrockRegionPattern.MatchString(region) {
+		return "", fmt.Errorf("bedrock: region must be a valid AWS region identifier")
+	}
+	return region, nil
 }
 
 // resolveBedrockCredentials returns AWS credentials for the chosen

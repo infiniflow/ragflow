@@ -547,12 +547,13 @@ export const BedrockInstanceCard = forwardRef<
         apiKind: 'add' as const,
       };
     }
-    // Skip cards the user hasn't actually edited. Collapsed cards
-    // never fetch `instanceDetails`, so their form is still on empty
-    // defaults - the signature check below would false-positive on
-    // defaulting differences. `form.formState.isDirty` tracks real
-    // user interaction.
-    if (!form.formState.isDirty) return null;
+    // Collapsed saved cards never fetch their details, so their form still
+    // contains incomplete defaults and must not participate in a batch save.
+    // Once details are loaded, compare the actual payload with the baseline
+    // instead of relying on formState.isDirty: React Hook Form only updates
+    // that proxy field after a render-time subscription, while this value is
+    // read exclusively through the imperative save ref.
+    if (!instanceDetails) return null;
     const values = form.getValues();
     const payload = buildPayload(values, instance.instance_name);
     const finalPayload = {

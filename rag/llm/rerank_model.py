@@ -369,6 +369,7 @@ class BedrockRerank(Base):
                 aws_session_token=creds["SessionToken"],
             )
         elif mode == "assume_role":
+            logging.debug("Initializing Bedrock rerank client: auth_mode=%s service=%s", mode, "bedrock-agent-runtime")
             self.client = boto3.client("bedrock-agent-runtime", region_name=self.bedrock_region)
         else:
             raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
