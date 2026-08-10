@@ -118,11 +118,12 @@ func TestExtractorComponent_Registered(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_DoesNotMutateUpstream verifies that the
-// Extractor writes to shallow copies of the input chunk maps rather than
-// mutating the maps the caller passed in (mirrors Python's
-// deepcopy(args[k]) at extractor.py:87). Both the field_name result and the
-// auto keyword/question/metadata writes must land on the copy, leaving the
-// upstream chunks untouched.
+// Extractor writes to shallow copies of the input chunk maps (top-level map
+// isolation): the returned chunks carry the field_name result and the auto
+// keyword writes, while the upstream maps the caller passed in stay untouched.
+// The positive assertions on the returned chunks make the test fail if
+// extraction is skipped — a no-op that only leaves upstream unmutated would
+// otherwise pass.
 func TestExtractorComponent_Invoke_DoesNotMutateUpstream(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: "extracted summary"},
@@ -130,20 +131,37 @@ func TestExtractorComponent_Invoke_DoesNotMutateUpstream(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName:     "summary",
-		AutoKeywords:  2,
-		LLMID:         "gpt-4o-mini",
-		Prompt:        "Extract:",
-		SystemPrompt:  "",
+		FieldName:    "summary",
+		AutoKeywords: 2,
+		LLMID:        "gpt-4o-mini",
+		Prompt:       "Extract:",
+		SystemPrompt: "",
 	}}
 	upstream := []map[string]any{
 		{"text": "doc one"},
 		{"text": "doc two"},
 	}
-	if _, err := c.Invoke(t.Context(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": upstream,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Invoke: %v", err)
+	}
+
+	// The returned chunks are the Extractor's private copies: they must
+	// carry the field_name result and the auto-keyword writes. Absence
+	// here means extraction was skipped, not that isolation worked.
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks key missing or wrong shape: %T", out["chunks"])
+	}
+	for i, ck := range chunks {
+		if _, has := ck["summary"]; !has {
+			t.Errorf("returned chunk[%d] is missing %q", i, "summary")
+		}
+		if _, has := ck["important_kwd"]; !has {
+			t.Errorf("returned chunk[%d] is missing %q", i, "important_kwd")
+		}
 	}
 
 	// Upstream chunk maps must not have been mutated by the Extractor:
