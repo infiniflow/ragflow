@@ -699,7 +699,7 @@ class Dealer:
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
-                "content_with_weight": chunk["content_with_weight"],
+                "content_with_weight": chunk.get("content_with_weight", ""),
                 "doc_id": did,
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
