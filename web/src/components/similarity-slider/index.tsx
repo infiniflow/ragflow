@@ -32,7 +32,7 @@ export const initialKeywordsSimilarityWeightValue = {
 export const similarityThresholdSchema = { similarity_threshold: z.number() };
 
 export const keywordsSimilarityWeightSchema = {
-  keywords_similarity_weight: z.number(),
+  keywords_similarity_weight: z.number().min(0).max(1),
 };
 
 export const vectorSimilarityWeightSchema = {
@@ -53,7 +53,8 @@ export function SimilaritySliderFormField({
   const { t } = useTranslate('knowledgeDetails');
   const form = useFormContext();
   const isVector = similarityWeightType === 'vector';
-  const normalizeWeight = (weight: number) => Number(weight.toFixed(2));
+  const normalizeWeight = (weight: number) =>
+    Number(Math.min(1, Math.max(0, weight)).toFixed(2));
   const getVectorWeight = (weight: number) =>
     normalizeWeight(isVector ? weight : 1 - weight);
   const getFullTextWeight = (weight: number) =>
@@ -137,7 +138,9 @@ export function SimilaritySliderFormField({
                   step={0.01}
                   {...field}
                   value={getVectorWeight(field.value)}
-                  onChange={(value) => field.onChange(getStoredWeight(value))}
+                  onChange={(value) =>
+                    field.onChange(getStoredWeight(Number(value)))
+                  }
                 ></NumberInput>
               </FormControl>
             </div>
