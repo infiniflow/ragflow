@@ -241,26 +241,32 @@ def filter_entities_with_relations(entities: list[dict], relations: list[dict]) 
 def _row_has_enabled_source(row: dict, excluded_doc_ids: set[str]) -> bool:
     if not excluded_doc_ids:
         return True
-    source_ids: set[str] = set()
-    for field in ("doc_ids_kwd", "source_doc_ids"):
-        value = row.get(field)
+
+    def _flatten_ids(value) -> set[str]:
+        if value is None:
+            return set()
         if isinstance(value, str):
             raw = value.strip()
-            if raw:
-                try:
-                    value = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    value = [raw]
-            else:
-                value = []
+            if not raw:
+                return set()
+            try:
+                return _flatten_ids(json.loads(raw))
+            except (json.JSONDecodeError, TypeError):
+                return {raw}
         if isinstance(value, (list, tuple, set)):
-            source_ids.update(str(doc_id) for doc_id in value)
-        elif value:
-            source_ids.add(str(value))
+            result: set[str] = set()
+            for item in value:
+                result.update(_flatten_ids(item))
+            return result
+        return {str(value)}
+
+    source_ids: set[str] = set()
+    for field in ("doc_ids_kwd", "source_doc_ids"):
+        source_ids.update(_flatten_ids(row.get(field)))
     if source_ids:
         return bool(source_ids - excluded_doc_ids)
-    doc_id = row.get("doc_id")
-    return not doc_id or str(doc_id) not in excluded_doc_ids
+    doc_ids = _flatten_ids(row.get("doc_id"))
+    return not doc_ids or bool(doc_ids - excluded_doc_ids)
 
 
 async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str] | None = None) -> tuple[list[dict], list[dict]]:

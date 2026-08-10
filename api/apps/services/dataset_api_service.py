@@ -1845,7 +1845,10 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     from api.apps.services import structure_graph_common as sgc
 
     keywords = (keywords or "").strip()
+    _, active_doc_ids = await _current_dataset_docs(dataset_id)
     disabled_doc_ids = await _disabled_dataset_doc_ids(dataset_id)
+    if not active_doc_ids:
+        return True, empty
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -2034,10 +2037,13 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
+            scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+            if scope_kwd == "doc":
+                scope["doc_id"] = sorted(active_doc_ids)
             entities, relations = await sgc.build_bucket(
                 index_nm,
                 dataset_id,
-                {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]},
+                scope,
                 excluded_doc_ids=disabled_doc_ids,
             )
         except Exception:
@@ -2048,7 +2054,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 entities, relations = await sgc.build_bucket(
                     index_nm,
                     dataset_id,
-                    {"compilation_template_ids": [tid], "scope_kwd": ["doc"]},
+                    {"compilation_template_ids": [tid], "scope_kwd": ["doc"], "doc_id": sorted(active_doc_ids)},
                     excluded_doc_ids=disabled_doc_ids,
                 )
             except Exception:
