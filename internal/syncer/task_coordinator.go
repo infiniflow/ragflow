@@ -24,6 +24,8 @@ import (
 	"time"
 )
 
+const connectorLockSafetyMargin = 5 * time.Second
+
 // ConnectorRegistry opens registered connectors by source.
 type ConnectorRegistry interface {
 	// Open creates a connector for a task context.
@@ -64,8 +66,8 @@ func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncT
 }
 
 // Execute dispatches a sync_logs task by task type.
-func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext) error {
-	runCtx, cancel := context.WithTimeout(ctx, taskExecutionTimeout(taskContext))
+func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext, lease ConnectorLockLease) error {
+	runCtx, cancel := context.WithDeadline(ctx, taskExecutionDeadline(time.Now(), taskContext, lease))
 	defer cancel()
 	ctx = runCtx
 
@@ -95,10 +97,25 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncT
 	}
 }
 
-func taskExecutionTimeout(taskContext service.SyncTaskContext) time.Duration {
+func taskExecutionDeadline(now time.Time, taskContext service.SyncTaskContext, lease ConnectorLockLease) time.Time {
 	timeout := time.Duration(taskContext.Connector.TimeoutSecs) * time.Second
-	if timeout <= 0 || timeout > connectorLockTTL {
-		return connectorLockTTL
+	if timeout <= 0 {
+		timeout = connectorLockTTL
 	}
-	return timeout
+	deadline := now.Add(timeout)
+	if lease.ExpiresAt.IsZero() {
+		if timeout > connectorLockTTL {
+			return now.Add(connectorLockTTL)
+		}
+		return deadline
+	}
+
+	lockDeadline := lease.ExpiresAt.Add(-connectorLockSafetyMargin)
+	if lockDeadline.Before(now) {
+		return now
+	}
+	if lockDeadline.Before(deadline) {
+		return lockDeadline
+	}
+	return deadline
 }

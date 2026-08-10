@@ -717,7 +717,7 @@ func TestSyncRunnerSubmitsBatchesBeforeWaiting(t *testing.T) {
 	sink := &fakeSink{delay: 80 * time.Millisecond}
 	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
 	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
-	if err := coordinator.Execute(t.Context(), taskContext); err != nil {
+	if err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if secondBatchAt.Sub(start) >= 70*time.Millisecond {
@@ -740,7 +740,7 @@ func TestSyncRunnerProcessesBatchJobsInParallel(t *testing.T) {
 	sink := &fakeSink{delay: 80 * time.Millisecond}
 	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
 	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
-	if err := coordinator.Execute(t.Context(), taskContext); err != nil {
+	if err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	sink.mu.Lock()
@@ -778,7 +778,7 @@ func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	sink := &fakeSink{}
 	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, store)
 	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
-	if err := coordinator.Execute(t.Context(), taskContext); err != nil {
+	if err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if sink.callCount() != 0 {
@@ -799,7 +799,7 @@ func TestAutoParseFlagFlowsToSink(t *testing.T) {
 	sink := &fakeSink{}
 	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
 	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
-	if err := coordinator.Execute(t.Context(), taskContext); err != nil {
+	if err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if sink.autoParseByDoc["source-1"] {
@@ -818,7 +818,7 @@ func TestCompleteSyncSchedulesNextRun(t *testing.T) {
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: now}}}}}
 	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{})
 	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
-	if err := coordinator.Execute(t.Context(), taskContext); err != nil {
+	if err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 
@@ -1017,15 +1017,25 @@ func TestMockSessionEOF(t *testing.T) {
 	}
 }
 
-// TestTaskExecutionTimeoutCapsConnectorTimeout verifies tasks cannot outlive the connector lock TTL.
-func TestTaskExecutionTimeoutCapsConnectorTimeout(t *testing.T) {
+// TestTaskExecutionDeadlineCapsConnectorTimeout verifies tasks cannot outlive the connector lock lease.
+func TestTaskExecutionDeadlineCapsConnectorTimeout(t *testing.T) {
+	now := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
 	taskContext := service.SyncTaskContext{}
 	taskContext.Connector.TimeoutSecs = int64(connectorLockTTL.Seconds()) + 60
-	if got := taskExecutionTimeout(taskContext); got != connectorLockTTL {
-		t.Fatalf("timeout = %s, want %s", got, connectorLockTTL)
+	lease := ConnectorLockLease{ExpiresAt: now.Add(10 * time.Minute)}
+	if got, want := taskExecutionDeadline(now, taskContext, lease), lease.ExpiresAt.Add(-connectorLockSafetyMargin); !got.Equal(want) {
+		t.Fatalf("deadline = %s, want %s", got, want)
 	}
 	taskContext.Connector.TimeoutSecs = 30
-	if got := taskExecutionTimeout(taskContext); got != 30*time.Second {
-		t.Fatalf("timeout = %s, want 30s", got)
+	if got, want := taskExecutionDeadline(now, taskContext, lease), now.Add(30*time.Second); !got.Equal(want) {
+		t.Fatalf("deadline = %s, want %s", got, want)
 	}
+	lease.ExpiresAt = now.Add(time.Second)
+	if got := taskExecutionDeadline(now, taskContext, lease); !got.Equal(now) {
+		t.Fatalf("deadline = %s, want %s", got, now)
+	}
+}
+
+func testLockLease() ConnectorLockLease {
+	return ConnectorLockLease{ExpiresAt: time.Now().Add(connectorLockTTL)}
 }

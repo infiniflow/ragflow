@@ -104,7 +104,8 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	}
 
 	// lock the connector and the KB
-	if !w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID) {
+	lease, locked := w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
+	if !locked {
 		_ = w.taskService.RescheduleClaimed(ctx, taskContext.Task.ID)
 		ackEnvelope(envelope)
 		return
@@ -112,7 +113,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	defer w.locker.Unlock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
 
 	startedAt := time.Now()
-	if err = w.coordinator.Execute(ctx, taskContext); err != nil { // execute the task(sync/ prune)
+	if err = w.coordinator.Execute(ctx, taskContext, lease); err != nil { // execute the task(sync/ prune)
 		logSyncTaskDuration(taskContext, startedAt)
 		if errors.Is(err, errSyncTaskCanceled) { // task is canceled by the user
 			ackEnvelope(envelope)

@@ -27,11 +27,16 @@ import (
 
 // ConnectorLocker serializes work for one connector and knowledge base.
 type ConnectorLocker interface {
-	TryLock(connectorID, kbID string) bool
+	TryLock(connectorID, kbID string) (ConnectorLockLease, bool)
 	Unlock(connectorID, kbID string)
 }
 
 const connectorLockTTL = 24 * time.Hour
+
+// ConnectorLockLease describes the bounded lifetime of a connector/KB lock.
+type ConnectorLockLease struct {
+	ExpiresAt time.Time
+}
 
 // ConnectorLock serializes connector/KB work through Redis when available.
 type ConnectorLock struct {
@@ -47,15 +52,15 @@ func NewConnectorLock() *ConnectorLock {
 }
 
 // TryLock attempts to acquire the connector/KB lock without blocking.
-func (l *ConnectorLock) TryLock(connectorID, kbID string) bool {
+func (l *ConnectorLock) TryLock(connectorID, kbID string) (ConnectorLockLease, bool) {
 	if l == nil {
-		return false
+		return ConnectorLockLease{}, false
 	}
 	key := connectorLockKey(connectorID, kbID)
 	l.mu.Lock()
 	if _, ok := l.local[key]; ok {
 		l.mu.Unlock()
-		return false
+		return ConnectorLockLease{}, false
 	}
 	l.local[key] = struct{}{}
 	l.mu.Unlock()
@@ -66,14 +71,14 @@ func (l *ConnectorLock) TryLock(connectorID, kbID string) bool {
 			l.mu.Lock()
 			delete(l.local, key)
 			l.mu.Unlock()
-			return false
+			return ConnectorLockLease{}, false
 		}
 		l.mu.Lock()
 		l.redis[key] = lock
 		l.mu.Unlock()
-		return true
+		return newConnectorLockLease(), true
 	}
-	return true
+	return newConnectorLockLease(), true
 }
 
 // Unlock releases the connector/KB lock.
@@ -94,4 +99,8 @@ func (l *ConnectorLock) Unlock(connectorID, kbID string) {
 
 func connectorLockKey(connectorID, kbID string) string {
 	return fmt.Sprintf("syncer:connector-lock:%s:%s", connectorID, kbID)
+}
+
+func newConnectorLockLease() ConnectorLockLease {
+	return ConnectorLockLease{ExpiresAt: time.Now().Add(connectorLockTTL)}
 }
