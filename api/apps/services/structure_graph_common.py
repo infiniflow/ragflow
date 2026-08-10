@@ -47,9 +47,21 @@ GRAPH_TOP_ENTITIES = 256
 # blow up the response.
 GRAPH_EXPANSION_CAP = 4096
 
-GRAPH_ENTITY_FIELDS = ["id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids"]
-GRAPH_RELATION_FIELDS = ["id", "content_with_weight", "from_entity_kwd", "to_entity_kwd"]
-GRAPH_ALL_FIELDS = ["id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd"]
+GRAPH_ENTITY_FIELDS = ["id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids"]
+GRAPH_RELATION_FIELDS = ["id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids"]
+GRAPH_ALL_FIELDS = [
+    "id",
+    "content_with_weight",
+    "name_kwd",
+    "mention_count_int",
+    "source_chunk_ids",
+    "from_entity_kwd",
+    "to_entity_kwd",
+    "knowledge_graph_kwd",
+    "doc_id",
+    "doc_ids_kwd",
+    "source_doc_ids",
+]
 
 
 async def graph_search(index_name, kb_id, select_fields, condition, order_by, limit, match_expressions=None):
@@ -226,7 +238,21 @@ def filter_entities_with_relations(entities: list[dict], relations: list[dict]) 
     return filtered
 
 
-async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list[dict]]:
+def _row_has_enabled_source(row: dict, excluded_doc_ids: set[str]) -> bool:
+    if not excluded_doc_ids:
+        return True
+    source_ids = row.get("doc_ids_kwd") or row.get("source_doc_ids")
+    if source_ids:
+        if isinstance(source_ids, str):
+            source_ids = [source_ids]
+        if isinstance(source_ids, (list, tuple, set)):
+            return any(str(doc_id) not in excluded_doc_ids for doc_id in source_ids)
+        return str(source_ids) not in excluded_doc_ids
+    doc_id = row.get("doc_id")
+    return not doc_id or str(doc_id) not in excluded_doc_ids
+
+
+async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str] | None = None) -> tuple[list[dict], list[dict]]:
     """Build one bucket's ``(entities, relations)`` from raw rows.
 
     ``scope`` is the filter WITHOUT ``knowledge_graph_kwd`` — e.g.
@@ -236,6 +262,7 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
     by ``mention_count_int``, the relations sourced from them, and those
     relations' target entities.
     """
+    excluded_doc_ids = excluded_doc_ids or set()
     both_cond = dict(scope, knowledge_graph_kwd=["entity", "relation"])
     _, total = await graph_search(index_name, kb_id, ["id"], both_cond, OrderByExpr(), 1)
 
@@ -244,6 +271,8 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
         entities: list[dict] = []
         relations: list[dict] = []
         for row in field_map.values():
+            if not _row_has_enabled_source(row, excluded_doc_ids):
+                continue
             if row.get("knowledge_graph_kwd") == "relation":
                 edge = project_relation(row)
                 if edge:
@@ -262,7 +291,7 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
     except Exception:
         order_by = OrderByExpr()
     ent_a_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"]), order_by, GRAPH_TOP_ENTITIES)
-    set_a = [n for n in (project_entity(r) for r in ent_a_map.values()) if n]
+    set_a = [n for n in (project_entity(r) for r in ent_a_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n]
     a_names = sorted({str(e.get("name") or "").strip() for e in set_a if str(e.get("name") or "").strip()})
     a_name_terms = sorted({term for name in a_names for term in _endpoint_terms(name)})
 
@@ -272,6 +301,8 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
     if a_name_terms:
         rel_map, _ = await graph_search(index_name, kb_id, GRAPH_RELATION_FIELDS, dict(scope, knowledge_graph_kwd=["relation"], from_entity_kwd=a_name_terms), OrderByExpr(), GRAPH_EXPANSION_CAP)
         for row in rel_map.values():
+            if not _row_has_enabled_source(row, excluded_doc_ids):
+                continue
             edge = project_relation(row)
             if edge:
                 relations.append(edge)
@@ -283,7 +314,7 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
     set_t = []
     if target_names_lower:
         tgt_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"], name_kwd=sorted(target_names_lower)), OrderByExpr(), GRAPH_EXPANSION_CAP)
-        set_t = [n for n in (project_entity(r) for r in tgt_map.values()) if n]
+        set_t = [n for n in (project_entity(r) for r in tgt_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n]
 
     entities = dedup_entities(set_a + set_t)
     return entities, normalize_relation_endpoints(entities, relations)

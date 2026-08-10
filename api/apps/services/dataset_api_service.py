@@ -949,15 +949,19 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
     elif wipe and index_type in _STRUCTURE_INDEX_TYPES:
         from rag.nlp import search
 
-        # Wipe the merged KB-wide dataset_graph rows for the requested kind
-        # (all kinds for the merge-all "structure" type). The per-document
-        # entity/relation rows the merge reads from are left intact.
+        # Wipe the merged KB-wide metadata and entity/relation rows for the
+        # requested kind (all kinds for the merge-all "structure" type). The
+        # per-document entity/relation rows the merge reads from are left intact.
         friendly = _STRUCTURE_INDEX_TYPE_TO_KIND.get(index_type)
         resolved_kind = _resolve_dataset_structure_kind(friendly) if friendly else None
-        condition: dict = {"knowledge_graph_kwd": ["dataset_graph"]}
-        if resolved_kind:
-            condition["compilation_template_kind_kwd"] = [resolved_kind]
-        settings.docStoreConn.delete(condition, search.index_name(kb.tenant_id), dataset_id)
+        conditions = [
+            {"knowledge_graph_kwd": ["dataset_graph"]},
+            {"knowledge_graph_kwd": ["entity", "relation"], "scope_kwd": ["dataset"]},
+        ]
+        for condition in conditions:
+            if resolved_kind:
+                condition["compilation_template_kind_kwd"] = [resolved_kind]
+            settings.docStoreConn.delete(condition, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}
@@ -1841,6 +1845,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     from api.apps.services import structure_graph_common as sgc
 
     keywords = (keywords or "").strip()
+    disabled_doc_ids = await _disabled_dataset_doc_ids(dataset_id)
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -2028,13 +2033,23 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]})
+            entities, relations = await sgc.build_bucket(
+                index_nm,
+                dataset_id,
+                {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]},
+                excluded_doc_ids=disabled_doc_ids,
+            )
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue
         if scope_kwd == "dataset" and not entities and not relations:
             try:
-                entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": ["doc"]})
+                entities, relations = await sgc.build_bucket(
+                    index_nm,
+                    dataset_id,
+                    {"compilation_template_ids": [tid], "scope_kwd": ["doc"]},
+                    excluded_doc_ids=disabled_doc_ids,
+                )
             except Exception:
                 logging.exception("get_dataset_structure: doc fallback bucket build failed for kb=%s template=%s", dataset_id, tid)
                 continue
@@ -2109,8 +2124,9 @@ _ALTERATION_ELIGIBLE_TEMPLATE_KINDS = {
     "tree": {"tree", "page_index"},
 }
 
-# Dataset-merged structure kinds carry provenance in ``source_doc_ids`` on
-# ``scope_kwd="dataset"`` rows, discovered by their stamped top-level kind.
+# Dataset-merged structure kinds carry provenance in ``source_doc_ids`` or
+# ``doc_ids_kwd`` on ``scope_kwd="dataset"`` rows, discovered by their stamped
+# top-level kind.
 _ALTERATION_KIND_TO_MERGED_ROW_KIND = {
     "graph": "knowledge_graph",
     "mindmap": "mind_map",
@@ -2137,9 +2153,26 @@ async def _current_dataset_docs(dataset_id: str):
         types=[],
         suffix=[],
     )
+    docs = [doc for doc in docs if str(doc.get("status", "1")) != "0"]
     docs = docs or []
     current_doc_ids = {str(doc.get("id")) for doc in docs if doc.get("id")}
     return docs, current_doc_ids
+
+
+async def _disabled_dataset_doc_ids(dataset_id: str) -> set[str]:
+    docs, _ = await thread_pool_exec(
+        DocumentService.get_by_kb_id,
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    return {str(doc["id"]) for doc in docs or [] if str(doc.get("status", "1")) == "0" and doc.get("id")}
 
 
 def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc_ids: set) -> dict:
@@ -2184,6 +2217,8 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     pipeline_cache: dict[str, bool] = {}
     eligible: set[str] = set()
     for doc in docs or []:
+        if str(doc.get("status", "1")) == "0":
+            continue
         doc_id = str(doc.get("id") or "")
         if not doc_id:
             continue
@@ -2196,16 +2231,17 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     return eligible
 
 
-async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str, from_list: bool) -> set:
-    """Page a docStore search, folding each row's ``field`` into a doc-id set.
+async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str | list[str], from_list: bool) -> set:
+    """Page a docStore search, folding provenance fields into a doc-id set.
 
-    ``from_list`` reads ``field`` as ``source_doc_ids`` (a list of provenance doc
-    ids); otherwise ``field`` is the row's own ``doc_id`` scalar.
+    ``from_list`` reads the selected fields as lists of provenance document IDs;
+    otherwise the selected field is the row's own scalar document ID.
     """
     from common.doc_store.doc_store_base import OrderByExpr
 
     involved: set[str] = set()
-    select_fields = ["id", field]
+    fields = [field] if isinstance(field, str) else field
+    select_fields = ["id", *fields]
     offset = 0
     page_size = 1000
     while True:
@@ -2230,11 +2266,13 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
         if not rows:
             break
         for row in rows.values():
-            value = row.get(field)
             if from_list:
-                involved.update(_flatten_provenance_doc_ids(value))
-            elif value:
-                involved.add(str(value))
+                for field_name in fields:
+                    involved.update(_flatten_provenance_doc_ids(row.get(field_name)))
+            else:
+                value = row.get(fields[0])
+                if value:
+                    involved.add(str(value))
 
         offset += page_size
         total = settings.docStoreConn.get_total(res)
@@ -2253,7 +2291,7 @@ async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> se
             "scope_kwd": ["dataset"],
             "compilation_template_kind_kwd": [_ALTERATION_KIND_TO_MERGED_ROW_KIND[kind]],
         }
-        return await _involved_doc_ids_paged(index_nm, dataset_id, condition, "source_doc_ids", from_list=True)
+        return await _involved_doc_ids_paged(index_nm, dataset_id, condition, ["source_doc_ids", "doc_ids_kwd"], from_list=True)
     if kind == "tree":
         return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": list(_ALTERATION_TREE_COMPILE_KWDS)}, "doc_id", from_list=False)
     return set()

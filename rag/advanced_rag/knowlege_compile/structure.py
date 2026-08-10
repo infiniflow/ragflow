@@ -2200,7 +2200,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids", "doc_id"]
     # ``doc_id is None`` collects every document's entities/relations in the KB
     # for the dataset-level graph; a concrete id keeps it document-scoped.
     condition: dict = {
@@ -2225,9 +2225,28 @@ async def _struct_rebuild_graph_json(
     )
     rows = settings.docStoreConn.get_fields(res, fields)
 
+    disabled_doc_ids: set[str] = set()
+    if doc_id is None:
+        from api.db.services.document_service import DocumentService
+
+        docs, _ = DocumentService.get_by_kb_id(
+            kb_id=kb_id,
+            page_number=0,
+            items_per_page=0,
+            orderby="create_time",
+            desc=False,
+            keywords="",
+            run_status=[],
+            types=[],
+            suffix=[],
+        )
+        disabled_doc_ids = {str(doc["id"]) for doc in docs or [] if str(doc.get("status", "1")) == "0" and doc.get("id")}
+
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
+        if str(row.get("doc_id") or "") in disabled_doc_ids:
+            continue
         payload = _struct_load_payload(row)
         if row.get("knowledge_graph_kwd") == "relation":
             relation = _struct_graph_relation(payload)
