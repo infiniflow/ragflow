@@ -58,6 +58,7 @@ class LLMParam(ComponentParamBase):
         self.check_decimal_float(float(self.top_p), "[Agent] Top P")
         self.check_empty(self.llm_id, "[Agent] LLM")
         self.check_empty(self.prompts, "[Agent] User prompt")
+        self.check_nonnegative_integer(self.max_retries, "[Agent] Max retries")
 
     def gen_conf(self):
         conf = {}
