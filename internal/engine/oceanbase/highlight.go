@@ -32,8 +32,8 @@ type textMatch struct {
 // highlightMarker holds the normalized keywords and compiled patterns for one query.
 type highlightMarker struct {
 	keywords           []string
-	keywordSet          map[string]struct{}
-	englishPatterns     []*regexp.Regexp
+	keywordSet         map[string]struct{}
+	englishPatterns    []*regexp.Regexp
 	nonEnglishPatterns []*regexp.Regexp
 }
 
@@ -42,8 +42,8 @@ func newHighlightMarker(keywords []string) *highlightMarker {
 	keywords = normalizeKeywords(keywords)
 	marker := &highlightMarker{
 		keywords:           keywords,
-		keywordSet:          make(map[string]struct{}, len(keywords)),
-		englishPatterns:     make([]*regexp.Regexp, 0, len(keywords)),
+		keywordSet:         make(map[string]struct{}, len(keywords)),
+		englishPatterns:    make([]*regexp.Regexp, 0, len(keywords)),
 		nonEnglishPatterns: make([]*regexp.Regexp, 0, len(keywords)),
 	}
 	for _, keyword := range keywords {
