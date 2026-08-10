@@ -33,7 +33,7 @@ import (
 )
 
 var (
-	nonStreamCallTimeout = 120 * time.Second
+	nonStreamCallTimeout = 300 * time.Second
 	streamCallTimeout    = 10 * time.Minute
 	longOpCallTimeout    = 10 * time.Minute
 )

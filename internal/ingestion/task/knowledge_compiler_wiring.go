@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
+	appcommon "ragflow/internal/common"
 )
 
 // This file is the composition-root wiring for the KnowledgeCompiler ingestion
@@ -154,9 +155,22 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 			config.MaxTokens = req.MaxTokens
 		}
 	}
-	resp, err := c.svc.Chat(ctx, c.tenantID, llmID, msgs, config)
-	if err != nil {
-		return nil, err
+	// Retry transient transport/provider failures (HTTP timeout, reset,
+	// connection refused, 5xx, 429) with exponential backoff. A single
+	// external-LLM hiccup must not abort the whole knowledge compile — the reply
+	// is never cached, so each attempt issues a fresh request. Permanent
+	// configuration/model errors (auth, unknown model) are not retried.
+	var resp *models.ChatResponse
+	retryErr := appcommon.RetryWithBackoff(ctx, kcChatRetryMax, kcChatRetryDelay, func() error {
+		r, err := c.svc.Chat(ctx, c.tenantID, llmID, msgs, config)
+		if err != nil {
+			return err
+		}
+		resp = r
+		return nil
+	}, appcommon.IsTransientError)
+	if retryErr != nil {
+		return nil, retryErr
 	}
 	content := ""
 	if resp != nil && resp.Answer != nil {
@@ -164,6 +178,14 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	return &kc.ChatResponse{Content: content}, nil
 }
+
+// kcChatRetryMax bounds how many times a transient LLM transport failure is
+// retried. Each attempt may run up to the driver's HTTP timeout, so the count
+// stays small to avoid unbounded wall-clock latency inside one compile.
+const kcChatRetryMax = 2
+
+// kcChatRetryDelay is the initial exponential-backoff delay between retries.
+const kcChatRetryDelay = 2 * time.Second
 
 // kcEmbedder adapts service.ModelProviderService.GetEmbeddingModel to the
 // knowledge_compiler Embedder seam. Vectors are returned as []float32 to match

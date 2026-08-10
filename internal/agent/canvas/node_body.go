@@ -40,6 +40,8 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+
+	"go.uber.org/zap"
 )
 
 // nodeBodyFn is the plain function shape compose.InvokableLambda accepts.
@@ -154,12 +156,10 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params ma
 		if comp == nil {
 			return nil, fmt.Errorf("canvas: component %q (%s): factory returned nil component", cpnID, name)
 		}
-		// Pass the class name through to the body so the per-class
-		// timeout resolver (resolveTimeout) can pick the right
-		// timeout without the runtime.Component interface needing
-		// to expose Name(). The factory returns the class name as
-		// the DSL's `component_name` field, which is also what
-		// ComponentBase.Name() would have returned.
+		// Pass the class name through to the body for structured logging
+		// without the runtime.Component interface needing to expose Name().
+		// The factory returns the class name as the DSL's `component_name`
+		// field, which is also what ComponentBase.Name() would have returned.
 		return realComponentBodyWithOptions(cpnID, name, comp, opts), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
@@ -221,11 +221,11 @@ func componentTimeout() time.Duration {
 // reach components here. Cross-cutting concerns therefore belong here,
 // not inside each component's Invoke:
 //
-//   - per-class timeout: context.WithTimeout from resolveTimeout
-//     (4-level: per-class env → per-class defaults table → uniform env
-//     → 600s fallback). The lookup is per-invocation (not per-body) so
-//     operators can tune COMPONENT_EXEC_TIMEOUT[_<CLASS>] at runtime
-//     without rebuilding graphs.
+//   - execution context: derived from the parent with cancellation only — no
+//     framework-level wall-clock deadline is imposed on any component, so a
+//     long knowledge-compilation step (many LLM calls) is not cut short by a
+//     fixed ceiling. A cancelled task still interrupts via the parent cancel;
+//     per-call model deadlines stay at the model driver.
 //   - progress: runtime.TrackProgress, with the callback pulled from
 //     ctx (nil ⇒ no observer). This makes progress a framework-level
 //     concern — components no longer wrap themselves.
@@ -248,8 +248,14 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 
 func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		timeout := resolveTimeoutFromContext(ctx, componentClass)
-		cctx, cancel := context.WithTimeout(ctx, timeout)
+		// The framework imposes no wall-clock deadline on component execution.
+		// Long-running components (notably knowledge compilation, which fans out
+		// over many model calls) exceed any fixed ceiling and would otherwise
+		// fail with "context deadline exceeded". We derive a cancellation-only
+		// context so a cancelled task (parent cancel) still interrupts the
+		// component mid-run, while no arbitrary timeout is applied. Per-call
+		// model deadlines remain enforced at the model driver.
+		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		var out map[string]any
@@ -261,10 +267,16 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 			return e
 		})
 		if invokeErr != nil {
+			// Surface the failure as a structured log line. The wrapped error
+			// already carries the full cause chain (e.g. deepseek DNS/timeout),
+			// but without this the failure only showed up as a generic
+			// "Task ... failed" line with no clear cause in the logs.
+			common.Error("canvas: component invoke failed", invokeErr,
+				zap.String("component_id", cpnID),
+				zap.String("component_class", componentClass))
 			switch {
 			case errors.Is(invokeErr, context.DeadlineExceeded):
-				return nil, fmt.Errorf("canvas: component %q invoke: timeout after %s: %w",
-					cpnID, timeout, invokeErr)
+				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
 			case errors.Is(invokeErr, context.Canceled):
 				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
 			}
