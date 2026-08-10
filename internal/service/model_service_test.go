@@ -24,13 +24,26 @@ type remoteModelProbeDriver struct {
 
 type connectionProbeDriver struct {
 	*modelModule.DummyModel
-	err        error
+	checkErr   error
+	chatErr    error
+	checkCalls int
+	chatCalls  int
 	lastConfig *modelModule.APIConfig
 }
 
 func (d *connectionProbeDriver) CheckConnection(_ context.Context, config *modelModule.APIConfig) error {
+	d.checkCalls++
 	d.lastConfig = config
-	return d.err
+	return d.checkErr
+}
+
+func (d *connectionProbeDriver) ChatWithMessages(_ context.Context, _ string, _ []modelModule.Message, config *modelModule.APIConfig, _ *modelModule.ChatConfig, _ *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	d.chatCalls++
+	d.lastConfig = config
+	if d.chatErr != nil {
+		return nil, d.chatErr
+	}
+	return &modelModule.ChatResponse{}, nil
 }
 
 func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
@@ -260,14 +273,15 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 	modelInfo := []CreateInstanceModelInfo{{ModelName: "test-model", ModelTypes: []string{"chat"}, MaxTokens: 8192}}
 	tests := []struct {
 		name          string
-		connectionErr error
+		checkErr      error
+		chatErr       error
 		region        string
 		wantNilRegion bool
 		wantErr       bool
 		wantInstances int64
 	}{
-		{name: "rejects failed connection", connectionErr: errors.New("invalid credentials"), region: "ap-northeast-1", wantErr: true, wantInstances: 0},
-		{name: "creates using credential region", wantNilRegion: true, wantInstances: 1},
+		{name: "rejects failed model verification", chatErr: errors.New("invalid credentials"), region: "ap-northeast-1", wantErr: true, wantInstances: 0},
+		{name: "creates selected model without catalog access", checkErr: errors.New("catalog access denied"), wantNilRegion: true, wantInstances: 1},
 	}
 
 	for _, tt := range tests {
@@ -278,7 +292,11 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 			if err := db.Exec("DELETE FROM tenant_model_instances").Error; err != nil {
 				t.Fatalf("failed to clear instances: %v", err)
 			}
-			driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}), err: tt.connectionErr}
+			driver := &connectionProbeDriver{
+				DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+				checkErr:   tt.checkErr,
+				chatErr:    tt.chatErr,
+			}
 			provider.ModelDriver = driver
 
 			code, err := NewModelProviderService().CreateProviderInstance(
@@ -291,8 +309,14 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 				"user-1",
 				modelInfo,
 			)
+			if driver.chatCalls != 1 {
+				t.Fatalf("ChatWithMessages calls = %d, want 1", driver.chatCalls)
+			}
+			if driver.checkCalls != 0 {
+				t.Fatalf("CheckConnection calls = %d, want 0 with a selected model", driver.checkCalls)
+			}
 			if driver.lastConfig == nil {
-				t.Fatal("CheckConnection was not called")
+				t.Fatal("model verification did not receive API config")
 			}
 			if tt.wantNilRegion && driver.lastConfig.Region != nil {
 				t.Fatalf("config.Region = %q, want nil so the credential region is used", *driver.lastConfig.Region)
@@ -316,6 +340,56 @@ func TestCreateProviderInstanceRequiresSuccessfulConnection(t *testing.T) {
 				t.Fatalf("instance count = %d, want %d", count, tt.wantInstances)
 			}
 		})
+	}
+}
+
+func TestVerifyProviderAPIKeyWithoutModelsUsesConnectionCheck(t *testing.T) {
+	provider := dao.GetModelProviderManager().FindProvider("Bedrock")
+	if provider == nil {
+		t.Fatal("Bedrock provider is not registered")
+	}
+	originalDriver := provider.ModelDriver
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	wantErr := errors.New("catalog access denied")
+	driver := &connectionProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		checkErr:   wantErr,
+	}
+	provider.ModelDriver = driver
+
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}`
+	_, err := NewModelProviderService().verifyProviderAPIKey(t.Context(), "Bedrock", apiKey, "", "", nil)
+	if err == nil || !strings.Contains(err.Error(), wantErr.Error()) {
+		t.Fatalf("verifyProviderAPIKey() error = %v, want %q", err, wantErr)
+	}
+	if driver.checkCalls != 1 {
+		t.Fatalf("CheckConnection calls = %d, want 1 without selected models", driver.checkCalls)
+	}
+	if driver.chatCalls != 0 {
+		t.Fatalf("ChatWithMessages calls = %d, want 0 without selected models", driver.chatCalls)
+	}
+}
+
+func TestVerifyProviderModelLeavesSkippedSameTypeUnknown(t *testing.T) {
+	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	models := []CheckConnectionModelInfo{
+		{ModelName: "chat-one", ModelTypes: []string{"chat"}},
+		{ModelName: "chat-two", ModelTypes: []string{"chat"}},
+	}
+
+	result, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, models)
+	if err != nil {
+		t.Fatalf("verifyProviderModel() error = %v", err)
+	}
+	if driver.chatCalls != 1 {
+		t.Fatalf("ChatWithMessages calls = %d, want 1 per model type", driver.chatCalls)
+	}
+	if result["chat-one"] != entity.ModelVerifySuccess {
+		t.Fatalf("chat-one status = %q, want %q", result["chat-one"], entity.ModelVerifySuccess)
+	}
+	if _, ok := result["chat-two"]; ok {
+		t.Fatalf("chat-two status = %q, want unknown so callers apply their default", result["chat-two"])
 	}
 }
 

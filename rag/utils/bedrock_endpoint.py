@@ -83,18 +83,23 @@ def resolve_bedrock_endpoint(auth_mode: str | None, endpoint_type: str | None, e
     return resolved_type, resolved_url
 
 
-def _configured_bedrock_endpoint_hosts() -> tuple[str, ...]:
-    return tuple(item.strip().lower().rstrip(".") for item in os.getenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "").split(",") if item.strip())
+def _configured_bedrock_endpoint_targets() -> tuple[str, ...]:
+    return tuple(item.strip().lower() for item in os.getenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "").split(",") if item.strip())
 
 
-def _is_allowed_bedrock_hostname(hostname: str) -> bool:
-    if any(pattern.fullmatch(hostname) for pattern in _AWS_BEDROCK_HOST_PATTERNS):
-        return True
-    for allowed_host in _configured_bedrock_endpoint_hosts():
+def _is_configured_bedrock_endpoint(hostname: str, port: int | None) -> bool:
+    for allowed_target in _configured_bedrock_endpoint_targets():
+        try:
+            parsed_target = urlsplit(f"//{allowed_target}")
+            allowed_host = (parsed_target.hostname or "").rstrip(".")
+            allowed_port = parsed_target.port
+        except ValueError:
+            continue
         if allowed_host.startswith("*."):
-            if hostname.endswith(allowed_host[1:]) and hostname != allowed_host[2:]:
-                return True
-        elif hostname == allowed_host:
+            host_matches = hostname.endswith(allowed_host[1:]) and hostname != allowed_host[2:]
+        else:
+            host_matches = hostname == allowed_host
+        if host_matches and ((allowed_port is None and port in (None, 443)) or allowed_port == port):
             return True
     return False
 
@@ -113,8 +118,13 @@ def validate_bedrock_endpoint_target(endpoint_url: str) -> None:
         port = parsed.port
     except ValueError as error:
         raise ValueError("Bedrock endpoint URL must specify a valid port") from error
-    if port not in (None, 443):
-        raise ValueError("Bedrock endpoint URL must not specify a non-default port")
     hostname = parsed.hostname.rstrip(".").lower()
-    if not _is_allowed_bedrock_hostname(hostname):
-        raise ValueError("Bedrock endpoint hostname is not allowed; configure BEDROCK_ENDPOINT_HOST_ALLOWLIST for a trusted proxy")
+    if any(pattern.fullmatch(hostname) for pattern in _AWS_BEDROCK_HOST_PATTERNS):
+        if port not in (None, 443):
+            raise ValueError("Bedrock endpoint URL must not specify a non-default port")
+        return
+    if _is_configured_bedrock_endpoint(hostname, port):
+        return
+    if port not in (None, 443):
+        raise ValueError("Bedrock endpoint URL non-default port requires an exact host:port entry in BEDROCK_ENDPOINT_HOST_ALLOWLIST")
+    raise ValueError("Bedrock endpoint hostname is not allowed; configure BEDROCK_ENDPOINT_HOST_ALLOWLIST for a trusted proxy")

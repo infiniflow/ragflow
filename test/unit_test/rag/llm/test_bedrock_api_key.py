@@ -312,6 +312,17 @@ def test_allows_explicit_https_bedrock_endpoint_port():
     validate_bedrock_endpoint_target("https://bedrock-runtime.us-east-1.amazonaws.com:443")
 
 
+def test_allows_explicit_allowlisted_proxy_port(monkeypatch):
+    monkeypatch.setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "bedrock-proxy.example.com:8443")
+    validate_bedrock_endpoint_target("https://bedrock-proxy.example.com:8443")
+
+
+def test_requires_exact_allowlisted_proxy_port(monkeypatch):
+    monkeypatch.setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "bedrock-proxy.example.com")
+    with pytest.raises(ValueError, match="exact host:port"):
+        validate_bedrock_endpoint_target("https://bedrock-proxy.example.com:8443")
+
+
 @pytest.mark.parametrize("region", ["attacker.example?ignored=", "ap_northeast_1", "-us-east-1", "us-east-1-"])
 def test_rejects_region_values_that_can_escape_the_aws_hostname(region):
     with pytest.raises(ValueError, match="valid AWS region identifier"):

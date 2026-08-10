@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -240,22 +241,42 @@ func validateBedrockEndpointTarget(endpointURL string) error {
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("bedrock: endpoint URL must not contain credentials, a query, or a fragment")
 	}
-	if port := parsed.Port(); port != "" && port != "443" {
-		return fmt.Errorf("bedrock: endpoint URL must not specify a non-default port")
-	}
+	port := parsed.Port()
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 	for _, pattern := range awsBedrockHostPatterns {
 		if pattern.MatchString(host) {
+			if port != "" && port != "443" {
+				return fmt.Errorf("bedrock: endpoint URL must not specify a non-default port")
+			}
 			return nil
 		}
 	}
 	for _, allowed := range strings.Split(os.Getenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST"), ",") {
-		allowed = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(allowed), "."))
-		if allowed == host || (strings.HasPrefix(allowed, "*.") && host != strings.TrimPrefix(allowed, "*.") && strings.HasSuffix(host, strings.TrimPrefix(allowed, "*"))) {
+		allowedHost, allowedPort := parseBedrockEndpointAllowlistEntry(allowed)
+		if !matchesBedrockEndpointHost(host, allowedHost) {
+			continue
+		}
+		if (allowedPort == "" && (port == "" || port == "443")) || allowedPort == port {
 			return nil
 		}
 	}
+	if port != "" && port != "443" {
+		return fmt.Errorf("bedrock: endpoint URL non-default port requires an exact host:port entry in BEDROCK_ENDPOINT_HOST_ALLOWLIST")
+	}
 	return fmt.Errorf("bedrock: endpoint hostname is not allowed; configure BEDROCK_ENDPOINT_HOST_ALLOWLIST for a trusted proxy")
+}
+
+func parseBedrockEndpointAllowlistEntry(entry string) (string, string) {
+	entry = strings.ToLower(strings.TrimSpace(entry))
+	host, port, err := net.SplitHostPort(entry)
+	if err == nil {
+		return strings.TrimSuffix(host, "."), port
+	}
+	return strings.TrimSuffix(entry, "."), ""
+}
+
+func matchesBedrockEndpointHost(host, allowedHost string) bool {
+	return allowedHost == host || (strings.HasPrefix(allowedHost, "*.") && host != strings.TrimPrefix(allowedHost, "*.") && strings.HasSuffix(host, strings.TrimPrefix(allowedHost, "*")))
 }
 
 func validateBedrockRequestTarget(requestURL *url.URL, service string) error {

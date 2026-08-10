@@ -230,6 +230,21 @@ func TestValidateBedrockEndpointAllowsHTTPSPort(t *testing.T) {
 	}
 }
 
+func TestValidateBedrockEndpointAllowsExplicitProxyPort(t *testing.T) {
+	t.Setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "bedrock-proxy.example.com:8443")
+	if err := validateBedrockEndpointTarget("https://bedrock-proxy.example.com:8443"); err != nil {
+		t.Fatalf("allowlisted proxy port: %v", err)
+	}
+}
+
+func TestValidateBedrockEndpointRequiresExactProxyPort(t *testing.T) {
+	t.Setenv("BEDROCK_ENDPOINT_HOST_ALLOWLIST", "bedrock-proxy.example.com")
+	err := validateBedrockEndpointTarget("https://bedrock-proxy.example.com:8443")
+	if err == nil || !strings.Contains(err.Error(), "exact host:port") {
+		t.Fatalf("hostname-only allowlist entry: got %v", err)
+	}
+}
+
 func TestBedrockMantleDriversReuseHTTPClient(t *testing.T) {
 	bedrock := newBedrockForTest("http://unused")
 	key := &bedrockKey{EndpointURL: "https://bedrock-mantle.us-east-1.api.aws"}

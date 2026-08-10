@@ -701,10 +701,10 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	return common.CodeSuccess, nil
 }
 
-// verifyProviderAPIKey verifies the API key against the provider by calling
-// the driver's CheckConnection. It returns a map from model name to verify
-// status (success/fail/unknown) and prevents persistence when the connection
-// check itself fails.
+// verifyProviderAPIKey verifies caller-selected models when present and falls
+// back to the driver's connection check when no model was selected. It returns
+// a map from model name to verify status (success/fail/unknown) and prevents
+// persistence when verification fails.
 func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) (map[string]string, error) {
 	result := make(map[string]string)
 
@@ -738,6 +738,18 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 	}
 
 	apiConfig := buildProviderAPIConfig(providerName, apiKey, region, baseURL)
+	if len(modelInfo) > 0 {
+		selectedModels := make([]CheckConnectionModelInfo, 0, len(modelInfo))
+		for _, model := range modelInfo {
+			selectedModels = append(selectedModels, CheckConnectionModelInfo{
+				ModelName:  model.ModelName,
+				ModelTypes: model.ModelTypes,
+				MaxTokens:  model.MaxTokens,
+				Extra:      model.Extra,
+			})
+		}
+		return verifyProviderModel(ctx, driver, providerInfo.Models, apiConfig, selectedModels)
+	}
 
 	verifyErr := driver.CheckConnection(ctx, apiConfig)
 	verifyStatus := entity.ModelVerifySuccess
@@ -1207,6 +1219,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	for _, model := range modelsToVerify {
 		modelName := model.Name
 		anyPassed := false
+		attempted := false
 
 		for _, modelType := range model.ModelTypes {
 			mtLower := strings.ToLower(modelType)
@@ -1216,6 +1229,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				continue
 			}
 
+			attempted = true
 			var err error
 
 			switch mtLower {
@@ -1266,7 +1280,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 
 		if anyPassed {
 			modelVerifyResult[modelName] = entity.ModelVerifySuccess
-		} else {
+		} else if attempted {
 			modelVerifyResult[modelName] = entity.ModelVerifyFail
 		}
 	}
