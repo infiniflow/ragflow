@@ -247,10 +247,12 @@ async def list_provider_models(provider_id_or_name: str):
     try:
         if request.method == "POST":
             logging.info("Listing models for provider %s via POST", provider_id_or_name)
-        body = await request.get_json(silent=True) if request.method == "POST" else {}
-        if body is None:
-            body = {}
-        elif not isinstance(body, dict):
+        body = {}
+        if request.method == "POST" and await request.get_data():
+            body = await request.get_json(silent=True)
+            if body is None:
+                return get_error_argument_result(message="request body must be a JSON object")
+        if not isinstance(body, dict):
             return get_error_argument_result(message="request body must be an object")
         for field in ("api_key", "base_url", "region"):
             if body.get(field) is not None and not isinstance(body[field], str):

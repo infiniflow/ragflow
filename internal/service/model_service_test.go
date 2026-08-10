@@ -373,6 +373,117 @@ func TestVerifyProviderAPIKeyWithoutModelsUsesConnectionCheck(t *testing.T) {
 	}
 }
 
+func TestVerifyProviderAPIKeyRequiresBaseURLForLocalProvider(t *testing.T) {
+	provider := dao.GetModelProviderManager().FindProvider("Ollama")
+	if provider == nil {
+		t.Fatal("Ollama provider is not registered")
+	}
+	if !strings.EqualFold(provider.Class, "local") {
+		t.Fatalf("Ollama class = %q, want local", provider.Class)
+	}
+	originalDriver := provider.ModelDriver
+	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	provider.ModelDriver = driver
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	modelInfo := []CreateInstanceModelInfo{{
+		ModelName:  "local-model",
+		ModelTypes: []string{"chat"},
+	}}
+	result, err := NewModelProviderService().verifyProviderAPIKey(
+		t.Context(),
+		"Ollama",
+		"token",
+		"default",
+		"  ",
+		modelInfo,
+	)
+	if err == nil || !strings.Contains(err.Error(), "base_url is required for local provider Ollama") {
+		t.Fatalf("verifyProviderAPIKey() error = %v", err)
+	}
+	if result["local-model"] != entity.ModelVerifyFail {
+		t.Fatalf("local-model status = %q, want %q", result["local-model"], entity.ModelVerifyFail)
+	}
+	if driver.checkCalls != 0 || driver.chatCalls != 0 {
+		t.Fatalf("driver calls = check:%d chat:%d, want none", driver.checkCalls, driver.chatCalls)
+	}
+}
+
+func TestCreateProviderInstanceReturnsDataErrorForMissingLocalBaseURL(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	for _, row := range []interface{}{
+		&entity.UserTenant{ID: "user-tenant-local", UserID: "user-local", TenantID: "tenant-local", Role: "owner", InvitedBy: "user-local", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-local", TenantID: "tenant-local", ProviderName: "Ollama"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	code, err := NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Ollama",
+		"local-instance",
+		"token",
+		"  ",
+		"default",
+		"user-local",
+		[]CreateInstanceModelInfo{{ModelName: "local-model", ModelTypes: []string{"chat"}}},
+	)
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err == nil || !strings.Contains(err.Error(), "base_url is required for local provider Ollama") {
+		t.Fatalf("CreateProviderInstance() error = %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&entity.TenantModelInstance{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("instance count = %d, want 0", count)
+	}
+
+	instance := &entity.TenantModelInstance{
+		ID:           "local-instance-id",
+		InstanceName: "local-instance",
+		ProviderID:   "provider-local",
+		APIKey:       "original-token",
+		Status:       "active",
+		Extra:        "{}",
+	}
+	if err := db.Create(instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	code, err = NewModelProviderService().AlterProviderInstance(
+		t.Context(),
+		"user-local",
+		"Ollama",
+		instance.ID,
+		"",
+		"new-token",
+		"  ",
+		"default",
+		[]CreateInstanceModelInfo{{ModelName: "local-model", ModelTypes: []string{"chat"}}},
+		true,
+	)
+	if code != common.CodeDataError {
+		t.Fatalf("alter code = %v, want %v", code, common.CodeDataError)
+	}
+	if err == nil || !strings.Contains(err.Error(), "base_url is required for local provider Ollama") {
+		t.Fatalf("AlterProviderInstance() error = %v", err)
+	}
+	if err := db.First(instance, "id = ?", instance.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if instance.APIKey != "original-token" {
+		t.Fatalf("APIKey = %q, want unchanged", instance.APIKey)
+	}
+}
+
 func TestVerifyProviderModelLeavesSkippedSameTypeUnknown(t *testing.T) {
 	driver := &connectionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
 	models := []CheckConnectionModelInfo{

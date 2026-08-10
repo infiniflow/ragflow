@@ -127,6 +127,13 @@ func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, regi
 	return newDriver, nil
 }
 
+func validateLocalProviderBaseURL(provider *modelModule.Provider, providerName, baseURL string) error {
+	if provider != nil && strings.EqualFold(provider.Class, "local") && strings.TrimSpace(baseURL) == "" {
+		return fmt.Errorf("base_url is required for local provider %s", providerName)
+	}
+	return nil
+}
+
 func NewModelProviderService() *ModelProviderService {
 	return &ModelProviderService{
 		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
@@ -563,6 +570,9 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
 	providerName := provider.ProviderName
+	if err := validateLocalProviderBaseURL(dao.GetModelProviderManager().FindProvider(providerName), providerName, baseURL); err != nil {
+		return common.CodeDataError, err
+	}
 
 	// Normalize api_key: VLLM with empty api_key defaults to "x".
 	// Mirrors Python's _normalize_provider_api_key.
@@ -723,6 +733,12 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 
 	driver := providerInfo.ModelDriver
 	if strings.EqualFold(providerInfo.Class, "local") {
+		if err := validateLocalProviderBaseURL(providerInfo, providerName, baseURL); err != nil {
+			for _, model := range modelInfo {
+				result[model.ModelName] = entity.ModelVerifyFail
+			}
+			return result, err
+		}
 		driverRegion := region
 		if driverRegion == "" {
 			driverRegion = "default"
@@ -2065,6 +2081,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	// Verify API key if requested.
 	modelVerifyResult := make(map[string]string)
 	if verify {
+		if err := validateLocalProviderBaseURL(dao.GetModelProviderManager().FindProvider(providerName), providerName, baseURL); err != nil {
+			return common.CodeDataError, err
+		}
 		modelVerifyResult, err = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
 		if err != nil {
 			return common.CodeServerError, err
