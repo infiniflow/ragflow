@@ -97,6 +97,7 @@ const TokenChunkerForm = ({
             <SliderInputFormField
               name="chunk_token_size"
               max={2048}
+              min={1}
               label={t('knowledgeConfiguration.chunkTokenNumber')}
             />
             <SliderInputFormField

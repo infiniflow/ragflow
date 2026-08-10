@@ -607,6 +607,10 @@ def run_index(dataset_id: str, tenant_id: str, index_type: str):
         types=[],
         suffix=[],
     )
+    # Disabled documents must not participate in a dataset-level structure
+    # rebuild. Keep them out of the fan-out task itself; the merger also
+    # applies a database-backed filter as a defense in depth.
+    documents = [document for document in documents if str(document.get("status", "1")) != "0"]
     if not documents:
         return False, f"No documents in Dataset {dataset_id}"
 
@@ -2053,17 +2057,6 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue
-        if scope_kwd == "dataset" and not entities and not relations:
-            try:
-                entities, relations = await sgc.build_bucket(
-                    index_nm,
-                    dataset_id,
-                    {"compilation_template_ids": [tid], "scope_kwd": ["doc"], "doc_id": sorted(active_doc_ids)},
-                    excluded_doc_ids=disabled_doc_ids,
-                )
-            except Exception:
-                logging.exception("get_dataset_structure: doc fallback bucket build failed for kb=%s template=%s", dataset_id, tid)
-                continue
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             entities = sgc.filter_entities_with_relations(entities, relations)
             if not entities:
