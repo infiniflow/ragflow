@@ -198,10 +198,10 @@ func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {
 		tmpl.ID = fmt.Sprint(v)
 	}
 	if v, ok := data["title"].(map[string]any); ok {
-		tmpl.Title = entity.JSONMap(v)
+		tmpl.Title = v
 	}
 	if v, ok := data["description"].(map[string]any); ok {
-		tmpl.Description = entity.JSONMap(v)
+		tmpl.Description = v
 	}
 	if v, ok := data["avatar"].(string); ok && v != "" {
 		tmpl.Avatar = &v
@@ -219,7 +219,7 @@ func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {
 	}
 
 	if v, ok := data["dsl"].(map[string]any); ok {
-		tmpl.DSL = entity.JSONMap(v)
+		tmpl.DSL = v
 	}
 
 	return tmpl, nil

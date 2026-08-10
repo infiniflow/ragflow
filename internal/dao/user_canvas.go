@@ -69,11 +69,6 @@ func userCanvasQualifiedOrderClause(orderby string, desc bool) string {
 	return order + " ASC"
 }
 
-func escapeSQLLike(s string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
-	return replacer.Replace(s)
-}
-
 func splitUserCanvasTags(raw string) []string {
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))
