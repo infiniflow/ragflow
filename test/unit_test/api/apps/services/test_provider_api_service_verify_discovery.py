@@ -153,7 +153,7 @@ async def test_credentials_in_the_base_url_never_reach_the_caller(monkeypatch, c
 
 
 @pytest.mark.asyncio
-async def test_authority_less_base_url_is_not_echoed_back(monkeypatch):
+async def test_authority_less_base_url_is_not_echoed_back(monkeypatch, caplog):
     """`urlparse` happily accepts a URL with no authority, e.g. one the user typed
     without a scheme. There is no host to keep, so nothing may be echoed."""
     secret_url = "models.internal/v1?api-key=AKIA-SECRET"
@@ -162,9 +162,11 @@ async def test_authority_less_base_url_is_not_echoed_back(monkeypatch):
         raise ConnectionRefusedError(f"Cannot connect to {secret_url}")
 
     module = _load_service(monkeypatch, _refused)
-    _, message, _ = await module.verify_api_key(PROVIDER, "sk-test", base_url=secret_url)
+    with caplog.at_level(logging.DEBUG):
+        _, message, _ = await module.verify_api_key(PROVIDER, "sk-test", base_url=secret_url)
 
     assert "AKIA-SECRET" not in message, message
+    assert "AKIA-SECRET" not in caplog.text, caplog.text
     assert "<unparsable url>" in message
 
 
@@ -185,8 +187,11 @@ async def test_invalid_port_does_not_propagate_out_of_the_error_handler(monkeypa
     assert "<unparsable url>" in message
 
 
-def test_redact_url_keeps_what_makes_a_failure_diagnosable():
-    redact = _load_helper("_redact_url")
+def test_redact_url_keeps_what_makes_a_failure_diagnosable(monkeypatch):
+    async def _unused():
+        return []
+
+    redact = _load_service(monkeypatch, _unused)._redact_url
 
     assert redact("http://127.0.0.1:1234/v1") == "http://127.0.0.1:1234/v1"
     assert redact("https://user:pw@host/v1") == "https://***@host/v1"
@@ -196,30 +201,6 @@ def test_redact_url_keeps_what_makes_a_failure_diagnosable():
     assert redact("https://host:notaport/v1") == "<unparsable url>"
     assert redact("") == ""
     assert redact(None) == ""
-
-
-def _load_helper(name: str):
-    repo_root = Path(__file__).resolve().parents[5]
-    source = (repo_root / "api" / "apps" / "services" / "provider_api_service.py").read_text()
-    namespace: dict = {}
-    exec(compile(_extract_function(source, name), "provider_api_service.py", "exec"), namespace)
-    return namespace[name]
-
-
-def _extract_function(source: str, name: str):
-    """Compile just one top-level function out of the service module.
-
-    `_redact_url` depends on nothing but `urllib.parse`, so pulling the single
-    definition out avoids stubbing the module's whole dependency graph for what
-    is a pure string transform.
-    """
-    import ast
-
-    tree = ast.parse(source)
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == name:
-            return ast.Module(body=[ast.parse("from urllib.parse import urlparse, urlunparse").body[0], node], type_ignores=[])
-    raise AssertionError(f"{name} not found in provider_api_service.py")
 
 
 @pytest.mark.asyncio
