@@ -142,7 +142,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
                 navigator.clipboard.writeText(token);
                 message.success(t('copySuccess'));
               }}
-              className="ml-2 p-2 hover:text-white transition-colors"
+              className="ml-2 p-2 hover:text-text-primary transition-colors"
               title="Copy ID"
             >
               <svg
