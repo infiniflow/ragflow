@@ -1020,18 +1020,21 @@ var toolCallRE = regexp.MustCompile(`(?s)<tool_call>.*?</tool_call>`)
 // in LLMBundle.async_chat (llm_service.py:459-461) for every response,
 // before any parsing:
 //
-//  1. Reasoning content: take everything after the LAST `</think>`. Python's
-//     _remove_reasoning_content (llm_service.py:332-346) only strips when a
-//     leading `<think>` is present AND a closing `</think>` follows it;
-//     otherwise the text is returned unchanged. (This differs from
-//     cleanExtractionResult, which strips on a bare `</think>`.)
+//  1. Reasoning content: when the response BEGINS with `<think>`, take
+//     everything after the LAST `</think>`. A `<think>` that appears after
+//     a non-empty prefix is treated as ordinary content and preserved, so a
+//     legitimate prefix is never stripped. Python's _remove_reasoning_content
+//     (llm_service.py:332-346) finds the first `<think>` anywhere; restricting
+//     to a leading `<think>` avoids deleting real content that merely contains
+//     a think-looking tag. A leading `<think>` with no closing `</think>` is
+//     kept unchanged.
 //  2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
 //
 // The result is a plain string, ready for the caller to consume as text or
 // to parse explicitly.
 func cleanLLMText(s string) string {
-	if i := strings.Index(s, "<think>"); i >= 0 {
-		if j := strings.LastIndex(s, "</think>"); j >= 0 && j > i {
+	if strings.HasPrefix(s, "<think>") {
+		if j := strings.LastIndex(s, "</think>"); j >= 0 {
 			s = s[j+len("</think>"):]
 		}
 	}

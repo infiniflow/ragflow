@@ -1282,7 +1282,12 @@ func TestCleanLLMText(t *testing.T) {
 		{
 			name: "close without open kept",
 			in:   "abc</think>def",
-			want: "abc</think>def", // Python _remove_reasoning_content: no <think> → unchanged
+			want: "abc</think>def", // no leading <think> → unchanged
+		},
+		{
+			name: "prefix before think kept",
+			in:   "prefix<think>reason</think>answer",
+			want: "prefix<think>reason</think>answer", // <think> not at start → content preserved
 		},
 		{
 			name: "open without close kept",
