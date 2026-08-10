@@ -222,7 +222,7 @@ func insertTaskContext(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, tas
 			Config:      entity.JSONMap{"sync_deleted_files": true},
 			RefreshFreq: 0,
 			PruneFreq:   0,
-			TimeoutSecs: 1,
+			TimeoutSecs: 60,
 			Status:      dao.SyncStatusSchedule,
 			BaseModel:   entity.BaseModel{UpdateDate: &now, UpdateTime: &ts},
 		}).Error; err != nil {
@@ -1014,5 +1014,18 @@ func TestMockSessionEOF(t *testing.T) {
 	_, err := session.NextBatch(t.Context())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("err = %v, want io.EOF", err)
+	}
+}
+
+// TestTaskExecutionTimeoutCapsConnectorTimeout verifies tasks cannot outlive the connector lock TTL.
+func TestTaskExecutionTimeoutCapsConnectorTimeout(t *testing.T) {
+	taskContext := service.SyncTaskContext{}
+	taskContext.Connector.TimeoutSecs = int64(connectorLockTTL.Seconds()) + 60
+	if got := taskExecutionTimeout(taskContext); got != connectorLockTTL {
+		t.Fatalf("timeout = %s, want %s", got, connectorLockTTL)
+	}
+	taskContext.Connector.TimeoutSecs = 30
+	if got := taskExecutionTimeout(taskContext); got != 30*time.Second {
+		t.Fatalf("timeout = %s, want 30s", got)
 	}
 }

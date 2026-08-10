@@ -156,6 +156,17 @@ func (d *SyncTaskDAO) ClaimTask(ctx context.Context, taskID string, now time.Tim
 			return nil
 		}
 
+		var mapping entity.Connector2Kb
+		lockQuery := tx.WithContext(ctx)
+		if tx.Dialector.Name() != "sqlite" {
+			lockQuery = lockQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := lockQuery.
+			Where("connector_id = ? AND kb_id = ?", task.ConnectorID, task.KbID).
+			First(&mapping).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
 		var running int64
 		if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
 			Where("id <> ? AND connector_id = ? AND kb_id = ? AND status = ? AND task_type IN ?", taskID, task.ConnectorID, task.KbID, SyncStatusRunning, []string{TaskTypeSync, TaskTypePrune}).

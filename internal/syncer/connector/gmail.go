@@ -733,8 +733,7 @@ func isGoogleRateLimited(err error) bool {
 	}
 	for _, reason := range googleErrorReasons(httpErr.body) {
 		switch reason {
-		case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded":
-			return true
+		case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "RESOURCE_EXHAUSTED":
 		}
 	}
 	return false

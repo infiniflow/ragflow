@@ -65,6 +65,10 @@ func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncT
 
 // Execute dispatches a sync_logs task by task type.
 func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext) error {
+	runCtx, cancel := context.WithTimeout(ctx, taskExecutionTimeout(taskContext))
+	defer cancel()
+	ctx = runCtx
+
 	connector, err := c.registry.Open(ctx, taskContext)
 	if err != nil {
 		return err
@@ -89,4 +93,12 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncT
 	default:
 		return fmt.Errorf("unsupported sync task type %q", taskContext.Task.TaskType)
 	}
+}
+
+func taskExecutionTimeout(taskContext service.SyncTaskContext) time.Duration {
+	timeout := time.Duration(taskContext.Connector.TimeoutSecs) * time.Second
+	if timeout <= 0 || timeout > connectorLockTTL {
+		return connectorLockTTL
+	}
+	return timeout
 }
