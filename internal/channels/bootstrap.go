@@ -124,7 +124,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			break
 		}
 	}
-	if err := syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
+	if err = syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
 		log.Printf("failed to sync WhatsApp gateway: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		if isRunning || retryPending {
 			continue
 		}
-		if err := r.startChannel(ctx, accountID, wanted); err != nil {
+		if err = r.startChannel(ctx, accountID, wanted); err != nil {
 			log.Printf("failed to start chat channel %s (%s): %v", accountID, wanted.channel, err)
 			r.recordStartFailure(accountID, wanted.fp, now)
 			continue

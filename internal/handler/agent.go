@@ -1524,7 +1524,8 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	code, err := h.agentService.TestDBConnection(user.ID, &req)
+	ctx := c.Request.Context()
+	code, err := h.agentService.TestDBConnection(ctx, user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

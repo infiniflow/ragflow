@@ -165,7 +165,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 
 	// 6. Security gate (strict; surfaces all errors as 102).
 	securityCfg := stringMap(webhookCfg["security"])
-	if err := validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
+	if err = validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}

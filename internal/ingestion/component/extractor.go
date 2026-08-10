@@ -665,7 +665,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}
 
 		if len(in.chunks) == 0 {
-			ans, callErr := c.call(timeoutCtx, db, in, "")
+			ans, callErr := c.callText(timeoutCtx, db, in, "")
 			if callErr != nil {
 				return callErr
 			}
@@ -709,7 +709,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 				strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
 				callChunkText = ""
 			}
-			ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
+			ans, callErr := c.callText(timeoutCtx, db, callIn, callChunkText)
 			if callErr != nil {
 				return fmt.Errorf("chunk %d: %w", i, callErr)
 			}
@@ -747,11 +747,10 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 		prompt:       "Output: ",
 		temperature:  &kwTemp,
 	}
-	result, err := c.call(ctx, db, kwIn, "")
+	resultStr, err := c.callText(ctx, db, kwIn, "")
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -783,11 +782,10 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 		prompt:       "Output: ",
 		temperature:  &qTemp,
 	}
-	result, err := c.call(ctx, db, qIn, "")
+	resultStr, err := c.callText(ctx, db, qIn, "")
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -931,31 +929,16 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			prompt:       "Output: ",
 			temperature:  &metaTemp,
 		}
-		result, err := c.call(ctx, db, metaIn, "")
+		parsed, err = c.callStructured(ctx, db, metaIn, "")
 		if err != nil {
 			return err
 		}
-		// call JSON-parses a JSON object response into a map; plain-text
-		// (or </think>-prefixed) responses come back as a string. Handle
-		// both so a valid ```json reply is never silently dropped.
-		var parsedObj map[string]any
-		switch r := result.(type) {
-		case map[string]any:
-			parsedObj = r
-		case string:
-			s := cleanExtractionResult(r)
-			if s == "" {
-				return nil
-			}
-			var ok bool
-			parsedObj, ok = tryParseJSONObject(s)
-			if !ok || len(parsedObj) == 0 {
-				return nil
-			}
-		default:
+		if parsed == nil {
+			// Non-JSON or empty response — nothing to extract, not an error.
+			// Matches Python gen_metadata treating an unparseable reply as an
+			// empty result rather than failing the chunk.
 			return nil
 		}
-		parsed = parsedObj
 		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
@@ -1025,6 +1008,38 @@ func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText strin
 		return
 	}
 	client.Set(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
+}
+
+// toolCallRE matches a <tool_call>...</tool_call> block, mirroring Python's
+// `re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)` at
+// llm_service.py:461. Non-greedy so consecutive tool_call blocks are each
+// stripped.
+var toolCallRE = regexp.MustCompile(`(?s)<tool_call>.*?</tool_call>`)
+
+// cleanLLMText applies the two-step LLM-layer cleanup that Python performs
+// in LLMBundle.async_chat (llm_service.py:459-461) for every response,
+// before any parsing:
+//
+//  1. Reasoning content: when the response BEGINS with `<think>`, take
+//     everything after the LAST `</think>`. A `<think>` that appears after
+//     a non-empty prefix is treated as ordinary content and preserved, so a
+//     legitimate prefix is never stripped. Python's _remove_reasoning_content
+//     (llm_service.py:332-346) finds the first `<think>` anywhere; restricting
+//     to a leading `<think>` avoids deleting real content that merely contains
+//     a think-looking tag. A leading `<think>` with no closing `</think>` is
+//     kept unchanged.
+//  2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
+//
+// The result is a plain string, ready for the caller to consume as text or
+// to parse explicitly.
+func cleanLLMText(s string) string {
+	if strings.HasPrefix(s, "<think>") {
+		if j := strings.LastIndex(s, "</think>"); j >= 0 {
+			s = s[j+len("</think>"):]
+		}
+	}
+	s = toolCallRE.ReplaceAllString(s, "")
+	return strings.TrimSpace(s)
 }
 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
@@ -1097,11 +1112,24 @@ func isRetryableLLMError(err error) bool {
 	return true
 }
 
-// call dispatches one LLM chat call for the supplied chunk text
-// (empty string in the no-chunk fast path). The result is the
-// raw string from the model — JSON parsing happens here so
-// callers can rely on a structured value downstream.
-func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (any, error) {
+// callRaw dispatches one LLM chat call for the supplied chunk text (empty
+// string in the no-chunk fast path) and returns the raw response. It holds
+// the shared plumbing — driver/target resolution, message assembly,
+// temperature override, retry — but deliberately does NOT clean or parse the
+// response. Callers pick the view they need:
+//
+//   - callText wraps callRaw with the LLM-layer two-step cleanup (think +
+//     tool_call) and returns a plain string — the field-extraction path,
+//     matching Python _generate_async.
+//   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
+//     returns a map — the metadata path, matching Python gen_metadata.
+//
+// Splitting this way restores Python's separation of concerns: the LLM layer
+// (async_chat) cleans, the caller decides whether to parse. A single
+// all-purpose call() that best-effort parses would hand field extraction a
+// map it does not want (silently dropped downstream) while leaving metadata
+// to re-parse — and could not add cleaning without breaking JSON structure.
+func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (*extractorChatResponse, error) {
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		return nil, err
@@ -1131,20 +1159,45 @@ func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractor
 	}, isRetryableLLMError); err != nil {
 		return nil, err
 	}
-	raw := strings.TrimSpace(resp.Content)
-	if raw == "" {
-		// No response — emit empty string so downstream code
-		// can distinguish from "LLM errored" via the error
-		// path above.
-		return "", nil
+	if resp == nil {
+		// Defensive: a provider adapter returning (nil, nil) would otherwise
+		// panic on resp.Content below. Surface a diagnosable error instead.
+		return nil, fmt.Errorf("extractor: chat: nil response from invoker")
 	}
-	// Best-effort JSON parse: a JSON object response is the
-	// canonical structured-extraction shape. Other shapes are
-	// returned verbatim so the caller can decide.
-	if parsed, ok := tryParseJSONObject(raw); ok {
-		return parsed, nil
+	return resp, nil
+}
+
+// callText runs one chat call and returns the cleaned text response. Used by
+// the field-extraction path (empty-chunks fast path and per-chunk writes),
+// which must always produce a string — matching Python's _generate_async
+// (llm.py:374-377) returning a raw string with no JSON parsing.
+func (c *ExtractorComponent) callText(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (string, error) {
+	resp, err := c.callRaw(ctx, db, in, chunkText)
+	if err != nil {
+		return "", err
 	}
-	return raw, nil
+	return cleanLLMText(resp.Content), nil
+}
+
+// callStructured runs one chat call, cleans the response, and explicitly
+// parses it as a JSON object. Used by the metadata path, which needs a
+// structured value to merge into chunk metadata — matching Python
+// gen_metadata's json_repair.loads. A non-JSON or empty response returns
+// (nil, nil) so the caller treats it as "nothing extracted", not an error.
+func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (map[string]any, error) {
+	resp, err := c.callRaw(ctx, db, in, chunkText)
+	if err != nil {
+		return nil, err
+	}
+	s := cleanLLMText(resp.Content)
+	if s == "" {
+		return nil, nil
+	}
+	parsed, ok := tryParseJSONObject(s)
+	if !ok {
+		return nil, nil
+	}
+	return parsed, nil
 }
 
 // resolveExtractorChatTarget resolves the llm_id into driver / model /

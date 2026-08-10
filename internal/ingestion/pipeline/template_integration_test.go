@@ -692,7 +692,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateResume_RealComponents(t *testing.T) {
 	RequireTokenizerPool(t)
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {

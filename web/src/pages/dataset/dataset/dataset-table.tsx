@@ -47,6 +47,7 @@ export type DatasetTableProps = Pick<
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+    bulkOperateBarVisible?: boolean;
   };
 
 export function DatasetTable({
@@ -56,6 +57,7 @@ export function DatasetTable({
   rowSelection,
   setRowSelection,
   showManageMetadataModal,
+  bulkOperateBarVisible = false,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -130,7 +132,13 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-280px)]">
+      <Table
+        rootClassName={
+          bulkOperateBarVisible
+            ? 'max-h-[calc(100vh-320px)]'
+            : 'max-h-[calc(100vh-280px)]'
+        }
+      >
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>

@@ -206,6 +206,32 @@ async def agentic_research(state: dict, tools) -> dict:
         if boost:
             _LOG.info("[Agentic research] Round %d: AutoRater is_sufficient=%s confidence=%.2f", cycle + 1, boost.get("is_sufficient"), boost.get("confidence", 1.0))
 
+        # LLM groundedness review (Google "draft review" thought): check whether each
+        # claim's report is semantically supported by the cited evidence. Ungrounded
+        # claims (hallucinated / over-claimed drafts) are merged into hard_violations
+        # so the decision ladder forces a caveated answer — this catches relation/over-
+        # claim errors that the lexical code-level grounded check (cross_check_claim)
+        # cannot see.
+        from rag.advanced_rag.harness.orchestrator.grounded_llm import llm_grounded_verify
+
+        grounded = await llm_grounded_verify(
+            tools,
+            ctx.question,
+            [(r.claim_id, r.report or "") for r in agent_results_list if r.report],
+            cited_ids,
+        )
+        # Treat a claim as violating when it is explicitly grounded=False OR has
+        # non-empty ungrounded assertions (covers the degenerate grounded=False /
+        # empty-ungrounded case too). Only accept IDs present in the original
+        # claims collection — the LLM may echo a bogus claim_id that must not leak
+        # into hard_violations.
+        valid_claim_ids = {r.claim_id for r in agent_results_list}
+        ungrounded_ids = [cid for cid, g in grounded.items() if cid in valid_claim_ids and (g.get("grounded") is False or g.get("ungrounded"))]
+        if ungrounded_ids:
+            existing = set(verdict.hard_violations or [])
+            verdict.hard_violations = list(existing | set(ungrounded_ids))
+            _LOG.info("[Agentic research] Round %d: %d claim(s) have ungrounded (draft-review) assertions: %s", cycle + 1, len(ungrounded_ids), ungrounded_ids)
+
         action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,

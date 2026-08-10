@@ -1362,7 +1362,8 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 
 	if req.ImageBase64 != nil {
-		imageBinary, err := decodeChunkImageBase64(*req.ImageBase64)
+		var imageBinary []byte
+		imageBinary, err = decodeChunkImageBase64(*req.ImageBase64)
 		if err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: err.Error()}
 		}
@@ -1394,7 +1395,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	chunkData[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
 
-	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
 	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
