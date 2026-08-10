@@ -27,7 +27,7 @@ import {
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { Segmented } from '@/components/ui/segmented';
+import { Segmented, type SegmentedValue } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import {
@@ -632,6 +632,27 @@ export const BedrockInstanceCard = forwardRef<
     [form],
   );
 
+  const createAuthModeChangeHandler = useCallback(
+    (onChange: (value: SegmentedValue) => void) =>
+      function handleAuthModeChange(value: SegmentedValue) {
+        if (value !== 'access_key_secret') {
+          form.setValue('bedrock_ak', '');
+          form.setValue('bedrock_sk', '');
+        }
+        if (value !== 'iam_role') {
+          form.setValue('aws_role_arn', '');
+        }
+        if (value !== 'bedrock_api_key') {
+          form.setValue('bedrock_api_key', '');
+          form.setValue('bedrock_endpoint_type', 'runtime');
+          form.setValue('bedrock_endpoint_url', '');
+          form.setValue('bedrock_discovery_endpoint_url', '');
+        }
+        onChange(value);
+      },
+    [form],
+  );
+
   const createMaxTokensChangeHandler = useCallback(
     (onChange: (value: number) => void) =>
       function handleMaxTokensChange(
@@ -680,22 +701,7 @@ export const BedrockInstanceCard = forwardRef<
             {(field) => (
               <Segmented
                 value={field.value}
-                onChange={(value) => {
-                  if (value !== 'access_key_secret') {
-                    form.setValue('bedrock_ak', '');
-                    form.setValue('bedrock_sk', '');
-                  }
-                  if (value !== 'iam_role') {
-                    form.setValue('aws_role_arn', '');
-                  }
-                  if (value !== 'bedrock_api_key') {
-                    form.setValue('bedrock_api_key', '');
-                    form.setValue('bedrock_endpoint_type', 'runtime');
-                    form.setValue('bedrock_endpoint_url', '');
-                    form.setValue('bedrock_discovery_endpoint_url', '');
-                  }
-                  field.onChange(value);
-                }}
+                onChange={createAuthModeChangeHandler(field.onChange)}
                 options={[
                   {
                     label: tSetting('awsAuthModeAccessKeySecret'),

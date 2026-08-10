@@ -768,14 +768,6 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 	}
 
 	verifyErr := driver.CheckConnection(ctx, apiConfig)
-	verifyStatus := entity.ModelVerifySuccess
-	if verifyErr != nil {
-		verifyStatus = entity.ModelVerifyFail
-	}
-
-	for _, model := range modelInfo {
-		result[model.ModelName] = verifyStatus
-	}
 	if verifyErr != nil {
 		return result, fmt.Errorf("provider %s connection verification failed: %w", providerName, verifyErr)
 	}
