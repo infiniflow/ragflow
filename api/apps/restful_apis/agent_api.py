@@ -1177,7 +1177,10 @@ async def update_agent(agent_id, tenant_id):
 
     if req.get("dsl") is not None:
         try:
+            from agent.canvas import Canvas
+
             req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
+            Canvas.validate_component_parameters(req["dsl"])
         except ValueError as exc:
             return get_json_result(
                 data=False,
