@@ -2995,7 +2995,6 @@ async def _wiki_build_source_context(
 
     chunk_map = await _wiki_load_chunks_by_id(chunk_ids, tenant_id, kb_id)
     if not chunk_map:
-        print("chunk_map::::::::::::::", chunk_ids, tenant_id, kb_id, flush=True)
         return "(source chunks could not be loaded)"
 
     parts: list[str] = []

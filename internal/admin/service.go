@@ -1395,38 +1395,40 @@ func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
 func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
+	globalConfig := server.GetConfig()
+
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := globalConfig.GetEnvDocumentEngineType()
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DOC_ENGINE",
+		"env":   "DOCUMENT_ENGINE",
 		"value": docEngine,
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
+	defaultSuperuserEmail := globalConfig.GetEnvDefaultSuperUserEmail()
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   common.EnvDefaultSuperuserEmail,
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
 		"value": defaultSuperuserEmail,
 	})
 
 	// DB_TYPE
-	dbType := common.GetEnv(common.EnvDBType)
+	dbType := globalConfig.GetEnvDatabaseType()
 	if dbType == "" {
 		dbType = "mysql"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DB_TYPE",
+		"env":   "DATABASE",
 		"value": dbType,
 	})
 
 	// DEVICE
-	device := common.GetEnv(common.EnvDevice)
+	device := globalConfig.GetEnvDeviceType()
 	if device == "" {
 		device = "cpu"
 	}
@@ -1436,12 +1438,12 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := common.GetEnv(common.EnvStorageImpl)
+	storageImpl := globalConfig.GetEnvStorageType()
 	if storageImpl == "" {
-		storageImpl = "MINIO"
+		storageImpl = "minio"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   common.EnvStorageImpl,
+		"env":   "STORAGE",
 		"value": storageImpl,
 	})
 

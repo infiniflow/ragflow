@@ -648,6 +648,38 @@ def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
             target.get("source_chunk_ids"),
             entity.get("source_chunk_ids"),
         )
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            entity.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
+    return [merged[key] for key in order]
+
+
+def _struct_merge_graph_relations(relations: list[dict]) -> list[dict]:
+    """Deduplicate relation payloads while preserving source provenance."""
+    merged: dict[tuple[str, str, str], dict] = {}
+    order: list[tuple[str, str, str]] = []
+    for relation in relations:
+        key = (
+            str(relation.get("from") or "").strip().casefold(),
+            str(relation.get("to") or "").strip().casefold(),
+            str(relation.get("type") or "related").strip().casefold(),
+        )
+        if not key[0] or not key[1]:
+            continue
+        if key not in merged:
+            merged[key] = relation
+            order.append(key)
+            continue
+        target = merged[key]
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            relation.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
     return [merged[key] for key in order]
 
 
@@ -2200,7 +2232,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids", "doc_id"]
     # ``doc_id is None`` collects every document's entities/relations in the KB
     # for the dataset-level graph; a concrete id keeps it document-scoped.
     condition: dict = {
@@ -2225,22 +2257,35 @@ async def _struct_rebuild_graph_json(
     )
     rows = settings.docStoreConn.get_fields(res, fields)
 
+    disabled_doc_ids: set[str] = set()
+    if doc_id is None:
+        from api.db.services.document_service import DocumentService
+
+        disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
+        if str(row.get("doc_id") or "") in disabled_doc_ids:
+            continue
+        source_doc_id = str(row.get("doc_id") or "").strip()
         payload = _struct_load_payload(row)
         if row.get("knowledge_graph_kwd") == "relation":
             relation = _struct_graph_relation(payload)
             if relation:
+                if doc_id is None and source_doc_id:
+                    relation["doc_ids_kwd"] = [source_doc_id]
                 relations.append(relation)
         else:
             entity = _struct_graph_entity(payload, row.get("source_chunk_ids"))
             if entity:
+                if doc_id is None and source_doc_id:
+                    entity["doc_ids_kwd"] = [source_doc_id]
                 entities.append(entity)
 
     return {
         "entities": _struct_merge_graph_entities(entities),
-        "relations": relations,
+        "relations": _struct_merge_graph_relations(relations) if doc_id is None else relations,
     }
 
 
