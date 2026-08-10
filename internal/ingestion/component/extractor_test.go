@@ -286,10 +286,12 @@ func TestExtractorComponent_Invoke_UnknownProvider(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_Invoke_ParsesJSON verifies a JSON object
-// response from the LLM is parsed into the chunk's field_name
-// value (matching the python set_output contract).
-func TestExtractorComponent_Invoke_ParsesJSON(t *testing.T) {
+// TestExtractorComponent_Invoke_KeepsJSONAsString verifies a JSON object
+// response from the LLM is written to the chunk's field_name value as a
+// plain string — matching Python's _generate_async, which returns the raw
+// string with no JSON parsing. (The Extractor does NOT parse field-extraction
+// results; only the metadata path, via callStructured, parses explicitly.)
+func TestExtractorComponent_Invoke_KeepsJSONAsString(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: `{"answer": 42, "tags": ["a", "b"]}`},
 	)
@@ -305,24 +307,20 @@ func TestExtractorComponent_Invoke_ParsesJSON(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := out["chunks"].([]map[string]any)
-	got, ok := chunks[0]["extraction"].(map[string]any)
+	got, ok := chunks[0]["extraction"].(string)
 	if !ok {
-		t.Fatalf("extraction should be parsed JSON object, got %T", chunks[0]["extraction"])
+		t.Fatalf("extraction should be a string (no JSON parse on field extraction), got %T", chunks[0]["extraction"])
 	}
-	if got["answer"].(float64) != 42 {
-		t.Errorf("answer = %v, want 42", got["answer"])
-	}
-	tags, _ := got["tags"].([]any)
-	if len(tags) != 2 {
-		t.Errorf("tags len = %d, want 2", len(tags))
+	if got != `{"answer": 42, "tags": ["a", "b"]}` {
+		t.Errorf("extraction = %q, want the raw JSON string", got)
 	}
 }
 
-// TestExtractorComponent_Invoke_ParsesJSONInFence verifies the
-// common LLM response shape — JSON wrapped in a markdown code
-// fence — parses cleanly. Mirrors the behaviour the agent
-// canvas applies (e.g. llm_retry_test.go matchOutputStructure).
-func TestExtractorComponent_Invoke_ParsesJSONInFence(t *testing.T) {
+// TestExtractorComponent_Invoke_KeepsJSONStringInFence verifies a JSON
+// response wrapped in a markdown code fence is stored as the raw string —
+// the code fence is not stripped on the field-extraction path (Python's
+// _generate_async returns the raw text untouched).
+func TestExtractorComponent_Invoke_KeepsJSONStringInFence(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: "```json\n{\"summary\": \"hello\"}\n```"},
 	)
@@ -336,12 +334,12 @@ func TestExtractorComponent_Invoke_ParsesJSONInFence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["chunks"].([]map[string]any)[0]["out"].(map[string]any)
+	got, ok := out["chunks"].([]map[string]any)[0]["out"].(string)
 	if !ok {
-		t.Fatalf("out should be parsed JSON object, got %T", out["chunks"].([]map[string]any)[0]["out"])
+		t.Fatalf("out should be a string, got %T", out["chunks"].([]map[string]any)[0]["out"])
 	}
-	if got["summary"] != "hello" {
-		t.Errorf("summary = %v, want hello", got["summary"])
+	if got != "```json\n{\"summary\": \"hello\"}\n```" {
+		t.Errorf("out = %q, want the raw fenced JSON string", got)
 	}
 }
 
@@ -1263,6 +1261,91 @@ func TestCleanExtractionResult_LastThinkTag(t *testing.T) {
 				t.Errorf("cleanExtractionResult(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCleanLLMText verifies the two-step LLM-layer cleanup that Python
+// applies in LLMBundle.async_chat (llm_service.py:459-461): reasoning
+// content is stripped only when a leading <think> has a matching closing
+// </think> after it, and <tool_call>...</tool_call> blocks are removed.
+func TestCleanLLMText(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "think block stripped",
+			in:   "<think>reasoning</think>the answer",
+			want: "the answer",
+		},
+		{
+			name: "close without open kept",
+			in:   "abc</think>def",
+			want: "abc</think>def", // no leading <think> → unchanged
+		},
+		{
+			name: "prefix before think kept",
+			in:   "prefix<think>reason</think>answer",
+			want: "prefix<think>reason</think>answer", // <think> not at start → content preserved
+		},
+		{
+			name: "open without close kept",
+			in:   "<think>unclosed",
+			want: "<think>unclosed", // no </think> → unchanged
+		},
+		{
+			name: "tool_call block removed",
+			in:   "before<tool_call>{\"name\":\"x\"}</tool_call>after",
+			want: "beforeafter",
+		},
+		{
+			name: "consecutive tool_call blocks",
+			in:   "a<tool_call>1</tool_call>b<tool_call>2</tool_call>c",
+			want: "abc",
+		},
+		{
+			name: "think then tool_call",
+			in:   "<think>r</think>out<tool_call>t</tool_call>end",
+			want: "outend",
+		},
+		{
+			name: "plain text",
+			in:   "  plain answer  ",
+			want: "plain answer",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanLLMText(tt.in); got != tt.want {
+				t.Errorf("cleanLLMText(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExtractorComponent_callStructured verifies the metadata path parses a
+// JSON object response into a map, and returns (nil, nil) for a non-JSON or
+// empty response (nothing extracted, not an error).
+func TestExtractorComponent_callStructured(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
+	c := &ExtractorComponent{}
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	if err != nil {
+		t.Fatalf("callStructured: %v", err)
+	}
+	if got["a"].(float64) != 1 {
+		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+
+	// Non-JSON response → (nil, nil), not an error.
+	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	if err != nil {
+		t.Fatalf("callStructured on non-JSON: %v", err)
+	}
+	if got != nil {
+		t.Errorf("non-JSON response should yield nil map, got %v", got)
 	}
 }
 
