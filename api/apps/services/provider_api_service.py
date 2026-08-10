@@ -116,8 +116,10 @@ def _load_model_extra(model) -> dict:
     try:
         extra = json.loads(model.extra)
     except (TypeError, json.JSONDecodeError) as error:
+        logging.error("Invalid stored extra metadata for model_id=%r", model.id)
         raise _ModelPersistenceError(f"Invalid stored extra for model '{model.model_name}'") from error
     if not isinstance(extra, dict):
+        logging.error("Invalid stored extra metadata for model_id=%r", model.id)
         raise _ModelPersistenceError(f"Invalid stored extra for model '{model.model_name}'")
     return extra
 
@@ -507,12 +509,13 @@ async def update_provider_instance(
             existing_model_names = {model_obj.model_name: model_obj for model_obj in existing_model_objs}
 
             # Delete models that are no longer in the submitted model_info
-            submitted_model_names = set()
-            if model_info:
+            factory_llms = None
+            if model_info is None:
+                factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+                factory_llms = factory_info[0]["llm"]
+                submitted_model_names = {_factory_llm_name(llm) for llm in factory_llms}
+            else:
                 submitted_model_names = {m.get("model_name") for m in model_info if m.get("model_name")}
-            elif model_info is not None:
-                # model_info is explicitly an empty list — remove all models
-                submitted_model_names = set()
             models_to_remove = set(existing_model_names.keys()) - submitted_model_names
             if models_to_remove:
                 TenantModelService.delete_by_ids([existing_model_names[n].id for n in models_to_remove])
@@ -549,8 +552,6 @@ async def update_provider_instance(
                             raise _ModelPersistenceError(msg)
             elif model_info is None:
                 # model_info not provided — add all factory default models (same as create)
-                factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
-                factory_llms = factory_info[0]["llm"]
                 for llm in factory_llms:
                     llm_name = _factory_llm_name(llm)
                     if llm_name in existing_model_names:

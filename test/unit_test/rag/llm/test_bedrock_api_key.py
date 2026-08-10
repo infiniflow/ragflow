@@ -200,18 +200,21 @@ def test_update_provider_instance_preserves_existing_extra_when_optional_extra_i
     assert update_extra == {"verify": "success", "preserved": True, "max_tokens": 4096}
 
 
-def test_update_provider_instance_rolls_back_when_existing_model_extra_is_invalid() -> None:
+@pytest.mark.parametrize("stored_extra", ["{invalid-json", "[]"])
+def test_update_provider_instance_rolls_back_when_existing_model_extra_is_invalid(stored_extra: str) -> None:
     atomic = _RecordingAtomic()
     provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
     instance = SimpleNamespace(id="instance-id", provider_id="provider-id", instance_name="instance", extra="{}")
-    existing_model = SimpleNamespace(id="model-id", model_name="model-a", model_type=1, extra="{invalid-json")
+    existing_model = SimpleNamespace(id="model-id", model_name="model-a", model_type=1, extra=stored_extra)
     update_by_id = MagicMock()
+    log_error = MagicMock()
     with (
         patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
         patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
         patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
         patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id", update_by_id),
         patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[existing_model]),
+        patch("api.apps.services.provider_api_service.logging.error", log_error),
     ):
         success, message = asyncio.run(
             update_provider_instance(
@@ -231,6 +234,85 @@ def test_update_provider_instance_rolls_back_when_existing_model_extra_is_invali
     assert message == "Invalid stored extra for model 'model-a'"
     assert atomic.error_type.__name__ == "_ModelPersistenceError"
     update_by_id.assert_called_once()
+    log_error.assert_called_once_with("Invalid stored extra metadata for model_id=%r", "model-id")
+
+
+def test_update_provider_instance_preserves_factory_models_when_model_info_is_omitted() -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    instance = SimpleNamespace(id="instance-id", provider_id="provider-id", instance_name="instance", extra="{}")
+    existing_factory_model = SimpleNamespace(id="factory-a-id", model_name="factory-a", model_type=1, extra=json.dumps({"preserved": True}))
+    existing_custom_model = SimpleNamespace(id="custom-id", model_name="custom-model", model_type=1, extra="{}")
+    delete_by_ids = MagicMock()
+    update_model = MagicMock()
+    add_model = MagicMock(return_value=(True, ""))
+    factory_info = [
+        {
+            "name": "Bedrock",
+            "llm": [
+                {"name": "factory-a", "model_type": "chat", "max_tokens": 4096},
+                {"name": "factory-b", "model_type": "chat", "max_tokens": 8192},
+            ],
+        }
+    ]
+
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.FACTORY_LLM_INFOS", factory_info),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id"),
+        patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[existing_factory_model, existing_custom_model]),
+        patch("api.apps.services.provider_api_service.TenantModelService.delete_by_ids", delete_by_ids),
+        patch("api.apps.services.provider_api_service.TenantModelService.update_model", update_model),
+        patch("api.apps.services.provider_api_service.add_model_to_instance", add_model),
+    ):
+        success, message = asyncio.run(update_provider_instance("tenant", "Bedrock", "instance-id", "instance", "token", "", None, None, verify=False))
+
+    assert success is True
+    assert message == "success"
+    delete_by_ids.assert_called_once_with(["custom-id"])
+    update_model.assert_called_once()
+    assert update_model.call_args.args[0] == "factory-a-id"
+    assert json.loads(update_model.call_args.args[1]["extra"]) == {
+        "preserved": True,
+        "max_tokens": 4096,
+        "is_tools": False,
+        "thinking": False,
+    }
+    assert add_model.call_args.args[:3] == ("tenant", "Bedrock", "instance")
+    assert add_model.call_args.kwargs == {
+        "model_type": ["chat"],
+        "model_name": "factory-b",
+        "max_tokens": 8192,
+        "extra": {"is_tools": False, "thinking": False},
+    }
+
+
+def test_update_provider_instance_deletes_all_models_for_explicit_empty_model_info() -> None:
+    atomic = _RecordingAtomic()
+    provider = SimpleNamespace(id="provider-id", provider_name="Bedrock")
+    instance = SimpleNamespace(id="instance-id", provider_id="provider-id", instance_name="instance", extra="{}")
+    existing_model = SimpleNamespace(id="model-id", model_name="model-a", model_type=1, extra="{}")
+    delete_by_ids = MagicMock()
+
+    with (
+        patch("api.apps.services.provider_api_service.DB.atomic", return_value=atomic),
+        patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_tenant_id_and_provider_id", return_value=provider),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.get_by_id", return_value=(True, instance)),
+        patch("api.apps.services.provider_api_service.TenantModelInstanceService.update_by_id"),
+        patch("api.apps.services.provider_api_service.TenantModelService.get_models_by_instance_id", return_value=[existing_model]),
+        patch("api.apps.services.provider_api_service.TenantModelService.delete_by_ids", delete_by_ids),
+        patch("api.apps.services.provider_api_service.TenantModelService.update_model") as update_model,
+        patch("api.apps.services.provider_api_service.add_model_to_instance") as add_model,
+    ):
+        success, message = asyncio.run(update_provider_instance("tenant", "Bedrock", "instance-id", "instance", "token", "", None, [], verify=False))
+
+    assert success is True
+    assert message == "success"
+    delete_by_ids.assert_called_once_with(["model-id"])
+    update_model.assert_not_called()
+    add_model.assert_not_called()
 
 
 def test_verify_rejects_mixed_unclassified_models_before_driver_calls() -> None:
