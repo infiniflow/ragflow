@@ -1849,6 +1849,10 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     disabled_doc_ids = await _disabled_dataset_doc_ids(dataset_id)
     if not active_doc_ids:
         return True, empty
+    # Dataset rows use the KB id as ``doc_id``. If a historical row has no
+    # source provenance, exclude it while documents are disabled and fall back
+    # to active document rows instead of returning potentially stale content.
+    dataset_excluded_doc_ids = disabled_doc_ids | ({dataset_id} if disabled_doc_ids else set())
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -2019,7 +2023,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             keywords,
             _scope_for_template,
             log_ctx=f"kb={dataset_id}",
-            excluded_doc_ids=disabled_doc_ids,
+            excluded_doc_ids=dataset_excluded_doc_ids,
         )
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             kw_entities = sgc.filter_entities_with_relations(kw_entities, kw_relations)
@@ -2044,7 +2048,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 index_nm,
                 dataset_id,
                 scope,
-                excluded_doc_ids=disabled_doc_ids,
+                excluded_doc_ids=dataset_excluded_doc_ids if scope_kwd == "dataset" else disabled_doc_ids,
             )
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
@@ -2076,7 +2080,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         try:
             res_l = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["content_with_weight", "compilation_template_kind_kwd"],
+                ["content_with_weight", "compilation_template_kind_kwd", "compile_kwd"],
                 [],
                 {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD], "must_not": {"exists": "compilation_template_ids"}},
                 [],
@@ -2086,16 +2090,34 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 index_nm,
                 [dataset_id],
             )
-            legacy_rows = settings.docStoreConn.get_fields(res_l, ["content_with_weight", "compilation_template_kind_kwd"]) or {}
+            legacy_rows = settings.docStoreConn.get_fields(res_l, ["content_with_weight", "compilation_template_kind_kwd", "compile_kwd"]) or {}
         except Exception:
             logging.exception("get_dataset_structure: legacy blob fetch failed for kb=%s", dataset_id)
             legacy_rows = {}
         legacy_bucket = {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind, "entities": [], "relations": []}
+        reconstructed_compile_kwds: set[str] = set()
         for row in legacy_rows.values():
             stamped_kind = row.get("compilation_template_kind_kwd") or ""
             if isinstance(stamped_kind, list):
                 stamped_kind = stamped_kind[0].strip()
             if _resolve_dataset_structure_kind((stamped_kind or "").strip()) != resolved_kind:
+                continue
+            if disabled_doc_ids:
+                compile_kwd = _scalar(row.get("compile_kwd"))
+                if not compile_kwd or compile_kwd in reconstructed_compile_kwds:
+                    continue
+                reconstructed_compile_kwds.add(compile_kwd)
+                try:
+                    entities, relations = await sgc.build_bucket(
+                        index_nm,
+                        dataset_id,
+                        {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)},
+                        excluded_doc_ids=disabled_doc_ids,
+                    )
+                except Exception:
+                    continue
+                legacy_bucket["entities"].extend(entities)
+                legacy_bucket["relations"].extend(relations)
                 continue
             try:
                 graph = json.loads(row.get("content_with_weight") or "{}")
@@ -2103,8 +2125,8 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict) and sgc._row_has_enabled_source(item, disabled_doc_ids))
-            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict) and sgc._row_has_enabled_source(item, disabled_doc_ids))
+            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict))
+            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict))
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
@@ -2265,9 +2287,7 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
                 for field_name in fields:
                     involved.update(_flatten_provenance_doc_ids(row.get(field_name)))
             else:
-                value = row.get(fields[0])
-                if value:
-                    involved.add(str(value))
+                involved.update(_flatten_provenance_doc_ids(row.get(fields[0])))
 
         offset += page_size
         total = settings.docStoreConn.get_total(res)
@@ -2286,7 +2306,33 @@ async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> se
             "scope_kwd": ["dataset"],
             "compilation_template_kind_kwd": [_ALTERATION_KIND_TO_MERGED_ROW_KIND[kind]],
         }
-        return await _involved_doc_ids_paged(index_nm, dataset_id, condition, ["source_doc_ids", "doc_ids_kwd"], from_list=True)
+        involved = await _involved_doc_ids_paged(index_nm, dataset_id, condition, ["source_doc_ids", "doc_ids_kwd"], from_list=True)
+        if involved:
+            return involved
+
+        # Historical dataset rows may predate provenance columns. Recover the
+        # source document set from their template/compile identity so alteration
+        # still reports disabled documents instead of treating every active
+        # document as newly uploaded.
+        template_ids = await _involved_doc_ids_paged(index_nm, dataset_id, condition, "compilation_template_ids", from_list=True)
+        compile_kwds = await _involved_doc_ids_paged(index_nm, dataset_id, condition, "compile_kwd", from_list=True)
+        if not template_ids and not compile_kwds:
+            legacy_condition = {
+                "knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD],
+                "compilation_template_kind_kwd": [_ALTERATION_KIND_TO_MERGED_ROW_KIND[kind]],
+            }
+            template_ids = await _involved_doc_ids_paged(index_nm, dataset_id, legacy_condition, "compilation_template_ids", from_list=True)
+            compile_kwds = await _involved_doc_ids_paged(index_nm, dataset_id, legacy_condition, "compile_kwd", from_list=True)
+        source_condition: dict = {"knowledge_graph_kwd": ["entity", "relation"]}
+        if template_ids:
+            source_condition["compilation_template_ids"] = sorted(template_ids)
+        elif compile_kwds:
+            source_condition["compile_kwd"] = sorted(compile_kwds)
+        else:
+            return set()
+        involved = await _involved_doc_ids_paged(index_nm, dataset_id, source_condition, "doc_id", from_list=False)
+        involved.discard(dataset_id)
+        return involved
     if kind == "tree":
         return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": list(_ALTERATION_TREE_COMPILE_KWDS)}, "doc_id", from_list=False)
     return set()
