@@ -2016,6 +2016,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             keywords,
             _scope_for_template,
             log_ctx=f"kb={dataset_id}",
+            excluded_doc_ids=disabled_doc_ids,
         )
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             kw_entities = sgc.filter_entities_with_relations(kw_entities, kw_relations)
@@ -2096,8 +2097,8 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(graph.get("entities") or [])
-            legacy_bucket["relations"].extend(graph.get("relations") or [])
+            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict) and sgc._row_has_enabled_source(item, disabled_doc_ids))
+            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict) and sgc._row_has_enabled_source(item, disabled_doc_ids))
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
@@ -2160,19 +2161,7 @@ async def _current_dataset_docs(dataset_id: str):
 
 
 async def _disabled_dataset_doc_ids(dataset_id: str) -> set[str]:
-    docs, _ = await thread_pool_exec(
-        DocumentService.get_by_kb_id,
-        kb_id=dataset_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    return {str(doc["id"]) for doc in docs or [] if str(doc.get("status", "1")) == "0" and doc.get("id")}
+    return await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, dataset_id)
 
 
 def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc_ids: set) -> dict:

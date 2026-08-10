@@ -2229,18 +2229,7 @@ async def _struct_rebuild_graph_json(
     if doc_id is None:
         from api.db.services.document_service import DocumentService
 
-        docs, _ = DocumentService.get_by_kb_id(
-            kb_id=kb_id,
-            page_number=0,
-            items_per_page=0,
-            orderby="create_time",
-            desc=False,
-            keywords="",
-            run_status=[],
-            types=[],
-            suffix=[],
-        )
-        disabled_doc_ids = {str(doc["id"]) for doc in docs or [] if str(doc.get("status", "1")) == "0" and doc.get("id")}
+        disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
 
     entities: list[dict] = []
     relations: list[dict] = []

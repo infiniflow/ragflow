@@ -64,7 +64,7 @@ GRAPH_ALL_FIELDS = [
 ]
 
 
-async def graph_search(index_name, kb_id, select_fields, condition, order_by, limit, match_expressions=None):
+async def graph_search(index_name, kb_id, select_fields, condition, order_by, limit, match_expressions=None, offset=0):
     """One raw-row search. Returns ``(field_map, total)`` where ``total`` is the
     full match count (not the returned slice)."""
     res = await thread_pool_exec(
@@ -74,7 +74,7 @@ async def graph_search(index_name, kb_id, select_fields, condition, order_by, li
         condition,
         match_expressions or [],
         order_by,
-        0,
+        offset,
         max(int(limit or 0), 1),
         index_name,
         [kb_id],
@@ -241,13 +241,24 @@ def filter_entities_with_relations(entities: list[dict], relations: list[dict]) 
 def _row_has_enabled_source(row: dict, excluded_doc_ids: set[str]) -> bool:
     if not excluded_doc_ids:
         return True
-    source_ids = row.get("doc_ids_kwd") or row.get("source_doc_ids")
+    source_ids: set[str] = set()
+    for field in ("doc_ids_kwd", "source_doc_ids"):
+        value = row.get(field)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw:
+                try:
+                    value = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    value = [raw]
+            else:
+                value = []
+        if isinstance(value, (list, tuple, set)):
+            source_ids.update(str(doc_id) for doc_id in value)
+        elif value:
+            source_ids.add(str(value))
     if source_ids:
-        if isinstance(source_ids, str):
-            source_ids = [source_ids]
-        if isinstance(source_ids, (list, tuple, set)):
-            return any(str(doc_id) not in excluded_doc_ids for doc_id in source_ids)
-        return str(source_ids) not in excluded_doc_ids
+        return bool(source_ids - excluded_doc_ids)
     doc_id = row.get("doc_id")
     return not doc_id or str(doc_id) not in excluded_doc_ids
 
@@ -290,8 +301,24 @@ async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str
         order_by.desc("mention_count_int")
     except Exception:
         order_by = OrderByExpr()
-    ent_a_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"]), order_by, GRAPH_TOP_ENTITIES)
-    set_a = [n for n in (project_entity(r) for r in ent_a_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n]
+    set_a: list[dict] = []
+    entity_offset = 0
+    entity_total = None
+    while len(set_a) < GRAPH_TOP_ENTITIES and (entity_total is None or entity_offset < entity_total):
+        ent_a_map, entity_total = await graph_search(
+            index_name,
+            kb_id,
+            GRAPH_ENTITY_FIELDS,
+            dict(scope, knowledge_graph_kwd=["entity"]),
+            order_by,
+            GRAPH_TOP_ENTITIES,
+            offset=entity_offset,
+        )
+        if not ent_a_map:
+            break
+        set_a.extend(n for n in (project_entity(r) for r in ent_a_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n)
+        entity_offset += len(ent_a_map)
+    set_a = set_a[:GRAPH_TOP_ENTITIES]
     a_names = sorted({str(e.get("name") or "").strip() for e in set_a if str(e.get("name") or "").strip()})
     a_name_terms = sorted({term for name in a_names for term in _endpoint_terms(name)})
 
@@ -320,7 +347,16 @@ async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str
     return entities, normalize_relation_endpoints(entities, relations)
 
 
-async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, keywords, scope_for_template, log_ctx="") -> tuple[dict | None, list[dict], list[dict]]:
+async def keyword_subgraph(
+    index_name,
+    kb_id,
+    embd_mdl,
+    base_entity_condition,
+    keywords,
+    scope_for_template,
+    log_ctx="",
+    excluded_doc_ids: set[str] | None = None,
+) -> tuple[dict | None, list[dict], list[dict]]:
     """KNN the entity rows matching ``base_entity_condition`` for ``keywords``;
     return ``(top1_bucket_meta, entities, relations)`` for the top-1 entity's
     1-hop subgraph (top-1 + neighbors + touching relations). ``(None, [], [])``
@@ -333,6 +369,8 @@ async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, k
     ``knowledge_graph_kwd``).
     """
     from common.doc_store.doc_store_base import MatchDenseExpr
+
+    excluded_doc_ids = excluded_doc_ids or set()
 
     try:
         qv, _ = await thread_pool_exec(embd_mdl.encode_queries, keywords)
@@ -348,14 +386,16 @@ async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, k
         embedding_data=vec,
         embedding_data_type="float",
         distance_type="cosine",
-        topn=1,
+        topn=GRAPH_TOP_ENTITIES,
         extra_options={"similarity": 0.0},
     )
     top_fields = GRAPH_ENTITY_FIELDS + ["compilation_template_ids", "compile_kwd", "compilation_template_kind_kwd"]
-    top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), 1, match_expressions=[match_expr])
+    top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_TOP_ENTITIES, match_expressions=[match_expr])
     if not top_map:
         return None, [], []
-    top_row = next(iter(top_map.values()))
+    top_row = next((row for row in top_map.values() if _row_has_enabled_source(row, excluded_doc_ids)), None)
+    if top_row is None:
+        return None, [], []
     top_node = project_entity(top_row)
     if not top_node:
         return None, [], []
@@ -372,6 +412,8 @@ async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, k
     for field in ("from_entity_kwd", "to_entity_kwd"):
         rel_map, _ = await graph_search(index_name, kb_id, GRAPH_RELATION_FIELDS, dict(scope, knowledge_graph_kwd=["relation"], **{field: top_name_terms}), OrderByExpr(), GRAPH_EXPANSION_CAP)
         for row in rel_map.values():
+            if not _row_has_enabled_source(row, excluded_doc_ids):
+                continue
             edge = project_relation(row)
             if not edge:
                 continue
@@ -388,7 +430,7 @@ async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, k
     entities = [top_node]
     if neighbor_names_lower:
         nb_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"], name_kwd=sorted(neighbor_names_lower)), OrderByExpr(), GRAPH_EXPANSION_CAP)
-        entities.extend(n for n in (project_entity(r) for r in nb_map.values()) if n)
+        entities.extend(n for n in (project_entity(r) for r in nb_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n)
 
     entities = dedup_entities(entities)
     return bucket_meta, entities, normalize_relation_endpoints(entities, relations)

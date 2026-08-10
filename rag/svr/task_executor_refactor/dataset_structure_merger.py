@@ -35,6 +35,7 @@ import asyncio
 import inspect
 import json
 import logging
+from functools import lru_cache
 from typing import Optional
 
 import xxhash
@@ -65,6 +66,15 @@ _BUCKET_MERGE_MAX_IN_FLIGHT = 4
 
 # Row id seeds for metadata
 _META_ROW_KWD = "kg_build_meta"
+
+
+@lru_cache(maxsize=None)
+def _supports_bulk_refresh(connection_type: type) -> bool:
+    try:
+        return "refresh" in inspect.signature(connection_type.insert).parameters
+    except (TypeError, ValueError):
+        return False
+
 
 STRUCTURE_MERGE_TASK_TYPES = frozenset(
     {
@@ -158,7 +168,7 @@ async def _index_insert(tenant_id: str, kb_id: str, rows: list[dict]) -> None:
     index = _index_name(tenant_id)
     try:
         insert = settings.docStoreConn.insert
-        if "refresh" in inspect.signature(insert).parameters:
+        if _supports_bulk_refresh(type(settings.docStoreConn)):
             await thread_pool_exec(insert, rows, index, kb_id, refresh=False)
         else:
             await thread_pool_exec(insert, rows, index, kb_id)
@@ -196,21 +206,10 @@ async def _embed_rows(embd_mdl, rows: list[dict], texts: list[str]) -> None:
                 rows[start + offset][f"q_{len(vector)}_vec"] = list(vector)
 
 
-def _disabled_doc_ids(kb_id: str) -> set[str]:
+async def _disabled_doc_ids(kb_id: str) -> set[str]:
     from api.db.services.document_service import DocumentService
 
-    docs, _ = DocumentService.get_by_kb_id(
-        kb_id=kb_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    return {str(doc["id"]) for doc in docs or [] if str(doc.get("status", "1")) == "0" and doc.get("id")}
+    return await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
 
 
 # ---------------------------------------------------------------------------
@@ -904,7 +903,7 @@ async def run_structure_merge(ctx: TaskContext) -> None:
         progress(1.0, f"No eligible templates for {kind_label}.")
         return
 
-    disabled_doc_ids = _disabled_doc_ids(ctx.kb_id)
+    disabled_doc_ids = await _disabled_doc_ids(ctx.kb_id)
     # A disabled document does not trigger an immediate rebuild. On the next
     # explicit merge, rebuild from all active source rows so shared entities
     # and relations are recalculated without the disabled document's data.
