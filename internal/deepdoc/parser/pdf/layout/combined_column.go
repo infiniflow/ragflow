@@ -55,9 +55,17 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 // wide enough to be real reading columns.
 const tableMaxColFrac = 0.22
 
+// maxColumnCount caps how many columns the gap detector may report. Gap
+// voting can over-split a single page into many spurious gutters (e.g.
+// first-line indentation), so we bound the count to the old detector's best-k
+// cap of min(4, n). This prevents catastrophic splits (a single page reported
+// as 7+ columns) that the old code could never produce.
+const maxColumnCount = 4
+
 // detectColumnCount returns (columnCount, centroids) for one page.
-// columnCount is currently 1, 2, or >=3; centroids are the k cluster means in
-// x0 space (snapshot of the gate decision) and are reused for ColID assignment.
+// columnCount is 1, 2, or up to maxColumnCount; centroids are the k cluster
+// means in x0 space (snapshot of the gate decision) and are reused for ColID
+// assignment.
 func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 	lines := make([]pdf.TextBox, len(indices))
 	for i, idx := range indices {
@@ -82,10 +90,19 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 			}
 		}
 		if g > 2 {
-			// gap >= 3 with wide columns: real multi-column layout.
+			// gap >= 3 with wide columns: a real multi-column layout.
+			// Cap the count (maxColumnCount) so spurious gutters cannot
+			// split a single page into many columns.
+			k := g
+			if k > maxColumnCount {
+				k = maxColumnCount
+			}
+			if k > len(lines) {
+				k = len(lines)
+			}
 			_, w := pageExtent(lines)
-			cents := kmeansCentroids(lines, g, w)
-			return g, cents
+			cents := kmeansCentroids(lines, k, w)
+			return k, cents
 		}
 		// g == 2: unreliable (fake gutter or real 2-col) -> defer to balance.
 	}
