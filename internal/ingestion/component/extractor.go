@@ -698,16 +698,23 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			callIn := in
 			callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
 			callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
-			// buildExtractorMessages appends chunkText to the user
-			// message unconditionally. When the chunk text was already
-			// embedded via a {text}/{chunks} placeholder above, passing
-			// it again would duplicate the content in the final prompt.
-			// Suppress the automatic append in that case (the keyword/
-			// question helper paths do the same by passing "").
+			// buildExtractorMessages appends chunkText to the user message
+			// unconditionally. Suppress that append only when a content-bearing
+			// placeholder ({text}/{chunks}/{content_with_weight}) was actually
+			// replaced — i.e. the chunk body is already in the prompt.
+			// "Present before substitution, gone after" is more precise than
+			// substring-matching the original prompt: it correctly handles a
+			// {text} that cannot be resolved against the chunk (still appends)
+			// and avoids suppressing on non-content placeholders like {title}
+			// (whose replacement must not drop the document body).
+			contentPH := []string{"{text}", "{chunks}", "{content_with_weight}"}
 			callChunkText := text
-			if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
-				strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
-				callChunkText = ""
+			for _, ph := range contentPH {
+				if (strings.Contains(in.prompt, ph) && !strings.Contains(callIn.prompt, ph)) ||
+					(strings.Contains(in.systemPrompt, ph) && !strings.Contains(callIn.systemPrompt, ph)) {
+					callChunkText = ""
+					break
+				}
 			}
 			ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
 			if callErr != nil {
