@@ -98,10 +98,11 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncT
 }
 
 func taskExecutionDeadline(now time.Time, taskContext service.SyncTaskContext, lease ConnectorLockLease) time.Time {
-	timeout := time.Duration(taskContext.Connector.TimeoutSecs) * time.Second
-	if timeout <= 0 {
-		timeout = connectorLockTTL
+	timeout := connectorLockTTL
+	if seconds := taskContext.Connector.TimeoutSecs; seconds > 0 && seconds <= int64(connectorLockTTL/time.Second) {
+		timeout = time.Duration(seconds) * time.Second
 	}
+	
 	deadline := now.Add(timeout)
 	if lease.ExpiresAt.IsZero() {
 		if timeout > connectorLockTTL {
