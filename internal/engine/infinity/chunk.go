@@ -553,9 +553,6 @@ func (e *Engine) AdjustChunkPagerank(ctx context.Context, baseName, chunkID, dat
 	if chunkID == "" {
 		return fmt.Errorf("chunk id cannot be empty")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if e.client == nil || e.client.pool == nil {
 		return fmt.Errorf("infinity client not initialized")
 	}

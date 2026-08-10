@@ -17,6 +17,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -40,7 +41,7 @@ var (
 )
 
 // InitDocEngine initializes document engine
-func InitDocEngine() error {
+func InitDocEngine(ctx context.Context) error {
 
 	var initErr error
 	once.Do(func() {
@@ -50,9 +51,9 @@ func InitDocEngine() error {
 		var err error
 		switch engineType {
 		case "elasticsearch":
-			globalEngine, err = elasticsearch.NewEngine(globalConfig.GetElasticsearchConfig())
+			globalEngine, err = elasticsearch.NewEngine(ctx, globalConfig.GetElasticsearchConfig())
 		case "infinity":
-			globalEngine, err = infinity.NewEngine(globalConfig.GetInfinityConfig())
+			globalEngine, err = infinity.NewEngine(ctx, globalConfig.GetInfinityConfig())
 		case "oceanbase", "seekdb":
 			connectionConfig, resolveErr := globalConfig.ResolveOceanBaseConnection(engineType)
 			if resolveErr != nil {

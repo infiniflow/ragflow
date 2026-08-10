@@ -107,6 +107,7 @@ func validateWebhookSecurity(
 	c *gin.Context,
 	canvasID string,
 ) error {
+	ctx := c.Request.Context()
 	if len(securityCfg) == 0 {
 		return errWebhookFailClosed
 	}
@@ -116,7 +117,7 @@ func validateWebhookSecurity(
 	if err := validateIPWhitelist(c, securityCfg); err != nil {
 		return err
 	}
-	if err := validateRateLimit(canvasID, securityCfg); err != nil {
+	if err := validateRateLimit(ctx, canvasID, securityCfg); err != nil {
 		return err
 	}
 	return validateAuth(c, securityCfg)
@@ -242,7 +243,7 @@ func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 //
 // Strict fail-closed: any Redis error → error. The webhook handler
 // surfaces this as 102 so an operator notices a misconfiguration.
-func validateRateLimit(canvasID string, cfg map[string]any) error {
+func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any) error {
 	rawRL, ok := cfg["rate_limit"].(map[string]any)
 	if !ok || len(rawRL) == 0 {
 		return nil
@@ -277,14 +278,14 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	}
 
 	key := fmt.Sprintf("rl:tb:%s", canvasID)
-	ctx, cancel := context.WithTimeout(context.Background(), webhookRateLimitTimeout)
+	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}
-	allowed, err := rdb.EvalTokenBucketStrict(ctx, key, limitF, limitF/window)
+	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
 		return fmt.Errorf("rate limit error: %s", err.Error())
 	}
