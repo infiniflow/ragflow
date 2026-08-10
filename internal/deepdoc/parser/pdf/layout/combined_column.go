@@ -246,7 +246,12 @@ func dropFullWidth(lines []pdf.TextBox, width float64) []pdf.TextBox {
 		}
 	}
 	if len(out) == 0 {
-		return lines // cover page: everything "full-width", fall back
+		// Every line is full-width: there is no narrow body to form a second
+		// column. Return nil (not the original lines) so the caller's
+		// len(body) < 4 guard treats the page as a single column instead of
+		// pushing the whole page through the balance gate, which could
+		// mis-split a full-width single column whose x0 happens to be bimodal.
+		return nil
 	}
 	return out
 }
