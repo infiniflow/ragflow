@@ -1330,9 +1330,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 
 	// Cancellation of the HTTP request must reach the workflow, but it must
 	// not stop the Redis watchers while the real Runner goroutine is still
-	// unwinding. Otherwise a non-cooperative external call can outlive the
+	// unwinding. Otherwise, a non-cooperative external call can outlive the
 	// lease, allowing a second process to acquire the same session. The
-	// detached watcher context is cancelled only after inner has closed and
+	// detached watcher context is canceled only after inner has closed and
 	// cleanup has taken ownership of the lease release.
 	lifecycleDone := make(chan struct{})
 	go func() {
@@ -2281,7 +2281,7 @@ func (s *AgentService) CancelSessionRun(ctx context.Context, userID, sessionID s
 		if err != nil {
 			return fmt.Errorf("agent cancel: read active session: %w: %w", err, ErrAgentStorageError)
 		}
-		if err == nil && remote != nil {
+		if remote != nil {
 			if remote.UserID != "" && remote.UserID != userID {
 				return ErrAgentNotOwner
 			}

@@ -699,24 +699,10 @@ async def _do_build(
         }
         if template_id:
             del_cond["compilation_template_ids"] = [template_id]
-        offset = 0
-        while True:
-            existing = await _index_search(
-                tenant_id,
-                kb_id,
-                del_cond,
-                ["id"],
-                limit=1000,
-                offset=offset,
-            )
-            if not existing:
-                break
-            ids = [r["id"] for r in existing if r.get("id")]
-            if ids:
-                await _index_delete(tenant_id, kb_id, {"id": ids})
-            if len(existing) < 1000:
-                break
-            offset += 1000
+        # Delete by condition in one operation. Paging through matches while
+        # deleting them shifts subsequent offsets and leaves every later page
+        # behind, which is especially visible on large timeline graphs.
+        await _index_delete(tenant_id, kb_id, del_cond)
         # Also delete the meta rows
         meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
         try:
@@ -728,9 +714,7 @@ async def _do_build(
     if incremental and last_build_time is not None:
         cleanup_ok = await _cleanup_deleted_docs(tenant_id, kb_id, compile_kwd, template_id)
 
-    # ── Scan doc_graph rows ──────────────────────────────────────────
-    # Backward compat: existing doc_graph rows don't have scope_kwd.
-    # Search for (scope_kwd="doc" OR (not exists scope_kwd)) AND compile_kwd.
+    # ── Scan document-level graph rows ───────────────────────────────
     base_cond = {
         "compile_kwd": [compile_kwd],
         "knowledge_graph_kwd": ["entity", "relation"],
@@ -738,8 +722,10 @@ async def _do_build(
     if template_id:
         base_cond["compilation_template_ids"] = [template_id]
     scan_all = not incremental or last_build_time is None
-    if not scan_all:
-        base_cond["scope_kwd"] = [_SCOPE_KWD_DOC]
+    # A full rebuild must only scan document-level rows.  Dataset-level rows
+    # are the output of this task and must never become input on the next run.
+    # This also makes disabled-document filtering effective after a rebuild.
+    base_cond["scope_kwd"] = [_SCOPE_KWD_DOC]
 
     # Build timestamp filter for incremental mode
     ts_cond = None

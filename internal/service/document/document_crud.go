@@ -275,7 +275,7 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		common.Warn(fmt.Sprintf("need to delete files from taskInfo: %v", taskInfo))
 	}
 
-	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID)
 	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
@@ -366,11 +366,10 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 
 // deleteDocEngineData removes chunks and metadata from the document engine.
 // No-op when the engine is nil.
-func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
+func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) {
 	if s.docEngine == nil {
 		return
 	}
-	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
@@ -382,7 +381,7 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	// source/per-doc chunks, so the consumer only owns merged-product cleanup.
 	// Bound the publish with a timeout so a stalled scheduler (MySQL/NATS) can
 	// never block the document delete, which already succeeded above.
-	pubCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	pubCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID); err != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
@@ -490,7 +489,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
-				rmErr := removeObjectBestEffort(storageImpl, file.ParentID, *file.Location)
+				rmErr := removeObjectBestEffort(ctx, storageImpl, file.ParentID, *file.Location)
 				if rmErr != nil {
 					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
 				}

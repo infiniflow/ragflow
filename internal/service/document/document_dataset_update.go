@@ -80,8 +80,8 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err := s.docEngine.UpdateChunks(
-				context.Background(),
+			err = s.docEngine.UpdateChunks(
+				ctx,
 				map[string]interface{}{"doc_id": docID},
 				map[string]interface{}{"available_int": statusInt},
 				fmt.Sprintf("ragflow_%s", kb.TenantID),
@@ -397,7 +397,7 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	return s.docEngine.UpdateChunks(
-		context.Background(),
+		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
 		map[string]interface{}{
 			"docnm_kwd":    newName,

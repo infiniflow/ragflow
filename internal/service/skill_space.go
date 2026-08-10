@@ -427,7 +427,7 @@ func (s *SkillSpaceService) DeleteSpace(ctx context.Context, spaceID, tenantID s
 // asyncDeleteSpace performs the actual deletion work in the background.
 // It deletes the search index, removes files via Go FileService, and soft-deletes the space record.
 func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folderID, tenantID string, docEngine engine.DocEngine) {
-	bgCtx, bgCancel := context.WithTimeout(context.Background(), 120*time.Second)
+	bgCtx, bgCancel := context.WithTimeout(ctx, 120*time.Second)
 	defer bgCancel()
 
 	defer func() {
@@ -441,7 +441,7 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	if docEngine != nil {
 		indexName := getSkillIndexName(tenantID, spaceID)
 		common.Info("Async deleting space index", zap.String("index", indexName), zap.String("spaceID", spaceID))
-		deleteCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		deleteCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		if err := docEngine.DropChunkStore(deleteCtx, indexName, "skill"); err != nil {
 			common.Warn("Failed to delete space index during async delete", zap.String("index", indexName), zap.Error(err))
 			// Continue with other cleanup steps
@@ -456,7 +456,7 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	// is the HTTP request context canceled when the handler returns and the
 	// goroutine starts executing).
 	common.Info("Async deleting space folder via Go FileService", zap.String("folderID", folderID), zap.String("spaceID", spaceID))
-	ctxFS, cancelFS := context.WithTimeout(context.Background(), 60*time.Second)
+	ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelFS()
 	success, msg := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID})
 	if !success {
