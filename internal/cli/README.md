@@ -21,8 +21,8 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 ### Build and run
 
 ```bash
-go build -o ragflow_cli ./cmd/ragflow_cli.go
-./ragflow_cli
+go build -o ragflow-cli ./cmd/ragflow-cli.go
+./ragflow-cli
 ```
 
 ## Architecture
@@ -103,6 +103,9 @@ search "machine learning"                    # Search all datasets (JSON output)
 search "neural networks" datasets/kb1        # Search in kb1
 search "AI" datasets/kb1  --output plain     # Plain text output
 search "RAG" -n 20                           # Return 20 results
+SEARCH 'machine learning' ON DATASETS 'kb1' 'kb2'
+SEARCH 'AI' ON DATASETS 'kb1' WITH top_k 1024 similarity_threshold 0.0 vector_similarity_weight 0.3 keyword true
+SEARCH 'AI' ON DATASETS 'kb1' WITH cross_languages ['Chinese']
 ```
 
 #### `cat <path>` - Display content

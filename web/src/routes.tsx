@@ -43,8 +43,12 @@ export enum Routes {
   Plan = '/plan',
   Model = '/model',
   Prompt = '/prompt',
+  CompilationTemplates = '/compilation-templates',
+  CompilationTemplatesCreateNext = '/compilation-templates/create-next',
+  CompilationTemplatesEditNext = '/compilation-templates/edit-next',
   DataSource = '/data-source',
   DataSourceDetailPage = '/data-source-detail-page',
+  ChatChannel = '/chat-channel',
   ProfileMcp = `${ProfileSetting}${Mcp}`,
   ProfileTeam = `${ProfileSetting}${Team}`,
   ProfilePlan = `${ProfileSetting}${Plan}`,
@@ -59,6 +63,7 @@ export enum Routes {
   Result = '/result',
   ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
+  Compilation = '/compilation',
   AgentLogPage = '/agent-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
@@ -66,6 +71,7 @@ export enum Routes {
   UserSetting = '/user-setting',
   DataSetOverview = '/logs',
   DataSetSetting = '/configuration',
+  DataSetSettingNext = '/setting',
   DataflowResult = '/dataflow-result',
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
@@ -202,6 +208,10 @@ const routeConfigOptions = [
             path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
             Component: () => import('@/pages/dataset/dataset-setting'),
           },
+          {
+            path: `${Routes.DatasetBase}${Routes.DataSetSettingNext}/:id`,
+            Component: () => import('@/pages/dataset/setting'),
+          },
         ],
       },
       {
@@ -294,6 +304,15 @@ const routeConfigOptions = [
             path: `${Routes.UserSetting}${Routes.DataSource}`,
             Component: () => import('@/pages/user-setting/data-source'),
           },
+          {
+            path: `${Routes.UserSetting}${Routes.ChatChannel}`,
+            Component: () => import('@/pages/user-setting/chat-channel'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.CompilationTemplates}`,
+            Component: () =>
+              import('@/pages/user-setting/compilation-templates'),
+          },
         ],
       },
       {
@@ -305,8 +324,36 @@ const routeConfigOptions = [
     ],
   },
   {
+    path: Routes.CompilationTemplatesCreateNext,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/create-next'),
+  },
+  {
+    path: `${Routes.CompilationTemplatesCreateNext}/:id`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/create-next'),
+  },
+  {
+    path: Routes.CompilationTemplatesEditNext,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/edit-next'),
+  },
+  {
+    path: `${Routes.CompilationTemplatesEditNext}/:id`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/edit-next'),
+  },
+  {
     path: `${Routes.SearchShare}`,
     Component: () => import('@/pages/next-search/share'),
+  },
+  {
+    path: `${Routes.DatasetBase}${Routes.Compilation}/:id`,
+    Component: () => import('@/pages/dataset/compilation'),
   },
   {
     path: Routes.Agent,

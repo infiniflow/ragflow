@@ -2,6 +2,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
 import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
+import { ConnectFileToKnowledgeMode } from '@/interfaces/request/file-manager';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
@@ -82,6 +83,8 @@ export const useHandleConnectToKnowledge = () => {
   const { connectFileToKnowledge: connectToKnowledge, loading } =
     useConnectToKnowledge();
   const [record, setRecord] = useState<IFile>({} as IFile);
+  const [documentIds, setDocumentIds] = useState<string[]>([]);
+  const [mode, setMode] = useState<ConnectFileToKnowledgeMode>('replace');
 
   const initialValue = useMemo(() => {
     return Array.isArray(record?.kbs_info)
@@ -90,10 +93,12 @@ export const useHandleConnectToKnowledge = () => {
   }, [record?.kbs_info]);
 
   const onConnectToKnowledgeOk = useCallback(
-    async (knowledgeIds: string[]) => {
+    async (kbsInfo: { kb_id: string; kb_name: string }[]) => {
       const ret = await connectToKnowledge({
-        fileIds: [record.id],
-        kbIds: knowledgeIds,
+        fileIds: documentIds,
+        kbIds: kbsInfo.map((kb) => kb.kb_id),
+        mode,
+        kbsInfo,
       });
 
       if (ret === 0) {
@@ -101,12 +106,21 @@ export const useHandleConnectToKnowledge = () => {
       }
       return ret;
     },
-    [connectToKnowledge, hideConnectToKnowledgeModal, record.id],
+    [connectToKnowledge, hideConnectToKnowledgeModal, documentIds, mode],
   );
 
   const handleShowConnectToKnowledgeModal = useCallback(
-    (record: IFile) => {
-      setRecord(record);
+    (documents: IFile | string[]) => {
+      if (Array.isArray(documents)) {
+        setDocumentIds(documents);
+        setRecord({} as IFile);
+        setMode('add');
+      } else {
+        setRecord(documents);
+        setDocumentIds([documents.id]);
+        setMode('replace');
+      }
+
       showConnectToKnowledgeModal();
     },
     [showConnectToKnowledgeModal],

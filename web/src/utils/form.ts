@@ -1,6 +1,6 @@
 import { variableEnabledFieldMap } from '@/constants/chat';
 import { TFunction } from 'i18next';
-import { camelCase } from 'lodash';
+import { camelCase, isNil } from 'lodash';
 import omit from 'lodash/omit';
 
 // chat model setting and generate operator
@@ -55,12 +55,27 @@ export function setLLMSettingEnabledValues(
     pre[field] =
       initialLlmSetting === undefined
         ? false
-        : !!initialLlmSetting[
-            variableEnabledFieldMap[
-              field as keyof typeof variableEnabledFieldMap
-            ]
-          ];
+        : !isNil(
+            initialLlmSetting[
+              variableEnabledFieldMap[
+                field as keyof typeof variableEnabledFieldMap
+              ]
+            ],
+          );
     return pre;
   }, {});
   return values;
+}
+
+/**
+ * Add prefix to form field name
+ * @param prefix - The prefix to add (e.g., 'chat.', 'settings.')
+ * @param name - The field name
+ * @returns The prefixed field name
+ * @example
+ * prefixName('chat.', 'icon') // returns 'chat.icon'
+ * prefixName('', 'name') // returns 'name'
+ */
+export function prefixName(prefix: string, name: string): string {
+  return `${prefix}${name}`;
 }

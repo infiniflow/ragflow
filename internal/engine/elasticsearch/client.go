@@ -17,36 +17,30 @@
 package elasticsearch
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"ragflow/internal/server"
+	"os"
+	"ragflow/internal/server/config"
+	"ragflow/internal/utility"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// Engine Elasticsearch engine implementation
-type elasticsearchEngine struct {
+// Engine is the Elasticsearch engine implementation
+type Engine struct {
 	client *elasticsearch.Client
-	config *server.ElasticsearchConfig
+	config *config.ElasticsearchConfig
 }
 
 // NewEngine creates an Elasticsearch engine
-func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("elasticsearch config is nil, please check your configuration file for 'doc_engine.es' settings")
-	}
-	esConfig, ok := cfg.(*server.ElasticsearchConfig)
-	if !ok {
-		return nil, fmt.Errorf("invalid Elasticsearch config type, expected *config.ElasticsearchConfig")
-	}
-	if esConfig == nil {
-		return nil, fmt.Errorf("elasticsearch config is nil, please check your configuration file for 'doc_engine.es' settings")
-	}
-
+func NewEngine(esConfig config.ElasticsearchConfig) (*Engine, error) {
 	// Create ES client
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{esConfig.Hosts},
@@ -55,6 +49,7 @@ func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   10,
 			ResponseHeaderTimeout: 30 * time.Second,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 		},
 	})
 	if err != nil {
@@ -73,24 +68,39 @@ func NewEngine(cfg interface{}) (*elasticsearchEngine, error) {
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
-	engine := &elasticsearchEngine{
+	engine := &Engine{
 		client: client,
-		config: esConfig,
+		config: &esConfig,
+	}
+
+	// Create two index templates for different index types
+	// Template for chunk indices (ragflow_*) - priority 1
+	if err = engine.CreateIndexTemplate(context.Background(), "ragflow_mapping", "ragflow_*", "mapping.json", 1); err != nil {
+		return nil, fmt.Errorf("failed to create chunk index template: %w", err)
+	}
+	// Template for doc_meta indices (ragflow_doc_meta_*) - priority 2 (higher than ragflow_*)
+	if err = engine.CreateIndexTemplate(context.Background(), "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
+		return nil, fmt.Errorf("failed to create doc_meta index template: %w", err)
 	}
 
 	return engine, nil
 }
 
 // GetType returns the engine type
-func (e *elasticsearchEngine) GetType() string {
+func (e *Engine) GetType() string {
 	return "elasticsearch"
 }
 
+// SupportsPageRank returns true because Elasticsearch supports pagerank.
+func (e *Engine) SupportsPageRank() bool {
+	return true
+}
+
 // Ping health check
-func (e *elasticsearchEngine) Ping(ctx context.Context) error {
+func (e *Engine) Ping(ctx context.Context) error {
 	req := esapi.InfoRequest{}
 	res, err := req.Do(ctx, e.client)
 	if err != nil {
@@ -104,14 +114,94 @@ func (e *elasticsearchEngine) Ping(ctx context.Context) error {
 }
 
 // Close closes the connection
-func (e *elasticsearchEngine) Close() error {
+func (e *Engine) Close() error {
 	// Go-elasticsearch client doesn't have a Close method, connection is managed by the transport
+	return nil
+}
+
+// CreateIndexTemplate creates an index template with the specified mapping
+// The template will be automatically applied to any new index matching the pattern
+func (e *Engine) CreateIndexTemplate(ctx context.Context, templateName, indexPattern, mappingFileName string, priority ...int) error {
+	if templateName == "" || indexPattern == "" {
+		return fmt.Errorf("template name and index pattern cannot be empty")
+	}
+
+	p := 1
+	if len(priority) > 0 {
+		p = priority[0]
+	}
+
+	if mappingFileName == "" {
+		mappingFileName = "mapping.json"
+	}
+
+	mappingPath, err := utility.FindConfFileInProject(mappingFileName)
+	if err != nil {
+		return err
+	}
+
+	// Read mapping from file
+	data, err := os.ReadFile(*mappingPath)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %q: %w", *mappingPath, err)
+	}
+
+	var mapping map[string]interface{}
+	if err = json.Unmarshal(data, &mapping); err != nil {
+		return fmt.Errorf("failed to parse mapping file %q: %w", *mappingPath, err)
+	}
+
+	// Separate settings and mappings from the mapping file
+	templateSettings := mapping["settings"]
+	templateMappings := mapping["mappings"]
+
+	// Build template body with proper structure
+	templateBody := map[string]interface{}{
+		"index_patterns": []string{indexPattern},
+		"priority":       p, // Configurable priority to override existing templates
+		"template": map[string]interface{}{
+			"settings": templateSettings,
+			"mappings": templateMappings,
+		},
+	}
+
+	templateBytes, err := json.Marshal(templateBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal template: %w", err)
+	}
+
+	// Create or update template
+	req := esapi.IndicesPutIndexTemplateRequest{
+		Name: templateName,
+		Body: bytes.NewReader(templateBytes),
+	}
+
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to create index template: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to create index template: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+
+	var result map[string]interface{}
+	if err = json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if acknowledged, ok := result["acknowledged"].(bool); !ok || !acknowledged {
+		return fmt.Errorf("index template creation not acknowledged")
+	}
+
 	return nil
 }
 
 // GetClusterStats gets Elasticsearch cluster statistics
 // Reference: curl -XGET "http://{es_host}/_cluster/stats" -H "kbn-xsrf: reporting"
-func (e *elasticsearchEngine) GetClusterStats() (map[string]interface{}, error) {
+func (e *Engine) GetClusterStats() (map[string]interface{}, error) {
 	req := esapi.ClusterStatsRequest{}
 	res, err := req.Do(context.Background(), e.client)
 	if err != nil {
@@ -124,7 +214,7 @@ func (e *elasticsearchEngine) GetClusterStats() (map[string]interface{}, error) 
 	}
 
 	var rawStats map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&rawStats); err != nil {
+	if err = json.NewDecoder(res.Body).Decode(&rawStats); err != nil {
 		return nil, fmt.Errorf("failed to decode cluster stats: %w", err)
 	}
 
@@ -187,8 +277,8 @@ func (e *elasticsearchEngine) GetClusterStats() (map[string]interface{}, error) 
 		if versions, ok := nodes["versions"].([]interface{}); ok {
 			result["nodes_version"] = versions
 		}
-		if os, ok := nodes["os"].(map[string]interface{}); ok {
-			if mem, ok := os["mem"].(map[string]interface{}); ok {
+		if operatingSystem, ok := nodes["os"].(map[string]interface{}); ok {
+			if mem, ok := operatingSystem["mem"].(map[string]interface{}); ok {
 				if totalInBytes, ok := mem["total_in_bytes"].(float64); ok {
 					result["os_mem"] = convertBytes(int64(totalInBytes))
 				}
@@ -222,7 +312,7 @@ func (e *elasticsearchEngine) GetClusterStats() (map[string]interface{}, error) 
 	return result, nil
 }
 
-// convertBytes converts bytes to human readable format
+// convertBytes converts bytes to human-readable format
 func convertBytes(bytes int64) string {
 	const (
 		KB = 1024
@@ -284,4 +374,39 @@ func extractErrorReason(bodyBytes []byte) string {
 	}
 
 	return ""
+}
+
+// GetIndexStats gets statistics for specified indices using the _cat/indices API
+// Returns index, health, status, docs.count, store.size, dataset.size for each index
+func (e *Engine) GetIndexStats(indices []string) ([]map[string]interface{}, error) {
+	if len(indices) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+
+	req := esapi.CatIndicesRequest{
+		Index:  indices,
+		Format: "json",
+		H:      []string{"index", "health", "status", "docs.count", "store.size", "dataset.size"},
+	}
+
+	res, err := req.Do(context.Background(), e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index stats: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return []map[string]interface{}{}, nil
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("elasticsearch cat indices error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+
+	var results []map[string]interface{}
+	if err = json.NewDecoder(res.Body).Decode(&results); err != nil {
+		return nil, fmt.Errorf("failed to decode index stats: %w", err)
+	}
+
+	return results, nil
 }

@@ -1,4 +1,4 @@
-import Image from '@/components/image';
+import Image, { useDocumentImageUrl } from '@/components/image';
 import {
   Carousel,
   CarouselContent,
@@ -7,7 +7,6 @@ import {
   CarouselPrevious,
 } from '@/components/ui/carousel';
 import { IReferenceChunk } from '@/interfaces/database/chat';
-import { restAPIv1 } from '@/utils/api';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
@@ -34,6 +33,20 @@ const getButtonVisibilityClass = (imageCount: number) => {
   };
   return map[imageCount] || (imageCount >= 6 ? '@2xl:hidden' : '');
 };
+
+function ImagePhotoView({ id, index }: ImageItem) {
+  const src = useDocumentImageUrl(id);
+
+  return (
+    <PhotoView src={src}>
+      <Image
+        id={id}
+        className="h-40 w-full"
+        label={`Fig. ${(index + 1).toString()}`}
+      />
+    </PhotoView>
+  );
+}
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {
   const buttonVisibilityClass = getButtonVisibilityClass(images.length);
@@ -79,13 +92,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               @2xl:basis-1/6
               "
             >
-              <PhotoView src={`${restAPIv1}/documents/images/${id}`}>
-                <Image
-                  id={id}
-                  className="h-40 w-full"
-                  label={`Fig. ${(index + 1).toString()}`}
-                />
-              </PhotoView>
+              <ImagePhotoView id={id} index={index}></ImagePhotoView>
             </CarouselItem>
           ))}
         </CarouselContent>

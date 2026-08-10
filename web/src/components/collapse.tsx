@@ -29,7 +29,7 @@ export function Collapse({
   title,
   children,
   rightContent,
-  open = true,
+  open,
   defaultOpen = false,
   onOpenChange,
   disabled,
@@ -37,8 +37,12 @@ export function Collapse({
   const [currentOpen, setCurrentOpen] = useState(open);
 
   useEffect(() => {
-    setCurrentOpen(open);
-  }, [open]);
+    if (typeof open === 'boolean') {
+      setCurrentOpen(open);
+    } else {
+      setCurrentOpen(defaultOpen);
+    }
+  }, [defaultOpen, open]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -55,25 +59,25 @@ export function Collapse({
       onOpenChange={handleOpenChange}
       disabled={disabled}
     >
-      <CollapsibleTrigger className={'w-full'}>
-        <section className="flex justify-between items-center">
-          <div className="flex items-center gap-1">
+      <section className="flex justify-between items-center gap-2">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center">
+          <div className="flex min-w-0 items-center gap-1">
             {currentOpen ? (
-              <ListChevronsUpDown className="size-4" />
+              <ListChevronsUpDown className="size-4 shrink-0" />
             ) : (
-              <ListChevronsDownUp className="size-4 text-text-secondary" />
+              <ListChevronsDownUp className="size-4 shrink-0 text-text-secondary" />
             )}
             <div
-              className={cn('text-text-secondary', {
-                'text-text-primary': open,
+              className={cn('min-w-0 text-text-secondary', {
+                'text-text-primary': currentOpen,
               })}
             >
               {title}
             </div>
           </div>
-          <div>{rightContent}</div>
-        </section>
-      </CollapsibleTrigger>
+        </CollapsibleTrigger>
+        {rightContent ? <div className="shrink-0">{rightContent}</div> : null}
+      </section>
       <CollapsibleContent className="pt-5">{children}</CollapsibleContent>
     </Collapsible>
   );

@@ -37,9 +37,7 @@ def step_02_validate_page(ctx: FlowContext, step, snap):
     input_count = page.locator("input").count()
     logo_count = page.locator("img[alt='logo']").count()
     if root_count + input_count + logo_count == 0:
-        raise AssertionError(
-            _format_diag(page, response, "No SPA root, inputs, or logo found")
-        )
+        raise AssertionError(_format_diag(page, response, "No SPA root, inputs, or logo found"))
 
 
 STEPS = [
@@ -52,9 +50,7 @@ STEPS = [
 @pytest.mark.p0
 @pytest.mark.auth
 @pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_auth_page_smoke_flow(
-    step_fn, flow_page, flow_state, base_url, smoke_login_url, step, snap
-):
+def test_auth_page_smoke_flow(step_fn, flow_page, flow_state, base_url, smoke_login_url, step, snap):
     ctx = FlowContext(
         page=flow_page,
         state=flow_state,
@@ -73,7 +69,4 @@ def _format_diag(page, response, reason: str) -> str:
     url = page.url
     title = page.title()
     snippet = page.content().strip().replace("\n", " ")[:500]
-    return (
-        f"{reason}. url={url} title={title} status={status} "
-        f"content_type={content_type} snippet={snippet}"
-    )
+    return f"{reason}. url={url} title={title} status={status} content_type={content_type} snippet={snippet}"

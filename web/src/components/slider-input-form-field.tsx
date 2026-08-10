@@ -92,9 +92,11 @@ export const SliderInputFormField = forwardRef<
               <FormControl>
                 <SingleFormSlider
                   {...field}
-                  value={percentage ? field.value * 100 : field.value}
+                  value={
+                    percentage ? Math.round(field.value * 100) : field.value
+                  }
                   onChange={(value) =>
-                    field.onChange(percentage ? value / 100 : value)
+                    field.onChange(percentage ? Math.round(value) / 100 : value)
                   }
                   max={displayMax}
                   min={displayMin}
@@ -114,13 +116,13 @@ export const SliderInputFormField = forwardRef<
                   step={displayStep}
                   hideIcons
                   value={
-                    percentage ? (field.value * 100).toFixed(0) : field.value
+                    percentage ? Math.round(field.value * 100) : field.value
                   }
                   onChange={(val) => {
                     const value = Number(val || 0);
-                    if (!isNaN(value)) {
+                    if (value >= 0) {
                       field.onChange(
-                        percentage ? (value / 100).toFixed(0) : value,
+                        percentage ? Math.round(value) / 100 : value,
                       );
                     }
                   }}

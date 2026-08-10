@@ -6,7 +6,7 @@ import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 import { ToolCard } from '../../form/agent-form/agent-tools';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../../store';
 import { NodeWrapper } from './node-wrapper';
 
@@ -41,15 +41,26 @@ function InnerToolNode({
         isConnectable={isConnectable}
         className="!bg-accent-primary !size-2"
       />
+      {/* v1 ExeSQL and similar "tool" components route their result
+          downstream, so they need a source handle too. Without this,
+          any edge where the toolNode is the source silently fails to
+          render. */}
+      <Handle
+        id={NodeHandleId.Start}
+        type="source"
+        position={Position.Right}
+        isConnectable={isConnectable}
+        className="!bg-accent-primary !size-2"
+      />
 
       <NodeCollapsible items={[tools, mcpList]}>
-        {(x) => {
+        {(x, idx) => {
           if (Reflect.has(x, 'mcp_id')) {
             const mcp = x as unknown as IAgentForm['mcp'][number];
 
             return (
               <ToolCard
-                key={mcp.mcp_id}
+                key={mcp.mcp_id || `mcp-${idx}`}
                 onClick={(e) => {
                   if (mcp.mcp_id === Operator.Code) {
                     e.preventDefault();
@@ -68,7 +79,7 @@ function InnerToolNode({
 
           return (
             <ToolCard
-              key={tool.id}
+              key={tool.id || `tool-${idx}`}
               onClick={(e) => {
                 if (tool.component_name === Operator.Code) {
                   e.preventDefault();

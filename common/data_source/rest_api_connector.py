@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
-from urllib.parse import parse_qs, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
 import ipaddress
 import socket
@@ -35,14 +35,17 @@ from common.data_source.interfaces import (
 )
 from common.data_source.models import Document
 from common.data_source.utils import rl_requests, retry_builder
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 
 try:
     from jsonpath import jsonpath as _jsonpath  # type: ignore[import]
 except Exception:  # pragma: no cover
     _jsonpath = None
 
-_FIELD_SEGMENT_RE = re.compile(r'^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$')
+_FIELD_SEGMENT_RE = re.compile(r"^(?P<key>[^\[\]]+)(\[(?P<index>\d+|\*)\])?$")
 _DEFAULT_MAX_PAGES = 1000
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_REDIRECTS = 5
 
 
 class AuthType:
@@ -214,17 +217,8 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 logger.debug("Skipping non-IP address resolved from %r: %r", hostname, ip_str)
                 continue
 
-            if (
-                ip_obj.is_loopback
-                or ip_obj.is_private
-                or ip_obj.is_link_local
-                or ip_obj.is_reserved
-                or ip_obj.is_multicast
-            ):
-                msg = (
-                    f"REST API connector URL {url!r} resolves to disallowed address {ip_str} "
-                    "(localhost, private, link-local, reserved, or multicast addresses are blocked)."
-                )
+            if ip_obj.is_loopback or ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_reserved or ip_obj.is_multicast:
+                msg = f"REST API connector URL {url!r} resolves to disallowed address {ip_str} (localhost, private, link-local, reserved, or multicast addresses are blocked)."
                 logger.warning(msg)
                 raise ConnectorValidationError(msg)
 
@@ -263,14 +257,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
             for k, v_list in parse_qs(parsed.query, keep_blank_values=True).items():
                 self._url_params[k] = v_list[-1]
 
-        self._explicit_query_params: Dict[str, str] = (
-            _text_to_dict(query_params) if isinstance(query_params, str) else (query_params or {})
-        )
+        self._explicit_query_params: Dict[str, str] = _text_to_dict(query_params) if isinstance(query_params, str) else (query_params or {})
         self.url = self._base_url
         self.method = (method or "GET").upper()
-        self._base_headers: Dict[str, str] = (
-            _text_to_dict(headers) if isinstance(headers, str) else (headers or {})
-        )
+        self._base_headers: Dict[str, str] = _text_to_dict(headers) if isinstance(headers, str) else (headers or {})
         self.auth_type = auth_type or AuthType.NONE
         self.auth_config: Dict[str, Any] = auth_config or {}
         self.items_path = items_path
@@ -279,10 +269,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
         self.metadata_fields: List[str] = metadata_fields or []
         self.pagination_type = pagination_type or PaginationType.NONE
         self.pagination_config: Dict[str, Any] = pagination_config or {}
-        self._static_request_body: Dict[str, Any] = (
-            request_body if request_body is not None
-            else self.pagination_config.get("request_body") or {}
-        )
+        self._static_request_body: Dict[str, Any] = request_body if request_body is not None else self.pagination_config.get("request_body") or {}
         self.poll_timestamp_field = poll_timestamp_field
         self.batch_size = batch_size
         self.max_pages = max_pages
@@ -317,21 +304,16 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         if self.auth_type == AuthType.API_KEY_HEADER:
             header_name = self.auth_config.get("header_name")
-            api_key = (
-                self._credentials.get("api_key")
-                or self.auth_config.get("api_key_value")
-                or self.auth_config.get("api_key")
-            )
+            api_key = self._credentials.get("api_key") or self.auth_config.get("api_key_value") or self.auth_config.get("api_key")
             if not header_name or not api_key:
                 logging.warning(
-                    "REST API auth setup failed: header_name=%s, api_key present=%s, "
-                    "credentials keys=%s, auth_config keys=%s",
-                    header_name, bool(api_key),
-                    list(self._credentials.keys()), list(self.auth_config.keys()),
+                    "REST API auth setup failed: header_name=%s, api_key present=%s, credentials keys=%s, auth_config keys=%s",
+                    header_name,
+                    bool(api_key),
+                    list(self._credentials.keys()),
+                    list(self.auth_config.keys()),
                 )
-                raise ConnectorMissingCredentialError(
-                    "REST API (api_key_header) requires 'header_name' in auth_config and 'api_key' in credentials"
-                )
+                raise ConnectorMissingCredentialError("REST API (api_key_header) requires 'header_name' in auth_config and 'api_key' in credentials")
             self._auth_headers[header_name] = str(api_key)
             logging.info("REST API auth configured: header '%s' set.", header_name)
             return
@@ -452,15 +434,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
         """Full fetch with pagination."""
         return self._yield_documents(time_window=None)
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Generator[List[Document], None, None]:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Generator[List[Document], None, None]:
         """Incremental fetch; filters by ``poll_timestamp_field`` if configured."""
         if not self.poll_timestamp_field:
-            logging.warning(
-                "poll_source called without poll_timestamp_field; "
-                "falling back to full fetch with in-memory filtering."
-            )
+            logging.warning("poll_source called without poll_timestamp_field; falling back to full fetch with in-memory filtering.")
         return self._yield_documents(
             time_window=(
                 datetime.fromtimestamp(start, tz=timezone.utc),
@@ -582,7 +559,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
             yield item
 
     @retry_builder(
-        tries=5, delay=1, max_delay=30, backoff=2,
+        tries=5,
+        delay=1,
+        max_delay=30,
+        backoff=2,
         exceptions=(requests.ConnectionError, requests.Timeout, requests.HTTPError),
     )
     def _fetch_page(self, params: Dict[str, Any]) -> Any:
@@ -598,17 +578,26 @@ class RestAPIConnector(LoadConnector, PollConnector):
         sensitive = {"authorization", "apikey", "api-key", "x-api-key"}
         logging.debug(
             "REST API request: %s %s | params=%s | headers=%s",
-            self.method, url,
+            self.method,
+            url,
             {k: ("***" if k.lower() in sensitive else v) for k, v in query_params.items()},
             {k: ("***" if k.lower() in sensitive else v) for k, v in headers.items()},
         )
 
         if self.method == "GET":
-            resp = rl_requests.get(url, headers=headers, params=query_params, auth=self._basic_auth, timeout=60)
+            resp = self._safe_request(
+                "GET",
+                url,
+                headers=headers,
+                params=query_params,
+            )
         elif self.method == "POST":
-            resp = rl_requests.post(
-                url, headers=headers, params=query_params,
-                json=self._static_request_body or {}, auth=self._basic_auth, timeout=60,
+            resp = self._safe_request(
+                "POST",
+                url,
+                headers=headers,
+                params=query_params,
+                json_body=self._static_request_body or {},
             )
         else:
             raise ConnectorValidationError(f"Unsupported HTTP method: {self.method}")
@@ -620,16 +609,15 @@ class RestAPIConnector(LoadConnector, PollConnector):
             if status in (401, 403):
                 sensitive = {"authorization", "apikey", "api-key", "x-api-key"}
                 logging.warning(
-                    "REST API %d for %s %s | auth_type=%s | "
-                    "request header keys=%s | auth_header keys=%s",
-                    status, self.method, resp.url,
+                    "REST API %d for %s %s | auth_type=%s | request header keys=%s | auth_header keys=%s",
+                    status,
+                    self.method,
+                    resp.url,
                     self.auth_type,
                     [k for k in headers],
                     [k for k in self._auth_headers],
                 )
-                raise ConnectorMissingCredentialError(
-                    f"REST API authentication failed with status {status}"
-                ) from exc
+                raise ConnectorMissingCredentialError(f"REST API authentication failed with status {status}") from exc
             if status is not None and 400 <= status < 500 and status != 429:
                 logging.warning(
                     "REST API client error %d for %s %s; not retrying.",
@@ -637,15 +625,116 @@ class RestAPIConnector(LoadConnector, PollConnector):
                     self.method,
                     resp.url,
                 )
-                raise ConnectorValidationError(
-                    f"REST API request failed with non-retriable client error status {status}"
-                ) from exc
+                raise ConnectorValidationError(f"REST API request failed with non-retriable client error status {status}") from exc
             raise
 
         try:
             return resp.json()
         except ValueError as exc:
             raise ConnectorValidationError("REST API response is not valid JSON") from exc
+
+    # Headers that carry auth state. Stripped on cross-origin redirects to
+    # prevent credential exfiltration to a third-party host. (Coderabbit MAJOR #3486038792)
+    _AUTH_SENSITIVE_HEADER_KEYS = frozenset(
+        {
+            "authorization",
+            "proxy-authorization",
+            "apikey",
+            "api-key",
+            "x-api-key",
+            "x-auth-token",
+        }
+    )
+
+    def _safe_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Dict[str, str],
+        params: Dict[str, Any],
+        body: Any = None,
+        json_body: Any = None,
+    ) -> requests.Response:
+        """Issue an HTTP request with per-hop SSRF validation and DNS pinning."""
+        current_url = url
+        current_method = method.upper()
+        current_body = body
+        current_json = json_body
+        current_params = dict(params)
+        # Local auth handle: cleared when crossing origins, even though
+        # ``self._basic_auth`` may still hold the original credentials.
+        current_auth = self._basic_auth
+        previous_netloc = urlparse(current_url).netloc
+
+        for _ in range(_MAX_REDIRECTS + 1):
+            # Normalize SSRF validation failures to the connector's documented
+            # ConnectorValidationError so they don't leak ValueError out of
+            # _page_iter_for_validation(). (Coderabbit MAJOR #3486038789)
+            try:
+                hostname, pin_ip = assert_url_is_safe(current_url)
+            except ValueError as exc:
+                raise ConnectorValidationError(f"Unsafe REST API URL: {exc}") from exc
+            with pin_dns(hostname, pin_ip):
+                if current_method == "GET":
+                    resp = rl_requests.get(
+                        current_url,
+                        headers=headers,
+                        params=current_params,
+                        auth=current_auth,
+                        timeout=60,
+                        allow_redirects=False,
+                    )
+                elif current_method == "POST":
+                    resp = rl_requests.post(
+                        current_url,
+                        headers=headers,
+                        params=current_params,
+                        json=current_json,
+                        auth=current_auth,
+                        timeout=60,
+                        allow_redirects=False,
+                    )
+                else:
+                    resp = rl_requests.request(
+                        current_method,
+                        current_url,
+                        headers=headers,
+                        params=current_params,
+                        auth=current_auth,
+                        timeout=60,
+                        data=current_body,
+                        json=current_json,
+                        allow_redirects=False,
+                    )
+
+            if resp.status_code not in _REDIRECT_STATUSES:
+                return resp
+
+            location = resp.headers.get("Location")
+            if not location:
+                return resp
+
+            current_url = urljoin(current_url, location)
+            next_netloc = urlparse(current_url).netloc
+
+            # Coderabbit MAJOR #3486038792: strip credentials when the redirect
+            # crosses to a different origin so a public→private redirect chain
+            # cannot exfiltrate Bearer/Basic/API-key headers.
+            if next_netloc and next_netloc != previous_netloc:
+                headers = {k: v for k, v in headers.items() if k.lower() not in self._AUTH_SENSITIVE_HEADER_KEYS}
+                current_auth = None
+            previous_netloc = next_netloc
+
+            if resp.status_code in (301, 302, 303):
+                current_method = "GET"
+                current_body = None
+                current_json = None
+                # Clear carried params — only the new Location URL's query
+                # string should apply for the downgraded GET.
+                current_params = {}
+
+        raise ConnectorValidationError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
 
     def _build_url_with_templates(self, params: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
         """Substitute ``{key}`` placeholders in the URL; return remaining query params."""
@@ -711,9 +800,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
             try:
                 matches = _jsonpath(response_json, self.items_path)
             except Exception as exc:
-                raise ConnectorValidationError(
-                    f"Failed to apply items JSONPath '{self.items_path}': {exc}"
-                ) from exc
+                raise ConnectorValidationError(f"Failed to apply items JSONPath '{self.items_path}': {exc}") from exc
             if not matches:
                 return []
             if len(matches) == 1 and isinstance(matches[0], list):
@@ -942,6 +1029,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
     class _SafeDict(dict):
         """Dict subclass that returns empty string for missing keys in format_map."""
+
         def __missing__(self, key: str) -> str:
             return ""
 

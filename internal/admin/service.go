@@ -17,131 +17,123 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"os"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
+	servicepkg "ragflow/internal/service"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
 )
 
-// Service errors
-var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrNotAdmin     = errors.New("user is not admin")
-	ErrUserInactive = errors.New("user is inactive")
-)
-
 // Service admin service layer
 type Service struct {
-	userDAO           *dao.UserDAO
-	licenseDAO        *dao.LicenseDAO
-	timeRecordDAO     *dao.TimeRecordDAO
-	systemSettingsDAO *dao.SystemSettingsDAO
-	tenantDAO         *dao.TenantDAO
-	userTenantDAO     *dao.UserTenantDAO
-	tenantLLMDAO      *dao.TenantLLMDAO
-	fileDAO           *dao.FileDAO
-	documentDAO       *dao.DocumentDAO
-	taskDAO           *dao.TaskDAO
-	kbDAO             *dao.KnowledgebaseDAO
-	canvasDAO         *dao.UserCanvasDAO
-	chatDAO           *dao.ChatDAO
-	chatSessionDAO    *dao.ChatSessionDAO
-	apiTokenDAO       *dao.APITokenDAO
-	api4ConvDAO       *dao.API4ConversationDAO
-	llmDAO            *dao.LLMDAO
+	userDAO             *dao.UserDAO
+	licenseDAO          *dao.LicenseDAO
+	timeRecordDAO       *dao.TimeRecordDAO
+	systemSettingsDAO   *dao.SystemSettingsDAO
+	tenantDAO           *dao.TenantDAO
+	userTenantDAO       *dao.UserTenantDAO
+	tenantLLMDAO        *dao.TenantLLMDAO
+	fileDAO             *dao.FileDAO
+	documentDAO         *dao.DocumentDAO
+	taskDAO             *dao.TaskDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	canvasDAO           *dao.UserCanvasDAO
+	chatDAO             *dao.ChatDAO
+	chatSessionDAO      *dao.ChatSessionDAO
+	apiTokenDAO         *dao.APITokenDAO
+	api4ConvDAO         *dao.API4ConversationDAO
+	llmDAO              *dao.LLMDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDao *dao.IngestionTaskLogDAO
+	ingestionTaskSvc    *servicepkg.IngestionTaskService
+
+	BillingProductDAO      *dao.BillingProductDAO
+	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
+	MemoryDAO              *dao.MemoryDAO
+	SearchDAO              *dao.SearchDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:           dao.NewUserDAO(),
-		licenseDAO:        dao.NewLicenseDAO(),
-		timeRecordDAO:     dao.NewTimeRecordDAO(),
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
-		tenantDAO:         dao.NewTenantDAO(),
-		userTenantDAO:     dao.NewUserTenantDAO(),
-		tenantLLMDAO:      dao.NewTenantLLMDAO(),
-		fileDAO:           dao.NewFileDAO(),
-		documentDAO:       dao.NewDocumentDAO(),
-		taskDAO:           dao.NewTaskDAO(),
-		kbDAO:             dao.NewKnowledgebaseDAO(),
-		canvasDAO:         dao.NewUserCanvasDAO(),
-		chatDAO:           dao.NewChatDAO(),
-		chatSessionDAO:    dao.NewChatSessionDAO(),
-		apiTokenDAO:       dao.NewAPITokenDAO(),
-		api4ConvDAO:       dao.NewAPI4ConversationDAO(),
-		llmDAO:            dao.NewLLMDAO(),
+		userDAO:             dao.NewUserDAO(),
+		licenseDAO:          dao.NewLicenseDAO(),
+		timeRecordDAO:       dao.NewTimeRecordDAO(),
+		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
+		tenantDAO:           dao.NewTenantDAO(),
+		userTenantDAO:       dao.NewUserTenantDAO(),
+		tenantLLMDAO:        dao.NewTenantLLMDAO(),
+		fileDAO:             dao.NewFileDAO(),
+		documentDAO:         dao.NewDocumentDAO(),
+		taskDAO:             dao.NewTaskDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		canvasDAO:           dao.NewUserCanvasDAO(),
+		chatDAO:             dao.NewChatDAO(),
+		chatSessionDAO:      dao.NewChatSessionDAO(),
+		apiTokenDAO:         dao.NewAPITokenDAO(),
+		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
+		llmDAO:              dao.NewLLMDAO(),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+
+		BillingProductDAO:      dao.NewBillingProductDAO(),
+		BillingSubscriptionDAO: dao.NewBillingSubscriptionDAO(),
+		MemoryDAO:              dao.NewMemoryDAO(),
+		SearchDAO:              dao.NewSearchDAO(),
 	}
 }
 
 // Logout user logout
-func (s *Service) Logout(user interface{}) error {
+func (s *Service) Logout(ctx context.Context, user interface{}) error {
 	// Invalidate token by setting it to INVALID_ prefix
 	if u, ok := user.(*entity.User); ok {
 		invalidToken := "INVALID_" + generateRandomHex(16)
-		return s.userDAO.UpdateAccessToken(u, invalidToken)
+		return s.userDAO.UpdateAccessToken(ctx, dao.DB, u, invalidToken)
 	}
 	return nil
 }
 
-// ListTasks
-func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+// ListIngestionTasks list all ingestion tasks for admin user
+func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
+	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
+}
 
-	tasks, err := s.taskDAO.GetAllTasks()
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
+}
 
-	var result []map[string]interface{}
-	for _, task := range tasks {
-		// task.ChunkIDs is a string, delimiter is space, count the word count
-		ChunkCount := strings.Count(*task.ChunkIDs, " ")
-		result = append(result, map[string]interface{}{
-			"id":          task.ID,
-			"task_type":   task.TaskType,
-			"document_id": task.DocID,
-			"chunk_count": ChunkCount,
-			"from_page":   task.FromPage,
-			"to_page":     task.ToPage,
-			"priority":    task.Priority,
-			"duration":    task.ProcessDuration,
-			"progress":    task.Progress,
-			//"message":     *task.ProgressMsg,
-			"retry_count": task.RetryCount,
-			"digest":      task.Digest,
-		})
-	}
-
-	return result, nil
+func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
 }
 
 // GetUserByToken get user by access token
-func (s *Service) GetUserByToken(token string) (*entity.User, error) {
-	user, err := s.userDAO.GetByAccessToken(token)
+func (s *Service) GetUserByToken(ctx context.Context, token string) (*entity.User, error) {
+	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, token)
 	if err != nil {
-		return nil, ErrInvalidToken
+		return nil, common.ErrInvalidToken
 	}
 
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		return nil, ErrNotAdmin
+		return nil, common.ErrNotAdmin
 	}
 
 	if user.IsActive != "1" {
@@ -159,8 +151,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers() ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(0, 0)
+func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(ctx, dao.DB, (pageIndex-1)*pageSize, pageSize, name, status, sort, orderBy)
 	if err != nil {
 		return nil, err
 	}
@@ -187,23 +179,23 @@ func (s *Service) ListUsers() ([]map[string]interface{}, error) {
 // Returns:
 //   - map[string]interface{}: user information without password
 //   - error: error message
-func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
+func (s *Service) CreateUser(ctx context.Context, username, password, role string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
-		return nil, fmt.Errorf("Invalid email address: %s!", username)
+		return nil, fmt.Errorf("invalid email address: %s", username)
 	}
 
-	existUser, _ := s.userDAO.GetByEmail(username)
+	existUser, _ := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if existUser != nil {
-		return nil, fmt.Errorf("User '%s' already exists", username)
+		return nil, fmt.Errorf("user '%s' already exists", username)
 	}
 
-	decryptedPassword, err := DecryptPassword(password)
+	decryptedPassword, err := common.DecryptPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -242,7 +234,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	}
 
 	// 1. Create user
-	if err := tx.Create(user).Error; err != nil {
+	if err = tx.Create(user).Error; err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
@@ -253,35 +245,43 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 	// Get default model IDs from config
 	cfg := server.GetConfig()
-	chatMdl := ""
-	embdMdl := ""
-	asrMdl := ""
-	img2txtMdl := ""
-	rerankMdl := ""
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+	chatModel := ""
+	embeddingModel := ""
+	asrModel := ""
+	vlmModel := ""
+	rerankModel := ""
+	var ttsModel *string = nil
+	var ocrModel *string = nil
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
-		chatMdl = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
-		embdMdl = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
-		asrMdl = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
-		img2txtMdl = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
-		rerankMdl = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+		chatModel = cfg.GetDefaultChatModel().Name
+		embeddingModel = cfg.GetDefaultEmbeddingModel().Name
+		asrModel = cfg.GetDefaultASRModel().Name
+		vlmModel = cfg.GetDefaultVisionModel().Name
+		rerankModel = cfg.GetDefaultRerankModel().Name
+		ttsModelStr := cfg.GetDefaultTTSModel().Name
+		ttsModel = &ttsModelStr
+		ocrModelStr := cfg.GetDefaultOCRModel().Name
+		ocrModel = &ocrModelStr
 	}
 
 	tenantStatus := "1"
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatMdl,
-		EmbdID:    embdMdl,
-		ASRID:     asrMdl,
-		Img2TxtID: img2txtMdl,
-		RerankID:  rerankMdl,
+		LLMID:     chatModel,
+		EmbdID:    embeddingModel,
+		ASRID:     asrModel,
+		Img2TxtID: vlmModel,
+		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
 	}
-	if err := tx.Create(tenant).Error; err != nil {
+	if err = tx.Create(tenant).Error; err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -296,18 +296,18 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
 	}
-	if err := tx.Create(userTenant).Error; err != nil {
+	if err = tx.Create(userTenant).Error; err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create user-tenant relation: %w", err)
 	}
 
 	// 4. Create tenant LLM configurations
-	tenantLLMs, err := s.getInitTenantLLM(userID)
+	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
 	if err != nil {
 		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
 		// Continue without LLM configs - not a critical error
 	} else if len(tenantLLMs) > 0 {
-		if err := tx.Create(&tenantLLMs).Error; err != nil {
+		if err = tx.Create(&tenantLLMs).Error; err != nil {
 			common.Warn("failed to create tenant LLM configs", zap.Error(err))
 			// Continue without LLM configs - not a critical error
 		}
@@ -326,13 +326,13 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Size:      0,
 		Location:  &fileLocation,
 	}
-	if err := tx.Create(file).Error; err != nil {
+	if err = tx.Create(file).Error; err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create root file folder: %w", err)
 	}
 
 	// Commit transaction
-	if err := tx.Commit().Error; err != nil {
+	if err = tx.Commit().Error; err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -350,7 +350,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 // getInitTenantLLM gets initial tenant LLM configurations
 // This matches Python's get_init_tenant_llm function
-func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
+func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
 	cfg := server.GetConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not initialized")
@@ -359,17 +359,19 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 	var tenantLLMs []*entity.TenantLLM
 
 	// Get model configs from configuration
-	modelConfigs := []server.ModelConfig{
-		cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		cfg.UserDefaultLLM.DefaultModels.RerankModel,
-		cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+	modelConfigs := []config.ModelConfig{
+		cfg.GetDefaultChatModel(),
+		cfg.GetDefaultEmbeddingModel(),
+		cfg.GetDefaultRerankModel(),
+		cfg.GetDefaultASRModel(),
+		cfg.GetDefaultVisionModel(),
+		cfg.GetDefaultTTSModel(),
+		cfg.GetDefaultOCRModel(),
 	}
 
 	// Track seen factories to avoid duplicates
 	seenFactories := make(map[string]bool)
-	var uniqueFactories []server.ModelConfig
+	var uniqueFactories []config.ModelConfig
 
 	for _, mc := range modelConfigs {
 		if mc.Factory == "" {
@@ -383,49 +385,49 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 	// Get LLMs for each unique factory
 	for _, factoryConfig := range uniqueFactories {
-		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		models, err := s.llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
 		if err != nil {
 			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
 		}
 
-		for _, llm := range llms {
+		for _, model := range models {
 			// Determine API key and base URL based on model type
 			var apiKey, apiBase string
-			switch llm.ModelType {
-			case string(entity.ModelTypeChat):
+			switch model.ModelType {
+			case entity.ModelTypeChat.String():
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
-			case string(entity.ModelTypeEmbedding):
-				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
+			case entity.ModelTypeEmbedding.String():
+				apiKey = cfg.GetDefaultEmbeddingModel().APIKey
+				apiBase = cfg.GetDefaultEmbeddingModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeRerank):
-				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
+			case entity.ModelTypeRerank.String():
+				apiKey = cfg.GetDefaultRerankModel().APIKey
+				apiBase = cfg.GetDefaultRerankModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeSpeech2Text):
-				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
+			case entity.ModelTypeSpeech2Text.String():
+				apiKey = cfg.GetDefaultASRModel().APIKey
+				apiBase = cfg.GetDefaultASRModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
 				if apiBase == "" {
 					apiBase = factoryConfig.BaseURL
 				}
-			case string(entity.ModelTypeImage2Text):
-				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
+			case entity.ModelTypeImage2Text.String():
+				apiKey = cfg.GetDefaultVisionModel().APIKey
+				apiBase = cfg.GetDefaultVisionModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -438,12 +440,12 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 			}
 
 			maxTokens := int64(8192)
-			if llm.MaxTokens > 0 {
-				maxTokens = llm.MaxTokens
+			if model.MaxTokens > 0 {
+				maxTokens = model.MaxTokens
 			}
 
-			llmName := llm.LLMName
-			modelType := llm.ModelType
+			llmName := model.LLMName
+			modelType := model.ModelType
 			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
 				LLMFactory: factoryConfig.Factory,
@@ -461,11 +463,11 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
 	seen := make(map[string]bool)
 	var uniqueLLMs []*entity.TenantLLM
-	for _, tllm := range tenantLLMs {
-		key := fmt.Sprintf("%s|%s|%s", tllm.TenantID, tllm.LLMFactory, *tllm.LLMName)
+	for _, tenantLLM := range tenantLLMs {
+		key := fmt.Sprintf("%s|%s|%s", tenantLLM.TenantID, tenantLLM.LLMFactory, *tenantLLM.LLMName)
 		if !seen[key] {
 			seen[key] = true
-			uniqueLLMs = append(uniqueLLMs, tllm)
+			uniqueLLMs = append(uniqueLLMs, tenantLLM)
 		}
 	}
 
@@ -478,20 +480,21 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	var user entity.User
 	err := dao.DB.Where("email = ?", username).First(&user).Error
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 
 	return map[string]interface{}{
-		"id":          user.ID,
-		"email":       user.Email,
-		"nickname":    user.Nickname,
-		"is_active":   user.IsActive,
-		"create_time": user.CreateTime,
-		"update_time": user.UpdateTime,
+		"id":           user.ID,
+		"email":        user.Email,
+		"nickname":     user.Nickname,
+		"is_active":    user.IsActive,
+		"is_superuser": user.IsSuperuser,
+		"create_time":  user.CreateTime,
+		"update_time":  user.UpdateTime,
 	}, nil
 }
 
-// DeleteUserResult
+// DeleteUserResult result of delete user operation
 type DeleteUserResult struct {
 	Username        string   `json:"username"`
 	TenantLLMCount  int      `json:"tenant_llm_count"`
@@ -510,34 +513,34 @@ type DeleteUserResult struct {
 // Returns:
 //   - *DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
+func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
 	result := &DeleteUserResult{
 		Username:       username,
 		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", username)},
 	}
-	userList, err := s.userDAO.ListByEmail(username)
+	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil || len(userList) == 0 {
-		return nil, fmt.Errorf("User '%s' not found", username)
+		return nil, fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return nil, fmt.Errorf("Exist more than 1 user: %s!", username)
+		return nil, fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
 
 	// Check if user is active - cannot delete active users
 	if user.IsActive == "1" {
-		return nil, fmt.Errorf("User '%s' is active and can't be deleted. Please deactivate the user first", username)
+		return nil, fmt.Errorf("user '%s' is active and can't be deleted. Please deactivate the user first", username)
 	}
 
 	// Check if user is superuser - cannot delete admin accounts
 	if user.IsSuperuser != nil && *user.IsSuperuser {
-		return nil, fmt.Errorf("Cannot delete admin account")
+		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
 	// Get user-tenant relations
-	tenants, err := s.userTenantDAO.GetByUserIDAll(user.ID)
+	tenants, err := s.userTenantDAO.GetByUserIDAll(ctx, dao.DB, user.ID)
 	if err != nil {
 		common.Warn("failed to get user-tenant relations", zap.Error(err))
 	}
@@ -568,14 +571,14 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Delete owned tenant data
 	if ownedTenantID != "" {
 		// 1. Get knowledge base IDs
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ctx, tx, ownedTenantID)
 		if err != nil {
 			common.Warn("failed to get knowledge base IDs", zap.Error(err))
 		}
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
-			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, tx, kbIDs)
 			if err != nil {
 				common.Warn("failed to get document IDs", zap.Error(err))
 			}
@@ -706,35 +709,35 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 //
 // Returns:
 //   - error: error message
-func (s *Service) ChangePassword(username, newPassword string) error {
-	userList, err := s.userDAO.ListByEmail(username)
+func (s *Service) ChangePassword(ctx context.Context, username, newPassword string) error {
+	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
 
-	decryptedPassword, err := DecryptPassword(newPassword)
+	decryptedPassword, err := common.DecryptPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	if user.Password != nil && CheckWerkzeugPassword(decryptedPassword, *user.Password) {
+	if user.Password != nil && common.CheckWerkzeugPassword(decryptedPassword, *user.Password) {
 		return nil
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	user.Password = &hashedPassword
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -748,14 +751,14 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 //
 // Returns:
 //   - error: error message
-func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error {
-	userList, err := s.userDAO.ListByEmail(username)
+func (s *Service) UpdateUserActivateStatus(ctx context.Context, username string, isActive bool) error {
+	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -771,7 +774,7 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 
 	user.IsActive = targetStatus
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -784,14 +787,14 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 //
 // Returns:
 //   - error: error message
-func (s *Service) GrantAdmin(username string) error {
-	userList, err := s.userDAO.ListByEmail(username)
+func (s *Service) GrantAdmin(ctx context.Context, username string) error {
+	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -803,7 +806,7 @@ func (s *Service) GrantAdmin(username string) error {
 	isSuperuser := true
 	user.IsSuperuser = &isSuperuser
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -816,14 +819,14 @@ func (s *Service) GrantAdmin(username string) error {
 //
 // Returns:
 //   - error: error message
-func (s *Service) RevokeAdmin(username string) error {
-	userList, err := s.userDAO.ListByEmail(username)
+func (s *Service) RevokeAdmin(ctx context.Context, username string) error {
+	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("User '%s' not found", username)
+		return fmt.Errorf("user '%s' not found", username)
 	}
 
 	if len(userList) > 1 {
-		return fmt.Errorf("Exist more than 1 user: %s!", username)
+		return fmt.Errorf("exist more than 1 user: %s", username)
 	}
 
 	user := userList[0]
@@ -835,7 +838,7 @@ func (s *Service) RevokeAdmin(username string) error {
 	isSuperuser := false
 	user.IsSuperuser = &isSuperuser
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -857,15 +860,15 @@ func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, erro
 // API Key methods
 
 // ListUserAPITokens get user API keys
-func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, error) {
+func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map[string]interface{}, error) {
 	// 1. Get user details
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
 	if err != nil || len(userTenants) == 0 {
 		return nil, fmt.Errorf("tenant not found")
 	}
@@ -873,7 +876,7 @@ func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, 
 	tenantID := userTenants[0].TenantID
 
 	// 3. Get API tokens by tenant ID
-	tokens, err := s.apiTokenDAO.GetByTenantID(tenantID)
+	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API tokens: %w", err)
 	}
@@ -898,15 +901,15 @@ func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, 
 }
 
 // GenerateUserAPIToken generate API key for user
-func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{}, error) {
+func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (map[string]interface{}, error) {
 	// 1. Get user details
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
 	if err != nil || len(userTenants) == 0 {
 		return nil, fmt.Errorf("tenant not found")
 	}
@@ -915,7 +918,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 
 	// 3. Generate API token
 	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken(key)
+	beta := utility.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
@@ -924,7 +927,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 	}
 
 	// 4. Save API token
-	if err := s.apiTokenDAO.Create(apiToken); err != nil {
+	if err = s.apiTokenDAO.Create(ctx, dao.DB, apiToken); err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
@@ -940,15 +943,15 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 }
 
 // DeleteUserAPIToken delete user API key
-func (s *Service) DeleteUserAPIToken(username, key string) error {
+func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) error {
 	// 1. Get user details
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
 	if err != nil || len(userTenants) == 0 {
 		return fmt.Errorf("tenant not found")
 	}
@@ -956,7 +959,7 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 	tenantID := userTenants[0].TenantID
 
 	// 3. Delete API token
-	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(tenantID, key)
+	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	if err != nil {
 		return fmt.Errorf("failed to delete API key: %w", err)
 	}
@@ -968,106 +971,89 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 	return nil
 }
 
-// Role management methods
-
-// ListRoles list all roles
-func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement list roles
-	return []map[string]interface{}{}, nil
+type ServiceStatus struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Elapsed string `json:"elapsed"`
+	Message string `json:"message"`
 }
 
-// CreateRole create a new role
-func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement create role
-	return map[string]interface{}{}, nil
-}
-
-// GetRole get role details
-func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement get role
-	return map[string]interface{}{}, nil
-}
-
-// UpdateRole update role
-func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement update role
-	return map[string]interface{}{}, nil
-}
-
-// DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement delete role
-	return nil
-}
-
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement get role permissions
-	return []map[string]interface{}{}, nil
-}
-
-// GrantRolePermission grant permission to role
-func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement grant role permission
-	return map[string]interface{}{}, nil
-}
-
-// RevokeRolePermission revoke permission from role
-func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement revoke role permission
-	return map[string]interface{}{}, nil
-}
-
-// UpdateUserRole update user role
-func (s *Service) UpdateUserRole(username, roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement update user role
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserPermission get user permissions
-func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user permissions
-	return []map[string]interface{}{}, nil
+func newServiceStatus(typeStr, nameStr, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
+	return ServiceStatus{
+		Type:    typeStr,
+		Name:    nameStr,
+		Status:  statusStr,
+		Elapsed: fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+		Message: messageStr,
+	}
 }
 
 // ListServices get all services
-func (s *Service) ListServices() ([]map[string]interface{}, error) {
-	allConfigs := server.GetAllConfigs()
+func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 
-	var result []map[string]interface{}
-	for _, configDict := range allConfigs {
-		serviceType := configDict["service_type"]
-		if serviceType != "ragflow_server" {
-			// Get service details to check status
-			serviceDetail, err := s.GetServiceDetails(configDict)
-			if err == nil {
-				if status, ok := serviceDetail["status"]; ok {
-					configDict["status"] = status
-				} else {
-					configDict["status"] = "timeout"
-				}
-			} else {
-				configDict["status"] = "timeout"
-			}
-			result = append(result, configDict)
-		}
+	var results []ServiceStatus
 
+	globalConfig := server.GetConfig()
+	// Database
+	databaseType := globalConfig.DatabaseType()
+	switch databaseType {
+	case "mysql":
+		mysqlStatus := s.getMySQLStatus(ctx)
+		results = append(results, mysqlStatus)
+	default:
+		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
 	}
 
-	id := len(result)
-	serverList := GlobalServerStatusStore.GetAllStatuses()
+	// Doc engine
+	docEngineImpl := engine.Get()
+	err := docEngineImpl.Ping(ctx)
+	if err == nil {
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "alive", time.Now(), ""))
+	} else {
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "timeout", time.Now(), err.Error()))
+	}
+
+	// storage engine
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	storageHealth := storageImpl.Health(ctx)
+	if storageHealth {
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "alive", time.Now(), ""))
+	} else {
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "timeout", time.Now(), ""))
+	}
+
+	// cache engine
+	cacheType := globalConfig.CacheEngineType()
+	switch cacheType {
+	case "redis":
+		mysqlStatus := s.getRedisInfo(ctx)
+		results = append(results, mysqlStatus)
+	default:
+		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+	}
+
+	// message queue
+	messageQueueImpl := engine.GetMessageQueueEngine()
+	messageQueueStatus := messageQueueImpl.CheckStatus()
+	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
+
+	results = append(results, s.GetEEServicesStatus()...)
+
+	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {
-		serverItem := make(map[string]interface{})
-		serverItem["name"] = serverStatus.ServerName
-		serverItem["service_type"] = serverStatus.ServerType
-		serverItem["id"] = id
-		id++
-		serverItem["host"] = serverStatus.Host
-		serverItem["port"] = serverStatus.Port
-		serverItem["status"] = "alive"
-		result = append(result, serverItem)
+		now := time.Now()
+		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, "", serverStatus.Timestamp, "")
+		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
+		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
+			serverItem.Status = "alive"
+		} else {
+			serverItem.Status = "timeout"
+		}
+		results = append(results, serverItem)
 	}
-	return result, nil
+
+	return results, nil
 }
 
 // GetServicesByType get services by type
@@ -1076,331 +1062,143 @@ func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{
 }
 
 // GetServiceDetails get service details
-func (s *Service) GetServiceDetails(configDict map[string]interface{}) (map[string]interface{}, error) {
-	serviceType, _ := configDict["service_type"].(string)
-	name, _ := configDict["name"].(string)
-
-	// Call detail function based on service type
-	switch serviceType {
-	case "meta_data":
-		return s.getMySQLStatus(name)
-	case "message_queue":
-		return s.getRedisInfo(name)
-	case "retrieval":
-		// Check the extra.retrieval_type to determine which retrieval service
-		if extra, ok := configDict["extra"].(map[string]interface{}); ok {
-			if retrievalType, ok := extra["retrieval_type"].(string); ok {
-				if retrievalType == "infinity" {
-					return s.getInfinityStatus(name)
-				}
-			}
-		}
-		return s.getESClusterStats(name)
-	case "ragflow_server":
-		return s.checkRAGFlowServerAlive(name)
-	case "file_store":
-		return s.checkMinioAlive(name)
-	case "task_executor":
-		return s.checkTaskExecutorAlive(name)
-	default:
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "unknown",
-			"message":      "Service type not supported",
-		}, nil
-	}
+func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]ServiceStatus, error) {
+	//serviceType, _ := configDict["service_type"].(string)
+	//name, _ := configDict["name"].(string)
+	//ctx := context.Background()
+	//
+	//// Call detail function based on service type
+	//switch serviceType {
+	//case "meta_data":
+	//	return s.getMySQLStatus(ctx), nil
+	//case "cache":
+	//	return s.getRedisInfo(ctx), nil
+	//case "message_queue":
+	//	host := configDict["host"].(string)
+	//	port := configDict["port"].(int)
+	//	return s.checkNatsAlive(name, host, port)
+	//case "retrieval":
+	//	// Check the extra.retrieval_type to determine which retrieval service
+	//	if extra, ok := configDict["extra"].(map[string]interface{}); ok {
+	//		if retrievalType, ok := extra["retrieval_type"].(string); ok {
+	//			if retrievalType == "infinity" {
+	//				return s.getInfinityStatus(name)
+	//			}
+	//		}
+	//	}
+	//	return s.getESClusterStats(name)
+	//case "ragflow_server":
+	//	return s.checkRAGFlowServerAlive(name)
+	//case "file_store":
+	//	return s.checkMinioAlive(name)
+	//case "olap":
+	//	return s.checkOlapAlive(name)
+	//case "tracing":
+	//	return s.checkTracingAlive(name)
+	//default:
+	//	return nil, nil
+	//}
+	return nil, nil
 }
 
 // getMySQLStatus gets MySQL service status
-func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
+func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
+
+	serviceType := "database"
+	name := "mysql"
 	startTime := time.Now()
 
-	// Check basic connectivity with SELECT 1
 	sqlDB, err := dao.DB.DB()
 	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"message":      err.Error(),
-		}, nil
+		return newServiceStatus(serviceType, name, "not connected", startTime, err.Error())
 	}
 
 	// Execute SELECT 1 to check connectivity
-	_, err = sqlDB.Exec("SELECT 1")
+	err = sqlDB.PingContext(ctx)
 	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"message":      err.Error(),
-		}, nil
+		return newServiceStatus(serviceType, name, "timeout", startTime, err.Error())
 	}
 
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-		"message":      "MySQL connection successful",
-	}, nil
+	return newServiceStatus(serviceType, name, "alive", startTime, "")
 }
 
 // getRedisInfo gets Redis service info
-func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
+func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
+
+	serviceType := "cache"
+	name := "redis"
+
 	startTime := time.Now()
 
-	redisClient := cache.Get()
-	if redisClient == nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"error":        "Redis client not initialized",
-		}, nil
+	redisClient := redis.Get()
+	if redisClient.Health(ctx) {
+		return newServiceStatus(serviceType, name, "alive", startTime, "")
 	}
 
-	// Check health
-	if !redisClient.Health() {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-			"error":        "Redis health check failed",
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"elapsed":      fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
-		"message":      "Redis connection successful",
-	}, nil
+	return newServiceStatus(serviceType, name, "timeout", startTime, "Redis health check failed")
 }
 
 // getESClusterStats gets Elasticsearch cluster stats
-func (s *Service) getESClusterStats(name string) (map[string]interface{}, error) {
-	// Check if Elasticsearch is the doc engine
-	docEngine := os.Getenv("DOC_ENGINE")
-	if docEngine == "" {
-		docEngine = "elasticsearch"
-	}
-	if docEngine != "elasticsearch" {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      "error: Elasticsearch is not in use.",
-		}, nil
-	}
+func (s *Service) getESClusterStats(serviceType string) map[string]interface{} {
+	name := "elasticsearch"
+	startTime := time.Now()
 
-	// Get ES config from server config
 	cfg := server.GetConfig()
-	if cfg == nil || cfg.DocEngine.ES == nil {
+	if cfg == nil || !cfg.IsElasticConfigured() {
 		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      "error: Elasticsearch configuration not found",
-		}, nil
+			"type":    serviceType,
+			"name":    name,
+			"status":  "timeout",
+			"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+			"message": "error: Elasticsearch configuration not found",
+		}
 	}
 
 	// Create ES engine and get cluster stats
-	esEngine, err := elasticsearch.NewEngine(cfg.DocEngine.ES)
+	esEngine, err := elasticsearch.NewEngine(cfg.GetElasticsearchConfig())
 	if err != nil {
 		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
+			"type":    serviceType,
+			"name":    name,
+			"status":  "timeout",
+			"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+			"message": fmt.Sprintf("error: %s", err.Error()),
+		}
 	}
 	defer esEngine.Close()
 
 	clusterStats, err := esEngine.GetClusterStats()
 	if err != nil {
 		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
+			"type":    serviceType,
+			"name":    name,
+			"status":  "timeout",
+			"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+			"message": fmt.Sprintf("error: %s", err.Error()),
+		}
 	}
 
 	return map[string]interface{}{
-		"service_name": name,
-		"status":       "alive",
-		"message":      clusterStats,
-	}, nil
+		"type":    serviceType,
+		"name":    name,
+		"status":  "alive",
+		"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+		"message": clusterStats,
+	}
 }
 
 // getInfinityStatus gets Infinity service status
-func (s *Service) getInfinityStatus(name string) (map[string]interface{}, error) {
+func (s *Service) getInfinityStatus(serviceType string) map[string]interface{} {
+	name := "infinity"
+	startTime := time.Now()
 	// TODO: Implement actual Infinity health check
 	return map[string]interface{}{
-		"service_name": name,
-		"status":       "unknown",
-		"message":      "Infinity health check not implemented",
-	}, nil
-}
-
-// checkRAGFlowServerAlive checks if RAGFlow server is alive
-func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, error) {
-	startTime := time.Now()
-
-	// Get ragflow config from allConfigs
-	var host string
-	var port int
-	allConfigs := server.GetAllConfigs()
-	for _, config := range allConfigs {
-		if serviceType, ok := config["service_type"].(string); ok && serviceType == "ragflow_server" {
-			if h, ok := config["host"].(string); ok {
-				host = h
-			}
-			if p, ok := config["port"].(int); ok {
-				port = p
-			}
-			break
-		}
+		"type":    serviceType,
+		"name":    name,
+		"status":  "unknown",
+		"elapsed": fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
+		"message": "Infinity health check not implemented",
 	}
-
-	// Default values
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	if port == 0 {
-		port = 9380
-	}
-
-	// Replace 0.0.0.0 with 127.0.0.1 for local check
-	if host == "0.0.0.0" {
-		host = "127.0.0.1"
-	}
-
-	url := fmt.Sprintf("http://%s:%d/v1/system/ping", host, port)
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
-	}
-	defer resp.Body.Close()
-
-	elapsed := time.Since(startTime).Milliseconds()
-	if resp.StatusCode == 200 {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "alive",
-			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "timeout",
-		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-	}, nil
-}
-
-// checkMinioAlive checks if MinIO is alive
-func (s *Service) checkMinioAlive(name string) (map[string]interface{}, error) {
-	startTime := time.Now()
-
-	// Get minio config from allConfigs
-	var host string
-	var port int
-	var secure bool
-	var verify bool = true
-
-	allConfigs := server.GetAllConfigs()
-	for _, config := range allConfigs {
-		if serviceType, ok := config["service_type"].(string); ok && serviceType == "file_store" {
-			// Get host from config
-			if h, ok := config["host"].(string); ok {
-				host = h
-			}
-
-			if p, ok := config["port"].(int); ok {
-				port = p
-			} else if p, ok := config["port"].(float64); ok {
-				port = int(p)
-			} else if p, ok := config["port"].(string); ok {
-				if parsedPort, err := strconv.Atoi(p); err == nil {
-					port = parsedPort
-				}
-			}
-			// Get secure from extra config
-			if extra, ok := config["extra"].(map[string]interface{}); ok {
-				if s, ok := extra["secure"].(bool); ok {
-					secure = s
-				} else if s, ok := extra["secure"].(string); ok {
-					secure = s == "true" || s == "1" || s == "yes"
-				}
-				if v, ok := extra["verify"].(bool); ok {
-					verify = v
-				} else if v, ok := extra["verify"].(string); ok {
-					verify = !(v == "false" || v == "0" || v == "no")
-				}
-			}
-			break
-		}
-	}
-
-	// Default host
-	if host == "" {
-		host = "localhost"
-	}
-	if port == 0 {
-		port = 9000
-	}
-
-	// Determine scheme
-	scheme := "http"
-	if secure {
-		scheme = "https"
-	}
-
-	url := fmt.Sprintf("%s://%s:%d/minio/health/live", scheme, host, port)
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	// If verify is false, we need to skip SSL verification
-	if !verify && scheme == "https" {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
-	}
-	defer resp.Body.Close()
-
-	elapsed := time.Since(startTime).Milliseconds()
-	if resp.StatusCode == 200 {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "alive",
-			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "timeout",
-		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-	}, nil
 }
 
 // checkTaskExecutorAlive checks if task executor is alive
@@ -1413,25 +1211,87 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 	}, nil
 }
 
+// checkNatsAlive checks if NATS is alive
+func (s *Service) checkNatsAlive(name string, ip string, port int) (map[string]interface{}, error) {
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	if msgQueueEngine == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "Message queue engine not initialized",
+		}, nil
+	}
+
+	status := msgQueueEngine.CheckStatus()
+
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       status,
+	}, nil
+}
+
+// checkTracingAlive checks if tracing is alive
+func (s *Service) checkTracingAlive(name string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "unknown",
+		"message":      "Tracing health check not implemented",
+	}, nil
+}
+
+// checkOlapAlive checks if ClickHouse is alive
+func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
+	clickhouseDriver := clickhouse.GetDriver()
+	if clickhouseDriver == nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "unknown",
+		}, nil
+	}
+
+	status, err := clickhouseDriver.Status()
+	if err != nil {
+		return map[string]interface{}{
+			"service_name": name,
+			"status":       "timeout",
+			"message":      fmt.Sprintf("error: %s", err.Error()),
+		}, nil
+	}
+
+	return map[string]interface{}{
+		"service_name": name,
+		"status":       "alive",
+		"message":      status,
+	}, nil
+}
+
 // ShutdownService shutdown service
-func (s *Service) ShutdownService(serviceID string) (map[string]interface{}, error) {
+func (s *Service) ShutdownService(serviceName string) (map[string]interface{}, error) {
 	// TODO: Implement with proper service manager
 	return map[string]interface{}{
-		"service_id": serviceID,
-		"status":     "shutdown",
+		"command":      "shutdown service",
+		"service_name": serviceName,
+		"error":        "shutdown service not implemented",
+	}, nil
+}
+
+// StartService start service
+func (s *Service) StartService(serviceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":      "start service",
+		"service_name": serviceName,
+		"error":        "command 'start service' isn't implemented",
 	}, nil
 }
 
 // RestartService restart service
-func (s *Service) RestartService(serviceID string) (map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
+func (s *Service) RestartService(serviceName string) (map[string]interface{}, error) {
 	return map[string]interface{}{
-		"service_id": serviceID,
-		"status":     "restarted",
+		"command":      "restart service",
+		"service_name": serviceName,
+		"error":        "command 'restart service' isn't implemented",
 	}, nil
 }
-
-// Variable/Settings methods
 
 // AdminException admin exception error
 type AdminException struct {
@@ -1452,67 +1312,17 @@ func NewAdminException(message string) *AdminException {
 	}
 }
 
-func formatSystemSetting(setting entity.SystemSettings) map[string]interface{} {
-	return map[string]interface{}{
-		"data_type":    setting.DataType,
-		"name":         setting.Name,
-		"setting_type": "config",
-		"value":        setting.Value,
-	}
-}
-
-func formatSystemSettings(settings []entity.SystemSettings) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(settings))
-	for _, setting := range settings {
-		result = append(result, formatSystemSetting(setting))
-	}
-	return result
-}
-
-func validateSystemSettingValue(setting entity.SystemSettings, value string) error {
-	dataType := strings.ToLower(setting.DataType)
-	switch dataType {
-	case "string":
-		return nil
-	case "integer", "int":
-		if _, err := strconv.Atoi(value); err != nil {
-			return NewAdminException(fmt.Sprintf("Invalid integer value for %s: %s", setting.Name, value))
-		}
-	case "bool", "boolean":
-		if value != "true" && value != "false" {
-			return NewAdminException(fmt.Sprintf("Invalid bool value for %s: expected true or false", setting.Name))
-		}
-	case "json":
-		if !json.Valid([]byte(value)) {
-			return NewAdminException(fmt.Sprintf("Invalid JSON value for %s", setting.Name))
-		}
-	default:
-		return NewAdminException(fmt.Sprintf("Unsupported data type for %s: %s", setting.Name, setting.DataType))
-	}
-	return nil
-}
-
-func inferSystemSettingDataType(name string) string {
-	if strings.HasPrefix(name, "sandbox.") {
-		return "json"
-	}
-	if strings.HasSuffix(name, ".enabled") {
-		return "bool"
-	}
-	return "string"
-}
-
 // GetVariable get variable by name
 // Returns the exact system setting with the given name, or settings matching the
 // given name prefix when an exact setting does not exist.
-func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *Service) GetVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(settings) == 0 {
-		settings, err = s.systemSettingsDAO.GetByNamePrefix(varName)
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
 		if err != nil {
 			return nil, err
 		}
@@ -1520,81 +1330,85 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 			return nil, NewAdminException("Can't get setting: " + varName)
 		}
 	}
-	return formatSystemSettings(settings), nil
+	return common.FormatSystemSettings(settings), nil
 }
 
-// GetAllVariables get all variables
+// ListAllVariables list all variables
 // Returns all system settings from database
-func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetAll()
+func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
 
-	return formatSystemSettings(settings), nil
+	return common.FormatSystemSettings(settings), nil
 }
 
 // SetVariable set variable
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one
-func (s *Service) SetVariable(varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *Service) SetVariable(ctx context.Context, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return err
 	}
 
 	if len(settings) == 1 {
 		setting := &settings[0]
-		if err := validateSystemSettingValue(*setting, varValue); err != nil {
+		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
 		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(varName, setting)
+		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
 	} else if len(settings) > 1 {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
 
-	dataType := inferSystemSettingDataType(varName)
+	dataType := common.InferSystemSettingDataType(varName)
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
 		DataType: dataType,
 	}
-	if err := validateSystemSettingValue(*newSetting, varValue); err != nil {
+	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
-	return s.systemSettingsDAO.Create(newSetting)
+	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
 }
 
 // Config methods
 
-// GetAllConfigs get all configs
+// ListAllConfigs list all configs
 // Returns all service configurations from the config file
-func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
-	result := server.GetAllConfigs()
+func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
+	result, err := server.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
 // Environment methods
 
-// GetAllEnvironments get all environments
-// Returns important environment variables
-func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
+// ListEnvironments list all environments
+func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
+	globalConfig := server.GetConfig()
+
 	// DOC_ENGINE
-	docEngine := os.Getenv("DOC_ENGINE")
+	docEngine := globalConfig.GetEnvDocumentEngineType()
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DOC_ENGINE",
+		"env":   "DOCUMENT_ENGINE",
 		"value": docEngine,
 	})
 
 	// DEFAULT_SUPERUSER_EMAIL
-	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	defaultSuperuserEmail := globalConfig.GetEnvDefaultSuperUserEmail()
 	if defaultSuperuserEmail == "" {
 		defaultSuperuserEmail = "admin@ragflow.io"
 	}
@@ -1604,17 +1418,17 @@ func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// DB_TYPE
-	dbType := os.Getenv("DB_TYPE")
+	dbType := globalConfig.GetEnvDatabaseType()
 	if dbType == "" {
 		dbType = "mysql"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "DB_TYPE",
+		"env":   "DATABASE",
 		"value": dbType,
 	})
 
 	// DEVICE
-	device := os.Getenv("DEVICE")
+	device := globalConfig.GetEnvDeviceType()
 	if device == "" {
 		device = "cpu"
 	}
@@ -1624,12 +1438,12 @@ func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
 	})
 
 	// STORAGE_IMPL
-	storageImpl := os.Getenv("STORAGE_IMPL")
+	storageImpl := globalConfig.GetEnvStorageType()
 	if storageImpl == "" {
-		storageImpl = "MINIO"
+		storageImpl = "minio"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "STORAGE_IMPL",
+		"env":   "STORAGE",
 		"value": storageImpl,
 	})
 
@@ -1639,8 +1453,8 @@ func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
 // Version methods
 
 // GetVersion get RAGFlow version
-func (s *Service) GetVersion() string {
-	return utility.GetRAGFlowVersion()
+func (s *Service) GetVersion() (string, string) {
+	return common.GetRAGFlowVersion(), common.GetRAGFlowType()
 }
 
 // Sandbox methods
@@ -1698,8 +1512,7 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
-	GlobalServerStatusStore.UpdateStatus(message.ServerName, status)
-	return common.CodeLicenseValid, ""
+	return UpdateServer(message.ServerName, status)
 }
 
 // InitDefaultAdmin initialize default admin user
@@ -1727,7 +1540,7 @@ func (s *Service) InitDefaultAdmin() error {
 		// Python: password = encode_to_base64(password) = base64.b64encode(password)
 		// Then: generate_password_hash(base64_password) creates werkzeug hash
 		password := base64.StdEncoding.EncodeToString([]byte(defaultPassword))
-		hashedPassword, err := GenerateWerkzeugPasswordHash(password, 150000)
+		hashedPassword, err := common.GenerateWerkzeugPasswordHash(password)
 		if err != nil {
 			return fmt.Errorf("failed to hash password: %w", err)
 		}
@@ -1746,14 +1559,15 @@ func (s *Service) InitDefaultAdmin() error {
 			IsSuperuser:     &isSuperuser,
 		}
 
-		if err := dao.DB.Create(user).Error; err != nil {
+		if err = dao.DB.Create(user).Error; err != nil {
 			return fmt.Errorf("can't init admin: %w", err)
 		}
 
-		if err := s.addTenantForAdmin(userID, defaultNickname); err != nil {
+		if err = s.addTenantForAdmin(userID, defaultNickname); err != nil {
 			return fmt.Errorf("failed to add tenant for admin: %w", err)
 		}
 
+		common.Info("Init default super user successfully")
 		return nil
 	}
 
@@ -1773,7 +1587,7 @@ func (s *Service) InitDefaultAdmin() error {
 				if user.Nickname != "" {
 					nickname = user.Nickname
 				}
-				if err := s.addTenantForAdmin(user.ID, nickname); err != nil {
+				if err = s.addTenantForAdmin(user.ID, nickname); err != nil {
 					return err
 				}
 			}
@@ -1781,6 +1595,7 @@ func (s *Service) InitDefaultAdmin() error {
 		}
 	}
 
+	common.Info("Init default super user successfully")
 	return nil
 }
 
@@ -1808,4 +1623,20 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	}
 
 	return dao.DB.Create(userTenant).Error
+}
+
+// ListAllModels list all models
+func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
+	models, err := dao.GetModelProviderManager().ListAllModels()
+	if err != nil {
+		return nil, err
+	}
+	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
+		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
+	}
+	return models, nil
+}
+
+func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {
+	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }

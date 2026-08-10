@@ -37,9 +37,9 @@ try:
     # 2. Upload and parse a document to have content for retrieval
     print("Uploading and parsing document...")
     content = "RAGFlow is an open-source RAG engine based on deep document understanding. It features a streamlined RAG workflow for businesses of any size."
-    docs = dataset.upload_documents([{"display_name": "ragflow_info.txt", "blob": content.encode('utf-8')}])
+    docs = dataset.upload_documents([{"display_name": "ragflow_info.txt", "blob": content.encode("utf-8")}])
     doc = docs[0]
-    
+
     # Wait for parsing to complete with timeout
     print("Parsing document...")
     dataset.async_parse_documents([doc.id])
@@ -48,7 +48,7 @@ try:
     while elapsed < MAX_WAIT:
         doc_status = dataset.list_documents(id=doc.id)[0]
         if doc_status.run == "1" and doc_status.progress >= 1.0:
-             break
+            break
         print(f"Parsing progress: {doc_status.progress:.2f}")
         time.sleep(2)
         elapsed += 2
@@ -61,18 +61,13 @@ try:
     print("\n--- Performing Retrieval ---")
     question = "What is RAGFlow?"
     print(f"Question: {question}")
-    
+
     # Retrieve relevant chunks from one or more datasets
-    chunks = rag.retrieve(
-        dataset_ids=[dataset.id],
-        question=question,
-        top_k=5,
-        similarity_threshold=0.1
-    )
+    chunks = rag.retrieve(dataset_ids=[dataset.id], question=question, top_k=5, similarity_threshold=0.1)
 
     print(f"Found {len(chunks)} relevant chunks:")
     for i, chunk in enumerate(chunks):
-        print(f"\nChunk {i+1}:")
+        print(f"\nChunk {i + 1}:")
         print(f"Content: {chunk.content[:200]}...")
         print(f"Similarity Score: {chunk.similarity:.4f}")
         print(f"Source Document: {chunk.document_name}")
@@ -83,10 +78,10 @@ try:
         dataset_ids=[dataset.id],
         question="workflow for businesses",
         top_k=3,
-        keyword=True  # Enable keyword search in addition to semantic search
+        keyword=True,  # Enable keyword search in addition to semantic search
     )
     for i, chunk in enumerate(chunks):
-        print(f"Chunk {i+1}: {chunk.content[:100]}... (Score: {chunk.similarity:.4f})")
+        print(f"Chunk {i + 1}: {chunk.content[:100]}... (Score: {chunk.similarity:.4f})")
 
     # Cleanup
     print("\nCleaning up...")

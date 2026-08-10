@@ -12,7 +12,7 @@ import authorizationUtil, {
 } from '@/utils/authorization-util';
 import notification from '@/utils/notification';
 import { RequestMethod, extend } from 'umi-request';
-import { convertTheKeysOfTheObjectToSnake } from './common-util';
+import { convertTheKeysOfTheObjectToSnake, isFormData } from './common-util';
 import { setCachedLlmList } from './llm-cache';
 import { addTenantParams } from './llm-util';
 
@@ -92,7 +92,9 @@ request.interceptors.request.use((url: string, options: any) => {
   const params = convertTheKeysOfTheObjectToSnake(options.params);
 
   // Add tenant parameters to data
-  const dataWithTenantParams = addTenantParams(data, url);
+  const dataWithTenantParams = isFormData(data)
+    ? data
+    : addTenantParams(data, url);
 
   return {
     url,

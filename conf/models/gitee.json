@@ -1,14 +1,16 @@
 {
-  "name": "Gitee",
+  "name": "GiteeAI",
   "url": {
-    "default": "https://api.moark.com/v1"
+    "default": "https://api.moark.ai/v1",
+    "china": "https://api.moark.com/v1",
+    "deprecated": "https://ai.gitee.com/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
     "status": "",
     "balance": "tokens/packages/balance",
-    "embedding": "embedding",
+    "embedding": "embeddings",
     "rerank": "rerank",
     "ocr": "images/ocr",
     "doc_parse": "async/documents/parse",
@@ -18,24 +20,36 @@
   "models": [
     {
       "name": "qwen3-8b",
-      "max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen3-0.6b",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4.7-flash",
-      "max_tokens": 204800,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "BAAI/bge-reranker-v2-m3",
@@ -49,7 +63,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 32
     },
     {
       "name": "GOT-OCR2_0",
@@ -68,6 +83,13 @@
       "model_types": [
         "ocr"
       ]
+    },
+    {
+      "name": "jina-clip-v2",
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 16384
     },
     {
       "name": "HunyuanOCR",

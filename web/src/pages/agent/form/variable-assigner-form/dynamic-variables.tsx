@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import Editor, { loader } from '@monaco-editor/react';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { X } from 'lucide-react';
-import { ReactNode, useCallback } from 'react';
+import { ReactNode, forwardRef, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import {
   JsonSchemaDataType,
@@ -77,6 +77,37 @@ const EmptyValueMap = {
   [JsonSchemaDataType.Array]: [],
 };
 
+type ObjectEditorProps = {
+  value?: any;
+  onChange?: (value: string) => void;
+};
+
+const ObjectEditor = forwardRef<HTMLDivElement, ObjectEditorProps>(
+  ({ value, onChange }, ref) => {
+    const isDarkTheme = useIsDarkTheme();
+
+    const stringValue =
+      typeof value === 'string' ? value : JSON.stringify(value ?? {});
+
+    return (
+      <div ref={ref}>
+        <Editor
+          height={300}
+          theme={isDarkTheme ? 'vs-dark' : 'vs'}
+          language="json"
+          value={stringValue}
+          onChange={(val) => onChange?.(val ?? '')}
+          options={{
+            minimap: { enabled: false },
+            automaticLayout: true,
+          }}
+        />
+      </div>
+    );
+  },
+);
+ObjectEditor.displayName = 'ObjectEditor';
+
 export function DynamicVariables({
   name,
   label,
@@ -87,7 +118,6 @@ export function DynamicVariables({
 }: SelectKeysProps) {
   const form = useFormContext();
   const { getType } = useGetVariableLabelOrTypeByValue();
-  const isDarkTheme = useIsDarkTheme();
 
   const { fields, remove, append } = useFieldArray({
     name: name,
@@ -128,17 +158,7 @@ export function DynamicVariables({
         }
 
         if (type === JsonSchemaDataType.Object) {
-          return (
-            <Editor
-              height={300}
-              theme={isDarkTheme ? 'vs-dark' : 'vs'}
-              language={'json'}
-              options={{
-                minimap: { enabled: false },
-                automaticLayout: true,
-              }}
-            />
-          );
+          return <ObjectEditor />;
         }
 
         if (type === JsonSchemaDataType.String) {
@@ -163,7 +183,7 @@ export function DynamicVariables({
         );
       }
     },
-    [form, getVariableType, isDarkTheme],
+    [form, getVariableType],
   );
 
   const handleVariableChange = useCallback(

@@ -23,11 +23,7 @@ from unittest.mock import patch
 import pytest
 
 
-CODE_EXEC_MODULE_PATH = next(
-    parent / "agent" / "tools" / "code_exec.py"
-    for parent in Path(__file__).resolve().parents
-    if (parent / "agent" / "tools" / "code_exec.py").exists()
-)
+CODE_EXEC_MODULE_PATH = next(parent / "agent" / "tools" / "code_exec.py" for parent in Path(__file__).resolve().parents if (parent / "agent" / "tools" / "code_exec.py").exists())
 
 
 def _load_module():
@@ -274,15 +270,9 @@ def test_malformed_array_schema_is_rejected(schema):
 
 def test_any_and_empty_expected_type_skip_validation():
     module = _load_module()
-    assert module.build_code_exec_contract({"result": {"value": None, "type": "Any"}}, {"foo": "bar"})["value"] == {
-        "foo": "bar"
-    }
-    assert module.build_code_exec_contract({"result": {"value": None, "type": ""}}, {"foo": "bar"})["value"] == {
-        "foo": "bar"
-    }
-    assert module.build_code_exec_contract({"result": {"value": None, "type": None}}, {"foo": "bar"})["value"] == {
-        "foo": "bar"
-    }
+    assert module.build_code_exec_contract({"result": {"value": None, "type": "Any"}}, {"foo": "bar"})["value"] == {"foo": "bar"}
+    assert module.build_code_exec_contract({"result": {"value": None, "type": ""}}, {"foo": "bar"})["value"] == {"foo": "bar"}
+    assert module.build_code_exec_contract({"result": {"value": None, "type": None}}, {"foo": "bar"})["value"] == {"foo": "bar"}
 
 
 def test_legacy_multi_output_schema_is_rejected():

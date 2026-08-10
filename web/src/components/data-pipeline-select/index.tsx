@@ -3,6 +3,7 @@ import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentList } from '@/hooks/use-agent-request';
+import { AgentListItem, AgentListItemType } from '@/interfaces/database/agent';
 import { buildSelectOptions } from '@/utils/component-util';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
@@ -48,19 +49,25 @@ export function DataFlowSelect(props: IProps) {
   const { data: dataPipelineOptions } = useFetchAgentList({
     canvas_category: AgentCategory.DataflowCanvas,
   });
+
+  const canvasList = useMemo(
+    () =>
+      (dataPipelineOptions?.canvas ?? []).filter(
+        (item): item is AgentListItem & { title: string; avatar?: string } =>
+          item.type !== AgentListItemType.CompilationTemplateGroup,
+      ),
+    [dataPipelineOptions?.canvas],
+  );
+
   const options = useMemo(() => {
-    const option = buildSelectOptions(
-      dataPipelineOptions?.canvas,
-      'id',
-      'title',
-    );
+    const option = buildSelectOptions(canvasList, 'id', 'title');
 
     return option || [];
-  }, [dataPipelineOptions]);
+  }, [canvasList]);
 
   const nodes = useMemo(() => {
     return (
-      dataPipelineOptions?.canvas?.map((item) => {
+      canvasList.map((item) => {
         return {
           id: item?.id,
           name: item?.title,
@@ -68,7 +75,7 @@ export function DataFlowSelect(props: IProps) {
         };
       }) || []
     );
-  }, [dataPipelineOptions]);
+  }, [canvasList]);
 
   useEffect(() => {
     setDataList?.(nodes);

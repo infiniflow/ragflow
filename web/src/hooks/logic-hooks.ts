@@ -26,10 +26,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './use-user-setting-request';
+import { useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -72,10 +71,14 @@ export const useGetPaginationWithRouter = () => {
   } = useSetPaginationParams();
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize?: number) => {
-      setPaginationParams(pageNumber, pageSize);
+    (pageNumber: number, size?: number) => {
+      if (size !== pageSize) {
+        setPaginationParams(1, size);
+      } else {
+        setPaginationParams(pageNumber, size);
+      }
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const setCurrentPagination = useCallback(
@@ -107,6 +110,24 @@ export const useGetPaginationWithRouter = () => {
   };
 };
 
+// When the current page becomes empty (e.g. after deleting the last card on
+// the last page), navigate back to the previous page automatically.
+export const useGoToPreviousPageOnEmpty = (
+  listLength: number | undefined,
+  loading: boolean = false,
+) => {
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  useEffect(() => {
+    if (!loading && listLength === 0 && pagination.current > 1) {
+      setPagination({
+        page: pagination.current - 1,
+        pageSize: pagination.pageSize,
+      });
+    }
+  }, [listLength, loading, pagination, setPagination]);
+};
+
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -122,8 +143,11 @@ export const useHandleSearchChange = () => {
   return { handleInputChange, searchString, pagination, setPagination };
 };
 
-export const useGetPagination = () => {
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
+export const useGetPagination = (options?: { pageSize?: number }) => {
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: options?.pageSize ?? 10,
+  });
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
@@ -148,6 +172,7 @@ export const useGetPagination = () => {
 
   return {
     pagination: currentPagination,
+    setPagination,
   };
 };
 
@@ -259,7 +284,7 @@ export const useSendMessageWithSse = () => {
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
-        // eslint-disable-next-line no-constant-condition
+        // oxlint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();
@@ -278,7 +303,8 @@ export const useSendMessageWithSse = () => {
                     // Skip final-chunk answer only when prior stream chunks exist (avoids duplicate).
                     // Empty-response and other single-shot answers arrive with final=true only.
                     // const currentAnswer = d.final ? '' : d.answer || '';
-                    const currentAnswer = d.final && prevAnswer ? '' : d.answer || '';
+                    const currentAnswer =
+                      d.final && prevAnswer ? '' : d.answer || '';
 
                     let newAnswer: string;
                     if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
@@ -708,12 +734,14 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        let nextMessages;
-        if (index !== -1) {
-          nextMessages = messages.slice(0, index);
-        }
+        // Always pass the truncated history explicitly, even when it is
+        // empty (regenerating the first question), so the backend can
+        // overwrite the session with it via pass_all_history_messages.
+        const nextMessages = index !== -1 ? messages.slice(0, index) : [];
         sendMessage({
-          message: { ...message, id: uuid() },
+          // Keep the original id so the question/answer pair id stays
+          // consistent between local state and the persisted session.
+          message: { ...message },
           messages: nextMessages,
         });
       }
@@ -749,12 +777,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-export const useFetchModelId = () => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
-
-  return tenantInfo?.llm_id ?? '';
 };
 
 const ChunkTokenNumMap = {

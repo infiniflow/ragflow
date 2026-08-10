@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
+func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != expectedPath {
@@ -37,17 +37,17 @@ func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing
 				t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
 				return
 			}
-			handler(t, body, w)
+			handler(t, r, body, w)
 			return
 		}
-		handler(t, nil, w)
+		handler(t, r, nil, w)
 	}))
 }
 
 func newLongCatForTest(baseURL string) *LongCatModel {
 	return NewLongCatModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "openai/v1/chat/completions"},
+		URLSuffix{Chat: "openai/v1/chat/completions", Models: "openai/v1/models"},
 	)
 }
 
@@ -85,8 +85,24 @@ func TestLongCatName(t *testing.T) {
 	}
 }
 
+func TestLongCatNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewLongCatModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewLongCatModel returned nil")
+	}
+}
+
 func TestLongCatChatHappyPath(t *testing.T) {
-	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Chat" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -103,9 +119,9 @@ func TestLongCatChatHappyPath(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages("LongCat-Flash-Chat",
+	resp, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -121,11 +137,13 @@ func TestLongCatChatHappyPath(t *testing.T) {
 }
 
 func TestLongCatChatExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// LongCat-Flash-Thinking returns the chain-of-thought in
 	// message.reasoning_content (OpenAI o-series shape). Live-probed
 	// against api.longcat.chat; the fixture mimics the actual response
 	// shape captured there.
-	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Thinking" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -143,9 +161,9 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages("LongCat-Flash-Thinking",
+	resp, err := m.ChatWithMessages(ctx, "LongCat-Flash-Thinking",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -160,20 +178,131 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	}
 }
 
+// TestLongCatChatParsesUsage verifies that the typed response parser
+// extracts the OpenAI-compatible usage block, including the nested
+// completion_tokens_details.reasoning_tokens from LongCat's thinking mode.
+func TestLongCatChatParsesUsage(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      "chatcmpl-abc123",
+			"object":  "chat.completion",
+			"created": 1700000000,
+			"model":   "LongCat-2.0",
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": "Hello!",
+				},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     20,
+				"completion_tokens": 15,
+				"total_tokens":      35,
+				"completion_tokens_details": map[string]interface{}{
+					"reasoning_tokens": 78,
+				},
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages(ctx, "LongCat-2.0",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Usage == nil {
+		t.Fatal("Usage must be non-nil")
+	}
+	if resp.Usage.PromptTokens != 20 {
+		t.Errorf("PromptTokens=%d, want 20", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.CompletionTokens != 15 {
+		t.Errorf("CompletionTokens=%d, want 15", resp.Usage.CompletionTokens)
+	}
+	if resp.Usage.TotalTokens != 35 {
+		t.Errorf("TotalTokens=%d, want 35", resp.Usage.TotalTokens)
+	}
+}
+
+// TestLongCatChatAcceptsReasoningOnlyResponse verifies that a response with
+// null content but non-empty reasoning_content is accepted. LongCat's
+// thinking model can emit all output as reasoning_content, leaving content
+// null — that is a valid response, not an error.
+func TestLongCatChatAcceptsReasoningOnlyResponse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "cmpl_reasoning_only",
+			"object": "chat.completion",
+			"model":  "LongCat-2.0",
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":              "assistant",
+					"content":           nil,
+					"reasoning_content": "\nThe answer is 4.",
+				},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     5,
+				"completion_tokens": 10,
+				"total_tokens":      15,
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages(ctx, "LongCat-2.0",
+		[]Message{{Role: "user", Content: "what is 2+2"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v (should not error on reasoning-only response)", err)
+	}
+	if resp.Answer == nil {
+		t.Error("Answer must be non-nil")
+	} else if *resp.Answer != "" {
+		t.Errorf("Answer=%q, want empty string", *resp.Answer)
+	}
+	if resp.ReasonContent == nil {
+		t.Error("ReasonContent must be non-nil")
+	} else if *resp.ReasonContent != "The answer is 4." {
+		t.Errorf("ReasonContent=%q, want 'The answer is 4.'", *resp.ReasonContent)
+	}
+	if resp.Usage == nil {
+		t.Error("Usage must be non-nil")
+	} else if resp.Usage.TotalTokens != 15 {
+		t.Errorf("Usage=%#v, want total=15", resp.Usage)
+	}
+}
+
 // TestLongCatChatDropsUndocumentedFields guards against re-introducing
 // stop / reasoning_effort / response_format / tools etc. The LongCat
-// docs only list model, messages, stream, max_tokens, temperature,
-// top_p — anything else is undocumented and must not be sent, since
-// the maintainer specifically flagged this on PR #14809.
+// docs only list model, messages, stream, temperature, top_p — anything
+// else is undocumented and must not be sent, since the maintainer
+// specifically flagged this on PR #14809.
 func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
-	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		for _, k := range []string{"stop", "reasoning_effort", "response_format", "tools", "tool_choice", "presence_penalty", "frequency_penalty", "n", "logprobs"} {
 			if _, present := body[k]; present {
 				t.Errorf("undocumented field %q must not be sent: %v", k, body[k])
 			}
 		}
 		// Documented fields, on the other hand, MUST be forwarded when set.
-		for _, k := range []string{"model", "messages", "stream", "max_tokens", "temperature", "top_p"} {
+		for _, k := range []string{"model", "messages", "stream", "temperature", "top_p"} {
 			if _, present := body[k]; !present {
 				t.Errorf("documented field %q missing from request body", k)
 			}
@@ -193,37 +322,128 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 	topP := 0.9
 	stop := []string{"END"}
 	effort := "high"
-	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
+	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		// Deliberately pass Stop/Effort to prove they are filtered out.
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort})
+		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
 }
 
-func TestLongCatChatRequiresAPIKey(t *testing.T) {
-	m := newLongCatForTest("http://unused")
-	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
+// TestLongCatStreamRequestsIncludeUsage verifies that the streaming driver
+// requests aggregate usage via stream_options.include_usage and populates
+// chatConfig.UsageResult from the final usage event.
+func TestLongCatStreamRequestsIncludeUsage(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		streamOpts, ok := body["stream_options"].(map[string]interface{})
+		if !ok {
+			t.Errorf("stream_options missing: %v", body)
+			return
+		}
+		if inc, _ := streamOpts["include_usage"].(bool); !inc {
+			t.Errorf("stream_options.include_usage=%v, want true", streamOpts["include_usage"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			`data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}`+"\n"+
+				`data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`+"\n"+
+				`data: [DONE]`+"\n")
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	chatConfig := &ChatConfig{}
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-2.0",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil)
+		&APIConfig{ApiKey: &apiKey}, chatConfig, nil,
+		func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if chatConfig.UsageResult == nil {
+		t.Fatal("UsageResult must be non-nil after stream with usage event")
+	}
+	if chatConfig.UsageResult.PromptTokens != 10 || chatConfig.UsageResult.CompletionTokens != 2 || chatConfig.UsageResult.TotalTokens != 12 {
+		t.Errorf("UsageResult=%#v, want prompt=10 completion=2 total=12", chatConfig.UsageResult)
+	}
+}
+
+// TestLongCatStreamParsesReasoningTokens verifies that a streaming usage
+// event carrying completion_tokens_details.reasoning_tokens populates
+// chatConfig.UsageResult.
+func TestLongCatStreamParsesReasoningTokens(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		streamOpts, ok := body["stream_options"].(map[string]interface{})
+		if !ok {
+			t.Errorf("stream_options missing: %v", body)
+			return
+		}
+		if inc, _ := streamOpts["include_usage"].(bool); !inc {
+			t.Errorf("stream_options.include_usage=%v, want true", streamOpts["include_usage"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			`data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}`+"\n"+
+				`data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":8,"total_tokens":18,"completion_tokens_details":{"reasoning_tokens":5}}}`+"\n"+
+				`data: [DONE]`+"\n")
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	chatConfig := &ChatConfig{}
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-2.0",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, chatConfig, nil,
+		func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if chatConfig.UsageResult == nil {
+		t.Fatal("UsageResult must be non-nil after stream with usage event")
+	}
+	if chatConfig.UsageResult.PromptTokens != 10 || chatConfig.UsageResult.CompletionTokens != 8 || chatConfig.UsageResult.TotalTokens != 18 {
+		t.Errorf("UsageResult=%#v, want prompt=10 completion=8 total=18", chatConfig.UsageResult)
+	}
+}
+
+func TestLongCatChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	m := newLongCatForTest("http://unused")
+	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{}, nil, nil,
+	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestLongCatChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
 }
 
 func TestLongCatChatRejectsHTTPError(t *testing.T) {
-	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 	})
@@ -231,15 +451,17 @@ func TestLongCatChatRejectsHTTPError(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
+	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestLongCatStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
@@ -252,9 +474,9 @@ func TestLongCatStreamHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	var sawDone bool
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -278,6 +500,8 @@ func TestLongCatStreamHappyPath(t *testing.T) {
 }
 
 func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Fixture matches the shape captured live from
 	// LongCat-Flash-Thinking against api.longcat.chat: deltas
 	// interleave reasoning_content and content within the stream.
@@ -293,9 +517,9 @@ func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
 	var content, reasoning []string
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Thinking",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Thinking",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil && r != nil {
 				t.Errorf("sender called with both args non-nil")
@@ -320,13 +544,16 @@ func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
 }
 
 func TestLongCatStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
 	stream := false
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("expected stream-true guard, got %v", err)
@@ -334,17 +561,21 @@ func TestLongCatStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestLongCatStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil, nil)
+		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("expected sender-required error, got %v", err)
 	}
 }
 
 func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
@@ -352,9 +583,9 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("expected truncation error, got %v", err)
@@ -365,6 +596,8 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 // which masked truncated or corrupted streams. The driver must now
 // fail hard with a "longcat: invalid SSE event" wrapper.
 func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {this is not valid json}`+"\n",
@@ -373,9 +606,9 @@ func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
 		t.Errorf("expected invalid-SSE error, got %v", err)
@@ -386,6 +619,8 @@ func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
 // the "no choices" continue and leave the caller with a generic
 // truncation error. The driver must surface the upstream error verbatim.
 func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"rate limit exceeded","type":"rate_limit_error"}}`+"\n",
@@ -394,9 +629,9 @@ func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
 		t.Errorf("expected upstream-error surfacing, got %v", err)
@@ -406,62 +641,147 @@ func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
 	}
 }
 
-// LongCat does not document /models or /health endpoints, so per
-// maintainer guidance ListModels and CheckConnection both return the
-// "no such method" sentinel rather than inventing fake catalogs or
-// burning chat completions for connection checks.
-func TestLongCatListModelsReturnsNoSuchMethod(t *testing.T) {
+func TestLongCatListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	var requests int
+	srv := newLongCatServer(t, "/openai/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		requests++
+		if body != nil {
+			t.Errorf("GET /models should not send a JSON body: %v", body)
+		}
+		if r.ContentLength > 0 {
+			t.Errorf("GET /models should not send request body with ContentLength=%d", r.ContentLength)
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read GET body: %v", err)
+			return
+		}
+		if len(raw) > 0 {
+			t.Errorf("GET /models should not send request body: %q", string(raw))
+		}
+		if requests == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"object": "list",
+				"data": []map[string]interface{}{
+					{"id": "LongCat-Flash-Chat", "object": "model"},
+					{"id": "LongCat-Flash-Thinking-2601", "object": "model"},
+					{"id": "", "object": "model"},
+				},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"object": "list",
+			"data": []map[string]interface{}{
+				{"id": "LongCat-Flash-Chat", "object": "model"},
+			},
+		})
+	})
+	defer srv.Close()
+
 	apiKey := "test-key"
-	_, err := newLongCatForTest("http://unused").ListModels(&APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("ListModels: want 'no such method', got %v", err)
+	models, err := newLongCatForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if got := joinModelNames(models, ","); got != "LongCat-Flash-Chat,LongCat-Flash-Thinking-2601" {
+		t.Errorf("models=%q", got)
+	}
+	if err := newLongCatForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
+		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
-func TestLongCatCheckConnectionReturnsNoSuchMethod(t *testing.T) {
-	apiKey := "test-key"
-	err := newLongCatForTest("http://unused").CheckConnection(&APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("CheckConnection: want 'no such method', got %v", err)
+func TestLongCatListModelsRejectsInvalidResponses(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	for name, response := range map[string]string{
+		"missing data": `{}`,
+		"null data":    `{"data":null}`,
+		"too large":    strings.Repeat(" ", longCatMaxListModelsResponseBytes+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newLongCatServer(t, "/openai/v1/models", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+				_, _ = io.WriteString(w, response)
+			})
+			defer srv.Close()
+
+			apiKey := "test-key"
+			_, err := newLongCatForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+		})
+	}
+}
+
+func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	for name, cfg := range map[string]*APIConfig{
+		"nil config": nil,
+		"nil key":    {},
+		"empty key":  {ApiKey: new(string)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := newLongCatForTest("http://unused").ListModels(ctx, cfg)
+			if err == nil || !strings.Contains(err.Error(), "api key is required") {
+				t.Errorf("expected api-key error, got %v", err)
+			}
+			err = newLongCatForTest("http://unused").CheckConnection(ctx, cfg)
+			if err == nil || !strings.Contains(err.Error(), "api key is required") {
+				t.Errorf("CheckConnection expected api-key error, got %v", err)
+			}
+		})
 	}
 }
 
 func TestLongCatEmbedReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	_, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil)
+	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: want 'no such method', got %v", err)
 	}
 }
 
 func TestLongCatRerankReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	_, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1})
+	_, err := m.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: want 'no such method', got %v", err)
 	}
 }
 
 func TestLongCatBalanceReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
-	_, err := m.Balance(&APIConfig{})
+	_, err := m.Balance(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: want 'no such method', got %v", err)
 	}
 }
 
 func TestLongCatAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: want 'no such method', got %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: want 'no such method', got %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: want 'no such method', got %v", err)
 	}
 }

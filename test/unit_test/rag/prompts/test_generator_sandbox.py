@@ -38,9 +38,7 @@ class TestJinjaSandbox:
     )
     def test_ssti_payload_blocked(self, payload):
         """Verify that SSTI payloads are blocked by SandboxedEnvironment."""
-        assert isinstance(PROMPT_JINJA_ENV, SandboxedEnvironment), (
-            "PROMPT_JINJA_ENV must use SandboxedEnvironment to prevent SSTI"
-        )
+        assert isinstance(PROMPT_JINJA_ENV, SandboxedEnvironment), "PROMPT_JINJA_ENV must use SandboxedEnvironment to prevent SSTI"
         template = PROMPT_JINJA_ENV.from_string(payload)
         # SandboxedEnvironment raises SecurityError, AttributeError, or UndefinedError to block SSTI attacks
         with pytest.raises((SecurityError, AttributeError, UndefinedError)) as exc_info:
@@ -59,8 +57,6 @@ class TestJinjaSandbox:
     @pytest.mark.p1
     def test_loop_and_conditional_rendering(self):
         """Verify control flow templates work properly."""
-        template = PROMPT_JINJA_ENV.from_string(
-            "{% for item in items %}{{ item }}{% endfor %}"
-        )
+        template = PROMPT_JINJA_ENV.from_string("{% for item in items %}{{ item }}{% endfor %}")
         result = template.render(items=["a", "b", "c"])
         assert result == "abc"

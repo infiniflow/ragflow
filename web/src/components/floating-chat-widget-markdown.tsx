@@ -1,6 +1,7 @@
-import Image from '@/components/image';
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import {
   useFetchDocumentThumbnailsByIds,
   useGetDocumentUrl,
@@ -19,11 +20,12 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,12 +38,11 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
 import { Button } from './ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const getChunkIndex = (match: string) =>
@@ -66,7 +67,11 @@ const FloatingChatWidgetMarkdown = ({
   const contentWithCursor = useMemo(() => {
     const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
+    return pipe(
+      replaceThinkToSection,
+      replaceRetrievingToSection,
+      preprocessLaTeX,
+    )(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -81,13 +86,14 @@ const FloatingChatWidgetMarkdown = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
         if (!documentId) return;
-        if (!isPdf && documentUrl) {
-          window.open(documentUrl, '_blank');
+        if (fileExtension !== 'pdf' && documentUrl) {
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else if (clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
         }
@@ -168,7 +174,7 @@ const FloatingChatWidgetMarkdown = ({
           className="flex gap-2 widget-citation-content"
         >
           {imageId && (
-            <Popover>
+            <Tooltip>
               <TooltipTrigger asChild>
                 <Image
                   id={imageId}
@@ -181,7 +187,7 @@ const FloatingChatWidgetMarkdown = ({
                   className="max-w-[80vw] max-h-[60vh] rounded"
                 />
               </TooltipContent>
-            </Popover>
+            </Tooltip>
           )}
           <div className="space-y-2 flex-1 min-w-0">
             <div
@@ -193,7 +199,7 @@ const FloatingChatWidgetMarkdown = ({
             {documentId && (
               <section className="flex gap-1 justify-center">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt={document?.doc_name}
                     className="w-6 h-6 rounded"
@@ -210,7 +216,7 @@ const FloatingChatWidgetMarkdown = ({
                       onClick={handleDocumentButtonClick(
                         documentId,
                         chunkItem,
-                        fileExtension === 'pdf',
+                        fileExtension,
                         documentUrl,
                       )}
                       disabled={!documentUrl && fileExtension !== 'pdf'}
@@ -265,7 +271,7 @@ const FloatingChatWidgetMarkdown = ({
               onClick={handleDocumentButtonClick(
                 documentId,
                 chunkItem,
-                fileExtension === 'pdf',
+                fileExtension,
                 documentUrl,
               )}
             />
@@ -273,12 +279,19 @@ const FloatingChatWidgetMarkdown = ({
         }
 
         return (
-          <Popover key={`popover-${i}`}>
-            <PopoverTrigger asChild>
+          <HoverCard key={`hovercard-${i}`}>
+            <HoverCardTrigger asChild>
               <InfoCircleOutlined className={styles.referenceIcon} />
-            </PopoverTrigger>
-            <PopoverContent>{getPopoverContent(chunkIndex)}</PopoverContent>
-          </Popover>
+            </HoverCardTrigger>
+            <HoverCardPrimitive.Portal>
+              <HoverCardContent
+                collisionPadding={8}
+                className="max-h-[var(--radix-hover-card-content-available-height)]"
+              >
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            </HoverCardPrimitive.Portal>
+          </HoverCard>
         );
       });
     },
@@ -290,7 +303,7 @@ const FloatingChatWidgetMarkdown = ({
   return (
     <div className="floating-chat-widget" dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
         remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
@@ -303,7 +316,7 @@ const FloatingChatWidgetMarkdown = ({
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // oxlint-disable-next-line typescript/no-unused-vars
               const { children, className, node, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
               return match ? (

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: RAGFlow CLI
+sidebar_label: RAGFlow CLI
 slug: /admin_cli
 sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal
@@ -16,8 +18,9 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.25.5
+   pipx install ragflow-cli==0.26.4
    ```
+  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.26.4`.
 
 3. Launch the CLI client:
 
@@ -29,12 +32,12 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
     The default password is admin.
 
     **Parameters:**
-    
+
     - -h: RAGFlow admin server host address
-    
+
     - -p: RAGFlow admin server port
 
-## Default administrative account
+## Default Administrative Account
 
 - Username: admin@ragflow.io
 - Password: admin
@@ -43,7 +46,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 
 Commands are case-insensitive and must be terminated with a semicolon(;).
 
-### Service manage commands
+### Service Manage Commands
 
 `LIST SERVICES;`
 
@@ -120,7 +123,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Lists the agents associated with the specified user.
 - [Example](#example-list-agents-of-user)
 
-### System info
+### System Info
 
 `SHOW VERSION;`
 - Display the current RAGFlow version.

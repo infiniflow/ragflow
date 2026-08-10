@@ -41,10 +41,13 @@ export const LargeModelFilterFormSchema = {
 
 type LargeModelFormFieldProps = Pick<
   NextInnerLLMSelectProps,
-  'showSpeech2TextModel'
->;
+  'ownerTenantId'
+> & {
+  name?: string;
+};
 export function LargeModelFormField({
-  showSpeech2TextModel: showTTSModel,
+  ownerTenantId,
+  name = 'llm_id',
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
@@ -54,7 +57,7 @@ export function LargeModelFormField({
     <>
       <FormField
         control={form.control}
-        name="llm_id"
+        name={name}
         render={({ field }) => (
           <FormItem>
             <FormLabel tooltip={t('chat.modelTip')}>
@@ -95,7 +98,7 @@ export function LargeModelFormField({
                 <NextLLMSelect
                   {...field}
                   filter={filter}
-                  showSpeech2TextModel={showTTSModel}
+                  ownerTenantId={ownerTenantId}
                 />
               </FormControl>
             </section>
@@ -110,12 +113,13 @@ export function LargeModelFormField({
 
 type LargeModelFormFieldWithoutFilterProps = Pick<
   NextInnerLLMSelectProps,
-  'triggerTestId' | 'optionTestIdPrefix'
+  'triggerTestId' | 'optionTestIdPrefix' | 'ownerTenantId'
 >;
 
 export function LargeModelFormFieldWithoutFilter({
   triggerTestId,
   optionTestIdPrefix,
+  ownerTenantId,
 }: LargeModelFormFieldWithoutFilterProps = {}) {
   const form = useFormContext();
 
@@ -130,6 +134,7 @@ export function LargeModelFormFieldWithoutFilter({
               {...field}
               triggerTestId={triggerTestId}
               optionTestIdPrefix={optionTestIdPrefix}
+              ownerTenantId={ownerTenantId}
             />
           </FormControl>
           <FormMessage />

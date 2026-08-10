@@ -43,6 +43,7 @@ export const formatNumberWithThousandsSeparator = (numberStr: string) => {
 };
 
 const orderFactoryList = [
+  LLMFactory.AIMLAPI,
   LLMFactory.OpenAI,
   LLMFactory.Moonshot,
   LLMFactory.PPIO,

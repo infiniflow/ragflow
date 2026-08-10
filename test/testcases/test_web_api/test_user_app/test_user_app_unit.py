@@ -166,9 +166,7 @@ def _load_user_app(monkeypatch):
     api_pkg.apps = apps_mod
 
     apps_auth_mod = ModuleType("api.apps.auth")
-    apps_auth_mod.get_auth_client = lambda _config: SimpleNamespace(
-        get_authorization_url=lambda state: f"https://oauth.example/{state}"
-    )
+    apps_auth_mod.get_auth_client = lambda _config: SimpleNamespace(get_authorization_url=lambda state: f"https://oauth.example/{state}")
     monkeypatch.setitem(sys.modules, "api.apps.auth", apps_auth_mod)
 
     db_mod = ModuleType("api.db")
@@ -232,16 +230,7 @@ def _load_user_app(monkeypatch):
         @staticmethod
         def get_api_key(tenant_id, model_name, model_type=None):
             return _MockTableObject(
-                id=1,
-                tenant_id=tenant_id,
-                llm_factory="",
-                model_type="chat",
-                llm_name=model_name,
-                api_key="fake-api-key",
-                api_base="https://api.example.com",
-                max_tokens=8192,
-                used_tokens=0,
-                status=1
+                id=1, tenant_id=tenant_id, llm_factory="", model_type="chat", llm_name=model_name, api_key="fake-api-key", api_base="https://api.example.com", max_tokens=8192, used_tokens=0, status=1
             )
 
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
@@ -344,10 +333,6 @@ def _load_user_app(monkeypatch):
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, params: params
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
-
     crypt_mod = ModuleType("api.utils.crypt")
     crypt_mod.decrypt = lambda value: value
     monkeypatch.setitem(sys.modules, "api.utils.crypt", crypt_mod)
@@ -390,7 +375,7 @@ def _load_user_app(monkeypatch):
     settings_mod.EMBEDDING_MDL = "embd-mdl"
     settings_mod.ASR_MDL = "asr-mdl"
     settings_mod.PARSERS = []
-    settings_mod.IMAGE2TEXT_MDL = "img-mdl"
+    settings_mod.VISION_MDL = "img-mdl"
     settings_mod.RERANK_MDL = "rerank-mdl"
     settings_mod.REGISTER_ENABLED = True
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
@@ -711,6 +696,11 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     res = _run(module.setting_user())
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
     assert "Password error" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"nickname": "carh!@#$%^&*()_+WFAGD"})
+    res = _run(module.setting_user())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert "invalid characters" in res["message"]
 
     _set_request_json(
         monkeypatch,

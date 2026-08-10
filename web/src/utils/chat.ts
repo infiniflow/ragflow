@@ -78,10 +78,16 @@ export const preprocessLaTeX = (content: string) => {
   return inlineProcessedContent;
 };
 
-export function replaceThinkToSection(text: string = '') {
+export function replaceThinkToSection(
+  text: string = '',
+  summary: string = 'Thinking...',
+) {
   const pattern = /<think>([\s\S]*?)<\/think>/g;
 
-  const result = text.replace(pattern, '<details class="think"><summary>Thinking...</summary>$1</details>');
+  const result = text.replace(
+    pattern,
+    `<details class="think"><summary>${summary}</summary>$1</details>`,
+  );
 
   return result;
 }
@@ -89,9 +95,62 @@ export function replaceThinkToSection(text: string = '') {
 export function replaceRetrievingToSection(text: string = '') {
   const pattern = /<retrieving>([\s\S]*?)<\/retrieving>/g;
 
-  const result = text.replace(pattern, '<details class="retrieving"><summary>Retrieving...</summary>$1</details>');
+  const result = text.replace(
+    pattern,
+    '<details class="retrieving"><summary>Retrieving...</summary>$1</details>',
+  );
 
   return result;
+}
+
+// Placeholder markers used internally to protect standalone < and > from
+// DOMPurify stripping. These Unicode symbols (U+27E8/U+27E9) are extremely
+// unlikely to appear in normal user input.
+const LT_MARKER = '\u27E8LT\u27E9';
+const GT_MARKER = '\u27E8GT\u27E9';
+
+/**
+ * Escape standalone < and > that are NOT part of a matched <...> pair,
+ * so that DOMPurify won't strip them as HTML tags.
+ * Only brackets inside text segments (outside complete tags) are escaped;
+ * matched <...> tags are left intact for DOMPurify to handle.
+ */
+export function escapeUnmatchedAngleBrackets(content: string): string {
+  if (!content) return content;
+
+  const segments: string[] = [];
+  const tags: string[] = [];
+  let lastIndex = 0;
+
+  const regex = /<[^>]*>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(content)) !== null) {
+    segments.push(content.slice(lastIndex, match.index));
+    tags.push(match[0]);
+    lastIndex = regex.lastIndex;
+  }
+  segments.push(content.slice(lastIndex));
+
+  const escapedSegments = segments.map((seg) =>
+    seg.replace(/</g, LT_MARKER).replace(/>/g, GT_MARKER),
+  );
+
+  return escapedSegments
+    .map((seg, i) => (i < tags.length ? seg + tags[i] : seg))
+    .join('');
+}
+
+/**
+ * Restore escaped angle bracket markers back to HTML entities (&lt;/&gt;).
+ * Must be called *after* preprocessLaTeX (which would otherwise convert
+ * &lt;/&gt; back to raw <, >).
+ */
+export function unescapeAngleBrackets(content: string): string {
+  if (!content) return content;
+  return content
+    .replace(new RegExp(LT_MARKER, 'g'), '&lt;')
+    .replace(new RegExp(GT_MARKER, 'g'), '&gt;');
 }
 
 export function setInitialChatVariableEnabledFieldValue(

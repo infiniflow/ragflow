@@ -16,6 +16,7 @@
 
 import asyncio
 import importlib.util
+import re
 import sys
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from test.testcases.configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file
@@ -35,8 +37,8 @@ from test.testcases.utils.file_utils import create_image_file
 DEFAULT_CHAT_EMPTY_RESPONSE = "Sorry! No relevant content was found in the knowledge base!"
 DEFAULT_CHAT_PROLOGUE = "Hi! I'm your assistant. What can I do for you?"
 DEFAULT_CHAT_SYSTEM_PROMPT = (
-    'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. '
-    'Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the '
+    "You are an intelligent assistant. Please summarize the content of the dataset to answer the question. "
+    "Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the "
     'question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" '
     "Answers need to consider chat history.\n"
     "      Here is the knowledge base:\n"
@@ -70,7 +72,6 @@ def _reset_chat_batch(rest_client, prefix, count=5):
         assert payload["code"] == 0, (prefix, index, payload)
         ids.append(payload["data"]["id"])
     return ids
-
 
 
 @pytest.mark.p1
@@ -130,8 +131,8 @@ def test_chat_crud_cycle(rest_client, clear_chats):
 @pytest.mark.parametrize(
     "name, expected_fragment",
     [
-        ("", "`name` is required."),
-        (" ", "`name` is required."),
+        ("", "`name` is required"),
+        (" ", "`name` is required"),
     ],
 )
 def test_chat_create_name_validation(rest_client, clear_chats, name, expected_fragment):
@@ -153,7 +154,7 @@ def test_chat_duplicate_name_validation(rest_client, clear_chats):
     assert second.status_code == 200
     second_payload = second.json()
     assert second_payload["code"] == 102, second_payload
-    assert "Duplicated chat name" in second_payload["message"], second_payload
+    assert "duplicated chat name" in second_payload["message"], second_payload
 
 
 @pytest.mark.p2
@@ -178,8 +179,7 @@ def test_chat_delete_requires_auth():
         res = client.delete("/chats", json={"ids": []})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -271,7 +271,7 @@ def test_chat_delete_error_and_repeat_contract(rest_client, clear_chats):
         assert f"Chat({chat_id}) not found." in second_payload["message"], second_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_delete_concurrent_and_bulk_contract(rest_client, clear_chats):
     concurrent_ids = _reset_chat_batch(rest_client, "delete_concurrent", count=20)
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -298,8 +298,7 @@ def test_chat_list_requires_auth():
         res = client.get("/chats")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
@@ -323,7 +322,7 @@ def test_chat_list_default_get_and_separate_lookup_contract(rest_client, clear_c
     assert invalid_get_res.status_code == 200
     invalid_get_payload = invalid_get_res.json()
     assert invalid_get_payload["code"] == 109, invalid_get_payload
-    assert invalid_get_payload["message"] == "No authorization.", invalid_get_payload
+    assert invalid_get_payload["message"] == "no authorization", invalid_get_payload
 
     for chat_id, keywords, expected_count in ((ids[0], "list_default_0", 1), (ids[0], "list_default_1", 1), (ids[0], "unknown", 0)):
         get_res = rest_client.get(f"/chats/{chat_id}")
@@ -358,7 +357,7 @@ def test_chat_list_keyword_and_invalid_param_contract(rest_client, clear_chats):
             assert payload["data"]["chats"][0]["name"] == expected_name, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_list_page_and_page_size_contract(rest_client, clear_chats):
     cases = [
         ("page none", {"page": None, "page_size": 2}, 0, lambda total: total, ""),
@@ -366,15 +365,15 @@ def test_chat_list_page_and_page_size_contract(rest_client, clear_chats):
         ("page two", {"page": 2, "page_size": 2}, 0, lambda total: min(max(total - 2, 0), 2), ""),
         ("page three", {"page": 3, "page_size": 2}, 0, lambda total: min(max(total - 4, 0), 2), ""),
         ("page string", {"page": "3", "page_size": 2}, 0, lambda total: min(max(total - 4, 0), 2), ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, None, "ProgrammingError(1064"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, lambda total: total, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, lambda total: total, ""),
         ("page_size none", {"page_size": None}, 0, lambda total: total, ""),
         ("page_size zero", {"page_size": 0}, 0, lambda total: total, ""),
         ("page_size one", {"page_size": 1}, 0, lambda total: total, ""),
         ("page_size six", {"page_size": 6}, 0, lambda total: total, ""),
         ("page_size string", {"page_size": "1"}, 0, lambda total: total, ""),
         ("page_size negative", {"page_size": -1}, 0, lambda total: total, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, lambda total: total, ""),
     ]
 
     for scenario_name, params, expected_code, expected_count_fn, expected_message in cases:
@@ -404,7 +403,7 @@ def test_chat_list_sorting_contract(rest_client, clear_chats):
         ("orderby create", {"orderby": "create_time"}, 0, descending_names, ""),
         ("orderby update", {"orderby": "update_time"}, 0, descending_names, ""),
         ("orderby name ascending", {"orderby": "name", "desc": "False"}, 0, ascending_names, ""),
-        ("orderby unknown", {"orderby": "unknown"}, 100, None, "AttributeError(\"type object 'Dialog' has no attribute 'unknown'\")"),
+        ("orderby unknown", {"orderby": "unknown"}, 101, None, "invalid orderby field"),
         ("desc none", {"desc": None}, 0, descending_names, ""),
         ("desc true", {"desc": "true"}, 0, descending_names, ""),
         ("desc True", {"desc": "True"}, 0, descending_names, ""),
@@ -427,7 +426,7 @@ def test_chat_list_sorting_contract(rest_client, clear_chats):
             assert expected_message in payload["message"], (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_list_concurrent_and_dataset_delete_contract(rest_client, clear_chats, ensure_parsed_document):
     _reset_chat_batch(rest_client, "list_concurrent")
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -611,9 +610,9 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     class _StubLLMType(str, Enum):
         CHAT = "chat"
-        IMAGE2TEXT = "image2text"
+        VISION = "vision"
         RERANK = "rerank"
-        SPEECH2TEXT = "speech2text"
+        ASR = "asr"
         TTS = "tts"
 
     class _StubRetCode(int, Enum):
@@ -630,6 +629,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     common_constants_mod.RetCode = _StubRetCode
     common_constants_mod.StatusEnum = _StubStatusEnum
     from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+
     common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
@@ -702,6 +702,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     dialog_service_mod.async_ask = lambda *_args, **_kwargs: None
     dialog_service_mod.async_chat = lambda *_args, **_kwargs: None
     dialog_service_mod.gen_mindmap = lambda *_args, **_kwargs: None
+    dialog_service_mod.rag_agent = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
 
     conversation_service_mod = ModuleType("api.db.services.conversation_service")
@@ -751,27 +752,8 @@ def _load_chat_routes_unit_module(monkeypatch):
             return False, None
 
     kb_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
-
-    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
-
-    class _StubTenantLLMService:
-        @staticmethod
-        def split_model_name_and_factory(model_name):
-            if model_name and "@" in model_name:
-                return tuple(model_name.split("@", 1))
-            return model_name, None
-
-        @staticmethod
-        def query(**_kwargs):
-            return []
-
-        @staticmethod
-        def get_api_key(*_args, **_kwargs):
-            return SimpleNamespace(id=1)
-
-    tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
-    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMBundle = lambda *_args, **_kwargs: None
@@ -782,8 +764,20 @@ def _load_chat_routes_unit_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+
+    def _get_model_config_by_id(_tenant_id, _model_type, model_ref):
+        if model_ref == "tenant-llm-id":
+            return {}
+        raise LookupError(f"unknown tenant model id: {model_ref}")
+
+    tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
+    tenant_model_service_mod.resolve_model_id = lambda _tenant_id, _model_type, model_name: model_name
+    tenant_model_service_mod.get_composite_model_name_by_id = lambda model_id: model_id
+    tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
+    tenant_model_service_mod.split_model_name = lambda model: (model.split("@")[0], "default", "factory")
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
@@ -791,7 +785,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     class _StubTenantService:
         @staticmethod
         def get_by_id(_tenant_id):
-            return True, SimpleNamespace(llm_id="glm-4")
+            return True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")
 
         @staticmethod
         def get_joined_tenants_by_user_id(_user_id):
@@ -829,12 +823,8 @@ def _load_chat_routes_unit_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "data": data, "message": message}
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.server_error_response = lambda ex: {"code": 500, "data": None, "message": str(ex)}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda func: func
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     rag_pkg = ModuleType("rag")
     rag_pkg.__path__ = [str(repo_root / "rag")]
@@ -871,7 +861,7 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     _set_route_unit_request_json(monkeypatch, module, {"name": "session"})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     res = _run(module.create_session.__wrapped__("chat-1"))
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     dia = SimpleNamespace(prompt_config={"prologue": "hello"})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [dia])
@@ -889,20 +879,20 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [SimpleNamespace(id="session-1")])
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     _set_route_unit_request_json(monkeypatch, module, {"message": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`messages` cannot be changed." in res["message"]
+    assert "`messages` cannot be changed" in res["message"]
 
     _set_route_unit_request_json(monkeypatch, module, {"reference": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`reference` cannot be changed." in res["message"]
+    assert "`reference` cannot be changed" in res["message"]
 
     _set_route_unit_request_json(monkeypatch, module, {"name": ""})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`name` can not be empty." in res["message"]
+    assert "`name` can not be empty" in res["message"]
 
     _set_route_unit_request_json(monkeypatch, module, {"name": "renamed"})
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)
@@ -966,7 +956,7 @@ def test_chat_session_list_projection_unit(monkeypatch):
         ),
     )
     res = _run(module.list_sessions.__wrapped__("chat-1"))
-    assert res["data"] == []
+    assert res["data"][0]["id"] == "session-1"
 
 
 @pytest.mark.p2
@@ -1151,7 +1141,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
             "name": "chat-a",
             "icon": "icon.png",
             "dataset_ids": ["kb-1"],
-            "llm_id": "glm-4@ZHIPU-AI",
+            "llm_id": "glm-4@@CI@ZHIPU-AI",
             "llm_setting": {"temperature": 0.8},
             "prompt_config": {
                 "system": "Answer with {knowledge}",
@@ -1162,38 +1152,17 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
             "vector_similarity_weight": 0.25,
         },
     )
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@ZHIPU-AI")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@CI@ZHIPU-AI", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    def _split_model_name_and_factory(model_name):
-        return {
-            "glm-4@ZHIPU-AI": ("glm-4", "ZHIPU-AI"),
-            "custom-reranker@OpenAI": ("custom-reranker", "OpenAI"),
-        }.get(model_name, (model_name, None))
+    def _resolve_model_id(tenant_id, model_type, model_name):
+        query_calls.append({"tenant_id": tenant_id, "model_ref": model_name, "model_type": model_type})
+        return model_name
 
-    def _query(**kwargs):
-        query_calls.append(kwargs)
-        if kwargs == {
-            "tenant_id": "tenant-1",
-            "llm_name": "glm-4",
-            "llm_factory": "ZHIPU-AI",
-            "model_type": "chat",
-        }:
-            return [SimpleNamespace(id="llm-1")]
-        if kwargs == {
-            "tenant_id": "tenant-1",
-            "llm_name": "custom-reranker",
-            "llm_factory": "OpenAI",
-            "model_type": "rerank",
-        }:
-            return [SimpleNamespace(id="rerank-1")]
-        return []
-
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", _split_model_name_and_factory)
-    monkeypatch.setattr(module.TenantLLMService, "query", _query)
+    monkeypatch.setattr(module, "resolve_model_id", _resolve_model_id)
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1207,8 +1176,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
     assert saved["rerank_id"] == "custom-reranker@OpenAI"
     assert {
         "tenant_id": "tenant-1",
-        "llm_name": "custom-reranker",
-        "llm_factory": "OpenAI",
+        "model_ref": "custom-reranker@OpenAI",
         "model_type": "rerank",
     } in query_calls
 
@@ -1218,9 +1186,9 @@ def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(m
     module = _load_chat_routes_unit_module(monkeypatch)
     saved = {}
     _set_route_unit_request_json(monkeypatch, module, {"name": "chat-a"})
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
+    monkeypatch.setattr(module, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1233,7 +1201,7 @@ def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(m
     assert res["code"] == 0
     assert saved["kb_ids"] == []
     assert saved["prompt_config"]["system"].find("{knowledge}") >= 0
-    assert saved["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}]
+    assert saved["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}, {"key": "date", "optional": True}]
 
 
 @pytest.mark.p2
@@ -1257,13 +1225,11 @@ def test_chat_create_uses_direct_chat_fields_unit(monkeypatch):
             "vector_similarity_weight": 0.25,
         },
     )
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1287,7 +1253,7 @@ def test_chat_create_uses_direct_chat_fields_unit(monkeypatch):
 
 
 @pytest.mark.p2
-def test_list_chats_defaults_to_authorized_owner_ids_when_omitted_unit(monkeypatch):
+def test_list_chats_passes_empty_owner_ids_when_omitted_unit(monkeypatch):
     module = _load_chat_routes_unit_module(monkeypatch)
     captured = {}
     monkeypatch.setattr(
@@ -1316,12 +1282,13 @@ def test_list_chats_defaults_to_authorized_owner_ids_when_omitted_unit(monkeypat
     monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
     res = _run(module.list_chats.__wrapped__())
     assert res["code"] == 0
-    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
+    assert captured["owner_ids"] == []
 
 
 @pytest.mark.p2
-def test_list_chats_rejects_unauthorized_owner_ids_unit(monkeypatch):
+def test_list_chats_filters_by_requested_owner_ids_unit(monkeypatch):
     module = _load_chat_routes_unit_module(monkeypatch)
+    captured = {}
     monkeypatch.setattr(
         module,
         "request",
@@ -1329,20 +1296,30 @@ def test_list_chats_rejects_unauthorized_owner_ids_unit(monkeypatch):
             args=SimpleNamespace(
                 get=lambda key, default=None: {
                     "keywords": "",
-                    "page": "0",
-                    "page_size": "0",
+                    "page": "1",
+                    "page_size": "10",
                     "orderby": "create_time",
                     "desc": "true",
                     "id": None,
                     "name": None,
                 }.get(key, default),
-                getlist=lambda key: ["foreign-tenant-id"] if key == "owner_ids" else [],
+                getlist=lambda key: ["team-tenant-2"] if key == "owner_ids" else [],
             )
         ),
     )
+
+    def _get_by_tenant_ids(owner_ids, *_args, **_kwargs):
+        captured["owner_ids"] = owner_ids
+        team_chat = _DummyDialogRecord({"id": "team-chat", "tenant_id": "team-tenant-2", "name": "team"}).to_dict()
+        own_chat = _DummyDialogRecord({"id": "own-chat", "tenant_id": "tenant-1", "name": "own"}).to_dict()
+        return ([team_chat, own_chat], 2)
+
+    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
     res = _run(module.list_chats.__wrapped__())
-    assert res["code"] == module.RetCode.OPERATING_ERROR
-    assert "authorized owner_ids" in res["message"]
+    assert res["code"] == 0
+    assert captured["owner_ids"] == ["team-tenant-2"]
+    assert [chat["id"] for chat in res["data"]["chats"]] == ["team-chat"]
+    assert res["data"]["total"] == 1
 
 
 @pytest.mark.p2
@@ -1404,11 +1381,10 @@ def test_patch_chat_drops_response_only_fields_before_update_unit(monkeypatch):
     _set_route_unit_request_json(monkeypatch, module, payload)
     monkeypatch.setattr(module.DialogService, "query", lambda **kwargs: [] if "name" in kwargs else [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+    monkeypatch.setattr(module, "get_api_key", lambda *args, **kwargs: SimpleNamespace(id=1))
 
     def _update(_chat_id, req):
         updated.update(req)
@@ -1433,7 +1409,7 @@ def test_patch_chat_merges_prompt_and_llm_settings_unit(monkeypatch):
     )
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
 
     def _update(_chat_id, payload):
         updated.update(payload)
@@ -1476,9 +1452,7 @@ def test_update_chat_allows_knowledge_placeholder_without_sources_unit(monkeypat
     )
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4", tenant_llm_id="tenant-llm-id")))
     updated = {}
 
     def _update(_chat_id, payload):
@@ -1491,7 +1465,7 @@ def test_update_chat_allows_knowledge_placeholder_without_sources_unit(monkeypat
     assert updated["prompt_config"]["system"] == "Answer with {knowledge}"
 
 
-@pytest.mark.p1
+@pytest.mark.p3
 def test_chat_create_dataset_ids_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
@@ -1530,39 +1504,39 @@ def test_chat_create_avatar_contract(rest_client, clear_chats, tmp_path):
     assert payload["data"]["icon"] == encoded_avatar, payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
-        ("default llm", {}, 0, "", "glm-4-flash@ZHIPU-AI", {}),
-        ("explicit llm_id", {"llm_id": "glm-4"}, 0, "", "glm-4", {}),
+        ("default llm", {}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {}),
+        ("explicit llm_id", {"llm_id": "glm-4"}, 102, "`llm_id` glm-4 doesn't exist", None, None),
         ("unknown llm_id", {"llm_id": "unknown"}, 102, "`llm_id` unknown doesn't exist", None, None),
-        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 0}),
-        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 1}),
-        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": -1}),
-        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 10}),
-        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": "a"}),
-        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 0}),
-        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 1}),
-        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": -1}),
-        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 10}),
-        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": "a"}),
-        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 0}),
-        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 1}),
-        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": -1}),
-        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 10}),
-        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": "a"}),
-        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 0}),
-        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 1}),
-        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": -1}),
-        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 10}),
-        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": "a"}),
-        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 0}),
-        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 1024}),
-        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": -1}),
-        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 10}),
-        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": "a"}),
-        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"unknown": "unknown"}),
+        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 0}),
+        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 1}),
+        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": -1}),
+        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 10}),
+        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": "a"}),
+        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 0}),
+        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 1}),
+        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": -1}),
+        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 10}),
+        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": "a"}),
+        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 0}),
+        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 1}),
+        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": -1}),
+        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 10}),
+        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": "a"}),
+        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 0}),
+        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 1}),
+        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": -1}),
+        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 10}),
+        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": "a"}),
+        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 0}),
+        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 1024}),
+        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": -1}),
+        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 10}),
+        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": "a"}),
+        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"unknown": "unknown"}),
     ]
 
     for index, (scenario_name, extra_payload, expected_code, expected_message, expected_llm_id, expected_llm_setting) in enumerate(cases, start=1):
@@ -1576,13 +1550,21 @@ def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_docume
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
         if expected_code == 0:
-            assert body["data"]["llm_id"] == expected_llm_id, (scenario_name, body)
+            actual_llm_id = body["data"]["llm_id"]
+            tenant_llm_id = body["data"].get("tenant_llm_id")
+            if expected_llm_id == "glm-4-flash@CI@ZHIPU-AI":
+                if tenant_llm_id:
+                    assert actual_llm_id == tenant_llm_id, (scenario_name, body)
+                else:
+                    assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, body)
+            else:
+                assert actual_llm_id == expected_llm_id, (scenario_name, body)
             assert body["data"]["llm_setting"] == expected_llm_setting, (scenario_name, body)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_create_prompt_contract(rest_client, clear_chats):
     cases = [
         (
@@ -1662,7 +1644,7 @@ def test_chat_create_prompt_contract(rest_client, clear_chats):
 @pytest.mark.p2
 def test_chat_create_additional_guards_contract(rest_client, clear_chats):
     cases = [
-        ("reject tenant_id override", {"tenant_id": "tenant-should-not-pass"}, "`tenant_id` must not be provided."),
+        ("reject tenant_id override", {"tenant_id": "tenant-should-not-pass"}, "`tenant_id` must not be provided"),
         ("reject unknown rerank_id", {"rerank_id": "unknown-rerank-model"}, "`rerank_id` unknown-rerank-model doesn't exist"),
     ]
 
@@ -1709,13 +1691,13 @@ def test_chat_update_name_contract(rest_client, clear_chats):
             "name too long",
             {"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)},
             102,
-            f"Chat name length is {CHAT_ASSISTANT_NAME_LIMIT + 1} which is larger than {CHAT_ASSISTANT_NAME_LIMIT}.",
+            f"chat name length is {CHAT_ASSISTANT_NAME_LIMIT + 1} which is larger than {CHAT_ASSISTANT_NAME_LIMIT}",
             None,
         ),
-        ("name wrong type", {"name": 1}, 102, "Chat name must be a string.", None),
-        ("name empty", {"name": ""}, 102, "`name` cannot be empty.", None),
-        ("duplicate lowercase", {"name": "restful_chat_update_duplicate"}, 102, "Duplicated chat name.", None),
-        ("duplicate uppercase", {"name": "RESTFUL_CHAT_UPDATE_DUPLICATE"}, 102, "Duplicated chat name.", None),
+        ("name wrong type", {"name": 1}, 102, "chat name must be a string", None),
+        ("name empty", {"name": ""}, 102, "`name` cannot be empty", None),
+        ("duplicate lowercase", {"name": "restful_chat_update_duplicate"}, 102, "duplicated chat name", None),
+        ("duplicate uppercase", {"name": "RESTFUL_CHAT_UPDATE_DUPLICATE"}, 102, "duplicated chat name", None),
     ]
 
     for scenario_name, patch_payload, expected_code, expected_message, expected_name in cases:
@@ -1733,7 +1715,7 @@ def test_chat_update_name_contract(rest_client, clear_chats):
             assert payload["message"] == expected_message, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_dataset_ids_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     target_res = rest_client.post("/chats", json={"name": "restful_chat_update_dataset_target", "dataset_ids": []})
@@ -1768,7 +1750,7 @@ def test_chat_update_dataset_ids_contract(rest_client, clear_chats, ensure_parse
             assert payload["message"] == expected_message, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_avatar_contract(rest_client, clear_chats, ensure_parsed_document, tmp_path):
     dataset_id, _ = ensure_parsed_document()
     create_res = rest_client.post("/chats", json={"name": "restful_chat_update_avatar_target", "dataset_ids": []})
@@ -1797,39 +1779,39 @@ def test_chat_update_avatar_contract(rest_client, clear_chats, ensure_parsed_doc
     assert get_payload["data"]["dataset_ids"] == [dataset_id], get_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
-        ("default llm", {}, 0, "", "glm-4-flash@ZHIPU-AI", {}),
-        ("explicit llm_id", {"llm_id": "glm-4"}, 0, "", "glm-4", {}),
+        ("default llm", {}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {}),
+        ("explicit llm_id", {"llm_id": "glm-4"}, 102, "`llm_id` glm-4 doesn't exist", None, None),
         ("unknown llm_id", {"llm_id": "unknown"}, 102, "`llm_id` unknown doesn't exist", None, None),
-        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 0}),
-        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 1}),
-        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": -1}),
-        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 10}),
-        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": "a"}),
-        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 0}),
-        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 1}),
-        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": -1}),
-        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 10}),
-        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": "a"}),
-        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 0}),
-        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 1}),
-        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": -1}),
-        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 10}),
-        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": "a"}),
-        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 0}),
-        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 1}),
-        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": -1}),
-        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 10}),
-        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": "a"}),
-        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 0}),
-        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 1024}),
-        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": -1}),
-        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 10}),
-        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": "a"}),
-        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"unknown": "unknown"}),
+        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 0}),
+        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 1}),
+        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": -1}),
+        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 10}),
+        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": "a"}),
+        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 0}),
+        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 1}),
+        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": -1}),
+        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 10}),
+        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": "a"}),
+        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 0}),
+        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 1}),
+        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": -1}),
+        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 10}),
+        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": "a"}),
+        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 0}),
+        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 1}),
+        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": -1}),
+        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 10}),
+        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": "a"}),
+        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 0}),
+        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 1024}),
+        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": -1}),
+        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 10}),
+        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": "a"}),
+        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"unknown": "unknown"}),
     ]
 
     for index, (scenario_name, extra_payload, expected_code, expected_message, expected_llm_id, expected_llm_setting) in enumerate(cases, start=1):
@@ -1855,13 +1837,21 @@ def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_docume
             get_payload = get_res.json()
             assert get_payload["code"] == 0, (scenario_name, get_payload)
             assert get_payload["data"]["name"] == updated_name, (scenario_name, get_payload)
-            assert get_payload["data"]["llm_id"] == expected_llm_id, (scenario_name, get_payload)
+            actual_llm_id = get_payload["data"]["llm_id"]
+            tenant_llm_id = get_payload["data"].get("tenant_llm_id")
+            if expected_llm_id == "glm-4-flash@CI@ZHIPU-AI":
+                if tenant_llm_id:
+                    assert actual_llm_id == tenant_llm_id, (scenario_name, get_payload)
+                else:
+                    assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, get_payload)
+            else:
+                assert actual_llm_id == expected_llm_id, (scenario_name, get_payload)
             assert get_payload["data"]["llm_setting"] == expected_llm_setting, (scenario_name, get_payload)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_update_prompt_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
@@ -1967,12 +1957,48 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     target_payload = target_res.json()
     assert target_payload["code"] == 0, target_payload
     chat_id = target_payload["data"]["id"]
+    original_parameters = target_payload["data"]["prompt_config"]["parameters"]
+
+    duplicate_create_res = rest_client.post(
+        "/chats",
+        json={
+            "name": "restful_chat_update_mapping_duplicate_parameters",
+            "dataset_ids": [],
+            "prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]},
+        },
+    )
+    assert duplicate_create_res.status_code == 200
+    duplicate_create_payload = duplicate_create_res.json()
+    assert duplicate_create_payload["code"] == 102, duplicate_create_payload
+    assert duplicate_create_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_create_payload
+
+    duplicate_parameters_res = rest_client.put(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_res.status_code == 200
+    duplicate_parameters_payload = duplicate_parameters_res.json()
+    assert duplicate_parameters_payload["code"] == 102, duplicate_parameters_payload
+    assert duplicate_parameters_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_payload
+    get_after_put_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_put_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
+
+    duplicate_parameters_patch_res = rest_client.patch(
+        f"/chats/{chat_id}",
+        json={"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}},
+    )
+    assert duplicate_parameters_patch_res.status_code == 200
+    duplicate_parameters_patch_payload = duplicate_parameters_patch_res.json()
+    assert duplicate_parameters_patch_payload["code"] == 102, duplicate_parameters_patch_payload
+    assert duplicate_parameters_patch_payload["message"] == "`parameters` contains duplicate key: knowledge", duplicate_parameters_patch_payload
+    get_after_patch_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_after_patch_res.json()["data"]["prompt_config"]["parameters"] == original_parameters
 
     unauthorized = rest_client.patch("/chats/invalid-chat-id", json={"name": "anything"})
     assert unauthorized.status_code == 200
     unauthorized_payload = unauthorized.json()
     assert unauthorized_payload["code"] == 109, unauthorized_payload
-    assert unauthorized_payload["message"] == "No authorization.", unauthorized_payload
+    assert unauthorized_payload["message"] == "no authorization", unauthorized_payload
 
     quote_res = rest_client.patch(f"/chats/{chat_id}", json={"prompt_config": {"quote": False}})
     assert quote_res.status_code == 200
@@ -1999,13 +2025,13 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     assert empty_name_res.status_code == 200
     empty_name_payload = empty_name_res.json()
     assert empty_name_payload["code"] == 102, empty_name_payload
-    assert empty_name_payload["message"] == "`name` cannot be empty.", empty_name_payload
+    assert empty_name_payload["message"] == "`name` cannot be empty", empty_name_payload
 
     duplicate_name_res = rest_client.patch(f"/chats/{chat_id}", json={"name": "restful_chat_update_mapping_duplicate"})
     assert duplicate_name_res.status_code == 200
     duplicate_name_payload = duplicate_name_res.json()
     assert duplicate_name_payload["code"] == 102, duplicate_name_payload
-    assert duplicate_name_payload["message"] == "Duplicated chat name.", duplicate_name_payload
+    assert duplicate_name_payload["message"] == "duplicated chat name", duplicate_name_payload
 
     prompt_without_placeholder_res = rest_client.patch(
         f"/chats/{chat_id}",
@@ -2033,13 +2059,13 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
 def test_chat_update_rejects_unparsed_document(rest_client, clear_chats, create_document):
     dataset_id, _ = create_document()
     create_res = rest_client.post("/chats", json={"name": "restful_chat_update_unparsed_target", "dataset_ids": []})
-    assert create_res.status_code == 200
+    assert create_res.status_code == 200, create_res.text
     create_payload = create_res.json()
     assert create_payload["code"] == 0, create_payload
     chat_id = create_payload["data"]["id"]
 
     res = rest_client.patch(f"/chats/{chat_id}", json={"dataset_ids": [dataset_id]})
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     payload = res.json()
     assert payload["code"] == 102, payload
     assert "doesn't own parsed file" in payload["message"], payload

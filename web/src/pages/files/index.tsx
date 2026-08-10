@@ -16,6 +16,10 @@ import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
 import { FilesTable } from './files-table';
+import {
+  useHandleConnectToKnowledge,
+  UseHandleConnectToKnowledgeReturnType,
+} from './hooks';
 import { MoveDialog } from './move-dialog';
 import { useBulkOperateFile } from './use-bulk-operate-file';
 import { useHandleCreateFolder } from './use-create-folder';
@@ -67,11 +71,16 @@ export default function Files() {
     moveFileLoading,
   } = useHandleMoveFile({ clearRowSelection });
 
+  const connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType =
+    useHandleConnectToKnowledge();
+
   const { list } = useBulkOperateFile({
     files,
     rowSelection,
     showMoveFileModal,
     setRowSelection,
+    showConnectToKnowledgeModal:
+      connectKnowledgeModal.showConnectToKnowledgeModal,
   });
 
   const breadcrumbItems = useSelectBreadcrumbItems();
@@ -87,8 +96,11 @@ export default function Files() {
   );
 
   return (
-    <article className="size-full flex flex-col" data-testid="files-list">
-      <header className="px-5 pt-8 mb-4">
+    <article
+      className="size-full min-w-0 flex flex-col"
+      data-testid="files-list"
+    >
+      <header className="mb-4 min-w-0 px-5 pt-8">
         <ListFilterBar
           leftPanel={leftPanel}
           searchString={searchString}
@@ -130,6 +142,7 @@ export default function Files() {
           rowSelection={rowSelection}
           setRowSelection={setRowSelection}
           showMoveFileModal={showMoveFileModal}
+          connectKnowledgeModal={connectKnowledgeModal}
         />
       </div>
 

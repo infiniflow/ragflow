@@ -15,8 +15,12 @@
 #
 
 import base64
+from contextlib import contextmanager
 import json
+import logging
+import os
 import re
+import threading
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.header import Header
@@ -38,85 +42,37 @@ OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
 ATTEMPT_LIMIT = 5  # maximum attempts
 ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
 RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
+BROWSER_FETCH_CONCURRENCY = max(1, int(os.getenv("RAGFLOW_BROWSER_FETCH_CONCURRENCY", "2")))
+BROWSER_FETCH_ACQUIRE_TIMEOUT = float(os.getenv("RAGFLOW_BROWSER_FETCH_ACQUIRE_TIMEOUT", "5"))
+BROWSER_FETCH_TIMEOUT = float(os.getenv("RAGFLOW_BROWSER_FETCH_TIMEOUT", "60"))
+_BROWSER_FETCH_SEMAPHORE = threading.BoundedSemaphore(BROWSER_FETCH_CONCURRENCY)
 
 
-CONTENT_TYPE_MAP = {
-    # Office
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "doc": "application/msword",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-    "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    # Text/code
-    "txt": "text/plain",
-    "py": "text/plain",
-    "js": "text/plain",
-    "java": "text/plain",
-    "c": "text/plain",
-    "cpp": "text/plain",
-    "h": "text/plain",
-    "php": "text/plain",
-    "go": "text/plain",
-    "ts": "text/plain",
-    "sh": "text/plain",
-    "cs": "text/plain",
-    "kt": "text/plain",
-    "sql": "text/plain",
-    # Web
-    "md": "text/markdown",
-    "markdown": "text/markdown",
-    "mdx": "text/markdown",
-    "htm": "text/html",
-    "html": "text/html",
-    "json": "application/json",
-    # Image formats
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "bmp": "image/bmp",
-    "tiff": "image/tiff",
-    "tif": "image/tiff",
-    "webp": "image/webp",
-    "svg": "image/svg+xml",
-    "ico": "image/x-icon",
-    "avif": "image/avif",
-    "heic": "image/heic",
-    # PPTX
-    "ppt": "application/vnd.ms-powerpoint",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-}
+class BrowserFetchBusy(RuntimeError):
+    pass
 
 
-FORCE_ATTACHMENT_EXTENSIONS = {
-    "htm",
-    "html",
-    "shtml",
-    "xht",
-    "xhtml",
-    "xml",
-    "mhtml",
-    "svg",
-}
+@contextmanager
+def browser_fetch_slot(timeout: float = BROWSER_FETCH_ACQUIRE_TIMEOUT):
+    if not _BROWSER_FETCH_SEMAPHORE.acquire(timeout=timeout):
+        raise BrowserFetchBusy("Too many concurrent browser fetch requests")
+    try:
+        yield
+    finally:
+        _BROWSER_FETCH_SEMAPHORE.release()
 
 
-FORCE_ATTACHMENT_CONTENT_TYPES = {
-    "text/html",
-    "image/svg+xml",
-    "application/xhtml+xml",
-    "text/xml",
-    "application/xml",
-    "multipart/related",
-}
-
-
-def should_force_attachment(ext: str | None, content_type: str | None = None) -> bool:
-    normalized_ext = (ext or "").lower().strip(".")
-    if normalized_ext in FORCE_ATTACHMENT_EXTENSIONS:
-        return True
-    normalized_type = (content_type or "").lower()
-    return normalized_type in FORCE_ATTACHMENT_CONTENT_TYPES
+from api.utils.file_response import (  # noqa: F401
+    CONTENT_TYPE_MAP,
+    FORCE_ATTACHMENT_CONTENT_TYPES,
+    FORCE_ATTACHMENT_EXTENSIONS,
+    agent_attachment_preview_path,
+    apply_download_file_response_headers,
+    apply_preview_file_response_headers,
+    resolve_attachment_content_type,
+    sanitize_content_disposition_filename,
+    should_force_attachment,
+)
 
 
 def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
@@ -135,7 +91,8 @@ def html2pdf(
     install_driver: bool = True,
     print_options: dict = {},
 ):
-    result = __get_pdf_from_html(source, timeout, install_driver, print_options)
+    with browser_fetch_slot():
+        result = __get_pdf_from_html(source, timeout, install_driver, print_options)
     return result
 
 
@@ -162,20 +119,23 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
 
     webdriver_prefs["profile.default_content_settings"] = {"images": 2}
 
-    if install_driver:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=webdriver_options)
-    else:
-        driver = webdriver.Chrome(options=webdriver_options)
-
-    driver.get(path)
-
+    driver = None
     try:
-        WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
-    except TimeoutException:
-        pass
+        if install_driver:
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=webdriver_options)
+        else:
+            driver = webdriver.Chrome(options=webdriver_options)
 
-    try:
+        driver.set_page_load_timeout(BROWSER_FETCH_TIMEOUT)
+        driver.set_script_timeout(BROWSER_FETCH_TIMEOUT)
+
+        try:
+            driver.get(path)
+            WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
+        except TimeoutException:
+            logging.warning("Timed out loading %s; printing current page state", path)
+
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -186,7 +146,8 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
         return base64.b64decode(result["data"])
     finally:
-        driver.quit()
+        if driver is not None:
+            driver.quit()
 
 
 def is_valid_url(url: str) -> bool:
@@ -228,7 +189,8 @@ async def send_email_html(to_email: str, subject: str, template_key: str, **cont
     smtp = aiosmtplib.SMTP(
         hostname=settings.MAIL_SERVER,
         port=settings.MAIL_PORT,
-        use_tls=True,
+        use_tls=settings.MAIL_USE_SSL,
+        start_tls=settings.MAIL_USE_TLS,
         timeout=10,
     )
 

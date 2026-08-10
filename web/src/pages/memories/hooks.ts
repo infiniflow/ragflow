@@ -5,7 +5,7 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import {
   buildOwnersFilter,
@@ -18,6 +18,7 @@ import { omit } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
+import { MemoryApiAction } from '../memory/constant';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,
@@ -217,9 +218,9 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
       });
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
+      queryClient.invalidateQueries({
+        queryKey: [MemoryApiAction.FetchMemoryDetail],
+      });
     },
   });
 
@@ -243,13 +244,13 @@ export const useRenameMemory = () => {
   const { updateMemory } = useUpdateMemory();
   const { createMemory } = useCreateMemory();
   const [loading, setLoading] = useState(false);
-  const { data: tenantInfo } = useFetchTenantInfo();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const handleShowChatRenameModal = useCallback(
     (record?: IMemory) => {
       if (record) {
-        const embd_id = record.embd_id || tenantInfo?.embd_id;
-        const llm_id = record.llm_id || tenantInfo?.llm_id;
+        const embd_id = record.embd_id || defaultModelDictionary?.embd_id;
+        const llm_id = record.llm_id || defaultModelDictionary?.llm_id;
         setMemory({
           ...record,
           embd_id,
@@ -258,7 +259,7 @@ export const useRenameMemory = () => {
       }
       showChatRenameModal();
     },
-    [showChatRenameModal, tenantInfo],
+    [showChatRenameModal, defaultModelDictionary],
   );
 
   const handleHideModal = useCallback(() => {
@@ -303,6 +304,7 @@ export const useRenameMemory = () => {
 };
 
 export function useSelectFilters() {
+  const { t } = useTranslation();
   const { data: res } = useFetchMemoryList();
   const data = res?.data;
 
@@ -318,16 +320,16 @@ export function useSelectFilters() {
   }, [data?.memory_list]);
 
   const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.memory_list ?? [], 'owner_name'),
+    buildOwnersFilter(data?.memory_list ?? [], 'owner_name', t('common.owner')),
     {
       field: 'memoryType',
       list: memoryType,
-      label: 'Memory Type',
+      label: t('memories.memoryType'),
     },
     {
       field: 'storageType',
       list: storageType,
-      label: 'Storage Type',
+      label: t('memory.config.storageType'),
     },
   ];
 

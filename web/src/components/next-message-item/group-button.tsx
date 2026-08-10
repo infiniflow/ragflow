@@ -85,6 +85,7 @@ export const AssistantGroupButton = ({
           <CopyToClipboard
             text={content}
             className="border-none hover:!bg-transparent"
+            avoidButtonWrapper
           ></CopyToClipboard>
         </ToggleGroupItem>
         {showLoudspeaker && (
@@ -117,10 +118,17 @@ export const AssistantGroupButton = ({
         )}
         {showLog && (
           <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
-            <NotebookText className="size-4" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <NotebookText className="size-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('flow.log')}</TooltipContent>
+            </Tooltip>
           </ToggleGroupItem>
         )}
-        {!!attachment?.doc_id && !isShare && (
+        {!!attachment?.doc_id && (
           <ToggleGroupItem
             value="g"
             onClick={async () => {
@@ -189,7 +197,7 @@ export const UserGroupButton = ({
       className="space-x-1"
     >
       <ToggleGroupItem value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
+        <CopyToClipboard text={content} avoidButtonWrapper></CopyToClipboard>
       </ToggleGroupItem>
       {regenerateMessage && (
         <ToggleGroupItem

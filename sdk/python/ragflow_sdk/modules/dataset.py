@@ -113,18 +113,21 @@ class DataSet(Base):
 
     def _get_documents_status(self, document_ids):
         import time
+
         terminal_states = {"DONE", "FAIL", "CANCEL"}
         interval_sec = 1
         pending = set(document_ids)
         finished = []
         while pending:
             for doc_id in list(pending):
+
                 def fetch_doc(doc_id: str) -> Document | None:
                     try:
                         docs = self.list_documents(id=doc_id)
                         return docs[0] if docs else None
                     except Exception:
                         return None
+
                 doc = fetch_doc(doc_id)
                 if doc is None:
                     continue
@@ -137,13 +140,12 @@ class DataSet(Base):
             if pending:
                 time.sleep(interval_sec)
         return finished
-    
+
     def async_parse_documents(self, document_ids):
         res = self.post(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
-        
 
     def parse_documents(self, document_ids):
         try:
@@ -151,9 +153,8 @@ class DataSet(Base):
             self._get_documents_status(document_ids)
         except KeyboardInterrupt:
             self.async_cancel_parse_documents(document_ids)
-            
-        return self._get_documents_status(document_ids)
 
+        return self._get_documents_status(document_ids)
 
     def async_cancel_parse_documents(self, document_ids):
         res = self.rm(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	ce "ragflow/internal/cli/filesystem"
 	"time"
 )
 
@@ -31,13 +32,13 @@ type HTTPClient struct {
 	Host           string
 	Port           int
 	APIVersion     string
-	APIToken       string
-	LoginToken     string
+	APIKey         *string
+	LoginToken     *string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	VerifySSL      bool
 	client         *http.Client
-	useAPIToken    bool
+	useAPIKey      bool
 }
 
 // NewHTTPClient creates a new HTTP client
@@ -66,12 +67,19 @@ func (c *HTTPClient) APIBase() string {
 
 // NonAPIBase returns the non-API base URL
 func (c *HTTPClient) NonAPIBase() string {
-	return fmt.Sprintf("%s:%d/%s", c.Host, c.Port, c.APIVersion)
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
 // BuildURL builds the full URL for a given path
-func (c *HTTPClient) BuildURL(path string) string {
-	base := c.APIBase()
+func (c *HTTPClient) BuildURL(path string, authKind string) string {
+	var base string
+
+	if authKind == "none" {
+		base = c.NonAPIBase()
+	} else {
+		base = c.APIBase()
+	}
+
 	if c.VerifySSL {
 		return fmt.Sprintf("https://%s%s", base, path)
 	}
@@ -84,15 +92,15 @@ func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[strin
 
 	switch authKind {
 	case "api":
-		if c.APIToken != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
-		} else if c.LoginToken != "" {
+		if c.APIKey != nil {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *c.APIKey)
+		} else if c.LoginToken != nil {
 			// Fallback to login token for API requests (user mode)
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.LoginToken)
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *c.LoginToken)
 		}
 	case "web", "admin":
-		if c.LoginToken != "" {
-			headers["Authorization"] = c.LoginToken
+		if c.LoginToken != nil {
+			headers["Authorization"] = *c.LoginToken
 		}
 	}
 
@@ -121,7 +129,11 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 
 // Request makes an HTTP request
 func (c *HTTPClient) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
-	url := c.BuildURL(path)
+	if c == nil {
+		return nil, fmt.Errorf("HTTP Client is nil")
+	}
+
+	url := c.BuildURL(path, authKind)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -153,12 +165,12 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 		return nil, err
 	}
 	defer resp.Body.Close()
-	duration := time.Since(startTime).Seconds()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	duration := time.Since(startTime).Seconds()
 
 	return &Response{
 		StatusCode: resp.StatusCode,
@@ -191,7 +203,7 @@ func (c *HTTPClient) RequestWithIterations(method, path string, authKind string,
 		return response, nil
 	}
 
-	url := c.BuildURL(path)
+	url := c.BuildURL(path, authKind)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -273,7 +285,7 @@ func (c *HTTPClient) RequestJSON(method, path string, authKind string, headers m
 
 // UploadMultipart uploads data using multipart/form-data
 func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Reader) error {
-	url := c.BuildURL(path)
+	url := c.BuildURL(path, "api")
 
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
@@ -282,10 +294,10 @@ func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Re
 
 	// Set headers
 	req.Header.Set("Content-Type", contentType)
-	if c.APIToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.APIToken))
-	} else if c.LoginToken != "" {
-		req.Header.Set("Authorization", c.LoginToken)
+	if c.APIKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *c.APIKey))
+	} else if c.LoginToken != nil {
+		req.Header.Set("Authorization", *c.LoginToken)
 	}
 
 	resp, err := c.client.Do(req)
@@ -317,7 +329,7 @@ func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Re
 
 // RequestStream makes an HTTP request for SSE streaming and returns the response body reader
 func (c *HTTPClient) RequestStream(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, error) {
-	url := c.BuildURL(path)
+	url := c.BuildURL(path, authKind)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -359,4 +371,48 @@ func (c *HTTPClient) RequestStream(method, path string, authKind string, headers
 	}
 
 	return resp.Body, nil
+}
+
+// PasswordPromptFunc is a function type for password input
+type PasswordPromptFunc func(prompt string) (string, error)
+
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+	ModelID  string
+}
+
+// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
+type httpClientAdapter struct {
+	client *HTTPClient
+}
+
+func (a *httpClientAdapter) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+	// Auto-detect auth kind based on available tokens
+	// If authKind is "auto" or empty, determine based on token availability
+	if authKind == "auto" || authKind == "" {
+		if a.client.useAPIKey && a.client.APIKey != nil {
+			authKind = "api"
+		} else if a.client.LoginToken != nil {
+			authKind = "web"
+		} else {
+			authKind = "web" // default
+		}
+	}
+	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
+	if err != nil {
+		return nil, err
+	}
+	return &ce.HTTPResponse{
+		StatusCode: resp.StatusCode,
+		Body:       resp.Body,
+		Headers:    resp.Headers,
+		Duration:   resp.Duration,
+	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
