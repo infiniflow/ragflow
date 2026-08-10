@@ -300,6 +300,9 @@ export const useSendMessageWithSse = () => {
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
+                    // Skip final-chunk answer only when prior stream chunks exist (avoids duplicate).
+                    // Empty-response and other single-shot answers arrive with final=true only.
+                    // const currentAnswer = d.final ? '' : d.answer || '';
                     const currentAnswer =
                       d.final && prevAnswer ? '' : d.answer || '';
 
