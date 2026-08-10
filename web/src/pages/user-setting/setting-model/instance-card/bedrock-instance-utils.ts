@@ -35,6 +35,32 @@ export type BedrockFormValues = {
   model_type: ('chat' | 'embedding')[];
 };
 
+export const getBedrockModelListRequest = (values: BedrockFormValues) => {
+  const extensions: Record<string, unknown> = {
+    auth_mode: values.auth_mode,
+  };
+  if (values.auth_mode === 'access_key_secret') {
+    extensions.bedrock_ak = values.bedrock_ak;
+    extensions.bedrock_sk = values.bedrock_sk;
+  } else if (values.auth_mode === 'iam_role') {
+    extensions.aws_role_arn = values.aws_role_arn;
+  } else if (values.auth_mode === 'bedrock_api_key') {
+    extensions.endpoint_type = values.bedrock_endpoint_type;
+    extensions.endpoint_url = values.bedrock_endpoint_url;
+    if (values.bedrock_endpoint_type === 'runtime') {
+      extensions.discovery_endpoint_url = values.bedrock_discovery_endpoint_url;
+    }
+  }
+  return {
+    api_key:
+      values.auth_mode === 'bedrock_api_key'
+        ? (values.bedrock_api_key ?? '')
+        : '',
+    region: values.bedrock_region,
+    extensions,
+  };
+};
+
 export const shouldResetBedrockForm = (
   previousValues: BedrockFormValues,
   nextValues: BedrockFormValues,

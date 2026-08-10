@@ -10,6 +10,7 @@
 
 import {
   getBedrockCatalogCredentialScope,
+  getBedrockModelListRequest,
   shouldResetBedrockForm,
 } from './bedrock-instance-utils';
 import type { BedrockFormValues } from './bedrock-instance-utils';
@@ -42,5 +43,21 @@ describe('Bedrock catalog credential scope', () => {
 
   it('does not reset for an identical instance-details refetch', () => {
     expect(shouldResetBedrockForm(Values, { ...Values })).toBe(false);
+  });
+});
+
+describe('Bedrock model list request', () => {
+  it('omits the Runtime discovery endpoint for Mantle', () => {
+    const request = getBedrockModelListRequest({
+      ...Values,
+      auth_mode: 'bedrock_api_key',
+      bedrock_api_key: 'token',
+      bedrock_endpoint_type: 'mantle_anthropic',
+      bedrock_endpoint_url:
+        'https://bedrock-mantle.ap-northeast-1.api.aws/anthropic',
+      bedrock_discovery_endpoint_url: 'https://attacker.example.com',
+    });
+
+    expect(request.extensions).not.toHaveProperty('discovery_endpoint_url');
   });
 });

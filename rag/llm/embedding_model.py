@@ -697,7 +697,22 @@ class BedrockEmbed(Base):
                 raise ValueError("Bedrock API key must be provided")
             if endpoint_type != "runtime":
                 raise ValueError("Bedrock Mantle endpoints do not support embeddings")
-            self.client = create_bedrock_bearer_client("bedrock-runtime", bedrock_api_key, self.bedrock_region, endpoint_url)
+            try:
+                timeout_seconds = max(1, int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+            except (TypeError, ValueError):
+                timeout_seconds = 600
+            try:
+                max_attempts = max(0, int(os.environ.get("LLM_MAX_RETRIES", 5)))
+            except (TypeError, ValueError):
+                max_attempts = 5
+            self.client = create_bedrock_bearer_client(
+                "bedrock-runtime",
+                bedrock_api_key,
+                self.bedrock_region,
+                endpoint_url,
+                timeout_seconds=timeout_seconds,
+                max_attempts=max_attempts,
+            )
         elif mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")

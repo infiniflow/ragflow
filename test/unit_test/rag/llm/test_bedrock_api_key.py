@@ -115,7 +115,7 @@ def test_runtime_discovery_client_has_bounded_network_timeouts(mock_client):
     config = mock_client.call_args.kwargs["config"]
     assert config.connect_timeout == BEDROCK_DISCOVERY_TIMEOUT_SECONDS
     assert config.read_timeout == BEDROCK_DISCOVERY_TIMEOUT_SECONDS
-    assert config.retries == {"max_attempts": 0}
+    assert config.retries == {"mode": "standard", "max_attempts": 0}
 
 
 def test_verify_bedrock_api_key_without_models_uses_discovery():
@@ -162,9 +162,16 @@ def test_verify_bedrock_api_key_without_models_uses_default_for_invalid_timeout(
             "bedrock_region": "ap-northeast-1",
         }
     )
+
+    async def run_verification(_label, awaitable, timeout_seconds):
+        assert timeout_seconds == 10
+        awaitable.close()
+        return True, [{"name": "anthropic.claude", "model_types": ["chat"]}]
+
     with (
         patch("api.apps.services.provider_api_service.TenantModelProviderService.get_by_id", return_value=(False, None)),
         patch.dict("api.apps.services.provider_api_service.ModelMeta", {"Bedrock": SuccessfulBedrockDiscovery}),
+        patch("api.apps.services.provider_api_service._run_verification", side_effect=run_verification),
     ):
         success, message, model_results = asyncio.run(verify_api_key("Bedrock", api_key, "", "ap-northeast-1", []))
 
@@ -523,6 +530,7 @@ def test_mantle_anthropic_discovery_filters_catalog(mock_openai):
             "bedrock_region": "ap-northeast-1",
             "bedrock_endpoint_type": "mantle_anthropic",
             "bedrock_endpoint_url": "https://bedrock-mantle.ap-northeast-1.api.aws/v1/models",
+            "bedrock_discovery_endpoint_url": "https://attacker.example.com",
         }
     )
 
@@ -563,7 +571,34 @@ def test_embedding_uses_request_scoped_bearer_client(mock_create_client):
         "amazon.titan-embed-text-v2:0",
     )
     assert model.client is client
-    mock_create_client.assert_called_once_with("bedrock-runtime", "token", "ap-northeast-1", "")
+    mock_create_client.assert_called_once_with(
+        "bedrock-runtime",
+        "token",
+        "ap-northeast-1",
+        "",
+        timeout_seconds=600,
+        max_attempts=5,
+    )
+
+
+@patch("rag.llm.bedrock_model_discovery.create_bedrock_bearer_client")
+def test_embedding_bearer_client_uses_runtime_transport_settings(mock_create_client, monkeypatch):
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("LLM_MAX_RETRIES", "3")
+
+    BedrockEmbed(
+        '{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token"}',
+        "amazon.titan-embed-text-v2:0",
+    )
+
+    mock_create_client.assert_called_once_with(
+        "bedrock-runtime",
+        "token",
+        "ap-northeast-1",
+        "",
+        timeout_seconds=120,
+        max_attempts=3,
+    )
 
 
 def test_rerank_rejects_bedrock_api_key():

@@ -132,13 +132,26 @@ func TestParseBedrockAPIKeyTrimsToken(t *testing.T) {
 	}
 }
 
+func TestParseBedrockAPIKeyNormalizesDiscoveryEndpoint(t *testing.T) {
+	key, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token","bedrock_discovery_endpoint_url":"  https://bedrock.ap-northeast-1.amazonaws.com/  "}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if key.DiscoveryEndpointURL != "https://bedrock.ap-northeast-1.amazonaws.com" {
+		t.Fatalf("DiscoveryEndpointURL=%q", key.DiscoveryEndpointURL)
+	}
+}
+
 func TestParseBedrockAPIKeyNormalizesMantleEndpoint(t *testing.T) {
-	key, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":"https://bedrock-mantle.ap-northeast-1.api.aws/v1/models"}`)
+	key, err := parseBedrockKey(`{"auth_mode":"bedrock_api_key","bedrock_region":"ap-northeast-1","bedrock_api_key":"token","bedrock_endpoint_type":"mantle_anthropic","bedrock_endpoint_url":"https://bedrock-mantle.ap-northeast-1.api.aws/v1/models","bedrock_discovery_endpoint_url":"https://attacker.example.com"}`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if key.EndpointURL != "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic" {
 		t.Fatalf("EndpointURL=%q", key.EndpointURL)
+	}
+	if key.DiscoveryEndpointURL != "" {
+		t.Fatalf("DiscoveryEndpointURL=%q, want stale Runtime endpoint ignored", key.DiscoveryEndpointURL)
 	}
 }
 

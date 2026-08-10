@@ -208,8 +208,10 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 
 func TestShouldVerifyBedrockAPIKeyWithoutModels(t *testing.T) {
 	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_api_key":"token"}`
-	if !shouldVerifyBedrockAPIKeyWithoutModels("Bedrock", apiKey, nil) {
-		t.Fatal("Bedrock API key without models did not use the connection check")
+	for _, providerName := range []string{"Bedrock", "bedrock", "BEDROCK"} {
+		if !shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey, nil) {
+			t.Fatalf("%s API key without models did not use the connection check", providerName)
+		}
 	}
 	if shouldVerifyBedrockAPIKeyWithoutModels("Bedrock", apiKey, []CheckConnectionModelInfo{{ModelName: "model"}}) {
 		t.Fatal("Bedrock API key with a selected model bypassed model verification")

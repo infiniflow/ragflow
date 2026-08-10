@@ -65,7 +65,15 @@ class DiscoveredBedrockModel(TypedDict):
     features: list[str]
 
 
-def create_bedrock_bearer_client(service_name: str, api_key: str, region_name: str, endpoint_url: str = "") -> BaseClient:
+def create_bedrock_bearer_client(
+    service_name: str,
+    api_key: str,
+    region_name: str,
+    endpoint_url: str = "",
+    *,
+    timeout_seconds: int = BEDROCK_DISCOVERY_TIMEOUT_SECONDS,
+    max_attempts: int = 0,
+) -> BaseClient:
     import boto3
 
     api_key = validate_bedrock_api_key(api_key)
@@ -75,9 +83,9 @@ def create_bedrock_bearer_client(service_name: str, api_key: str, region_name: s
         "region_name": region_name,
         "config": Config(
             signature_version=UNSIGNED,
-            connect_timeout=BEDROCK_DISCOVERY_TIMEOUT_SECONDS,
-            read_timeout=BEDROCK_DISCOVERY_TIMEOUT_SECONDS,
-            retries={"max_attempts": 0},
+            connect_timeout=timeout_seconds,
+            read_timeout=timeout_seconds,
+            retries={"mode": "standard", "max_attempts": max_attempts},
         ),
     }
     if endpoint_url:
@@ -154,10 +162,10 @@ def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockMod
         raise ValueError("Bedrock region must be provided in the key")
     validate_bedrock_region(region_name)
     endpoint_type, endpoint_url = resolve_bedrock_endpoint("bedrock_api_key", config.get("bedrock_endpoint_type"), config.get("bedrock_endpoint_url"))
-    catalog_endpoint_url = normalize_bedrock_endpoint("runtime", config.get("bedrock_discovery_endpoint_url") or "")
-    validate_bedrock_endpoint_target(catalog_endpoint_url)
     logging.info("Discovering Bedrock models using endpoint type %s", endpoint_type)
     if endpoint_type == "runtime":
+        catalog_endpoint_url = normalize_bedrock_endpoint("runtime", config.get("bedrock_discovery_endpoint_url") or "")
+        validate_bedrock_endpoint_target(catalog_endpoint_url)
         models = _discover_runtime_models(api_key, region_name, catalog_endpoint_url)
     else:
         models = _discover_mantle_models(api_key, endpoint_url, endpoint_type == "mantle_anthropic")

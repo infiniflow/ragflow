@@ -1082,7 +1082,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 }
 
 func shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey string, modelInfo []CheckConnectionModelInfo) bool {
-	if providerName != "Bedrock" || len(modelInfo) > 0 {
+	if !strings.EqualFold(providerName, "Bedrock") || len(modelInfo) > 0 {
 		return false
 	}
 	var keyConfig struct {

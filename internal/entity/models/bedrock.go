@@ -176,8 +176,13 @@ func parseBedrockKey(raw string) (*bedrockKey, error) {
 	}
 	key.EndpointType = endpointType
 	key.EndpointURL = endpointURL
-	if err := validateBedrockEndpointTarget(key.DiscoveryEndpointURL); err != nil {
-		return nil, err
+	if key.EndpointType == bedrockEndpointRuntime {
+		key.DiscoveryEndpointURL = normalizeBedrockEndpoint(bedrockEndpointRuntime, key.DiscoveryEndpointURL)
+		if err := validateBedrockEndpointTarget(key.DiscoveryEndpointURL); err != nil {
+			return nil, err
+		}
+	} else {
+		key.DiscoveryEndpointURL = ""
 	}
 	return &key, nil
 }

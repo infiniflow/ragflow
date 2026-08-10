@@ -60,6 +60,7 @@ import { splitProviderPayload } from '../payload-utils';
 import { parseApiKeyAsObject } from '../provider-schema/field-config/utils';
 import {
   getBedrockCatalogCredentialScope,
+  getBedrockModelListRequest,
   shouldResetBedrockForm,
 } from './bedrock-instance-utils';
 import type {
@@ -73,30 +74,6 @@ import {
 } from './interface';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
-
-export const getBedrockModelListRequest = (values: BedrockFormValues) => {
-  const extensions: Record<string, unknown> = {
-    auth_mode: values.auth_mode,
-  };
-  if (values.auth_mode === 'access_key_secret') {
-    extensions.bedrock_ak = values.bedrock_ak;
-    extensions.bedrock_sk = values.bedrock_sk;
-  } else if (values.auth_mode === 'iam_role') {
-    extensions.aws_role_arn = values.aws_role_arn;
-  } else if (values.auth_mode === 'bedrock_api_key') {
-    extensions.endpoint_type = values.bedrock_endpoint_type;
-    extensions.endpoint_url = values.bedrock_endpoint_url;
-    extensions.discovery_endpoint_url = values.bedrock_discovery_endpoint_url;
-  }
-  return {
-    api_key:
-      values.auth_mode === 'bedrock_api_key'
-        ? (values.bedrock_api_key ?? '')
-        : '',
-    region: values.bedrock_region,
-    extensions,
-  };
-};
 
 interface BedrockInstanceCardProps {
   providerName: string;
@@ -404,6 +381,12 @@ export const BedrockInstanceCard = forwardRef<
           });
         }
       });
+      if (
+        values.auth_mode === 'bedrock_api_key' &&
+        values.bedrock_endpoint_type !== 'runtime'
+      ) {
+        delete cleaned.bedrock_discovery_endpoint_url;
+      }
 
       const flat = {
         ...cleaned,
@@ -766,7 +749,12 @@ export const BedrockInstanceCard = forwardRef<
               {(field) => (
                 <SelectWithSearch
                   value={field.value}
-                  onChange={field.onChange}
+                  onChange={(value) => {
+                    if (value !== 'runtime') {
+                      form.setValue('bedrock_discovery_endpoint_url', '');
+                    }
+                    field.onChange(value);
+                  }}
                   options={[
                     {
                       value: 'runtime',
