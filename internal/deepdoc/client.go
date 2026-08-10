@@ -30,7 +30,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/server"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -102,10 +101,9 @@ func WithBackoff(d time.Duration) Option {
 // (legacy alias per deepdoc/vision/layout_recognizer.py:52). When
 // both are unset, Enabled() reports false.
 func NewClient(opts ...Option) *Client {
-	globalConfig := server.GetConfig()
-	url := globalConfig.GetDeepDocURL()
+	url := common.GetEnv(common.EnvDeepDocURL)
 	if url == "" {
-		url = globalConfig.GetTensorRTDLAServer()
+		url = common.GetEnv(common.EnvTensorrtDLAServer)
 	}
 	return NewClientWithURL(url, opts...)
 }

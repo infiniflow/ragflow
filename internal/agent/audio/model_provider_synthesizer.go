@@ -40,7 +40,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"ragflow/internal/server"
+	"ragflow/internal/common"
+	"strconv"
 	"time"
 
 	"ragflow/internal/agent/runtime"
@@ -166,6 +167,13 @@ func buildTTSCacheKey(tenantID string, req SynthesizeRequest) string {
 // ttsCacheTTL reads RAGFLOW_TTS_CACHE_TTL_SECONDS; default 7 days.
 // Matches the Python `_ttl_seconds` default of 7 * 24 * 60 * 60.
 func ttsCacheTTL() time.Duration {
-	globalConfig := server.GetConfig()
-	return globalConfig.GetTTSCacheTTLSeconds()
+	raw := common.GetEnv(common.EnvRAGFlowTTSCacheTTLSeconds)
+	if raw == "" {
+		return 7 * 24 * time.Hour
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 7 * 24 * time.Hour
+	}
+	return time.Duration(n) * time.Second
 }

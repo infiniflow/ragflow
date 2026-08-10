@@ -31,7 +31,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
-	"ragflow/internal/server"
+	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
 	_ "image/gif"
@@ -437,10 +437,9 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(binary []byte) (string, error) {
-	globalConfig := server.GetConfig()
-	deepdocURL := globalConfig.GetDeepDocURL()
+	deepdocURL := common.GetEnv(common.EnvDeepDocURL)
 	if deepdocURL == "" {
-		deepdocURL = globalConfig.GetTensorRTDLAServer()
+		deepdocURL = common.GetEnv(common.EnvTensorrtDLAServer)
 	}
 	if deepdocURL == "" {
 		return "", fmt.Errorf("local OCR: DEEPDOC_URL not configured")
