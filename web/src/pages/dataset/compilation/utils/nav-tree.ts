@@ -92,30 +92,26 @@ function decorateStructureItems(
   });
 }
 
+// Entity items mount directly under the document node — the template itself
+// is not rendered as a tree node, its id only prefixes entity ids so they
+// stay unique when a document has multiple templates.
 function buildStructureTreeData(
   templates: IStructureGraphTemplate[],
   idPrefix: string,
   onEntityClick?: (entity: IStructureGraphEntity) => void,
 ): TreeDataItem[] {
-  return templates.map((template) => {
+  return templates.flatMap((template) => {
     const entityById = new Map<string, IStructureGraphEntity>(
       template.entities
         .map((entity) => [entity.id ?? entity.name ?? '', entity] as const)
         .filter(([id]) => !!id),
     );
-    const templateId = `${idPrefix}/${template.template_id}`;
-    const children = decorateStructureItems(
+    return decorateStructureItems(
       buildTemplateChildren(template),
       entityById,
-      templateId,
+      `${idPrefix}/${template.template_id}`,
       onEntityClick,
     );
-    return {
-      id: templateId,
-      name: trim(template.template_name),
-      hasChildren: children.length > 0,
-      children,
-    };
   });
 }
 
@@ -157,22 +153,27 @@ export function buildNavTreeData(
       }
       // Fetched but empty: leave children unset so the branch opens to nothing.
     } else if (node.doc_id) {
-      // Document leaf: expandable into its structure graph templates.
+      // Document leaf: expandable into its structure graph entities.
       const templates = structureMap[node.doc_id];
-      if (templates?.length) {
+      if (!templates) {
+        // Not fetched yet: a placeholder keeps the node rendered as an
+        // expandable branch until the request resolves.
         item.hasChildren = true;
-        item.children = buildStructureTreeData(templates, id, (entity) =>
+        item.children = [{ id: `${id}/__loading__`, name: loadingPlaceholder }];
+      } else {
+        const children = buildStructureTreeData(templates, id, (entity) =>
           onEntityClick?.(
             node,
             getEntityDisplayName(entity),
             getEntityDescription(entity),
           ),
         );
-      } else if (!templates) {
-        item.hasChildren = true;
-        item.children = [{ id: `${id}/__loading__`, name: loadingPlaceholder }];
+        if (children.length) {
+          item.hasChildren = true;
+          item.children = children;
+        }
+        // No entity nodes: leave hasChildren unset so the node stays a leaf.
       }
-      // Fetched but empty: leave hasChildren unset so the node stays a leaf.
     }
 
     return item;
