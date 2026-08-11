@@ -4,7 +4,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, TriangleAlert, X } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -28,6 +28,17 @@ interface TreeSelectProps {
   className?: string;
   defaultExpandAll?: boolean;
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
+  /**
+   * Custom display for a value that matches no node in `data` (e.g. the
+   * referenced entity was deleted). Defaults to a warning icon plus the raw
+   * value.
+   */
+  renderMissingValue?: (value: string) => React.ReactNode;
+  /**
+   * While true, an unmatched value is treated as not-yet-loaded instead of
+   * missing, so the missing-value display doesn't flash before `data` arrives.
+   */
+  loading?: boolean;
   testId?: string;
 }
 
@@ -44,6 +55,8 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
       className,
       defaultExpandAll,
       renderSelected,
+      renderMissingValue,
+      loading,
       testId,
     },
     ref,
@@ -80,6 +93,11 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
       };
       return find(data);
     }, [data, value]);
+
+    // A value matching no node means the referenced option is gone (e.g.
+    // deleted) — unless `data` may simply not have loaded yet.
+    const missingValue =
+      value && !selectedNode && !loading ? value : undefined;
 
     const isLeaf = useCallback(
       (node: TreeSelectNode) => !node.children?.length,
@@ -229,11 +247,22 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
             )}
           >
             <span className={cn('truncate', !selectedNode && 'text-slate-400')}>
-              {renderSelected
-                ? renderSelected(selectedNode)
-                : selectedNode?.title ||
-                  placeholder ||
-                  t('common.pleaseSelect')}
+              {missingValue ? (
+                renderMissingValue ? (
+                  renderMissingValue(missingValue)
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <TriangleAlert className="size-4 flex-shrink-0" />
+                    <span className="truncate">{missingValue}</span>
+                  </span>
+                )
+              ) : renderSelected ? (
+                renderSelected(selectedNode)
+              ) : (
+                selectedNode?.title ||
+                placeholder ||
+                t('common.pleaseSelect')
+              )}
             </span>
             <div className="flex items-center ml-2 flex-shrink-0">
               {allowClear && value ? (

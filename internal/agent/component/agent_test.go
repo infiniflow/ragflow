@@ -787,7 +787,7 @@ func TestAgent_Invoke_RespectsParentCancellation(t *testing.T) {
 	})
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
 	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "hi"})
@@ -1065,15 +1065,16 @@ func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
 	if len(agent.param.SubAgents) != 1 {
 		t.Fatalf("sub agents = %d, want 1", len(agent.param.SubAgents))
 	}
+	ctx := t.Context()
 
-	tools, err := buildAgentTools(t.Context(), agent.param)
+	tools, err := buildAgentTools(ctx, agent.param)
 	if err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}
 	if len(tools) != 1 {
 		t.Fatalf("len(tools) = %d, want 1", len(tools))
 	}
-	info, err := tools[0].Info(context.Background())
+	info, err := tools[0].Info(ctx)
 	if err != nil {
 		t.Fatalf("tool.Info: %v", err)
 	}
@@ -1125,7 +1126,7 @@ func TestAgent_CanvasSubAgentToolNamesAreUniqueAfterNormalization(t *testing.T) 
 	}
 	var names []string
 	for _, tool := range tools {
-		info, err := tool.Info(context.Background())
+		info, err := tool.Info(t.Context())
 		if err != nil {
 			t.Fatalf("tool.Info: %v", err)
 		}

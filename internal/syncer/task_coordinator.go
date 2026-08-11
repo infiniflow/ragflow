@@ -24,6 +24,8 @@ import (
 	"time"
 )
 
+const connectorLockSafetyMargin = 5 * time.Second
+
 // ConnectorRegistry opens registered connectors by source.
 type ConnectorRegistry interface {
 	// Open creates a connector for a task context.
@@ -32,9 +34,8 @@ type ConnectorRegistry interface {
 
 // TaskCoordinatorConfig controls per-task document processing.
 type TaskCoordinatorConfig struct {
-	PerTaskItemConcurrency int
-	ItemRetryCount         int
-	ItemRetryBaseDelay     time.Duration
+	ItemRetryCount     int
+	ItemRetryBaseDelay time.Duration
 }
 
 // TaskCoordinator owns one task execution window.
@@ -45,15 +46,11 @@ type TaskCoordinator struct {
 	sink         service.DocumentSink
 	pruneService *service.SyncPruneService
 	idResolver   *service.DocumentIDResolver
-	globalItems  chan struct{}
+	executor     *SyncJobExecutor
 }
 
 // NewTaskCoordinator creates a coordinator for one claimed task at a time.
-func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncTaskService, registry ConnectorRegistry, sink service.DocumentSink, pruneService *service.SyncPruneService, idResolver *service.DocumentIDResolver, globalItems chan struct{}) *TaskCoordinator {
-	if config.PerTaskItemConcurrency <= 0 {
-		config.PerTaskItemConcurrency = 1
-	}
-
+func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncTaskService, registry ConnectorRegistry, sink service.DocumentSink, pruneService *service.SyncPruneService, idResolver *service.DocumentIDResolver, executor *SyncJobExecutor) *TaskCoordinator {
 	if config.ItemRetryCount <= 0 {
 		config.ItemRetryCount = 1
 	}
@@ -61,12 +58,19 @@ func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncT
 	if config.ItemRetryBaseDelay <= 0 {
 		config.ItemRetryBaseDelay = time.Second
 	}
+	if executor == nil {
+		panic("task coordinator executor must not be nil")
+	}
 
-	return &TaskCoordinator{config: config, taskService: taskService, registry: registry, sink: sink, pruneService: pruneService, idResolver: idResolver, globalItems: globalItems}
+	return &TaskCoordinator{config: config, taskService: taskService, registry: registry, sink: sink, pruneService: pruneService, idResolver: idResolver, executor: executor}
 }
 
 // Execute dispatches a sync_logs task by task type.
-func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext) error {
+func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext, lease ConnectorLockLease) error {
+	runCtx, cancel := context.WithDeadline(ctx, taskExecutionDeadline(time.Now(), taskContext, lease))
+	defer cancel()
+	ctx = runCtx
+
 	connector, err := c.registry.Open(ctx, taskContext)
 	if err != nil {
 		return err
@@ -74,9 +78,16 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncT
 	if err = connector.Validate(ctx); err != nil {
 		return err
 	}
+
 	switch taskContext.Task.TaskType {
 	case service.TaskTypeSync:
-		runner := NewSyncRunner(c.config, c.taskService, c.sink, c.idResolver, c.globalItems)
+		queue, err := c.executor.RegisterTask(ctx, taskContext.Task.ID)
+		if err != nil {
+			return err
+		}
+		defer queue.Close()
+
+		runner := NewSyncRunner(c.config, c.taskService, c.sink, c.idResolver, queue)
 		return runner.Run(ctx, taskContext, connector)
 	case service.TaskTypePrune:
 		runner := NewPruneRunner(c.taskService, c.pruneService)
@@ -84,4 +95,28 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncT
 	default:
 		return fmt.Errorf("unsupported sync task type %q", taskContext.Task.TaskType)
 	}
+}
+
+func taskExecutionDeadline(now time.Time, taskContext service.SyncTaskContext, lease ConnectorLockLease) time.Time {
+	timeout := connectorLockTTL
+	if seconds := taskContext.Connector.TimeoutSecs; seconds > 0 && seconds <= int64(connectorLockTTL/time.Second) {
+		timeout = time.Duration(seconds) * time.Second
+	}
+
+	deadline := now.Add(timeout)
+	if lease.ExpiresAt.IsZero() {
+		if timeout > connectorLockTTL {
+			return now.Add(connectorLockTTL)
+		}
+		return deadline
+	}
+
+	lockDeadline := lease.ExpiresAt.Add(-connectorLockSafetyMargin)
+	if lockDeadline.Before(now) {
+		return now
+	}
+	if lockDeadline.Before(deadline) {
+		return lockDeadline
+	}
+	return deadline
 }

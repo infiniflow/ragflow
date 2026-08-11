@@ -1038,7 +1038,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	messageQueueStatus := messageQueueImpl.CheckStatus()
 	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
 
-	results = append(results, s.GetEEServicesStatus()...)
+	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {

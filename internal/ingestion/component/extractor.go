@@ -696,17 +696,16 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
-			callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
-			// buildExtractorMessages appends chunkText to the user
-			// message unconditionally. When the chunk text was already
-			// embedded via a {text}/{chunks} placeholder above, passing
-			// it again would duplicate the content in the final prompt.
-			// Suppress the automatic append in that case (the keyword/
-			// question helper paths do the same by passing "").
+			// buildExtractorMessages appends chunkText to the user message
+			// unconditionally. Substitute first; if a content-bearing
+			// placeholder ({text}/{chunks}/{content_with_weight}) was actually
+			// replaced, the chunk body is already in the prompt — suppress
+			// the append to avoid duplication.
+			var subP, subS bool
+			callIn.prompt, subP = substituteChunkPlaceholders(in.prompt, ck, text)
+			callIn.systemPrompt, subS = substituteChunkPlaceholders(in.systemPrompt, ck, text)
 			callChunkText := text
-			if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
-				strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
+			if subP || subS {
 				callChunkText = ""
 			}
 			ans, callErr := c.callText(timeoutCtx, db, callIn, callChunkText)
@@ -1455,39 +1454,67 @@ var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
 // (agent/component/base.py:602-609).
 var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
 
+// contentPlaceholders are the simple placeholders that resolve to the
+// chunk body. Substituting any of them indicates the chunk body is
+// already embedded in the prompt — so the automatic append in
+// buildExtractorMessages must be suppressed to avoid duplication.
+// "text" and "chunks" both map to chunkText (the primary chunk body);
+// "content_with_weight" is a chunk field carrying the weighted body.
+var contentPlaceholders = map[string]bool{
+	"text":                true,
+	"chunks":              true,
+	"content_with_weight": true,
+}
+
 // substituteChunkPlaceholders replaces {field_name} placeholders in
 // the prompt with values from the current chunk map. The special
-// alias "chunks" maps to chunkText (the current chunk's primary
-// text), matching Python's `args[chunks_key] = ck["text"]` at
+// aliases "text" and "chunks" map to chunkText (the current chunk's
+// primary text), matching Python's `args[chunks_key] = ck["text"]` at
 // extractor.py:102. Unmatched placeholders are left as-is.
-func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
+//
+// The "text" placeholder falls back to chunkText when the chunk has no
+// explicit "text" field — e.g. when only content_with_weight is present.
+// This makes {text}'s resolved value match the append path's `text`
+// variable (which also falls back content_with_weight → text).
+//
+// Returns the substituted prompt and whether any content-bearing
+// placeholder was replaced (i.e. the chunk body is now in the prompt).
+func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) (string, bool) {
 	if prompt == "" || ck == nil {
-		return prompt
+		return prompt, false
 	}
-	// Build lookup: chunk fields + "chunks" alias
-	lookup := make(map[string]string, len(ck)+1)
+	// Build lookup: chunk fields + "chunks" alias + "text" fallback.
+	lookup := make(map[string]string, len(ck)+2)
 	for k, v := range ck {
 		lookup[k] = fmt.Sprintf("%v", v)
+	}
+	if _, has := lookup["text"]; !has {
+		lookup["text"] = chunkText
 	}
 	if _, has := lookup["chunks"]; !has {
 		lookup["chunks"] = chunkText
 	}
-	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
+	var substituted bool
+	out := simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
 		key := match[1 : len(match)-1] // strip { }
 		if val, ok := lookup[key]; ok {
+			if contentPlaceholders[key] {
+				substituted = true
+			}
 			return val
 		}
 		return match // leave unknown placeholders as-is
 	})
+	return out, substituted
 }
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when
-// s is not a JSON object. Trims common markdown code fences
+// s is not a JSON object. Trims common Markdown code fences
 // (```json ... ```) before parsing.
 func tryParseJSONObject(s string) (map[string]any, bool) {
 	trimmed := strings.TrimSpace(s)
-	// Strip a surrounding markdown code fence. Models commonly wrap JSON in
+	// Strip a surrounding Markdown code fence. Models commonly wrap JSON in
 	// ```json ... ``` (language tag on the opening line) but some emit the tag
 	// on its own line (```\njson\n{...}); Python's json_repair tolerates both,
 	// encoding/json does not, so we drop the fence and any bare leading

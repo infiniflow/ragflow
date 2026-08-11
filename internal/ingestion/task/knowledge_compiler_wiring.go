@@ -33,8 +33,9 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service"
 
-	"gorm.io/gorm"
 	appcommon "ragflow/internal/common"
+
+	"gorm.io/gorm"
 )
 
 // This file is the composition-root wiring for the KnowledgeCompiler ingestion
@@ -96,7 +97,20 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 	svc := service.NewModelProviderService()
 	return func(tenantID, llmID, embeddingModel string) (kc.Deps, error) {
 		if strings.TrimSpace(llmID) == "" {
-			return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is required for production deps resolution")
+			// No explicit chat model was supplied (e.g. the dataset-level deduper
+			// is seeded with a global default that may be empty). Resolve the
+			// tenant's default chat model so cross-document LLM merging can
+			// actually run instead of failing / falling back to a no-op. Use the
+			// composite "<model>@<instance>@<provider>" reference (not the bare
+			// model name) so later Chat/ResolveModelConfig round-trips can locate
+			// the provider.
+			defaultRef, derr := svc.GetTenantDefaultModelRef(context.Background(), tenantID, entity.ModelTypeChat)
+			if derr != nil || strings.TrimSpace(defaultRef) == "" {
+				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
+			}
+			llmID = defaultRef
+			// Keep the fall-through path below for ModelContextLen resolution so
+			// both explicit and default model refs share one context-window path.
 		}
 		// Resolve the chat model's context window so RAPTOR can truncate each
 		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
@@ -111,6 +125,16 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		if ml, merr := svc.ResolveModelContextLength(ctx, tenantID, llmID); merr == nil && ml > 0 {
 			llmMax = ml
 		}
+		// Resolve the model's generation cap (max_output). Cross-document merge
+		// judging packs many pairs into one LLM call; the batch must be bounded by
+		// BOTH the input window and this output cap, so a large candidate set
+		// never overflows max_output and yields a truncated/non-JSON reply. This
+		// uses max_tokens (the generation cap), NOT content_length — see
+		// ResolveModelContextLength's comment.
+		llmMaxOutput := 0
+		if _, _, _, mo, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && mo > 0 {
+			llmMaxOutput = mo
+		}
 
 		return kc.Deps{
 			Chat:      &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
@@ -120,6 +144,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
 			ModelContextLen: llmMax,
+			ModelMaxOutput:  llmMaxOutput,
 		}, nil
 	}
 }
@@ -161,15 +186,25 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
-	retryErr := appcommon.RetryWithBackoff(ctx, kcChatRetryMax, kcChatRetryDelay, func() error {
-		r, err := c.svc.Chat(ctx, c.tenantID, llmID, msgs, config)
+	call := func() error {
+		// Bound each attempt to a short deadline so a stalled LLM provider (e.g.
+		// MiniMax hanging on a large merge-judge prompt) surfaces a timeout
+		// quickly instead of blocking a compile sub-batch for minutes; the
+		// retry/backoff loop above then handles it as a transient failure.
+		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
+		defer cancel()
+		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
 		if err != nil {
 			return err
 		}
 		resp = r
 		return nil
-	}, appcommon.IsTransientError)
-	if retryErr != nil {
+	}
+	if req.DisableRetry {
+		if err := call(); err != nil {
+			return nil, err
+		}
+	} else if retryErr := appcommon.RetryWithBackoff(ctx, kcChatRetryMax, kcChatRetryDelay, call, appcommon.IsTransientError); retryErr != nil {
 		return nil, retryErr
 	}
 	content := ""
@@ -182,7 +217,13 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 // kcChatRetryMax bounds how many times a transient LLM transport failure is
 // retried. Each attempt may run up to the driver's HTTP timeout, so the count
 // stays small to avoid unbounded wall-clock latency inside one compile.
-const kcChatRetryMax = 2
+const kcChatRetryMax = 5
+
+// kcChatAttemptTimeout bounds a single Chat call (per retry attempt). A stalled
+// provider must surface a timeout promptly rather than hold a compile sub-batch;
+// 3 minutes is long enough for a big merge-judge prompt yet short enough that
+// several failed attempts do not stall the pipeline for many minutes.
+const kcChatAttemptTimeout = 3 * time.Minute
 
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second

@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -42,6 +43,10 @@ type NatsEngine struct {
 	knowledgeCompileStream   jetstream.Stream
 	knowledgeCompileConsumer jetstream.Consumer
 	kv                       jetstream.KeyValue
+
+	syncerStream   jetstream.Stream
+	syncerConsumer jetstream.Consumer
+	syncerMu       sync.Mutex
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {

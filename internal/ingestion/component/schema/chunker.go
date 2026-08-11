@@ -85,7 +85,7 @@ type ChunkerFromUpstream struct {
 	// Python). Set when OutputFormat == "json".
 	JSONResult []ChunkDoc `json:"json,omitempty"`
 
-	// MarkdownResult is the upstream markdown payload (alias "markdown").
+	// MarkdownResult is the upstream Markdown payload (alias "markdown").
 	// Set when OutputFormat == "markdown".
 	MarkdownResult *string `json:"markdown,omitempty"`
 

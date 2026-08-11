@@ -49,7 +49,7 @@ from api.utils.api_utils import (
     get_result,
     server_error_response,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -478,6 +478,10 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req.get("keywords", "")
     chunk_ids = _get_query_id_list(req, "chunk_ids")
+    try:
+        validate_rest_api_ids(chunk_ids, "chunk_ids")
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     query = {
         "doc_ids": [document_id],
         "page": page,
@@ -737,7 +741,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
         return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-    # ── keywords mode: global KNN → the top-1 entity's focused subgraph ──
+    # ── keywords mode: name matching/KNN → matched entities' subgraph ──
     if keywords:
         try:
             embd_id = DocumentService.get_embd_id(document_id)

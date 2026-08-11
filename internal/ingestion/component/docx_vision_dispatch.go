@@ -22,8 +22,8 @@
 // Unlike the PDF vision path (which replaces dispatchParse entirely),
 // DOCX vision is a post-processing step. It mirrors Python exactly:
 // vision enrichment happens ONLY on the JSON output path, where each
-// item carries a doc_type_kwd and an optional image. The markdown path
-// performs no vision enrichment in Python, so it must not here either.
+// item carries a doc_type_kwd and an optional image. The Markdown path
+// performs no vision enrichment in Python, so it must not be here either.
 
 package component
 
@@ -73,8 +73,8 @@ var (
 // without an image (e.g. DOCX tables) are left untouched, exactly as Python
 // skips them via `if item.get("image") is None: continue`.
 //
-// The markdown output path receives no vision enrichment — Python's DOCX
-// markdown branch only concatenates text and never calls the vision model.
+// The Markdown output path receives no vision enrichment — Python's DOCX
+// Markdown branch only concatenates text and never calls the vision model.
 func maybeDispatchDOCXVision(
 	ctx context.Context,
 	db *gorm.DB,
@@ -141,7 +141,7 @@ func maybeDispatchDOCXVision(
 				return
 			}
 			// DOCX JSON items have no surrounding context (unlike the
-			// former markdown path), so use the bare figure prompt —
+			// former Markdown path), so use the bare figure prompt —
 			// matching Python's VisionFigureParser(context_size=0).
 			prompt, perr := docxVisionPromptBuilder("", "")
 			if perr != nil {

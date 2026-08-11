@@ -67,8 +67,10 @@ func TestAkShare_FetchesStockNews(t *testing.T) {
 	akshareStockNewsEndpoint = srv.URL + "/search/jsonp"
 	defer func() { akshareStockNewsEndpoint = oldEndpoint }()
 
+	ctx := t.Context()
+
 	tool := NewAkShareToolWithTopN(NewHTTPHelper(), 2)
-	out, err := tool.InvokableRun(context.Background(), `{"query":"600519"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"600519"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v (out=%s)", err, out)
 	}
@@ -105,9 +107,10 @@ func TestAkShare_ParseTruncatesToTopN(t *testing.T) {
 
 func TestAkShare_RejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewAkShareTool()
-	_, err := tool.InvokableRun(context.Background(), `{not json`)
+	_, err := tool.InvokableRun(ctx, `{not json`)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -118,9 +121,10 @@ func TestAkShare_RejectsMalformedJSON(t *testing.T) {
 
 func TestAkShare_RejectsMissingQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewAkShareTool()
-	out, err := tool.InvokableRun(context.Background(), `{}`)
+	out, err := tool.InvokableRun(ctx, `{}`)
 	if err == nil {
 		t.Fatalf("expected error for missing query, got nil (out=%s)", out)
 	}
