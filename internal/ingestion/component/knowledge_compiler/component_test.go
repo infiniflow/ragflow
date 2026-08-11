@@ -730,7 +730,7 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 
 	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
-		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1", "plan": true,
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -789,7 +789,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 
 	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
-		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1", "plan": true,
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1293,6 +1293,53 @@ func TestKnowledgeCompiler_TenantFromGlobals(t *testing.T) {
 	})
 	if gotTenant != "tenant-from-globals" {
 		t.Fatalf("template resolver saw tenant %q, want %q (tenant_id must be read from CanvasState.Globals)", gotTenant, "tenant-from-globals")
+	}
+}
+
+func TestOverlayTemplateConfigPlanPrecedence(t *testing.T) {
+	boolPtr := func(value bool) *bool { return &value }
+
+	cases := []struct {
+		name    string
+		initial *bool
+		cfg     map[string]any
+		want    bool
+	}{
+		{
+			name: "unset_uses_template_plan",
+			cfg:  map[string]any{"plan": true},
+			want: true,
+		},
+		{
+			name: "no_plan_disables_plan",
+			cfg:  map[string]any{"no_plan": true, "plan": true},
+			want: false,
+		},
+		{
+			name:    "explicit_dsl_false_overrides_template",
+			initial: boolPtr(false),
+			cfg:     map[string]any{"plan": true},
+			want:    false,
+		},
+		{
+			name:    "explicit_dsl_true_overrides_no_plan",
+			initial: boolPtr(true),
+			cfg:     map[string]any{"no_plan": true},
+			want:    true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			param := common.Param{Plan: tc.initial}
+			overlayTemplateConfig(&param, tc.cfg)
+			if param.Plan == nil {
+				t.Fatal("Plan = nil after template config")
+			}
+			if *param.Plan != tc.want {
+				t.Errorf("Plan = %t, want %t", *param.Plan, tc.want)
+			}
+		})
 	}
 }
 

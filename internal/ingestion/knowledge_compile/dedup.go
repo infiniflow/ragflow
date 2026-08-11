@@ -111,27 +111,57 @@ func (x *llmDeduper) Decide(ctx context.Context, existing, incoming kccommon.Pro
 	return kccommon.Product{}, false, nil
 }
 
-// DecideBatch folds every group with a single LLM call. All candidate pairs
-// across all groups are judged at once (mergePairsBatch); each group then folds
-// its candidates into its existing row in order so a chain of merges within a
-// group accumulates correctly.
-func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
-	// Assign a flat pair index to every (group, candidate).
-	var inputs []structure.MergePairInput
-	pairIndexOf := make([][]int, len(groups))
+// DecideBatch folds every group into its dataset-level merged row. Wiki groups
+// use a REPLACE-ONLY strategy (wikiDecideBatch) that never invokes the LLM JSON
+// merge — Markdown wiki pages must not be concatenated/merged by the generic
+// structure decider. Structure (and other non-wiki) groups are judged by the LLM
+// merge decider as before.
+// splitWikiGroups partitions the batch into wiki groups (replace-only, no LLM)
+// and structure groups (LLM-merged). structIdx[i] is the ORIGINAL position in
+// `groups` of structGroups[i]; it is what the fold uses to write results back to
+// the right slice element. Recording the position inside structGroups (i.e.
+// len(structGroups)) instead would always equal i and misroute structure results
+// to the wrong groups whenever a wiki group appears earlier in the batch.
+func splitWikiGroups(groups []MergeGroup) (wikiIdx, structIdx []int, structGroups []MergeGroup) {
 	for gi := range groups {
-		pairIndexOf[gi] = make([]int, len(groups[gi].Candidates))
-		for ci := range groups[gi].Candidates {
+		if isWikiGroup(groups[gi]) {
+			wikiIdx = append(wikiIdx, gi)
+		} else {
+			structIdx = append(structIdx, gi)
+			structGroups = append(structGroups, groups[gi])
+		}
+	}
+	return wikiIdx, structIdx, structGroups
+}
+
+func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
+	// Split into wiki (replace-only, no LLM) and structure (LLM-merged) groups.
+	wikiIdx, structIdx, structGroups := splitWikiGroups(groups)
+	// Wiki groups: replace-only, in place.
+	for _, gi := range wikiIdx {
+		groups[gi] = wikiDecideBatch(ctx, []MergeGroup{groups[gi]})[0]
+	}
+	if len(structGroups) == 0 {
+		return groups, nil
+	}
+
+	// Assign a flat pair index to every (group, candidate) of the structure groups.
+	var inputs []structure.MergePairInput
+	pairIndexOf := make([][]int, len(structGroups))
+	for gi := range structGroups {
+		pairIndexOf[gi] = make([]int, len(structGroups[gi].Candidates))
+		for ci := range structGroups[gi].Candidates {
 			idx := len(inputs)
 			pairIndexOf[gi][ci] = idx
 			inputs = append(inputs, structure.MergePairInput{
 				Index:    idx,
-				Existing: groups[gi].Existing.Content,
-				Incoming: groups[gi].Candidates[ci].Content,
+				Existing: structGroups[gi].Existing.Content,
+				Incoming: structGroups[gi].Candidates[ci].Content,
 			})
 		}
 	}
 	if len(inputs) == 0 {
+		// Only wiki groups had candidates; copy them back (already folded above).
 		return groups, nil
 	}
 	results, err := x.decider.DecideBatch(ctx, inputs)
@@ -143,12 +173,12 @@ func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]Me
 		byIndex[r.Index] = r
 	}
 
-	for gi := range groups {
-		existing := groups[gi].Existing
+	for si, gi := range structIdx {
+		existing := structGroups[si].Existing
 		var distinct []kccommon.Product
 		duplicated := false
-		for ci, cand := range groups[gi].Candidates {
-			r := byIndex[pairIndexOf[gi][ci]]
+		for ci, cand := range structGroups[si].Candidates {
+			r := byIndex[pairIndexOf[si][ci]]
 			if !r.Duplicated || r.Merged == nil {
 				// Judged distinct: keep it as its own new merged row.
 				c := cand
