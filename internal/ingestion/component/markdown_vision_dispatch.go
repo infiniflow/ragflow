@@ -29,7 +29,6 @@ package component
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -102,6 +101,7 @@ func maybeDispatchMarkdownVision(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
+	language := resolveVisionLanguage(inputs, "")
 
 	// Resolve the tenant's IMAGE2TEXT model.
 	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
@@ -124,7 +124,7 @@ func maybeDispatchMarkdownVision(
 
 			// Markdown images have no context — use the
 			// default (no-context) prompt template.
-			prompt, err := buildMarkdownVisionPrompt()
+			prompt, err := figureVisionPromptBuilder("", "", language)
 			if err != nil {
 				return
 			}
@@ -156,15 +156,4 @@ func maybeDispatchMarkdownVision(
 	}
 
 	return dispatched, true, nil
-}
-
-// buildMarkdownVisionPrompt loads the default (no-context) figure
-// describe prompt template, mirroring Python's
-// vision_llm_figure_describe_prompt().
-func buildMarkdownVisionPrompt() (string, error) {
-	template, err := loadDOCXVisionPromptFile(docxVisionPromptFile)
-	if err != nil {
-		return "", fmt.Errorf("markdown vision prompt: %w", err)
-	}
-	return template, nil
 }

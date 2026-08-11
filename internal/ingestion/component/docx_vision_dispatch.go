@@ -44,21 +44,21 @@ import (
 )
 
 var (
-	docxVisionPromptBuilder      = buildDOCXVisionPrompt
-	visionChatInvoker            = defaultVisionChatInvoker
-	docxVisionConcurrency   uint = 10
+	figureVisionPromptBuilder      = buildFigureVisionPrompt
+	visionChatInvoker              = defaultVisionChatInvoker
+	docxVisionConcurrency     uint = 10
 )
 
 const (
-	docxVisionPromptFile            = "vision_llm_figure_describe_prompt.md"
-	docxVisionPromptWithContextFile = "vision_llm_figure_describe_prompt_with_context.md"
+	figureVisionPromptFile            = "vision_llm_figure_describe_prompt.md"
+	figureVisionPromptWithContextFile = "vision_llm_figure_describe_prompt_with_context.md"
 )
 
 var (
-	docxVisionPromptsBase string
-	docxVisionPromptsOnce sync.Once
-	docxVisionPromptCache = make(map[string]string)
-	docxVisionPromptMu    sync.RWMutex
+	figureVisionPromptsBase string
+	figureVisionPromptsOnce sync.Once
+	figureVisionPromptCache = make(map[string]string)
+	figureVisionPromptMu    sync.RWMutex
 )
 
 // maybeDispatchDOCXVision enriches a DOCX parse result with vision-model
@@ -96,6 +96,7 @@ func maybeDispatchDOCXVision(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
+	language := resolveVisionLanguage(inputs, "")
 
 	// Resolve the tenant's IMAGE2TEXT model.
 	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
@@ -143,7 +144,7 @@ func maybeDispatchDOCXVision(
 			// DOCX JSON items have no surrounding context (unlike the
 			// former Markdown path), so use the bare figure prompt —
 			// matching Python's VisionFigureParser(context_size=0).
-			prompt, perr := docxVisionPromptBuilder("", "")
+			prompt, perr := figureVisionPromptBuilder("", "", language)
 			if perr != nil {
 				return
 			}
@@ -175,28 +176,30 @@ func maybeDispatchDOCXVision(
 	return dispatched, modified, nil
 }
 
-// buildDOCXVisionPrompt loads the figure-describe prompt template
+// buildFigureVisionPrompt loads the figure-describe prompt template
 // and, when context text is available, renders it with the
 // with-context variant. Mirrors Python:
 //
 //	if context_above or context_below:
-//	    prompt = vision_llm_figure_describe_prompt_with_context(context_above, context_below)
+//	    prompt = vision_llm_figure_describe_prompt_with_context(
+//	        context_above, context_below, language=language)
 //	else:
-//	    prompt = vision_llm_figure_describe_prompt()
-func buildDOCXVisionPrompt(contextAbove, contextBelow string) (string, error) {
+//	    prompt = vision_llm_figure_describe_prompt(language=language)
+func buildFigureVisionPrompt(contextAbove, contextBelow, language string) (string, error) {
 	hasContext := strings.TrimSpace(contextAbove) != "" || strings.TrimSpace(contextBelow) != ""
 
 	var templateName string
 	if hasContext {
-		templateName = docxVisionPromptWithContextFile
+		templateName = figureVisionPromptWithContextFile
 	} else {
-		templateName = docxVisionPromptFile
+		templateName = figureVisionPromptFile
 	}
 
-	template, err := loadDOCXVisionPromptFile(templateName)
+	template, err := loadFigureVisionPromptFile(templateName)
 	if err != nil {
 		return "", err
 	}
+	template = renderFigureVisionLanguage(template, language)
 
 	if hasContext {
 		template = strings.ReplaceAll(template, "{{ context_above }}", contextAbove)
@@ -205,36 +208,36 @@ func buildDOCXVisionPrompt(contextAbove, contextBelow string) (string, error) {
 	return template, nil
 }
 
-func loadDOCXVisionPromptFile(filename string) (string, error) {
-	docxVisionPromptMu.RLock()
-	if cached, ok := docxVisionPromptCache[filename]; ok {
-		docxVisionPromptMu.RUnlock()
+func loadFigureVisionPromptFile(filename string) (string, error) {
+	figureVisionPromptMu.RLock()
+	if cached, ok := figureVisionPromptCache[filename]; ok {
+		figureVisionPromptMu.RUnlock()
 		return cached, nil
 	}
-	docxVisionPromptMu.RUnlock()
+	figureVisionPromptMu.RUnlock()
 
-	baseDir, err := docxVisionPromptsBaseDir()
+	baseDir, err := figureVisionPromptsBaseDir()
 	if err != nil {
 		return "", err
 	}
 	promptPath := filepath.Join(baseDir, "rag", "prompts", filename)
 	content, err := os.ReadFile(promptPath)
 	if err != nil {
-		return "", fmt.Errorf("docx vision prompt %q: %w", filename, err)
+		return "", fmt.Errorf("figure vision prompt %q: %w", filename, err)
 	}
 	cached := strings.TrimSpace(string(content))
-	docxVisionPromptMu.Lock()
-	docxVisionPromptCache[filename] = cached
-	docxVisionPromptMu.Unlock()
+	figureVisionPromptMu.Lock()
+	figureVisionPromptCache[filename] = cached
+	figureVisionPromptMu.Unlock()
 	return cached, nil
 }
 
-func docxVisionPromptsBaseDir() (string, error) {
+func figureVisionPromptsBaseDir() (string, error) {
 	var initErr error
-	docxVisionPromptsOnce.Do(func() {
+	figureVisionPromptsOnce.Do(func() {
 		root := utility.GetProjectRoot()
 		if _, statErr := os.Stat(filepath.Join(root, "rag", "prompts")); statErr == nil {
-			docxVisionPromptsBase = root
+			figureVisionPromptsBase = root
 			return
 		}
 		initErr = fmt.Errorf("rag/prompts not found under project root %q", root)
@@ -242,7 +245,7 @@ func docxVisionPromptsBaseDir() (string, error) {
 	if initErr != nil {
 		return "", initErr
 	}
-	return docxVisionPromptsBase, nil
+	return figureVisionPromptsBase, nil
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {

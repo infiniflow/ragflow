@@ -75,11 +75,11 @@ func (c *docxVisionCaptureInvoker) invoke(
 func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
-	origPrompt := docxVisionPromptBuilder
+	origPrompt := figureVisionPromptBuilder
 	defer func() {
 		resolveTenantModelByType = origResolver
 		visionChatInvoker = origInvoker
-		docxVisionPromptBuilder = origPrompt
+		figureVisionPromptBuilder = origPrompt
 	}()
 
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -87,7 +87,11 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	}
 	invoker := &docxVisionCaptureInvoker{}
 	visionChatInvoker = invoker.invoke
-	docxVisionPromptBuilder = func(string, string) (string, error) { return "describe the figure", nil }
+	var capturedLanguage string
+	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
+		capturedLanguage = language
+		return "describe the figure", nil
+	}
 
 	dispatched := parserDispatchResult{
 		OutputFormat: "json",
@@ -105,7 +109,7 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
+		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		defaultSetups(),
 	)
 	if err != nil {
@@ -129,6 +133,9 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	}
 	if len(invoker.images) != 1 {
 		t.Fatalf("vision invoker called %d times, want 1 (only the image item)", len(invoker.images))
+	}
+	if capturedLanguage != "Japanese" {
+		t.Errorf("figure prompt language = %q, want Japanese", capturedLanguage)
 	}
 	if want := "data:image/png;base64,aGVsbG8taW1hZ2U="; invoker.images[0] != want {
 		t.Errorf("vision image data URI = %q, want %q", invoker.images[0], want)

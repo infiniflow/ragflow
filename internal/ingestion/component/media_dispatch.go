@@ -151,7 +151,7 @@ func maybeDispatchImage(
 	// --- Phase 2: VLM description (when OCR text is short) ---
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
 	// then use OCR text only; otherwise call cv_mdl.describe().
-	lang := getStringOr(setup, "lang", "")
+	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 	eng := strings.EqualFold(lang, "english")
 
 	if ocrText != "" {
@@ -174,7 +174,7 @@ func maybeDispatchImage(
 			fmt.Errorf("parser: picture image2text model: %w", err)
 	}
 
-	prompt := "Describe this image in detail."
+	prompt := defaultImageVisionPrompt(lang)
 	// image family's contract key is system_prompt (parser.go:295),
 	// mirroring Python parser.py:1119. Do NOT read setup["prompt"]
 	// here — that key is for the video family, not image.
