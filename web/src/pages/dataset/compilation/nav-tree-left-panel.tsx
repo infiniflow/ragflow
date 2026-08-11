@@ -64,6 +64,9 @@ function NavNodeDeleteAction({
 type NavTreeLeftPanelProps = {
   navList: DatasetNavList | null;
   navLoading: boolean;
+  navError?: boolean;
+  loadingParent?: string | null;
+  childrenErrorParents?: Record<string, boolean>;
   childrenMap: Record<string, DatasetNavNode[]>;
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
@@ -76,6 +79,9 @@ type NavTreeLeftPanelProps = {
 export function NavTreeLeftPanel({
   navList,
   navLoading,
+  navError = false,
+  loadingParent = null,
+  childrenErrorParents = {},
   childrenMap,
   deleteNavLoading,
   deleteNodeLoading,
@@ -102,14 +108,19 @@ export function NavTreeLeftPanel({
     () =>
       buildNavTreeData(navList?.items, {
         childrenMap,
+        childrenErrorParents,
+        loadingParent,
         getActions: renderNavActions,
         onParentClick,
         onChildClick,
         loadingPlaceholder: t('datasetNav.loading'),
+        errorPlaceholder: t('datasetNav.childLoadFailed'),
       }),
     [
       navList?.items,
       childrenMap,
+      childrenErrorParents,
+      loadingParent,
       renderNavActions,
       onParentClick,
       onChildClick,
@@ -145,6 +156,10 @@ export function NavTreeLeftPanel({
         {navLoading && treeData.length === 0 ? (
           <div className="py-8 flex justify-center">
             <Spin size="small" />
+          </div>
+        ) : navError ? (
+          <div className="py-8 text-center text-sm text-text-secondary">
+            {t('datasetNav.loadFailed')}
           </div>
         ) : treeData.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-secondary">

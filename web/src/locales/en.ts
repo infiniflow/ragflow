@@ -2396,6 +2396,8 @@ Example: Virtual Hosted Style`,
     datasetNav: {
       title: 'Navigation tree',
       empty: 'No navigation nodes',
+      loadFailed: 'Failed to load the navigation tree',
+      childLoadFailed: 'Failed to load child nodes',
       loading: 'Loading...',
       selectNode: 'Select a child node to view details',
       noDescription: 'No description',
