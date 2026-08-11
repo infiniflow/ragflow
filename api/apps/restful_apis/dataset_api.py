@@ -20,7 +20,7 @@ from quart import request, make_response
 from common.constants import RetCode
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -44,6 +44,7 @@ def aggregate_tags(tenant_id):
         return get_error_data_result(message="Lack of dataset_ids in query parameters")
 
     try:
+        validate_rest_api_ids(dataset_ids, "dataset_ids")
         success, result = dataset_api_service.aggregate_tags(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
@@ -66,6 +67,7 @@ def get_flattened_metadata(tenant_id):
         return get_error_data_result(message="Lack of dataset_ids in query parameters")
 
     try:
+        validate_rest_api_ids(dataset_ids, "dataset_ids")
         success, result = dataset_api_service.get_flattened_metadata(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
@@ -602,7 +604,7 @@ async def has_any_wiki(tenant_id, dataset_id):
 async def list_wiki_pages(tenant_id, dataset_id):
     """List artifact pages for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity&topic=topic&keywords=query
+    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=100&page_type=entity&topic=topic&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
     """
     try:
@@ -638,7 +640,7 @@ async def list_wiki_pages(tenant_id, dataset_id):
 async def list_wiki_topics(tenant_id, dataset_id):
     """List wiki topics for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=200&keywords=query
+    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=100&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
     """
     try:
