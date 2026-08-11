@@ -12,6 +12,9 @@ export interface SelectedNavNode {
   name: string;
   description: string;
   doc_count: number;
+  keywords?: string[];
+  entities?: string[];
+  graph_content?: string;
 }
 
 export function useCompilationNav() {
@@ -95,6 +98,9 @@ export function useCompilationNav() {
         name: node.name,
         description: node.description,
         doc_count: node.doc_count,
+        keywords: node.keywords,
+        entities: node.entities,
+        graph_content: node.graph_content,
       });
     },
     [],

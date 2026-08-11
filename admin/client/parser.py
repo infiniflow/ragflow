@@ -112,6 +112,8 @@ sql_command: login_user
            | set_license
            | set_license_config
            | show_license
+           | generate_nav_for_dataset
+           | navigation_search
            | check_license
            | benchmark
 
@@ -171,6 +173,9 @@ ENVS: "ENVS"i
 KEY: "KEY"i
 KEYS: "KEYS"i
 GENERATE: "GENERATE"i
+NAVIGATION: "NAVIGATION"i
+MODE: "MODE"i
+TOPK: "TOPK"i
 MODEL: "MODEL"i
 MODELS: "MODELS"i
 PROVIDER: "PROVIDER"i
@@ -194,6 +199,7 @@ SIZE: "SIZE"i
 PARSER: "PARSER"i
 PIPELINE: "PIPELINE"i
 SEARCH: "SEARCH"i
+EXPLORE: "EXPLORE"i
 CURRENT: "CURRENT"i
 LLM: "LLM"i
 VLM: "VLM"i
@@ -373,6 +379,8 @@ create_metadata_table: CREATE METADATA TABLE ";"
 drop_metadata_table: DROP METADATA TABLE ";"
 insert_dataset_from_file: INSERT DATASET FROM FILE quoted_string ";"
 insert_metadata_from_file: INSERT METADATA FROM FILE quoted_string ";"
+generate_nav_for_dataset: GENERATE NAVIGATION OF DATASET quoted_string ";"
+navigation_search: NAVIGATION SEARCH quoted_string IN DATASET quoted_string MODE quoted_string (TOPK NUMBER)? ";"
 update_chunk: UPDATE CHUNK quoted_string OF DATASET quoted_string SET quoted_string ";"
 
 identifier_list: identifier (COMMA identifier)*
@@ -787,6 +795,35 @@ class RAGFlowCLITransformer(Transformer):
     def insert_metadata_from_file(self, items):
         file_path = items[4].children[0].strip("'\"")
         return {"type": "insert_metadata_from_file", "file_path": file_path}
+
+    def generate_nav_for_dataset(self, items):
+        dataset_id = items[4].children[0].strip("'\"")
+        return {"type": "generate_nav_for_dataset", "dataset_id": dataset_id}
+
+    def navigation_search(self, items):
+        query = items[2].children[0].strip("'\"")
+        dataset_name = items[5].children[0].strip("'\"")
+        mode = items[7].children[0].strip("'\"")
+        topk = None
+        # If TOPK was specified, items will be longer.
+        if len(items) > 9:
+            try:
+                extra = items[8]
+                if hasattr(extra, "data"):
+                    # group wrapper: extra.children = [TOPK, NUMBER]
+                    topk = int(extra.children[1])
+                else:
+                    # flattened: items[8] = TOPK, items[9] = NUMBER
+                    topk = int(items[9])
+            except (ValueError, IndexError):
+                topk = None
+        return {
+            "type": "navigation_search",
+            "query": query,
+            "dataset_id": dataset_name,
+            "mode": mode,
+            "topk": topk,
+        }
 
     def update_chunk(self, items):
         def get_quoted_value(item):
