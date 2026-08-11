@@ -3451,6 +3451,24 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, 
 	return m.ResolveModelConfig(ctx, tenantID, modelType, modelName)
 }
 
+// GetTenantDefaultModelRef returns the composite model reference (the
+// "<model>@<instance>@<provider>" form stored on the tenant, e.g.
+// "MiniMax-M3@mm@MiniMax") that callers pass on to model config resolution.
+// Unlike GetTenantDefaultModelByType — which resolves the driver/API config and
+// returns a bare model name — this returns the reference verbatim so it can be
+// used as an llmID for a later ResolveModelConfig/Chat round-trip.
+func (m *ModelProviderService) GetTenantDefaultModelRef(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
+	}
+	modelName, _ := defaultModelRefs(tenant, modelType)
+	if strings.TrimSpace(modelName) == "" {
+		return "", fmt.Errorf("no default %s model is set", modelType)
+	}
+	return modelName, nil
+}
+
 // GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
 func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	common.Debug("GetModelConfigByID",

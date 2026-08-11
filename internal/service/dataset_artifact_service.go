@@ -20,6 +20,9 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
@@ -377,9 +380,22 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		it.PageCount = counts[t]
 		items = append(items, it)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Topic < items[j].Topic })
+	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
+	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
+	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
+	// which orders Chinese by pinyin and handles Latin/digits/other scripts
+	// correctly, case-insensitively, without assuming topics are all-Chinese.
+	sort.Slice(items, func(i, j int) bool {
+		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
+	})
 	return items, int64(len(items)), nil
 }
+
+// wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
+// selects the CLDR zh collation (pinyin-based for Han), while Latin/digits and
+// other scripts sort naturally, case-insensitively. It is safe for concurrent
+// use after construction.
+var wikiTopicCollator = collate.New(language.Chinese)
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
 type WikiGraph struct {

@@ -21,6 +21,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -73,10 +76,18 @@ var compiledSelectFields = []string{
 // compiledSelectFields) that must survive the doc→merge round-trip so the
 // dataset-level merged rows keep the fields the artifact API and page renderers
 // depend on (page_type_kwd/topic_kwd/title_kwd/...).
+//
+// "q_*_vec" selects the (dimension-agnostic) embedding column. Without it,
+// LoadDocProducts reconstructs products with an empty Vector, so merged rows
+// carry no embedding and the dataset-level KNN dedup (SearchSimilar on
+// available_int=1 + q_<dim>_vec) can never match an existing wiki page — the
+// graph keeps accumulating cross-run duplicates. ES accepts the wildcard in
+// both _source includes and the fields parameter.
 var wikiSelectFields = []string{
 	"page_type_kwd", "topic_kwd", "title_kwd",
 	"entity_names_kwd", "summary_with_weight",
 	"related_kb_pages_kwd", "outlinks_kwd", "section_level_int",
+	"q_*_vec",
 }
 
 // loadDocProductsLimit is the per-page size used when scrolling a single
@@ -124,6 +135,24 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 		}
 		offset += loadDocProductsLimit
 	}
+	// Diagnostics: count how many loaded per-doc products carry an embedding
+	// and report the (deduped) vector dimensions. If this shows 0/empty while
+	// per-doc rows in ES do have q_<dim>_vec, VectorFromChunkMap is failing to
+	// restore the vector and the merged rows will end up embedding-less.
+	vecCount := 0
+	dims := map[int]int{}
+	for _, p := range out {
+		if dim := len(p.Vector); dim > 0 {
+			vecCount++
+			dims[dim]++
+		}
+	}
+	common.Info("knowledge_compile: LoadDocProducts vector audit",
+		zap.String("kb_id", kb),
+		zap.String("doc_id", docID),
+		zap.Int("products", len(out)),
+		zap.Int("with_vector", vecCount),
+		zap.Any("vector_dims", dims))
 	return out, nil
 }
 
@@ -262,7 +291,11 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		if !ok || !p.Merged {
 			continue
 		}
-		score := toFloat64(c["score"])
+		// The DocEngine stores the dense similarity in the "_score" key (mirroring
+		// ES's _score), not "score". Reading the wrong key yields 0 and misleads
+		// downstream diagnostics (KNN groups logging). The value is informational
+		// only — KNN eligibility is enforced by the engine's min_score filter.
+		score := toFloat64(c["_score"])
 		return p, score, nil
 	}
 	return kccommon.Product{}, 0, nil
