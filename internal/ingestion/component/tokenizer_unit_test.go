@@ -702,3 +702,115 @@ func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
 		t.Errorf("important_tks = %v, want full keyword string", got[0]["important_tks"])
 	}
 }
+
+// TestTokenizerComponent_ImportantKwd_PreservesEmptyElements locks F3: the
+// component path splits on the ENGLISH COMMA ONLY via strings.Split and
+// PRESERVES empty elements, matching Python's "a,,b".split(",") ==
+// ["a","","b"]. This is the contract asserted by the comment at
+// tokenizer.go:688-689, and it is the intentional counterpart to the executor
+// fallback (cleanupConsumedChunkFields -> utility.SplitKeywords) which DROPS
+// empty parts. Runs without the C++ analyzer pool via the identity engine.
+func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	c, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+
+	// Middle empty element must be preserved (["a","","b"]), not dropped.
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": "a,,b"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := out["chunks"].([]map[string]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
+	}
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
+	}
+	want := []string{"a", "", "b"}
+	if len(kwd) != len(want) {
+		t.Fatalf("important_kwd = %v, want %v (empty elements preserved)", kwd, want)
+	}
+	for i := range want {
+		if kwd[i] != want[i] {
+			t.Errorf("important_kwd[%d] = %q, want %q (empty elements preserved)", i, kwd[i], want[i])
+		}
+	}
+
+	// Empty keyword string must not error. The component guards on a
+	// non-empty keywords field (tokenizer.go:682), so important_kwd is left
+	// unset (nil) rather than materialized as an empty array. Downstream
+	// indexing treats a missing important_kwd as "no keywords", which is safe.
+	outEmpty, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": ""},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke(empty keywords): %v", err)
+	}
+	gotEmpty, ok := outEmpty["chunks"].([]map[string]any)
+	if !ok || len(gotEmpty) != 1 {
+		t.Fatalf("empty chunks = %v, want 1 chunk", outEmpty["chunks"])
+	}
+	if kwd, exists := gotEmpty[0]["important_kwd"]; exists && kwd != nil {
+		t.Errorf("empty keywords should leave important_kwd unset, got %v", kwd)
+	}
+}
+
+// TestTextPayloadToChunks_B1B2 pins the text-payload adapter used for
+// markdown/text/html payloads (tokenizer.go:578). This is the Go-correct
+// counterpart to a Python-DSL bug where turning full_text off dropped the
+// entire document (B1), and where an empty payload failed to emit the chunks
+// key at all (B2). The Go helper always returns a slice: non-empty payload ->
+// one chunk carrying the raw text; nil/empty/whitespace payload -> a non-nil
+// EMPTY slice so the downstream "chunks" key is present as [].
+//
+// No-tag unit test: textPayloadToChunks is a pure function, no CGo pool needed.
+func TestTextPayloadToChunks_B1B2(t *testing.T) {
+	// B1: a real payload yields exactly one chunk with the text preserved.
+	payload := "plain payload body"
+	got := textPayloadToChunks(&payload)
+	if len(got) != 1 {
+		t.Fatalf("non-empty payload: len(chunks) = %d, want 1", len(got))
+	}
+	if got[0].Text != payload {
+		t.Errorf("chunk text = %q, want %q", got[0].Text, payload)
+	}
+
+	// B2: empty/whitespace/nil payloads must still return a non-nil EMPTY
+	// slice (so the chunks key is present as [] downstream), never nil.
+	for _, tc := range []struct {
+		name string
+		in   *string
+	}{
+		{"empty string", ptr("")},
+		{"whitespace only", ptr("   \n\t  ")},
+		{"nil pointer", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := textPayloadToChunks(tc.in)
+			if out == nil {
+				t.Fatalf("textPayloadToChunks(%s) = nil, want non-nil empty slice", tc.name)
+			}
+			if len(out) != 0 {
+				t.Errorf("textPayloadToChunks(%s) len = %d, want 0", tc.name, len(out))
+			}
+		})
+	}
+}
+
+func ptr(s string) *string { return &s }
