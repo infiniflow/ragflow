@@ -16,7 +16,6 @@
 
 import HighLightMarkdown from '@/components/highlight-markdown';
 import { Button } from '@/components/ui/button';
-import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -28,6 +27,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { ExternalLink } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import CopyToClipboard from '@/components/copy-to-clipboard';
 
 type IEmbedAppModalProps = {
   open: any;
@@ -152,30 +152,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
               readOnly
               className="flex-1 px-4 py-2 focus:outline-none bg-bg-base rounded-lg"
             />
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(token);
-                message.success(t('copySuccess'));
-              }}
-              className="ml-2 p-2 hover:text-text-primary transition-colors"
-              title="Copy ID"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h10a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
-            </button>
+            <CopyToClipboard text={token}></CopyToClipboard>
           </div>
         </div>
       </div>
