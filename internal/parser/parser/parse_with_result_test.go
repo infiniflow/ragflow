@@ -335,9 +335,11 @@ func TestTextParser_ParseWithResult_DefaultDelimiter(t *testing.T) {
 // comparison normalizes both (delimiters stripped, whitespace collapsed) and
 // joins on whitespace, reconciling the boundary difference.
 //
-// Regenerate the baseline with:
-//
-//	.venv/bin/python internal/parser/parser/testdata/gen_textcode_golden.py
+// No generator script is committed. The baseline is reproducible from the
+// golden's meta block alone (see textcode.python.golden.json: generator,
+// sample, delimiter, keep_delimiters, chunk_token_num): call the python flow
+// _code on the sample with keep_delimiters=True and the default delimiter set,
+// then project each merged section to {"text": section[0], "doc_type_kwd": "text"}.
 func TestTextParser_AlignmentGolden(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
@@ -359,5 +361,48 @@ func TestTextParser_AlignmentGolden(t *testing.T) {
 
 	if ok, diff := CompareAlignment(goText, pyText, TextCodeAlignOptions(DefaultTextCodeDelimiter)); !ok {
 		t.Fatalf("text&code parser not aligned with Python golden:%s", diff)
+	}
+}
+
+// TestTextParser_AdjacentDelimiters pins Go's behavior on adjacent delimiters,
+// which intentionally diverges from Python's deepdoc and is only reconciled by
+// the alignment test's delimiter-strip normalization. Python keeps each trailing
+// delimiter as its own segment ("a!!b" → ["a!", "!", "b"]), while Go merges the
+// run so the standalone second delimiter is dropped ("a!!b" → ["a!", "b"]). The
+// normalized comparison still treats both as equal, so without this test a future
+// silent change to splitCapturingDelims would go unnoticed.
+func TestTextParser_AdjacentDelimiters(t *testing.T) {
+	ctx := t.Context()
+	p := NewTextParser()
+
+	// Two adjacent sentence delimiters: Go merges them into the preceding
+	// segment and drops the standalone second delimiter.
+	src := []byte("a!!b")
+	res := p.ParseWithResult(ctx, "doc.txt", src)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	want := []string{"a!", "b"}
+	if len(res.JSON) != len(want) {
+		t.Fatalf("adjacent delimiters: JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
+	}
+	for i, w := range want {
+		if got := res.JSON[i]["text"]; got != w {
+			t.Errorf("adjacent delimiters: JSON[%d].text = %v, want %v", i, got, w)
+		}
+	}
+
+	// Delimiters separated by text each attach to their own segment (no merge
+	// across the gap).
+	src = []byte("x?y!z")
+	res = p.ParseWithResult(ctx, "doc.txt", src)
+	want = []string{"x?", "y!", "z"}
+	if len(res.JSON) != len(want) {
+		t.Fatalf("mixed delimiters: JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
+	}
+	for i, w := range want {
+		if got := res.JSON[i]["text"]; got != w {
+			t.Errorf("mixed delimiters: JSON[%d].text = %v, want %v", i, got, w)
+		}
 	}
 }
