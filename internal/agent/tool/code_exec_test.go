@@ -26,9 +26,10 @@ import (
 
 func TestCodeExec_StubsErrorWhenClientMissing(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	out, err := c.InvokableRun(context.Background(), `{"language":"python","code":"def main(): return {}"}`)
+	out, err := c.InvokableRun(ctx, `{"language":"python","code":"def main(): return {}"}`)
 	if !errors.Is(err, ErrCodeExecSandboxMissing) {
 		t.Fatalf("err = %v, want ErrCodeExecSandboxMissing", err)
 	}
@@ -47,9 +48,10 @@ func TestCodeExec_StubsErrorWhenClientMissing(t *testing.T) {
 
 func TestCodeExec_RejectsEmptyCode(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(), `{"language":"python","code":""}`)
+	_, err := c.InvokableRun(ctx, `{"language":"python","code":""}`)
 	if err == nil || !strings.Contains(err.Error(), "code") {
 		t.Fatalf("err = %v, want to mention empty code", err)
 	}
@@ -57,9 +59,10 @@ func TestCodeExec_RejectsEmptyCode(t *testing.T) {
 
 func TestCodeExec_RejectsBadLanguage(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(), `{"language":"brainfuck","code":"x"}`)
+	_, err := c.InvokableRun(ctx, `{"language":"brainfuck","code":"x"}`)
 	if err == nil || !strings.Contains(err.Error(), "language") {
 		t.Fatalf("err = %v, want to reject unsupported language", err)
 	}
@@ -67,11 +70,12 @@ func TestCodeExec_RejectsBadLanguage(t *testing.T) {
 
 func TestCodeExec_AcceptsLangAlias(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
 	// Python tool also accepts "lang" as the field name; the Go shell
 	// should still reach the stub branch.
-	_, err := c.InvokableRun(context.Background(), `{"lang":"nodejs","script":"async function main() {}"}`)
+	_, err := c.InvokableRun(ctx, `{"lang":"nodejs","script":"async function main() {}"}`)
 	if !errors.Is(err, ErrCodeExecSandboxMissing) {
 		t.Fatalf("err = %v, want ErrCodeExecSandboxMissing", err)
 	}
@@ -79,9 +83,10 @@ func TestCodeExec_AcceptsLangAlias(t *testing.T) {
 
 func TestCodeExec_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	info, err := c.Info(context.Background())
+	info, err := c.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -101,7 +106,7 @@ func TestCodeExec_Info(t *testing.T) {
 		t.Fatalf("marshal Info schema: %v", err)
 	}
 	var schema map[string]any
-	if err := json.Unmarshal(encoded, &schema); err != nil {
+	if err = json.Unmarshal(encoded, &schema); err != nil {
 		t.Fatalf("decode Info schema: %v", err)
 	}
 	properties, ok := schema["properties"].(map[string]any)
@@ -109,12 +114,12 @@ func TestCodeExec_Info(t *testing.T) {
 		t.Fatalf("Info schema properties = %#v, want object", schema["properties"])
 	}
 	for _, name := range []string{"lang", "script"} {
-		if _, ok := properties[name]; !ok {
+		if _, ok = properties[name]; !ok {
 			t.Errorf("Info schema missing %q", name)
 		}
 	}
 	for _, name := range []string{"language", "code", "arguments", "outputs"} {
-		if _, ok := properties[name]; ok {
+		if _, ok = properties[name]; ok {
 			t.Errorf("Info schema unexpectedly exposes node field %q", name)
 		}
 	}
@@ -344,6 +349,7 @@ func TestCodeExec_ResultFallsBackToStdoutJSON(t *testing.T) {
 // parallel with the other CodeExec tests that depend on the
 // default (loud-fail) stub.
 func TestCodeExec_PassesTimeoutToSandbox(t *testing.T) {
+	ctx := t.Context()
 	var captured SandboxRequest
 	prev := GetSandboxClient()
 	SetSandboxClient(stubSandbox(func(_ context.Context, req SandboxRequest) (*SandboxResponse, error) {
@@ -353,7 +359,7 @@ func TestCodeExec_PassesTimeoutToSandbox(t *testing.T) {
 	t.Cleanup(func() { SetSandboxClient(prev) })
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(),
+	_, err := c.InvokableRun(ctx,
 		`{"language":"python","code":"def main(): return {}","timeout":42}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -368,6 +374,7 @@ func TestCodeExec_PassesTimeoutToSandbox(t *testing.T) {
 // timeout test, this mutates the global sandbox client and must
 // not run in parallel with sibling CodeExec tests.
 func TestCodeExec_PassesArgumentsToSandbox(t *testing.T) {
+	ctx := t.Context()
 	var captured SandboxRequest
 	prev := GetSandboxClient()
 	SetSandboxClient(stubSandbox(func(_ context.Context, req SandboxRequest) (*SandboxResponse, error) {
@@ -377,7 +384,7 @@ func TestCodeExec_PassesArgumentsToSandbox(t *testing.T) {
 	t.Cleanup(func() { SetSandboxClient(prev) })
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(),
+	_, err := c.InvokableRun(ctx,
 		`{"language":"python","code":"def main(**kw): return kw","arguments":{"x":1,"y":"z"}}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
