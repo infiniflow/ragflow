@@ -10,35 +10,35 @@
   },
   "items": [
     {
-      "text": "# 健康检查套餐对比\n本文比较两种体检套餐，包含表格、列表与代码块",
+      "text": "# Health Check Plan Comparison\nThis document compares two health check plans, covering tables, lists, and code blocks",
       "doc_type_kwd": "text"
     },
     {
-      "text": "## 套餐明细",
+      "text": "## Plan Details",
       "doc_type_kwd": "text"
     },
     {
-      "text": "<table>\n<thead>\n<tr>\n<th>检查项目</th>\n<th>基础版 699 元</th>\n<th>进阶版 1299 元</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>血常规 / 尿常规</td>\n<td>包含</td>\n<td>包含</td>\n</tr>\n<tr>\n<td>心电图</td>\n<td>不包含</td>\n<td>包含</td>\n</tr>\n</tbody>\n</table>",
+      "text": "<table>\n<thead>\n<tr>\n<th>Check Item</th>\n<th>Basic 699</th>\n<th>Advanced 1299</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Blood routine / Urine routine</td>\n<td>Included</td>\n<td>Included</td>\n</tr>\n<tr>\n<td>ECG</td>\n<td>Not included</td>\n<td>Included</td>\n</tr>\n</tbody>\n</table>",
       "doc_type_kwd": "text"
     },
     {
-      "text": "注意：所有套餐均需空腹",
+      "text": "Note: all plans require fasting.",
       "doc_type_kwd": "text"
     },
     {
-      "text": "## 注意事项",
+      "text": "## Precautions",
       "doc_type_kwd": "text"
     },
     {
-      "text": "- 体检前三天清淡饮食",
+      "text": "- Eat a light diet for three days before the exam?",
       "doc_type_kwd": "text"
     },
     {
-      "text": "- 避免剧烈运动",
+      "text": "- Avoid strenuous exercise!",
       "doc_type_kwd": "text"
     },
     {
-      "text": "下面是示例配置：",
+      "text": "Here is a sample configuration:",
       "doc_type_kwd": "text"
     },
     {
@@ -46,15 +46,15 @@
       "doc_type_kwd": "text"
     },
     {
-      "text": "示意图",
+      "text": "diagram",
       "doc_type_kwd": "image"
     },
     {
-      "text": "\n| 检查项目 | 基础版 699 元 | 进阶版 1299 元 |\n| --- | --- | --- |\n| 血常规 / 尿常规 | 包含 | 包含 |\n| 心电图 | 不包含 | 包含 |\n",
+      "text": "\n| Check Item | Basic 699 | Advanced 1299 |\n| --- | --- | --- |\n| Blood routine / Urine routine | Included | Included |\n| ECG | Not included | Included |\n",
       "doc_type_kwd": "table"
     },
     {
-      "text": "\n<table>\n<thead>\n<tr>\n<th>检查项目</th>\n<th>基础版 699 元</th>\n<th>进阶版 1299 元</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>血常规 / 尿常规</td>\n<td>包含</td>\n<td>包含</td>\n</tr>\n<tr>\n<td>心电图</td>\n<td>不包含</td>\n<td>包含</td>\n</tr>\n</tbody>\n</table>\n",
+      "text": "\n<table>\n<thead>\n<tr>\n<th>Check Item</th>\n<th>Basic 699</th>\n<th>Advanced 1299</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Blood routine / Urine routine</td>\n<td>Included</td>\n<td>Included</td>\n</tr>\n<tr>\n<td>ECG</td>\n<td>Not included</td>\n<td>Included</td>\n</tr>\n</tbody>\n</table>\n",
       "doc_type_kwd": "table"
     }
   ]

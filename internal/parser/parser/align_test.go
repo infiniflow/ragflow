@@ -197,23 +197,54 @@ type GoldenDoc struct {
 	Items []map[string]any
 }
 
-// LoadGolden reads a Python golden JSON file produced by the Python flow
-// parser for the same input. The file is a {meta, items} document; see
-// GoldenDoc.
-func LoadGolden(t *testing.T, path string) *GoldenDoc {
+// parseGolden unmarshals a golden file that may be either a bare JSON array of
+// items (legacy format) or a {meta, items} document (current format). It
+// returns the full document either way. Tolerant parsing keeps older
+// callers/tests working after the format gained a meta block.
+func parseGolden(t *testing.T, data []byte) *GoldenDoc {
+	t.Helper()
+	var doc GoldenDoc
+	if err := json.Unmarshal(data, &doc); err == nil && doc.Items != nil {
+		return &doc
+	}
+	// Legacy flat-array format: treat the whole file as the items list.
+	var items []map[string]any
+	if err := json.Unmarshal(data, &items); err != nil {
+		t.Fatalf("parse golden: %v", err)
+	}
+	return &GoldenDoc{Items: items}
+}
+
+// LoadGolden reads a Python golden JSON file and returns its items. The file
+// may be a bare array (legacy) or a {meta, items} document; either way only
+// the items are returned, so existing callers keep working unchanged.
+func LoadGolden(t *testing.T, path string) []map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("load golden %s: %v", path, err)
 	}
-	var doc GoldenDoc
-	if err := json.Unmarshal(data, &doc); err != nil {
-		t.Fatalf("parse golden %s: %v", path, err)
-	}
+	doc := parseGolden(t, data)
 	if len(doc.Items) == 0 {
 		t.Fatalf("golden %s has no items", path)
 	}
-	return &doc
+	return doc.Items
+}
+
+// LoadGoldenDoc reads a Python golden JSON file and returns the full
+// {meta, items} document, including the meta block. Used by tests that drive
+// behavior from the golden's metadata (e.g. accepted_divergences).
+func LoadGoldenDoc(t *testing.T, path string) *GoldenDoc {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("load golden %s: %v", path, err)
+	}
+	doc := parseGolden(t, data)
+	if len(doc.Items) == 0 {
+		t.Fatalf("golden %s has no items", path)
+	}
+	return doc
 }
 
 // AcceptedDivergences returns the doc_type_kwd values the golden baseline
