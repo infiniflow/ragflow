@@ -317,14 +317,6 @@ func MarkdownAlignOptions(delimiter string) AlignOptions {
 	}
 }
 
-// DefaultMarkdownDelimiter is the flow parser's default Markdown delimiter
-// set, used when generating/loading the golden baseline.
-const DefaultMarkdownDelimiter = "\n!?;。；！？"
-
-// DefaultTextCodeDelimiter is the flow parser's default text&code delimiter
-// set, used when generating/loading the golden baseline.
-const DefaultTextCodeDelimiter = "\n!?;。；！？"
-
 // TextCodeAlignOptions returns the normalizer preset for the text&code family.
 // Unlike markdown it has no syntax or HTML markup to strip, so only the
 // delimiter-set replacement and whitespace collapse run:
