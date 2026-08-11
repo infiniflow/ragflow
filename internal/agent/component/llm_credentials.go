@@ -79,17 +79,14 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 // modelRef is the original canvas llm_id (may be a tenant_model.id); driver
 // and modelName are the resolved provider + bare model name.
 func resolveModelContentLength(ctx context.Context, db *gorm.DB, modelRef, driver, modelName string) int {
-	// Unit tests invoke the LLM component with a nil *gorm.DB; without a DB
-	// the tenant-model lookup cannot run, so fall straight to the catalog.
+	// Without a DB the tenant-model lookup cannot run, so fall straight to
+	// the provider catalog, which needs no database.
 	if db == nil {
 		db = dao.DB
-		if db == nil {
-			return 0
-		}
 	}
 	// 1. A tenant model instance id (canvas llm_id pointing at a custom-added
 	//    model): read content_length from its provider catalog row.
-	if modelRef != "" {
+	if db != nil && modelRef != "" {
 		if obj, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && obj != nil && obj.Status == "active" {
 			if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
 				if mdl, err := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContentLength != nil {
@@ -104,6 +101,13 @@ func resolveModelContentLength(ctx context.Context, db *gorm.DB, modelRef, drive
 			return *mdl.ContentLength
 		}
 	}
+	// A 0 here makes the caller fall back to the 8192 default budget, which
+	// can silently discard most of a large-context prompt, so surface the
+	// resolution failure for diagnosis.
+	common.Debug("llm credentials: content_length not resolved, falling back to 8192",
+		zap.String("model_ref", modelRef),
+		zap.String("driver", driver),
+		zap.String("model_name", modelName))
 	return 0
 }
 
