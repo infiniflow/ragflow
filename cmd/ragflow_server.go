@@ -919,7 +919,10 @@ func startServer(ctx context.Context) {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	channels.Start(ctx)
+	_, err := channels.Start(ctx)
+	if err != nil {
+		common.Fatal("Fail to start chat-channel", zap.Error(err))
+	}
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
 
