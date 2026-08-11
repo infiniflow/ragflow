@@ -73,6 +73,30 @@ func TestFit_ExactBudget(t *testing.T) {
 	}
 }
 
+// TestFit_SystemOnlyMessages verifies that when only system messages are
+// retained (no non-system message), the whole budget is spread across every
+// retained system message and the total never exceeds it.
+func TestFit_SystemOnlyMessages(t *testing.T) {
+	sys1 := strings.Repeat("s ", 800)
+	sys2 := strings.Repeat("t ", 200)
+	msgs := []Message{
+		{Role: "system", Content: sys1},
+		{Role: "system", Content: sys2},
+	}
+	const budget = 500
+
+	if got := Fit(msgs, budget); got == 0 {
+		t.Fatalf("Fit returned 0, want > 0")
+	}
+	total := tokenizer.NumTokensFromString(msgs[0].Content) + tokenizer.NumTokensFromString(msgs[1].Content)
+	if total > budget {
+		t.Errorf("fitted total %d exceeds budget %d", total, budget)
+	}
+	if len(msgs[0].Content) >= len(sys1) || len(msgs[1].Content) >= len(sys2) {
+		t.Errorf("system messages not trimmed: %+v", msgs)
+	}
+}
+
 // TestFit_TrimsAllSystemMessages verifies that the system budget is spread
 // across every retained system message, not just the first one, so the final
 // total never exceeds the budget.

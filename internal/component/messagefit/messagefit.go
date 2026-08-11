@@ -28,7 +28,10 @@ type Message struct {
 	Content string
 }
 
-// Fit trims msgs so its total token count fits within maxTokens.
+// Fit trims msgs so its total token count fits within budget. budget is the
+// caller-chosen token ceiling for the whole conversation — the agent LLM and
+// ingestion Extractor both pass the chat model's context window
+// (content_length), not the generation cap (max_output).
 //
 // Strategy (mirrors Python's message_fit_in, with two deliberate tweaks:
 // an exact budget match counts as fitting, and the system share is spread
@@ -41,21 +44,21 @@ type Message struct {
 //     give the remaining budget to the system messages.
 //     - Otherwise → preserve the system messages, give the remaining
 //     budget to the last.
-//     - Single message → trim to maxTokens directly.
+//     - Single message → trim to budget directly.
 //
-// maxTokens <= 0 is treated as 8192 (Python's default).
+// budget <= 0 is treated as 8192 (Python's default).
 // Returns the token count after fitting. msgs is modified in place:
 // entries that were dropped have their Content set to "".
-func Fit(msgs []Message, maxTokens int) int {
-	if maxTokens <= 0 {
-		maxTokens = 8192
+func Fit(msgs []Message, budget int) int {
+	if budget <= 0 {
+		budget = 8192
 	}
 	if len(msgs) == 0 {
 		return 0
 	}
 
 	// Step 1: everything fits (an exact budget match counts as fitting).
-	if total := countTokens(msgs); total <= maxTokens {
+	if total := countTokens(msgs); total <= budget {
 		return total
 	}
 
@@ -80,7 +83,7 @@ func Fit(msgs []Message, maxTokens int) int {
 	for i, idx := range kept {
 		keptMsgs[i] = msgs[idx]
 	}
-	if total := countTokens(keptMsgs); total <= maxTokens {
+	if total := countTokens(keptMsgs); total <= budget {
 		// Zero out the dropped entries so the caller can filter them.
 		zeroDropped(msgs, kept)
 		return total
@@ -88,9 +91,17 @@ func Fit(msgs []Message, maxTokens int) int {
 
 	// Step 3: trim proportionally.
 	if len(kept) == 1 {
-		msgs[kept[0]].Content = tokenizer.TrimContentToTokenLimit(msgs[kept[0]].Content, maxTokens)
+		msgs[kept[0]].Content = tokenizer.TrimContentToTokenLimit(msgs[kept[0]].Content, budget)
 		zeroDropped(msgs, kept)
 		return countTokens(msgs[kept[0] : kept[0]+1])
+	}
+
+	// Only system messages were retained (no non-system message): spread the
+	// whole budget across every retained system message.
+	if lastNonSystem < 0 {
+		trimSystems(msgs, kept, budget)
+		zeroDropped(msgs, kept)
+		return countTokensMulti(msgs, kept)
 	}
 
 	// kept[:len(kept)-1] are the retained system messages; the last entry
@@ -111,13 +122,13 @@ func Fit(msgs []Message, maxTokens int) int {
 	if float64(ll)/float64(total) > 0.8 {
 		// System dominates: preserve the last message and give the
 		// remaining budget to the system messages.
-		preserved := min(ll2, maxTokens)
+		preserved := min(ll2, budget)
 		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, preserved)
-		trimSystems(msgs, sysIdxs, max(0, maxTokens-preserved))
+		trimSystems(msgs, sysIdxs, max(0, budget-preserved))
 	} else {
-		preserved := min(ll, maxTokens)
+		preserved := min(ll, budget)
 		trimSystems(msgs, sysIdxs, preserved)
-		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, max(0, maxTokens-preserved))
+		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, max(0, budget-preserved))
 	}
 	zeroDropped(msgs, kept)
 	return countTokensMulti(msgs, kept)
