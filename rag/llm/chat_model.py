@@ -2234,6 +2234,25 @@ class LiteLLMBase(ABC):
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
+
+                    # Terminal-tool short-circuit: a terminal tool (e.g. ``rag``)
+                    # already composes the final answer itself, so return its
+                    # result directly instead of feeding it back for another LLM
+                    # round. This mirrors the streaming path
+                    # (``async_chat_streamly_with_tools``), which otherwise lets
+                    # the outer model re-invoke ``rag`` on partial answers until
+                    # ``max_rounds`` is exhausted — the source of multi-hop
+                    # timeouts (single request exceeding the client budget).
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    ans += out
+                                return self._sanitize_answer(ans), tk_count
+
                     history = self._append_history_batch(
                         history,
                         results,

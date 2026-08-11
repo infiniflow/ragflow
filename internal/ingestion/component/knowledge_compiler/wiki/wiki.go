@@ -330,11 +330,36 @@ func (p *wikiPipeline) run() error {
 		zap.String("doc_id", p.runKey()),
 		zap.Int("batches", len(p.mapExtracts)),
 		zap.Int("raw_entities", countExtractEntities(p.mapExtracts)))
-	p.reduced = reduceExtracts(p.mapExtracts)
+	appcommon.Debug("wiki: MAP intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("batches", len(p.mapExtracts)),
+		zap.Strings("entities", extractEntitiesDebug(p.mapExtracts)),
+		zap.Strings("concepts", extractConceptDebug(p.mapExtracts)),
+		zap.Strings("claims", extractClaimDebug(p.mapExtracts)),
+		zap.Strings("relations", extractRelationDebug(p.mapExtracts)))
+	reduced := reduceExtracts(p.mapExtracts)
+	p.reduced = reduced
+	appcommon.Debug("wiki: REDUCE exact done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Strings("entities", entitiesDebug(reduced.Entities)),
+		zap.Strings("concepts", conceptsDebug(reduced.Concepts)),
+		zap.Int("claims", len(reduced.Claims)),
+		zap.Strings("relations", relationsDebug(reduced.Relations)))
 	// Layer embedding + LLM disambiguation onto the exact-merged entities
 	// (REDUCE enhancement; concepts keep exact dedup). Degrades to a no-op when
 	// the embedder/chat seams are unavailable.
-	p.reduced.Entities = p.dedupeEntities(p.reduced.Entities)
+	preDedup := reduced.Entities
+	p.reduced.Entities = p.dedupeEntities(preDedup)
+	appcommon.Debug("wiki: REDUCE embedding+LLM dedup done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("pre_dedup_entities", len(preDedup)),
+		zap.Int("post_dedup_entities", len(p.reduced.Entities)),
+		zap.Strings("pre_dedup_names", entityNamesDebug(preDedup)),
+		zap.Strings("post_dedup_names", entityNamesDebug(p.reduced.Entities)),
+		zap.Strings("post_dedup_entities", entitiesDebug(p.reduced.Entities)))
 	appcommon.Info("wiki: REDUCE done",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
@@ -350,6 +375,14 @@ func (p *wikiPipeline) run() error {
 		zap.String("doc_id", p.runKey()),
 		zap.Int("plan_pages", len(plan.Pages)),
 		zap.Int("capacity_excluded", p.planCapacityExcluded))
+	appcommon.Debug("wiki: PLAN intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.String("plan_title", plan.Title),
+		zap.String("plan_slug", plan.Slug),
+		zap.Int("plan_pages", len(plan.Pages)),
+		zap.Int("capacity_excluded", p.planCapacityExcluded),
+		zap.Strings("pages", planPagesDebug(plan.Pages)))
 	pages, err := p.runRefine()
 	if err != nil {
 		return err
@@ -359,6 +392,11 @@ func (p *wikiPipeline) run() error {
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
 		zap.Int("refined_pages", len(pages)))
+	appcommon.Debug("wiki: REFINE intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("refined_pages", len(pages)),
+		zap.Strings("pages", pageResultsDebug(pages)))
 	return nil
 }
 
@@ -369,6 +407,120 @@ func countExtractEntities(extracts []wikiExtract) int {
 		n += len(e.Entities)
 	}
 	return n
+}
+
+// --- Debug helpers: compact per-item descriptors for the stage-intermediate
+// logs in run(). They deliberately record only identity-level fields (name /
+// slug / type / aliases / endpoints), never full content or embedding vectors,
+// so a batch with many entities stays readable and does not blow the log line.
+
+func entityDebug(e wikiEntity) string {
+	if len(e.Aliases) == 0 {
+		return fmt.Sprintf("%s(%s)", e.Name, e.Type)
+	}
+	return fmt.Sprintf("%s(%s){aliases:%s}", e.Name, e.Type, strings.Join(e.Aliases, ","))
+}
+
+func conceptDebug(c wikiConcept) string {
+	return c.Term
+}
+
+func claimDebug(c wikiClaim) string {
+	return c.Subject + ": " + c.Statement
+}
+
+func relationDebug(r wikiRelation) string {
+	return fmt.Sprintf("%s-[%s]->%s", r.From, r.Type, r.To)
+}
+
+func extractEntitiesDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, e := range ex.Entities {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, entityDebug(e)))
+		}
+	}
+	return out
+}
+
+func extractConceptDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, c := range ex.Concepts {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, conceptDebug(c)))
+		}
+	}
+	return out
+}
+
+func extractClaimDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, c := range ex.Claims {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, claimDebug(c)))
+		}
+	}
+	return out
+}
+
+func extractRelationDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, r := range ex.Relations {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, relationDebug(r)))
+		}
+	}
+	return out
+}
+
+func entitiesDebug(es []wikiEntity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, entityDebug(e))
+	}
+	return out
+}
+
+func entityNamesDebug(es []wikiEntity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+func conceptsDebug(cs []wikiConcept) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, conceptDebug(c))
+	}
+	return out
+}
+
+func relationsDebug(rs []wikiRelation) []string {
+	out := make([]string, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, relationDebug(r))
+	}
+	return out
+}
+
+func planPagesDebug(pages []wikiPlanPage) []string {
+	out := make([]string, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, fmt.Sprintf("%s:%s(%s) prio=%d related=%s",
+			p.Slug, p.Title, p.PageType, p.Priority, strings.Join(p.RelatedKB, ",")))
+	}
+	return out
+}
+
+func pageResultsDebug(pages []wikiPageResult) []string {
+	out := make([]string, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, fmt.Sprintf("%s:%s(%s) outlinks=%s",
+			p.Slug, p.Title, p.PageType, strings.Join(p.Outlinks, ",")))
+	}
+	return out
 }
 
 func (p *wikiPipeline) runMap() error {
@@ -1246,17 +1398,34 @@ func normalizeWikiPlan(plan wikiPlan, docID string, reduced wikiExtract) wikiPla
 }
 
 func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPlanPage {
-	existing := map[string]wikiPlanPage{}
+	// existing maps a plan slug to its index in out (exact-slug dedup); byTitle
+	// additionally collapses pages that share the same page_type + normalized
+	// title, so a single batch never yields two "吕布" pages whose slugs only
+	// differ in transliteration (lu-bu vs lv-bu). Scheme A (§5 of the duplicates
+	// research): page identity is page_type/slug, so the key is page-type-scoped
+	// (a same-title concept and topic may legitimately coexist) and the first
+	// page seen (LLM emission order) is kept, folding the duplicate's RelatedKB
+	// into the survivor so its outlinks are not silently dropped.
+	existing := map[string]int{}
+	byTitle := map[string]int{}
 	out := make([]wikiPlanPage, 0, len(pages))
 	for _, page := range pages {
 		page = normalizeWikiPlanPage(page)
 		if page.Slug == "" {
 			continue
 		}
-		if _, ok := existing[page.Slug]; ok {
+		if idx, ok := existing[page.Slug]; ok {
+			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
 		}
-		existing[page.Slug] = page
+		key := wikiTitleKey(page.PageType, page.Title)
+		if idx, ok := byTitle[key]; ok {
+			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
+			continue
+		}
+		idx := len(out)
+		byTitle[key] = idx
+		existing[page.Slug] = idx
 		out = append(out, page)
 	}
 	fallback := buildWikiFallbackPages(reduced)
@@ -1265,7 +1434,10 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			if page.Slug == "" {
 				continue
 			}
-			existing[page.Slug] = page
+			page = normalizeWikiPlanPage(page)
+			idx := len(out)
+			byTitle[wikiTitleKey(page.PageType, page.Title)] = idx
+			existing[page.Slug] = idx
 			out = append(out, page)
 		}
 	}
@@ -1363,6 +1535,14 @@ func normalizeWikiPlanSections(sections []wikiPlanSection) []wikiPlanSection {
 		return []wikiPlanSection{{Heading: "Overview", Points: nil}}
 	}
 	return out
+}
+
+// wikiTitleKey returns the Scheme-A dedup key for a planned page: page_type
+// scoped to the normalized title. Two pages collapse only when both their type
+// and their (case/whitespace-normalized) title match — a same-title concept and
+// topic stay distinct because page identity is page_type/slug.
+func wikiTitleKey(pageType, title string) string {
+	return strings.TrimSpace(pageType) + "\x00" + normKey(title)
 }
 
 func buildWikiFallbackPages(reduced wikiExtract) []wikiPlanPage {

@@ -12,12 +12,16 @@ from rag.advanced_rag.harness.sufficiency import (
     compute_fusion_score,
     route_sufficiency_verdict,
 )
+from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
 from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
 
 _MAX_EVIDENCE_SNIPPETS = 6
 _MAX_NEXT_QUERIES = 3
+# Upper bound on dynamically-discovered claims per decomposition, to prevent
+# open-ended claim expansion from the evidence analysis from blowing up cost.
+_MAX_DYNAMIC_CLAIMS = 6
 
 _EVIDENCE_ANALYSIS_SYSTEM = """You are controlling a multi-hop RAG retrieval loop.
 Judge whether the retrieved passages verify the claim using only the provided evidence.
@@ -26,7 +30,16 @@ dates, names, or relationships discovered in the evidence and move closer to the
 original question.
 Distinguish final-answer entities from bridge entities. If the passages identify
 only a clue node in the chain, keep the claim incomplete and search for the
-remaining relation needed by the original question. Return JSON only."""
+remaining relation needed by the original question.
+Each `next_queries` entry MUST be a retrieval-boosted query: in addition to the core
+terms, actively fold in SYNONYMS and variants so a single search recalls more of the
+corpus:
+- entity synonyms/aliases: "Usain Bolt" -> "Usain Bolt, sprinter, 100 m record holder";
+- DATE/TIME synonyms: "1994" -> "1994, 66th Academy Awards, mid-1990s"; "2011-02-05" ->
+  "5 February 2011, Feb 5 2011";
+- number/unit variants: "1.95 m" -> "1.95 m, 6 ft 5 in"; "50 m" -> "50 m, 50 metres".
+Write each query as a compact, self-contained phrase (terms + synonyms), not a full
+sentence. Return JSON only."""
 
 _EVIDENCE_ANALYSIS_USER = """Original question:
 {question}
@@ -48,8 +61,21 @@ Return JSON:
   "confidence": 0.0,
   "report": "Short evidence-backed finding, or what was learned so far.",
   "gaps": ["specific missing fact or relationship"],
-  "next_queries": ["standalone follow-up search query"]
-}}"""
+  "next_queries": ["standalone follow-up search query"],
+  "discovered_claims": ["a NEW, previously-unlisted sub-question that the original question requires but the current claim decomposition does not cover, if any; empty if no new sub-question is needed"],
+  "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match"],
+  "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"]
+}}
+Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one. discovered_claims must ONLY be genuinely new necessary sub-questions the original question needs (e.g. "which players were on the 1995 Pro Bowl roster"), never re-statements of an existing claim."""
+
+# Rewrites the search query right before an ABSTAIN, in a last-ditch attempt to
+# surface evidence that the earlier queries missed (e.g. the question constrains a
+# year the first pass only returned estimates for, or needs a disambiguating entity).
+_QUERY_REWRITE_SYSTEM = """You are rewriting a retrieval query to recover missing evidence.
+The previous retrieval came back with no usable evidence. Rewrite the query so a fresh
+search is more likely to hit the needed fact: anchor it with explicit years, dates,
+full names, role words, and any distinguishing constraints from the question. Do NOT
+invent facts. Output a single standalone search query only."""
 
 
 async def decompose_and_search(state: dict, tools) -> dict:
@@ -68,16 +94,35 @@ async def decompose_and_search(state: dict, tools) -> dict:
     pending_queries: dict[str, list[str]] = {c.claim_id: [] for c in ctx.claims}
     completed_cycles = 0
 
-    for cycle in range(max_cycles):
+    # Stagnation guard: stop when the fusion score stops improving across
+    # consecutive rounds (corpus lacks the data, follow-ups return nothing)
+    # instead of burning the remaining cycle budget unproductively.
+    prev_score: float | None = None
+    _STAGNATION_CYCLES = 2
+    _STAGNATION_GAIN = 0.05
+    # Query-rewrite rescue is attempted at most once per decomposition, so a
+    # mis-anchored query that ABSTAINs cannot trigger an unbounded rewrite loop.
+    rescue_used = False
+
+    # Dynamic round budget (Plan B): start at ``max_cycles`` and grant extra
+    # rounds when a NEW dynamic claim is discovered near the budget boundary, so a
+    # sub-question uncovered in the final round still gets a chance to be searched
+    # and verified (otherwise the for-loop would end and the fresh claim would
+    # never be retrieved). Bounded to ``2 * max_cycles`` to avoid open-ended cost.
+    cycle = 0
+    budget = max_cycles
+    _MAX_BUDGET = max_cycles * 2
+    while cycle < budget:
         ctx.iteration = cycle
         unverified = [c for c in ctx.claims if not c.is_verified]
         if not unverified:
             break
+        new_dynamic_this_round = False
 
         _LOG.info(
             "[Decompose search] Round %d of %d: researching %d unresolved claim(s).",
             cycle + 1,
-            max_cycles,
+            budget,
             len(unverified),
         )
 
@@ -137,6 +182,7 @@ async def decompose_and_search(state: dict, tools) -> dict:
 
             c.is_verified = analysis["is_verified"]
             c.confidence = analysis["confidence"]
+            discovered_claims = analysis.get("discovered_claims", [])
             c.agent_result = AgentResult(
                 claim_id=c.claim_id,
                 report=analysis["report"],
@@ -144,9 +190,10 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 confidence=c.confidence,
                 evidence_ids=evidence_ids,
                 gaps=analysis["gaps"],
-                discovered_claims=[],
+                discovered_claims=discovered_claims,
+                grounded=analysis.get("grounded", []),
+                numbers=analysis.get("numbers", []),
             )
-            ctx.agent_results[c.claim_id] = c.agent_result
 
             next_queries = _new_queries(
                 analysis.get("next_queries", []),
@@ -159,6 +206,27 @@ async def decompose_and_search(state: dict, tools) -> dict:
                     c.claim_id,
                     len(next_queries),
                 )
+
+            # Dynamic claim discovery: when the evidence analysis reveals a NEW
+            # necessary sub-question the original question needs but the planner's
+            # initial decomposition did not cover, add it as a fresh claim so the
+            # orchestrator retrieves and verifies it in a later round. Mirrors the
+            # high/ultra agentic orchestrator (agentic.py). Bounded to avoid blow-up.
+            if mode.allows_dynamic_claims and not c.is_verified:
+                existing_desc = {cc.description for cc in ctx.claims}
+                for dc in discovered_claims:
+                    if dc and dc not in existing_desc and len(ctx.claims) < _MAX_DYNAMIC_CLAIMS:
+                        dyn_id = f"c_dyn_{len(ctx.claims)}"
+                        ctx.claims.append(ClaimTarget(claim_id=dyn_id, description=dc))
+                        attempted_queries[dyn_id] = set()
+                        pending_queries[dyn_id] = [dc]
+                        existing_desc.add(dc)
+                        new_dynamic_this_round = True
+                        _LOG.info(
+                            '[Decompose search] Discovered new sub-question from claim %s: "%s" (queued for next round).',
+                            c.claim_id,
+                            dc,
+                        )
             _LOG.info(
                 '[Decompose search] Claim %s after "%s": %s (confidence %.0f%%).',
                 c.claim_id,
@@ -173,25 +241,125 @@ async def decompose_and_search(state: dict, tools) -> dict:
         agent_results = [c.agent_result for c in ctx.claims if c.agent_result]
         cross_results = [cross_check_claim(r, all_chunks) for r in agent_results]
 
-        verdict = compute_fusion_score(agent_results, cross_results, mode)
+        # HEAD sufficiency enhancements: pass the question + claims + evidence so
+        # the fusion activates required-entity AND-semantics veto, grounded-fact
+        # verification, and numeric multi-source conflict detection (not just the
+        # baseline ratio/mean that upstream's 3-arg call skipped).
+        verdict = compute_fusion_score(
+            agent_results,
+            cross_results,
+            mode,
+            question=ctx.question,
+            claims=ctx.claims,
+            all_chunks=all_chunks,
+        )
         ctx.verdict = verdict
 
-        action, should_continue = route_sufficiency_verdict(
+        # LLM Sufficient Context AutoRater (primary sufficiency judge). Medium
+        # keeps it gated to the borderline band for cost control; its verdict
+        # (`auto=boost`) is fed to the decision ladder inside
+        # ``route_sufficiency_verdict``, which replaces the old manual
+        # SUFFICIENT upgrade. Missing-piece follow-ups feed the next hop.
+        boost: dict = {}
+        if verdict.status in ("USEFUL_BUT_INCOMPLETE", "INSUFFICIENT", "CONFLICTING"):
+            boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=_global_evidence_ids(tools, {"chunks": tools.kbinfos.get("chunks", [])}))
+            followups = boost.get("followups") or []
+            if followups:
+                ctx.pending_followups = followups
+                _LOG.info("[Decompose] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
+            if boost:
+                _LOG.info("[Decompose] AutoRater is_sufficient=%s confidence=%.2f", boost.get("is_sufficient"), boost.get("confidence", 1.0))
+
+        # LLM groundedness review (Google "draft review"): runs unconditionally so every
+        # decomposed result — including a non-critical-band SUFFICIENT — is groundedness-
+        # validated before the status gate. (The lexical NER grounded check is disabled
+        # in favour of this LLM review, so it must not be skipped on any path.) Ungrounded
+        # claim drafts are merged into hard_violations → decision ladder caveat.
+        from rag.advanced_rag.harness.orchestrator.grounded_llm import llm_grounded_verify
+
+        # Union of cited evidence IDs across all claim results (matches the
+        # agentic orchestrator's cited-evidence behavior) so the reviewer sees
+        # the exact evidence each claim referenced, not a global prefix.
+        cited_evidence_ids: list[str] = []
+        for r in agent_results:
+            cited_evidence_ids.extend(r.evidence_ids or [])
+        grounded = await llm_grounded_verify(
+            tools,
+            ctx.question,
+            [(r.claim_id, r.report or "") for r in agent_results if r.report],
+            cited_evidence_ids or None,
+        )
+        # Treat a claim as violating when it is explicitly grounded=False OR has
+        # non-empty ungrounded assertions (covers the degenerate grounded=False /
+        # empty-ungrounded case too). Only accept IDs that exist in the original
+        # claims collection — the LLM may echo a bogus claim_id, which must not
+        # leak into hard_violations.
+        valid_claim_ids = {r.claim_id for r in agent_results}
+        ungrounded_ids = [cid for cid, g in grounded.items() if cid in valid_claim_ids and (g.get("grounded") is False or g.get("ungrounded"))]
+        if ungrounded_ids:
+            existing = set(verdict.hard_violations or [])
+            verdict.hard_violations = list(existing | set(ungrounded_ids))
+            _LOG.info("[Decompose] %d claim(s) have ungrounded (draft-review) assertions: %s", len(ungrounded_ids), ungrounded_ids)
+
+        action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
             cycle,
             max_cycles,
+            auto=boost,
         )
+        if caveat:
+            _LOG.info("[Decompose] caveat=%s", caveat)
+
+        # Stagnation guard: if the verdict is not (yet) sufficient and the score
+        # has not meaningfully improved across consecutive rounds, stop instead
+        # of burning the remaining cycle budget on unproductive re-searches.
+        if should_continue and verdict.status in ("INSUFFICIENT", "USEFUL_BUT_INCOMPLETE"):
+            if prev_score is not None and cycle >= _STAGNATION_CYCLES and verdict.score - prev_score < _STAGNATION_GAIN:
+                _LOG.info(
+                    "[Decompose] Round %d: score stagnant (%.3f → %.3f) — early-stopping to partial answer",
+                    cycle + 1,
+                    prev_score,
+                    verdict.score,
+                )
+                action = "ANSWER_PARTIAL"
+                should_continue = False
+            else:
+                prev_score = verdict.score
 
         if action in ("ANSWER", "ANSWER_PARTIAL"):
             return _finalize(ctx, tools, partial=action == "ANSWER_PARTIAL", loop=completed_cycles)
         if action == "ABSTAIN":
+            # Query-rewrite rescue: before refusing, rewrite the search query
+            # (anchoring years/constraints from the gaps) and re-search once. A
+            # merely mis-anchored query (e.g. the question pins a year the first
+            # pass only returned estimates for) otherwise abstains despite the
+            # data existing. Only attempted once per decomposition.
+            if not rescue_used and await _rewrite_and_retry(tools, ctx.question, keywords, ctx):
+                rescue_used = True
+                prev_score = None
+                cycle += 1
+                continue
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True, "loop": completed_cycles}
         if action == "FALLBACK_LLM":
             return _finalize(ctx, tools, partial=True, loop=completed_cycles)
         if not should_continue:
             break
+
+        # Dynamic budget extension (Plan B): if this round discovered a NEW dynamic
+        # claim near the budget boundary, grant an extra round so it can actually be
+        # searched (a fresh claim discovered in the final round would otherwise be
+        # left unretrieved). Stagnation guard still bounds total cost.
+        if new_dynamic_this_round and cycle + 1 >= budget and budget < _MAX_BUDGET:
+            budget += 1
+            _LOG.info(
+                "[Decompose] Round %d: discovered new claim(s); extending round budget to %d.",
+                cycle + 1,
+                budget,
+            )
+
+        cycle += 1
 
     if not tools.kbinfos.get("chunks"):
         return {"empty_result": True, "kbinfos": tools.kbinfos, "loop": completed_cycles}
@@ -219,6 +387,7 @@ async def _analyze_claim_evidence(
             "report": "",
             "gaps": ["no evidence found"],
             "next_queries": _fallback_queries(question, claim),
+            "discovered_claims": [],
         }
 
     try:
@@ -286,11 +455,17 @@ def _normalize_analysis(
     report = str(parsed.get("report") or "").strip() or _summarize(result)
     gaps = _string_list(parsed.get("gaps"))
     next_queries = _string_list(parsed.get("next_queries"))[:_MAX_NEXT_QUERIES]
+    discovered_claims = _string_list(parsed.get("discovered_claims"))[:_MAX_NEXT_QUERIES]
+    grounded = _string_list(parsed.get("grounded"))
+    numbers = _string_list(parsed.get("numbers"))
 
     if is_verified:
         gaps = []
         next_queries = []
-        confidence = max(confidence, 0.65)
+        # NOTE: no optimistic floor here. The old ``max(confidence, 0.65)``
+        # inflated medium's agent confidence and distorted the decision-ladder
+        # gate (agent_confidence >= c_high/c_low). Keep the LLM's raw confidence
+        # so the ladder's thresholds behave as designed.
     elif not next_queries and cycle + 1 < max_cycles:
         next_queries = _fallback_queries(question, claim)
 
@@ -300,6 +475,9 @@ def _normalize_analysis(
         "report": report,
         "gaps": gaps,
         "next_queries": next_queries,
+        "discovered_claims": discovered_claims,
+        "grounded": grounded,
+        "numbers": numbers,
     }
 
 
@@ -320,6 +498,9 @@ def _fallback_analysis(
         "report": _summarize(result),
         "gaps": [] if is_verified else ["need more specific evidence"],
         "next_queries": next_queries,
+        "discovered_claims": [],
+        "grounded": [],
+        "numbers": [],
     }
 
 
@@ -487,3 +668,49 @@ def _summarize(result: dict) -> str:
     chunks = result.get("chunks", [])
     texts = [(c.get("content_with_weight") or c.get("content") or c.get("text") or "")[:200] for c in chunks[:3]]
     return " | ".join(texts)
+
+
+async def _rewrite_and_retry(tools, question: str, keywords: str, ctx: OrchestratorContext) -> bool:
+    """Last-ditch attempt before an ABSTAIN: rewrite the search query so a fresh
+    search is anchored on the missing evidence (years, dates, names, constraints)
+    and retrieve once more. Returns True if fresh evidence was merged; the caller
+    then continues the decompose loop instead of refusing. At most one rewrite per
+    decomposition is attempted by the caller (``rescue_used``)."""
+    unverified = [c for c in ctx.claims if not c.is_verified and c.agent_result]
+    gaps: list[str] = []
+    for c in unverified:
+        gaps.extend(c.agent_result.gaps or [])
+    followups = getattr(ctx, "pending_followups", None) or []
+    anchors = list(dict.fromkeys([g for g in (gaps + followups) if g and g.strip()]))[:4]
+    if not anchors:
+        # Nothing concrete to anchor the rewrite on — avoid a blind re-search.
+        _LOG.info("[Decompose] ABSTAIN rescue skipped: no gap/followup to anchor a rewrite.")
+        return False
+
+    user = (
+        f"Question: {question}\n\n"
+        f"Missing evidence / gaps found so far:\n- " + "\n- ".join(anchors) + "\n\n"
+        "Rewrite ONE standalone search query (anchor it with explicit years, dates, "
+        "full names, role words and distinguishing constraints from the question) that "
+        "is most likely to retrieve the missing evidence. Output only the query."
+    )
+    try:
+        msg = await tools._fit_messages(_QUERY_REWRITE_SYSTEM, user)
+        ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.0})
+        if isinstance(ans, tuple):
+            ans = ans[0]
+        query = (ans or "").strip().strip('"').strip("'").replace("\n", " ")
+        if not query:
+            return False
+        _LOG.info('[Decompose] ABSTAIN rescue: rewritten query = "%s"', query)
+        result = await hybrid_search(tools, query=query, keywords=keywords, use_compiled=True)
+        chunks = (result or {}).get("chunks", []) or []
+        if not chunks:
+            _LOG.info("[Decompose] ABSTAIN rescue: rewritten query returned no chunks.")
+            return False
+        _merge_kbinfos(tools, result)
+        _LOG.info("[Decompose] ABSTAIN rescue: recovered %d chunk(s) from rewritten query.", len(chunks))
+        return True
+    except Exception:
+        _LOG.exception("[Decompose] ABSTAIN rescue query rewrite failed.")
+        return False

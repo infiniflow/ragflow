@@ -452,9 +452,12 @@ def list_datasets(tenant_id: str, args: dict):
         query_user_id = tenant_id
     if kb_ids:
         accessible_ids = KnowledgebaseService.get_accessible_ids([m["tenant_id"] for m in tenants], tenant_id, kb_ids)
-        if len(accessible_ids) != len(kb_ids):
-            denied_ids = [kb_id for kb_id in kb_ids if kb_id not in accessible_ids]
-            return False, f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(denied_ids)}'"""
+        denied_ids = [kb_id for kb_id in kb_ids if kb_id not in accessible_ids]
+        if denied_ids:
+            logging.warning("User '%s' lacks permission for datasets: '%s'", tenant_id, ", ".join(denied_ids))
+        kb_ids = [kb_id for kb_id in kb_ids if kb_id in accessible_ids]
+        if not kb_ids:
+            return True, {"data": [], "total": 0}
     kbs, total = KnowledgebaseService.get_list(tenant_ids, query_user_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id, kb_ids)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
@@ -604,6 +607,10 @@ def run_index(dataset_id: str, tenant_id: str, index_type: str):
         types=[],
         suffix=[],
     )
+    # Disabled documents must not participate in a dataset-level structure
+    # rebuild. Keep them out of the fan-out task itself; the merger also
+    # applies a database-backed filter as a defense in depth.
+    documents = [document for document in documents if str(document.get("status", "1")) != "0"]
     if not documents:
         return False, f"No documents in Dataset {dataset_id}"
 
@@ -946,15 +953,19 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
     elif wipe and index_type in _STRUCTURE_INDEX_TYPES:
         from rag.nlp import search
 
-        # Wipe the merged KB-wide dataset_graph rows for the requested kind
-        # (all kinds for the merge-all "structure" type). The per-document
-        # entity/relation rows the merge reads from are left intact.
+        # Wipe the merged KB-wide metadata and entity/relation rows for the
+        # requested kind (all kinds for the merge-all "structure" type). The
+        # per-document entity/relation rows the merge reads from are left intact.
         friendly = _STRUCTURE_INDEX_TYPE_TO_KIND.get(index_type)
         resolved_kind = _resolve_dataset_structure_kind(friendly) if friendly else None
-        condition: dict = {"knowledge_graph_kwd": ["dataset_graph"]}
-        if resolved_kind:
-            condition["compilation_template_kind_kwd"] = [resolved_kind]
-        settings.docStoreConn.delete(condition, search.index_name(kb.tenant_id), dataset_id)
+        conditions = [
+            {"knowledge_graph_kwd": ["dataset_graph"]},
+            {"knowledge_graph_kwd": ["entity", "relation"], "scope_kwd": ["dataset"]},
+        ]
+        for condition in conditions:
+            if resolved_kind:
+                condition["compilation_template_kind_kwd"] = [resolved_kind]
+            settings.docStoreConn.delete(condition, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}
@@ -1811,8 +1822,8 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     KB-wide (no ``doc_id`` filter), since dataset-merge templates dedup those rows
     across documents.
 
-    ``keywords`` (optional): return the single best-matching entity's 1-hop
-    subgraph (top-1 + neighbors + touching relations) across the kind, via KNN.
+    ``keywords`` (optional): return the matching entities' subgraph, including
+    neighbors and touching relations, across the kind.
 
     Returns ``(True, {"kind": <kind>, "templates": [...]})`` or
     ``(False, message)`` on auth/validation failure.
@@ -1838,6 +1849,14 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     from api.apps.services import structure_graph_common as sgc
 
     keywords = (keywords or "").strip()
+    _, active_doc_ids = await _current_dataset_docs(dataset_id)
+    disabled_doc_ids = await _disabled_dataset_doc_ids(dataset_id)
+    if not active_doc_ids:
+        return True, empty
+    # Dataset rows use the KB id as ``doc_id``. If a historical row has no
+    # source provenance, exclude it while documents are disabled and fall back
+    # to active document rows instead of returning potentially stale content.
+    dataset_excluded_doc_ids = disabled_doc_ids | ({dataset_id} if disabled_doc_ids else set())
 
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
@@ -1978,7 +1997,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         resolved_kind,
     )
 
-    # ── keywords mode: global KNN across the kind → top-1's focused subgraph. ──
+    # ── keywords mode: name matching/KNN across the kind → matched subgraph. ──
     if keywords:
         if not kind_template_ids:
             return True, empty
@@ -2008,6 +2027,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             keywords,
             _scope_for_template,
             log_ctx=f"kb={dataset_id}",
+            excluded_doc_ids=dataset_excluded_doc_ids,
         )
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             kw_entities = sgc.filter_entities_with_relations(kw_entities, kw_relations)
@@ -2025,16 +2045,18 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]})
+            scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+            if scope_kwd == "doc":
+                scope["doc_id"] = sorted(active_doc_ids)
+            entities, relations = await sgc.build_bucket(
+                index_nm,
+                dataset_id,
+                scope,
+                excluded_doc_ids=dataset_excluded_doc_ids if scope_kwd == "dataset" else disabled_doc_ids,
+            )
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue
-        if scope_kwd == "dataset" and not entities and not relations:
-            try:
-                entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": ["doc"]})
-            except Exception:
-                logging.exception("get_dataset_structure: doc fallback bucket build failed for kb=%s template=%s", dataset_id, tid)
-                continue
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             entities = sgc.filter_entities_with_relations(entities, relations)
             if not entities:
@@ -2051,7 +2073,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         try:
             res_l = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["content_with_weight", "compilation_template_kind_kwd"],
+                ["content_with_weight", "compilation_template_kind_kwd", "compile_kwd"],
                 [],
                 {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD], "must_not": {"exists": "compilation_template_ids"}},
                 [],
@@ -2061,16 +2083,34 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 index_nm,
                 [dataset_id],
             )
-            legacy_rows = settings.docStoreConn.get_fields(res_l, ["content_with_weight", "compilation_template_kind_kwd"]) or {}
+            legacy_rows = settings.docStoreConn.get_fields(res_l, ["content_with_weight", "compilation_template_kind_kwd", "compile_kwd"]) or {}
         except Exception:
             logging.exception("get_dataset_structure: legacy blob fetch failed for kb=%s", dataset_id)
             legacy_rows = {}
         legacy_bucket = {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind, "entities": [], "relations": []}
+        reconstructed_compile_kwds: set[str] = set()
         for row in legacy_rows.values():
             stamped_kind = row.get("compilation_template_kind_kwd") or ""
             if isinstance(stamped_kind, list):
                 stamped_kind = stamped_kind[0].strip()
             if _resolve_dataset_structure_kind((stamped_kind or "").strip()) != resolved_kind:
+                continue
+            if disabled_doc_ids:
+                compile_kwd = _scalar(row.get("compile_kwd"))
+                if not compile_kwd or compile_kwd in reconstructed_compile_kwds:
+                    continue
+                reconstructed_compile_kwds.add(compile_kwd)
+                try:
+                    entities, relations = await sgc.build_bucket(
+                        index_nm,
+                        dataset_id,
+                        {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)},
+                        excluded_doc_ids=disabled_doc_ids,
+                    )
+                except Exception:
+                    continue
+                legacy_bucket["entities"].extend(entities)
+                legacy_bucket["relations"].extend(relations)
                 continue
             try:
                 graph = json.loads(row.get("content_with_weight") or "{}")
@@ -2078,8 +2118,8 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(graph.get("entities") or [])
-            legacy_bucket["relations"].extend(graph.get("relations") or [])
+            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict))
+            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict))
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
@@ -2106,8 +2146,9 @@ _ALTERATION_ELIGIBLE_TEMPLATE_KINDS = {
     "tree": {"tree", "page_index"},
 }
 
-# Dataset-merged structure kinds carry provenance in ``source_doc_ids`` on
-# ``scope_kwd="dataset"`` rows, discovered by their stamped top-level kind.
+# Dataset-merged structure kinds carry provenance in ``source_doc_ids`` or
+# ``doc_ids_kwd`` on ``scope_kwd="dataset"`` rows, discovered by their stamped
+# top-level kind.
 _ALTERATION_KIND_TO_MERGED_ROW_KIND = {
     "graph": "knowledge_graph",
     "mindmap": "mind_map",
@@ -2134,9 +2175,14 @@ async def _current_dataset_docs(dataset_id: str):
         types=[],
         suffix=[],
     )
+    docs = [doc for doc in docs if str(doc.get("status", "1")) != "0"]
     docs = docs or []
     current_doc_ids = {str(doc.get("id")) for doc in docs if doc.get("id")}
     return docs, current_doc_ids
+
+
+async def _disabled_dataset_doc_ids(dataset_id: str) -> set[str]:
+    return await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, dataset_id)
 
 
 def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc_ids: set) -> dict:
@@ -2181,6 +2227,8 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     pipeline_cache: dict[str, bool] = {}
     eligible: set[str] = set()
     for doc in docs or []:
+        if str(doc.get("status", "1")) == "0":
+            continue
         doc_id = str(doc.get("id") or "")
         if not doc_id:
             continue
@@ -2193,16 +2241,17 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     return eligible
 
 
-async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str, from_list: bool) -> set:
-    """Page a docStore search, folding each row's ``field`` into a doc-id set.
+async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str | list[str], from_list: bool) -> set:
+    """Page a docStore search, folding provenance fields into a doc-id set.
 
-    ``from_list`` reads ``field`` as ``source_doc_ids`` (a list of provenance doc
-    ids); otherwise ``field`` is the row's own ``doc_id`` scalar.
+    ``from_list`` reads the selected fields as lists of provenance document IDs;
+    otherwise the selected field is the row's own scalar document ID.
     """
     from common.doc_store.doc_store_base import OrderByExpr
 
     involved: set[str] = set()
-    select_fields = ["id", field]
+    fields = [field] if isinstance(field, str) else field
+    select_fields = ["id", *fields]
     offset = 0
     page_size = 1000
     while True:
@@ -2227,11 +2276,11 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
         if not rows:
             break
         for row in rows.values():
-            value = row.get(field)
             if from_list:
-                involved.update(_flatten_provenance_doc_ids(value))
-            elif value:
-                involved.add(str(value))
+                for field_name in fields:
+                    involved.update(_flatten_provenance_doc_ids(row.get(field_name)))
+            else:
+                involved.update(_flatten_provenance_doc_ids(row.get(fields[0])))
 
         offset += page_size
         total = settings.docStoreConn.get_total(res)
@@ -2250,7 +2299,33 @@ async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> se
             "scope_kwd": ["dataset"],
             "compilation_template_kind_kwd": [_ALTERATION_KIND_TO_MERGED_ROW_KIND[kind]],
         }
-        return await _involved_doc_ids_paged(index_nm, dataset_id, condition, "source_doc_ids", from_list=True)
+        involved = await _involved_doc_ids_paged(index_nm, dataset_id, condition, ["source_doc_ids", "doc_ids_kwd"], from_list=True)
+        if involved:
+            return involved
+
+        # Historical dataset rows may predate provenance columns. Recover the
+        # source document set from their template/compile identity so alteration
+        # still reports disabled documents instead of treating every active
+        # document as newly uploaded.
+        template_ids = await _involved_doc_ids_paged(index_nm, dataset_id, condition, "compilation_template_ids", from_list=True)
+        compile_kwds = await _involved_doc_ids_paged(index_nm, dataset_id, condition, "compile_kwd", from_list=True)
+        if not template_ids and not compile_kwds:
+            legacy_condition = {
+                "knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD],
+                "compilation_template_kind_kwd": [_ALTERATION_KIND_TO_MERGED_ROW_KIND[kind]],
+            }
+            template_ids = await _involved_doc_ids_paged(index_nm, dataset_id, legacy_condition, "compilation_template_ids", from_list=True)
+            compile_kwds = await _involved_doc_ids_paged(index_nm, dataset_id, legacy_condition, "compile_kwd", from_list=True)
+        source_condition: dict = {"knowledge_graph_kwd": ["entity", "relation"]}
+        if template_ids:
+            source_condition["compilation_template_ids"] = sorted(template_ids)
+        elif compile_kwds:
+            source_condition["compile_kwd"] = sorted(compile_kwds)
+        else:
+            return set()
+        involved = await _involved_doc_ids_paged(index_nm, dataset_id, source_condition, "doc_id", from_list=False)
+        involved.discard(dataset_id)
+        return involved
     if kind == "tree":
         return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": list(_ALTERATION_TREE_COMPILE_KWDS)}, "doc_id", from_list=False)
     return set()
@@ -2756,12 +2831,68 @@ async def delete_skills(dataset_id: str, tenant_id: str):
     return True, {"deleted": int(deleted or 0)}
 
 
-async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
-    """Delete a single compiled skill node identified by ``skill_kwd``.
+def _parse_list_field(value):
+    """Normalize a search-result ``_kwd`` field to a Python list.
 
-    Removes the per-node ``skill`` row(s) matching ``skill_kwd`` (the same
-    identity ``get_skill_page`` reads). The aggregate ``skill_all`` tree row is
-    left untouched. Returns ``(True, {"deleted": <n>})``.
+    Infinity stores keyword fields as ``###``-joined strings;
+    ES / OpenSearch / OceanBase keep native lists.
+    """
+    if isinstance(value, list):
+        return [v for v in value if v]
+    if isinstance(value, str) and value:
+        return [v for v in value.split("###") if v]
+    return []
+
+
+def _walk_skill_tree(tree: list[dict], target_kwd: str, parent_kwd: str | None = None):
+    """Depth-first search through the ``skill_all`` tree JSON.
+
+    Returns ``(parent_kwd, found_node)`` or ``(None, None)`` when *target_kwd*
+    is not present in the tree.
+    """
+    for node in tree:
+        if node.get("skill_kwd") == target_kwd:
+            return parent_kwd, node
+        children = node.get("children_kwd", [])
+        if children:
+            result = _walk_skill_tree(children, target_kwd, node.get("skill_kwd"))
+            p, n = result
+            if n is not None:
+                return p, n
+    return None, None
+
+
+def _collect_tree_descendants(node: dict) -> set[str]:
+    """Return all ``skill_kwd`` values from *node*'s subtree (recursive)."""
+    result: set[str] = set()
+    for child in node.get("children_kwd", []):
+        kwd = child.get("skill_kwd", "")
+        if kwd:
+            result.add(kwd)
+        result.update(_collect_tree_descendants(child))
+    return result
+
+
+def _prune_skill_tree(tree: list[dict], deleted_kwds: set[str]) -> list[dict]:
+    """Remove nodes whose ``skill_kwd`` is in *deleted_kwds* (and their subtrees)."""
+    result = []
+    for node in tree:
+        if node.get("skill_kwd") in deleted_kwds:
+            continue
+        children = node.get("children_kwd", [])
+        node["children_kwd"] = _prune_skill_tree(children, deleted_kwds)
+        result.append(node)
+    return result
+
+
+async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
+    """Delete a compiled skill node and its descendants.
+
+    1. Walk the ``skill_all`` tree to identify the target node, its parent,
+       and all descendant ``skill_kwd`` values.
+    2. Delete every matching ``compile_kwd="skill"`` row (self + subtree).
+    3. If a parent exists, remove the deleted node from its ``children_kwd``.
+    4. Prune the ``skill_all`` tree and rewrite the aggregate row.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "no authorization"
@@ -2772,15 +2903,123 @@ async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
         return True, {"deleted": 0}
     index_nm, _ = pack
 
+    # ------------------------------------------------------------------
+    # 1. Read current skill_all tree
+    # ------------------------------------------------------------------
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    _ALL_SELECT = ["id", "kb_id", "doc_id", "compile_kwd", "skill_with_weight", "available_int"]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=_ALL_SELECT,
+            highlight_fields=[],
+            condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, _ALL_SELECT)
+    except Exception:
+        logging.exception("delete_skill: read skill_all failed kb=%s skill=%s", dataset_id, skill_kwd)
+        return False, "Failed to read skill tree."
+
+    if not field_map:
+        return True, {"deleted": 0}
+    _, skill_all_row = next(iter(field_map.items()))
+
+    raw_tree = skill_all_row.get("skill_with_weight", "[]")
+    tree = json.loads(raw_tree) if isinstance(raw_tree, str) else raw_tree
+    tree = tree if isinstance(tree, list) else [tree]
+
+    # ------------------------------------------------------------------
+    # 2. Locate target node and collect descendants
+    # ------------------------------------------------------------------
+    parent_kwd, found_node = _walk_skill_tree(tree, skill_kwd)
+    if found_node is None:
+        # Fallback: node not tracked in the tree; try direct delete anyway.
+        try:
+            deleted = settings.docStoreConn.delete(
+                {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [skill_kwd]},
+                index_nm,
+                dataset_id,
+            )
+        except Exception:
+            logging.exception("delete_skill: fallback delete failed kb=%s skill=%s", dataset_id, skill_kwd)
+            return False, "Failed to delete skill."
+        return True, {"deleted": int(deleted or 0)}
+
+    descendant_kwds = _collect_tree_descendants(found_node)
+    all_kwds = [skill_kwd] + sorted(descendant_kwds)
+
+    # ------------------------------------------------------------------
+    # 3. Delete compile_kwd="skill" rows (self + all descendants)
+    # ------------------------------------------------------------------
     try:
         deleted = settings.docStoreConn.delete(
-            {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [skill_kwd]},
+            {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": all_kwds},
             index_nm,
             dataset_id,
         )
     except Exception:
-        logging.exception("delete_skill: docStore delete failed for kb=%s skill=%s", dataset_id, skill_kwd)
+        logging.exception("delete_skill: delete failed kb=%s skill=%s kwds=%s", dataset_id, skill_kwd, all_kwds)
         return False, "Failed to delete skill."
+
+    # ------------------------------------------------------------------
+    # 4. Update parent's children_kwd
+    # ------------------------------------------------------------------
+    if parent_kwd:
+        _NODE_SELECT = [
+            "id",
+            "kb_id",
+            "doc_id",
+            "compile_kwd",
+            "skill_kwd",
+            "depth_int",
+            "children_kwd",
+            "source_doc_ids",
+            "md_with_weight",
+            "available_int",
+            "parent_kwd",
+        ]
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=_NODE_SELECT,
+                highlight_fields=[],
+                condition={"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [parent_kwd]},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=1,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            fm = settings.docStoreConn.get_fields(res, _NODE_SELECT)
+        except Exception:
+            logging.exception("delete_skill: read parent failed kb=%s parent=%s", dataset_id, parent_kwd)
+        else:
+            if fm:
+                _, parent_row = next(iter(fm.items()))
+                children = [c for c in _parse_list_field(parent_row.get("children_kwd", [])) if c != skill_kwd]
+                parent_row["children_kwd"] = children
+                try:
+                    settings.docStoreConn.insert([parent_row], index_nm, dataset_id)
+                except Exception:
+                    logging.exception("delete_skill: update parent children_kwd failed kb=%s parent=%s", dataset_id, parent_kwd)
+
+    # ------------------------------------------------------------------
+    # 5. Prune and rewrite skill_all tree
+    # ------------------------------------------------------------------
+    try:
+        deleted_set = set(all_kwds)
+        pruned_tree = _prune_skill_tree(tree, deleted_set)
+        skill_all_row["skill_with_weight"] = json.dumps(pruned_tree, ensure_ascii=False, indent=2)
+        settings.docStoreConn.insert([skill_all_row], index_nm, dataset_id)
+    except Exception:
+        logging.exception("delete_skill: rewrite skill_all failed kb=%s skill=%s", dataset_id, skill_kwd)
+        return False, "Failed to update skill tree."
 
     return True, {"deleted": int(deleted or 0)}
 

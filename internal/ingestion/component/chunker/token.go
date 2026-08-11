@@ -379,100 +379,6 @@ func computeOverlapPrefix(prevText string, overlappedPct float64) (string, int) 
 	return overlap, tokenizeStr(overlap)
 }
 
-// mergeAction is the decision returned by mergeDecision for one incoming unit.
-type mergeAction int
-
-const (
-	// mergeIntoPrev overrides the previous chunk's text with the joined text.
-	mergeIntoPrev mergeAction = iota
-	// startNewChunk appends a new chunk, optionally prefixed with an overlap
-	// slice carved from the previous chunk.
-	startNewChunk
-	// mergeThenClose overrides the previous chunk with the joined text and
-	// forces the NEXT incoming unit to start a brand-new chunk (OVER_CAP
-	// boundary overflow: a chunk may exceed target by at most one unit).
-	mergeThenClose
-)
-
-// mergeDecision computes the merge decision shared by the text and JSON merge
-// paths. prevText is the current chunk, incoming is the next unit, and joinSep
-// is the separator used to project the joined text ("" for the text path, "\n"
-// for the JSON path). target is the token cap. prevTokens is the running sum of
-// per-unit token counts already accumulated into prevText; incomingTokens is
-// the token count of incoming, counted the same way the calling path counts a
-// unit.
-//
-// strategy selects the merge strategy (schema.MergeStrategy), mirroring
-// Python's MergeStrategy:
-//   - MergeOverCap (default, Python OVER_CAP): when the joined text exceeds
-//     target but the incoming unit still fits target, it is merged into the
-//     previous chunk and that chunk is then closed (mergeThenClose), forcing
-//     the next unit to start a new chunk. An incoming unit that already exceeds
-//     target is never merged — it stands alone as its own chunk (Python
-//     OVER_CAP: an oversized paragraph is never combined with the previous
-//     chunk).
-//   - MergeUnderCap (Python UNDER_CAP, strict no-overflow): an overflowing
-//     joined text starts a new chunk instead.
-//
-// The merge decision is made on the RUNNING SUM of per-unit token counts
-// (prevTokens + incomingTokens), NEVER on tokenizeStr(joined). BPE
-// tokenization is non-additive across joinSep ("\n"), so re-tokenizing the
-// joined string disagreed with Python's per-paragraph size() sum and shifted
-// every downstream boundary by a line — and, once the budget is small enough,
-// changed the chunk count. Both Python references accumulate a running sum of
-// per-unit counts: rag/nlp/__init__.py:_merge_paragraph_groups
-// (size("\n" + sub_sec)) and rag/flow/chunker/token_chunker.py:
-// _merge_text_chunks_by_token_size (tk_nums += current["tk_nums"]). The joined
-// text is still returned as the merged content.
-//
-// JSON-only metadata (PDFPositions/Positions/TKNums) is the caller's
-// responsibility; this helper only returns the merged/new text and the action.
-//
-// Note on the JSON path: this helper decides on the running sum, but it still
-// uses the OVER_CAP strategy (merge-then-close on overflow). The Python JSON
-// reference (rag/flow/chunker/token_chunker.py:_merge_text_chunks_by_token_size)
-// decides on prev_tk_nums > threshold instead, so JSON parity is only partially
-// addressed here: the join-string re-tokenization is gone but the merge
-// STRATEGY difference remains. The TKNums accounting contract is pinned by
-// TestMergeByTokenSizeFromJSON_TKNumsConsistency.
-func mergeDecision(prevText, incoming, joinSep string, target int, overlapPct float64, strategy schema.MergeStrategy, prevTokens, incomingTokens int) (string, mergeAction) {
-	// An incoming unit that already exceeds target can never be merged; it
-	// stands alone as its own chunk.
-	if incomingTokens > target {
-		return newChunkText(prevText, incoming, target, overlapPct, incomingTokens), startNewChunk
-	}
-	joined := prevText + joinSep + incoming
-	// Faithful to Python: decide on the running sum of per-unit token counts,
-	// never on the BPE count of the re-joined string, which is non-additive
-	// across joinSep ("\n") and therefore disagrees with Python's per-paragraph
-	// size() sum, shifting every downstream boundary by a line (and, on a small
-	// enough budget, changing the chunk count). See the function doc.
-	if prevTokens+incomingTokens <= target {
-		return joined, mergeIntoPrev
-	}
-	if strategy == schema.MergeOverCap {
-		// OVER_CAP: merge the overflowing unit but close the chunk so the
-		// next unit starts fresh.
-		return joined, mergeThenClose
-	}
-	return newChunkText(prevText, incoming, target, overlapPct, incomingTokens), startNewChunk
-}
-
-// newChunkText returns the text for a fresh chunk started after prevText,
-// prefixing an overlap slice from prevText when one fits within target. It is
-// used both by the UNDER_CAP overflow branch of mergeDecision and by the
-// caller when a previous chunk was closed by an OVER_CAP boundary overflow.
-func newChunkText(prevText, incoming string, target int, overlapPct float64, incomingTokens int) string {
-	if overlapPct > 0 {
-		if overlapText, overlapTokens := computeOverlapPrefix(prevText, overlapPct); overlapTokens > 0 {
-			if overlapTokens+incomingTokens <= target {
-				return overlapText + incoming
-			}
-		}
-	}
-	return incoming
-}
-
 // mergeByTokenSize implements exact token-based chunk merging that mirrors
 // Python's naive_merge (rag/nlp/__init__.py) after the strict chunk_token_num
 // hard-cap fix. It uses tokenizeStr for precise token counting, treats the
@@ -480,9 +386,10 @@ func newChunkText(prevText, incoming string, target int, overlapPct float64, inc
 // sentence delimiters. An oversize unit (a single paragraph larger than the
 // token budget) is kept whole as a standalone chunk — matching Python OVER_CAP,
 // where the model layer truncates it later — instead of being atom-split.
-// Sections are merged only when the projected total stays within
-// chunk_token_size. Overlap is applied only when the resulting chunk still
-// fits the budget.
+// Sections are merged with the unified core (scaled overlap threshold +
+// unconditional overlap prefix), matching Python naive_merge / token_chunker.
+// When overlap>0 the previous chunk's tail is always prepended, so a chunk may
+// exceed chunk_token_size by up to the overlap amount.
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
@@ -506,93 +413,61 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 		return emptyOutputs()
 	}
 
-	var cks []string
-	var tkns []int
-
-	// addChunk applies the projected-total merge and optional-overlap decision
-	// to one unit that already fits target.
-	var prevClosed bool
-	addChunk := func(segment string) {
-		tnum := tokenizeStr(segment)
-		if len(cks) == 0 {
-			cks = append(cks, segment)
-			tkns = append(tkns, tnum)
-			return
-		}
-		// Previous chunk was closed by an OVER_CAP boundary overflow: the
-		// next unit must start a fresh chunk (with overlap when it fits).
-		if prevClosed {
-			prevClosed = false
-			out := newChunkText(cks[len(cks)-1], segment, target, overlapPct, tnum)
-			cks = append(cks, out)
-			tkns = append(tkns, tokenizeStr(out))
-			return
-		}
-		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, c.param.MergeStrategy(), tkns[len(tkns)-1], tnum)
-		switch act {
-		case mergeIntoPrev, mergeThenClose:
-			cks[len(cks)-1] = out
-			// Maintain the running sum of per-paragraph token counts so the
-			// next merge decision matches Python's size() sum.
-			tkns[len(tkns)-1] += tnum
-			prevClosed = act == mergeThenClose
-		case startNewChunk:
-			cks = append(cks, out)
-			tkns = append(tkns, tokenizeStr(out))
-		}
-	}
-
+	// Build merge units from the (single) section. Each unit is a paragraph
+	// (split on sentence delimiters when the section exceeds target); its
+	// token count is precomputed so mergeUnits can keep a running sum.
+	var units []schema.ChunkDoc
 	for _, sec := range sections {
 		sec = strings.TrimSpace(sec)
 		if sec == "" {
 			continue
 		}
 		t := "\n" + sec
-		if tokenizeStr(t) <= target {
-			addChunk(t)
+		tk := tokenizeStr(t)
+		if tk <= target {
+			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk), CKType: "text"})
 			continue
 		}
 		// Oversized section: split on production sentence delimiters into
-		// units. An oversize unit (still exceeds the budget) is passed through
-		// addChunk and kept whole — no atom-split, matching Python
-		// naive_merge. mergeDecision forces an oversize incoming unit to
-		// startNewChunk, so it stands alone as its own chunk.
+		// units. An oversize unit (still exceeds the budget) is kept whole —
+		// no atom-split, matching Python naive_merge. Per the unified
+		// algorithm an over-budget unit STANDS ALONE (#17799): never merged
+		// into the previous chunk.
 		parts := sentenceDelimiter.Split(sec, -1)
 		hadPart := false
 		for _, part := range parts {
 			// Keep the raw split fragment, including any inter-line trailing
-			// whitespace. Python's naive_merge builds each unit from
-			// "\n" + sub_sec (naive_merge:1357) where sub_sec retains its
-			// trailing space and is never TrimSpaced — the only post-processing
-			// is dropping the leading empty placeholder (naive_merge:1370-1375),
-			// never per-unit trimming. Trimming here drops that space, so the
-			// overlap prefix carved from the previous chunk (which runs over the
-			// untrimmed segment) loses a character and diverges from Python.
-			// Only genuinely empty fragments are skipped, mirroring naive_merge's
-			// `if not sub_sec` guard. (The final-output TrimSpace only strips a
-			// chunk's own leading/trailing whitespace, not the inter-line space
-			// preserved here.)
+			// whitespace (Python's naive_merge builds each unit from
+			// "\n" + sub_sec with its trailing space, never TrimSpaced). Only
+			// genuinely empty fragments are skipped.
 			if part == "" {
 				continue
 			}
 			hadPart = true
-			addChunk("\n" + part)
+			seg := "\n" + part
+			units = append(units, schema.ChunkDoc{Text: seg, TKNums: intPtr(tokenizeStr(seg)), CKType: "text"})
 		}
 		if !hadPart {
-			addChunk(t)
+			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
 		}
 	}
 
-	docs := make([]schema.ChunkDoc, 0, len(cks))
-	for _, ch := range cks {
+	// Merge with the unified core (scaled overlap threshold + unconditional
+	// overlap prefix). joinSep is "" for the text path, mirroring Python
+	// naive_merge's concatenation of adjacent paragraphs. For overlap=0 this
+	// is exactly equivalent to the previous OVER_CAP running-sum merge, so
+	// existing overlap=0 output is unchanged.
+	merged := mergeUnits(units, target, overlapPct, c.param.MergeStrategy(), "")
+	docs := make([]schema.ChunkDoc, 0, len(merged))
+	for _, ch := range merged {
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text.
-		ch = removeTag(strings.TrimSpace(ch))
-		if ch == "" {
+		ch.Text = removeTag(strings.TrimSpace(ch.Text))
+		if ch.Text == "" {
 			continue
 		}
-		docs = append(docs, schema.ChunkDoc{Text: ch})
+		docs = append(docs, ch)
 	}
 	final := applyChildrenDelimText(docs, childrenPattern)
 	return chunkOutputs(final)
@@ -885,17 +760,135 @@ func takeFromStart(text string, tokens int) string {
 	return best
 }
 
-// mergeByTokenSizeFromJSON mirrors Python naive_merge's projected-total
-// hard cap (rag/nlp/__init__.py after the strict chunk_token_num fix).
-// Over-budget units are never atom-split: each one stands alone as its own
-// chunk (Python naive_merge behavior, #17808 OVER_CAP contract). Overlap is
-// applied only when overlap+segment still fits the budget.
+// mergeUnits is the single, unified token-merge core shared by BOTH the text
+// path (mergeByTokenSize) and the JSON path (mergeByTokenSizeFromJSON). It is
+// a faithful port of Python rag/flow/chunker/token_chunker.py:
+// _merge_text_chunks_by_token_size (the JSON strategy) and is also the target
+// the Python text path (rag/nlp naive_merge) is migrating to, so the two
+// languages and the two paths converge on ONE algorithm.
+//
+// Unified contract (overlap>0):
+//   - The merge threshold is SCALED to reserve room for overlap:
+//     threshold = target * (100 - overlap) / 100. A chunk keeps receiving
+//     units while its running token sum stays <= threshold; once it exceeds
+//     threshold the next unit starts a fresh chunk. For overlap=0 the
+//     threshold equals target and this is exactly equivalent to Python's
+//     OVER_CAP merge-then-close (verified 0/30000 mismatch), so overlap=0
+//     output is unchanged.
+//   - When a fresh chunk starts and overlap>0, the tail of the previous chunk
+//     is UNCONDITIONALLY prepended (computeOverlapPrefix already strips parser
+//     tags) and the new chunk's token count is recomputed from the joined
+//     text. Overlap is never silently dropped, so every chunk boundary keeps
+//     its shared context — this is the user-visible reason the JSON strategy
+//     is preferred over the old fit-check overlap.
+//   - Over-budget units (a single unit whose token count exceeds target) STAND
+//     ALONE — they are never merged into the previous chunk. This matches
+//     Python naive_merge and Python token_chunker (both also stand the
+//     over-budget unit alone, #17799), so the Go TokenChunker, the Python text
+//     path, and the Python JSON path share one contract; the overlap prefix
+//     (when overlap>0) is kept like any other new-chunk boundary.
+//   - strategy == MergeUnderCap (Go-only strict mode; Python JSON has no such
+//     variant) additionally forbids a projected overflow: even when prev is
+//     below the scaled threshold, if prev+incoming would exceed target the
+//     incoming starts a fresh chunk instead.
+//
+// Token counts use the RUNNING SUM of per-unit counts (never re-tokenizing the
+// joined string), matching Python's tk_nums += current["tk_nums"] (#17948).
+// Non-text units pass through unchanged and reset the merge run. joinSep is
+// "\n" for the JSON path and "" for the text path.
+func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strategy schema.MergeStrategy, joinSep string) []schema.ChunkDoc {
+	if overlapPct < 0 {
+		overlapPct = 0
+	} else if overlapPct > 100 {
+		overlapPct = 100
+	}
+	// Scaled threshold reserves room for the unconditional overlap prefix.
+	threshold := float64(target) * (100.0 - overlapPct) / 100.0
+
+	merged := make([]schema.ChunkDoc, 0, len(units))
+	prevIdx := -1
+	for i := range units {
+		ck := units[i]
+		if ck.CKType != "text" {
+			merged = append(merged, cloneChunkDoc(ck))
+			prevIdx = -1
+			continue
+		}
+		tk := intValue(ck.TKNums)
+		if tk <= 0 {
+			tk = tokenizeStr(ck.Text)
+		}
+		if prevIdx < 0 {
+			// First text chunk (or first after a non-text chunk): no prior
+			// text to overlap with.
+			cp := cloneChunkDoc(ck)
+			cp.TKNums = intPtr(tk)
+			merged = append(merged, cp)
+			prevIdx = len(merged) - 1
+			continue
+		}
+		// #17799: an over-budget unit stands alone — it is never merged into
+		// the previous chunk. This matches Python naive_merge and Python
+		// token_chunker (both also stand the over-budget unit alone), so the
+		// Go TokenChunker, Python text path, and Python JSON path share one
+		// contract; the overlap prefix (when overlap>0) is kept like any
+		// other new-chunk boundary.
+		if tk > target {
+			cp := cloneChunkDoc(ck)
+			if overlapPct > 0 && merged[prevIdx].Text != "" {
+				overlap, _ := computeOverlapPrefix(merged[prevIdx].Text, overlapPct)
+				cp.Text = overlap + cp.Text
+				cp.TKNums = intPtr(tokenizeStr(cp.Text))
+			} else {
+				cp.TKNums = intPtr(tk)
+			}
+			merged = append(merged, cp)
+			prevIdx = len(merged) - 1
+			continue
+		}
+		prev := &merged[prevIdx]
+		startNew := float64(intValue(prev.TKNums)) > threshold
+		if !startNew && strategy == schema.MergeUnderCap && intValue(prev.TKNums)+tk > target {
+			startNew = true
+		}
+		if startNew {
+			cp := cloneChunkDoc(ck)
+			if overlapPct > 0 && prev.Text != "" {
+				// Unconditional overlap prefix (mirrors Python JSON). The
+				// prefix is a duplicate of prev's tail, so it carries no new
+				// coordinates — only cur's positions are kept.
+				overlap, _ := computeOverlapPrefix(prev.Text, overlapPct)
+				cp.Text = overlap + cp.Text
+				cp.TKNums = intPtr(tokenizeStr(cp.Text))
+			} else {
+				cp.TKNums = intPtr(tk)
+			}
+			merged = append(merged, cp)
+			prevIdx = len(merged) - 1
+			continue
+		}
+		// Merge into the previous chunk, maintaining the running token sum.
+		if prev.Text != "" && ck.Text != "" {
+			prev.Text = prev.Text + joinSep + ck.Text
+		} else {
+			prev.Text = prev.Text + ck.Text
+		}
+		prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
+		prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
+		prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
+	}
+	return merged
+}
+
+// mergeByTokenSizeFromJSON merges the text units of each upstream item using
+// the unified mergeUnits core (scaled overlap threshold + unconditional
+// overlap prefix), mirroring Python token_chunker.py:_merge_text_chunks_by
+// _token_size via the unified mergeUnits core. Non-text units pass through and
+// reset the merge run.
 //
 // strategy selects the merge strategy (schema.MergeStrategy): MergeOverCap =
-// OVER_CAP (Python's canonical default, a chunk may exceed the target by at
-// most one incoming unit), MergeUnderCap = UNDER_CAP (never exceed the target;
-// a projected overflow starts a fresh chunk). The TokenChunker threads its
-// MergeStrategy() here.
+// OVER_CAP (Python's canonical default), MergeUnderCap = UNDER_CAP (strict
+// no-overflow, Go-only). The TokenChunker threads its MergeStrategy() here.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, strategy schema.MergeStrategy) [][]schema.ChunkDoc {
 	// overlappedPct is a [0,100] percentage. Clamp defensively because this
 	// helper is also exercised directly by tests.
@@ -905,109 +898,15 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 		overlappedPct = 100
 	}
 	for idx := range perItem {
-		chunks := perItem[idx]
-		if len(chunks) == 0 {
+		if len(perItem[idx]) == 0 {
 			continue
 		}
-		var merged []schema.ChunkDoc
-
-		// addTextChunk applies the projected-total merge / overlap-drop
-		// decision for one text unit that already fits chunkTokens.
-		var prevClosed bool
-		addTextChunk := func(ck schema.ChunkDoc) {
-			tk := intValue(ck.TKNums)
-			if tk <= 0 {
-				tk = tokenizeStr(ck.Text)
-				ck.TKNums = intPtr(tk)
-			}
-			if len(merged) == 0 || merged[len(merged)-1].CKType != "text" {
-				// First text chunk, or first text after a non-text chunk:
-				// no prior text to overlap with. A stale OVER_CAP boundary
-				// overflow (prevClosed) from a previous text chunk must be
-				// cleared here, otherwise the next text chunk would be wrongly
-				// forced into a fresh chunk instead of merging with this one.
-				prevClosed = false
-				merged = append(merged, cloneChunkDoc(ck))
-				return
-			}
-			prev := &merged[len(merged)-1]
-			// Empty previous text: assign incoming text directly
-			// (diff Chunker-2.11 / token_chunker.py:236-239).
-			if prev.Text == "" {
-				// Invariant: every path that emits a chunk WITHOUT consuming
-				// the OVER_CAP boundary-overflow flag (prevClosed) must clear
-				// it, so a stale flag can never leak into a later chunk. The
-				// early-return above already does this for the first-text /
-				// after-non-text case; do the same here. (Today this branch is
-				// only reached with an empty prev, and mergeThenClose always
-				// leaves a non-empty prev, so prevClosed cannot actually be
-				// true here — the reset is defensive and keeps the invariant
-				// explicit against future refactors.)
-				prevClosed = false
-				prev.Text = ck.Text
-				prev.TKNums = intPtr(tk)
-				prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
-				prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
-				return
-			}
-			// Previous chunk was closed by an OVER_CAP boundary overflow:
-			// the next unit must start a fresh chunk (with overlap when it
-			// fits). Coordinates stay on the new chunk only.
-			if prevClosed {
-				prevClosed = false
-				cp := cloneChunkDoc(ck)
-				cp.Text = newChunkText(prev.Text, ck.Text, chunkTokens, overlappedPct, tk)
-				// Boundary path: TKNums is the RE-TOKENIZED new chunk text (which
-				// may include an overlap prefix and the "\n" joins), NOT the
-				// running sum used on the merge path above. With overlap > 0 this
-				// mixes the actual text count into the otherwise-running-sum
-				// accounting, so it can diverge from Python; pinned by
-				// TestMergeByTokenSizeFromJSON_TKNumsConsistency.
-				cp.TKNums = intPtr(tokenizeStr(cp.Text))
-				merged = append(merged, cp)
-				return
-			}
-			// Proactive projected-total merge (joined with "\n").
-			out, act := mergeDecision(prev.Text, ck.Text, "\n", chunkTokens, overlappedPct, strategy, intValue(prev.TKNums), tk)
-			switch act {
-			case mergeIntoPrev, mergeThenClose:
-				prev.Text = out
-				// Maintain the running sum of upstream tk_nums so the next
-				// merge decision matches Python's tk_nums += current["tk_nums"].
-				prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
-				prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
-				prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
-				prevClosed = act == mergeThenClose
-			case startNewChunk:
-				cp := cloneChunkDoc(ck)
-				cp.Text = out
-				// Boundary path: TKNums is the RE-TOKENIZED new chunk text, not the
-				// running sum (see the prevClosed branch above for why this is a
-				// deliberate, divergence-prone accounting choice).
-				cp.TKNums = intPtr(tokenizeStr(out))
-				merged = append(merged, cp)
-			}
-		}
-
-		for _, ck := range chunks {
-			if ck.CKType != "text" {
-				merged = append(merged, cloneChunkDoc(ck))
-				continue
-			}
-			tk := intValue(ck.TKNums)
-			if tk <= 0 {
-				tk = tokenizeStr(ck.Text)
-			}
-			if tk <= chunkTokens {
-				addTextChunk(ck)
-				continue
-			}
-			// Over-budget unit: keep it whole. Python's naive_merge never
-			// sub-splits a single item, so emit it as one chunk and let the
-			// model layer truncate it later.
-			addTextChunk(ck)
-		}
-		perItem[idx] = merged
+		// All text units in the sequence are merged with the unified
+		// JSON-strategy core. Non-text units pass through and reset the merge
+		// run (see mergeUnits). Join separator is "\n" to mirror
+		// token_chunker.py:_merge_text_chunks_by_token_size, which joins
+		// adjacent item text with "\n".
+		perItem[idx] = mergeUnits(perItem[idx], chunkTokens, overlappedPct, strategy, "\n")
 	}
 	return perItem
 }

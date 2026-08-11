@@ -28,9 +28,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
+import { useTranslation } from 'react-i18next';
 
 export type SelectWithSearchOptionType = RAGFlowSelectOptionType & {
   description?: ReactNode;
@@ -127,8 +127,8 @@ export const SelectWithSearch = forwardRef<
       triggerClassName,
       allowClear = false,
       disabled = false,
-      placeholder = t('common.selectPlaceholder'),
-      emptyData = t('common.noDataFound'),
+      placeholder,
+      emptyData,
       allowCustomValue = false,
       onNoMatchEnter,
       disableAutoSelectOnEnter = false,
@@ -137,6 +137,9 @@ export const SelectWithSearch = forwardRef<
     },
     ref,
   ) => {
+    const { t } = useTranslation();
+    const resolvedPlaceholder = placeholder ?? t('common.selectPlaceholder');
+    const resolvedEmptyData = emptyData ?? t('common.noDataFound');
     const id = useId();
     const [open, setOpen] = useState<boolean>(false);
     const [value, setValue] = useState<string>('');
@@ -257,7 +260,7 @@ export const SelectWithSearch = forwardRef<
                 {selectLabel || value}
               </span>
             ) : (
-              <span className="text-text-disabled">{placeholder}</span>
+              <span className="text-text-disabled">{resolvedPlaceholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
@@ -296,7 +299,7 @@ export const SelectWithSearch = forwardRef<
             )}
             <CommandList className="mt-2 outline-none">
               <CommandEmpty>
-                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+                <div dangerouslySetInnerHTML={{ __html: resolvedEmptyData }}></div>
               </CommandEmpty>
               {hasCustomSearchValue && (
                 <CommandItem

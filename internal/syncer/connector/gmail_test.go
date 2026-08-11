@@ -51,8 +51,71 @@ func TestGmailConnectorOpenSync(t *testing.T) {
 	if doc.Metadata["external_user_emails"].([]string)[0] != "admin@example.com" {
 		t.Fatalf("external user metadata = %v", doc.Metadata["external_user_emails"])
 	}
+	if doc.Fingerprint == "" {
+		t.Fatalf("fingerprint is empty")
+	}
 	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("NextBatch EOF = %v", err)
+	}
+}
+
+// TestGmailFingerprintStable verifies Gmail fingerprints are stable and content-sensitive.
+func TestGmailFingerprintStable(t *testing.T) {
+	thread := gmailThread{
+		ID: "thread-1",
+		Messages: []gmailMessage{{
+			ID: "msg-1",
+			Payload: gmailPayload{
+				Headers: []gmailHeader{
+					{Name: "From", Value: "Alice Example <alice@example.com>"},
+					{Name: "To", Value: "Bob <bob@example.com>"},
+					{Name: "Cc", Value: "Carol <carol@example.com>"},
+					{Name: "Subject", Value: "Hello"},
+					{Name: "Date", Value: "Fri, 02 Jan 2026 03:04:05 +0000"},
+				},
+				Parts: []gmailPart{{
+					MimeType: "text/plain",
+					Body:     gmailBody{Data: base64.RawURLEncoding.EncodeToString([]byte("Body text"))},
+				}},
+			},
+		}},
+	}
+	doc1, ok := thread.toSourceDocument("admin@example.com")
+	if !ok {
+		t.Fatalf("thread did not produce document")
+	}
+	doc2, ok := thread.toSourceDocument("admin@example.com")
+	if !ok {
+		t.Fatalf("thread did not produce second document")
+	}
+	if doc1.Fingerprint == "" || doc1.Fingerprint != doc2.Fingerprint {
+		t.Fatalf("fingerprint unstable: %q %q", doc1.Fingerprint, doc2.Fingerprint)
+	}
+
+	changed := thread
+	changed.Messages = append([]gmailMessage(nil), thread.Messages...)
+	changed.Messages[0].Payload.Headers = append([]gmailHeader(nil), thread.Messages[0].Payload.Headers...)
+	changed.Messages[0].Payload.Headers[3].Value = "Hello v2"
+	doc3, ok := changed.toSourceDocument("admin@example.com")
+	if !ok {
+		t.Fatalf("changed thread did not produce document")
+	}
+	if doc3.Fingerprint == doc1.Fingerprint {
+		t.Fatalf("fingerprint did not change after subject update")
+	}
+}
+
+// TestGmailOwnersMetadataSorted verifies owner metadata is deterministic.
+func TestGmailOwnersMetadataSorted(t *testing.T) {
+	owners := gmailOwnersMetadata(map[string]string{
+		"carol@example.com": "Carol Example",
+		"alice@example.com": "Alice Example",
+	})
+	if len(owners) != 2 {
+		t.Fatalf("owners len = %d, want 2", len(owners))
+	}
+	if owners[0]["email"] != "alice@example.com" || owners[1]["email"] != "carol@example.com" {
+		t.Fatalf("owners not sorted: %+v", owners)
 	}
 }
 

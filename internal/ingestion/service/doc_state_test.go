@@ -52,7 +52,7 @@ func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string,
 	return nil
 }
 
-func (s *stubDocStateSvc) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
+func (s *stubDocStateSvc) ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
 	s.incrementCalled = true
 	s.gotDocID = docID
 	s.gotKbID = kbID

@@ -1,3 +1,20 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { IAddedModel } from '@/interfaces/database/llm';
 import { getCachedLlmList } from './llm-cache';
 
 // The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
@@ -41,6 +58,30 @@ export function buildModelValue(model: {
   model_provider: string;
 }) {
   return `${model.model_name}@${model.model_instance}@${model.model_provider}`;
+}
+
+/**
+ * Collects every id under which an added model can be referenced — both the
+ * model_id form and the legacy "modelName@instanceName@providerName" form —
+ * so a persisted form value can be checked against the models that still
+ * exist. Mirrors the leaf ids produced by `buildModelTree`.
+ */
+export function buildValidModelIds(
+  allModels: IAddedModel[],
+  modelTypes: string[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const m of allModels) {
+    if (!m.model_type?.some((t) => modelTypes.includes(t))) continue;
+    const legacyId = buildModelValue({
+      model_name: getRealModelName(m.name),
+      model_instance: m.instance_name,
+      model_provider: m.provider_name,
+    });
+    ids.add(m.model_id || legacyId);
+    ids.add(legacyId);
+  }
+  return ids;
 }
 
 /**

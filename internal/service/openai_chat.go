@@ -268,7 +268,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			_ = lfClient.Shutdown(shutdownCtx)
 		}()
@@ -364,7 +364,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 							finalReference = formatChunks(chunks)
 						}
 					}
-					s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 					completionTok = tokenizer.NumTokensFromString(result.Answer)
 					events <- OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
@@ -405,7 +405,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 					}
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 			events <- OpenAIStreamEvent{
 				Kind:             OpenAIEventFinal,
 				FinalAnswer:      strings.TrimSpace(fullContent),
@@ -449,7 +449,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 					resp.Reference = formatChunks(chunks)
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 		}
 
 		contextUsed := 0
@@ -669,7 +669,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 // api/utils/reference_metadata_utils.py.
 // When fields is a non-nil empty slice (explicitly provided as []), enrichment
 // is skipped — matching Python's behavior for {"fields": []}.
-func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedChunk, tenantID string, include bool, fields []string) {
+func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(ctx context.Context, chunks []FormattedChunk, tenantID string, include bool, fields []string) {
 	if !include || len(chunks) == 0 || s == nil || s.pipeline.MetadataSvc == nil {
 		return
 	}
@@ -684,7 +684,7 @@ func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedC
 			"document_metadata": ch.DocumentMetadata,
 		}
 	}
-	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(maps, tenantID, fields)
+	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(ctx, maps, tenantID, fields)
 	for i, m := range maps {
 		if md, ok := m["document_metadata"]; ok {
 			chunks[i].DocumentMetadata = md

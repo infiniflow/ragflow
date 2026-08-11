@@ -18,7 +18,7 @@ func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, pa
 		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
 	}
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRApiURL))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAPIURL))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR requires paddleocr_base_url or PADDLEOCR_BASE_URL")}

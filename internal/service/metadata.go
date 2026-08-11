@@ -105,7 +105,7 @@ type SearchMetadataResponse struct {
 }
 
 // SearchMetadata searches the metadata index with the given parameters
-func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
+func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
 	searchReq := &types.SearchMetadataRequest{
 		TenantID: tenantID,
 		Offset:   0,
@@ -116,7 +116,7 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 		},
 	}
 
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -306,10 +306,10 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 }
 
 // FetchDocMetaByKB fetches document metadata from ES for each KB.
-func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
+func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
 	for kbID, docIDs := range docIDsByKB {
-		result, err := s.SearchMetadata(kbID, tenantID, docIDs, len(docIDs))
+		result, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
 		if err != nil {
 			continue
 		}
@@ -353,7 +353,7 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 
 // EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
 // Combines CollectDocIDsByKB, FetchDocMetaByKB, and AttachDocMetaToChunks.
-func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
+func (s *MetadataService) EnrichChunksWithDocMetadata(ctx context.Context, chunks []map[string]interface{}, tenantID string, metadataFields []string) {
 	if len(chunks) == 0 || s.docEngine == nil {
 		return
 	}
@@ -361,7 +361,7 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 	if len(docIDsByKB) == 0 {
 		return
 	}
-	metaByDoc := s.FetchDocMetaByKB(docIDsByKB, tenantID)
+	metaByDoc := s.FetchDocMetaByKB(ctx, docIDsByKB, tenantID)
 	if len(metaByDoc) == 0 {
 		return
 	}
@@ -493,7 +493,7 @@ func appendDocID(existing interface{}, docID string) []string {
 	return result
 }
 
-// ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON format
+// ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON
 // Format: [4-byte length (little-endian)][JSON][4-byte length][JSON]...
 // Returns the FIRST valid JSON object found
 func ParseLengthPrefixedJSON(data []byte) map[string]interface{} {
