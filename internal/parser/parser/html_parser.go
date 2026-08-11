@@ -324,11 +324,11 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, tableItems *[]map[string]any) {
 			// Keep the table as its full HTML markup (NOT flattened) so
 			// row/column structure survives into the wrapper's text item,
 			// embedding, retrieval, and LLM rendering. This mirrors the
-			// top-level walkHTMLBlocks "table" case and Python's HtmlParser,
-			// and covers tables nested in div/section/article/… (which the
-			// walkHTMLBlocks case never reaches). The structured table item
-			// is collected for the downstream chunker (appended after the
-			// walk by the caller, same as the top-level path).
+			// top-level walkHTMLBlocks "table" case, and covers tables nested
+			// in div/section/article/… (which the walkHTMLBlocks case never
+			// reaches). The structured table item is collected for the
+			// downstream chunker (appended after the walk by the caller, same
+			// as the top-level path).
 			markup := renderTableHTML(n)
 			if strings.TrimSpace(markup) != "" {
 				w.writeText(markup)
@@ -337,12 +337,6 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, tableItems *[]map[string]any) {
 					"doc_type_kwd": "table",
 					"ck_type":      "table",
 				})
-			} else {
-				// Degenerate: render failed; flatten children without markup
-				// so we never drop the cell text entirely.
-				for child := n.FirstChild; child != nil; child = child.NextSibling {
-					walkHTMLLeaf(child, w, tableItems)
-				}
 			}
 			return
 		}
