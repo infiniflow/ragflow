@@ -1577,6 +1577,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       templateDescription: '描述',
       llmForExtraction: '默认提取模型',
       llmForExtractionRequired: '请选择 LLM 模型',
+      llmForExtractionUnavailable: '之前选择的模型已被删除，请重新选择',
       templateKind: '类型',
       templateKindRequired: '请选择类型',
       entitySpecification: 'Entity specification',

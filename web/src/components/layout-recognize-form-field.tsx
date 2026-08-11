@@ -46,10 +46,11 @@ export function LayoutRecognizeFormField({
   const form = useFormContext();
 
   const { t } = useTranslate('knowledgeDetails');
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
-    ownerTenantId,
-  );
+  const {
+    data: allAddedModels,
+    isFetched: modelsFetched,
+    isError: modelsError,
+  } = useFetchAllAddedModels(undefined, ownerTenantId);
 
   const treeData = useMemo(() => {
     const list = optionsWithoutLLM
@@ -118,6 +119,7 @@ export function LayoutRecognizeFormField({
                       testId={testId}
                       showSearch
                       defaultExpandAll
+                      loading={!modelsFetched || modelsError}
                       renderSelected={(node) => {
                         if (!node) return null;
                         return node.label ?? node.title;

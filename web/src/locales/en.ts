@@ -1889,6 +1889,8 @@ Example: Virtual Hosted Style`,
       templateDescription: 'Description',
       llmForExtraction: 'Default Model for extraction',
       llmForExtractionRequired: 'Please select an LLM model',
+      llmForExtractionUnavailable:
+        'The previously selected model has been deleted, please select another one',
       templateKind: 'Kind',
       templateKindRequired: 'Please select a kind',
       entitySpecification: 'Entity specification',
