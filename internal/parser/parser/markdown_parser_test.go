@@ -551,7 +551,7 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	gd := LoadGolden(t, "testdata/markdown.python.golden.json")
+	gd := LoadGoldenDoc(t, "testdata/markdown.python.golden.json")
 
 	// Exclude the doc types the golden declares as accepted divergences
 	// (meta.accepted_divergences) on both sides — no hardcoded list in the test.
