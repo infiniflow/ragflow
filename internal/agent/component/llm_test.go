@@ -466,3 +466,41 @@ func TestFitMessages_FoldsMultipleTextParts(t *testing.T) {
 		t.Fatalf("fitted text totals %d tokens, exceeds budget 2000", total)
 	}
 }
+
+// TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
+// fitting budget in Invoke is the chat model's context window
+// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// canvas max_tokens / the 8192 fallback. A user prompt far larger than the
+// 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
+// through to the invoker untrimmed.
+func TestLLM_Invoke_UsesModelContentLengthBudget(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	// ~40k tokens: > 8192 (the fallback default) but << 128000 (gpt-4o).
+	bigPrompt := strings.Repeat("x ", 20000)
+
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@openai"})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatalf("no user message captured: %+v", stub.captured.Messages)
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; want it preserved under the gpt-4o content_length budget, got head: %.80q", got, userContent)
+	}
+	if !strings.Contains(userContent, bigPrompt) {
+		t.Fatal("user prompt was modified by fitting despite fitting the content_length budget")
+	}
+}
