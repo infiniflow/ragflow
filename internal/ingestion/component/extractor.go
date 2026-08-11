@@ -1398,6 +1398,9 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if fn := getExtractorContextLengthOverride(); fn != nil {
 		return fn(ctx, llmID)
 	}
+	if db == nil {
+		db = dao.DB
+	}
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {
 		return 0
@@ -1420,6 +1423,10 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 // the tenant_model UUID when one is pinned, otherwise the composite
 // "model@provider" id — or "" when the tenant has no default chat model.
 func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) string {
+	if db == nil {
+		// No database to read the tenant's default chat model from.
+		return ""
+	}
 	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
 	if err != nil || tenant == nil {
 		return ""
@@ -1474,6 +1481,21 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	}
 	if len(fitted) == 0 {
 		return nil, errors.New("extractor: message fitting dropped every message; check the chat model context length setting")
+	}
+	// The system prompt carries the extraction contract (output format,
+	// field definitions); sending without it would silently produce
+	// garbage. The proportional trim can empty every system message when
+	// the final user turn alone fills the budget, so require at least one
+	// retained system message.
+	keptSystem := false
+	for _, m := range fitted {
+		if m.Role == eschema.System {
+			keptSystem = true
+			break
+		}
+	}
+	if !keptSystem {
+		return nil, errors.New("extractor: message fitting emptied the system prompt; check the chat model context length setting or reduce the prompt size")
 	}
 	last := fitted[len(fitted)-1]
 	if last.Role != eschema.User || strings.TrimSpace(last.Content) == "" {

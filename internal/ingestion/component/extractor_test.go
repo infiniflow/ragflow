@@ -1964,3 +1964,34 @@ func TestExtractorContextFitBudget(t *testing.T) {
 		t.Fatalf("extractorContextFitBudget(1) = %d, want 1 (clamped to avoid the 8192 Fit default)", got)
 	}
 }
+
+// TestFitExtractorMessages_RejectsSystemPromptLoss verifies the guard that a
+// fitting which empties every system message (leaving only the user turn) is
+// rejected instead of sending an instruction-less extraction request: the
+// system prompt carries the extraction contract, so running without it would
+// silently produce garbage.
+func TestFitExtractorMessages_RejectsSystemPromptLoss(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 300 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	// System dominates (>4x the user) and the user message alone exceeds
+	// the budget: the proportional trim preserves the user turn and empties
+	// the system messages.
+	msgs := []eschema.Message{
+		{Role: eschema.System, Content: strings.Repeat("s ", 5000)},
+		{Role: eschema.User, Content: strings.Repeat("u ", 400)},
+	}
+	if _, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs); err == nil {
+		t.Fatal("expected an error when fitting empties the system prompt")
+	}
+}
+
+// TestExtractorContextLength_NilDBGraceful verifies that resolving the tenant
+// default chat model with no database available (nil db and no override)
+// degrades to 0 (skip fitting) instead of panicking in defaultChatModelRef.
+func TestExtractorContextLength_NilDBGraceful(t *testing.T) {
+	ctx := extractorStateCtx(t, "tenant-1")
+	if got := extractorContextLength(ctx, nil, ""); got != 0 {
+		t.Fatalf("extractorContextLength(nil db, default model) = %d, want 0 (skip fitting)", got)
+	}
+}
