@@ -1413,38 +1413,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if llmID == "" {
 		return 0
 	}
-	return resolveExtractorModelContextLength(ctx, db, llmID)
-}
-
-// resolveExtractorModelContextLength returns the chat model's context window
-// (content_length) for modelRef — a tenant model UUID or a composite
-// "model@provider" reference — or 0 when unknown. It resolves through the DAO
-// and the provider catalog directly (mirroring
-// service.ModelProviderService.ResolveModelContextLength) because
-// internal/ingestion/component cannot import internal/service: the service
-// package's tests import this package to register components, which would
-// create an import cycle in test builds.
-func resolveExtractorModelContextLength(ctx context.Context, db *gorm.DB, modelRef string) int {
-	if db == nil {
-		db = dao.DB
-	}
-	// 1. Tenant model UUID: read content_length from its provider catalog row.
-	if db != nil && modelRef != "" {
-		if obj, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && obj != nil && obj.Status == "active" {
-			if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-				if mdl, err := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContentLength != nil {
-					return *mdl.ContentLength
-				}
-			}
-		}
-	}
-	// 2. Composite "model@provider" reference: look up the provider catalog.
-	if pureName, _, providerName, err := parseCompositeModelName(modelRef); err == nil {
-		if mdl, err := dao.GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContentLength != nil {
-			return *mdl.ContentLength
-		}
-	}
-	return 0
+	return dao.ResolveModelContentLength(ctx, db, llmID, "", "")
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —
