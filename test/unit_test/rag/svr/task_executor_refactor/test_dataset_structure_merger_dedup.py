@@ -102,6 +102,43 @@ async def test_merge_bucket_tolerates_unhashable_chunk_ids_and_descriptions():
     assert row["source_chunk_ids"] == [["bad", "id"], "c1", "c2"]
 
 
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_bucket_dedups_dict_chunks_regardless_of_key_order():
+    """Dict equality ignores key order, so a source_chunk_ids entry that's the
+    same dict with keys reordered must still be treated as a duplicate."""
+    rows = [
+        _entity_row("Widget Co", chunks=[{"a": 1, "b": 2}], doc_id="docA"),
+        _entity_row("Widget Co", chunks=[{"b": 2, "a": 1}, "c2"], doc_id="docA"),
+    ]
+
+    rows_out = await _merge_bucket("tenant1", "kb1", "compile1", None, rows, None)
+
+    assert len(rows_out) == 1
+    assert rows_out[0]["source_chunk_ids"] == [{"a": 1, "b": 2}, "c2"]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_bucket_does_not_collide_description_string_with_malformed_repr():
+    """A genuine string description that happens to equal repr(<malformed
+    description>) must not be discarded as a false duplicate."""
+    malformed = ["not", "a", "string"]
+    lookalike = repr(malformed)
+    rows = [
+        _entity_row("Widget Co", description=malformed, chunks=["c1"], doc_id="docA"),
+        _entity_row("Widget Co", description=lookalike, chunks=["c2"], doc_id="docA"),
+    ]
+
+    rows_out = await _merge_bucket("tenant1", "kb1", "compile1", None, rows, None)
+
+    assert len(rows_out) == 1
+    payload_out = json.loads(rows_out[0]["content_with_weight"])
+    # the longer, genuine description must win — it must not have been
+    # dropped because its repr() collided with the malformed value's key
+    assert payload_out["description"] == lookalike
+
+
 def _relation_row(*, from_="apple", to="iphone", type_="produces", chunks=None, doc_id=None, use_row_level_fallback=False) -> dict:
     if use_row_level_fallback:
         # "type" stays in the payload (no row-level fallback exists for it);
@@ -139,6 +176,24 @@ async def test_merge_relations_dedups_chunks_and_docs_per_group():
     ipad = by_target["ipad"]
     assert ipad["source_chunk_ids"] == ["c5"]
     assert ipad["doc_ids_kwd"] == ["docC"]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_relations_dedups_dict_chunks_regardless_of_key_order():
+    """Malformed source_chunk_ids/doc_id entries that are the same dict with
+    keys reordered must still be treated as duplicates in relation merging."""
+    rows = [
+        _relation_row(chunks=[{"a": 1, "b": 2}], doc_id={"x": 1, "y": 2}),
+        _relation_row(chunks=[{"b": 2, "a": 1}, "c2"], doc_id={"y": 2, "x": 1}),
+    ]
+
+    rows_out = await _merge_relations("tenant1", "kb1", "compile1", None, rows, None)
+
+    assert len(rows_out) == 1
+    row = rows_out[0]
+    assert row["source_chunk_ids"] == [{"a": 1, "b": 2}, "c2"]
+    assert row["doc_ids_kwd"] == [{"x": 1, "y": 2}]
 
 
 def _fake_get_fields(res, fields):
@@ -218,3 +273,36 @@ async def test_cleanup_deleted_docs_tolerates_unhashable_doc_ids_kwd_entries():
     args = update_calls[0].args
     assert args[0] == {"id": ["entity1"]}
     assert args[1] == {"doc_ids_kwd": [["bad", "entry"], "docC"]}
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_cleanup_deleted_docs_matches_reordered_malformed_doc_id():
+    """A deleted marker doc_id that's a dict must still match a doc_ids_kwd
+    entry holding the same dict with keys in a different order."""
+    pass1_rows = [{"id": "meta1", "deleted_doc_id": {"a": 1, "b": 2}}]
+    pass2_rows = [
+        {"id": "entity1", "doc_ids_kwd": [{"b": 2, "a": 1}, "docC"]},
+    ]
+
+    mock_conn = MagicMock()
+    mock_conn.index_exist.return_value = True
+    mock_conn.search.side_effect = [pass1_rows, pass2_rows]
+    mock_conn.get_fields.side_effect = _fake_get_fields
+
+    mock_settings = MagicMock()
+    mock_settings.docStoreConn = mock_conn
+
+    with (
+        patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings", mock_settings),
+        patch("rag.svr.task_executor_refactor.dataset_structure_merger._index_delete", new_callable=AsyncMock),
+    ):
+        ok = await _cleanup_deleted_docs("tenant1", "kb1", "compile1", None)
+
+    assert ok is True
+    update_calls = mock_conn.update.call_args_list
+    assert len(update_calls) == 1
+    args = update_calls[0].args
+    assert args[0] == {"id": ["entity1"]}
+    # the reordered dict must be recognized as the deleted doc and removed
+    assert args[1] == {"doc_ids_kwd": ["docC"]}

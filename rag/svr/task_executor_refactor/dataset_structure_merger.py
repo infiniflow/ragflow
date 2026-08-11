@@ -97,14 +97,49 @@ def is_structure_merge_task(task_type: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _hashable_key(value):
-    """Return a value usable as a set/dict key, falling back to repr() for
-    unhashable (malformed) provenance values instead of raising TypeError."""
+class _CanonKey:
+    """Wraps a canonicalized structure so it can never collide with an
+    unrelated plain hashable value (e.g. a string equal to another value's
+    repr())."""
+
+    __slots__ = ("_key",)
+
+    def __init__(self, key):
+        self._key = key
+
+    def __eq__(self, other):
+        return isinstance(other, _CanonKey) and self._key == other._key
+
+    def __hash__(self):
+        return hash(self._key)
+
+
+def _canonicalize(value):
+    """Recursively convert JSON-like unhashable values (dict/list/set) into an
+    equality-preserving hashable form: dict equality ignores key order, list
+    equality doesn't."""
+    if isinstance(value, dict):
+        return ("__dict__", frozenset((k, _canonicalize(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return ("__list__", tuple(_canonicalize(v) for v in value))
+    if isinstance(value, set):
+        return ("__set__", frozenset(_canonicalize(v) for v in value))
     try:
         hash(value)
         return value
     except TypeError:
-        return repr(value)
+        return ("__repr__", repr(value))
+
+
+def _hashable_key(value):
+    """Return a value usable as a set/dict key, falling back to a recursive
+    canonicalization for unhashable (malformed) provenance values instead of
+    raising TypeError."""
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return _CanonKey(_canonicalize(value))
 
 
 def _index_name(tenant_id: str) -> str:

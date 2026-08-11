@@ -98,11 +98,61 @@ async def test_merge_round_tolerates_unhashable_chunk_and_doc_ids():
 
     await retrieval._async_update_chunk_info(chunk_info, kbinfos)
 
-    # the malformed existing entries are deduped (repr-based key), new valid ones are appended
+    # the malformed existing entries are deduped (canonical-key based), new valid ones are appended
     assert len(chunk_info["chunks"]) == 2
     assert chunk_info["chunks"][1]["chunk_id"] == "c2"
     assert len(chunk_info["doc_aggs"]) == 2
     assert chunk_info["doc_aggs"][1]["doc_id"] == "d2"
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_round_dedups_dicts_regardless_of_key_order():
+    """dict equality ignores key order, so a dict doc_id/chunk_id with the same
+    keys/values in a different order must still be treated as a duplicate."""
+    retrieval = _retrieval()
+    chunk_info = {
+        "total": 1,
+        "chunks": [{"chunk_id": {"a": 1, "b": 2}, "content_with_weight": "c1"}],
+        "doc_aggs": [],
+    }
+    kbinfos = {
+        "total": 1,
+        # same dict, keys reordered -> must dedup, not be treated as new
+        "chunks": [{"chunk_id": {"b": 2, "a": 1}, "content_with_weight": "dup"}, _chunk("c2")],
+        "doc_aggs": [],
+    }
+
+    await retrieval._async_update_chunk_info(chunk_info, kbinfos)
+
+    assert len(chunk_info["chunks"]) == 2
+    assert chunk_info["chunks"][1]["chunk_id"] == "c2"
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_round_does_not_collide_string_with_malformed_repr():
+    """A real string chunk_id that happens to equal repr(<malformed value>)
+    must not be treated as a duplicate of that malformed value."""
+    retrieval = _retrieval()
+    malformed = ["nested", "id"]
+    lookalike = repr(malformed)  # e.g. "['nested', 'id']"
+    chunk_info = {
+        "total": 1,
+        "chunks": [{"chunk_id": malformed, "content_with_weight": "c1"}],
+        "doc_aggs": [],
+    }
+    kbinfos = {
+        "total": 1,
+        "chunks": [{"chunk_id": lookalike, "content_with_weight": "c2"}],
+        "doc_aggs": [],
+    }
+
+    await retrieval._async_update_chunk_info(chunk_info, kbinfos)
+
+    # both must be kept -> they are not the same chunk despite the repr() collision
+    assert len(chunk_info["chunks"]) == 2
+    assert chunk_info["chunks"][1]["chunk_id"] == lookalike
 
 
 @pytest.mark.p1
