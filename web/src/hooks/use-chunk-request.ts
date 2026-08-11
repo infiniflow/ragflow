@@ -176,7 +176,7 @@ export const useFetchNextChunkList = (
         kb_id: knowledgeId,
         doc_id: documentId,
         page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length ? 100 : Math.min(pagination.pageSize, 100),
+        size: chunkIds?.length ? chunkIds.length : Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
         chunk_ids: chunkIds,
