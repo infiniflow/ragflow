@@ -357,6 +357,8 @@ class TaskHandler:
             if ctx.tenant_embd_id:
                 try:
                     embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
+                    if not embd_model_config.get("api_key") and task_embedding_id:
+                        embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
                 except LookupError:
                     embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             elif task_embedding_id:

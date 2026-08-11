@@ -1,0 +1,81 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from rag.svr.task_executor_refactor.task_handler import TaskHandler
+
+
+@pytest.mark.asyncio
+async def test_bind_embedding_model_reresolves_empty_stale_tenant_model(task_context):
+    task_context.raw_task["tenant_embd_id"] = "stale-instance"
+    task_context.raw_task["embd_id"] = "current-embedding@provider"
+    handler = TaskHandler(task_context)
+    embedding_model = MagicMock()
+    embedding_model.encode.return_value = ([[1.0, 2.0]], 1)
+
+    with (
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.get_model_config_by_id",
+            return_value={"api_key": ""},
+        ),
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.resolve_model_config",
+            return_value={"api_key": "current-key"},
+        ) as resolve_model_config,
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.LLMBundle",
+            return_value=embedding_model,
+        ) as llm_bundle,
+    ):
+        result = await handler._bind_embedding_model()
+
+    resolve_model_config.assert_called_once_with(
+        task_context.tenant_id,
+        "embedding",
+        "current-embedding@provider",
+    )
+    llm_bundle.assert_called_once_with(
+        task_context.tenant_id,
+        {"api_key": "current-key"},
+        lang=task_context.language,
+    )
+    assert result == (embedding_model, 2)
+
+
+@pytest.mark.asyncio
+async def test_bind_embedding_model_keeps_nonempty_tenant_model(task_context):
+    task_context.raw_task["tenant_embd_id"] = "current-instance"
+    handler = TaskHandler(task_context)
+    embedding_model = MagicMock()
+    embedding_model.encode.return_value = ([[1.0]], 1)
+
+    with (
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.get_model_config_by_id",
+            return_value={"api_key": "current-key"},
+        ),
+        patch("rag.svr.task_executor_refactor.task_handler.resolve_model_config") as resolve_model_config,
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.LLMBundle",
+            return_value=embedding_model,
+        ),
+    ):
+        result = await handler._bind_embedding_model()
+
+    resolve_model_config.assert_not_called()
+    assert result == (embedding_model, 1)
