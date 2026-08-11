@@ -120,10 +120,11 @@ func loadLabeledPages(t *testing.T) []labeledPage {
 // is the single source of truth, also used by the Python reference). Hard
 // pages were labeled from the page coverage profile + strip map in
 // tool-py/analyze_hardcases.py, tagged H (high) / L (low) confidence in
-// truth_note. Reference (Python) numbers on the original comfortable 18:
-// KMeans 11.1%, gap 61.1%, combined 94.4% — but those were the tuned set, so
-// the per-page / single / double / ACC lines below are the real signal, and
-// the only asserted contract is "combined must not regress gap by >5pt".
+// truth_note. The 18-page labeled sample that motivated this detector reported
+// KMeans 11.1% / gap 61.1% accuracy, but that sample was hand-picked and must
+// not be used as a target. The per-page / single / double / ACC lines below
+// are the real signal, and the only asserted contract is "combined must not
+// regress gap by >5pt".
 func TestAssignColumnCombined_Labeled(t *testing.T) {
 	charspyDir := "../testdata/charspy"
 	if _, err := os.Stat(charspyDir); err != nil {
