@@ -1,0 +1,22 @@
+[
+  {
+    "text": "# 产品说明 Product Guide",
+    "doc_type_kwd": "text"
+  },
+  {
+    "text": "第一步：打开应用。第二步：点击设置按钮完成配置。",
+    "doc_type_kwd": "text"
+  },
+  {
+    "text": "<table>\n<tr><th>Name</th><th>Age</th></tr>\n<tr><td>Alice</td><td>30</td></tr>\n<tr><td>Bob</td><td>25</td></tr>\n</table>",
+    "doc_type_kwd": "text"
+  },
+  {
+    "text": "## 使用条款 Terms",
+    "doc_type_kwd": "text"
+  },
+  {
+    "text": "欢迎使用我们的智能助手，它能帮您快速处理任务。",
+    "doc_type_kwd": "text"
+  }
+]
