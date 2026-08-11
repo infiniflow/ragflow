@@ -1,20 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DeepDoc 批量文档解析脚本 - 重构版
-基于 RAGFlow 官方解析调度机制，充分发挥各解析器功能
+DeepDoc 批量文档解析脚本
+基于 RAGFlow 官方解析调度机制，充分发挥各解析器功能。
 
-改进点：
-1. 使用 RAGFlowPdfParser.parse_into_bboxes() 替代 __call__()，支持回调和分页
-2. 使用 PlainParser 作为 PDF 纯文本备选
-3. 正确调用各格式解析器（Docx, Excel, Ppt, Html, Markdown, Epub, Txt）
-4. 支持输出格式：json / markdown / text / html
-5. 更好的错误处理和日志记录
-6. 支持 xgboost 模型降级处理（不阻断解析）
+PDF 解析流水线（parse_into_bboxes 内部）：
+  1. OCR / pdfplumber 文本提取（乱码回退 OCR）
+  2. LayoutRecognizer (ONNX) 版面分析 → layout_type + layoutno
+  3. TableStructureRecognizer 表格检测与结构识别 → HTML
+  4. _text_merge          水平合并（同行 + 同 layoutno + 同 col_id）
+  5. _concat_downward     xgboost 智能垂直拼接（核心文本拼接）
+  6. _naive_vertical_merge 规则兜底合并
+  7. _extract_table_figure 提取表格/图表图片 + OCR 内部文字
+  8. crop                  为每个 block 截图
+
+本脚本在 parse_into_bboxes 返回后额外做：
+  - 先提取 figure/table 图片到 images/ 目录（避免重复保存）
+  - 再序列化输出为 json / markdown / text / html
+  - 可选：移除目录页、移除页眉页脚、多列重排、展平媒体
+
+已修复的依赖兼容性问题（RAGFlow _concat_downward 被禁用时期的 bit rot）：
+  - rag_tokenizer.tag() 返回 bool → pdf_parser.py:176-177
+  - datrie.Trie 缺失 has_keys_with_prefix → rag_tokenizer.py monkey-patch
+  - 空字符串取 [-1] IndexError → pdf_parser.py:1157
 """
 
 import os
 import sys
+import re
 import argparse
 import traceback
 import json
@@ -115,7 +128,8 @@ class DeepDocDocumentProcessor:
                  zoomin=3, return_html=True, from_page=0, to_page=100000,
                  parse_method="deepdoc", lang="Chinese",
                  remove_toc=False, remove_header_footer=False,
-                 flatten_media=False, enable_multi_column=False):
+                 flatten_media=False, enable_multi_column=False,
+                 save_all_images=False, extract_figures=True):
         """
         初始化处理器
 
@@ -132,6 +146,8 @@ class DeepDocDocumentProcessor:
             remove_header_footer: 是否移除页眉页脚
             flatten_media: 是否将图片/表格展平为文本
             enable_multi_column: 是否启用多列排版重排
+            save_all_images: 是否保存所有文本块的截图（默认 False，只保存 figure/table 图片）
+            extract_figures: 是否将 PDF 中的图片/图表单独提取到 images 目录（默认 True）
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -146,6 +162,8 @@ class DeepDocDocumentProcessor:
         self.remove_header_footer = remove_header_footer
         self.flatten_media = flatten_media
         self.enable_multi_column = enable_multi_column
+        self.save_all_images = save_all_images
+        self.extract_figures = extract_figures
 
         # 初始化解析器缓存
         self._parsers = {}
@@ -191,23 +209,44 @@ class DeepDocDocumentProcessor:
             else:
                 return value
 
+        # 需要保存图片的 layout_type（仅在 --save_all_images 时保存文本块截图）
+        IMAGE_LAYOUT_TYPES = {"figure", "table", "figure caption", "table caption"}
+        text_images_saved = 0
+        text_images_skipped = 0
+
         # 序列化前处理
         serializable_data = []
         for idx, item in enumerate(data):
             item_copy = {}
             for key, value in item.items():
-                # 处理 image 字段（PIL Image 对象）
-                if key == "image" and value is not None and hasattr(value, 'save'):
-                    img_path = output_path / f"{file_stem}_image_{idx}.png"
-                    try:
-                        value.save(img_path)
-                        item_copy["image_path"] = str(img_path.name)
-                    except Exception as e:
-                        logger.warning(f"保存图片失败: {e}")
+                if key == "image":
+                    # 情况1: _extract_figures_to_dir 已将 PIL Image 替换为字符串路径
+                    if isinstance(value, str):
+                        item_copy["image_path"] = value
+                    # 情况2: 仍是 PIL Image 对象（仅 --save_all_images 时保存文本块截图）
+                    elif value is not None and hasattr(value, 'save'):
+                        layout_type = item.get("layout_type", "text")
+                        if self.save_all_images and layout_type not in IMAGE_LAYOUT_TYPES:
+                            img_path = output_path / f"{file_stem}_image_{idx}.png"
+                            try:
+                                value.save(img_path)
+                                item_copy["image_path"] = str(img_path.name)
+                                text_images_saved += 1
+                            except Exception as e:
+                                logger.warning(f"保存图片失败: {e}")
+                        else:
+                            item_copy["image_path"] = None
+                            if hasattr(value, 'save'):
+                                text_images_skipped += 1
+                    else:
+                        item_copy["image_path"] = None
                 else:
                     item_copy[key] = convert_value(value)
 
             serializable_data.append(item_copy)
+
+        if text_images_skipped > 0:
+            logger.info(f"  - 跳过 {text_images_skipped} 个文本块截图（使用 --save_all_images 保存全部）")
 
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(serializable_data, f, ensure_ascii=False, indent=2)
@@ -290,6 +329,133 @@ class DeepDocDocumentProcessor:
             saved.append(self._save_html_output(data, output_path, file_stem))
         return saved
 
+    def _extract_figures_to_dir(self, data: List[Dict], output_dir: Path, file_stem: str):
+        """
+        将解析结果中的图表（figure/table）单独提取到 images 子目录。
+        这是用户通常最关心的内容——原始文档中的彩色图片、图表等。
+
+        Args:
+            data: bboxes 列表
+            output_dir: 输出根目录
+            file_stem: 文件名（不含扩展名）
+
+        Returns:
+            saved image paths list, statistics dict
+        """
+        images_dir = output_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        saved = []
+        stats = {"figure": 0, "table": 0, "figure_caption": 0, "table_caption": 0, "other": 0}
+
+        for idx, item in enumerate(data):
+            layout_type = item.get("layout_type", "text")
+            image = item.get("image")
+
+            if image is None or not hasattr(image, 'save'):
+                continue
+
+            # 只提取有意义的图片类型
+            if layout_type in ("figure", "table", "figure caption", "table caption"):
+                # 命名规则：类型_页码_序号.png
+                page = item.get("page_number", 0)
+                img_name = f"{file_stem}_{layout_type.replace(' ', '_')}_p{page}_{idx:03d}.png"
+                img_path = images_dir / img_name
+                try:
+                    image.save(img_path)
+                    saved.append(str(img_path))
+                    # 将 PIL Image 替换为相对路径字符串，后续 JSON 输出直接引用
+                    item["image"] = f"images/{img_name}"
+                    if layout_type in stats:
+                        stats[layout_type] += 1
+                    else:
+                        stats["other"] += 1
+                    logger.debug(f"  提取图片: {img_name}")
+                except Exception as e:
+                    logger.warning(f"  提取图片失败 [{layout_type}] #{idx}: {e}")
+            else:
+                # 非图表类型（text/title 等），丢弃 PIL Image 避免后续重复保存
+                item["image"] = None
+
+        if saved:
+            logger.info(f"\n图片提取统计:")
+            logger.info(f"  - 图表 (figure): {stats['figure']} 个")
+            logger.info(f"  - 表格 (table):  {stats['table']} 个")
+            logger.info(f"  - 图标题:        {stats['figure_caption']} 个")
+            logger.info(f"  - 表标题:        {stats['table_caption']} 个")
+            logger.info(f"  - 总计:          {len(saved)} 个")
+            logger.info(f"  - 保存位置:      {images_dir}")
+        else:
+            logger.info(f"\n未检测到可提取的图表（layout_type 中无 figure/table 类型）")
+            logger.info(f"提示: 版面分析模型可能未检测到图片。尝试降低检测阈值或检查 PDF 质量。")
+
+        return saved, stats
+
+    def _merge_by_layoutno(self, bboxes: List[Dict]) -> List[Dict]:
+        """
+        将相同 layoutno 的文本块合并为完整段落。
+
+        RAGFlowPdfParser 的 _concat_downward (xgboost) 已重新启用，
+        本方法作为可选的兜底策略：按 layoutno 强制合并相邻的 text/title 块。
+        默认不调用，如需启用，在 parse_pdf_deepdoc 中取消注释即可。
+
+        Args:
+            bboxes: 原始 bboxes 列表
+
+        Returns:
+            合并后的 bboxes 列表
+        """
+        if not bboxes:
+            return bboxes
+
+        merged = []
+        # 只合并这些类型的块
+        MERGEABLE_TYPES = {"text", "title"}
+
+        for b in bboxes:
+            lt = b.get("layout_type", "text")
+            lno = b.get("layoutno", "")
+
+            # 不可合并的类型直接追加
+            if lt not in MERGEABLE_TYPES or not lno:
+                merged.append(b)
+                continue
+
+            # 尝试与上一个块合并：同 page、同 layoutno、同 col_id、同类型
+            if merged:
+                prev = merged[-1]
+                prev_lt = prev.get("layout_type", "text")
+                prev_lno = prev.get("layoutno", "")
+
+                if (prev_lt == lt
+                        and prev_lno == lno
+                        and prev.get("page_number") == b.get("page_number")
+                        and prev.get("col_id") == b.get("col_id")):
+                    # 合并文本
+                    prev_text = prev.get("text", "").strip()
+                    curr_text = b.get("text", "").strip()
+                    if prev_text and curr_text:
+                        # 判断是否需要加空格（中英文混排）
+                        if (re.match(r"[a-zA-Z0-9]$", prev_text[-1])
+                                and re.match(r"^[a-zA-Z0-9]", curr_text[0])):
+                            prev["text"] = prev_text + " " + curr_text
+                        else:
+                            prev["text"] = prev_text + curr_text
+                    else:
+                        prev["text"] = prev_text + curr_text
+                    # 扩展边界
+                    prev["x0"] = min(prev["x0"], b["x0"])
+                    prev["x1"] = max(prev["x1"], b["x1"])
+                    prev["bottom"] = b["bottom"]
+                    continue
+
+            merged.append(b)
+
+        merged_count = len(bboxes) - len(merged)
+        if merged_count > 0:
+            logger.info(f"  - layoutno 合并: {merged_count} 个文本块 → 段落已整合")
+        return merged
+
     def parse_pdf_deepdoc(self, pdf_path, output_dir=None):
         """
         使用 RAGFlowPdfParser.parse_into_bboxes() 解析 PDF
@@ -352,6 +518,11 @@ class DeepDocDocumentProcessor:
                     for b in bboxes:
                         b["doc_type_kwd"] = "text"
 
+                # （可选）按 layoutno 合并同一段落的文本块
+                # xgboost _concat_downward 已重新启用，此兜底策略默认关闭
+                # 如需启用，取消下一行注释：
+                # bboxes = self._merge_by_layoutno(bboxes)
+
                 logger.info(f"\n解析完成！")
                 logger.info(f"  - 文本块: {len(bboxes)} 个")
 
@@ -363,8 +534,18 @@ class DeepDocDocumentProcessor:
                 for lt, count in sorted(layout_counts.items()):
                     logger.info(f"  - {lt}: {count} 个")
 
-                # 保存输出
+                # 先提取图表图片到 images/ 目录，并将 bbox 中的 PIL Image
+                # 替换为相对路径字符串，后续 JSON 输出直接引用，避免重复保存
+                if self.extract_figures:
+                    fig_paths, fig_stats = self._extract_figures_to_dir(bboxes, output_dir, file_stem)
+                    layout_counts["_extracted_images"] = len(fig_paths)
+                    layout_counts["_figure_stats"] = fig_stats
+                else:
+                    fig_paths = []
+
+                # 保存输出（image_path 直接引用 images/ 中的文件，不再重复保存）
                 saved = self._save_output(bboxes, output_dir, file_stem)
+                saved.extend(fig_paths)
 
                 # 保存大纲信息
                 if parser.outlines:
@@ -802,11 +983,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 解析单个 PDF（使用 DeepDoc 完整流程）
+  # 解析单个 PDF（自动提取图表到 images/ 目录）
   python yklstartdeepdoc.py --inputs=document.pdf
 
   # 批量解析文件夹
   python yklstartdeepdoc.py --inputs=./my_documents/
+
+  # 不单独提取图表图片
+  python yklstartdeepdoc.py --inputs=./pdfs/ --no_extract_figures
+
+  # 保存所有文本块截图（默认只保存 figure/table 图片）
+  python yklstartdeepdoc.py --inputs=./docs/ --save_all_images
 
   # 使用纯文本模式解析 PDF（更快，无 OCR）
   python yklstartdeepdoc.py --inputs=./pdfs/ --parse_method=plain_text
@@ -816,6 +1003,18 @@ def main():
 
   # 启用多列排版重排
   python yklstartdeepdoc.py --inputs=./papers/ --enable_multi_column
+
+输出目录结构:
+  deepdoc_outputs/<文件名>/
+  ├── <文件名>.json          # 结构化解析结果
+  ├── <文件名>.md            # Markdown 格式
+  ├── <文件名>.txt           # 纯文本
+  ├── metadata.json           # 解析统计
+  ├── outlines.json           # PDF 大纲/书签
+  └── images/                 # 提取的图表图片（单独的文件夹）
+      ├── xxx_figure_p1_000.png
+      ├── xxx_table_p3_015.png
+      └── ...
 
 支持的格式:
   PDF (.pdf), Word (.docx), Excel (.xlsx, .xls, .csv),
@@ -852,6 +1051,10 @@ def main():
                        help="将图片/表格展平为文本")
     parser.add_argument("--enable_multi_column", action="store_true",
                        help="启用多列排版重排")
+    parser.add_argument("--save_all_images", action="store_true",
+                       help="保存所有文本块的截图（默认只保存 figure/table 类型的图片）")
+    parser.add_argument("--no_extract_figures", action="store_true",
+                       help="不单独提取图表图片到 images 目录")
     parser.add_argument("--verbose", "-v", action="store_true",
                        help="显示详细日志")
 
@@ -875,6 +1078,8 @@ def main():
         remove_header_footer=args.remove_header_footer,
         flatten_media=args.flatten_media,
         enable_multi_column=args.enable_multi_column,
+        save_all_images=args.save_all_images,
+        extract_figures=not args.no_extract_figures,
     )
 
     # 执行批量处理

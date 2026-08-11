@@ -173,8 +173,8 @@ class RAGFlowPdfParser:
             tks_down[-1] == tks_up[-1] if tks_down and tks_up else False,
             max(down["in_row"], up["in_row"]),
             abs(down["in_row"] - up["in_row"]),
-            len(tks_down) == 1 and rag_tokenizer.tag(tks_down[0]).find("n") >= 0,
-            len(tks_up) == 1 and rag_tokenizer.tag(tks_up[0]).find("n") >= 0,
+            len(tks_down) == 1 and (lambda t: isinstance(t, str) and t.find("n") >= 0)(rag_tokenizer.tag(tks_down[0])),
+            len(tks_up) == 1 and (lambda t: isinstance(t, str) and t.find("n") >= 0)(rag_tokenizer.tag(tks_up[0])),
         ]
         return fea
 
@@ -1115,7 +1115,6 @@ class RAGFlowPdfParser:
 
     def _concat_downward(self, concat_between_pages=True):
         self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
-        return
 
         # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
@@ -1155,7 +1154,7 @@ class RAGFlowPdfParser:
                     if not concat_between_pages and down["page_number"] > up["page_number"]:
                         break
 
-                    if up.get("R", "") != down.get("R", "") and up["text"][-1] != "，":
+                    if up.get("R", "") != down.get("R", "") and up["text"] and up["text"][-1] != "，":
                         i += 1
                         continue
 
