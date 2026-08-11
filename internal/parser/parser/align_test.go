@@ -390,3 +390,45 @@ func HTMLAlignOptions() AlignOptions {
 		ItemKey: "text",
 	}
 }
+
+// TestParseGolden locks the two tolerated golden formats (legacy bare array
+// and {meta, items}) plus the corrupt-input failure path, so future format
+// evolution of the golden files cannot silently change parse behavior.
+func TestParseGolden(t *testing.T) {
+	// Legacy bare-array format: parsed as the items list, no meta.
+	legacy := []byte(`[{"text":"hello"},{"text":"world"}]`)
+	doc := parseGolden(t, legacy)
+	if doc.Meta != nil {
+		t.Fatalf("legacy: want nil meta, got %v", doc.Meta)
+	}
+	if len(doc.Items) != 2 {
+		t.Fatalf("legacy: want 2 items, got %d", len(doc.Items))
+	}
+	if got := doc.Items[0]["text"]; got != "hello" {
+		t.Fatalf("legacy: item0 text = %v, want hello", got)
+	}
+
+	// {meta, items} format: meta preserved, items parsed.
+	meta := `{"meta":{"generator":"py","sample":"in.txt","accepted_divergences":["table"]},"items":[{"text":"a"},{"text":"b"}]}`
+	doc2 := parseGolden(t, []byte(meta))
+	if doc2.Meta == nil {
+		t.Fatalf("{meta,items}: want non-nil meta")
+	}
+	if got := doc2.Meta["generator"]; got != "py" {
+		t.Fatalf("{meta,items}: meta.generator = %v, want py", got)
+	}
+	if len(doc2.Items) != 2 {
+		t.Fatalf("{meta,items}: want 2 items, got %d", len(doc2.Items))
+	}
+	if got := doc2.Items[1]["text"]; got != "b" {
+		t.Fatalf("{meta,items}: item1 text = %v, want b", got)
+	}
+
+	// Corrupt input must fatal: a broken golden should fail loudly, not
+	// silently fall through to an empty baseline.
+	if ok := t.Run("corrupt", func(t *testing.T) {
+		parseGolden(t, []byte(`{not valid json`))
+	}); ok {
+		t.Fatalf("corrupt input: expected parseGolden to fail, but it returned")
+	}
+}
