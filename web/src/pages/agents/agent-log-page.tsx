@@ -20,7 +20,7 @@ import {
 } from '@/interfaces/database/agent';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { DateRange } from '../../components/originui/calendar/index';
@@ -174,21 +174,24 @@ const AgentLogPage: React.FC = () => {
     });
   };
 
-  const handleSearch = (overrides: Partial<typeof searchParams> = {}) => {
-    setSearchParams((pre) => {
-      return {
-        ...pre,
-        from_date: currentDate.from as Date,
-        to_date: currentDate.to as Date,
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        orderby: sortConfig?.orderby || '',
-        desc: sortConfig?.desc as boolean,
-        keywords: keywords,
-        ...overrides,
-      };
-    });
-  };
+  const handleSearch = useCallback(
+    (overrides: Partial<typeof searchParams> = {}) => {
+      setSearchParams((pre) => {
+        return {
+          ...pre,
+          from_date: currentDate.from as Date,
+          to_date: currentDate.to as Date,
+          page: pagination.current,
+          page_size: pagination.pageSize,
+          orderby: sortConfig?.orderby || '',
+          desc: sortConfig?.desc as boolean,
+          keywords: keywords,
+          ...overrides,
+        };
+      });
+    },
+    [currentDate, pagination, sortConfig, keywords],
+  );
 
   const handleClickSearch = () => {
     const sameParams =
@@ -206,7 +209,7 @@ const AgentLogPage: React.FC = () => {
   };
   useEffect(() => {
     handleSearch();
-  }, [pagination.current, pagination.pageSize, sortConfig]);
+  }, [pagination.current, pagination.pageSize, sortConfig, handleSearch]);
   // handle sort
   const handleSort = (key: string) => {
     let desc = false;
@@ -217,7 +220,7 @@ const AgentLogPage: React.FC = () => {
   };
 
   const handleReset = () => {
-    setSearchParams(init);
+    setSearchParams({ ...init, page_size: pagination.pageSize });
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
   };
@@ -316,7 +319,7 @@ const AgentLogPage: React.FC = () => {
         <div className="border rounded-md overflow-auto">
           {/* <div className="max-h-[500px] overflow-y-auto w-full"> */}
           <Table rootClassName="max-h-[calc(100vh-200px)]">
-            <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+            <TableHeader className="sticky top-0 bg-bg-title z-10 shadow-sm">
               <TableRow>
                 {columns.map((column) => (
                   <TableHead
