@@ -33,6 +33,29 @@ func TestResolveModelContentLength_CompositeReference(t *testing.T) {
 	}
 }
 
+// TestResolveModelContentLength_CompositeReferenceThreePart resolves
+// content_length for a composite "model@instance@provider" reference — the
+// instance-bearing form used by tenant model instances — from the provider
+// catalog.
+func TestResolveModelContentLength_CompositeReferenceThreePart(t *testing.T) {
+	if got := ResolveModelContentLength(t.Context(), nil, "gpt-4o@default@openai", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@default@openai) = %d, want 128000", got)
+	}
+}
+
+// TestResolveModelContentLength_TooManyParts documents that a reference with
+// more than two "@" separators is not treated as a composite ref: it falls
+// through to the driver+modelName fallback, and to 0 when no fallback is
+// supplied.
+func TestResolveModelContentLength_TooManyParts(t *testing.T) {
+	if got := ResolveModelContentLength(t.Context(), nil, "a@b@c@d", "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(a@b@c@d, openai, gpt-4o) = %d, want 128000 (driver fallback)", got)
+	}
+	if got := ResolveModelContentLength(t.Context(), nil, "a@b@c@d", "", ""); got != 0 {
+		t.Fatalf("ResolveModelContentLength(a@b@c@d) = %d, want 0", got)
+	}
+}
+
 // TestResolveModelContentLength_DriverModelFallback resolves content_length
 // from the resolved driver + bare model name, which needs no database.
 func TestResolveModelContentLength_DriverModelFallback(t *testing.T) {
