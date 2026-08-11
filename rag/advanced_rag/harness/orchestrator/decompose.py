@@ -30,7 +30,16 @@ dates, names, or relationships discovered in the evidence and move closer to the
 original question.
 Distinguish final-answer entities from bridge entities. If the passages identify
 only a clue node in the chain, keep the claim incomplete and search for the
-remaining relation needed by the original question. Return JSON only."""
+remaining relation needed by the original question.
+Each `next_queries` entry MUST be a retrieval-boosted query: in addition to the core
+terms, actively fold in SYNONYMS and variants so a single search recalls more of the
+corpus:
+- entity synonyms/aliases: "Usain Bolt" -> "Usain Bolt, sprinter, 100 m record holder";
+- DATE/TIME synonyms: "1994" -> "1994, 66th Academy Awards, mid-1990s"; "2011-02-05" ->
+  "5 February 2011, Feb 5 2011";
+- number/unit variants: "1.95 m" -> "1.95 m, 6 ft 5 in"; "50 m" -> "50 m, 50 metres".
+Write each query as a compact, self-contained phrase (terms + synonyms), not a full
+sentence. Return JSON only."""
 
 _EVIDENCE_ANALYSIS_USER = """Original question:
 {question}
