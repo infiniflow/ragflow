@@ -18,6 +18,10 @@ type UpdateLogSheetProps = {
   title: string;
 };
 
+function preventOutsideDismiss(e: Event) {
+  e.preventDefault();
+}
+
 export function UpdateLogSheet({
   open,
   onOpenChange,
@@ -34,7 +38,10 @@ export function UpdateLogSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
-      <SheetContent className="flex flex-col">
+      <SheetContent
+        className="flex flex-col"
+        onInteractOutside={preventOutsideDismiss}
+      >
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
