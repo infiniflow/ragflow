@@ -351,7 +351,10 @@ func defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) 
 // rows whose kind is empty are derived in the Reader; only truly page-kind wiki
 // products proceed.
 func filterWikiPageCandidates(candidates []kccommon.Product) []kccommon.Product {
-	filtered := candidates[:0]
+	// Allocate a fresh slice: reusing candidates[:0] would overwrite the caller's
+	// backing array in place, corrupting any other reference (e.g. the vector
+	// audit that still reads `incoming`).
+	filtered := make([]kccommon.Product, 0, len(candidates))
 	for _, cand := range candidates {
 		if cand.Variant == kccommon.VariantWiki {
 			if metaString(cand.Meta, "kind") != "page" {

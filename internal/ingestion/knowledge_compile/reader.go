@@ -191,7 +191,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	}
 	id, _ := c["id"].(string)
 	docID, _ := c["doc_id"].(string)
-	variant, _ := c["compile_kwd"].(string)
+	// Normalize through the shared asString helper (matching LoadDocProducts) so
+	// a non-string scalar or a list-wrapped keyword column from the engine is
+	// reverse-mapped consistently instead of being rejected as a dirty row.
+	variant := asString(c["compile_kwd"])
 	// Dirty-row contract: the raw compile_kwd must reverse-map to the expected
 	// variant. An unknown/dirty kwd (kwdToVariant error) or a mapped variant
 	// that differs from expect is rejected.
@@ -353,7 +356,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		// validates kwdToVariant(c) == variant and drops dirty/unknown kinds. The
 		// raw-keyword check below is a fast pre-filter before the full product
 		// reconstruction.
-		if kwd, ok := c["compile_kwd"].(string); ok && kwd != expectKwd {
+		if asString(c["compile_kwd"]) != expectKwd {
 			continue
 		}
 		p, ok := productFromChunkMap(c, tenant, variant)
@@ -405,7 +408,10 @@ func isAvailable(v interface{}) bool {
 }
 
 // asString normalizes a boxed chunk-map value into a string (used where the
-// backend may return a typed string or a json.Number for a keyword column).
+// backend may return a typed string, a json.Number, or a single-element list for
+// a keyword column). A list-wrapped keyword (e.g. []string{"wiki_page"} or
+// []any{"wiki_page"}) is unwrapped to its first element so reverse-mapping and
+// raw-keyword filters behave consistently across engine backends.
 func asString(v interface{}) string {
 	switch t := v.(type) {
 	case nil:
@@ -414,6 +420,19 @@ func asString(v interface{}) string {
 		return t
 	case json.Number:
 		return t.String()
+	case []string:
+		if len(t) == 1 {
+			return t[0]
+		}
+		return ""
+	case []interface{}:
+		if len(t) == 1 {
+			if s, ok := t[0].(string); ok {
+				return s
+			}
+			return fmt.Sprintf("%v", t[0])
+		}
+		return ""
 	}
 	return fmt.Sprintf("%v", v)
 }

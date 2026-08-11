@@ -227,7 +227,7 @@ const wikiRefineWriterUserTemplate = `## Task
 ## Available pages (ONLY use these slugs for [[wikilinks]])
 {all_plan_slugs}
 
-## Related KB pages (cross-link these when relevant, even if not in the available list above)
+## Related KB pages (cross-link only those that are also in the available pages list above)
 {related_kb_pages}
 
 {existing_section}

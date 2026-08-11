@@ -36,6 +36,10 @@ func wikiReplace(existing, candidate kccommon.Product) kccommon.Product {
 
 	// Body: the newer (incoming) Markdown wins verbatim.
 	merged.Content = candidate.Content
+	// The embedding must match the replacement Markdown. WriteMerged persists
+	// p.Vector without re-embedding, so keeping existing.Vector would leave a
+	// stale embedding for the old page body and break KNN similarity searches.
+	merged.Vector = candidate.Vector
 
 	// Identity preserved: keep existing id, doc_id (== kb), and the original
 	// creation timestamp (carried via Meta.created_at_unix by the Reader).
@@ -54,11 +58,11 @@ func wikiReplace(existing, candidate kccommon.Product) kccommon.Product {
 	return merged
 }
 
-// unionWikiProvenance returns a new Meta map that is the union of a and b, with
-// created_at_unix / created_at / kind / slug / page_type / title / summary /
-// entity_names / related_kb_pages / outlinks taken from the existing row (b is a
-// newer candidate whose provenance arrays are unioned in). Source provenance
-// arrays (source_doc_ids, source_chunk_ids) are deduped.
+// unionWikiProvenance returns a new Meta map based on a (the existing row). The
+// candidate b overwrites kind / slug / page_type / title / summary /
+// entity_names / related_kb_pages / outlinks. Identity and creation time
+// (created_at_unix, created_at) stay from a. Source provenance arrays
+// (source_doc_ids, source_chunk_ids) are unioned and deduped.
 func unionWikiProvenance(a, b map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range a {

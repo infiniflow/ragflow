@@ -2257,47 +2257,64 @@ func pageTypeOf(slug string, slugToPageType map[string]string) string {
 	return "page"
 }
 
-func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
-	kbID = strings.TrimSpace(kbID)
-	// Resolve a wikitext slug (which may be a bare "name" or a full
-	// "<page_type>/<slug>") to the canonical full slug used as the page
-	// identifier (slug_kwd). This mirrors Python's _wiki_resolve_dead_slug:
-	// plain names / titles are reverse-mapped to the full pid, and slugs that
-	// cannot be resolved are dropped (dead links). Without this, bare slugs
-	// written by the LLM never match the full-slug page index, so wiki
-	// relations (edges) are silently lost.
-	bareToSlug := map[string]string{}
-	titleToSlug := map[string]string{}
-	// Plan slugs are canonicalized to the hyphen style upstream
-	// (normalizeWikiPlanPage -> normalizeWikiSlugHyphens), so slugToPageType /
-	// pageTitles keys are already hyphen full-slugs. LLM-authored wikitext
-	// links may still carry underscores (e.g. "dong_zhuo"); normalize both
-	// sides to hyphens so the reverse lookup matches, and always emit the
-	// resolved outlink in the canonical hyphen full-slug form.
+// wikiSlugResolver resolves a wikitext slug (a bare "name" or a full
+// "<page_type>/<slug>") to the canonical hyphen full-slug used as the page
+// identifier (slug_kwd), mirroring Python's _wiki_resolve_dead_slug: plain
+// names / titles are reverse-mapped to the full pid. An empty result means the
+// target is not a known page and must not be emitted as a link or graph edge.
+type wikiSlugResolver struct {
+	slugToPageType map[string]string
+	bareToSlug     map[string]string
+	titleToSlug    map[string]string
+}
+
+// newWikiSlugResolver builds the reverse lookup maps from the available-page
+// index. Plan slugs are canonicalized to the hyphen style upstream
+// (normalizeWikiPlanPage -> normalizeWikiSlugHyphens), so slugToPageType /
+// pageTitles keys are already hyphen full-slugs. LLM-authored wikitext links may
+// still carry underscores (e.g. "dong_zhuo"); normalize both sides to hyphens so
+// the reverse lookup matches.
+func newWikiSlugResolver(pageTitles, slugToPageType map[string]string) *wikiSlugResolver {
+	r := &wikiSlugResolver{
+		slugToPageType: slugToPageType,
+		bareToSlug:     map[string]string{},
+		titleToSlug:    map[string]string{},
+	}
 	for fullSlug := range slugToPageType {
-		bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(fullSlug))] = fullSlug
+		r.bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(fullSlug))] = fullSlug
 	}
 	for fullSlug, title := range pageTitles {
 		if t := strings.TrimSpace(title); t != "" {
-			titleToSlug[t] = fullSlug
+			r.titleToSlug[t] = fullSlug
 		}
 	}
-	resolveSlug := func(slug string) string {
-		slug = strings.TrimSpace(slug)
-		if slug == "" {
-			return ""
-		}
-		if _, ok := slugToPageType[slug]; ok {
-			return slug
-		}
-		if full, ok := bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(slug))]; ok {
-			return full
-		}
-		if full, ok := titleToSlug[slug]; ok {
-			return full
-		}
+	return r
+}
+
+// resolve returns the canonical hyphen full-slug for target, or "" when the
+// target is not a known page (dead link). The result is always emitted in the
+// canonical hyphen form so outlinks_kwd and slug_kwd agree in format.
+func (r *wikiSlugResolver) resolve(target string) string {
+	slug := strings.TrimSpace(target)
+	if slug == "" {
 		return ""
 	}
+	if _, ok := r.slugToPageType[slug]; ok {
+		return normalizeWikiSlugHyphens(slug)
+	}
+	if full, ok := r.bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(slug))]; ok {
+		return normalizeWikiSlugHyphens(full)
+	}
+	if full, ok := r.titleToSlug[slug]; ok {
+		return normalizeWikiSlugHyphens(full)
+	}
+	return ""
+}
+
+func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
+	kbID = strings.TrimSpace(kbID)
+	resolver := newWikiSlugResolver(pageTitles, slugToPageType)
+	resolveSlug := resolver.resolve
 	seen := map[string]bool{}
 	var outlinks []string
 	track := func(slug string) {
@@ -2453,13 +2470,18 @@ func appendWikiSeeAlso(content string, outlinks, related []string, kbID string, 
 	if len(related) == 0 {
 		return content, outlinks
 	}
+	resolver := newWikiSlugResolver(pageTitles, slugToPageType)
 	have := make(map[string]bool, len(outlinks))
 	for _, o := range outlinks {
 		have[normalizeWikiSlugHyphens(o)] = true
 	}
 	var bullets []string
 	for _, slug := range related {
-		canon := normalizeWikiSlugHyphens(strings.TrimSpace(slug))
+		// Resolve the RelatedKB target against the current page index. An
+		// unresolved target is not a known page: omit it entirely (no broken
+		// artifact link) and do NOT append it to outlinks, so no phantom graph
+		// edge is persisted for a page that was never compiled.
+		canon := resolver.resolve(slug)
 		if canon == "" || have[canon] {
 			continue
 		}

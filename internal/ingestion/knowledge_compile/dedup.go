@@ -116,19 +116,27 @@ func (x *llmDeduper) Decide(ctx context.Context, existing, incoming kccommon.Pro
 // merge — Markdown wiki pages must not be concatenated/merged by the generic
 // structure decider. Structure (and other non-wiki) groups are judged by the LLM
 // merge decider as before.
-func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
-	// Split into wiki (replace-only, no LLM) and structure (LLM-merged) groups.
-	var wikiIdx []int
-	var structGroups []MergeGroup
-	var structIdx []int
+// splitWikiGroups partitions the batch into wiki groups (replace-only, no LLM)
+// and structure groups (LLM-merged). structIdx[i] is the ORIGINAL position in
+// `groups` of structGroups[i]; it is what the fold uses to write results back to
+// the right slice element. Recording the position inside structGroups (i.e.
+// len(structGroups)) instead would always equal i and misroute structure results
+// to the wrong groups whenever a wiki group appears earlier in the batch.
+func splitWikiGroups(groups []MergeGroup) (wikiIdx, structIdx []int, structGroups []MergeGroup) {
 	for gi := range groups {
 		if isWikiGroup(groups[gi]) {
 			wikiIdx = append(wikiIdx, gi)
 		} else {
-			structIdx = append(structIdx, len(structGroups))
+			structIdx = append(structIdx, gi)
 			structGroups = append(structGroups, groups[gi])
 		}
 	}
+	return wikiIdx, structIdx, structGroups
+}
+
+func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
+	// Split into wiki (replace-only, no LLM) and structure (LLM-merged) groups.
+	wikiIdx, structIdx, structGroups := splitWikiGroups(groups)
 	// Wiki groups: replace-only, in place.
 	for _, gi := range wikiIdx {
 		groups[gi] = wikiDecideBatch(ctx, []MergeGroup{groups[gi]})[0]
