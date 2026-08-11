@@ -107,6 +107,10 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 // <style>, and <noscript> blocks are skipped entirely so they
 // don't pollute the downstream chunker input.
 func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
+	// tableItems collects the structured doc_type_kwd:"table" items so they
+	// can be appended after the walk (mirrors markdown_parser.go:366-367,
+	// which appends tables after all sections to match Python's ordering).
+	var tableItems []map[string]any
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.TextNode {
 			if emitsLooseHTMLText(root) {
@@ -129,10 +133,53 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 			// Wrapper elements: descend into their children.
 			walkHTMLBlocks(child, out)
 			continue
+		case "table":
+			// Keep the table as its full HTML markup (NOT flattened) so
+			// row/column structure survives into embedding, retrieval, and
+			// LLM rendering. This mirrors the markdown table handling
+			// (markdown_parser.go:305-328) and Python's HtmlParser, which
+			// keeps the <table>…</table> string as the section text.
+			markup := renderTableHTML(child)
+			if strings.TrimSpace(markup) != "" {
+				// Inlined copy in document order (matches Python's <table>
+				// section text and markdown's text-flow copy).
+				*out = append(*out, map[string]any{
+					"text":         markup,
+					"doc_type_kwd": "text",
+				})
+				// Structured table item, appended after the walk.
+				tableItems = append(tableItems, map[string]any{
+					"text":         markup,
+					"doc_type_kwd": "table",
+					"ck_type":      "table",
+				})
+			}
+			continue
 		}
-		text := htmlLeafText(child)
+		text := htmlLeafText(child, &tableItems)
 		appendHTMLTextItem(out, text, htmlTagToCkType(tag), tag != "pre" && tag != "textarea")
 	}
+	if len(tableItems) > 0 {
+		*out = append(*out, tableItems...)
+	}
+}
+
+// renderTableHTML serializes a <table> node back to its outer HTML markup
+// (tags preserved), mirroring Python's HtmlParser which keeps the full
+// <table>…</table> string as the section text. This preserves row/column
+// structure for embedding, retrieval, and LLM rendering, instead of
+// flattening cells into a single text blob. It is used both for top-level
+// tables (walkHTMLBlocks) and for tables reached via the leaf-text extractor
+// (walkHTMLLeaf, i.e. a <table> nested in a div/section/…). On any rendering
+// error it returns "" so callers skip the table rather than risk a render
+// loop through the leaf extractor — html.Render only fails on unsupported
+// node kinds, and a parsed <table> never triggers it.
+func renderTableHTML(n *html.Node) string {
+	var b bytes.Buffer
+	if err := html.Render(&b, n); err != nil {
+		return ""
+	}
+	return b.String()
 }
 
 func emitsLooseHTMLText(root *html.Node) bool {
@@ -241,15 +288,18 @@ func (w *leafWriter) hardBreak() {
 // descendants. <script>/<style>/<noscript> subtrees are skipped. Whitespace
 // is folded per CSS rules (so "<h1>Hello   world</h1>" becomes "Hello world"
 // and "<br>" survives as a real line break), while <pre>/<textarea> keep
-// their source formatting verbatim.
-func htmlLeafText(n *html.Node) string {
+// their source formatting verbatim. Any <table> encountered in the subtree is
+// rendered as its <table>…</table> markup (so row/column structure survives)
+// and registered as a structured doc_type_kwd:"table" item via tableItems —
+// see walkHTMLLeaf's "table" case.
+func htmlLeafText(n *html.Node, tableItems *[]map[string]any) string {
 	var b bytes.Buffer
 	w := &leafWriter{b: &b}
-	walkHTMLLeaf(n, w)
+	walkHTMLLeaf(n, w, tableItems)
 	return b.String()
 }
 
-func walkHTMLLeaf(n *html.Node, w *leafWriter) {
+func walkHTMLLeaf(n *html.Node, w *leafWriter, tableItems *[]map[string]any) {
 	switch n.Type {
 	case html.TextNode:
 		w.writeText(n.Data)
@@ -265,9 +315,35 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter) {
 			// Verbatim: no folding, no injected block breaks.
 			w.pre = true
 			for child := n.FirstChild; child != nil; child = child.NextSibling {
-				walkHTMLLeaf(child, w)
+				walkHTMLLeaf(child, w, tableItems)
 			}
 			w.pre = false
+			return
+		}
+		if n.Data == "table" {
+			// Keep the table as its full HTML markup (NOT flattened) so
+			// row/column structure survives into the wrapper's text item,
+			// embedding, retrieval, and LLM rendering. This mirrors the
+			// top-level walkHTMLBlocks "table" case and Python's HtmlParser,
+			// and covers tables nested in div/section/article/… (which the
+			// walkHTMLBlocks case never reaches). The structured table item
+			// is collected for the downstream chunker (appended after the
+			// walk by the caller, same as the top-level path).
+			markup := renderTableHTML(n)
+			if strings.TrimSpace(markup) != "" {
+				w.writeText(markup)
+				*tableItems = append(*tableItems, map[string]any{
+					"text":         markup,
+					"doc_type_kwd": "table",
+					"ck_type":      "table",
+				})
+			} else {
+				// Degenerate: render failed; flatten children without markup
+				// so we never drop the cell text entirely.
+				for child := n.FirstChild; child != nil; child = child.NextSibling {
+					walkHTMLLeaf(child, w, tableItems)
+				}
+			}
 			return
 		}
 		// Add a line break between block children so headings, paragraphs,
@@ -282,7 +358,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter) {
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLLeaf(child, w)
+			walkHTMLLeaf(child, w, tableItems)
 		}
 		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
 			w.hardBreak()

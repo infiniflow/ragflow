@@ -345,3 +345,48 @@ func TextCodeAlignOptions(delimiter string) AlignOptions {
 		ItemKey: "text",
 	}
 }
+
+// htmlHeadingMarkerRE matches a leading ATX heading marker so Python's
+// "# Title" (deepdoc merge_block_text prefixes h1–h6 with "# ") can be
+// normalized to Go's clean heading text.
+var htmlHeadingMarkerRE = regexp.MustCompile(`(?m)^#{1,6}\s+`)
+
+// StripHTMLHeadingMarker returns a Normalizer that removes a leading ATX
+// heading marker ("#"/"##"/…) from a line. Python's HTML flow parser
+// (deepdoc parser.py merge_block_text) prefixes h1–h6 sections with "# ",
+// while the Go HTML parser emits clean heading text. This is a representation
+// difference, not a content divergence, so it is stripped before comparing.
+// It must run before CollapseWhitespace because the marker relies on the line
+// start.
+func StripHTMLHeadingMarker() Normalizer {
+	return func(s string) string {
+		return htmlHeadingMarkerRE.ReplaceAllString(s, "")
+	}
+}
+
+// HTMLAlignOptions returns the normalizer preset for HTML. Order matters:
+//   - StripHTMLHeadingMarker first: drops the "# " Python prefixes from h1–h6
+//     sections (relies on the line start, so before CollapseWhitespace).
+//   - StripHTMLTags next: replace table/HTML tags with a space (not delete) so
+//     adjacent cell text does not fuse, e.g. "<td>A</td><td>B</td>" → "A B".
+//   - CollapseWhitespace last: folds all remaining internal whitespace (the
+//     inter-tag gaps of a table, the space from any heading-marker removal)
+//     into single spaces.
+//
+// No WithDelimiterStrip: HTML is emitted one item per block (no delimiter
+// split), and the Python flow chunks HTML at 512 tokens — boundaries differ,
+// but CompareAlignment concatenates normalized text boundary-agnostically, so
+// only the concatenated content (order preserved) is compared.
+//
+// Reused by the HTML alignment test; shares CompareAlignment with the other
+// format presets (MarkdownAlignOptions, TextCodeAlignOptions).
+func HTMLAlignOptions() AlignOptions {
+	return AlignOptions{
+		Normalizers: []Normalizer{
+			StripHTMLHeadingMarker(),
+			StripHTMLTags(),
+			CollapseWhitespace(),
+		},
+		ItemKey: "text",
+	}
+}
