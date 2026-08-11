@@ -1,13 +1,10 @@
-import { useEffect } from 'react';
-
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { GenerateStatus } from '@/constants/knowledge';
-import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
+import { ITraceInfo } from '@/hooks/use-dataset-generate';
 
 import { ProgressLogPanel } from './progress-log-panel';
 
@@ -28,14 +25,6 @@ export function UpdateLogSheet({
   data,
   title,
 }: UpdateLogSheetProps) {
-  const { status } = useGenerateStatus(data);
-
-  useEffect(() => {
-    if (status === GenerateStatus.Completed) {
-      onOpenChange(false);
-    }
-  }, [status, onOpenChange]);
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
