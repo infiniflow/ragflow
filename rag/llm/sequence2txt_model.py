@@ -30,7 +30,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
-from rag.utils.url_utils import ensure_v1
+from rag.utils.url_utils import append_api_path, ensure_v1
 
 logger = logging.getLogger(__name__)
 
@@ -411,7 +411,7 @@ class XinferenceSeq2txt(Base):
 
         try:
             headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
-            response = requests.post(f"{self.base_url}/audio/transcriptions", files=files, data=payload, headers=headers, timeout=60)
+            response = requests.post(append_api_path(self.base_url, "audio/transcriptions"), files=files, data=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
 
