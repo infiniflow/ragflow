@@ -23,22 +23,10 @@ def normalize_mws_project_url(base_url: str | None) -> str:
     value = (base_url or "").strip().rstrip("/")
     parsed = urlparse(value)
     path_parts = parsed.path.strip("/").split("/")
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or not parsed.hostname
-        or len(path_parts) != 2
-        or path_parts[0] != "projects"
-        or not path_parts[1]
-    ):
-        raise ValueError(
-            "MWS API URL must be a project root in the form "
-            "https://gpt.mwsapis.ru/projects/<project>"
-        )
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.hostname or len(path_parts) != 2 or path_parts[0] != "projects" or not path_parts[1]:
+        raise ValueError("MWS API URL must be a project root in the form https://gpt.mwsapis.ru/projects/<project>")
     if parsed.username or parsed.password or parsed.params or parsed.query or parsed.fragment:
-        raise ValueError(
-            "MWS API URL must not contain credentials, parameters, a query string, or a fragment"
-        )
+        raise ValueError("MWS API URL must not contain credentials, parameters, a query string, or a fragment")
     return urlunparse((parsed.scheme, parsed.netloc, f"/projects/{path_parts[1]}", "", "", ""))
 
 

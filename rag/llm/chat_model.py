@@ -1112,10 +1112,7 @@ class MWSChat(Base):
             role = message.get("role") if isinstance(message, dict) else None
             content = message.get("content") if isinstance(message, dict) else None
             if role not in self._ROLES or not isinstance(content, str):
-                raise ValueError(
-                    "MWS chat messages must contain only a system, user, or "
-                    "assistant role and string content"
-                )
+                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
             messages.append({"role": role, "content": content})
         if not messages:
             raise ValueError("MWS chat messages are required")
@@ -1129,9 +1126,7 @@ class MWSChat(Base):
 
     async def _post_json(self, body):
         """Send a non-streaming MWS chat request and decode its JSON response."""
-        timeout = aiohttp.ClientTimeout(
-            total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
-        )
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
                 self.chat_url,
@@ -1139,17 +1134,12 @@ class MWSChat(Base):
                 json=body,
             ) as response:
                 if response.status != 200:
-                    raise RuntimeError(
-                        f"MWS chat request failed with status {response.status}: "
-                        f"{await response.text()}"
-                    )
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
                 return await response.json()
 
     async def _async_chat(self, history, gen_conf, **kwargs):
         """Return one complete MWS chat answer together with its token usage."""
-        payload = await self._post_json(
-            self._request_body(history, gen_conf, stream=False)
-        )
+        payload = await self._post_json(self._request_body(history, gen_conf, stream=False))
         self.last_usage = usage_from_response(payload)
         choices = payload.get("choices") if isinstance(payload, dict) else None
         if not isinstance(choices, list) or not choices:
@@ -1167,9 +1157,7 @@ class MWSChat(Base):
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
         """Yield MWS SSE content chunks and attach usage to the final chunk."""
         body = self._request_body(history, gen_conf, stream=True)
-        timeout = aiohttp.ClientTimeout(
-            total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
-        )
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
         pending_content = None
         estimated_tokens = 0
         reported_tokens = 0
@@ -1181,10 +1169,7 @@ class MWSChat(Base):
                 json=body,
             ) as response:
                 if response.status != 200:
-                    raise RuntimeError(
-                        f"MWS chat request failed with status {response.status}: "
-                        f"{await response.text()}"
-                    )
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
 
                 async for raw_line in response.content:
                     line = raw_line.decode("utf-8").strip()

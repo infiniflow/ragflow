@@ -910,13 +910,7 @@ class MWSEmbed(OpenAIEmbed):
         embeddings = [None] * len(batch)
         for item in data:
             index = item.get("index") if isinstance(item, dict) else None
-            if (
-                not isinstance(index, int)
-                or isinstance(index, bool)
-                or index < 0
-                or index >= len(batch)
-                or embeddings[index] is not None
-            ):
+            if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(batch) or embeddings[index] is not None:
                 raise ValueError(f"unexpected MWS embedding index: {index}")
             embeddings[index] = item["embedding"]
         return embeddings, total_token_count_from_response(payload)

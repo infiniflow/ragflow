@@ -61,18 +61,9 @@ def test_mws_provider_registration():
 def test_mws_project_url_validation_and_endpoints():
     """Normalize project roots and construct each supported MWS endpoint."""
     assert normalize_mws_project_url(PROJECT_URL + "/") == PROJECT_URL
-    assert (
-        mws_api_url(PROJECT_URL, "openai/v1/chat/completions")
-        == PROJECT_URL + "/openai/v1/chat/completions"
-    )
-    assert (
-        mws_api_url(PROJECT_URL, "openai/v1/embeddings")
-        == PROJECT_URL + "/openai/v1/embeddings"
-    )
-    assert (
-        mws_api_url(PROJECT_URL, "cohere/v2/rerank")
-        == PROJECT_URL + "/cohere/v2/rerank"
-    )
+    assert mws_api_url(PROJECT_URL, "openai/v1/chat/completions") == PROJECT_URL + "/openai/v1/chat/completions"
+    assert mws_api_url(PROJECT_URL, "openai/v1/embeddings") == PROJECT_URL + "/openai/v1/embeddings"
+    assert mws_api_url(PROJECT_URL, "cohere/v2/rerank") == PROJECT_URL + "/cohere/v2/rerank"
     with pytest.raises(ValueError, match="project root"):
         normalize_mws_project_url("https://gpt.mwsapis.ru/openai/v1")
     with pytest.raises(ValueError, match="query string"):

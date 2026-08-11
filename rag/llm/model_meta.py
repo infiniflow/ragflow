@@ -511,12 +511,7 @@ class MWS(OpenAIAPICompatible):
             LLMType.EMBEDDING.value,
             LLMType.RERANK.value,
         }
-        return [
-            model
-            for model in super()._format_model_list(raw_model_list)
-            if len(model.get("model_types") or []) == 1
-            and model["model_types"][0] in supported_types
-        ]
+        return [model for model in super()._format_model_list(raw_model_list) if len(model.get("model_types") or []) == 1 and model["model_types"][0] in supported_types]
 
     async def get_model_list(self):
         """Discover MWS models while logging safe request and result metadata."""

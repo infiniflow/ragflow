@@ -361,31 +361,17 @@ class MWSRerank(OpenAI_APIRerank):
             results = payload.get("results") if isinstance(payload, dict) else None
             if not isinstance(results, list) or len(results) != len(documents):
                 count = len(results) if isinstance(results, list) else 0
-                raise ValueError(
-                    f"MWS returned {count} rerank results for {len(documents)} documents"
-                )
+                raise ValueError(f"MWS returned {count} rerank results for {len(documents)} documents")
 
             rank = np.zeros(len(documents), dtype=float)
             seen = set()
             for item in results:
                 index = item.get("index") if isinstance(item, dict) else None
-                if (
-                    not isinstance(index, int)
-                    or isinstance(index, bool)
-                    or index < 0
-                    or index >= len(documents)
-                    or index in seen
-                ):
+                if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(documents) or index in seen:
                     raise ValueError(f"unexpected MWS rerank index: {index}")
                 relevance_score = item.get("relevance_score")
-                if (
-                    isinstance(relevance_score, bool)
-                    or not isinstance(relevance_score, (int, float))
-                    or not math.isfinite(relevance_score)
-                ):
-                    raise ValueError(
-                        f"unexpected MWS rerank relevance_score at index {index}: {relevance_score!r}"
-                    )
+                if isinstance(relevance_score, bool) or not isinstance(relevance_score, (int, float)) or not math.isfinite(relevance_score):
+                    raise ValueError(f"unexpected MWS rerank relevance_score at index {index}: {relevance_score!r}")
                 seen.add(index)
                 rank[index] = relevance_score
         except Exception as error:
@@ -399,9 +385,7 @@ class MWSRerank(OpenAI_APIRerank):
             )
             raise
 
-        token_count = num_tokens_from_string(query) + sum(
-            num_tokens_from_string(document) for document in documents
-        )
+        token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(document) for document in documents)
         return rank, token_count
 
 
