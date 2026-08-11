@@ -2831,12 +2831,68 @@ async def delete_skills(dataset_id: str, tenant_id: str):
     return True, {"deleted": int(deleted or 0)}
 
 
-async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
-    """Delete a single compiled skill node identified by ``skill_kwd``.
+def _parse_list_field(value):
+    """Normalize a search-result ``_kwd`` field to a Python list.
 
-    Removes the per-node ``skill`` row(s) matching ``skill_kwd`` (the same
-    identity ``get_skill_page`` reads). The aggregate ``skill_all`` tree row is
-    left untouched. Returns ``(True, {"deleted": <n>})``.
+    Infinity stores keyword fields as ``###``-joined strings;
+    ES / OpenSearch / OceanBase keep native lists.
+    """
+    if isinstance(value, list):
+        return [v for v in value if v]
+    if isinstance(value, str) and value:
+        return [v for v in value.split("###") if v]
+    return []
+
+
+def _walk_skill_tree(tree: list[dict], target_kwd: str, parent_kwd: str | None = None):
+    """Depth-first search through the ``skill_all`` tree JSON.
+
+    Returns ``(parent_kwd, found_node)`` or ``(None, None)`` when *target_kwd*
+    is not present in the tree.
+    """
+    for node in tree:
+        if node.get("skill_kwd") == target_kwd:
+            return parent_kwd, node
+        children = node.get("children_kwd", [])
+        if children:
+            result = _walk_skill_tree(children, target_kwd, node.get("skill_kwd"))
+            p, n = result
+            if n is not None:
+                return p, n
+    return None, None
+
+
+def _collect_tree_descendants(node: dict) -> set[str]:
+    """Return all ``skill_kwd`` values from *node*'s subtree (recursive)."""
+    result: set[str] = set()
+    for child in node.get("children_kwd", []):
+        kwd = child.get("skill_kwd", "")
+        if kwd:
+            result.add(kwd)
+        result.update(_collect_tree_descendants(child))
+    return result
+
+
+def _prune_skill_tree(tree: list[dict], deleted_kwds: set[str]) -> list[dict]:
+    """Remove nodes whose ``skill_kwd`` is in *deleted_kwds* (and their subtrees)."""
+    result = []
+    for node in tree:
+        if node.get("skill_kwd") in deleted_kwds:
+            continue
+        children = node.get("children_kwd", [])
+        node["children_kwd"] = _prune_skill_tree(children, deleted_kwds)
+        result.append(node)
+    return result
+
+
+async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
+    """Delete a compiled skill node and its descendants.
+
+    1. Walk the ``skill_all`` tree to identify the target node, its parent,
+       and all descendant ``skill_kwd`` values.
+    2. Delete every matching ``compile_kwd="skill"`` row (self + subtree).
+    3. If a parent exists, remove the deleted node from its ``children_kwd``.
+    4. Prune the ``skill_all`` tree and rewrite the aggregate row.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "no authorization"
@@ -2847,15 +2903,123 @@ async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
         return True, {"deleted": 0}
     index_nm, _ = pack
 
+    # ------------------------------------------------------------------
+    # 1. Read current skill_all tree
+    # ------------------------------------------------------------------
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    _ALL_SELECT = ["id", "kb_id", "doc_id", "compile_kwd", "skill_with_weight", "available_int"]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=_ALL_SELECT,
+            highlight_fields=[],
+            condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=1,
+            index_names=index_nm,
+            knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, _ALL_SELECT)
+    except Exception:
+        logging.exception("delete_skill: read skill_all failed kb=%s skill=%s", dataset_id, skill_kwd)
+        return False, "Failed to read skill tree."
+
+    if not field_map:
+        return True, {"deleted": 0}
+    _, skill_all_row = next(iter(field_map.items()))
+
+    raw_tree = skill_all_row.get("skill_with_weight", "[]")
+    tree = json.loads(raw_tree) if isinstance(raw_tree, str) else raw_tree
+    tree = tree if isinstance(tree, list) else [tree]
+
+    # ------------------------------------------------------------------
+    # 2. Locate target node and collect descendants
+    # ------------------------------------------------------------------
+    parent_kwd, found_node = _walk_skill_tree(tree, skill_kwd)
+    if found_node is None:
+        # Fallback: node not tracked in the tree; try direct delete anyway.
+        try:
+            deleted = settings.docStoreConn.delete(
+                {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [skill_kwd]},
+                index_nm,
+                dataset_id,
+            )
+        except Exception:
+            logging.exception("delete_skill: fallback delete failed kb=%s skill=%s", dataset_id, skill_kwd)
+            return False, "Failed to delete skill."
+        return True, {"deleted": int(deleted or 0)}
+
+    descendant_kwds = _collect_tree_descendants(found_node)
+    all_kwds = [skill_kwd] + sorted(descendant_kwds)
+
+    # ------------------------------------------------------------------
+    # 3. Delete compile_kwd="skill" rows (self + all descendants)
+    # ------------------------------------------------------------------
     try:
         deleted = settings.docStoreConn.delete(
-            {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [skill_kwd]},
+            {"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": all_kwds},
             index_nm,
             dataset_id,
         )
     except Exception:
-        logging.exception("delete_skill: docStore delete failed for kb=%s skill=%s", dataset_id, skill_kwd)
+        logging.exception("delete_skill: delete failed kb=%s skill=%s kwds=%s", dataset_id, skill_kwd, all_kwds)
         return False, "Failed to delete skill."
+
+    # ------------------------------------------------------------------
+    # 4. Update parent's children_kwd
+    # ------------------------------------------------------------------
+    if parent_kwd:
+        _NODE_SELECT = [
+            "id",
+            "kb_id",
+            "doc_id",
+            "compile_kwd",
+            "skill_kwd",
+            "depth_int",
+            "children_kwd",
+            "source_doc_ids",
+            "md_with_weight",
+            "available_int",
+            "parent_kwd",
+        ]
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=_NODE_SELECT,
+                highlight_fields=[],
+                condition={"compile_kwd": [_SKILL_COMPILE_KWD], "skill_kwd": [parent_kwd]},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=1,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            fm = settings.docStoreConn.get_fields(res, _NODE_SELECT)
+        except Exception:
+            logging.exception("delete_skill: read parent failed kb=%s parent=%s", dataset_id, parent_kwd)
+        else:
+            if fm:
+                _, parent_row = next(iter(fm.items()))
+                children = [c for c in _parse_list_field(parent_row.get("children_kwd", [])) if c != skill_kwd]
+                parent_row["children_kwd"] = children
+                try:
+                    settings.docStoreConn.insert([parent_row], index_nm, dataset_id)
+                except Exception:
+                    logging.exception("delete_skill: update parent children_kwd failed kb=%s parent=%s", dataset_id, parent_kwd)
+
+    # ------------------------------------------------------------------
+    # 5. Prune and rewrite skill_all tree
+    # ------------------------------------------------------------------
+    try:
+        deleted_set = set(all_kwds)
+        pruned_tree = _prune_skill_tree(tree, deleted_set)
+        skill_all_row["skill_with_weight"] = json.dumps(pruned_tree, ensure_ascii=False, indent=2)
+        settings.docStoreConn.insert([skill_all_row], index_nm, dataset_id)
+    except Exception:
+        logging.exception("delete_skill: rewrite skill_all failed kb=%s skill=%s", dataset_id, skill_kwd)
+        return False, "Failed to update skill tree."
 
     return True, {"deleted": int(deleted or 0)}
 
