@@ -38,12 +38,12 @@ type ParseResult struct {
 	DLARegions []DLAPageRegions
 
 	// Engine is the native PDF backend used to lazily crop section
-	// images on demand (e.g. for markdown figure embeds or downstream
+	// images on demand (e.g. for Markdown figure embeds or downstream
 	// chunk-time cropping). It is populated by ParseRaw and carries
 	// ownership of the engine: Parse does NOT close the engine, so the
 	// caller must release it via Close once the result is fully
 	// serialized. The JSON parse path closes it immediately after
-	// serialization; the markdown path crops figure images first, then
+	// serialization; the Markdown path crops figure images first, then
 	// closes. Close is idempotent and safe to call on a nil result.
 	Engine PDFEngine
 }

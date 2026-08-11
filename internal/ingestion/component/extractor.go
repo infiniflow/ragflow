@@ -1510,11 +1510,11 @@ func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText str
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when
-// s is not a JSON object. Trims common markdown code fences
+// s is not a JSON object. Trims common Markdown code fences
 // (```json ... ```) before parsing.
 func tryParseJSONObject(s string) (map[string]any, bool) {
 	trimmed := strings.TrimSpace(s)
-	// Strip a surrounding markdown code fence. Models commonly wrap JSON in
+	// Strip a surrounding Markdown code fence. Models commonly wrap JSON in
 	// ```json ... ``` (language tag on the opening line) but some emit the tag
 	// on its own line (```\njson\n{...}); Python's json_repair tolerates both,
 	// encoding/json does not, so we drop the fence and any bare leading

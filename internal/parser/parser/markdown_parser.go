@@ -37,7 +37,7 @@ import (
 // dataURIPrefix is the MIME prefix for data URI images.
 const dataURIPrefix = "data:image/"
 
-// GoMarkdown is the lib_type identifier for the pure-Go markdown backend.
+// GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
 
 // ssrfAllowLoopback lets tests exercise the HTTP image fetch path against a
@@ -83,10 +83,10 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
-// returns a structured markdown payload that mirrors the Python
+// returns a structured Markdown payload that mirrors the Python
 // parser's `output_format == "json"` shape. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
-// block contains a markdown image reference (![alt](src)), the image
+// block contains a Markdown image reference (![alt](src)), the image
 // data is resolved and the item carries `doc_type_kwd: "image"` with
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
@@ -162,7 +162,7 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 			// Wrap the inlined <table> HTML in blank lines so gomarkdown
 			// keeps it as a single HTML block (one item) instead of
 			// re-parsing it into scattered cell text. See
-			// PARSER_ALIGNMENT_HANDOFF.md §3.1 (markdown session A, 方案 Y).
+			// PARSER_ALIGNMENT_HANDOFF.md §3.1 (Markdown session A, 方案 Y).
 			ensureTrailingBlankLine(&buf)
 			buf.WriteString(strings.TrimRight(string(tableHTML), "\r\n"))
 			buf.WriteString("\n\n")
@@ -259,7 +259,7 @@ func markdownTableCells(line string) []string {
 
 // walkMarkdownBlocksWithImages emits one normalized item per
 // top-level block. Headings, paragraphs, lists, and code blocks are
-// emitted with their text. When a block contains a markdown image
+// emitted with their text. When a block contains a Markdown image
 // reference (![alt](src)), the image data is resolved via
 // findBlockImage (per-block AST walk) and the item carries
 // `doc_type_kwd: "image"` together with the base64-encoded image
@@ -345,7 +345,7 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten b
 			item["ck_type"] = ckType
 		}
 
-		// Resolve markdown images from the AST node of THIS block only, so
+		// Resolve Markdown images from the AST node of THIS block only, so
 		// the image payload (and doc_type_kwd:"image") is attached to the
 		// single block that actually contains the ![alt](src) reference.
 		// Scanning the whole document (the old approach) wrongly tagged
@@ -399,7 +399,7 @@ func findBlockImage(n ast.Node) (string, bool) {
 	return url, found
 }
 
-// resolveImageURL resolves a markdown image URL to its base64-encoded data.
+// resolveImageURL resolves a Markdown image URL to its base64-encoded data.
 // Supports:
 //   - data:image/... URIs → decoded directly
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
@@ -536,7 +536,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}
 	for _, addr := range addrs {
-		ip := addr.IP
+		ip = addr.IP
 		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 			ip.IsPrivate() || ip.IsUnspecified() {
 			return nil, fmt.Errorf("markdown: rejected image URL resolving to internal address: %s (%s)", host, ip)

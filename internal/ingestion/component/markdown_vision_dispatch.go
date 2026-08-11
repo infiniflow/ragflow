@@ -14,13 +14,13 @@
 //  limitations under the License.
 //
 
-// Markdown vision figure dispatch: enriches parsed markdown JSON
+// Markdown vision figure dispatch: enriches parsed Markdown JSON
 // items with LLM-generated descriptions of embedded images,
 // mirroring Python's enhance_media_sections_with_vision in
 // rag/flow/parser/utils.py, called from the _markdown path.
 //
 // Unlike the DOCX vision path (which processes a separate figures
-// array), markdown vision iterates over the JSON items produced by
+// array), Markdown vision iterates over the JSON items produced by
 // MarkdownParser.ParseWithResult and enhances items whose
 // doc_type_kwd == "image" and whose "image" field contains a
 // base64-encoded image.
@@ -43,7 +43,7 @@ var (
 	markdownVisionConcurrency uint = 10
 )
 
-// maybeDispatchMarkdownVision checks whether the markdown parse result
+// maybeDispatchMarkdownVision checks whether the Markdown parse result
 // contains JSON items with embedded images and, when a vision model is
 // available, enriches those items with AI-generated figure descriptions.
 //

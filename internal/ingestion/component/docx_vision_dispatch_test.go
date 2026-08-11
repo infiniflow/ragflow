@@ -135,9 +135,9 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchDOCXVision_JSONOnly verifies Diff 2.4: the markdown output
+// TestMaybeDispatchDOCXVision_JSONOnly verifies Diff 2.4: the Markdown output
 // path must NOT be enhanced (Python's markdown/docx branch performs no vision
-// enrichment). A markdown result with embedded figures is returned untouched.
+// enrichment). A Markdown result with embedded figures is returned untouched.
 func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	origInvoker := visionChatInvoker
