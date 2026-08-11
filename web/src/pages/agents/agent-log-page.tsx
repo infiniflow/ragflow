@@ -220,9 +220,22 @@ const AgentLogPage: React.FC = () => {
   };
 
   const handleReset = () => {
-    setSearchParams({ ...init, page_size: pagination.pageSize });
+    const resetParams = { ...init, page_size: pagination.pageSize };
+    const alreadyReset =
+      searchParams.keywords === resetParams.keywords &&
+      searchParams.from_date?.valueOf() === resetParams.from_date.valueOf() &&
+      searchParams.to_date?.valueOf() === resetParams.to_date.valueOf() &&
+      searchParams.orderby === resetParams.orderby &&
+      searchParams.desc === resetParams.desc &&
+      searchParams.page === resetParams.page &&
+      searchParams.page_size === resetParams.page_size;
+
+    setSearchParams(resetParams);
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
+    if (alreadyReset) {
+      refetch();
+    }
   };
 
   const [openModal, setOpenModal] = useState(false);
