@@ -80,8 +80,9 @@ func Start(ctx context.Context) (*Runtime, error) {
 func (r *Runtime) Run(ctx context.Context) {
 	ticker := time.NewTicker(reconcileInterval)
 	defer ticker.Stop()
-	defer r.stopAll(context.Background())
+	defer r.stopAll(ctx)
 
+	// check channel's status periodically
 	for {
 		if err := r.Reconcile(ctx); err != nil {
 			log.Printf("chat channel reconcile failed: %v", err)
@@ -105,21 +106,22 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 	r.mu.Lock()
 	for accountID, entry := range r.running {
 		wanted, ok := desired[accountID]
-		if !ok || wanted.fp != entry.fingerprint {
+		if !ok || wanted.fingerprint != entry.fingerprint {
 			delete(r.running, accountID)
 			toStop = append(toStop, entry.channel)
 		}
 	}
+
 	for accountID, failure := range r.failed {
 		wanted, ok := desired[accountID]
-		if !ok || wanted.fp != failure.fingerprint {
+		if !ok || wanted.fingerprint != failure.fingerprint {
 			delete(r.failed, accountID)
 		}
 	}
 	r.mu.Unlock()
 
 	for _, ch := range toStop {
-		stopChannel(context.Background(), ch)
+		stopChannel(ctx, ch)
 	}
 
 	activeWhatsApp := false
@@ -138,14 +140,14 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		r.mu.Lock()
 		_, isRunning := r.running[accountID]
 		failure, failed := r.failed[accountID]
-		retryPending := failed && failure.fingerprint == wanted.fp && now.Before(failure.nextRetryAt)
+		retryPending := failed && failure.fingerprint == wanted.fingerprint && now.Before(failure.nextRetryAt)
 		r.mu.Unlock()
 		if isRunning || retryPending {
 			continue
 		}
 		if err = r.startChannel(ctx, accountID, wanted); err != nil {
 			log.Printf("failed to start chat channel %s (%s): %v", accountID, wanted.channel, err)
-			r.recordStartFailure(accountID, wanted.fp, now)
+			r.recordStartFailure(accountID, wanted.fingerprint, now)
 			continue
 		}
 		r.clearStartFailure(accountID)
@@ -192,9 +194,9 @@ func startRetryDelay(attempts int) time.Duration {
 }
 
 type desiredChannel struct {
-	channel    string
-	credential map[string]any
-	fp         string
+	channel     string
+	credential  map[string]any
+	fingerprint string
 }
 
 // desiredChannels loads enabled chat-channel rows and reduces them to runtime configuration.
@@ -207,9 +209,9 @@ func desiredChannels(ctx context.Context) (map[string]desiredChannel, error) {
 	for _, row := range rows {
 		credential := credentialFromConfig(row.Config)
 		out[row.ID] = desiredChannel{
-			channel:    row.Channel,
-			credential: credential,
-			fp:         fingerprint(row.Channel, credential),
+			channel:     row.Channel,
+			credential:  credential,
+			fingerprint: fingerprint(row.Channel, credential),
 		}
 	}
 	return out, nil
@@ -273,7 +275,7 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		return err
 	}
 	r.mu.Lock()
-	r.running[accountID] = runningChannel{channel: ch, fingerprint: wanted.fp}
+	r.running[accountID] = runningChannel{channel: ch, fingerprint: wanted.fingerprint}
 	r.mu.Unlock()
 	log.Printf("started chat channel %s:%s", ch.ChannelID(), accountID)
 	return nil
