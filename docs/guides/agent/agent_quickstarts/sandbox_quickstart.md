@@ -89,8 +89,6 @@ Notes:
 
 See [UCloud Agent Sandbox prerequisites](https://astraflow.ucloud.cn/docs/agent-sandbox/product/prerequisites) and [regions](https://astraflow.ucloud.cn/docs/agent-sandbox/product/region).
 
-When the Go runtime loads this provider from environment variables instead of Admin settings, use `UCLOUD_SANDBOX_API_KEY`, `UCLOUD_SANDBOX_REGION`, `UCLOUD_SANDBOX_DOMAIN`, `UCLOUD_SANDBOX_API_URL`, `UCLOUD_SANDBOX_TEMPLATE`, `UCLOUD_SANDBOX_ALLOW_INTERNET_ACCESS`, `UCLOUD_SANDBOX_INSECURE_HTTP`, `UCLOUD_SANDBOX_EXECUTION_TIMEOUT`, `UCLOUD_SANDBOX_TIMEOUT`, and the corresponding `UCLOUD_SANDBOX_MAX_*` limit variables.
-
 ## Prerequisites
 
 - Linux distribution compatible with gVisor.
