@@ -148,19 +148,19 @@ def test_nvidia_logits_are_normalized():
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "configured_url",
     [
         "https://ai.example.com/v1/retrieval/nvidia",
         "https://ai.example.com/v1/retrieval/nvidia/",
     ],
 )
-def test_nvidia_fallback_preserves_path_and_logs_without_api_key(base_url):
+def test_nvidia_fallback_preserves_path_and_logs_without_api_key(configured_url):
     """Preserve the base path and log fallback metadata without credentials."""
     with patch("rag.llm.rerank_model.logging.info") as info:
         reranker = NvidiaRerank(
             "super-secret-key",
             "nvidia/custom-reranker",
-            base_url,
+            configured_url,
         )
 
     expected_endpoint = "https://ai.example.com/v1/retrieval/nvidia/reranking"
