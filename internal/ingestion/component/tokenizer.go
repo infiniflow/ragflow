@@ -413,6 +413,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		tokenCount  int
 		hasTitleVec bool
 	)
+	// go_intentional (A3): when the upstream name is empty we skip title
+	// weighting entirely (hasTitleVec stays false, so the merged vector is the
+	// content vector alone). From the end-user perspective an empty title must
+	// not contribute the filename embedding weight; the Python DSL instead
+	// computes 0.1*emb(""), injecting an undefined bias into every chunk. Go's
+	// skip is the correct behavior (go_intentional). Do NOT "align" this to
+	// the DSL.
 	if trimmedName == "" {
 		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
@@ -680,13 +687,11 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			// A2: split on the ENGLISH COMMA only, matching the DSL tokenizer
-			// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`) and
-			// the keyword_prompt contract ("delimited by ENGLISH COMMA"). CJK
-			// commas/semicolons and newlines stay part of the keyword so the
-			// Go index is byte-compatible with the Python-DSL-built index.
-			// strings.Split preserves empty elements, matching Python's
-			// "a,,b".split(",") == ["a","","b"].
+			// Split keywords on the ENGLISH COMMA ONLY. The keyword_prompt
+			// contract specifies "delimited by ENGLISH COMMA", so CJK commas,
+			// semicolons and newlines stay part of the keyword rather than
+			// acting as separators. strings.Split also preserves empty
+			// elements, matching Python's "a,,b".split(",") == ["a","","b"].
 			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
@@ -772,6 +777,13 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 
 // shouldHaveEmbedding reports whether the tokenizer must attach embedding
 // vectors: the search method requests embedding AND a KB is present.
+//
+// go_intentional (A4): the kbID != "" guard is deliberate. Each dataset
+// configures its own embedding model, so an empty kb_id (e.g. a canvas-debug
+// dry run) must NOT fall back to the tenant's default embedding model — doing
+// so would produce vectors a dataset cannot actually use at retrieval time.
+// This is a deliberate, go_intentional divergence. Do NOT "align" this to a
+// path that injects a default embedding.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
 	return contains(searchMethods, "embedding") && kbID != ""
 }
