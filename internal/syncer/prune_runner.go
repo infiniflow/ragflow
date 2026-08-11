@@ -53,6 +53,9 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 
 	retain := map[string]struct{}{}
 	for {
+		if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+			return err
+		}
 		batch, nextErr := session.NextBatch(ctx)
 		if errors.Is(nextErr, io.EOF) {
 			break
@@ -65,9 +68,26 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 		}
 	}
 
+	if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+		return err
+	}
 	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain)
 	if err != nil {
 		return err
 	}
 	return r.taskService.CompletePrune(ctx, taskContext, removed)
+}
+
+func (r *PruneRunner) checkCanceled(ctx context.Context, taskID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	canceled, err := r.taskService.IsCanceled(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if canceled {
+		return errSyncTaskCanceled
+	}
+	return nil
 }
