@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -50,6 +49,7 @@ func TestYahooFinanceBuildURL(t *testing.T) {
 
 func TestYahooFinanceInvokableRunBuildsMarkdownReport(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotQuery, gotUserAgent string
 	var gotPaths []string
@@ -92,7 +92,7 @@ func TestYahooFinanceInvokableRunBuildsMarkdownReport(t *testing.T) {
 	defer server.Close()
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
-	raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), `{"stock_code":" AAPL "}`)
+	raw, err := NewYahooFinanceToolWith(helper).InvokableRun(ctx, `{"stock_code":" AAPL "}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -132,6 +132,7 @@ func TestYahooFinanceInvokableRunBuildsMarkdownReport(t *testing.T) {
 
 func TestYahooFinanceInvokableRunAcceptsQueryAlias(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -158,7 +159,7 @@ func TestYahooFinanceInvokableRunAcceptsQueryAlias(t *testing.T) {
 	defer server.Close()
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
-	raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), `{"query":"3800.HK"}`)
+	raw, err := NewYahooFinanceToolWith(helper).InvokableRun(ctx, `{"query":"3800.HK"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestYahooFinanceInvokableRunAcceptsQueryAlias(t *testing.T) {
 		t.Fatalf("q = %q", gotQuery)
 	}
 	var envelope yahooFinanceEnvelope
-	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(raw), &envelope); err != nil {
 		t.Fatalf("unmarshal output %q: %v", raw, err)
 	}
 	if !strings.Contains(envelope.Report, "| symbol | 3800.HK |") ||
@@ -177,6 +178,7 @@ func TestYahooFinanceInvokableRunAcceptsQueryAlias(t *testing.T) {
 
 func TestYahooFinanceUsesSearchResolvedSymbolForDownstreamRequests(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var paths []string
 	var gotSearchQuery string
@@ -232,7 +234,7 @@ func TestYahooFinanceUsesSearchResolvedSymbolForDownstreamRequests(t *testing.T)
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
 	yahoo := NewYahooFinanceToolWithDefaults(helper, yahooFinanceParams{Info: true, Count: true})
-	raw, err := yahoo.InvokableRun(context.Background(), `{"stock_code":"Apple"}`)
+	raw, err := yahoo.InvokableRun(ctx, `{"stock_code":"Apple"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -249,7 +251,7 @@ func TestYahooFinanceUsesSearchResolvedSymbolForDownstreamRequests(t *testing.T)
 		}
 	}
 	var envelope yahooFinanceEnvelope
-	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(raw), &envelope); err != nil {
 		t.Fatalf("unmarshal output %q: %v", raw, err)
 	}
 	if !strings.Contains(envelope.Report, "| longname | Apple Inc. |") ||
@@ -260,6 +262,7 @@ func TestYahooFinanceUsesSearchResolvedSymbolForDownstreamRequests(t *testing.T)
 
 func TestYahooFinanceEmptyStockCodeSkipsRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -269,12 +272,12 @@ func TestYahooFinanceEmptyStockCodeSkipsRequest(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
 
 	for _, args := range []string{`{"stock_code":""}`, `{"stock_code":"   "}`} {
-		raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), args)
+		raw, err := NewYahooFinanceToolWith(helper).InvokableRun(ctx, args)
 		if err != nil {
 			t.Fatalf("InvokableRun(%s): %v", args, err)
 		}
 		var envelope yahooFinanceEnvelope
-		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		if err = json.Unmarshal([]byte(raw), &envelope); err != nil {
 			t.Fatalf("unmarshal output: %v", err)
 		}
 		if envelope.Report != "" || envelope.Error != "" {
@@ -288,6 +291,7 @@ func TestYahooFinanceEmptyStockCodeSkipsRequest(t *testing.T) {
 
 func TestYahooFinanceAllSectionsDisabledSkipsRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -297,12 +301,12 @@ func TestYahooFinanceAllSectionsDisabledSkipsRequest(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
 	yahoo := NewYahooFinanceToolWithDefaults(helper, yahooFinanceParams{})
 
-	raw, err := yahoo.InvokableRun(context.Background(), `{"stock_code":"AAPL"}`)
+	raw, err := yahoo.InvokableRun(ctx, `{"stock_code":"AAPL"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var envelope yahooFinanceEnvelope
-	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(raw), &envelope); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
 	if envelope.Report != "" || calls != 0 {
@@ -312,6 +316,7 @@ func TestYahooFinanceAllSectionsDisabledSkipsRequest(t *testing.T) {
 
 func TestYahooFinanceSummaryUsesCrumbAndCookie(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var sawCookieOnCrumb, sawCookieOnSummary bool
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -352,7 +357,7 @@ func TestYahooFinanceSummaryUsesCrumbAndCookie(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
 	yahoo := NewYahooFinanceToolWithDefaults(helper, yahooFinanceParams{Count: true})
-	raw, err := yahoo.InvokableRun(context.Background(), `{"stock_code":"AAPL"}`)
+	raw, err := yahoo.InvokableRun(ctx, `{"stock_code":"AAPL"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -360,7 +365,7 @@ func TestYahooFinanceSummaryUsesCrumbAndCookie(t *testing.T) {
 		t.Fatalf("cookie propagation crumb=%v summary=%v", sawCookieOnCrumb, sawCookieOnSummary)
 	}
 	var envelope yahooFinanceEnvelope
-	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(raw), &envelope); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
 	if !strings.Contains(envelope.Report, "# Count:") ||
@@ -459,6 +464,7 @@ func TestMergeYahooFinanceParamsKeepsStockCodeAndUsesNodeConfig(t *testing.T) {
 
 func TestYahooFinanceErrorsReturnEnvelope(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tests := []struct {
 		name       string
@@ -484,7 +490,7 @@ func TestYahooFinanceErrorsReturnEnvelope(t *testing.T) {
 			defer server.Close()
 			helper := NewHTTPHelperWithRetry(RetryConfig{MaxAttempts: 1}).WithClient(&http.Client{Transport: rewriteHostTransport(server.URL)})
 
-			raw, err := NewYahooFinanceToolWith(helper).InvokableRun(context.Background(), `{"stock_code":"AAPL"}`)
+			raw, err := NewYahooFinanceToolWith(helper).InvokableRun(ctx, `{"stock_code":"AAPL"}`)
 			if err == nil || !strings.Contains(err.Error(), test.wantError) {
 				t.Fatalf("err = %v, want %q", err, test.wantError)
 			}
@@ -501,8 +507,9 @@ func TestYahooFinanceErrorsReturnEnvelope(t *testing.T) {
 
 func TestYahooFinanceMalformedArguments(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	raw, err := NewYahooFinanceTool().InvokableRun(context.Background(), `{`)
+	raw, err := NewYahooFinanceTool().InvokableRun(ctx, `{`)
 	if err == nil || !strings.Contains(err.Error(), "parse arguments") {
 		t.Fatalf("err = %v", err)
 	}
@@ -535,8 +542,9 @@ func TestYahooFinanceComponentContract(t *testing.T) {
 
 func TestYahooFinanceInfoExposesPythonCompatibleParams(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	info, err := NewYahooFinanceTool().Info(context.Background())
+	info, err := NewYahooFinanceTool().Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
