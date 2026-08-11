@@ -146,6 +146,12 @@
 
 ## 🎬 自主托管
 
+### 在 Sealos 上部署
+
+[![Deploy on Sealos](https://sealos.io/Deploy-on-Sealos.svg)](https://sealos.io/products/app-store/ragflow)
+
+该模板会为 RAGFlow 0.26.4 配置托管的 MySQL、Redis、Infinity，以及私有的 S3 兼容对象存储。
+
 ### 📝 前提条件
 
 - CPU >= 4 核
