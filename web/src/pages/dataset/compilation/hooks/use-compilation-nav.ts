@@ -15,7 +15,7 @@ export interface SelectedNavNode {
   name: string;
   description: string;
   docId?: string;
-  doc_count: number;
+  doc_count?: number;
   keywords?: string[];
   entities?: string[];
   graph_content?: string;
