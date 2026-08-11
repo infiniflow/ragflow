@@ -1,6 +1,6 @@
 /**
  * @param  {String}  url
- * @param  {Boolean} isNoCaseSensitive 是否区分大小写
+ * @param  {Boolean} isNoCaseSensitive
  * @return {Object}
  */
 // import numeral from 'numeral';
