@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -317,5 +318,81 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 	}
 	if got, want := stub.captured.BaseURL, "https://instance.example"; got != want {
 		t.Errorf("BaseURL=%q, want %q", got, want)
+	}
+}
+
+func TestFitMessages_EverythingFits(t *testing.T) {
+	msgs := []schema.Message{
+		{Role: schema.System, Content: "you are helpful"},
+		{Role: schema.User, Content: "hello"},
+	}
+	fitted, fitErr := fitMessages("", msgs, 100000)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2", len(fitted))
+	}
+	if fitted[0].Content != "you are helpful" || fitted[1].Content != "hello" {
+		t.Fatalf("messages modified when they fit: %+v", fitted)
+	}
+}
+
+func TestFitMessages_PreservesImageOnlyTurn(t *testing.T) {
+	imgURL := "data:image/png;base64,AAAA"
+	msgs := []schema.Message{
+		{Role: schema.System, Content: "you are helpful"},
+		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
+			}},
+		}},
+	}
+	fitted, fitErr := fitMessages("", msgs, 100000)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2 (image-only turn must be preserved)", len(fitted))
+	}
+	last := fitted[len(fitted)-1]
+	if len(last.UserInputMultiContent) != 1 || last.UserInputMultiContent[0].Type != schema.ChatMessagePartTypeImageURL {
+		t.Fatalf("image parts lost after fitting: %+v", last)
+	}
+}
+
+func TestFitMessages_IncludesSyntheticSystemPrompt(t *testing.T) {
+	msgs := []schema.Message{{Role: schema.User, Content: "hello"}}
+	fitted, fitErr := fitMessages("be brief", msgs, 100000)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2 (synthetic system prompt + user)", len(fitted))
+	}
+	if fitted[0].Role != schema.System || fitted[0].Content != "be brief" {
+		t.Fatalf("synthetic system prompt not preserved: %+v", fitted[0])
+	}
+}
+
+func TestFitMessages_DropsMiddleWhenOverBudget(t *testing.T) {
+	long := strings.Repeat("x ", 5000)
+	msgs := []schema.Message{
+		{Role: schema.System, Content: long},
+		{Role: schema.User, Content: "middle"},
+		{Role: schema.User, Content: "last"},
+	}
+	fitted, fitErr := fitMessages("", msgs, 1000)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2 (middle dropped, system + last user kept)", len(fitted))
+	}
+	if fitted[0].Role != schema.System || fitted[1].Role != schema.User {
+		t.Fatalf("unexpected roles: %+v", fitted)
+	}
+	if !strings.Contains(fitted[1].Content, "last") {
+		t.Fatalf("last user message not preserved: %+v", fitted[1])
 	}
 }
