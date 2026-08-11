@@ -92,7 +92,12 @@ func TestFit_SystemOnlyMessages(t *testing.T) {
 	if total > budget {
 		t.Errorf("fitted total %d exceeds budget %d", total, budget)
 	}
-	if len(msgs[0].Content) >= len(sys1) || len(msgs[1].Content) >= len(sys2) {
+	fitted0 := tokenizer.NumTokensFromString(msgs[0].Content)
+	fitted1 := tokenizer.NumTokensFromString(msgs[1].Content)
+	if fitted0 == 0 || fitted1 == 0 {
+		t.Errorf("a system message was emptied by fitting: %+v", msgs)
+	}
+	if fitted0 >= tokenizer.NumTokensFromString(sys1) || fitted1 >= tokenizer.NumTokensFromString(sys2) {
 		t.Errorf("system messages not trimmed: %+v", msgs)
 	}
 }
@@ -123,7 +128,12 @@ func TestFit_TrimsAllSystemMessages(t *testing.T) {
 	if total > budget {
 		t.Errorf("fitted total %d exceeds budget %d", total, budget)
 	}
-	if len(msgs[0].Content) >= len(sys1) || len(msgs[1].Content) >= len(sys2) {
+	fitted0 := tokenizer.NumTokensFromString(msgs[0].Content)
+	fitted1 := tokenizer.NumTokensFromString(msgs[1].Content)
+	if fitted0 == 0 || fitted1 == 0 {
+		t.Errorf("a system message was emptied by fitting: %+v", msgs)
+	}
+	if fitted0 >= tokenizer.NumTokensFromString(sys1) || fitted1 >= tokenizer.NumTokensFromString(sys2) {
 		t.Errorf("system messages not trimmed: %+v", msgs)
 	}
 }
