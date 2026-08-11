@@ -49,9 +49,7 @@ const DocumentViewer = () => {
       {(ext === 'md' || ext === 'mdx') && (
         <Md url={api} className="!h-dvh p-5"></Md>
       )}
-      {ext === 'txt' && (
-        <TxtPreviewer url={api} className="!h-dvh"></TxtPreviewer>
-      )}
+      {ext === 'txt' && <TxtPreviewer url={api}></TxtPreviewer>}
 
       {ext === 'pdf' && (
         <PdfPreview url={api} className="!h-dvh p-5"></PdfPreview>
