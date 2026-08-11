@@ -755,34 +755,50 @@ export const useFetchDocumentThumbnailsByIds = () => {
   return { data, setDocumentIds };
 };
 
-export function useFetchDocumentStructureGraph(keywords?: string) {
-  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+export function useFetchDocumentStructureGraphById(
+  datasetId: string,
+  documentId: string,
+  keywords?: string,
+) {
   const enabled = !!datasetId && !!documentId;
   const trimmedKeywords = keywords?.trim();
 
-  const { data, isFetching: loading } =
-    useQuery<IStructureGraphResponse | null>({
-      queryKey: trimmedKeywords
-        ? DocumentStructureKeys.graphWithKeywords(
-            datasetId,
-            documentId,
-            trimmedKeywords,
-          )
-        : DocumentStructureKeys.graph(datasetId, documentId),
-      enabled,
-      initialData: null,
-      gcTime: 0,
-      placeholderData: keepPreviousData,
-      queryFn: async () => {
-        const { data } =
-          await documentStructureService.getDocumentStructureGraph(
-            datasetId,
-            documentId,
-            trimmedKeywords,
-          );
-        return data?.data ?? null;
-      },
-    });
+  const {
+    data,
+    isFetching: loading,
+    isPlaceholderData,
+  } = useQuery<IStructureGraphResponse | null>({
+    queryKey: trimmedKeywords
+      ? DocumentStructureKeys.graphWithKeywords(
+          datasetId,
+          documentId,
+          trimmedKeywords,
+        )
+      : DocumentStructureKeys.graph(datasetId, documentId),
+    enabled,
+    initialData: null,
+    gcTime: 0,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const { data } = await documentStructureService.getDocumentStructureGraph(
+        datasetId,
+        documentId,
+        trimmedKeywords,
+      );
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading, isPlaceholderData };
+}
+
+export function useFetchDocumentStructureGraph(keywords?: string) {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const { data, loading } = useFetchDocumentStructureGraphById(
+    datasetId,
+    documentId,
+    keywords,
+  );
 
   return { data, loading };
 }
