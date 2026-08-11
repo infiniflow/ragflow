@@ -145,7 +145,7 @@ export const useFetchNextChunkList = (
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds;
+  const chunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -176,9 +176,7 @@ export const useFetchNextChunkList = (
         kb_id: knowledgeId,
         doc_id: documentId,
         page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length
-          ? Math.max(chunkIds.length, 100)
-          : pagination.pageSize,
+        size: chunkIds?.length ? chunkIds.length : Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
         chunk_ids: chunkIds,
