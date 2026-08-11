@@ -15,12 +15,13 @@ export function NavTreeView() {
     navList,
     navLoading,
     childrenMap,
+    structureMap,
     selectedNode,
     deleteNavLoading,
     deleteNodeLoading,
-    handleParentClick,
-    handleParentExpand,
-    handleChildClick,
+    handleNodeClick,
+    handleNodeExpand,
+    handleEntityClick,
     handleDeleteAll,
     handleDeleteNode,
   } = useCompilationNav();
@@ -33,11 +34,12 @@ export function NavTreeView() {
             navList={navList}
             navLoading={navLoading}
             childrenMap={childrenMap}
+            structureMap={structureMap}
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}
-            onParentClick={handleParentClick}
-            onParentExpand={handleParentExpand}
-            onChildClick={handleChildClick}
+            onNodeClick={handleNodeClick}
+            onNodeExpand={handleNodeExpand}
+            onEntityClick={handleEntityClick}
             onDeleteAll={handleDeleteAll}
             onDeleteNode={handleDeleteNode}
           />
@@ -50,9 +52,13 @@ export function NavTreeView() {
                 <h3 className="text-sm font-medium text-text-primary">
                   {selectedNode.name}
                 </h3>
-                <span className="text-xs text-text-secondary">
-                  {t('datasetNav.docCount', { count: selectedNode.doc_count })}
-                </span>
+                {selectedNode.doc_count !== undefined && (
+                  <span className="text-xs text-text-secondary">
+                    {t('datasetNav.docCount', {
+                      count: selectedNode.doc_count,
+                    })}
+                  </span>
+                )}
               </header>
               <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 text-sm text-text-primary whitespace-pre-wrap">
                 {selectedNode.description || t('datasetNav.noDescription')}
