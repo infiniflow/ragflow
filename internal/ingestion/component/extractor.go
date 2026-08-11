@@ -1430,6 +1430,22 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 	return tenant.LLMID
 }
 
+// extractorContextFitBudget returns 97% of the model's context window as the
+// fitting budget, mirroring the agent component's contextFitBudget. The
+// margin leaves headroom for the difference between the cl100k tokenizer used
+// for counting and the model's own tokenizer, plus per-message formatting
+// overhead, so a fitted prompt stays inside the provider's real context limit
+// instead of landing exactly on it.
+func extractorContextFitBudget(ctxLen int) int {
+	budget := int(float64(ctxLen) * 0.97)
+	if budget < 1 {
+		// Never hand messagefit a <=0 budget: Fit treats <=0 as the 8192
+		// default, which would stop trimming entirely for a tiny context.
+		return 1
+	}
+	return budget
+}
+
 // fitExtractorMessages trims msgs to the chat model's context window using
 // the shared messagefit fitter (mirrors Python's message_fit_in), dropping
 // entries the fitter removed. It returns a clear error instead of letting a
@@ -1446,7 +1462,7 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	for i := range msgs {
 		fitMsgs[i] = messagefit.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
 	}
-	messagefit.Fit(fitMsgs, ctxLen)
+	messagefit.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
 
 	fitted := make([]eschema.Message, 0, len(msgs))
 	for i := range msgs {

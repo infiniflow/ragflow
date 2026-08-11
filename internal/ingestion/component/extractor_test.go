@@ -1951,3 +1951,16 @@ func TestExtractorContextLength_UnknownModelSkips(t *testing.T) {
 		t.Fatalf("extractorContextLength(unknown) = %d, want 0", got)
 	}
 }
+
+// TestExtractorContextFitBudget verifies the fitting budget is 97% of the
+// resolved content_length (mirroring the agent's contextFitBudget), leaving
+// headroom for tokenizer drift between cl100k and the model's own tokenizer,
+// and that a tiny context never collapses to messagefit's <=0 → 8192 default.
+func TestExtractorContextFitBudget(t *testing.T) {
+	if got := extractorContextFitBudget(128000); got != 124160 {
+		t.Fatalf("extractorContextFitBudget(128000) = %d, want 124160", got)
+	}
+	if got := extractorContextFitBudget(1); got != 1 {
+		t.Fatalf("extractorContextFitBudget(1) = %d, want 1 (clamped to avoid the 8192 Fit default)", got)
+	}
+}

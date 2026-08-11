@@ -288,8 +288,11 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	}
 	total := tokenizer.NumTokensFromString(capt.req.Messages[0].Content) +
 		tokenizer.NumTokensFromString(capt.req.Messages[1].Content)
-	if total > budget {
-		t.Fatalf("fitted messages total %d tokens exceeds budget %d", total, budget)
+	// The budget is 97% of the resolved content_length (the override value),
+	// mirroring the agent's contextFitBudget; the margin keeps a fitted
+	// prompt inside the provider's real context limit.
+	if total > extractorContextFitBudget(budget) {
+		t.Fatalf("fitted messages total %d tokens exceeds the margin-adjusted budget %d", total, extractorContextFitBudget(budget))
 	}
 }
 
