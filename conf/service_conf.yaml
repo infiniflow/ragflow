@@ -66,8 +66,6 @@ otel:
   enable: false
 ingestor:
   mq_type: 'nats'
-task_executor:
-  message_queue_type: 'nats'
 file_syncer:
   max_concurrent_syncs: 4
   sync_interval: 3

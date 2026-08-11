@@ -15,6 +15,7 @@
 package handler
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,11 +26,11 @@ import (
 )
 
 type ChatChannelService interface {
-	CreateChatChannel(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
-	List(tenantID string) ([]*entity.ChatChannelListResponse, error)
-	GetChatChannel(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
-	UpdateChatChannel(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
-	DeleteChatChannel(userID, channelID string) (bool, common.ErrorCode, error)
+	CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error)
+	GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
+	UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
+	DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error)
 }
 
 type ChatChannelHandler struct {
@@ -66,7 +67,10 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	row, err := h.chatChannelService.CreateChatChannel(
+		ctx,
 		user.ID,
 		req.Name,
 		req.Channel,
@@ -88,7 +92,8 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.chatChannelService.List(user.ID)
+	ctx := c.Request.Context()
+	rows, err := h.chatChannelService.List(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
@@ -116,7 +121,8 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 		return
 	}
 
-	channel, code, err := h.chatChannelService.GetChatChannel(userID, channelID)
+	ctx := c.Request.Context()
+	channel, code, err := h.chatChannelService.GetChatChannel(ctx, userID, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
@@ -151,7 +157,8 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatChannelService.UpdateChatChannel(userID, channelID, unwrapChatChannelPayload(request))
+	ctx := c.Request.Context()
+	result, code, err := h.chatChannelService.UpdateChatChannel(ctx, userID, channelID, unwrapChatChannelPayload(request))
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
@@ -180,7 +187,8 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatChannelService.DeleteChatChannel(userID, channelID)
+	ctx := c.Request.Context()
+	result, code, err := h.chatChannelService.DeleteChatChannel(ctx, userID, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return

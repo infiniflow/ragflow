@@ -17,6 +17,7 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -37,12 +38,12 @@ func (e *embedder) MaxTokens() int {
 	return e.model.MaxTokens
 }
 
-func (e *embedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error) {
+func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	if e.model.ModelDriver == nil {
 		return nil, fmt.Errorf("embedder: embedding model driver is nil for model %v", e.model.ModelName)
 	}
 	config := &models.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.model.ModelDriver.Embed(e.model.ModelName, texts, e.model.APIConfig, config, nil)
+	embeds, err := e.model.ModelDriver.Embed(ctx, e.model.ModelName, texts, e.model.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -60,11 +61,11 @@ func (e *embedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error
 // injectable deps so the resolution logic stays unit-testable without a live
 // model provider / DB.
 func newEmbedderResolver(
-	getKBEmbdID func(kbID string) (string, error),
-	getEmbeddingModel func(tenantID, embdID string) (*models.EmbeddingModel, error),
+	getKBEmbdID func(ctx context.Context, kbID string) (string, error),
+	getEmbeddingModel func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error),
 ) componentpkg.EmbedderResolver {
-	return func(tenantID, kbID, _ string) (componentpkg.Embedder, error) {
-		embdID, err := getKBEmbdID(kbID)
+	return func(ctx context.Context, tenantID, kbID, _ string) (componentpkg.Embedder, error) {
+		embdID, err := getKBEmbdID(ctx, kbID)
 		if err != nil {
 			return nil, fmt.Errorf("embedder: resolve kb embd_id for kb_id=%s: %w", kbID, err)
 		}
@@ -72,7 +73,7 @@ func newEmbedderResolver(
 		if embdID == "" {
 			return nil, nil
 		}
-		model, err := getEmbeddingModel(tenantID, embdID)
+		model, err := getEmbeddingModel(ctx, tenantID, embdID)
 		if err != nil {
 			return nil, err
 		}
@@ -89,8 +90,8 @@ func newEmbedderResolver(
 // composition root for ingestion runs.
 func init() {
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
-		func(kbID string) (string, error) {
-			kb, err := dao.NewKnowledgebaseDAO().GetByID(kbID)
+		func(ctx context.Context, kbID string) (string, error) {
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
 			if err != nil {
 				return "", err
 			}

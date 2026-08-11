@@ -175,7 +175,8 @@
                         },
                         "auto_keywords": 0,
                         "auto_questions": 0,
-                        "llm_id": ""
+                        "llm_id": "",
+                        "auto_tags": 0
                     }
                 }
             }

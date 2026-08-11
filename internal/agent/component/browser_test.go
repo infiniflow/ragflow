@@ -199,7 +199,7 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected tenant LLM lookup error, got nil")
 	}
@@ -281,7 +281,7 @@ func TestBrowser_MissingTenant(t *testing.T) {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	ctx := canvas.WithState(context.Background(), state)
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "tenant_id") {
 		t.Errorf("expected tenant_id error, got %v", err)
 	}
@@ -313,7 +313,7 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected runtime error, got nil")
 	}
@@ -431,7 +431,7 @@ func TestBrowser_RunExtractRequestShape(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	req := mock.lastRequest(t)
@@ -474,7 +474,7 @@ func TestBrowser_HeadlessPropagates(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	req := mock.lastRequest(t)
@@ -505,7 +505,7 @@ func TestBrowser_OutputsShape(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

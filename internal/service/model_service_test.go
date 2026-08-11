@@ -182,7 +182,8 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
-	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID("user-1", entity.ModelTypeChat, "model-1")
+	ctx := t.Context()
+	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID(ctx, "user-1", entity.ModelTypeChat, "model-1")
 	if err != nil {
 		t.Fatalf("GetModelConfigByID() error = %v", err)
 	}

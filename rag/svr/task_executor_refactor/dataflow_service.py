@@ -326,7 +326,7 @@ class DataflowService:
                 del ck["metadata"]
 
             if "content_with_weight" not in ck:
-                ck["content_with_weight"] = ck["text"]
+                ck["content_with_weight"] = ck["text"] or ""
             del ck["text"]
 
             if "positions" in ck:

@@ -1411,7 +1411,10 @@
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan-M2-Plus",
@@ -1425,7 +1428,10 @@
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan-Text-Embedding",
@@ -1445,7 +1451,10 @@
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan2-Turbo-192k",
@@ -1459,35 +1468,50 @@
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan3-Turbo-128k",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan4",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan4-Air",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Baichuan4-Turbo",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "baidu/ernie-5.0-thinking-exp",
@@ -3221,6 +3245,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -3299,7 +3326,10 @@
       "alias": [
         "claude-opus-4.6"
       ],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-opus-4-7",
@@ -3312,7 +3342,10 @@
       ],
       "alias": [
         "claude-opus-4.7"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-opus-4-7-thinking",
@@ -3380,7 +3413,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-sonnet-4-5-20250929-thinking",
@@ -3408,6 +3444,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -4091,6 +4130,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -4118,7 +4160,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 8000
+      "max_completion_tokens": 8000,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek/deepseek-v3/community",
@@ -4129,7 +4174,10 @@
       "alias": [
         "community"
       ],
-      "max_completion_tokens": 8000
+      "max_completion_tokens": 8000,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek-ai/deepseek-v4-flash",
@@ -4148,6 +4196,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -4177,6 +4228,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -4944,7 +4998,10 @@
         "image2text",
         "vision"
       ],
-      "max_completion_tokens": 8192
+      "max_completion_tokens": 8192,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek-ocr-2",
@@ -4973,6 +5030,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -4989,6 +5049,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -5137,7 +5200,10 @@
       "model_types": [
         "chat"
       ],
-      "max_completion_tokens": 16384
+      "max_completion_tokens": 16384,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "deepseek-v3-1-think-250821",
@@ -5147,6 +5213,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -5185,6 +5254,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -5207,6 +5279,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -5234,6 +5309,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -5249,6 +5327,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -5898,6 +5979,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -6593,14 +6677,20 @@
       "name": "glm-4",
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-0520",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-5-air-20250728",
@@ -6631,7 +6721,10 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-air-250414",
@@ -6645,7 +6738,10 @@
       "max_tokens": 8000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-flash",
@@ -6672,14 +6768,20 @@
       "max_tokens": 1000000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4-plus",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4.1v-thinking-flash",
@@ -6708,7 +6810,10 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4.5-flash",
@@ -6725,7 +6830,10 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4.7-coding-preview",
@@ -6786,6 +6894,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -6801,6 +6912,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -7631,7 +7745,10 @@
       "alias": [],
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "google/gemma-2-2b-it-GGUF",
@@ -7853,7 +7970,10 @@
         "chat",
         "image2text",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "google/gemma-3-27b-it-qat-q4_0-gguf",
@@ -9921,7 +10041,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-3.5-turbo-0125",
@@ -9978,7 +10101,10 @@
       ],
       "alias": [
         "gpt-4-all"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4-0125-preview",
@@ -10009,7 +10135,10 @@
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4-32k-0613",
@@ -10085,7 +10214,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4.1-2025-04-14",
@@ -10101,7 +10233,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4.1-mini-2025-04-14",
@@ -10117,7 +10252,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4.1-nano-2025-04-14",
@@ -10137,7 +10275,10 @@
       ],
       "alias": [
         "gpt-4o-all"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4o-2024-08-06",
@@ -10206,7 +10347,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-4o-mini-2024-07-18",
@@ -10361,7 +10505,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-5-codex-2025-09-15",
@@ -10510,7 +10657,10 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-5.1-codex-2025-11-13",
@@ -10608,6 +10758,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -10697,7 +10850,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "alias": []
+      "alias": [],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-5.4-nano-2026-03-17",
@@ -11063,7 +11219,10 @@
       "max_completion_tokens": 8192,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "groq/compound-mini",
@@ -11074,7 +11233,10 @@
       "max_completion_tokens": 8192,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Gryphe/MythoMax-L2-13b-turbo",
@@ -13799,7 +13961,10 @@
         "clear_thinking": true
       },
       "max_tokens": 262144,
-      "max_completion_tokens": 32768
+      "max_completion_tokens": 32768,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "kimi-k2-thinking",
@@ -13810,6 +13975,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -13847,6 +14015,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -14447,7 +14618,10 @@
       "max_completion_tokens": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "llama-3.3-70b-versatile",
@@ -14455,7 +14629,10 @@
       "max_completion_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "llama-4-maverick",
@@ -15088,7 +15265,10 @@
       "max_tokens": 131072,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "meta-llama/Llama-3.2-11B-Vision",
@@ -16367,6 +16547,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -16389,6 +16572,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -16459,6 +16645,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -16590,7 +16779,10 @@
         "MiniMaxAI/MiniMax-M3",
         "MiniMax M3"
       ],
-      "max_completion_tokens": 131072
+      "max_completion_tokens": 131072,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "MiniMax-Voice-Clone",
@@ -17350,7 +17542,10 @@
         "chat"
       ],
       "max_tokens": 131072,
-      "max_completion_tokens": 16000
+      "max_completion_tokens": 16000,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "mistralai/Mistral-Nemo-Instruct-2407",
@@ -17643,7 +17838,10 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshot-v1-128k-vision-preview",
@@ -17652,14 +17850,20 @@
         "chat",
         "image2text",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshot-v1-32k",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshot-v1-32k-vision-preview",
@@ -17668,14 +17872,20 @@
         "chat",
         "image2text",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshot-v1-8k",
       "max_tokens": 8000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshot-v1-8k-vision-preview",
@@ -17684,7 +17894,10 @@
         "chat",
         "image2text",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshotai/Kimi-Audio-7B",
@@ -17788,7 +18001,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 262144
+      "max_completion_tokens": 262144,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "moonshotai/Kimi-K2.5",
@@ -18321,6 +18537,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -20662,7 +20881,10 @@
       ],
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "nvidia/nemotron-3-super-120b-a12b:free",
@@ -22995,7 +23217,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 65536
+      "max_completion_tokens": 65536,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "openai/gpt-oss-120b-Turbo",
@@ -23029,7 +23254,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 65536
+      "max_completion_tokens": 65536,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "openai/gpt-oss-safeguard-120b",
@@ -23970,7 +24198,10 @@
       ],
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "orcarouter/fusion",
@@ -24216,7 +24447,10 @@
         "chat",
         "image2text",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "Pixverse/Pixverse-6-I2V",
@@ -24873,7 +25107,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 65536
+      "max_completion_tokens": 65536,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3.7-max-preview",
@@ -25049,7 +25286,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 65536
+      "max_completion_tokens": 65536,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3.5-plus-20260420",
@@ -25161,7 +25401,10 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "max_completion_tokens": 65536
+      "max_completion_tokens": 65536,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3.5-27b",
@@ -25498,6 +25741,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -26057,7 +26303,10 @@
         "chat"
       ],
       "max_tokens": 32768,
-      "max_completion_tokens": 40960
+      "max_completion_tokens": 40960,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3-8b",
@@ -26068,7 +26317,10 @@
       "model_types": [
         "chat"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3-8b-base",
@@ -26382,6 +26634,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -26536,6 +26791,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -27056,7 +27314,10 @@
         "chat"
       ],
       "max_tokens": 262144,
-      "max_completion_tokens": 65536
+      "max_completion_tokens": 65536,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3-coder-480b-a35b-instruct-fp8",
@@ -28519,7 +28780,10 @@
         "chat"
       ],
       "max_tokens": 131072,
-      "max_completion_tokens": 32000
+      "max_completion_tokens": 32000,
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen2.5-32b-instruct-awq",
@@ -32999,7 +33263,10 @@
       ],
       "alias": [
         "solar-mini-250422"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "solar-pro2",
@@ -33008,7 +33275,10 @@
       ],
       "alias": [
         "solar-pro2-251215"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "solar-pro3",
@@ -33017,7 +33287,10 @@
       ],
       "alias": [
         "solar-pro3-260323"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "sonar",
@@ -33762,21 +34035,30 @@
         "chat",
         "image2text",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "step-1v-32k",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "step-1v-8k",
       "max_tokens": 8000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "step-2-16k",
@@ -33786,7 +34068,10 @@
       "max_tokens": 16000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "step-2-16k-exp",

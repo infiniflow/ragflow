@@ -18,7 +18,10 @@
       "max_tokens": 995904,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "text-embedding-v4",
@@ -29,10 +32,14 @@
     },
     {
       "name": "qwen3-vl-plus",
-      "max_tokens": 260096,
+      "max_tokens": 256000,
       "model_types": [
-        "vision"
-      ]
+        "vision",
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen-tts-flash",

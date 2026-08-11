@@ -92,6 +92,7 @@ func (h *Handler) Ping(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /admin/login [post]
 func (h *Handler) Login(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
@@ -100,7 +101,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Use userService.LoginByEmail with adminLogin=true
 	// This allows default admin account to log in admin system
-	user, code, err := h.userService.LoginByEmail(&req)
+	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -191,14 +192,21 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	quotaInt, err := common.ParseRequestIntPositive(c, c.Query("quota"), "quota", 0)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if quotaInt > 100 {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Quota must be less than or equal to 100")
-		return
+	// quota is optional: nil when the query param is absent, &v when present
+	// (including 0). This lets ListUsersEE distinguish "no quota filter" from
+	// "filter by quota threshold 0".
+	var quotaPtr *int
+	if quotaStr := c.Query("quota"); quotaStr != "" {
+		q, err := common.ParseRequestIntPositive(c, quotaStr, "quota", 0)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			return
+		}
+		if q > 100 {
+			common.ErrorWithCode(c, common.CodeBadRequest, "Quota must be less than or equal to 100")
+			return
+		}
+		quotaPtr = &q
 	}
 	daysInt, err := common.ParseRequestIntPositive(c, c.Query("days"), "days", 0)
 	if err != nil {
@@ -219,11 +227,13 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.SuccessWithData(c, users, "List users")
 		return
 	case common.EnterpriseEdition:
-		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaInt)
+		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
+		common.SuccessWithData(c, users, "List users")
+		return
 	default:
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
@@ -248,8 +258,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = "user"
 	}
+	ctx := c.Request.Context()
 
-	userInfo, err := h.service.CreateUser(req.Username, req.Password, req.Role)
+	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -299,7 +310,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.DeleteUser(username)
+	result, err := h.service.DeleteUser(c.Request.Context(), username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -422,7 +433,8 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 		return
 	}
 
-	apiKeys, err := h.service.ListUserAPITokens(username)
+	ctx := c.Request.Context()
+	apiKeys, err := h.service.ListUserAPITokens(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -438,7 +450,8 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.service.GenerateUserAPIToken(username)
+	ctx := c.Request.Context()
+	apiKey, err := h.service.GenerateUserAPIToken(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -461,7 +474,8 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 		return
 	}
 
-	if err = h.service.DeleteUserAPIToken(username, key); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.DeleteUserAPIToken(ctx, username, key); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
@@ -585,10 +599,11 @@ func (h *Handler) RestartService(c *gin.Context) {
 
 // ListVariables handle list variables
 func (h *Handler) ListVariables(c *gin.Context) {
+	ctx := c.Request.Context()
 	// Check if request has body content
 	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
 		// List all variables
-		variables, err := h.service.ListAllVariables()
+		variables, err := h.service.ListAllVariables(ctx)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -611,7 +626,7 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.service.GetVariable(req.VarName)
+	variable, err := h.service.GetVariable(ctx, req.VarName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -633,7 +648,8 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.service.GetVariable(varName)
+	ctx := c.Request.Context()
+	variable, err := h.service.GetVariable(ctx, varName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -667,7 +683,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
+	ctx := c.Request.Context()
+	if err := h.service.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -701,38 +718,6 @@ func (h *Handler) ListEnvironments(c *gin.Context) {
 func (h *Handler) GetVersion(c *gin.Context) {
 	version, versionType := h.service.GetVersion()
 	common.SuccessWithData(c, gin.H{"version": version, "version_type": versionType}, "")
-}
-
-// GetFingerprint handle get system fingerprint
-func (h *Handler) GetFingerprint(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
-type SetLicenseHTTPRequest struct {
-	License string `json:"license" binding:"required"`
-}
-
-// SetLicense to set system license
-func (h *Handler) SetLicense(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
-type SetLicenseConfigHTTPRequest struct {
-	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
-	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
-}
-
-func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
-}
-
-// ShowLicense to get system license
-func (h *Handler) ShowLicense(c *gin.Context) {
-	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
-	return
 }
 
 // ListSandboxProviders handle list sandbox providers
@@ -839,6 +824,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 // Validates that the user is authenticated and is a superuser (admin)
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		token := c.GetHeader("Authorization")
 		if token == "" {
 			common.ErrorWithCode(c, common.CodeUnauthorized, "Missing authorization header")
@@ -847,7 +833,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(token)
+		user, code, err := h.userService.GetUserByToken(ctx, token)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
@@ -1037,7 +1023,8 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	}
 
 	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
+		ctx := c.Request.Context()
+		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
 			return
@@ -1068,7 +1055,8 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	}
 
 	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.StopIngestionTasks(req.Tasks)
+		ctx := c.Request.Context()
+		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
 			return
@@ -1103,7 +1091,8 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 	var tasks []map[string]interface{}
 	var req ListIngestionTasksRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		tasks, err = h.service.ListIngestionTasks()
+		ctx := c.Request.Context()
+		tasks, err = h.service.ListIngestionTasks(ctx)
 	} else {
 		tasks, err = h.service.ListIngestionTasksByCondition(req.Email, req.Status)
 	}
@@ -1177,11 +1166,6 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Handle the heartbeat
 	errCode, message := h.service.HandleHeartbeat(&req)
-	if errCode != common.CodeLicenseValid {
-		common.ErrorWithCode(c, errCode, message)
-		return
-	}
-
 	common.ErrorWithCode(c, errCode, message)
 }
 
@@ -1263,10 +1247,16 @@ func (h *Handler) PingCache(c *gin.Context) {
 }
 
 func (h *Handler) PingEngine(c *gin.Context) {
-
 	docEngine := engine.Get()
 	ctx := context.Background()
 	if err := docEngine.Ping(ctx); err != nil {
+		var coded interface {
+			Code() common.ErrorCode
+		}
+		if errors.As(err, &coded) {
+			common.ResponseWithHttpCodeData(c, http.StatusServiceUnavailable, coded.Code(), nil, err.Error())
+			return
+		}
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}

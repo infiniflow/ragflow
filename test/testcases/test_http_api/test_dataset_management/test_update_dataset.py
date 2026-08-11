@@ -77,7 +77,7 @@ class TestRquest:
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
         assert res["code"] == 102, res
-        assert res["message"] == "No properties were modified", res
+        assert res["message"] == "no properties were modified", res
 
     @pytest.mark.p3
     def test_payload_unset(self, HttpApiAuth, add_dataset_func):

@@ -222,8 +222,8 @@ class RAGTools:
             "them all together as one comma-separated list, in the SAME language as the question.\n"
             '   Example — question "In which year did Apple acquire Beats?": keywords = '
             '"Apple, Apple Inc., acquire, acquisition, Beats" (terms from the question + synonyms; '
-            'the year is the ANSWER, so it must NOT appear).\n\n'
-            'Output ONLY JSON, no prose, no code fences: '
+            "the year is the ANSWER, so it must NOT appear).\n\n"
+            "Output ONLY JSON, no prose, no code fences: "
             '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
         )
         user = f"Conversation:\n{transcript}\n\nOutput JSON:"

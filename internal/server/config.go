@@ -51,7 +51,6 @@ type Config struct {
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
-	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 	Ingestor         IngestorConfig         `mapstructure:"ingestor"`
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
 	OTel             OtelConfig             `mapstructure:"otel"`

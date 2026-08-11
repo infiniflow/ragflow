@@ -25,6 +25,8 @@ import (
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
@@ -564,10 +566,7 @@ func (e *elasticsearchEngine) SearchMetadata(ctx context.Context, req *types.Sea
 		}, nil
 	}
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 30
@@ -723,7 +722,7 @@ const metaPushdownMaxSize = 10000
 //	nil        -> push-down was not viable / errored / result overflowed the
 //	              push-down cap (caller should fall back to in-memory)
 //	[]string{} -> push-down succeeded but found 0 matching docs (empty result is definitive)
-func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
+func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
 	if len(conditions) == 0 || len(kbIDs) == 0 {
 		return nil
 	}
@@ -736,7 +735,7 @@ func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kb
 
 	// Execute search for each tenant (use first KB to get tenant)
 	kb := kbIDs[0]
-	tenantID, err := dao.GetTenantIDByKBID(kb)
+	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kb)
 	if err != nil {
 		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kb), zap.Error(err))
 		return nil

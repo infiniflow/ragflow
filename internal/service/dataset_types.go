@@ -129,7 +129,7 @@ type CreateDatasetRequest struct {
 	ParserID       *string `json:"parser_id,omitempty"`
 	PipelineID     *string `json:"pipeline_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
-	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
 }
 
@@ -154,6 +154,11 @@ type UpdateDatasetRequest struct {
 	ParserConfig   map[string]interface{}     `json:"parser_config,omitempty"`
 	PipelineID     *string                    `json:"pipeline_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
-	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
+
+	// ParserConfigProvided reports whether the raw request body contained a
+	// "parser_config" key. An explicitly provided parser_config ({} or null) is a
+	// valid no-op that must succeed, unlike a truly empty request body.
+	ParserConfigProvided bool `json:"-"`
 }

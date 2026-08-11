@@ -17,8 +17,10 @@ func InjectExtractorLLMID(parserConfig map[string]interface{}, llmID string) boo
 		}
 		cidLower := strings.ToLower(cid)
 		if strings.HasPrefix(cidLower, "extractor:") || strings.HasPrefix(cidLower, "extractor_") {
-			compMap["llm_id"] = llmID
-			updated = true
+			if current, ok := compMap["llm_id"].(string); !ok || current == "" {
+				compMap["llm_id"] = llmID
+				updated = true
+			}
 		}
 	}
 	return updated

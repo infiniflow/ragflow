@@ -66,6 +66,7 @@ func TestVoyageNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestVoyageEmbedHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "voyage-3.5" {
 			t.Errorf("model=%v", body["model"])
@@ -85,7 +86,7 @@ func TestVoyageEmbedHappyPath(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	vecs, err := v.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := v.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -102,6 +103,7 @@ func TestVoyageEmbedHappyPath(t *testing.T) {
 // "dimensions" returns "Argument 'dimensions' is not supported by our
 // API"), so this name matters and must not regress.
 func TestVoyageEmbedPropagatesOutputDimension(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if got, ok := body["output_dimension"].(float64); !ok || got != 256 {
 			t.Errorf("output_dimension=%v want 256", body["output_dimension"])
@@ -120,7 +122,7 @@ func TestVoyageEmbedPropagatesOutputDimension(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey},
+	_, err := v.Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &apiKey},
 		&EmbeddingConfig{Dimension: 256}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
@@ -131,6 +133,7 @@ func TestVoyageEmbedPropagatesOutputDimension(t *testing.T) {
 // would default the vector length, but only if we don't send the key
 // at all (sending output_dimension: 0 is a 400).
 func TestVoyageEmbedOmitsOutputDimensionWhenUnset(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if _, present := body["output_dimension"]; present {
 			t.Errorf("output_dimension must be absent when Dimension is unset, got %v", body["output_dimension"])
@@ -144,13 +147,14 @@ func TestVoyageEmbedOmitsOutputDimensionWhenUnset(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := v.Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 }
 
 func TestVoyageEmbedReordersByIndex(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -165,7 +169,7 @@ func TestVoyageEmbedReordersByIndex(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	vecs, err := v.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := v.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -177,6 +181,7 @@ func TestVoyageEmbedReordersByIndex(t *testing.T) {
 }
 
 func TestVoyageEmbedEmptyInputShortCircuits(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("Embed([]) made an unexpected HTTP call")
 	}))
@@ -185,31 +190,34 @@ func TestVoyageEmbedEmptyInputShortCircuits(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	vecs, err := v.Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := v.Embed(ctx, &model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil || len(vecs) != 0 {
 		t.Errorf("Embed([])=(%v,%v)", vecs, err)
 	}
 }
 
 func TestVoyageEmbedRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	v := newVoyageForTest("http://unused")
 	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := v.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestVoyageEmbedRequiresModelName(t *testing.T) {
+	ctx := t.Context()
 	v := newVoyageForTest("http://unused")
 	apiKey := "test-key"
-	_, err := v.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := v.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 }
 
 func TestVoyageEmbedRejectsDuplicateIndex(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -223,13 +231,14 @@ func TestVoyageEmbedRejectsDuplicateIndex(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := v.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate error, got %v", err)
 	}
 }
 
 func TestVoyageEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -242,13 +251,14 @@ func TestVoyageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := v.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
 }
 
 func TestVoyageEmbedRejectsMissingSlot(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -261,13 +271,14 @@ func TestVoyageEmbedRejectsMissingSlot(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := v.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
 }
 
 func TestVoyageRerankHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		// Voyage's request key is top_k (not top_n).
 		if body["top_k"] != float64(3) {
@@ -291,7 +302,7 @@ func TestVoyageRerankHappyPath(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "rerank-2"
-	resp, err := v.Rerank(&model, "x", []string{"a", "b", "c"},
+	resp, err := v.Rerank(ctx, &model, "x", []string{"a", "b", "c"},
 		&APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 3}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
@@ -308,6 +319,7 @@ func TestVoyageRerankHappyPath(t *testing.T) {
 }
 
 func TestVoyageRerankTopKDefaultsToLenDocuments(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_k"] != float64(4) {
 			t.Errorf("top_k=%v want 4 (len(documents))", body["top_k"])
@@ -319,7 +331,7 @@ func TestVoyageRerankTopKDefaultsToLenDocuments(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "rerank-2"
-	_, err := v.Rerank(&model, "x", []string{"a", "b", "c", "d"},
+	_, err := v.Rerank(ctx, &model, "x", []string{"a", "b", "c", "d"},
 		&APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
@@ -327,10 +339,11 @@ func TestVoyageRerankTopKDefaultsToLenDocuments(t *testing.T) {
 }
 
 func TestVoyageRerankEmptyDocuments(t *testing.T) {
+	ctx := t.Context()
 	v := newVoyageForTest("http://unused")
 	apiKey := "test-key"
 	model := "rerank-2"
-	resp, err := v.Rerank(&model, "x", nil,
+	resp, err := v.Rerank(ctx, &model, "x", nil,
 		&APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 0}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
@@ -341,6 +354,7 @@ func TestVoyageRerankEmptyDocuments(t *testing.T) {
 }
 
 func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
+	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -353,7 +367,7 @@ func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "rerank-2"
-	_, err := v.Rerank(&model, "x", []string{"a", "b"},
+	_, err := v.Rerank(ctx, &model, "x", []string{"a", "b"},
 		&APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
@@ -361,6 +375,7 @@ func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
+	ctx := t.Context()
 	// A duplicate index would silently overwrite an earlier slot, which
 	// is the same failure mode Embed already guards against. Make sure
 	// Rerank fails loudly too.
@@ -377,7 +392,7 @@ func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
 	v := newVoyageForTest(srv.URL)
 	apiKey := "test-key"
 	model := "rerank-2"
-	_, err := v.Rerank(&model, "x", []string{"a", "b"},
+	_, err := v.Rerank(ctx, &model, "x", []string{"a", "b"},
 		&APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate rerank index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
@@ -389,6 +404,7 @@ func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
 // (e.g. `.../v1//embeddings`). Rerank already trims, so Embed must
 // trim too; CodeRabbit flagged the inconsistency.
 func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
+	ctx := t.Context()
 	var sawPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawPath = r.URL.Path
@@ -404,7 +420,7 @@ func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
 	)
 	apiKey := "test-key"
 	model := "voyage-3.5"
-	if _, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+	if _, err := v.Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 	if sawPath != "/v1/embeddings" {

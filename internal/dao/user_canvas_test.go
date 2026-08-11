@@ -133,3 +133,60 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 		t.Fatalf("expected original DSL to remain unchanged, got %v", path)
 	}
 }
+
+func TestUserCanvasDAOListTagsIncludesPipelineWhenCategoryIsEmpty(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	pushDB(t, db)
+
+	dao := NewUserCanvasDAO()
+	pipelineType := "pipeline"
+	rows := []*entity.UserCanvas{
+		{
+			ID:             "agent-canvas",
+			UserID:         "user-1",
+			Title:          stringPtr("Agent Canvas"),
+			Permission:     "me",
+			CanvasCategory: "agent_canvas",
+			Tags:           "agent-tag,shared",
+		},
+		{
+			ID:             "pipeline-canvas",
+			UserID:         "user-1",
+			Title:          stringPtr("Pipeline Canvas"),
+			Permission:     "me",
+			CanvasCategory: "dataflow_canvas",
+			CanvasType:     &pipelineType,
+			Tags:           "pipeline-tag,shared",
+		},
+	}
+	for _, row := range rows {
+		if err := dao.Create(row); err != nil {
+			t.Fatalf("failed to create canvas %s: %v", row.ID, err)
+		}
+	}
+
+	counts, err := dao.ListTags([]string{"user-1"}, "user-1", "")
+	if err != nil {
+		t.Fatalf("ListTags failed: %v", err)
+	}
+	if counts["agent-tag"] != 1 {
+		t.Fatalf("agent-tag count = %d, want 1", counts["agent-tag"])
+	}
+	if counts["pipeline-tag"] != 1 {
+		t.Fatalf("pipeline-tag count = %d, want 1", counts["pipeline-tag"])
+	}
+	if counts["shared"] != 2 {
+		t.Fatalf("shared count = %d, want 2", counts["shared"])
+	}
+
+	counts, err = dao.ListTags([]string{"user-1"}, "user-1", "agent_canvas")
+	if err != nil {
+		t.Fatalf("ListTags with category failed: %v", err)
+	}
+	if counts["pipeline-tag"] != 0 {
+		t.Fatalf("pipeline-tag count with agent_canvas filter = %d, want 0", counts["pipeline-tag"])
+	}
+	if counts["agent-tag"] != 1 {
+		t.Fatalf("agent-tag count with agent_canvas filter = %d, want 1", counts["agent-tag"])
+	}
+}

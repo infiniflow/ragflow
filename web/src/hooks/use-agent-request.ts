@@ -7,6 +7,7 @@ import {
   IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
+  IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
   IPipeLineListRequest,
@@ -77,6 +78,9 @@ export const enum AgentApiAction {
   FetchSharedAgent = 'fetchSharedAgent',
   FetchAgentTags = 'fetchAgentTags',
   UpdateAgentTags = 'updateAgentTags',
+  FetchPipelineNodes = 'fetchPipelineNodes',
+  FetchBuiltinPipelineList = 'fetchBuiltinPipelineList',
+  FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
 export const useFetchAgentTemplates = () => {
@@ -867,6 +871,37 @@ export const useFetchAgentList = ({
   return { data, loading };
 };
 
+export const BuiltinPipelineKeys = {
+  list: (type: string) =>
+    [AgentApiAction.FetchBuiltinPipelineList, type] as const,
+  detail: (id: string) =>
+    [AgentApiAction.FetchBuiltinPipelineDetail, id] as const,
+};
+
+export const useFetchBuiltinPipelines = (type = 'builtin', enabled = true) => {
+  const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
+    queryKey: BuiltinPipelineKeys.list(type),
+    initialData: { canvas: [], total: 0 },
+    gcTime: 0,
+    enabled,
+    queryFn: async () => {
+      const { data } = await agentService.listBuiltinPipelines(
+        { params: { type } },
+        true,
+      );
+      return data?.data ?? { canvas: [], total: 0 };
+    },
+  });
+
+  const options =
+    data?.canvas?.map((item) => ({
+      label: item.title,
+      value: item.id,
+    })) ?? [];
+
+  return { data, loading, options };
+};
+
 export const useCancelDataflow = () => {
   const {
     data,
@@ -1115,4 +1150,27 @@ export const useExportAgentLog = () => {
   });
 
   return { exportLogs: mutateAsync, loading };
+};
+
+export const useFetchPipelineDslByPipelineId = (
+  pipelineId?: string,
+  isBuiltin = false,
+) => {
+  const { data: dsl, isFetching: loading } = useQuery({
+    queryKey: isBuiltin
+      ? BuiltinPipelineKeys.detail(pipelineId!)
+      : [AgentApiAction.FetchPipelineNodes, pipelineId],
+    initialData: {},
+    gcTime: 0,
+    enabled: !!pipelineId,
+    queryFn: async () => {
+      const { data } = isBuiltin
+        ? await agentService.getBuiltinPipeline(pipelineId!)
+        : await agentService.getAgent(pipelineId!);
+      const flow = data?.data;
+      return flow?.dsl ?? {};
+    },
+  });
+
+  return { dsl, loading };
 };

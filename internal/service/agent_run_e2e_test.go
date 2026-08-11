@@ -56,6 +56,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
@@ -1689,7 +1690,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 
 type categorizeResumeInvoker struct{}
 
-func (i *categorizeResumeInvoker) Invoke(_ context.Context, req component.ChatInvokeRequest) (*component.ChatInvokeResponse, error) {
+func (i *categorizeResumeInvoker) Invoke(_ context.Context, _ *gorm.DB, req component.ChatInvokeRequest) (*component.ChatInvokeResponse, error) {
 	return &component.ChatInvokeResponse{
 		Content: "Retrieval",
 		Model:   req.ModelName,
@@ -1711,10 +1712,8 @@ func (i *categorizeResumeInvoker) Invoke(_ context.Context, req component.ChatIn
 // matching the Python canvas.py soft-fail). Parameter-binding
 // sites keep runtime.ResolveTemplate's loud-fail contract.
 //
-// mapAgentError must classify the resulting wrapped
-// ErrAgentStorageError as CodeServerError (500). The test asserts
-// at the service layer; the handler-layer mapping is exercised by
-// TestMapAgentError in handler/agent_test.go.
+// A component invocation error must retain its invoke context without being
+// misclassified as an agent storage failure.
 func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
@@ -1775,8 +1774,11 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Invoke of DSL with bad component query ref")
 	}
-	if !strings.Contains(errs[0].Message, "agent storage error") {
-		t.Errorf("error message %q does not mention sanitised label", errs[0].Message)
+	if !strings.Contains(errs[0].Message, "canvas invoke:") {
+		t.Errorf("error message %q does not mention invoke context", errs[0].Message)
+	}
+	if strings.Contains(errs[0].Message, "agent storage error") {
+		t.Errorf("error message %q misclassifies invoke failure as storage failure", errs[0].Message)
 	}
 }
 

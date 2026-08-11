@@ -187,6 +187,13 @@ class PipelineTaskType(StrEnum):
     MEMORY = "Memory"
     ARTIFACT = "Artifact"
     SKILL = "Skill"
+    # KB-wide structure-graph merge tasks (rebuild_dataset_structure_graph_json).
+    STRUCTURE_GRAPH = "StructureGraph"
+    STRUCTURE_MINDMAP = "StructureMindmap"
+    TIMELINE = "Timeline"
+    SESSION_GRAPH = "SessionGraph"
+    SESSION_ESSENCE = "SessionEssence"
+    STRUCTURE = "Structure"
 
 
 VALID_PIPELINE_TASK_TYPES = {
@@ -197,6 +204,12 @@ VALID_PIPELINE_TASK_TYPES = {
     PipelineTaskType.MINDMAP,
     PipelineTaskType.ARTIFACT,
     PipelineTaskType.SKILL,
+    PipelineTaskType.STRUCTURE_GRAPH,
+    PipelineTaskType.STRUCTURE_MINDMAP,
+    PipelineTaskType.TIMELINE,
+    PipelineTaskType.SESSION_GRAPH,
+    PipelineTaskType.SESSION_ESSENCE,
+    PipelineTaskType.STRUCTURE,
 }
 
 
@@ -358,4 +371,16 @@ SOMARK_DEFAULT_CONFIG = {
     "SOMARK_ENABLE_TABLE_IMAGE": 1,
     "SOMARK_ENABLE_IMAGE_UNDERSTANDING": 1,
     "SOMARK_KEEP_HEADER_FOOTER": 0,
+}
+MISTRAL_OCR_ENV_KEYS = [
+    "MISTRAL_OCR_BASE_URL",
+    "MISTRAL_OCR_API_KEY",
+    "MISTRAL_OCR_TABLE_FORMAT",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER",
+]
+MISTRAL_OCR_DEFAULT_CONFIG = {
+    "MISTRAL_OCR_BASE_URL": "https://api.mistral.ai/v1",
+    "MISTRAL_OCR_API_KEY": "",
+    "MISTRAL_OCR_TABLE_FORMAT": "html",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER": 0,
 }

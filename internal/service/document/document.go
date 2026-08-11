@@ -63,7 +63,6 @@ func NewDocumentService() *DocumentService {
 	}
 }
 
-// CreateDocumentRequest create document request
 // UpdateDocumentRequest update document request
 type UpdateDocumentRequest struct {
 	Name        *string  `json:"name"`
@@ -123,6 +122,9 @@ type UpdateDatasetDocumentRequest struct {
 	Progress     *float64       `json:"progress"`
 	ParserConfig map[string]any `json:"parser_config"`
 	MetaFields   map[string]any `json:"meta_fields"`
+	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
+	// 2 = Pipeline (pipeline_id). nil means unspecified.
+	ParseType *int `json:"parse_type,omitempty"`
 }
 
 // PATCH /api/v1/datasets/:dataset_id/documents/:document_id.

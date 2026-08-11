@@ -504,3 +504,94 @@ class NewAPI(OpenAIAPICompatible):
 
 class RAGcon(OpenAIAPICompatible):
     _FACTORY_NAME = "RAGcon"
+
+
+class AIMLAPI(Base):
+    """AIMLAPI (aimlapi.com) aggregates 700+ models behind an OpenAI-compatible
+    API. ``GET /v1/models`` returns one record per model *and* endpoint, so a
+    single model id repeats under different ``type`` values (e.g.
+    ``openai/chat-completions`` and ``openai/responses/submit``); records are
+    de-duplicated by id and their RAGFlow model types unioned.
+
+    The ``type`` (endpoint family) field drives classification. Families RAGFlow
+    cannot consume — image/video/audio generation, batch, OCR — are intentionally
+    left out of the map, so those models are skipped. The listing carries no
+    modality flag, so image-capable chat models are detected from the id, the
+    same way OpenAIAPICompatible does.
+    """
+
+    _FACTORY_NAME = "aimlapi.com"
+
+    _TYPE_TO_MODEL_TYPE = {
+        "openai/chat-completions": LLMType.CHAT.value,
+        "openai/responses/submit": LLMType.CHAT.value,
+        "anthropic/messages": LLMType.CHAT.value,
+        "openai/embeddings": LLMType.EMBEDDING.value,
+        "internal/text-to-speech": LLMType.TTS.value,
+        "internal/speech-to-text/submit": LLMType.ASR.value,
+    }
+
+    # Chat models whose id hints at image input also serve VISION (VLM).
+    # Heuristic: the /v1/models listing exposes no structured modality field.
+    _VISION_HINTS = (
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4-turbo",
+        "gpt-5",
+        "chatgpt-4o",
+        "claude-3",
+        "claude-opus-4",
+        "claude-sonnet-4",
+        "claude-haiku-4",
+        "gemini",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "qwen3-vl",
+        "internvl",
+        "llava",
+        "pixtral",
+        "minicpm-v",
+        "glm-4v",
+        "glm-4.1v",
+        "llama-3.2",
+        "llama-4",
+        "grok-2-vision",
+        "grok-4",
+        "vision",
+        "-vl",
+    )
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        merged = {}
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            model_id = model.get("id")
+            if not model_id:
+                continue
+            model_type = self._TYPE_TO_MODEL_TYPE.get(model.get("type"))
+            if not model_type:
+                continue
+
+            entry = merged.get(model_id)
+            if entry is None:
+                info = model.get("info") or {}
+                entry = {
+                    "name": model_id,
+                    "model_types": [],
+                    "features": [],
+                    "max_tokens": info.get("contextLength") or 8192,
+                }
+                merged[model_id] = entry
+
+            if model_type not in entry["model_types"]:
+                entry["model_types"].append(model_type)
+            if model_type == LLMType.CHAT.value and LLMType.VISION.value not in entry["model_types"] and any(hint in model_id.lower() for hint in self._VISION_HINTS):
+                entry["model_types"].append(LLMType.VISION.value)
+
+        return list(merged.values())

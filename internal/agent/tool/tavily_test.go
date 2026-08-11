@@ -79,8 +79,11 @@ func TestTavily_BuildRequest(t *testing.T) {
 	if gotBody["search_depth"] != "advanced" {
 		t.Errorf("body.search_depth = %v, want advanced", gotBody["search_depth"])
 	}
-	if gotBody["include_raw_content"] != true || gotBody["include_images"] != true {
-		t.Errorf("include flags = raw:%v images:%v, want true/true", gotBody["include_raw_content"], gotBody["include_images"])
+	// include_raw_content and include_images are always forced to false
+	// to match the Python implementation (avoids bloating the context
+	// with base64 image data).
+	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
+		t.Errorf("include flags = raw:%v images:%v, want false/false (forced)", gotBody["include_raw_content"], gotBody["include_images"])
 	}
 }
 
@@ -133,12 +136,12 @@ func TestTavily_RequiresAPIKey(t *testing.T) {
 	// envKey always returns "" so we know the failure is from the
 	// missing api_key, not from a stray process env var.
 	tool := NewTavilyToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
-	_, err := tool.InvokableRun(context.Background(), `{"query":"x"}`)
-	if err == nil {
-		t.Fatal("expected error for missing api_key")
+	out, err := tool.InvokableRun(context.Background(), `{"query":"x"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun should not return a Go error for missing api_key: %v", err)
 	}
-	if !strings.Contains(err.Error(), "api_key") {
-		t.Errorf("err = %v, want to mention api_key", err)
+	if !strings.Contains(out, "api_key") {
+		t.Errorf("output = %q, want to mention api_key", out)
 	}
 }
 
@@ -263,19 +266,22 @@ func TestTavily_ExplicitFlagsOverrideNodeDefaults(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tavily := newTavilyTool(helper, func() string { return "" }, tavilyParams{
-		APIKey: "stored-key", IncludeRawContent: true, IncludeImages: true,
+		APIKey: "stored-key", IncludeAnswer: true,
 	})
 	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow"}`); err != nil {
 		t.Fatalf("InvokableRun(node defaults): %v", err)
 	}
-	if gotBody["include_raw_content"] != true || gotBody["include_images"] != true {
-		t.Fatalf("node default flags were not sent: %#v", gotBody)
-	}
-	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow","include_raw_content":false,"include_images":false}`); err != nil {
-		t.Fatalf("InvokableRun: %v", err)
+	if gotBody["include_answer"] != true {
+		t.Fatalf("node default include_answer was not sent: %#v", gotBody)
 	}
 	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
-		t.Fatalf("explicit false flags were not preserved: %#v", gotBody)
+		t.Fatalf("include_raw_content/images should be forced false: %#v", gotBody)
+	}
+	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow","include_answer":false}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if gotBody["include_answer"] != false {
+		t.Fatalf("explicit false include_answer was not preserved: %#v", gotBody)
 	}
 }
 
@@ -426,12 +432,12 @@ func TestTavilyExtract_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
 
 	tool := NewTavilyExtractToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
-	_, err := tool.InvokableRun(context.Background(), `{"urls":["https://a.example/"]}`)
-	if err == nil {
-		t.Fatal("expected error for missing api_key")
+	out, err := tool.InvokableRun(context.Background(), `{"urls":["https://a.example/"]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun should not return a Go error for missing api_key: %v", err)
 	}
-	if !strings.Contains(err.Error(), "api_key") {
-		t.Errorf("err = %v, want to mention api_key", err)
+	if !strings.Contains(out, "api_key") {
+		t.Errorf("output = %q, want to mention api_key", out)
 	}
 }
 

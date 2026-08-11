@@ -117,10 +117,17 @@ export interface IUpdateProviderInstanceRequestBody {
   verify?: boolean;
 }
 
-export interface ISetDefaultModelRequestBody {
-  model_type: string;
-  model_id: string;
-}
+export type ISetDefaultModelRequestBody =
+  | {
+      model_type: string;
+      model_id: string;
+    }
+  | {
+      model_type: string;
+      model_provider: string;
+      model_instance: string;
+      model_name: string;
+    };
 
 /**
  * Item shape returned by the list-provider-models endpoint.

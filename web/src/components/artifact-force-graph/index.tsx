@@ -1,8 +1,7 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { renderNodeLabel } from './node-label';
 import {
   getNodeColor as defaultGetNodeColor,
   getNodeRadius as defaultGetNodeRadius,
@@ -11,7 +10,12 @@ import {
 import { type ArtifactForceGraphProps, type ArtifactGraphNode } from './types';
 import { useArtifactGraphData } from './use-artifact-graph-data';
 import { useContainerDimensions } from './use-container-dimensions';
+import { useGraphHighlight } from './use-graph-highlight';
 import { defaultMapNodeToValue } from './utils';
+
+const defaultGetNodeId = (node: IArtifactGraphEntity) => node.slug;
+
+const nodeCanvasObjectMode = () => 'after' as const;
 
 function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
@@ -20,9 +24,10 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   mapNodeToValue = defaultMapNodeToValue as (
     node: IArtifactGraphEntity,
   ) => TNodeValue,
-  getNodeId = (node) => node.slug,
+  getNodeId = defaultGetNodeId,
   getNodeColor = defaultGetNodeColor,
   getNodeRadius = defaultGetNodeRadius,
+  highlightNodeId,
 }: ArtifactForceGraphProps<TNodeValue>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
@@ -37,6 +42,34 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     getNodeColor,
     getNodeRadius,
   });
+
+  const getBaseLinkColor = useCallback(() => {
+    if (typeof window === 'undefined' || !containerRef.current) {
+      return '#b2b5b7';
+    }
+    return window
+      .getComputedStyle(containerRef.current)
+      .getPropertyValue('--text-disabled')
+      .trim();
+  }, []);
+
+  // Resolve the controlled id back to a node object reference (highlighting relies on the node's __neighbors/__links)
+  const pinnedNode = useMemo(
+    () =>
+      highlightNodeId
+        ? ((graphData.nodes.find((node) => node.id === highlightNodeId) ??
+            null) as ArtifactGraphNode | null)
+        : null,
+    [graphData, highlightNodeId],
+  );
+
+  const {
+    handleNodeHover,
+    getNodeColor: nodeColor,
+    getLinkColor,
+    getLinkWidth,
+    paintNode,
+  } = useGraphHighlight(getBaseLinkColor, pinnedNode);
 
   useEffect(() => {
     hasFittedRef.current = false;
@@ -55,18 +88,6 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     },
     [onNodeClick, mapNodeToValue],
   );
-
-  const getLinkColor = useCallback(() => {
-    if (typeof window === 'undefined' || !containerRef.current) {
-      return '#b2b5b7';
-    }
-    return window
-      .getComputedStyle(containerRef.current)
-      .getPropertyValue('--text-disabled')
-      .trim();
-  }, []);
-
-  const nodeColor = useCallback((node: ArtifactGraphNode) => node.__color, []);
 
   const nodeVal = useCallback(
     (node: ArtifactGraphNode) => node.__radius ?? MinNodeRadius,
@@ -89,11 +110,14 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           nodeVal={nodeVal}
           cooldownTicks={100}
           nodeLabel={''}
+          autoPauseRedraw={false}
           onEngineStop={handleEngineStop}
           onNodeClick={handleNodeClick}
-          nodeCanvasObject={renderNodeLabel}
-          nodeCanvasObjectMode={() => 'after'}
+          onNodeHover={handleNodeHover}
+          nodeCanvasObject={paintNode}
+          nodeCanvasObjectMode={nodeCanvasObjectMode}
           linkColor={getLinkColor}
+          linkWidth={getLinkWidth}
         />
       )}
     </div>

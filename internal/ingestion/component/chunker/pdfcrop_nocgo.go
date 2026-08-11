@@ -14,7 +14,7 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-func newPDFEngineFromUpstream(_ context.Context, _ schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
+func newPDFEngineFromUpstream(_ context.Context, _ *gorm.DB, _ schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
 	return nil, nil
 }
 

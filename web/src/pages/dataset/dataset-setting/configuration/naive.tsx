@@ -3,7 +3,6 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { ChildrenDelimiterForm } from '@/components/children-delimiter-form';
-import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { DelimiterFormField } from '@/components/delimiter-form-field';
 import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
@@ -25,7 +24,6 @@ export function NaiveConfiguration() {
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <CompilationTemplateFormField horizontal></CompilationTemplateFormField>
         <LayoutRecognizeFormField
           testId="ds-settings-parser-pdf-parser-select"
           ownerTenantId={ownerTenantId}

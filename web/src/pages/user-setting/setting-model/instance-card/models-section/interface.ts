@@ -47,7 +47,7 @@ export interface ModelsSectionProps {
   hideIfEmpty?: boolean;
   /**
    * Optional getter returning the host card's current form values
-   * (`api_key`, `base_url` / `api_base`, region-specific fields, ...).
+   * (`api_key`, `base_url`, region-specific fields, ...).
    * When provided, ModelsSection prefers these over the persisted
    * `instance` props when calling listProviderModels / verifyProviderConnection,
    * so the user can verify with values they are still editing (before

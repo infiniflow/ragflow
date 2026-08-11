@@ -33,6 +33,7 @@ export interface IDataset {
   nickname: string;
   pagerank: number;
   parser_config: Parserconfig;
+  parser_id?: string;
   permission: string;
   pipeline_id: string;
   raptor_task_finish_at: string;
@@ -48,6 +49,14 @@ export interface IDataset {
   vector_similarity_weight: number;
   connectors: IConnector[];
 }
+
+export type IDatasetFilter = {
+  owner: Array<{
+    id: string;
+    label: string;
+    count: number;
+  }>;
+};
 
 interface Parserconfig {
   auto_keywords: number;

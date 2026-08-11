@@ -62,7 +62,14 @@ export function buildModelTree(
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
         const modelName = getRealModelName(m.name);
-        const id = m.model_id;
+
+        const id =
+          m.model_id ||
+          buildModelValue({
+            model_name: modelName,
+            model_instance: m.instance_name,
+            model_provider: m.provider_name,
+          });
         if (seenLeafIds.has(id)) return acc;
         seenLeafIds.add(id);
         const leafNode: TreeSelectNode = {

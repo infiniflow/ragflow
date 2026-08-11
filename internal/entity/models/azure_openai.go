@@ -61,7 +61,7 @@ func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string 
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (a *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -182,7 +182,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message
 
 // ChatStreamlyWithSender sends messages and streams the response via the
 // sender function. Used for streaming chat responses with no extra channel.
-func (a *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -313,7 +313,7 @@ type azureEmbeddingResponse struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -391,7 +391,7 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 }
 
 // ListModels returns the deployment names visible to the configured API key.
-func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (a *AzureOpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse
 	url := fmt.Sprintf("%s/%s?api-version=%s",
 		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, azureAPIVersion)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -442,49 +442,49 @@ func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the endpoint
-func (a *AzureOpenAIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := a.ListModels(apiConfig)
+func (a *AzureOpenAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := a.ListModels(ctx, apiConfig)
 	return err
 }
 
 // Balance is not exposed by the Azure OpenAI API.
-func (a *AzureOpenAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (a *AzureOpenAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // Rerank is not exposed by the Azure OpenAI API.
-func (a *AzureOpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AzureOpenAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (a *AzureOpenAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AzureOpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (a *AzureOpenAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AzureOpenAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (a *AzureOpenAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (a *AzureOpenAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (a *AzureOpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AzureOpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (a *AzureOpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

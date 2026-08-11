@@ -23,8 +23,8 @@ import { SelectWithSearch } from '../originui/select-with-search';
 import { AudioButton } from '../ui/audio-button';
 
 export type NextMessageInputOnPressEnterParameter = {
-  enableThinking: string;
-  enableInternet: boolean;
+  enableThinking?: string;
+  enableInternet?: boolean;
 };
 
 interface NextMessageInputProps {
@@ -78,10 +78,27 @@ export function NextMessageInput({
 
   const thinkingOptions = useMemo(
     () => [
-      { label: t('chat.thinkingLevelUltra'), value: '3' },
-      { label: t('chat.thinkingLevelHigh'), value: '2' },
-      { label: t('chat.thinkingLevelMedium'), value: '1' },
-      { label: t('chat.thinkingLevelLow'), value: '0' },
+      {
+        label: t('chat.thinkingLevelUltra'),
+        value: '4',
+        description: t('chat.thinkingLevelUltraDescription'),
+      },
+      {
+        label: t('chat.thinkingLevelHigh'),
+        value: '3',
+        description: t('chat.thinkingLevelHighDescription'),
+      },
+      {
+        label: t('chat.thinkingLevelMedium'),
+        value: '2',
+        description: t('chat.thinkingLevelMediumDescription'),
+      },
+      {
+        label: t('chat.thinkingLevelLow'),
+        value: '1',
+        description: t('chat.thinkingLevelLowDescription'),
+      },
+      { label: t('chat.thinkingLevelNone'), value: '0' },
     ],
     [t],
   );

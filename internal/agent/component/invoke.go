@@ -49,6 +49,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/utility"
 )
@@ -101,7 +102,7 @@ func (i *InvokeComponent) Name() string { return i.name }
 // On any of those checks failing the function returns an `_ERROR`
 // output (no Go error) so the canvas can route around the failure
 // the same way the Python fix does, instead of crashing the node.
-func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (output map[string]any, invokeErr error) {
+func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (output map[string]any, invokeErr error) {
 	startedAt := time.Now()
 	defer func() {
 		if output == nil {
@@ -404,8 +405,8 @@ func sanitizeLogURL(raw string) string {
 
 // Stream is a synchronous facade over Invoke. Real streaming
 // (chunked transfer as it arrives) is a future enhancement.
-func (i *InvokeComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := i.Invoke(ctx, inputs)
+func (i *InvokeComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := i.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

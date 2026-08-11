@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -186,39 +185,6 @@ func (r *Registry) IsValid(ref string) bool {
 	}
 	_, ok := r.templates[r.canonicalRef(ref)]
 	return ok
-}
-
-// fileTypeParserOverrides maps a file type value to the canonical parser_id that
-// must be used for all files of that type. The type values are FileType constants
-// defined in the utility package.
-var fileTypeParserOverrides = map[string]string{
-	"visual": "picture",
-	"aural":  "audio",
-}
-
-var (
-	presentationExtPattern = regexp.MustCompile(`(?i)\.(ppt|pptx|pages)$`)
-	emailExtPattern        = regexp.MustCompile(`(?i)\.(msg|eml)$`)
-)
-
-// DefaultParserID returns the canonical parser_id for a document given its file
-// type, filename and the dataset-level parser_id. File-type-based overrides
-// (e.g. "visual" → "picture", "aural" → "audio") take precedence, followed by
-// filename extension heuristics (presentation / email), then falling back to
-// the dataset's parser_id.
-func (r *Registry) DefaultParserID(fileType, filename, fallback string) string {
-	if override, ok := fileTypeParserOverrides[strings.ToLower(fileType)]; ok {
-		return override
-	}
-	base := filepath.Base(strings.TrimSpace(filename))
-	switch {
-	case presentationExtPattern.MatchString(base):
-		return "presentation"
-	case emailExtPattern.MatchString(base):
-		return "email"
-	default:
-		return fallback
-	}
 }
 
 func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {

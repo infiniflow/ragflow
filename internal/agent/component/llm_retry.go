@@ -25,6 +25,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // retryInvoker decorates a ChatInvoker with exponential-backoff
@@ -113,14 +115,14 @@ func unwrapChatInvoker(inv ChatInvoker) ChatInvoker {
 // sleeping initialDelay * 2^attempt between failures. The sleep
 // honours ctx cancellation: a cancelled context aborts the backoff
 // and returns ctx.Err() immediately.
-func (r *retryInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (r *retryInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if r.inner == nil {
 		return nil, fmt.Errorf("component: retryInvoker: nil inner")
 	}
 	delay := r.initialDelay
 	var lastErr error
 	for attempt := 0; attempt <= r.maxRetries; attempt++ {
-		resp, err := r.inner.Invoke(ctx, req)
+		resp, err := r.inner.Invoke(ctx, db, req)
 		if err == nil {
 			return resp, nil
 		}

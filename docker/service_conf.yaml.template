@@ -75,8 +75,9 @@ otel:
   secure: false
   sample_ratio: 1.0
   stdout: false
-task_executor:
-  message_queue_type: 'nats'
+  enable: false
+ingestor:
+  mq_type: 'nats'
 file_syncer:
   max_concurrent_syncs: 4
   sync_interval: 3

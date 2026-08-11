@@ -101,11 +101,7 @@ export function useResolveCreds(
     const fv = getFormValues?.() ?? {};
     return {
       apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
-      baseUrl:
-        (fv.base_url as string) ??
-        (fv.api_base as string) ??
-        instance?.base_url ??
-        '',
+      baseUrl: (fv.base_url as string) ?? instance?.base_url ?? '',
     };
   }, [getFormValues, instance]);
 
@@ -284,13 +280,20 @@ export function useModelsDerived({
     });
   }, [sourceItems, catalogFeatures]);
 
-  // Union of instance models + catalog, keyed by `name`. Catalog entries
-  // win on conflict; instance set listed first so already-added models
-  // stay at the top on the initial render.
+  // Union of instance models + catalog, keyed by `name`. Instance entries
+  // win on conflict so that editing an already-added model loads the
+  // instance-specific values (e.g. a user-customised `max_tokens`) rather
+  // than the upstream catalog defaults; catalog entries are only used to
+  // fill in models that have not been added yet. Instance set is listed
+  // first so already-added models stay at the top on the initial render.
   const models: IProviderModelItem[] = useMemo(() => {
     const byName = new Map<string, IProviderModelItem>();
     instanceItems.forEach((m) => byName.set(m.name, m));
-    catalog.forEach((m) => byName.set(m.name, m));
+    catalog.forEach((m) => {
+      if (!byName.has(m.name)) {
+        byName.set(m.name, m);
+      }
+    });
     return Array.from(byName.values());
   }, [instanceItems, catalog]);
 
@@ -385,12 +388,14 @@ interface UseModelVerifyArgs {
   providerName: string;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
+  instance?: IProviderInstance;
 }
 
 export function useModelVerify({
   providerName,
   resolveCreds,
   instanceModels,
+  instance,
 }: UseModelVerifyArgs) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const [verify, setVerify] = useState<Record<string, VerifyStatus>>({});
@@ -431,6 +436,7 @@ export function useModelVerify({
             max_tokens: model.max_tokens ?? 0,
           },
         ],
+        ...(instance?.id ? { instance_id: instance.id } : {}),
       });
       setVerify((prev) => ({
         ...prev,

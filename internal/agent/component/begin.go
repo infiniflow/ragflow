@@ -29,6 +29,8 @@ import (
 	"maps"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // mapsCopy is a thin alias for the stdlib maps.Copy to keep the call
@@ -62,7 +64,7 @@ func (b *BeginComponent) Name() string { return b.name }
 // the shared *CanvasState.Sys namespace, then returns the input map as
 // outputs unchanged. The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
-func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Begin: %w", err)
@@ -101,8 +103,8 @@ func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 // Stream is a synchronous facade over Invoke for P0. SSE streaming of
 // Begin output is not meaningful (Begin has no I/O), so the channel
 // receives a single payload and closes — same shape as Invoke's return.
-func (b *BeginComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := b.Invoke(ctx, inputs)
+func (b *BeginComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := b.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

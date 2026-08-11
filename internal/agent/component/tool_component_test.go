@@ -262,7 +262,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(WenCai): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"query":     "商业航天",
 		"unrelated": "ignored by the tool parameter struct",
 	})
@@ -320,7 +320,7 @@ func TestToolBackedComponentInvokeOrdersReferencesBeforeRendering(t *testing.T) 
 	fake := &fakeToolAdapter{out: `{"results":[{"title":"RAGFlow","content":"RAG engine"}],"tool_metadata":{"request_id":"request-1"}}`}
 	c := &ToolBackedComponent{name: "Search", tool: fake, spec: fake.ComponentSpec()}
 	state := runtime.NewCanvasState("run", "task")
-	out, err := c.Invoke(runtime.WithState(context.Background(), state), map[string]any{
+	out, err := c.Invoke(runtime.WithState(context.Background(), state), nil, map[string]any{
 		"query":   "ragflow",
 		"top_n":   float64(10),
 		"outputs": map[string]any{"json": map[string]any{}},
@@ -361,7 +361,7 @@ func TestToolBackedComponentReturnsErrorEnvelopeWithoutReferences(t *testing.T) 
 	}
 	c := &ToolBackedComponent{name: "Search", tool: fake, spec: fake.ComponentSpec()}
 	state := runtime.NewCanvasState("run-error", "task-error")
-	out, err := c.Invoke(runtime.WithState(context.Background(), state), map[string]any{"query": "ragflow"})
+	out, err := c.Invoke(runtime.WithState(context.Background(), state), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -397,14 +397,14 @@ func TestToolBackedComponentGitHubIntegration(t *testing.T) {
 	github := agenttool.NewGitHubToolWith(helper)
 	component := &ToolBackedComponent{name: "GitHub", tool: github, spec: github.ComponentSpec()}
 	state := runtime.NewCanvasState("run-github", "task-github")
-	empty, err := component.Invoke(context.Background(), map[string]any{"query": ""})
+	empty, err := component.Invoke(context.Background(), nil, map[string]any{"query": ""})
 	if err != nil {
 		t.Fatalf("Invoke(empty query): %v", err)
 	}
 	if serverCalls != 0 || len(empty["json"].([]any)) != 0 || empty["formalized_content"] != "" {
 		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls)
 	}
-	out, err := component.Invoke(runtime.WithState(context.Background(), state), map[string]any{"query": "ragflow"})
+	out, err := component.Invoke(runtime.WithState(context.Background(), state), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -443,14 +443,14 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 	tavily := agenttool.NewTavilyToolWith(helper)
 	component := &ToolBackedComponent{name: "TavilySearch", tool: tavily, spec: tavily.ComponentSpec()}
 	state := runtime.NewCanvasState("run-tavily", "task-tavily")
-	empty, err := component.Invoke(context.Background(), map[string]any{"query": ""})
+	empty, err := component.Invoke(context.Background(), nil, map[string]any{"query": ""})
 	if err != nil {
 		t.Fatalf("Invoke(empty query): %v", err)
 	}
 	if serverCalls != 0 || len(empty["json"].([]any)) != 0 || empty["formalized_content"] != "" {
 		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls)
 	}
-	out, err := component.Invoke(runtime.WithState(context.Background(), state), map[string]any{"query": "ragflow", "api_key": "key"})
+	out, err := component.Invoke(runtime.WithState(context.Background(), state), nil, map[string]any{"query": "ragflow", "api_key": "key"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 	yahoo := agenttool.NewYahooFinanceToolWith(helper)
 	component := &ToolBackedComponent{name: "YahooFinance", tool: yahoo, spec: yahoo.ComponentSpec()}
 
-	empty, err := component.Invoke(context.Background(), map[string]any{"stock_code": ""})
+	empty, err := component.Invoke(context.Background(), nil, map[string]any{"stock_code": ""})
 	if err != nil {
 		t.Fatalf("Invoke(empty stock_code): %v", err)
 	}
@@ -516,7 +516,7 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 		t.Fatalf("empty result = %#v, server calls = %d", empty, serverCalls)
 	}
 
-	out, err := component.Invoke(context.Background(), map[string]any{"stock_code": "AAPL"})
+	out, err := component.Invoke(context.Background(), nil, map[string]any{"stock_code": "AAPL"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

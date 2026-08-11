@@ -395,6 +395,15 @@ class xAICV(GptV4):
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
+class MistralCV(GptV4):
+    _FACTORY_NAME = "Mistral"
+
+    def __init__(self, key, model_name="pixtral-12b-2409", lang="Chinese", base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://api.mistral.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
 class QWenCV(GptV4):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
@@ -1387,6 +1396,15 @@ class FuturMixCV(GptV4):
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
         logging.info("[FuturMix] CV initialized with model %s", model_name)
+
+
+class AIMLAPICV(GptV4):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[aimlapi.com] CV initialized with model %s", model_name)
 
 
 class RAGconCV(GptV4):

@@ -43,6 +43,7 @@ var (
 )
 
 func maybeDispatchPDFVision(
+	ctx context.Context,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -86,7 +87,7 @@ func maybeDispatchPDFVision(
 		return parserDispatchResult{}, true, fmt.Errorf(
 			`Parser: pdf parse_method %q requires tenant_id to resolve IMAGE2TEXT model`, modelID)
 	}
-	res, err := dispatchPDFVision(filename, binary, tenantID, modelID, setup)
+	res, err := dispatchPDFVision(ctx, filename, binary, tenantID, modelID, setup)
 	if err != nil {
 		return parserDispatchResult{}, true, err
 	}
@@ -357,22 +358,34 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 	return "", false
 }
 
+// isNamedPDFParseMethod reports whether raw is a recognized named PDF
+// parse method (as opposed to a CustomVLM model name). Its membership set
+// MUST stay aligned with the PDF whitelist enforced by
+// (*ParserComponent).Check() (parser.go:200-203):
+//
+//	deepdoc, plain_text, mineru, docling,
+//	opendataloader, tcadp parser, paddleocr, somark
+//
+// A parse_method that Check() rejects must not be treated as a named method
+// here, otherwise it silently falls through to the CustomVLM vision path
+// instead of failing fast at construction.
+//
+// Note: "@"-suffixed spellings such as "foo@mineru" are layout_recognizer
+// selectors, not parse_method values. Check() rejects them as parse_method,
+// and the MinerU layout branch is resolved from the layout_recognizer field
+// separately (pdf_vision_dispatch.go:62-68), so they must NOT be recognized
+// here.
 func isNamedPDFParseMethod(raw string) bool {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	switch {
-	case strings.HasSuffix(method, "@paddleocr"),
-		strings.HasSuffix(method, "@somark"),
-		strings.HasSuffix(method, "@opendataloader"):
-		return true
-	}
 	switch method {
-	case "deepdoc", "mineru", "plain_text", "plain text", "plaintext", "paddleocr", "docling", "opendataloader", "somark", "tcadp", "tcadp parser":
+	case "deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
 		return true
 	}
 	return false
 }
 
 func dispatchPDFVision(
+	ctx context.Context,
 	filename string,
 	binary []byte,
 	tenantID string,
@@ -396,7 +409,7 @@ func dispatchPDFVision(
 	markdownParts := make([]string, 0, len(renderedPages))
 	for _, page := range renderedPages {
 		prompt := renderPDFVisionPrompt(promptTemplate, page.PageNumber)
-		resp, err := pdfVisionChatInvoker(driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
+		resp, err := pdfVisionChatInvoker(ctx, driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
 		if err != nil {
 			return parserDispatchResult{}, fmt.Errorf("Parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
@@ -472,13 +485,14 @@ func defaultPDFVisionModelResolver(
 }
 
 func defaultPDFVisionChatInvoker(
+	ctx context.Context,
 	driver modelModule.ModelDriver,
 	modelName string,
 	messages []modelModule.Message,
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
 	vision := true
-	return driver.ChatWithMessages(modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	return driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 }
 
 func loadPDFVisionPrompt(name string) (string, error) {

@@ -60,7 +60,7 @@ func TestVariableAggregator_FirstNonEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestVariableAggregator_SkipsEmptyString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestVariableAggregator_MultipleGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestVariableAggregator_AllEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

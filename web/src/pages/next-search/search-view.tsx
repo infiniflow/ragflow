@@ -3,7 +3,6 @@ import Empty from '@/components/empty/empty';
 import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
-import { Input } from '@/components/originui/input';
 import { SkeletonCard } from '@/components/skeleton-card';
 import { TopSelect } from '@/components/top-select';
 import { Button } from '@/components/ui/button';
@@ -13,10 +12,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { IReference } from '@/interfaces/database/chat';
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { ListTree, Search, X } from 'lucide-react';
-import { Dispatch, SetStateAction, useEffect, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
@@ -73,10 +73,13 @@ export default function SearchingView({
 
   const [searchText, setSearchText] = useState<string>('');
   const [retrievalLoading, setRetrievalLoading] = useState(false);
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setSearchText(searchStr);
   }, [searchStr, setSearchText]);
+
+  useAutoResizeTextarea(searchInputRef, searchText);
 
   return (
     <section
@@ -103,18 +106,25 @@ export default function SearchingView({
         >
           <div className={cn('flex flex-col justify-start items-start w-full')}>
             <div className="relative w-full text-primary">
-              <Input
+              <textarea
+                ref={searchInputRef}
+                rows={1}
                 placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-full py-6 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base',
+                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none overflow-y-auto scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
                 )}
                 value={searchText}
                 onChange={(e) => {
                   setSearchText(e.target.value);
                 }}
                 disabled={sendingLoading}
-                onKeyUp={(e) => {
-                  if (e.key === 'Enter') {
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
                     handleSearch(searchText);
                   }
                 }}

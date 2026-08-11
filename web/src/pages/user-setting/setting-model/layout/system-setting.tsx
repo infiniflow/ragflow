@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { LinkifyText } from '@/components/linkify-text';
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
 import {
   Tooltip,
@@ -26,6 +27,7 @@ import {
   useFetchDefaultModelDictionary,
   useSetDefaultModel,
 } from '@/hooks/use-llm-request';
+import { parseModelValue } from '@/utils/llm-util';
 import { CircleQuestionMark } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
@@ -55,7 +57,9 @@ function ModelFieldItem({
         {label}
         {tooltip && (
           <Tooltip>
-            <TooltipContent>{tooltip}</TooltipContent>
+            <TooltipContent>
+              <LinkifyText>{tooltip}</LinkifyText>
+            </TooltipContent>
             <TooltipTrigger>
               <CircleQuestionMark
                 size={12}
@@ -88,8 +92,13 @@ function SystemSetting() {
     async (field: string, value: string) => {
       const modelType = FieldToModelType[field];
       if (!modelType) return;
-
-      await setDefaultModel({ model_id: value, model_type: modelType });
+      if (!value) return;
+      const parsed = parseModelValue(value);
+      if (parsed) {
+        await setDefaultModel({ ...parsed, model_type: modelType });
+      } else {
+        await setDefaultModel({ model_id: value, model_type: modelType });
+      }
     },
     [setDefaultModel],
   );

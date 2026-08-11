@@ -207,7 +207,7 @@ class Dealer:
                 if settings.DOC_ENGINE_OCEANBASE:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
+                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
                 matchExprs = [matchText, matchDense, fusionExpr]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)

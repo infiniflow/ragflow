@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
@@ -92,6 +94,11 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"query"`) {
 		t.Errorf("schema JSON does not contain 'query' key: %s", raw)
+	}
+	for _, nodeConfig := range []string{"dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold", "keywords_similarity_weight", "use_kg"} {
+		if strings.Contains(string(raw), `"`+nodeConfig+`"`) {
+			t.Errorf("schema JSON exposes Canvas node config %q to the model: %s", nodeConfig, raw)
+		}
 	}
 }
 
@@ -302,7 +309,7 @@ type capturingRetrievalService struct {
 	req RetrievalRequest
 }
 
-func (s *capturingRetrievalService) Search(_ context.Context, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (s *capturingRetrievalService) Search(_ context.Context, _ *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	s.req = req
 	return []RetrievalChunk{{ID: "ck-1", Content: "answer"}}, nil
 }
@@ -311,6 +318,6 @@ type staticRetrievalService struct {
 	chunks []RetrievalChunk
 }
 
-func (s staticRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (s staticRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return s.chunks, nil
 }

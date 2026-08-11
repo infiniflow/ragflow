@@ -357,28 +357,24 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 	// Canvases owned by any of the ownerIDs that are "team"-permission, plus all owned by userID.
 	base := DB.Model(&entity.UserCanvas{}).
 		Select(`user_canvas.id,
-			user_canvas.avatar,
-			user_canvas.title,
-			user_canvas.description,
-			user_canvas.permission,
-			user_canvas.user_id,
-			user_canvas.user_id AS tenant_id,
-			user.nickname,
-			user.avatar AS tenant_avatar,
-			user_canvas.canvas_type,
-			user_canvas.canvas_category,
-			user_canvas.tags,
-			user_canvas.create_time,
-			user_canvas.update_time`).
+		user_canvas.avatar,
+		user_canvas.title,
+		user_canvas.description,
+		user_canvas.permission,
+		user_canvas.user_id,
+		user_canvas.user_id AS tenant_id,
+		user.nickname,
+		user.avatar AS tenant_avatar,
+		user_canvas.canvas_type,
+		user_canvas.canvas_category,
+		user_canvas.tags,
+		user_canvas.create_time,
+		user_canvas.update_time`).
 		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
+		Where("user_canvas.user_id IN ?", ownerIDs).
 		Where(
-			DB.Where("user_canvas.user_id IN ? AND user_canvas.permission = ?", ownerIDs, "team").
-				Or("user_canvas.user_id = ?", userID),
-			"user_canvas.user_id IN ?",
-			ownerIDs,
-		).Where(
-		DB.Where("user_canvas.permission = ?", "team").
-			Or("user_canvas.user_id = ?", userID))
+			DB.Where("user_canvas.permission = ?", "team").
+				Or("user_canvas.user_id = ?", userID))
 
 	if canvasCategory != "" {
 		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
@@ -433,8 +429,6 @@ func (dao *UserCanvasDAO) ListTags(ownerIDs []string, userID string, canvasCateg
 
 	if canvasCategory != "" {
 		query = query.Where("user_canvas.canvas_category = ?", canvasCategory)
-	} else {
-		query = query.Where("user_canvas.canvas_category = ?", "agent_canvas")
 	}
 
 	var rows []struct {

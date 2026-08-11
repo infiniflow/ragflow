@@ -55,6 +55,7 @@ func TestVolcEngineConfigDeclaresModelsSuffix(t *testing.T) {
 }
 
 func TestVolcEngineListModelsHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s", r.Method)
@@ -77,7 +78,7 @@ func TestVolcEngineListModelsHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newVolcEngineForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newVolcEngineForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -87,23 +88,25 @@ func TestVolcEngineListModelsHappyPath(t *testing.T) {
 }
 
 func TestVolcEngineListModelsRejectsProviderError(t *testing.T) {
+	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
 	})
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newVolcEngineForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	_, err := newVolcEngineForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "401 Unauthorized") || !strings.Contains(err.Error(), "bad key") {
 		t.Fatalf("expected provider error with status and body, got %v", err)
 	}
 }
 
 func TestVolcEngineListModelsRequiresModelsSuffix(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	model := NewVolcEngine(map[string]string{"default": "http://unused"}, URLSuffix{})
 
-	_, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	_, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "models URL suffix is not configured") {
 		t.Fatalf("expected missing models suffix error, got %v", err)
 	}

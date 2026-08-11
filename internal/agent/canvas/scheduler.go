@@ -549,7 +549,12 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if name == "" {
 			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
 		}
-		body, err := buildNodeBody(ctx, cpnID, name, c.Components[cpnID].Obj.Params)
+		deferToMessage := directMessageDownstream(c, cpnID)
+		nodeOpts := runtime.ComponentExecutionOptions{
+			DeferAgentToMessage:        deferToMessage,
+			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
+		}
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -566,7 +571,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		nodePost := func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
 			result, postErr := statePost(ctx, out, state)
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
+			if postErr == nil && runtime.IsDeferredStream(result["content"]) {
+				// Python keeps the Agent node pending while Message consumes its
+				// partial generator. Message completes this callback after the
+				// deferred stream closes.
+				runtime.RegisterDeferredNode(ctx, cpnID, func() {
+					nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+				})
+			} else {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
+			}
 			return result, postErr
 		}
 		lambda := compose.InvokableLambda[map[string]any, map[string]any](body)
@@ -697,6 +711,26 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 
 	return wf, nil
+}
+
+// directMessageDownstream: only a direct
+// Message child enables lazy Agent execution. Intermediate nodes must not
+// accidentally change the Agent's execution mode.
+func directMessageDownstream(c *Canvas, cpnID string) bool {
+	if c == nil {
+		return false
+	}
+	comp, ok := c.Components[cpnID]
+	if !ok {
+		return false
+	}
+	for _, downID := range comp.Downstream {
+		down, ok := c.Components[downID]
+		if ok && strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return true
+		}
+	}
+	return false
 }
 
 func wireWorkflowTerminals(

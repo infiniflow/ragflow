@@ -1135,6 +1135,9 @@ async def rerun_agent(tenant_id):
     if 0 < doc["progress"] < 1:
         return get_data_error_result(message=f"`{doc['name']}` is processing...")
 
+    from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+    remove_dataset_nav_doc_sync(tenant_id, doc["kb_id"], doc["id"])
     if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc["kb_id"]):
         settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(tenant_id), doc["kb_id"])
     doc["progress_msg"] = ""

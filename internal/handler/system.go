@@ -186,7 +186,9 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 
 // ListVariables handle list variables
 func (h *SystemHandler) ListVariables(c *gin.Context) {
-	variables, err := h.systemService.ListAllVariables()
+	ctx := c.Request.Context()
+
+	variables, err := h.systemService.ListAllVariables(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -220,7 +222,9 @@ func (h *SystemHandler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
+	ctx := c.Request.Context()
+
+	if err := h.systemService.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -241,7 +245,9 @@ func (h *SystemHandler) ShowVariable(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.systemService.ShowVariable(varName)
+	ctx := c.Request.Context()
+
+	variable, err := h.systemService.ShowVariable(ctx, varName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return

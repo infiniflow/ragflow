@@ -32,8 +32,20 @@ PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
 
 
 def _skip_go_ignored_null(payload, field):
-    if IS_GO_PROXY and payload.get("message") == "No properties were modified":
+    if IS_GO_PROXY and payload.get("message") == "no properties were modified":
         pytest.skip(f"Go dataset update ignores an explicit null {field}")
+
+
+def _parser_id_fields(chunk_method):
+    """Build parser_id/chunk_method fields with parse_type=1 for Go proxy.
+
+    Go proxy requires parse_type alongside parser_id (fail-fast by design);
+    Python mode uses chunk_method alone.
+    """
+    fields = {PARSER_ID_FIELD: chunk_method}
+    if IS_GO_PROXY:
+        fields["parse_type"] = 1
+    return fields
 
 
 def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
@@ -160,7 +172,7 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         json={
             "name": "dataset_update_lang_connectors",
             "description": "",
-            PARSER_ID_FIELD: "naive",
+            **_parser_id_fields("naive"),
             "language": "English",
             "connectors": [],
             "avatar": avatar_value,
@@ -198,9 +210,8 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         "presentation",
         "qa",
         "table",
-        "tag",
     ],
-    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table"],
 )
 def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk_method):
     create_res = rest_client.post("/datasets", json={"name": f"dataset_update_chunk_{chunk_method}"})
@@ -211,7 +222,7 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
 
     update_res = rest_client.put(
         f"/datasets/{dataset_id}",
-        json={PARSER_ID_FIELD: chunk_method},
+        json=_parser_id_fields(chunk_method),
     )
     assert update_res.status_code == 200
     update_payload = update_res.json()
@@ -363,9 +374,9 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
 @pytest.mark.parametrize(
     "name, update_payload",
     [
-        ("parser_config_empty", {PARSER_ID_FIELD: "qa", "parser_config": {}}),
-        ("parser_config_none", {PARSER_ID_FIELD: "qa", "parser_config": None}),
-        ("parser_config_unset", {PARSER_ID_FIELD: "qa"}),
+        ("parser_config_empty", {**_parser_id_fields("qa"), "parser_config": {}}),
+        ("parser_config_none", {**_parser_id_fields("qa"), "parser_config": None}),
+        ("parser_config_unset", _parser_id_fields("qa")),
     ],
     ids=["parser_config_empty", "parser_config_none", "parser_config_unset"],
 )
@@ -665,7 +676,7 @@ def test_dataset_update_content_type_and_payload_contract(rest_client, clear_dat
     assert empty_payload_res.status_code == 200
     empty_payload = empty_payload_res.json()
     assert empty_payload["code"] == 102, empty_payload
-    assert empty_payload["message"] == "No properties were modified", empty_payload
+    assert empty_payload["message"] == "no properties were modified", empty_payload
 
     unset_payload_res = rest_client.put(f"/datasets/{dataset_id}")
     assert unset_payload_res.status_code == 200
@@ -767,7 +778,7 @@ def test_dataset_update_description_validation_contract(rest_client, clear_datas
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"description": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    if IS_GO_PROXY and none_payload.get("message") == "No properties were modified":
+    if IS_GO_PROXY and none_payload.get("message") == "no properties were modified":
         pytest.skip("Go dataset update does not clear description with an explicit null")
     assert none_payload["code"] == 0, none_payload
 
@@ -896,14 +907,16 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
 
     expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for chunk_method in ("", "unknown", []):
-        res = rest_client.put(f"/datasets/{dataset_id}", json={PARSER_ID_FIELD: chunk_method})
+        res = rest_client.put(f"/datasets/{dataset_id}", json=_parser_id_fields(chunk_method))
         assert res.status_code == 200
         payload = res.json()
         assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
+        elif IS_GO_PROXY and chunk_method == "":
+            assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -913,7 +926,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     _skip_go_ignored_null(none_payload, PARSER_ID_FIELD)
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
-        assert none_payload["message"].startswith("Input should be 'audio', 'book'") and none_payload["message"].endswith("or 'tag'"), none_payload
+        assert none_payload["message"].startswith("Input should be 'audio', 'book'") and none_payload["message"].endswith("or 'table'"), none_payload
     else:
         assert expected_chunk_message in none_payload["message"], none_payload
 
@@ -1174,12 +1187,11 @@ def test_dataset_create_avatar_and_description_contract(rest_client, clear_datas
         ("presentation", "presentation"),
         ("qa", "qa"),
         ("table", "table"),
-        ("tag", "tag"),
     ],
-    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table"],
 )
 def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
-    res = rest_client.post("/datasets", json={"name": name, PARSER_ID_FIELD: chunk_method})
+    res = rest_client.post("/datasets", json={"name": name, **_parser_id_fields(chunk_method)})
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
@@ -1672,23 +1684,25 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     ]
     expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for name, chunk_method in chunk_method_invalid_cases:
-        res = rest_client.post("/datasets", json={"name": name, PARSER_ID_FIELD: chunk_method})
+        res = rest_client.post("/datasets", json={"name": name, **_parser_id_fields(chunk_method)})
         assert res.status_code == 200
         payload = res.json()
         assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and not isinstance(chunk_method, str):
             assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
+        elif IS_GO_PROXY and chunk_method == "":
+            assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'tag'"), payload
+            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
-    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", PARSER_ID_FIELD: None})
+    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", **_parser_id_fields(None)})
     assert chunk_method_none_res.status_code == 200
     chunk_method_none_payload = chunk_method_none_res.json()
     assert chunk_method_none_payload["code"] == ARGUMENT_ERROR_CODE, chunk_method_none_payload
     if IS_GO_PROXY:
-        assert chunk_method_none_payload["message"].startswith("Input should be 'audio', 'book'") and chunk_method_none_payload["message"].endswith("or 'tag'"), chunk_method_none_payload
+        assert chunk_method_none_payload["message"] == "parser_id is required when parse_type is BuiltIn", chunk_method_none_payload
     else:
         assert expected_chunk_message in chunk_method_none_payload["message"], chunk_method_none_payload
 

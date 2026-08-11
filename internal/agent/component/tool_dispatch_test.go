@@ -69,7 +69,7 @@ func TestPhase3_6_ToolDSLLoading(t *testing.T) {
 		MaxRounds: 1,
 		Tools:     []string{"retrieval"}, // known tool
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "test",
 	})
 	if err != nil {

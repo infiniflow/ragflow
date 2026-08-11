@@ -185,7 +185,7 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 	}
 
 	// New user — register a fresh account bound to this channel.
-	created, ecode, cerr := s.registerOAuthUser(channel, info)
+	created, ecode, cerr := s.registerOAuthUser(ctx, channel, info)
 	if cerr != nil {
 		return nil, ecode, cerr
 	}
@@ -195,7 +195,7 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 // registerOAuthUser provisions a new user + tenant for an OAuth identity.
 // Models the relevant fields the email-password Register path sets so the
 // rest of the app (kbs, files, llm config) sees a fully-shaped tenant.
-func (s *UserService) registerOAuthUser(channel string, info *oauth.UserInfo) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) registerOAuthUser(ctx context.Context, channel string, info *oauth.UserInfo) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
 	userID := utility.GenerateToken()
 	accessToken := utility.GenerateToken()
@@ -272,7 +272,7 @@ func (s *UserService) registerOAuthUser(channel string, info *oauth.UserInfo) (*
 		_ = tenantDAO.Delete(userID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
-	if err := fileDAO.Create(rootFile); err != nil {
+	if err := fileDAO.Create(ctx, dao.DB, rootFile); err != nil {
 		_ = s.userDAO.DeleteByID(userID)
 		_ = tenantDAO.Delete(userID)
 		_ = userTenantDAO.Delete(userTenantID)

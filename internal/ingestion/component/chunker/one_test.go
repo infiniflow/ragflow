@@ -28,7 +28,7 @@ func oneChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("NewOneChunker: %v", err)
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(context.Background(), nil, inputs)
 	if err != nil {
 		t.Fatalf("OneChunker.Invoke: %v", err)
 	}

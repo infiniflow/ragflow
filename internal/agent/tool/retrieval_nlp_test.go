@@ -32,6 +32,8 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // floatEqual compares two floats with a small epsilon so
@@ -221,7 +223,7 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 	a := NewNLPRetrievalAdapter(nil)
-	_, err := a.Search(context.TODO(), RetrievalRequest{Query: "hi"})
+	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
 	}
@@ -281,7 +283,7 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 
 func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
 	a := &NLPRetrievalAdapter{}
-	got, err := a.resolveTenantIDs(RetrievalRequest{
+	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
 	})
@@ -307,7 +309,7 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
 			},
 		},
 	}
-	got, err := a.resolveTenantIDs(RetrievalRequest{
+	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-3", " "},
 	})
 	if err != nil {
@@ -326,7 +328,7 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsKeepsRequestTenantFirst(t *testing.
 			},
 		},
 	}
-	got, err := a.resolveTenantIDs(RetrievalRequest{
+	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1"},
 	})
@@ -343,6 +345,6 @@ type fakeKnowledgebaseLookup struct {
 	err error
 }
 
-func (f fakeKnowledgebaseLookup) GetByIDs(_ []string) ([]*entity.Knowledgebase, error) {
+func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {
 	return f.kbs, f.err
 }

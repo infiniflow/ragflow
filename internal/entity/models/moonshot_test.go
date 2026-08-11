@@ -85,6 +85,7 @@ func TestMoonshotNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestMoonshotChatForcesNonStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -113,6 +114,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 	stream := true
 	thinking := true
 	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		ctx,
 		" kimi-k2.6 ",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -130,6 +132,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestMoonshotChatSupportsTools(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		tools, ok := body["tools"].([]interface{})
 		if !ok || len(tools) != 1 {
@@ -164,6 +167,7 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 		},
 	}}
 	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "北京今天天气怎么样？"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -181,6 +185,7 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 }
 
 func TestMoonshotStreamForcesStreaming(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -209,6 +214,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newMoonshotForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -243,6 +249,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 }
 
 func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v, want true", body["stream"])
@@ -255,6 +262,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 	apiKey := "test-key"
 	var sawDone bool
 	err := newMoonshotForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"kimi-k2.6",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -276,6 +284,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 }
 
 func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -293,7 +302,7 @@ func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newMoonshotForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newMoonshotForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -303,6 +312,7 @@ func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
 }
 
 func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
+	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -323,7 +333,7 @@ func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	balance, err := newMoonshotForTest(srv.URL).Balance(&APIConfig{ApiKey: &apiKey})
+	balance, err := newMoonshotForTest(srv.URL).Balance(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("Balance: %v", err)
 	}
@@ -336,6 +346,7 @@ func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
 }
 
 func TestMoonshotRejectsMalformedResponses(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	tests := []struct {
 		name     string
@@ -346,7 +357,7 @@ func TestMoonshotRejectsMalformedResponses(t *testing.T) {
 			name:     "models missing data",
 			response: map[string]interface{}{"object": "list"},
 			run: func(m *MoonshotModel) error {
-				_, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
+				_, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 				return err
 			},
 		},
@@ -356,7 +367,7 @@ func TestMoonshotRejectsMalformedResponses(t *testing.T) {
 				"data": []map[string]string{{"id": ""}},
 			},
 			run: func(m *MoonshotModel) error {
-				_, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
+				_, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 				return err
 			},
 		},
@@ -366,7 +377,7 @@ func TestMoonshotRejectsMalformedResponses(t *testing.T) {
 				"data": map[string]float64{"cash_balance": 3},
 			},
 			run: func(m *MoonshotModel) error {
-				_, err := m.Balance(&APIConfig{ApiKey: &apiKey})
+				_, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey})
 				return err
 			},
 		},
@@ -387,6 +398,7 @@ func TestMoonshotRejectsMalformedResponses(t *testing.T) {
 }
 
 func TestMoonshotValidatesInputs(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := " "
 	send := func(*string, *string) error { return nil }
@@ -399,7 +411,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ChatWithMessages("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
+				_, err := newMoonshotForTest("http://unused").ChatWithMessages(ctx, "kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -407,7 +419,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ChatWithMessages(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newMoonshotForTest("http://unused").ChatWithMessages(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -415,28 +427,28 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(ctx, "kimi-k2.6", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream model",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, send)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, send)
 			},
 			want: "model name is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newMoonshotForTest("http://unused").ChatStreamlyWithSender("kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
+				return newMoonshotForTest("http://unused").ChatStreamlyWithSender(ctx, "kimi-k2.6", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},
 		{
 			name: "models api key",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").ListModels(&APIConfig{})
+				_, err := newMoonshotForTest("http://unused").ListModels(ctx, &APIConfig{})
 				return err
 			},
 			want: "api key is required",
@@ -444,7 +456,7 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 		{
 			name: "balance api key",
 			run: func() error {
-				_, err := newMoonshotForTest("http://unused").Balance(nil)
+				_, err := newMoonshotForTest("http://unused").Balance(ctx, &APIConfig{})
 				return err
 			},
 			want: "api key is required",

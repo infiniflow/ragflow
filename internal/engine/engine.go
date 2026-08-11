@@ -20,6 +20,8 @@ import (
 	"context"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+
+	"gorm.io/gorm"
 )
 
 // EngineType document engine type
@@ -83,7 +85,7 @@ type DocEngine interface {
 	// the doc metadata index, returning matching doc IDs or nil if push-down
 	// is not supported (caller should fall back to in-memory filtering).
 	// conditions is a list of filter objects with keys: key, op, value
-	FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string
+	FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string
 }
 
 // Type returns the engine type (helper method for runtime type checking)

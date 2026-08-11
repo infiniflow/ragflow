@@ -92,6 +92,7 @@ func TestTokenPonyFactory(t *testing.T) {
 }
 
 func TestTokenPonyChatHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-32b" {
 			t.Errorf("model=%v", body["model"])
@@ -120,6 +121,7 @@ func TestTokenPonyChatHappyPath(t *testing.T) {
 	mt := 64
 	temp := 0.3
 	resp, err := newTokenPonyForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -138,6 +140,7 @@ func TestTokenPonyChatHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyChatNoReasoning(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -149,6 +152,7 @@ func TestTokenPonyChatNoReasoning(t *testing.T) {
 
 	apiKey := "test-key"
 	resp, err := newTokenPonyForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -164,7 +168,9 @@ func TestTokenPonyChatNoReasoning(t *testing.T) {
 }
 
 func TestTokenPonyChatRequiresAPIKey(t *testing.T) {
+	ctx := t.Context()
 	_, err := newTokenPonyForTest("http://unused").ChatWithMessages(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil)
@@ -174,15 +180,17 @@ func TestTokenPonyChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestTokenPonyChatRequiresMessages(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newTokenPonyForTest("http://unused").ChatWithMessages(
-		"qwen3-32b", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+		ctx, "qwen3-32b", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
 }
 
 func TestTokenPonyChatPropagatesHTTPError(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"bad key"}`))
@@ -191,6 +199,7 @@ func TestTokenPonyChatPropagatesHTTPError(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newTokenPonyForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -200,6 +209,7 @@ func TestTokenPonyChatPropagatesHTTPError(t *testing.T) {
 }
 
 func TestTokenPonyStreamHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
@@ -212,6 +222,7 @@ func TestTokenPonyStreamHappyPath(t *testing.T) {
 	var chunks []string
 	var sawDone bool
 	err := newTokenPonyForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -238,6 +249,7 @@ func TestTokenPonyStreamHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyStreamSplitsReasoning(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 1. "}}]}`+"\n"+
@@ -250,6 +262,7 @@ func TestTokenPonyStreamSplitsReasoning(t *testing.T) {
 	apiKey := "test-key"
 	var content, reasoning []string
 	err := newTokenPonyForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"deepseek-r1-0528",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -277,9 +290,11 @@ func TestTokenPonyStreamSplitsReasoning(t *testing.T) {
 }
 
 func TestTokenPonyStreamRejectsExplicitFalse(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
 	err := newTokenPonyForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -292,8 +307,10 @@ func TestTokenPonyStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestTokenPonyStreamRequiresSender(t *testing.T) {
+	ctx := t.Context()
 	apiKey := "test-key"
 	err := newTokenPonyForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
@@ -303,6 +320,7 @@ func TestTokenPonyStreamRequiresSender(t *testing.T) {
 }
 
 func TestTokenPonyStreamFailsWithoutTerminal(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
@@ -310,6 +328,7 @@ func TestTokenPonyStreamFailsWithoutTerminal(t *testing.T) {
 
 	apiKey := "test-key"
 	err := newTokenPonyForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -320,6 +339,7 @@ func TestTokenPonyStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestTokenPonyStreamRejectsMalformedFrame(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {oops not json}`+"\n",
@@ -328,6 +348,7 @@ func TestTokenPonyStreamRejectsMalformedFrame(t *testing.T) {
 
 	apiKey := "test-key"
 	err := newTokenPonyForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -344,8 +365,10 @@ func TestTokenPonyStreamSurfacesUpstreamError(t *testing.T) {
 	)
 	defer srv.Close()
 
+	ctx := t.Context()
 	apiKey := "test-key"
 	err := newTokenPonyForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
@@ -359,6 +382,7 @@ func TestTokenPonyStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestTokenPonyListModelsHappyPath(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -371,7 +395,7 @@ func TestTokenPonyListModelsHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	models, err := newTokenPonyForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newTokenPonyForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -382,13 +406,15 @@ func TestTokenPonyListModelsHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyListModelsRequiresAPIKey(t *testing.T) {
-	_, err := newTokenPonyForTest("http://unused").ListModels(&APIConfig{})
+	ctx := t.Context()
+	_, err := newTokenPonyForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestTokenPonyCheckConnectionDelegatesToListModels(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{{"id": "qwen3-32b"}},
@@ -397,12 +423,13 @@ func TestTokenPonyCheckConnectionDelegatesToListModels(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	if err := newTokenPonyForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := newTokenPonyForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection: %v", err)
 	}
 }
 
 func TestTokenPonyCheckConnectionPropagatesError(t *testing.T) {
+	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"bad key"}`))
@@ -410,40 +437,43 @@ func TestTokenPonyCheckConnectionPropagatesError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	err := newTokenPonyForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey})
+	err := newTokenPonyForTest(srv.URL).CheckConnection(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestTokenPonyBaseURLForRegionUnknown(t *testing.T) {
+	ctx := t.Context()
 	m := newTokenPonyForTest("http://unused")
 	apiKey := "test-key"
 	region := "missing"
-	_, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &region})
+	_, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey, Region: &region})
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
 		t.Errorf("expected base-URL error, got %v", err)
 	}
 }
 
 func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	model := "x"
-	_, err := newTokenPonyForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := newTokenPonyForTest("http://unused").Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: want 'no such method', got %v", err)
 	}
 }
 
 func TestTokenPonyAudioOCRReturnNoSuchMethod(t *testing.T) {
+	ctx := t.Context()
 	m := newTokenPonyForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

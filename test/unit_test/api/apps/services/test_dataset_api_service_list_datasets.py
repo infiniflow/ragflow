@@ -150,9 +150,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "api.db.services.user_service",
         TenantService=SimpleNamespace(
-            get_joined_tenants_by_user_id=lambda user_id: [
-                {"tenant_id": "tenant-1"}
-            ],
+            get_joined_tenants_by_user_id=lambda user_id: [{"tenant_id": "tenant-1"}],
         ),
         UserService=SimpleNamespace(get_by_ids=lambda ids: []),
         UserTenantService=SimpleNamespace(),
@@ -173,13 +171,9 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
 
     repo_root = Path(__file__).resolve().parents[5]
     module_path = repo_root / "api" / "apps" / "services" / "dataset_api_service.py"
-    spec = importlib.util.spec_from_file_location(
-        "test_dataset_api_service_list_datasets_module", module_path
-    )
+    spec = importlib.util.spec_from_file_location("test_dataset_api_service_list_datasets_module", module_path)
     module = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(
-        sys.modules, "test_dataset_api_service_list_datasets_module", module
-    )
+    monkeypatch.setitem(sys.modules, "test_dataset_api_service_list_datasets_module", module)
     spec.loader.exec_module(module)
     return module, parsing_status_mock, get_list_mock
 

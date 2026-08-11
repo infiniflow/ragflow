@@ -1470,6 +1470,9 @@ def _run_sync(user_id: str, req):
         DocumentService.update_by_id(doc_id, info)
         if req.get("delete", False):
             TaskService.filter_delete([Task.doc_id == doc_id])
+            from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+            remove_dataset_nav_doc_sync(doc_tenant_id, doc.kb_id, doc.id)
             if settings.docStoreConn.index_exist(search.index_name(doc_tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(doc_tenant_id), doc.kb_id)
 
@@ -1580,6 +1583,9 @@ async def parse_documents(tenant_id, dataset_id):
 
                 DocumentService.update_by_id(doc_id, info)
                 TaskService.filter_delete([Task.doc_id == doc_id])
+                from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+                remove_dataset_nav_doc_sync(tenant_id, doc.kb_id, doc.id)
                 if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 

@@ -25,7 +25,7 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -194,6 +194,61 @@ func TestUpdateChatHandlerRejectsNonOwner(t *testing.T) {
 	}
 	if resp["data"] != false {
 		t.Fatalf("expected data=false, got %v", resp["data"])
+	}
+	if resp["message"] != "No authorization." {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
+func TestGetChatHandlerRejectsNonOwner(t *testing.T) {
+	db := setupChatHandlerTestDB(t)
+	createChatHandlerTestChat(t, db, "chat-1", "tenant-2")
+
+	h := NewChatHandler(service.NewChatService(), service.NewUserService())
+	c, w := setupGinContextWithUser("GET", "/api/v1/chats/chat-1", "")
+	c.Params = []gin.Param{{Key: "chat_id", Value: "chat-1"}}
+
+	h.GetChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeAuthenticationError) {
+		t.Fatalf("expected auth error code 109, got %v", resp["code"])
+	}
+	if resp["data"] != false {
+		t.Fatalf("expected data=false, got %v", resp["data"])
+	}
+	if resp["message"] != "No authorization." {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
+func TestDeleteChatHandlerRejectsNonOwner(t *testing.T) {
+	db := setupChatHandlerTestDB(t)
+	createChatHandlerTestChat(t, db, "chat-1", "tenant-2")
+
+	h := NewChatHandler(service.NewChatService(), service.NewUserService())
+	c, w := setupGinContextWithUser("DELETE", "/api/v1/chats/chat-1", "")
+	c.Params = []gin.Param{{Key: "chat_id", Value: "chat-1"}}
+
+	h.DeleteChat(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeAuthenticationError) {
+		t.Fatalf("expected auth error code 109, got %v", resp["code"])
 	}
 	if resp["message"] != "No authorization." {
 		t.Fatalf("unexpected message: %v", resp["message"])

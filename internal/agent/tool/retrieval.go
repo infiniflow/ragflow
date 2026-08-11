@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/dao"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -121,41 +122,6 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
 				Required: true,
 			},
-			"dataset_ids": {
-				Type:     schema.Array,
-				Desc:     "Optional list of dataset IDs to restrict the search to.",
-				Required: false,
-			},
-			"kb_ids": {
-				Type:     schema.Array,
-				Desc:     "Optional list of knowledge base IDs to restrict the search to.",
-				Required: false,
-			},
-			"top_n": {
-				Type:     schema.Integer,
-				Desc:     "Number of top chunks to return. Defaults to 8 if omitted.",
-				Required: false,
-			},
-			"top_k": {
-				Type:     schema.Integer,
-				Desc:     "Maximum candidate chunks retrieved before final top_n trimming.",
-				Required: false,
-			},
-			"keywords_similarity_weight": {
-				Type:     schema.Number,
-				Desc:     "Keyword similarity weight in [0,1]; vector similarity weight is 1 - this value.",
-				Required: false,
-			},
-			"use_kg": {
-				Type:     schema.Boolean,
-				Desc:     "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
-				Required: false,
-			},
-			"similarity_threshold": {
-				Type:     schema.Number,
-				Desc:     "Minimum similarity threshold for dataset retrieval.",
-				Required: false,
-			},
 		}),
 	}, nil
 }
@@ -196,7 +162,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
 	svc := GetRetrievalService()
-	chunks, err := svc.Search(ctx, RetrievalRequest{
+	chunks, err := svc.Search(ctx, dao.DB, RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
 		TopN:                     args.TopN,

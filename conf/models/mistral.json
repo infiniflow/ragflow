@@ -16,35 +16,50 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "mistral-medium-latest",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "mistral-small-latest",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "ministral-8b-latest",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "ministral-3b-latest",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "pixtral-large-latest",
@@ -52,56 +67,80 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "codestral-latest",
       "max_tokens": 256000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "open-mistral-nemo",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "open-mistral-7b",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "open-mixtral-8x7b",
       "max_tokens": 32000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "open-mixtral-8x22b",
       "max_tokens": 64000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "magistral-medium-latest",
       "max_tokens": 40000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "magistral-small-latest",
       "max_tokens": 40000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "mistral-embed",
