@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/component/messagefit"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
@@ -313,7 +314,16 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// Resolve the model's context window (content_length) for message
 	// fitting. 0 means the model is unknown → fitMessages falls back to
 	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
-	contentLength := resolveModelContentLength(ctx, db, originalModelID, p.Driver, p.ModelID)
+	contentLength := dao.ResolveModelContentLength(ctx, db, originalModelID, p.Driver, p.ModelID)
+	if contentLength <= 0 {
+		// A 0 makes fitMessages fall back to the 8192 default budget, which can
+		// silently discard most of a large-context prompt, so surface the
+		// resolution failure for diagnosis.
+		common.Debug("llm: content_length not resolved, falling back to 8192",
+			zap.String("model_ref", originalModelID),
+			zap.String("driver", p.Driver),
+			zap.String("model_name", p.ModelID))
+	}
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}

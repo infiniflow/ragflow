@@ -71,46 +71,6 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 	return modelID, driver, apiKey, baseURL, nil
 }
 
-// resolveModelContentLength returns the chat model's context window
-// (content_length) for message fitting, or 0 when the model is unknown.
-// It mirrors service.ResolveModelContextLength but resolves through the DAO
-// and the provider catalog directly, so the agent component does not import
-// internal/service (which would form an import cycle through the canvas).
-// modelRef is the original canvas llm_id (may be a tenant_model.id); driver
-// and modelName are the resolved provider + bare model name.
-func resolveModelContentLength(ctx context.Context, db *gorm.DB, modelRef, driver, modelName string) int {
-	// Without a DB the tenant-model lookup cannot run, so fall straight to
-	// the provider catalog, which needs no database.
-	if db == nil {
-		db = dao.DB
-	}
-	// 1. A tenant model instance id (canvas llm_id pointing at a custom-added
-	//    model): read content_length from its provider catalog row.
-	if db != nil && modelRef != "" {
-		if obj, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && obj != nil && obj.Status == "active" {
-			if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-				if mdl, err := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContentLength != nil {
-					return *mdl.ContentLength
-				}
-			}
-		}
-	}
-	// 2. Provider catalog by the resolved driver + bare model name.
-	if driver != "" && modelName != "" {
-		if mdl, err := dao.GetModelProviderManager().GetModelByName(driver, modelName); err == nil && mdl.ContentLength != nil {
-			return *mdl.ContentLength
-		}
-	}
-	// A 0 here makes the caller fall back to the 8192 default budget, which
-	// can silently discard most of a large-context prompt, so surface the
-	// resolution failure for diagnosis.
-	common.Debug("llm credentials: content_length not resolved, falling back to 8192",
-		zap.String("model_ref", modelRef),
-		zap.String("driver", driver),
-		zap.String("model_name", modelName))
-	return 0
-}
-
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
 func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
