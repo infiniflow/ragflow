@@ -297,7 +297,7 @@ func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
 }
 
 // TestMarkdownParser_TableNotCollapsed is the core regression guard for the
-// markdown table fix (方案 Y): a document containing a GFM table must keep one
+// Markdown table fix (方案 Y): a document containing a GFM table must keep one
 // item per top-level block instead of collapsing into one giant item, AND the
 // table must be emitted as a single raw <table>…</table> HTML block (not
 // scattered cell text), appearing both as an inlined text copy and as a
@@ -526,8 +526,8 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 // TestMarkdownParser_AlignmentGolden verifies Go's ParseWithResult output is
 // content-equivalent to Python's _markdown on the shared sample, using the
 // shared concatenation-normalization alignment tool (align_test.go). Python
-// keeps raw markdown and splits on the delimiter set; Go emits clean per-block
-// text. The comparison normalizes both (markdown syntax, html tags, delimiters
+// keeps raw Markdown and splits on the delimiter set; Go emits clean per-block
+// text. The comparison normalizes both (Markdown syntax, html tags, delimiters
 // stripped; whitespace collapsed) and ignores "table"/"image" items, which are
 // accepted representation differences (PARSER_ALIGNMENT_HANDOFF.md §3.1).
 //

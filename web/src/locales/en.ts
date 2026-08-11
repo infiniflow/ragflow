@@ -2476,6 +2476,7 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      exportCurrentPage: 'Export current page',
       preprocess: {
         preprocess: 'Preprocess',
         mainContent: 'Main content',

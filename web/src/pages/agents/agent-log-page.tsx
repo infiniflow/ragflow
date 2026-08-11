@@ -273,7 +273,7 @@ const AgentLogPage: React.FC = () => {
           <div className="flex justify-end space-x-2 mb-4 text-foreground">
             <div className="flex items-center space-x-2">
               <Button onClick={onExportClick} loading={exportLoading}>
-                {t('flow.export')}
+                {t('flow.exportCurrentPage')}
               </Button>
               <span>{`${t('flow.id')}/${t('flow.logTitle')}`}</span>
               <SearchInput

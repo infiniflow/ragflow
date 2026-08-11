@@ -317,7 +317,7 @@ func TestExtractorComponent_Invoke_KeepsJSONAsString(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_KeepsJSONStringInFence verifies a JSON
-// response wrapped in a markdown code fence is stored as the raw string —
+// response wrapped in a Markdown code fence is stored as the raw string —
 // the code fence is not stripped on the field-extraction path (Python's
 // _generate_async returns the raw text untouched).
 func TestExtractorComponent_Invoke_KeepsJSONStringInFence(t *testing.T) {

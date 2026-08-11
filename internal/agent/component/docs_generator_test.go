@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -96,7 +95,7 @@ func TestDocsGenerator_Invoke_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	_, _ = c.Invoke(context.Background(), nil, map[string]any{})
+	_, _ = c.Invoke(t.Context(), nil, map[string]any{})
 	// We do not assert err == nil here because txt output requires
 	// the internal writer (which may not be available in this
 	// checkout). The test pins that the call doesn't panic.
@@ -110,7 +109,7 @@ func TestDocsGenerator_Invoke_UsesQueryWhenContentEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"query": "Hello from begin query",
 	})
 	if err != nil {
@@ -134,10 +133,11 @@ func TestDocsGenerator_Invoke_AcceptsDecorationParamNames(t *testing.T) {
 		"footer_text":    "Canonical Footer",
 		"watermark_text": "Canonical Watermark",
 	})
+	ctx := t.Context()
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke canonical params: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestDocsGenerator_Invoke_AcceptsDecorationParamNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator alias params): %v", err)
 	}
-	out, err = c.Invoke(context.Background(), nil, map[string]any{})
+	out, err = c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke alias params: %v", err)
 	}

@@ -60,7 +60,7 @@ func CollapseWhitespace() Normalizer {
 }
 
 // htmlTagRE matches an HTML tag so table/HTML markup can be ignored when
-// comparing content across the two markdown libraries (goldmark vs
+// comparing content across the two Markdown libraries (goldmark vs
 // Python-Markdown serialize tables differently but the cell text is the same).
 var htmlTagRE = regexp.MustCompile(`(?is)<[^>]+>`)
 
@@ -68,7 +68,7 @@ var htmlTagRE = regexp.MustCompile(`(?is)<[^>]+>`)
 // visible text. Tags are replaced with a single space (not deleted) so
 // adjacent cell text does not fuse — e.g. "<td>A</td><td>B</td>" becomes
 // "A B" rather than "AB". CollapseWhitespace then folds the extra space.
-// Used so table-markup differences between markdown libraries don't mask the
+// Used so table-markup differences between Markdown libraries don't mask the
 // underlying content equivalence.
 func StripHTMLTags() Normalizer {
 	return func(s string) string {
@@ -77,17 +77,17 @@ func StripHTMLTags() Normalizer {
 }
 
 // Markdown-syntax regexes removed by StripMarkdownSyntax. The Python flow
-// parser keeps raw markdown in its section text ("# Title", "- item",
+// parser keeps raw Markdown in its section text ("# Title", "- item",
 // ``` fenced ```); the Go parser emits clean per-block text. These are
 // representation differences (PARSER_ALIGNMENT_HANDOFF.md §3.1), not content
-// divergences, so the markdown alignment strips them before comparing.
+// divergences, so the Markdown alignment strips them before comparing.
 var (
 	mdHeaderRE = regexp.MustCompile(`(?m)^#{1,6}\s+`)
 	mdListRE   = regexp.MustCompile(`(?m)^\s*[-*+]\s+`)
 	mdFenceRE  = regexp.MustCompile("(?s)```[^\n]*\n(.*?)```")
 )
 
-// StripMarkdownSyntax returns a Normalizer that removes markdown presentation
+// StripMarkdownSyntax returns a Normalizer that removes Markdown presentation
 // characters (ATX headings, list bullets, fenced-code fences) from a section,
 // leaving the bare text. It must run before CollapseWhitespace because the
 // fence regex relies on the surrounding newlines.
@@ -203,7 +203,7 @@ func LoadGolden(t *testing.T, path string) []map[string]any {
 	return items
 }
 
-// MarkdownAlignOptions returns the normalizer preset for markdown. The order
+// MarkdownAlignOptions returns the normalizer preset for Markdown. The order
 // matters:
 //   - StripMarkdownSyntax first: drops "#"/"-"/fenced-code markup that Python
 //     keeps inline but Go parses out (relies on the surrounding newlines, so it
@@ -218,7 +218,7 @@ func LoadGolden(t *testing.T, path string) []map[string]any {
 //     inter-tag gaps of an HTML table, the space from delimiter replacement,
 //     the newlines inside a fenced code block) into single spaces.
 //
-// Reused by every markdown alignment test; other formats define their own
+// Reused by every Markdown alignment test; other formats define their own
 // preset and share CompareAlignment.
 func MarkdownAlignOptions(delimiter string) AlignOptions {
 	return AlignOptions{
@@ -232,6 +232,6 @@ func MarkdownAlignOptions(delimiter string) AlignOptions {
 	}
 }
 
-// DefaultMarkdownDelimiter is the flow parser's default markdown delimiter
+// DefaultMarkdownDelimiter is the flow parser's default Markdown delimiter
 // set, used when generating/loading the golden baseline.
 const DefaultMarkdownDelimiter = "\n!?;。；！？"

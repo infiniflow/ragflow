@@ -18,6 +18,7 @@ import json
 import os
 import logging
 import re
+import secrets
 from typing import Any
 
 from werkzeug.security import check_password_hash
@@ -146,7 +147,10 @@ class UserMgr:
         if target_status == usr.is_active:
             return f"User activate status is already {_activate_status}!"
         # update is_active
-        UserService.update_user(usr.id, {"is_active": target_status})
+        update_dict = {"is_active": target_status}
+        if target_status == ActiveEnum.INACTIVE.value:
+            update_dict["access_token"] = f"INVALID_{secrets.token_hex(16)}"
+        UserService.update_user(usr.id, update_dict)
         return f"Turn {_activate_status} user activate status successfully!"
 
     @staticmethod
