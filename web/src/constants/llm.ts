@@ -44,6 +44,7 @@ export enum LLMFactory {
   NVIDIA = 'NVIDIA',
   LMStudio = 'LM-Studio',
   OpenAiAPICompatible = 'OpenAI-API-Compatible',
+  MWS = 'MWS',
   Cohere = 'Cohere',
   LeptonAI = 'LeptonAI',
   TogetherAI = 'TogetherAI',
@@ -193,6 +194,7 @@ export const IconMap = {
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.MWS]: 'mws',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -217,6 +219,8 @@ export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.MWS]:
+    'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',

@@ -1798,6 +1798,14 @@
             "rank": "985"
         },
         {
+            "name": "MWS",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
+            "status": "1",
+            "llm": [],
+            "rank": "984"
+        },
+        {
             "name": "VLLM",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
