@@ -139,6 +139,22 @@ async def test_merge_bucket_does_not_collide_description_string_with_malformed_r
     assert payload_out["description"] == lookalike
 
 
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_bucket_treats_nested_list_and_tuple_chunk_ids_as_distinct():
+    """A list and a tuple with equal elements are never equal in Python, so a
+    source_chunk_ids entry nesting one of each must not be deduped together."""
+    rows = [
+        _entity_row("Widget Co", chunks=[{"ids": ["a", "b"]}], doc_id="docA"),
+        _entity_row("Widget Co", chunks=[{"ids": ("a", "b")}], doc_id="docA"),
+    ]
+
+    rows_out = await _merge_bucket("tenant1", "kb1", "compile1", None, rows, None)
+
+    assert len(rows_out) == 1
+    assert rows_out[0]["source_chunk_ids"] == [{"ids": ["a", "b"]}, {"ids": ("a", "b")}]
+
+
 def _relation_row(*, from_="apple", to="iphone", type_="produces", chunks=None, doc_id=None, use_row_level_fallback=False) -> dict:
     if use_row_level_fallback:
         # "type" stays in the payload (no row-level fallback exists for it);

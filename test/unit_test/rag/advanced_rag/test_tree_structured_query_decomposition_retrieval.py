@@ -157,6 +157,28 @@ async def test_merge_round_does_not_collide_string_with_malformed_repr():
 
 @pytest.mark.p1
 @pytest.mark.asyncio
+async def test_merge_round_treats_nested_list_and_tuple_as_distinct():
+    """A list and a tuple with equal elements are never equal in Python, so a
+    chunk_id nesting one of each must not be deduped against the other."""
+    retrieval = _retrieval()
+    chunk_info = {
+        "total": 1,
+        "chunks": [{"chunk_id": {"ids": ["a", "b"]}, "content_with_weight": "c1"}],
+        "doc_aggs": [],
+    }
+    kbinfos = {
+        "total": 1,
+        "chunks": [{"chunk_id": {"ids": ("a", "b")}, "content_with_weight": "c2"}],
+        "doc_aggs": [],
+    }
+
+    await retrieval._async_update_chunk_info(chunk_info, kbinfos)
+
+    assert len(chunk_info["chunks"]) == 2
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
 async def test_multiple_merge_rounds_keep_accumulating_without_duplicates():
     retrieval = _retrieval()
     chunk_info = {"total": 0, "chunks": [], "doc_aggs": []}

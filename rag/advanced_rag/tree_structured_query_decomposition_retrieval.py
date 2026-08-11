@@ -43,12 +43,16 @@ class _CanonKey:
 def _canonicalize(value):
     """Recursively convert JSON-like unhashable values (dict/list/set) into an
     equality-preserving hashable form: dict equality ignores key order, list
-    equality doesn't."""
+    equality doesn't. Distinct types that are never equal to each other in
+    Python (list vs. tuple) get distinct tags; types that compare equal by
+    value (set vs. frozenset) share one."""
     if isinstance(value, dict):
         return ("__dict__", frozenset((k, _canonicalize(v)) for k, v in value.items()))
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return ("__list__", tuple(_canonicalize(v) for v in value))
-    if isinstance(value, set):
+    if isinstance(value, tuple):
+        return ("__tuple__", tuple(_canonicalize(v) for v in value))
+    if isinstance(value, (set, frozenset)):
         return ("__set__", frozenset(_canonicalize(v) for v in value))
     try:
         hash(value)
