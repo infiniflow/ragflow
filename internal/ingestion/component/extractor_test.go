@@ -1792,3 +1792,44 @@ func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *tes
 		t.Errorf("expected title substitution to produce literal '{text}' label: %q", userContent)
 	}
 }
+
+// TestFitExtractorMessages_RejectsEmptyUserTurn verifies the guard added for
+// review feedback: when messagefit's proportional trim would empty the final
+// user turn (the system prompt alone exceeds the context budget), the
+// extractor surfaces a clear error instead of sending [system, user:""] to
+// the provider.
+func TestFitExtractorMessages_RejectsEmptyUserTurn(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 500 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	msgs := []eschema.Message{
+		{Role: eschema.System, Content: strings.Repeat("s ", 1000)},
+		{Role: eschema.User, Content: strings.Repeat("u ", 400)},
+	}
+	if _, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs); err == nil {
+		t.Fatal("expected an error when fitting empties the user turn")
+	}
+}
+
+// TestFitExtractorMessages_KeepsUserTurn verifies the happy path: with a
+// normal budget the fitter trims oversized prompts and the final user turn
+// survives, so no error is returned.
+func TestFitExtractorMessages_KeepsUserTurn(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 2000 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	msgs := []eschema.Message{
+		{Role: eschema.System, Content: "you are a helpful assistant"},
+		{Role: eschema.User, Content: strings.Repeat("u ", 3000)},
+	}
+	fitted, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2", len(fitted))
+	}
+	if strings.TrimSpace(fitted[1].Content) == "" {
+		t.Fatal("user turn was emptied")
+	}
+}

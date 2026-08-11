@@ -80,10 +80,13 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/component/messagefit"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
@@ -1134,6 +1137,11 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		return nil, err
 	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
+	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
+	if fitErr != nil {
+		return nil, fitErr
+	}
+	msgs = fitted
 	inv := getExtractorChatInvoker()
 	req := extractorChatRequest{
 		Driver:    driver,
@@ -1352,6 +1360,116 @@ func isBareTenantModelID(s string) bool {
 		}
 	}
 	return true
+}
+
+// extractorContextLengthOverride is a narrow test seam mirroring
+// extractorChatTargetResolverOverride: it lets unit tests supply a context
+// length without a real tenant model row, so the message-fitting wiring in
+// callRaw/llmTagChunk can be exercised without a DB. When set,
+// extractorContextLength consults it first.
+var (
+	extractorContextLengthOverrideMu sync.RWMutex
+	extractorContextLengthOverride   func(ctx context.Context, llmID string) int
+)
+
+// SetExtractorContextLengthOverride swaps the package-level context-length
+// resolver for tests. Pass nil to restore the default. Concurrent-safe.
+func SetExtractorContextLengthOverride(fn func(ctx context.Context, llmID string) int) {
+	extractorContextLengthOverrideMu.Lock()
+	defer extractorContextLengthOverrideMu.Unlock()
+	extractorContextLengthOverride = fn
+}
+
+func getExtractorContextLengthOverride() func(ctx context.Context, llmID string) int {
+	extractorContextLengthOverrideMu.RLock()
+	defer extractorContextLengthOverrideMu.RUnlock()
+	return extractorContextLengthOverride
+}
+
+// extractorContextLength returns the chat model's context window
+// (content_length) for the effective chat model used by a call, or 0 when
+// unavailable. Mirrors Python's chat_mdl.max_length. Used as the token
+// budget for message fitting so oversized prompts are trimmed instead of
+// rejected by the provider. When llm_id is empty the call falls back to the
+// tenant default chat model (see resolveExtractorChatTarget), so the same
+// model is resolved here; otherwise the default-model path would never get
+// message fitting. Returns 0 (skip fitting) when the model is unknown (e.g.
+// unit tests with synthetic llm_id or no canvas state).
+func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int {
+	if fn := getExtractorContextLengthOverride(); fn != nil {
+		return fn(ctx, llmID)
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return 0
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return 0
+	}
+	if llmID == "" {
+		llmID = defaultChatModelRef(ctx, db, tid)
+	}
+	if llmID == "" {
+		return 0
+	}
+	svc := service.NewModelProviderService()
+	ctxLen, err := svc.ResolveModelContextLength(ctx, tid, llmID)
+	if err != nil || ctxLen <= 0 {
+		return 0
+	}
+	return ctxLen
+}
+
+// defaultChatModelRef returns the tenant's default chat model reference —
+// the tenant_model UUID when one is pinned, otherwise the composite
+// "model@provider" id — or "" when the tenant has no default chat model.
+func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) string {
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
+	if err != nil || tenant == nil {
+		return ""
+	}
+	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
+		return *tenant.TenantLLMID
+	}
+	return tenant.LLMID
+}
+
+// fitExtractorMessages trims msgs to the chat model's context window using
+// the shared messagefit fitter (mirrors Python's message_fit_in), dropping
+// entries the fitter removed. It returns a clear error instead of letting a
+// conversation whose final user turn was trimmed to empty reach the provider:
+// the proportional trim can do that when the system prompt alone exceeds the
+// context budget, and providers reject empty user turns with an obscure error
+// after retries.
+func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs []eschema.Message) ([]eschema.Message, error) {
+	ctxLen := extractorContextLength(ctx, db, llmID)
+	if ctxLen <= 0 {
+		return msgs, nil
+	}
+	fitMsgs := make([]messagefit.Message, len(msgs))
+	for i := range msgs {
+		fitMsgs[i] = messagefit.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
+	}
+	messagefit.Fit(fitMsgs, ctxLen)
+
+	fitted := make([]eschema.Message, 0, len(msgs))
+	for i := range msgs {
+		if fitMsgs[i].Content == "" {
+			continue // dropped by fitter
+		}
+		msgs[i].Content = fitMsgs[i].Content
+		fitted = append(fitted, msgs[i])
+	}
+	if len(fitted) == 0 {
+		return nil, errors.New("extractor: message fitting dropped every message; check the chat model context length setting")
+	}
+	last := fitted[len(fitted)-1]
+	if last.Role != eschema.User || strings.TrimSpace(last.Content) == "" {
+		return nil, errors.New("extractor: message fitting emptied the final user turn; check the chat model context length setting or reduce the prompt size")
+	}
+	return fitted, nil
 }
 
 // buildExtractorMessages assembles system + user messages for
