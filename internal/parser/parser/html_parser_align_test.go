@@ -14,7 +14,7 @@ import (
 //
 //  1. an inlined copy in the text flow (doc_type_kwd:"text") whose text keeps
 //     the <table> markup, so embedding/retrieval/LLM rendering preserve the
-//     row/column structure (no "塌方");
+//     row/column structure (no "collapse");
 //  2. a structured table item (doc_type_kwd:"table", ck_type:"table") appended
 //     after the walk, consumed by the downstream chunker (attachMediaContext).
 //
@@ -23,12 +23,12 @@ import (
 // markup — this test fails on that behavior.
 func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 	const html = `<html><body>
-<h1>员工表</h1>
+<h1>Employee Table</h1>
 <table>
 <tr><th>Name</th><th>Age</th></tr>
 <tr><td>Alice</td><td>30</td></tr>
 </table>
-<p>尾部段落</p>
+<p>Trailing paragraph</p>
 </body></html>`
 
 	p := NewHTMLParser()
@@ -47,7 +47,7 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 				inlinedText = text
 				inlinedIdx = i
 			}
-			if text == "尾部段落" {
+			if text == "Trailing paragraph" {
 				trailingIdx = i
 			}
 		case "table":
@@ -93,21 +93,21 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 // the walk root; a nested <table> is reached via the default-branch leaf-text
 // extractor (htmlLeafText → walkHTMLLeaf). Before the fix, that path ran
 // htmlLeafText over the wrapper, flattening the table into a single text blob
-// ("Name Age Alice 30") with no markup — the same 塌方 as the top-level case,
+// ("Name Age Alice 30") with no markup — the same collapse as the top-level case,
 // just hidden one level deeper. After the fix, walkHTMLLeaf must render the
 // <table> markup inline (so it survives inside the wrapper's single text item)
 // AND register a structured doc_type_kwd:"table"/ck_type:"table" item (appended
 // after the walk like the top-level path).
 func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 	const html = `<html><body>
-<h1>标题</h1>
+<h1>Heading</h1>
 <div class="content">
 <table>
 <tr><th>Name</th><th>Age</th></tr>
 <tr><td>Alice</td><td>30</td></tr>
 </table>
 </div>
-<p>尾部段落</p>
+<p>Trailing paragraph</p>
 </body></html>`
 
 	p := NewHTMLParser()
@@ -126,7 +126,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 				inlinedText = text
 				inlinedIdx = i
 			}
-			if text == "尾部段落" {
+			if text == "Trailing paragraph" {
 				trailingIdx = i
 			}
 		case "table":
@@ -168,7 +168,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 
 // TestHTMLParser_NestedListItemsPreserved verifies a nested <ul> (a list
 // containing a sublist) does NOT lose any item text — i.e. it is NOT subject to
-// the same kind of 塌方 the table path once had. Unlike tables (whose markup is
+// the same kind of collapse the table path once had. Unlike tables (whose markup is
 // dropped and cells can fuse), list items are separated by hard breaks inside
 // walkHTMLLeaf, so every <li> text survives in document order. This mirrors
 // Python's RAGFlowHtmlParser: read_text_recursively (html_parser.py:108-160)
@@ -220,10 +220,10 @@ func TestHTMLParser_NestedListItemsPreserved(t *testing.T) {
 		t.Errorf("nested list order not preserved (parent must precede sub-items): %q", all)
 	}
 
-	// No 塌方: items must not be fused without a separator
+	// No collapse: items must not be fused without a separator
 	// (e.g. "Item 2" directly adjacent to "Sub A" with no break).
 	if strings.Contains(all, "Item 2Sub") || strings.Contains(all, "Sub ASub") {
-		t.Errorf("nested list items fused together (塌方): %q", all)
+		t.Errorf("nested list items fused together (collapse): %q", all)
 	}
 
 	// The whole top-level <ul> is emitted as ONE text item tagged
@@ -232,7 +232,7 @@ func TestHTMLParser_NestedListItemsPreserved(t *testing.T) {
 	// unexpectedly. Note: a list nested inside a non-list container
 	// (div/section/…) is folded into that container's single text item and
 	// therefore loses ck_type:"list" (becomes "text") — a fidelity nuance,
-	// not a 塌方, since downstream chunking reads doc_type_kwd not ck_type.
+	// not a collapse, since downstream chunking reads doc_type_kwd not ck_type.
 	var listText string
 	for _, it := range res.JSON {
 		if it["ck_type"] == "list" {
@@ -355,7 +355,7 @@ func TestHTMLParser_AlignmentGolden(t *testing.T) {
 	// Ignore "table" items on both sides (accepted divergence: Go appends a
 	// structured table item; Python folds the inline <table> into the text
 	// flow). The inline <table> markup itself remains a "text" item in both
-	// runs so it is still compared — that is exactly what guards against 塌方.
+	// runs so it is still compared — that is exactly what guards against collapse.
 	goText := FilterByDocType(res.JSON, "text")
 	pyText := FilterByDocType(golden, "text")
 
