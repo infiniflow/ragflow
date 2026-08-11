@@ -22,6 +22,7 @@ package parser
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -201,18 +202,18 @@ type GoldenDoc struct {
 // items (legacy format) or a {meta, items} document (current format). It
 // returns the full document either way. Tolerant parsing keeps older
 // callers/tests working after the format gained a meta block.
-func parseGolden(t *testing.T, data []byte) *GoldenDoc {
+func parseGolden(t *testing.T, data []byte) (*GoldenDoc, error) {
 	t.Helper()
 	var doc GoldenDoc
 	if err := json.Unmarshal(data, &doc); err == nil && doc.Items != nil {
-		return &doc
+		return &doc, nil
 	}
 	// Legacy flat-array format: treat the whole file as the items list.
 	var items []map[string]any
 	if err := json.Unmarshal(data, &items); err != nil {
-		t.Fatalf("parse golden: %v", err)
+		return nil, fmt.Errorf("parse golden: %w", err)
 	}
-	return &GoldenDoc{Items: items}
+	return &GoldenDoc{Items: items}, nil
 }
 
 // LoadGolden reads a Python golden JSON file and returns its items. The file
@@ -224,7 +225,10 @@ func LoadGolden(t *testing.T, path string) []map[string]any {
 	if err != nil {
 		t.Fatalf("load golden %s: %v", path, err)
 	}
-	doc := parseGolden(t, data)
+	doc, err := parseGolden(t, data)
+	if err != nil {
+		t.Fatalf("load golden %s: %v", path, err)
+	}
 	if len(doc.Items) == 0 {
 		t.Fatalf("golden %s has no items", path)
 	}
@@ -240,7 +244,10 @@ func LoadGoldenDoc(t *testing.T, path string) *GoldenDoc {
 	if err != nil {
 		t.Fatalf("load golden %s: %v", path, err)
 	}
-	doc := parseGolden(t, data)
+	doc, err := parseGolden(t, data)
+	if err != nil {
+		t.Fatalf("load golden %s: %v", path, err)
+	}
 	if len(doc.Items) == 0 {
 		t.Fatalf("golden %s has no items", path)
 	}
@@ -389,7 +396,10 @@ func HTMLAlignOptions() AlignOptions {
 func TestParseGolden(t *testing.T) {
 	// Legacy bare-array format: parsed as the items list, no meta.
 	legacy := []byte(`[{"text":"hello"},{"text":"world"}]`)
-	doc := parseGolden(t, legacy)
+	doc, err := parseGolden(t, legacy)
+	if err != nil {
+		t.Fatalf("legacy: parse golden: %v", err)
+	}
 	if doc.Meta != nil {
 		t.Fatalf("legacy: want nil meta, got %v", doc.Meta)
 	}
@@ -402,7 +412,10 @@ func TestParseGolden(t *testing.T) {
 
 	// {meta, items} format: meta preserved, items parsed.
 	meta := `{"meta":{"generator":"py","sample":"in.txt","accepted_divergences":["table"]},"items":[{"text":"a"},{"text":"b"}]}`
-	doc2 := parseGolden(t, []byte(meta))
+	doc2, err := parseGolden(t, []byte(meta))
+	if err != nil {
+		t.Fatalf("{meta,items}: parse golden: %v", err)
+	}
 	if doc2.Meta == nil {
 		t.Fatalf("{meta,items}: want non-nil meta")
 	}
@@ -416,11 +429,9 @@ func TestParseGolden(t *testing.T) {
 		t.Fatalf("{meta,items}: item1 text = %v, want b", got)
 	}
 
-	// Corrupt input must fatal: a broken golden should fail loudly, not
+	// Corrupt input must fail loudly: a broken golden should error, not
 	// silently fall through to an empty baseline.
-	if ok := t.Run("corrupt", func(t *testing.T) {
-		parseGolden(t, []byte(`{not valid json`))
-	}); ok {
+	if _, err := parseGolden(t, []byte(`{not valid json`)); err == nil {
 		t.Fatalf("corrupt input: expected parseGolden to fail, but it returned")
 	}
 }
