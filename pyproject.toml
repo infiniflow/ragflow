@@ -256,6 +256,9 @@ constraint-dependencies = [
     # CVE-2026-21226: azure-core < 1.38.0 vulnerable; pulled in transitively via
     # azure-identity, azure-storage-blob, azure-storage-file-datalake
     "azure-core>=1.38.0",
+    # CVE-2026-33752: curl_cffi < 0.15.0 vulnerable; pulled in transitively via
+    # akshare, yfinance
+    "curl_cffi>=0.15.0"
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
