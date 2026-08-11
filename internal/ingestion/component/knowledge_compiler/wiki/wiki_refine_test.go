@@ -11,7 +11,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// refineChatStub returns per-page markdown keyed by the page title in the
+// refineChatStub returns per-page Markdown keyed by the page title in the
 // writer prompt so each page's result is distinct and deterministic.
 type refineChatStub struct{}
 

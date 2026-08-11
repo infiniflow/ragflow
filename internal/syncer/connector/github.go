@@ -723,7 +723,7 @@ func configBoolDefault(value any, fallback bool) bool {
 	return fallback
 }
 
-// sanitizeGitHubName mirrors Python's sanitized markdown filename intent.
+// sanitizeGitHubName mirrors Python's sanitized Markdown filename intent.
 func sanitizeGitHubName(name, extension string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
