@@ -62,6 +62,18 @@ const tableMaxColFrac = 0.22
 // as 7+ columns) that the old code could never produce.
 const maxColumnCount = 4
 
+// minColLineFrac: a column holding fewer than this fraction of the page's
+// lines (or zero lines) is not a real reading column — it is a spurious
+// gutter sliver (an indented block, a stray caption, an empty kmeans
+// centroid). Drop it so the detector does not over-split.
+//
+// The threshold is set with margin below the smallest genuine column ratio
+// observed on the 70-page labeled corpus: the sparsest real double's minority
+// column is ~17.7% of lines, and the only real triple's columns are each
+// >=22%. 12% prunes genuine outliers (e.g. a 4-line footnote, 7.3%) without
+// touching those.
+const minColLineFrac = 0.12
+
 // detectColumnCount returns (columnCount, centroids) for one page.
 // columnCount is 1, 2, or up to maxColumnCount; centroids are the k cluster
 // means in x0 space (snapshot of the gate decision) and are reused for ColID
@@ -92,7 +104,9 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 		if g > 2 {
 			// gap >= 3 with wide columns: a real multi-column layout.
 			// Cap the count (maxColumnCount) so spurious gutters cannot
-			// split a single page into many columns.
+			// split a single page into many columns, then prune empty or
+			// too-sparse columns so an indentation-created sliver does not
+			// survive as a spurious column.
 			k := g
 			if k > maxColumnCount {
 				k = maxColumnCount
@@ -102,14 +116,56 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 			}
 			_, w := pageExtent(lines)
 			cents := kmeansCentroids(lines, k, w)
-			return k, cents
+			if pk, pc, ok := pruneColumns(lines, cents); ok {
+				return pk, pc
+			}
+			return 1, nil
 		}
 		// g == 2: unreliable (fake gutter or real 2-col) -> defer to balance.
 	}
 	if ok, cents := balancedBodyK2(lines, 0.30, 0.10); ok {
-		return 2, cents
+		if pk, pc, ok2 := pruneColumns(lines, cents); ok2 {
+			return pk, pc
+		}
+		return 1, nil
 	}
 	return 1, nil
+}
+
+// pruneColumns drops empty (0-line) or too-sparse (< minColLineFrac) columns
+// from a k-centroid partition and returns the surviving (k', cents'). A column
+// is "real" only if it captures enough of the page's lines. If fewer than 2
+// real columns survive, ok is false and the caller should treat the page as a
+// single column.
+func pruneColumns(lines []pdf.TextBox, cents []float64) (int, []float64, bool) {
+	n := len(lines)
+	if n == 0 || len(cents) < 2 {
+		return len(cents), cents, len(cents) >= 2
+	}
+	counts := make([]int, len(cents))
+	for _, b := range lines {
+		best, bestD := 0, math.Abs(b.X0-cents[0])
+		for c := 1; c < len(cents); c++ {
+			if d := math.Abs(b.X0 - cents[c]); d < bestD {
+				bestD, best = d, c
+			}
+		}
+		counts[best]++
+	}
+	keep := make([]int, 0, len(cents))
+	for c := range cents {
+		if counts[c] > 0 && float64(counts[c]) >= minColLineFrac*float64(n) {
+			keep = append(keep, c)
+		}
+	}
+	if len(keep) < 2 {
+		return len(keep), nil, false
+	}
+	newCents := make([]float64, len(keep))
+	for i, c := range keep {
+		newCents[i] = cents[c]
+	}
+	return len(keep), newCents, true
 }
 
 // gapColumnWidths returns the width (in page units) of each column found by
