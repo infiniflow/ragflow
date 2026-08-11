@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -48,7 +47,7 @@ func TestLLM_Stream_ExposesThinkingAndContentForDownstreamMessage(t *testing.T) 
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), nil, map[string]any{"user_prompt": "go"})
+	ch, err := c.Stream(t.Context(), nil, map[string]any{"user_prompt": "go"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}

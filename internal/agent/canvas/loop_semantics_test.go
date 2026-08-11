@@ -32,7 +32,6 @@
 package canvas
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"strings"
@@ -257,7 +256,7 @@ func TestLoop_MessageEmitsEveryIteration(t *testing.T) {
 		Upstream: []string{"bump"},
 	}
 
-	cc, err := Compile(context.Background(), dsl)
+	cc, err := Compile(ctx, dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}

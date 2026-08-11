@@ -119,7 +119,7 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		"markdown": "# Title\n\nParagraph one.\n\nParagraph two.",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	// The upstream decode normalizes markdown block boundaries into the
+	// The upstream decode normalizes Markdown block boundaries into the
 	// backtick-newline delimiter, so the text path must split into exactly
 	// three trimmed chunks with the delimiter dropped (no trailing newline).
 	want := []string{"# Title", "Paragraph one.", "Paragraph two."}

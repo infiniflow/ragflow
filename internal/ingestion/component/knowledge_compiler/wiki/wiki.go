@@ -2307,7 +2307,7 @@ func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[str
 	})
 	// rawLinks counts the model-authored wikilinks in the source content. It
 	// must be counted against content, not out: by this point every [[...]] has
-	// been rewritten to markdown, so counting on out would always report zero.
+	// been rewritten to Markdown, so counting on out would always report zero.
 	rawLinks := wikiWikilinkSimpleRe.FindAllString(content, -1)
 	appcommon.Info("knowledge_compiler: transformWikiLinks resolved outlinks",
 		zap.Int("raw_wikilinks", len(rawLinks)),

@@ -357,7 +357,7 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: markdown
+// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: Markdown
 // vision enhancement must also process items whose doc_type_kwd is "table"
 // (Python checks {"image","table"} in parser/utils.py:181), not only "image".
 // Before the fix the table item was skipped and never sent to the VLM.

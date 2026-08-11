@@ -310,7 +310,7 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 }
 
 // invokeTextPayload handles plain-text input (output_format in
-// {markdown,text,html} on the python side).
+// {Markdown,text,html} on the python side).
 func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	if text == "" {
 		return emptyOutputs()
