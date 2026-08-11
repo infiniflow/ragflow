@@ -531,33 +531,50 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 // stripped; whitespace collapsed) and ignores the doc types the golden declares
 // as accepted divergences (meta.accepted_divergences; PARSER_ALIGNMENT_HANDOFF.md §3.1).
 //
-// No generator script is committed. The baseline is reproducible from the
-// golden's meta block alone (see markdown.python.golden.json: generator, sample,
-// delimiter, accepted_divergences): call the python flow _markdown on the sample
-// with the default delimiter set, then project each merged section to
-// {"text": section[0], "doc_type_kwd": "text"}.
+// Both an English (markdown.sample.en.md) and a Chinese (markdown.sample.zh.md)
+// sample are checked so markdown parsing is exercised in both Latin and CJK
+// contexts — the Chinese sample also covers the full-width delimiters in the
+// default delimiter set (\n!?;。；！？). Each baseline is a {meta, items}
+// document whose "meta" block records how it was produced (generator
+// rag/flow/parser/parser.py:_markdown, sample, delimiter, accepted
+// divergences). No generator script is committed — to regenerate, call
+// _markdown on the sample and dump {meta, items}. The baseline is
+// reproducible from the metadata alone (an AI or human can recreate the thin
+// wrapper on demand).
 func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
 
-	sample, err := os.ReadFile("testdata/markdown.sample.md")
-	if err != nil {
-		t.Fatalf("read sample: %v", err)
+	cases := []struct {
+		name   string
+		sample string
+		golden string
+	}{
+		{"en", "testdata/markdown.sample.en.md", "testdata/markdown.python.en.golden.json"},
+		{"zh", "testdata/markdown.sample.zh.md", "testdata/markdown.python.zh.golden.json"},
 	}
-	res := p.ParseWithResult(ctx, "markdown.sample.md", sample)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sample, err := os.ReadFile(tc.sample)
+			if err != nil {
+				t.Fatalf("read sample: %v", err)
+			}
+			res := p.ParseWithResult(ctx, tc.sample, sample)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
 
-	gd := LoadGoldenDoc(t, "testdata/markdown.python.golden.json")
+			gd := LoadGoldenDoc(t, tc.golden)
 
-	// Exclude the doc types the golden declares as accepted divergences
-	// (meta.accepted_divergences) on both sides — no hardcoded list in the test.
-	ignore := AcceptedDivergences(gd.Meta)
-	goText := FilterOutDocTypes(res.JSON, ignore)
-	pyText := FilterOutDocTypes(gd.Items, ignore)
+			// Exclude the doc types the golden declares as accepted divergences
+			// (meta.accepted_divergences) on both sides — no hardcoded list in the test.
+			ignore := AcceptedDivergences(gd.Meta)
+			goText := FilterOutDocTypes(res.JSON, ignore)
+			pyText := FilterOutDocTypes(gd.Items, ignore)
 
-	if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
-		t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
+			if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
+				t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
+			}
+		})
 	}
 }

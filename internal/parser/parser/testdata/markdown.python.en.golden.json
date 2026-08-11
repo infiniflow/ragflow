@@ -1,7 +1,7 @@
 {
   "meta": {
     "generator": "rag/flow/parser/parser.py:_markdown",
-    "sample": "internal/parser/parser/testdata/markdown.sample.md",
+    "sample": "internal/parser/parser/testdata/markdown.sample.en.md",
     "delimiter": "\n!?;。；！？",
     "separate_tables": false,
     "accepted_divergences": ["table", "image"],
