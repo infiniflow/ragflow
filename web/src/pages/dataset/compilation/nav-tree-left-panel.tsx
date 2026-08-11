@@ -68,6 +68,7 @@ type NavTreeLeftPanelProps = {
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
   onParentClick: (node: DatasetNavNode) => void;
+  onParentExpand: (node: DatasetNavNode) => void;
   onChildClick: (node: DatasetNavNode, parentName: string) => void;
   onDeleteAll: () => void;
   onDeleteNode: (name: string, parentName: string | null) => void;
@@ -80,6 +81,7 @@ export function NavTreeLeftPanel({
   deleteNavLoading,
   deleteNodeLoading,
   onParentClick,
+  onParentExpand,
   onChildClick,
   onDeleteAll,
   onDeleteNode,
@@ -104,6 +106,7 @@ export function NavTreeLeftPanel({
         childrenMap,
         getActions: renderNavActions,
         onParentClick,
+        onParentExpand,
         onChildClick,
         loadingPlaceholder: t('datasetNav.loading'),
       }),
@@ -112,6 +115,7 @@ export function NavTreeLeftPanel({
       childrenMap,
       renderNavActions,
       onParentClick,
+      onParentExpand,
       onChildClick,
       t,
     ],
@@ -153,6 +157,7 @@ export function NavTreeLeftPanel({
         ) : (
           <TreeView
             data={treeData}
+            expandOnRowClick={false}
             defaultNodeIcon={Folder}
             defaultLeafIcon={FileText}
           />

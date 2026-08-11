@@ -19,6 +19,7 @@ export function NavTreeView() {
     deleteNavLoading,
     deleteNodeLoading,
     handleParentClick,
+    handleParentExpand,
     handleChildClick,
     handleDeleteAll,
     handleDeleteNode,
@@ -35,6 +36,7 @@ export function NavTreeView() {
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}
             onParentClick={handleParentClick}
+            onParentExpand={handleParentExpand}
             onChildClick={handleChildClick}
             onDeleteAll={handleDeleteAll}
             onDeleteNode={handleDeleteNode}

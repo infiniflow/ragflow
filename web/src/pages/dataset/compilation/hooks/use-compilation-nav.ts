@@ -8,7 +8,7 @@ import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
 import { useCallback, useEffect, useState } from 'react';
 
 export interface SelectedNavNode {
-  parentName: string;
+  parentName: string | null;
   name: string;
   description: string;
   doc_count: number;
@@ -78,9 +78,19 @@ export function useCompilationNav() {
     setLoadingParent(null);
   }, []);
 
-  const handleParentClick = useCallback(
+  // Row click selects the node and shows its description on the right,
+  // same as a leaf; expansion is handled separately via handleParentExpand.
+  const handleParentClick = useCallback((node: DatasetNavNode) => {
+    setSelectedNode({
+      parentName: null,
+      name: node.name,
+      description: node.description,
+      doc_count: node.doc_count,
+    });
+  }, []);
+
+  const handleParentExpand = useCallback(
     (node: DatasetNavNode) => {
-      setSelectedNode(null);
       if (node.has_children) {
         loadChildren(node.name);
       }
@@ -122,8 +132,13 @@ export function useCompilationNav() {
           );
         } else {
           dropChildren(name);
+          // Clear the selection when the deleted root is the selected node
+          // itself or the parent of the selected child.
           setSelectedNode((current) =>
-            current?.parentName === name ? null : current,
+            current?.parentName === name ||
+            (current?.parentName === null && current?.name === name)
+              ? null
+              : current,
           );
         }
       }
@@ -139,6 +154,7 @@ export function useCompilationNav() {
     deleteNavLoading,
     deleteNodeLoading,
     handleParentClick,
+    handleParentExpand,
     handleChildClick,
     handleDeleteAll,
     handleDeleteNode,

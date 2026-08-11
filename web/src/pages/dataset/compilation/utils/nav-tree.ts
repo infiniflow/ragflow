@@ -12,6 +12,7 @@ type BuildNavTreeDataOptions = {
   childrenMap: Record<string, DatasetNavNode[]>;
   getActions?: NavTreeActionsFactory;
   onParentClick: (node: DatasetNavNode) => void;
+  onParentExpand: (node: DatasetNavNode) => void;
   onChildClick: (node: DatasetNavNode, parentName: string) => void;
   loadingPlaceholder: string;
 };
@@ -22,6 +23,7 @@ export function buildNavTreeData(
     childrenMap,
     getActions,
     onParentClick,
+    onParentExpand,
     onChildClick,
     loadingPlaceholder,
   }: BuildNavTreeDataOptions,
@@ -33,6 +35,7 @@ export function buildNavTreeData(
       hasChildren: node.has_children,
       actions: getActions?.(node, null),
       onClick: () => onParentClick(node),
+      onExpand: () => onParentExpand(node),
     };
 
     if (node.has_children) {

@@ -26,7 +26,7 @@ export function useSelectFilters() {
   const filters: FilterCollection[] = [
     {
       field: 'owner',
-      list: agentFilters.owner,
+      list: agentFilters?.owner,
       label: t('common.owner'),
     },
     {
@@ -36,7 +36,7 @@ export function useSelectFilters() {
           id: AgentCategory.DataflowCanvas,
           label: t('flow.tabList.ingestionPipeline'),
           count:
-            agentFilters.canvas_category.find(
+            agentFilters?.canvas_category.find(
               (item) => item.id === AgentCategory.DataflowCanvas,
             )?.count ?? 0,
         },
@@ -44,7 +44,7 @@ export function useSelectFilters() {
           id: AgentListItemType.CompilationTemplateGroup,
           label: t('flow.tabList.compilationOperator'),
           count:
-            agentFilters.canvas_category.find(
+            agentFilters?.canvas_category.find(
               (item) => item.id === AgentListItemType.CompilationTemplateGroup,
             )?.count ?? 0,
         },
@@ -52,7 +52,7 @@ export function useSelectFilters() {
           id: AgentCategory.AgentCanvas,
           label: t('flow.tabList.workflow'),
           count:
-            agentFilters.canvas_category.find(
+            agentFilters?.canvas_category.find(
               (item) => item.id === AgentCategory.AgentCanvas,
             )?.count ?? 0,
         },
