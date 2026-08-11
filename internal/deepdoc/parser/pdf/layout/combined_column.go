@@ -123,8 +123,12 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 		}
 		// g == 2: unreliable (fake gutter or real 2-col) -> defer to balance.
 	}
-	if ok, cents := balancedBodyK2(lines, 0.30, 0.10); ok {
-		if pk, pc, ok2 := pruneColumns(lines, cents); ok2 {
+	if ok, cents, body := balancedBodyK2(lines, 0.30, 0.10); ok {
+		// prune on the SAME body the gate clustered, not all lines: full-width
+		// titles/abstracts were deliberately excluded from the balance check
+		// and must not be re-counted here (they would inflate one column and
+		// let prune wrongly collapse a real two-column page to one).
+		if pk, pc, ok2 := pruneColumns(body, cents); ok2 {
 			return pk, pc
 		}
 		return 1, nil
@@ -269,15 +273,18 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 // balancedBodyK2 runs a forced k=2 KMeans on the BODY x0 (full-width front
 // matter excluded) and reports whether the split is a real two-column: two
 // clusters each holding >= minModeFrac of body lines, separated by >=
-// minSepFrac*width. Returns the 2 cluster centroids on success.
-func balancedBodyK2(lines []pdf.TextBox, minModeFrac, minSepFrac float64) (bool, []float64) {
+// minSepFrac*width. Returns the 2 cluster centroids on success, plus the body
+// slice it clustered on so the caller's prune step counts the SAME line set
+// (otherwise full-width lines re-inflated into one column would let prune
+// collapse a balanced two-column page back to one).
+func balancedBodyK2(lines []pdf.TextBox, minModeFrac, minSepFrac float64) (bool, []float64, []pdf.TextBox) {
 	minX0, width := pageExtent(lines)
 	if width <= 0 {
-		return false, nil
+		return false, nil, nil
 	}
 	body := dropFullWidth(lines, width)
 	if len(body) < 4 {
-		return false, nil
+		return false, nil, nil
 	}
 	x0s := make([]float64, len(body))
 	for i, b := range body {
@@ -287,7 +294,7 @@ func balancedBodyK2(lines []pdf.TextBox, minModeFrac, minSepFrac float64) (bool,
 	sx := snapX0s(x0s, minX0, indentTol)
 	labels, cents := kmeansK2PlusPlus(sx, 42)
 	if len(uniqueInts(labels)) < 2 {
-		return false, nil
+		return false, nil, nil
 	}
 	counts := make(map[int]int, 2)
 	for _, l := range labels {
@@ -300,12 +307,12 @@ func balancedBodyK2(lines []pdf.TextBox, minModeFrac, minSepFrac float64) (bool,
 		}
 	}
 	if float64(minCount) < minModeFrac*float64(len(body)) {
-		return false, nil
+		return false, nil, nil
 	}
 	if math.Abs(cents[0]-cents[1]) < minSepFrac*width {
-		return false, nil
+		return false, nil, nil
 	}
-	return true, cents
+	return true, cents, body
 }
 
 // dropFullWidth removes lines whose width spans >=90% of the page text width

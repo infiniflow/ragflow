@@ -236,3 +236,48 @@ func TestKmeansK2PlusPlus_Smoke(t *testing.T) {
 		t.Errorf("tight single-mode: minority %.0f%% should be <30%%", 100*float64(minC)/float64(len(tight)))
 	}
 }
+
+// TestAssignColumn_FullWidthBridgeKeepsBalancedTwoColumn is a regression test
+// for the balance-gate / prune asymmetry: the balance gate clusters the BODY
+// (full-width front matter excluded), but pruneColumns must count the SAME
+// body — not all lines. A real but minority-right two-column block dominated
+// by full-width title/abstract lines must stay two columns; otherwise the
+// full-width lines inflate the left column and prune wrongly collapses the
+// page to one.
+func TestAssignColumn_FullWidthBridgeKeepsBalancedTwoColumn(t *testing.T) {
+	const (
+		minX0 = 100.0
+		maxX1 = 700.0
+	)
+	var boxes []pdf.TextBox
+	add := func(x0, x1 float64) {
+		top := float64(len(boxes)) * 12
+		boxes = append(boxes, pdf.TextBox{
+			PageNumber: 0, X0: x0, X1: x1, Top: top, Bottom: top + 10, Text: "b",
+		})
+	}
+	// Body: a genuine two-column block with a real gutter. The right column is
+	// the minority (6 of 20 body lines, i.e. 30% — exactly the gate floor).
+	for i := 0; i < 14; i++ {
+		add(minX0, 350) // left column
+	}
+	for i := 0; i < 6; i++ {
+		add(450, maxX1) // right column
+	}
+	// 60 full-width front-matter lines (title + abstract) bridge the gutter so
+	// gap reports a single column. They must not be re-counted by prune.
+	for i := 0; i < 60; i++ {
+		add(minX0, maxX1) // full width
+	}
+
+	res := AssignColumn(boxes)
+	k := 1
+	for _, b := range res {
+		if b.ColID+1 > k {
+			k = b.ColID + 1
+		}
+	}
+	if k != 2 {
+		t.Fatalf("balanced two-column page with full-width front matter collapsed to %d column(s); want 2", k)
+	}
+}
