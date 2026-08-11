@@ -28,11 +28,9 @@ export const DefaultTemplateValues: TemplateSchemaType = {
   id: undefined,
   name: '',
   description: '',
-  llm_id: '',
   kind: '',
   config: {
     kind: '',
-    llm_id: '',
     global_rules: '',
     example: '',
     instruction: '',

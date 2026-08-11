@@ -42,20 +42,11 @@ export const buildSynthesisSchema = () =>
     })
     .passthrough();
 
-export const buildTemplateSchema = (
-  t: (key: string) => string,
-  isModelAvailable?: (id: string) => boolean,
-) =>
+export const buildTemplateSchema = (t: (key: string) => string) =>
   z.object({
     id: z.string().optional(),
     name: z.string().min(1, t('setting.templateNameRequired')),
     description: z.string().optional(),
-    llm_id: z
-      .string()
-      .min(1, t('setting.llmForExtractionRequired'))
-      .refine((val) => !val || (isModelAvailable?.(val) ?? true), {
-        message: t('setting.llmForExtractionUnavailable'),
-      }),
     kind: z.string().min(1, t('setting.templateKindRequired')),
     config: z.record(
       z.union([
@@ -68,15 +59,12 @@ export const buildTemplateSchema = (
     ),
   });
 
-export const buildFormSchema = (
-  t: (key: string) => string,
-  isModelAvailable?: (id: string) => boolean,
-) =>
+export const buildFormSchema = (t: (key: string) => string) =>
   z.object({
     name: z.string().optional(),
     description: z.string().optional(),
     avatar: z.string().optional(),
-    templates: z.array(buildTemplateSchema(t, isModelAvailable)).min(1),
+    templates: z.array(buildTemplateSchema(t)).min(1),
   });
 
 export type TemplateSchemaType = z.infer<
