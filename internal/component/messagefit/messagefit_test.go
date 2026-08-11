@@ -3,6 +3,8 @@ package messagefit
 import (
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 func countMessages(msgs []Message) int {
@@ -31,32 +33,74 @@ func TestFit_AllFits(t *testing.T) {
 }
 
 func TestFit_Step2_DropsMiddle(t *testing.T) {
-	// Three system + one user in the middle + last user. With a tight
-	// budget that fits system + last user, the middle user is dropped.
-	long := strings.Repeat("x ", 500) // ~1000 tokens
-	short := "y"
+	// system + last user fit within the budget, but all three together do
+	// not, so Step 2 drops the middle user and keeps system + last intact.
+	sysContent := strings.Repeat("x ", 200)
+	middle := "middle"
+	last := "last"
 	msgs := []Message{
-		{Role: "system", Content: long},
-		{Role: "user", Content: short},
-		{Role: "user", Content: long},
+		{Role: "system", Content: sysContent},
+		{Role: "user", Content: middle},
+		{Role: "user", Content: last},
 	}
-	// Budget that fits system + last but not all three.
-	budget := len(long)/2 + len(long)/2 + 100 // rough
-	_ = budget
-	// Use a very tight budget to force step 3.
-	got := Fit(msgs, 50)
-	if got == 0 {
-		t.Errorf("Fit returned 0, want > 0")
+	budget := tokenizer.NumTokensFromString(sysContent) + tokenizer.NumTokensFromString(last)
+
+	if got := Fit(msgs, budget); got == 0 {
+		t.Fatalf("Fit returned 0, want > 0")
 	}
-	// After fitting, at least the last message should be kept (non-empty).
-	foundLast := false
-	for _, m := range msgs {
-		if m.Content != "" {
-			foundLast = true
-		}
+	if msgs[1].Content != "" {
+		t.Errorf("middle message not cleared: %q", msgs[1].Content)
 	}
-	if !foundLast {
-		t.Errorf("all messages empty after fit: %+v", msgs)
+	if msgs[0].Content != sysContent || msgs[2].Content != last {
+		t.Errorf("retained messages modified: %+v", msgs)
+	}
+}
+
+// TestFit_ExactBudget verifies that a total exactly equal to the budget
+// counts as fitting: nothing is dropped or trimmed.
+func TestFit_ExactBudget(t *testing.T) {
+	msgs := []Message{
+		{Role: "system", Content: "abc"},
+		{Role: "user", Content: "def"},
+	}
+	budget := tokenizer.NumTokensFromString("abc") + tokenizer.NumTokensFromString("def")
+
+	if got := Fit(msgs, budget); got == 0 {
+		t.Fatalf("Fit returned 0, want > 0")
+	}
+	if msgs[0].Content != "abc" || msgs[1].Content != "def" {
+		t.Errorf("messages modified at exact budget: %+v", msgs)
+	}
+}
+
+// TestFit_TrimsAllSystemMessages verifies that the system budget is spread
+// across every retained system message, not just the first one, so the final
+// total never exceeds the budget.
+func TestFit_TrimsAllSystemMessages(t *testing.T) {
+	sys1 := strings.Repeat("s ", 800) // dominates the token count
+	sys2 := strings.Repeat("t ", 200)
+	last := "last"
+	msgs := []Message{
+		{Role: "system", Content: sys1},
+		{Role: "system", Content: sys2},
+		{Role: "user", Content: last},
+	}
+	const budget = 500
+
+	if got := Fit(msgs, budget); got == 0 {
+		t.Fatalf("Fit returned 0, want > 0")
+	}
+	if msgs[2].Content != last {
+		t.Errorf("last user message not preserved: %q", msgs[2].Content)
+	}
+	total := tokenizer.NumTokensFromString(msgs[0].Content) +
+		tokenizer.NumTokensFromString(msgs[1].Content) +
+		tokenizer.NumTokensFromString(msgs[2].Content)
+	if total > budget {
+		t.Errorf("fitted total %d exceeds budget %d", total, budget)
+	}
+	if len(msgs[0].Content) >= len(sys1) || len(msgs[1].Content) >= len(sys2) {
+		t.Errorf("system messages not trimmed: %+v", msgs)
 	}
 }
 

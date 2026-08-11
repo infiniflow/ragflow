@@ -30,14 +30,17 @@ type Message struct {
 
 // Fit trims msgs so its total token count fits within maxTokens.
 //
-// Strategy (mirrors Python's message_fit_in):
+// Strategy (mirrors Python's message_fit_in, with two deliberate tweaks:
+// an exact budget match counts as fitting, and the system share is spread
+// across every retained system message instead of only the first):
 //  1. If everything fits, return as-is.
 //  2. Keep all system messages + the last non-system message, drop the
 //     rest; if that fits, return.
 //  3. If still over, trim proportionally:
 //     - System dominates (>80% of tokens) → preserve the last message,
-//     give remaining budget to system.
-//     - Otherwise → preserve system, give remaining budget to last.
+//     give the remaining budget to the system messages.
+//     - Otherwise → preserve the system messages, give the remaining
+//     budget to the last.
 //     - Single message → trim to maxTokens directly.
 //
 // maxTokens <= 0 is treated as 8192 (Python's default).
@@ -51,8 +54,8 @@ func Fit(msgs []Message, maxTokens int) int {
 		return 0
 	}
 
-	// Step 1: everything fits.
-	if total := countTokens(msgs); total < maxTokens {
+	// Step 1: everything fits (an exact budget match counts as fitting).
+	if total := countTokens(msgs); total <= maxTokens {
 		return total
 	}
 
@@ -77,7 +80,7 @@ func Fit(msgs []Message, maxTokens int) int {
 	for i, idx := range kept {
 		keptMsgs[i] = msgs[idx]
 	}
-	if total := countTokens(keptMsgs); total < maxTokens {
+	if total := countTokens(keptMsgs); total <= maxTokens {
 		// Zero out the dropped entries so the caller can filter them.
 		zeroDropped(msgs, kept)
 		return total
@@ -90,9 +93,14 @@ func Fit(msgs []Message, maxTokens int) int {
 		return countTokens(msgs[kept[0] : kept[0]+1])
 	}
 
-	sysIdx := kept[0]
+	// kept[:len(kept)-1] are the retained system messages; the last entry
+	// is the final non-system message.
+	sysIdxs := kept[:len(kept)-1]
 	lastIdx := kept[len(kept)-1]
-	ll := tokenizer.NumTokensFromString(msgs[sysIdx].Content)
+	ll := 0
+	for _, idx := range sysIdxs {
+		ll += tokenizer.NumTokensFromString(msgs[idx].Content)
+	}
 	ll2 := tokenizer.NumTokensFromString(msgs[lastIdx].Content)
 	total := ll + ll2
 	if total <= 0 {
@@ -101,16 +109,54 @@ func Fit(msgs []Message, maxTokens int) int {
 	}
 
 	if float64(ll)/float64(total) > 0.8 {
+		// System dominates: preserve the last message and give the
+		// remaining budget to the system messages.
 		preserved := min(ll2, maxTokens)
 		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, preserved)
-		msgs[sysIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[sysIdx].Content, max(0, maxTokens-preserved))
+		trimSystems(msgs, sysIdxs, max(0, maxTokens-preserved))
 	} else {
 		preserved := min(ll, maxTokens)
-		msgs[sysIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[sysIdx].Content, preserved)
+		trimSystems(msgs, sysIdxs, preserved)
 		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, max(0, maxTokens-preserved))
 	}
 	zeroDropped(msgs, kept)
 	return countTokensMulti(msgs, kept)
+}
+
+// trimSystems trims each retained system message so their combined token
+// count fits within budget. The budget is allocated in proportion to each
+// message's original token count, with the last message taking any remainder
+// so the total never exceeds budget.
+func trimSystems(msgs []Message, sysIdxs []int, budget int) {
+	if len(sysIdxs) == 0 {
+		return
+	}
+	if budget <= 0 {
+		for _, idx := range sysIdxs {
+			msgs[idx].Content = ""
+		}
+		return
+	}
+	total := 0
+	for _, idx := range sysIdxs {
+		total += tokenizer.NumTokensFromString(msgs[idx].Content)
+	}
+	if total <= 0 {
+		return
+	}
+	remaining := budget
+	for i, idx := range sysIdxs {
+		limit := remaining
+		if i < len(sysIdxs)-1 {
+			tokens := tokenizer.NumTokensFromString(msgs[idx].Content)
+			limit = int(float64(budget) * float64(tokens) / float64(total))
+			if limit > remaining {
+				limit = remaining
+			}
+		}
+		msgs[idx].Content = tokenizer.TrimContentToTokenLimit(msgs[idx].Content, limit)
+		remaining -= tokenizer.NumTokensFromString(msgs[idx].Content)
+	}
 }
 
 func countTokens(msgs []Message) int {
