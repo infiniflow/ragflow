@@ -528,12 +528,14 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 // shared concatenation-normalization alignment tool (align_test.go). Python
 // keeps raw Markdown and splits on the delimiter set; Go emits clean per-block
 // text. The comparison normalizes both (Markdown syntax, html tags, delimiters
-// stripped; whitespace collapsed) and ignores "table"/"image" items, which are
-// accepted representation differences (PARSER_ALIGNMENT_HANDOFF.md §3.1).
+// stripped; whitespace collapsed) and ignores the doc types the golden declares
+// as accepted divergences (meta.accepted_divergences; PARSER_ALIGNMENT_HANDOFF.md §3.1).
 //
-// Regenerate the baseline with:
-//
-//	.venv/bin/python internal/parser/parser/testdata/gen_markdown_golden.py
+// No generator script is committed. The baseline is reproducible from the
+// golden's meta block alone (see markdown.python.golden.json: generator, sample,
+// delimiter, accepted_divergences): call the python flow _markdown on the sample
+// with the default delimiter set, then project each merged section to
+// {"text": section[0], "doc_type_kwd": "text"}.
 func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -547,11 +549,13 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	golden := LoadGolden(t, "testdata/markdown.python.golden.json")
+	gd := LoadGoldenDoc(t, "testdata/markdown.python.golden.json")
 
-	// Ignore "table"/"image" items on both sides (accepted divergences).
-	goText := FilterByDocType(res.JSON, "text")
-	pyText := FilterByDocType(golden, "text")
+	// Exclude the doc types the golden declares as accepted divergences
+	// (meta.accepted_divergences) on both sides — no hardcoded list in the test.
+	ignore := AcceptedDivergences(gd.Meta)
+	goText := FilterOutDocTypes(res.JSON, ignore)
+	pyText := FilterOutDocTypes(gd.Items, ignore)
 
 	if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
 		t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
