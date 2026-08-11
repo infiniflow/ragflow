@@ -174,7 +174,10 @@ async def test_merge_round_treats_nested_list_and_tuple_as_distinct():
 
     await retrieval._async_update_chunk_info(chunk_info, kbinfos)
 
-    assert len(chunk_info["chunks"]) == 2
+    assert [chunk["chunk_id"]["ids"] for chunk in chunk_info["chunks"]] == [
+        ["a", "b"],
+        ("a", "b"),
+    ]
 
 
 @pytest.mark.p1
