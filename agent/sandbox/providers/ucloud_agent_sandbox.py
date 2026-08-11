@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 
+"""UCloud Agent Sandbox provider for remote code execution."""
+
 from __future__ import annotations
 
 import base64
@@ -44,6 +46,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
     """Execute Python and JavaScript in disposable UCloud Agent Sandboxes."""
 
     def __init__(self):
+        """Initialize the provider with safe defaults and no active instances."""
         self.api_key = ""
         self.region = DEFAULT_REGION
         self.domain = ""
@@ -60,6 +63,17 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         self._instances: dict[str, dict[str, Any]] = {}
 
     def initialize(self, config: dict[str, Any]) -> bool:
+        """Validate and apply provider configuration.
+
+        Args:
+            config: Provider credentials, endpoint options, and execution limits.
+
+        Returns:
+            True when the provider is ready to create sandboxes.
+
+        Raises:
+            SandboxProviderConfigError: If the configuration or SDK is invalid.
+        """
         self.api_key = str(config.get("api_key", "") or "").strip()
         self.region = str(config.get("region", DEFAULT_REGION) or DEFAULT_REGION).strip()
         self.domain = str(config.get("domain", "") or "").strip()
@@ -83,6 +97,14 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         return True
 
     def create_instance(self, template: str = "python") -> SandboxInstance:
+        """Create a disposable sandbox and its isolated execution workspace.
+
+        Args:
+            template: Requested language identifier used to validate the runtime.
+
+        Returns:
+            A RAGFlow sandbox instance handle.
+        """
         if not self._initialized:
             raise RuntimeError("Provider not initialized. Call initialize() first.")
 
@@ -142,6 +164,18 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         timeout: int = 10,
         arguments: dict[str, Any] | None = None,
     ) -> ExecutionResult:
+        """Execute wrapped code in an existing UCloud sandbox.
+
+        Args:
+            instance_id: RAGFlow instance identifier returned by create_instance.
+            code: User-provided source code defining a main function.
+            language: Python or JavaScript language identifier.
+            timeout: Maximum execution duration in seconds.
+            arguments: Values passed to the user-defined main function.
+
+        Returns:
+            Captured output, structured result metadata, and allowed artifacts.
+        """
         if not self._initialized:
             raise RuntimeError("Provider not initialized. Call initialize() first.")
         if instance_id not in self._instances:
@@ -203,6 +237,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         )
 
     def destroy_instance(self, instance_id: str) -> bool:
+        """Destroy a sandbox instance if it is still tracked by the provider."""
         if not self._initialized:
             raise RuntimeError("Provider not initialized. Call initialize() first.")
         instance = self._instances.pop(instance_id, None)
@@ -212,13 +247,16 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         return True
 
     def health_check(self) -> bool:
+        """Return whether the provider is initialized with an API key."""
         return self._initialized and bool(self.api_key)
 
     def get_supported_languages(self) -> list[str]:
+        """Return the language identifiers accepted by this provider."""
         return ["python", "javascript"]
 
     @staticmethod
     def get_config_schema() -> dict[str, dict]:
+        """Return the Admin UI configuration schema for this provider."""
         return {
             "api_key": {
                 "type": "string",
@@ -310,6 +348,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         }
 
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str | None]:
+        """Validate required credentials and numeric execution limits."""
         if not str(config.get("api_key", "") or "").strip():
             return False, "UCloud Agent Sandbox API key is required"
         if not str(config.get("template", "base") or "").strip():
@@ -330,6 +369,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         return True, None
 
     def _api_options(self) -> dict[str, Any]:
+        """Build keyword arguments shared by UCloud SDK API calls."""
         options: dict[str, Any] = {
             "api_key": self.api_key,
             "domain": self.domain or f"{self.region}.{DOMAIN_SUFFIX}",
@@ -342,6 +382,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         return options
 
     def _prepare_script(self, sandbox, remote_work_dir: str, language: str, code: str, arguments: dict[str, Any]) -> tuple[str, str]:
+        """Wrap user code, upload it, and return its path and executable."""
         args_json = json.dumps(arguments, ensure_ascii=False)
         if language == "python":
             script_name = "main.py"
@@ -358,16 +399,19 @@ class UCloudAgentSandboxProvider(SandboxProvider):
         return script_path, executable
 
     def _validate_output_size(self, stdout: str, stderr: str) -> None:
+        """Reject combined standard output that exceeds the configured limit."""
         output_size = len(stdout.encode("utf-8")) + len(stderr.encode("utf-8"))
         if output_size > self.max_output_bytes:
             raise RuntimeError(f"UCloud Agent Sandbox execution output exceeded {self.max_output_bytes} bytes.")
 
     def _collect_artifacts(self, sandbox, artifacts_dir: str) -> list[dict[str, Any]]:
+        """Collect allowed files from the execution artifact directory."""
         artifacts: list[dict[str, Any]] = []
         self._collect_artifacts_recursive(sandbox, artifacts_dir, "", artifacts, depth=0)
         return artifacts
 
     def _collect_artifacts_recursive(self, sandbox, current_dir: str, relative_dir: str, artifacts: list[dict[str, Any]], depth: int) -> None:
+        """Traverse artifact directories while enforcing type, size, and depth limits."""
         if depth > MAX_ARTIFACT_DEPTH:
             raise RuntimeError(f"Artifact directory nesting exceeds {MAX_ARTIFACT_DEPTH} levels: {relative_dir}")
         sdk = _get_ucloud_sandbox_module()
@@ -401,6 +445,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
             )
 
     def _safe_kill(self, sandbox) -> None:
+        """Best-effort terminate a remote sandbox during cleanup."""
         try:
             sandbox.kill(request_timeout=self.timeout)
         except Exception as exc:  # noqa: BLE001 - cleanup is deliberately best-effort
@@ -408,6 +453,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
 
     @staticmethod
     def _normalize_language(language: str) -> str:
+        """Normalize supported language aliases to provider runtime names."""
         value = (language or "python").lower()
         if value in {"python", "python3"}:
             return "python"
@@ -417,6 +463,7 @@ class UCloudAgentSandboxProvider(SandboxProvider):
 
 
 def _get_ucloud_sandbox_module():
+    """Import and return the UCloud SDK with a provider-specific error."""
     try:
         import ucloud_sandbox
     except ImportError as exc:
