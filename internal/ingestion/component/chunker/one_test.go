@@ -39,6 +39,20 @@ func oneChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	return chunks
 }
 
+// TestNewChunkerByName_TokenChunkerOneMode pins the DSL-contract
+// translation: a TokenChunker component whose delimiter_mode is "one"
+// (what the web UI and the Python runtime emit) must build a
+// OneChunker, not fail schema validation.
+func TestNewChunkerByName_TokenChunkerOneMode(t *testing.T) {
+	comp, err := newChunkerByName(ComponentNameTokenChunker, map[string]any{"delimiter_mode": "one"})
+	if err != nil {
+		t.Fatalf("newChunkerByName: %v", err)
+	}
+	if _, ok := comp.(*OneChunkerComponent); !ok {
+		t.Fatalf("component type = %T, want *OneChunkerComponent", comp)
+	}
+}
+
 // TestOneChunker_Text emits exactly one chunk for a text payload,
 // faithful to rag/app/one.py (whole file = one chunk).
 func TestOneChunker_Text(t *testing.T) {
