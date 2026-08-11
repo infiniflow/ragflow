@@ -63,7 +63,7 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 		heartbeat:      20 * time.Second,
 		pollInterval:   2 * time.Second,
 		sweepInterval:  30 * time.Second,
-		mergeThreshold: 0.99,
+		mergeThreshold: 0.85,
 		tombs:          map[string]map[string]uint64{},
 	}
 	for _, o := range opts {
@@ -290,7 +290,19 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 
 	deduper, err := c.factory(tenant)
 	if err != nil || deduper == nil {
-		deduper = NewNoopDeduper()
+		// A no-op deduper would silently disable dataset-level LLM merging: every
+		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
+		// merged row and duplicates would accumulate across runs. That degradation
+		// is never acceptable here, so fail loudly instead of papering over it.
+		common.Fatal("knowledge_compile: dataset-level LLM deduper unavailable, refusing to continue with a no-op merge",
+			zap.String("kb_id", kb),
+			zap.String("tenant_id", tenant),
+			zap.String("factory_err", func() string {
+				if err != nil {
+					return err.Error()
+				}
+				return "deduper factory returned nil"
+			}()))
 	}
 
 	deletedSet := make(map[string]bool, len(deleted))
@@ -344,6 +356,52 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	if err != nil {
 		return err
 	}
+	// Diagnostics: after batch dedup, verify the per-doc products still carry
+	// their embedding before the KNN/merge path consumes cand.Vector. If
+	// candidates show 0 vectors while incoming had vectors, Dedup is dropping
+	// them and both the KNN lookups and the merged rows lose embeddings.
+	{
+		incomingVec, candVec := 0, 0
+		for _, p := range incoming {
+			if len(p.Vector) > 0 {
+				incomingVec++
+			}
+		}
+		for _, p := range candidates {
+			if len(p.Vector) > 0 {
+				candVec++
+			}
+		}
+		common.Info("knowledge_compile: dedup vector audit",
+			zap.String("kb_id", kb),
+			zap.Int("incoming", len(incoming)),
+			zap.Int("incoming_with_vector", incomingVec),
+			zap.Int("candidates", len(candidates)),
+			zap.Int("candidates_with_vector", candVec))
+	}
+
+	// Diagnostics: break the KNN-input set down by variant and list the wiki_page
+	// slugs, so the reader can reconcile the number of wiki_page candidates here
+	// against the wiki_page rows WriteMerged emits (they differ when KNN merges a
+	// candidate into an existing merged row, when DecideBatch returns distinct new
+	// rows, or when candidates of the same variant collapse in-memory). This is
+	// what explains "39 wiki_page written vs 21 KNN requests".
+	{
+		byVariant := map[string]int{}
+		var wikiPageSlugs []string
+		for _, cand := range candidates {
+			v := string(cand.Variant)
+			byVariant[v]++
+			if v == "wiki_page" {
+				wikiPageSlugs = append(wikiPageSlugs, candidateIdentity(cand))
+			}
+		}
+		common.Info("knowledge_compile: candidates breakdown",
+			zap.String("kb_id", kb),
+			zap.Int("candidates", len(candidates)),
+			zap.Any("by_variant", byVariant),
+			zap.Strings("wiki_page_candidate_slugs", wikiPageSlugs))
+	}
 
 	// Then dedup each candidate against the DocEngine via KNN top1 + LLM judge,
 	// mirroring Python _struct_doc_storage_dedup_batch. Candidates that KNN-hit
@@ -382,6 +440,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 			if hit.ID == "" {
 				// No sufficiently-similar merged row: insert the candidate as a new
 				// merged row.
+				common.Debug("knowledge_compile: KNN no hit, candidate becomes new merged row",
+					zap.String("kb_id", kb),
+					zap.String("candidate", candidateIdentity(cand)),
+					zap.String("variant", string(cand.Variant)))
 				cand.Merged = true
 				cand.DocID = kb
 				unmatchedMu.Lock()
@@ -389,6 +451,12 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 				unmatchedMu.Unlock()
 				return nil
 			}
+			common.Debug("knowledge_compile: KNN hit",
+				zap.String("kb_id", kb),
+				zap.String("candidate", candidateIdentity(cand)),
+				zap.String("variant", string(cand.Variant)),
+				zap.String("hit", candidateIdentity(hit)),
+				zap.Float64("score", score))
 			groupsMu.Lock()
 			g := groupsByID[hit.ID]
 			if g == nil {
@@ -409,6 +477,29 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	// updated existing rows and the candidates judged distinct (new rows).
 	var newMerged []kccommon.Product
 	if len(groupsByID) > 0 {
+		// Diagnostics: summarize the KNN groups before the LLM merge decision so
+		// the reader can see which existing merged rows were hit and by how many
+		// candidates (e.g. whether a "吕布" candidate hit an existing 吕布 row and
+		// was then judged by the LLM).
+		{
+			type groupDump struct {
+				Existing   string   `json:"existing"`
+				Candidates []string `json:"candidates"`
+				Score      float64  `json:"score"`
+			}
+			dumps := make([]groupDump, 0, len(groupsByID))
+			for _, g := range groupsByID {
+				cands := make([]string, 0, len(g.candidates))
+				for _, cand := range g.candidates {
+					cands = append(cands, candidateIdentity(cand))
+				}
+				dumps = append(dumps, groupDump{Existing: candidateIdentity(g.existing), Candidates: cands, Score: g.score})
+			}
+			common.Info("knowledge_compile: KNN groups for DecideBatch",
+				zap.String("kb_id", kb),
+				zap.Int("groups", len(groupsByID)),
+				zap.Any("groups_detail", dumps))
+		}
 		batched := make([]MergeGroup, 0, len(groupsByID))
 		for _, g := range groupsByID {
 			batched = append(batched, MergeGroup{
@@ -460,4 +551,20 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 		zap.Int("deleted_docs", len(deleted)),
 		zap.Int("merged_rows_written", len(mergedFinal)))
 	return nil
+}
+
+// candidateIdentity returns a compact identity string for a product, preferring
+// the wiki slug (full "<page_type>/<slug>") when present, else the id/doc_id,
+// so KNN/dedup diagnostics can tie a candidate to the page it belongs to.
+func candidateIdentity(p kccommon.Product) string {
+	if slug, _ := p.Meta["slug"].(string); slug != "" {
+		return slug
+	}
+	if id := p.ID; id != "" {
+		return id
+	}
+	if docID := p.DocID; docID != "" {
+		return docID
+	}
+	return "<unknown>"
 }

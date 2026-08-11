@@ -67,19 +67,19 @@ type llmDeduper struct {
 }
 
 // NewLLMDeduper builds a KB-scoped deduper from the runtime chat/embed deps.
-// llmMaxTokens is the chat model's token budget (0 disables per-batch token
-// splitting in DecideBatch).
-func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID string, threshold float64, llmMaxTokens int) Deduper {
+// modelContentLength is the chat model's context window (content_length) and
+// modelMaxOutput its generation cap (max_output); both bound how many pairs a
+// single DecideBatch sub-call may judge (a value <= 0 disables per-batch token
+// splitting). Together they keep every sub-call inside the input window and the
+// output cap, so a large candidate set never overflows either.
+func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID string, threshold float64, modelContentLength, modelMaxOutput int) Deduper {
 	decider := structure.NewLLMMergeDecider(chat, llmID, embed, threshold)
-	decider.SetMaxBatchTokens(llmMaxTokens)
+	decider.SetMaxBatchTokens(modelContentLength, modelMaxOutput)
 	// Share the process-wide, vCPU-sized compiler pool so DecideBatch's
 	// token-bounded sub-batches run concurrently with the rest of the pipeline
-	// (LLM-bounded), all under one concurrency limit. SubmitCompilerJobs enqueues
-	// every sub-batch then waits on their futures on the caller goroutine — it
-	// never blocks on a single job, so a stopped pool returns an error instead of
-	// hanging DecideBatch.
-	decider.SetSubmitter(func(ctx context.Context, fn func() error) error {
-		return SubmitCompilerJobs(ctx, []CompilerJob{fn})
+	// (LLM-bounded), all under one concurrency limit.
+	decider.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
+		return SubmitCompilerJobs(ctx, jobs)
 	})
 	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }

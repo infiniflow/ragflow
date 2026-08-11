@@ -25,6 +25,19 @@ from rag.nlp import rag_tokenizer, term_weight, synonym
 from rag.utils.redis_conn import REDIS_CONN
 
 
+# Tokens that are hard time/date/number constraints (a year, a date, a measurement).
+# They get a high BM25 weight so chunks carrying the exact value rank above passages
+# that merely mention the surrounding entity. Matches:
+#   pure numbers / decimals: 1994, 2001, 1.95, 3.68
+#   dates: 2011-02-05, 1994-06-23, 02/05/2011
+#   numbers with a unit: 50m, 1.95m, 6ft5in, 94kg
+_NUM_DATE_TOKEN_RE = re.compile(
+    r"^\d[\d.,/:\-]*$"
+    r"|^\d+(?:\.\d+)?\s*(?:m|km|cm|mm|kg|g|lb|ft|in|yd|s|ms|min|h|hr|sec|y|yr|yo|yrs|k|m|b|th|nd|rd|st|%)$",
+    re.IGNORECASE,
+)
+
+
 class FulltextQueryer(QueryBase):
     def __init__(self):
         self.tw = term_weight.Dealer()
@@ -64,6 +77,18 @@ class FulltextQueryer(QueryBase):
             tks_w = [(re.sub(r"[ \\\"'^]", "", tk), w) for tk, w in tks_w]
             tks_w = [(re.sub(r"^[\+-]", "", tk), w) for tk, w in tks_w if tk]
             tks_w = [(tk.strip(), w) for tk, w in tks_w if tk.strip()]
+            # Time/date/number terms are hard constraints in retrieval (e.g. a year,
+            # a date, a measurement). Boost them so chunks carrying the exact value
+            # rank well above passages that merely mention the surrounding entity.
+            #
+            # NOTE on decimals/dates: ``rag_tokenizer`` splits "1.95" into "1" "95"
+            # and "2011-02-05" into "2011" "02" "05". Each integer fragment is still
+            # boosted to 10, because the query_string builder below pairs every two
+            # adjacent tokens into a bigram phrase (``"1 95"^max*2``). That bigram
+            # re-connects the fragments and matches the exact value "1.95" in the
+            # index, so weighting the fragments is exactly what makes the decimal
+            # match — they are NOT independent numbers in the query.
+            tks_w = [(tk, 10.0 if _NUM_DATE_TOKEN_RE.match(tk) else w) for tk, w in tks_w]
             syns = []
             for tk, w in tks_w[:256]:
                 # Strip single quotes from synonym terms to avoid Infinity lexer TokenError

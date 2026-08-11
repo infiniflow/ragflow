@@ -28,6 +28,10 @@ type ChatRequest struct {
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
+	// DisableRetry tells the production ChatInvoker that the caller owns
+	// transient-error retries (GenJSON is such a caller). It is internal
+	// plumbing and is not part of the user-facing model request.
+	DisableRetry bool
 }
 
 // ChatResponse holds the LLM's text answer.
@@ -111,6 +115,13 @@ type Deps struct {
 	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
 	// quotas (mirrors Python self._llm_model.max_length).
 	ModelContextLen int
+	// ModelMaxOutput is the chat model's generation cap (max_output), the most
+	// tokens one LLM response may emit. Cross-document merge judging packs many
+	// pairs into a single call, so the caller must cap the batch by both the
+	// input window (ModelContextLen) and this output cap; otherwise a large
+	// candidate set can overflow the model's max_output and it returns a
+	// truncated/non-JSON reply. Mirrors Python's max_tokens generation config.
+	ModelMaxOutput int
 }
 
 // DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.
