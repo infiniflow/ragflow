@@ -81,6 +81,32 @@ async def test_merge_round_dedups_against_existing_ids_and_preserves_order():
 
 @pytest.mark.p1
 @pytest.mark.asyncio
+async def test_merge_round_tolerates_unhashable_chunk_and_doc_ids():
+    """Malformed provenance (e.g. a chunk_id/doc_id that's a list/dict instead
+    of a string) must not raise TypeError just because dedup is set-backed."""
+    retrieval = _retrieval()
+    chunk_info = {
+        "total": 1,
+        "chunks": [{"chunk_id": ["nested", "id"], "content_with_weight": "c1"}],
+        "doc_aggs": [{"doc_id": {"bad": "id"}, "doc_name": "d1"}],
+    }
+    kbinfos = {
+        "total": 1,
+        "chunks": [{"chunk_id": ["nested", "id"], "content_with_weight": "dup"}, _chunk("c2")],
+        "doc_aggs": [{"doc_id": {"bad": "id"}, "doc_name": "dup"}, _doc("d2")],
+    }
+
+    await retrieval._async_update_chunk_info(chunk_info, kbinfos)
+
+    # the malformed existing entries are deduped (repr-based key), new valid ones are appended
+    assert len(chunk_info["chunks"]) == 2
+    assert chunk_info["chunks"][1]["chunk_id"] == "c2"
+    assert len(chunk_info["doc_aggs"]) == 2
+    assert chunk_info["doc_aggs"][1]["doc_id"] == "d2"
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
 async def test_multiple_merge_rounds_keep_accumulating_without_duplicates():
     retrieval = _retrieval()
     chunk_info = {"total": 0, "chunks": [], "doc_aggs": []}

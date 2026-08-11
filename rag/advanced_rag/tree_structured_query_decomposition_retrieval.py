@@ -23,6 +23,16 @@ from rag.utils.web_search_conn import create_web_search_provider
 from timeit import default_timer as timer
 
 
+def _hashable_key(value):
+    """Return a value usable as a set/dict key, falling back to repr() for
+    unhashable (malformed) provenance values instead of raising TypeError."""
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return repr(value)
+
+
 class TreeStructuredQueryDecompositionRetrieval:
     def __init__(
         self,
@@ -79,17 +89,19 @@ class TreeStructuredQueryDecompositionRetrieval:
                     chunk_info[k] = kbinfos[k]
             else:
                 # Merge newly retrieved information, avoiding duplicates
-                cids = {c["chunk_id"] for c in chunk_info["chunks"]}
+                cids = {_hashable_key(c["chunk_id"]) for c in chunk_info["chunks"]}
                 for c in kbinfos["chunks"]:
-                    if c["chunk_id"] not in cids:
+                    key = _hashable_key(c["chunk_id"])
+                    if key not in cids:
                         chunk_info["chunks"].append(c)
-                        cids.add(c["chunk_id"])
+                        cids.add(key)
 
-                dids = {d["doc_id"] for d in chunk_info["doc_aggs"]}
+                dids = {_hashable_key(d["doc_id"]) for d in chunk_info["doc_aggs"]}
                 for d in kbinfos["doc_aggs"]:
-                    if d["doc_id"] not in dids:
+                    key = _hashable_key(d["doc_id"])
+                    if key not in dids:
                         chunk_info["doc_aggs"].append(d)
-                        dids.add(d["doc_id"])
+                        dids.add(key)
 
                 chunk_info["total"] = chunk_info.get("total", 0) + kbinfos.get("total", 0)
 

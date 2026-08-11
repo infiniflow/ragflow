@@ -84,6 +84,24 @@ async def test_merge_bucket_dedups_chunks_docs_descriptions_and_names_per_group(
     assert widget["doc_ids_kwd"] == ["docC"]
 
 
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_merge_bucket_tolerates_unhashable_chunk_ids_and_descriptions():
+    """A malformed source_chunk_ids entry or description (list/dict instead of
+    a string) must not raise TypeError just because dedup is set-backed."""
+    rows = [
+        _entity_row("Gadget Co", description=["not", "a", "string"], chunks=[["bad", "id"], "c1"], doc_id="docA"),
+        # exact duplicate malformed chunk id + malformed description -> both deduped via repr()
+        _entity_row("Gadget Co", description=["not", "a", "string"], chunks=[["bad", "id"], "c2"], doc_id="docA"),
+    ]
+
+    rows_out = await _merge_bucket("tenant1", "kb1", "compile1", None, rows, None)
+
+    assert len(rows_out) == 1
+    row = rows_out[0]
+    assert row["source_chunk_ids"] == [["bad", "id"], "c1", "c2"]
+
+
 def _relation_row(*, from_="apple", to="iphone", type_="produces", chunks=None, doc_id=None, use_row_level_fallback=False) -> dict:
     if use_row_level_fallback:
         # "type" stays in the payload (no row-level fallback exists for it);
@@ -168,3 +186,35 @@ async def test_cleanup_deleted_docs_dedups_deleted_ids_and_preserves_live_docs()
     args = update_calls[0].args
     assert args[0] == {"id": ["entity1"]}
     assert args[1] == {"doc_ids_kwd": ["docC"]}
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_cleanup_deleted_docs_tolerates_unhashable_doc_ids_kwd_entries():
+    """A doc_ids_kwd entry that's a list/dict (malformed provenance) must not
+    raise TypeError just because the membership filter is set-backed."""
+    pass1_rows = [{"id": "meta1", "deleted_doc_id": "docA"}]
+    pass2_rows = [
+        {"id": "entity1", "doc_ids_kwd": ["docA", ["bad", "entry"], "docC"]},
+    ]
+
+    mock_conn = MagicMock()
+    mock_conn.index_exist.return_value = True
+    mock_conn.search.side_effect = [pass1_rows, pass2_rows]
+    mock_conn.get_fields.side_effect = _fake_get_fields
+
+    mock_settings = MagicMock()
+    mock_settings.docStoreConn = mock_conn
+
+    with (
+        patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings", mock_settings),
+        patch("rag.svr.task_executor_refactor.dataset_structure_merger._index_delete", new_callable=AsyncMock),
+    ):
+        ok = await _cleanup_deleted_docs("tenant1", "kb1", "compile1", None)
+
+    assert ok is True
+    update_calls = mock_conn.update.call_args_list
+    assert len(update_calls) == 1
+    args = update_calls[0].args
+    assert args[0] == {"id": ["entity1"]}
+    assert args[1] == {"doc_ids_kwd": [["bad", "entry"], "docC"]}
