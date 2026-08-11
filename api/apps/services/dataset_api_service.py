@@ -1603,6 +1603,37 @@ def _scalar(raw, default=""):
     return raw if raw not in (None, "") else default
 
 
+def _string_list(raw) -> list[str]:
+    """Normalize native arrays and legacy JSON/Infinity string fields."""
+    if isinstance(raw, (list, tuple, set)):
+        values = raw
+    elif isinstance(raw, str):
+        value = raw.strip()
+        if not value:
+            return []
+        try:
+            decoded = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            decoded = None
+        if isinstance(decoded, list):
+            values = decoded
+        else:
+            values = value.split("###")
+    else:
+        return []
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        item = item.strip()
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
 def _normalize_compilation_template_group_ids(raw) -> list[str]:
     if isinstance(raw, str):
         raw = [raw]
@@ -2708,11 +2739,11 @@ async def get_wiki_page(
         "topic": _scalar(row.get("topic_kwd")) or "",
         "content_md_rendered": content_md,
         "summary": summary,
-        "entity_names": row.get("entity_names_kwd") or [],
-        "outlinks": row.get("outlinks_kwd") or [],
-        "related_kb_pages": row.get("related_kb_pages_kwd") or [],
-        "source_chunk_ids": row.get("source_chunk_ids") or [],
-        "source_doc_ids": row.get("source_doc_ids") or [],
+        "entity_names": _string_list(row.get("entity_names_kwd")),
+        "outlinks": _string_list(row.get("outlinks_kwd")),
+        "related_kb_pages": _string_list(row.get("related_kb_pages_kwd")),
+        "source_chunk_ids": _string_list(row.get("source_chunk_ids")),
+        "source_doc_ids": _string_list(row.get("source_doc_ids")),
     }
 
 
@@ -4249,8 +4280,6 @@ async def get_wiki_graph(
         return True, empty
     index_nm, _ = pack
 
-    from api.apps.services import structure_graph_common as sgc
-
     keywords = (keywords or "").strip()
     # Entity budget: caller-overridable, clamped to a sane range so a bad param
     # can neither disable the cap nor blow up the response.
@@ -4365,7 +4394,7 @@ async def get_wiki_graph(
                     _add_entity(payload)
 
         return True, {
-            "entities": sgc.filter_entities_with_relations(list(entities.values()), relations),
+            "entities": list(entities.values()),
             "relations": relations,
         }
 
@@ -4474,7 +4503,7 @@ async def get_wiki_graph(
         page += 1
 
     return True, {
-        "entities": sgc.filter_entities_with_relations(list(entities.values()), relations),
+        "entities": list(entities.values()),
         "relations": relations,
     }
 

@@ -79,6 +79,9 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     get_list_mock = MagicMock(return_value=(list(kbs), len(kbs)))
     get_accessible_ids_mock = MagicMock(return_value={kb["id"] for kb in kbs})
 
+    _stub(monkeypatch, "api.apps", __path__=[])
+    _stub(monkeypatch, "api.apps.services", __path__=[])
+    _stub(monkeypatch, "api.apps.services.structure_graph_common")
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
@@ -366,3 +369,15 @@ def test_list_datasets_with_include_parsing_status_missing_kb_gets_empty_dict(mo
     assert by_id["kb-a"]["parsing_status"]["unstart_count"] == 1
     assert by_id["kb-b"]["parsing_status"] == {}
     parsing_status_mock.assert_called_once()
+
+
+def test_string_list_decodes_legacy_json_and_native_arrays(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    assert module._string_list('["doc_1", "doc_2"]') == ["doc_1", "doc_2"]
+    assert module._string_list(["doc_1", "doc_2", "doc_1"]) == ["doc_1", "doc_2"]
+    assert module._string_list("doc_1###doc_2") == ["doc_1", "doc_2"]
