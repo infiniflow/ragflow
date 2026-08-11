@@ -327,6 +327,58 @@ func TestTextParser_ParseWithResult_DefaultDelimiter(t *testing.T) {
 	}
 }
 
+// TestTextParser_ParseWithResult_NewlineNormalization pins the
+// normalizeTextNewlines contract: CRLF ("\r\n") and lone-CR ("\r") line
+// endings fold to LF before splitting, so every variant of the same logical
+// content yields identical items. This mirrors rag/nlp/delim.
+// normalize_text_newlines, which is what Python splits on, so Windows-line
+// documents parse identically to Unix ones.
+func TestTextParser_ParseWithResult_NewlineNormalization(t *testing.T) {
+	ctx := t.Context()
+	p := NewTextParser()
+
+	// Same logical content expressed with LF, CRLF, and lone-CR line endings.
+	lf := "First line.\nSecond line! Third? Fourth."
+	crlf := strings.ReplaceAll(lf, "\n", "\r\n")
+	cr := strings.ReplaceAll(lf, "\n", "\r")
+
+	extract := func(src string) []string {
+		res := p.ParseWithResult(ctx, "doc.txt", []byte(src))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult: %v", res.Err)
+		}
+		out := make([]string, 0, len(res.JSON))
+		for _, it := range res.JSON {
+			if txt, _ := it["text"].(string); txt != "" {
+				out = append(out, txt)
+			}
+		}
+		return out
+	}
+
+	want := extract(lf)
+	if len(want) == 0 {
+		t.Fatal("LF baseline produced no items")
+	}
+	for _, variant := range []struct {
+		name string
+		src  string
+	}{
+		{"crlf", crlf},
+		{"cr", cr},
+	} {
+		got := extract(variant.src)
+		if len(got) != len(want) {
+			t.Fatalf("%s: JSON len = %d, want %d: %#v", variant.name, len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("%s: JSON[%d].text = %q, want %q", variant.name, i, got[i], want[i])
+			}
+		}
+	}
+}
+
 // TestTextParser_AlignmentGolden verifies Go's ParseWithResult output is
 // content-equivalent to Python's _code on the shared sample, using the shared
 // concatenation-normalization alignment tool (align_test.go). Python applies
@@ -376,19 +428,21 @@ func TestTextParser_AlignmentGolden(t *testing.T) {
 	}
 }
 
-// TestTextParser_AdjacentDelimiters pins Go's behavior on adjacent delimiters,
-// which intentionally diverges from Python's deepdoc and is only reconciled by
-// the alignment test's delimiter-strip normalization. Python keeps each trailing
-// delimiter as its own segment ("a!!b" → ["a!", "!", "b"]), while Go merges the
-// run so the standalone second delimiter is dropped ("a!!b" → ["a!", "b"]). The
-// normalized comparison still treats both as equal, so without this test a future
-// silent change to splitCapturingDelims would go unnoticed.
+// TestTextParser_AdjacentDelimiters pins Go's behavior on adjacent
+// delimiters, confirming it matches Python's deepdoc TxtParser.parser_txt
+// delimiter-loop exactly (not a divergence). Both ports run the same
+// re.split(r"(%s)" % dels, txt) loop with keep_delimiters=True and merge a
+// run of adjacent delimiters into the preceding segment, so the standalone
+// second delimiter is dropped on both sides: "a!!b" → ["a!", "b"] (verified
+// against deepdoc/parser/txt_parser.py). The alignment test's delimiter-strip
+// normalization also reconciles this, but this test guards splitCapturingDelims
+// directly so a future silent change there is caught independently.
 func TestTextParser_AdjacentDelimiters(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
 
-	// Two adjacent sentence delimiters: Go merges them into the preceding
-	// segment and drops the standalone second delimiter.
+	// Two adjacent sentence delimiters: Go (and Python's parser_txt) merge
+	// them into the preceding segment and drop the standalone second delimiter.
 	src := []byte("a!!b")
 	res := p.ParseWithResult(ctx, "doc.txt", src)
 	if res.Err != nil {
