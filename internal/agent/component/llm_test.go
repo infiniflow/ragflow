@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/tokenizer"
 
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
@@ -394,5 +395,45 @@ func TestFitMessages_DropsMiddleWhenOverBudget(t *testing.T) {
 	}
 	if !strings.Contains(fitted[1].Content, "last") {
 		t.Fatalf("last user message not preserved: %+v", fitted[1])
+	}
+}
+
+// TestFitMessages_FoldsMultipleTextParts verifies that every non-empty text
+// part of a multi-modal message participates in the token budget: the parts
+// are folded into a single fitted text on the first text part and additional
+// text parts are removed, so no text escapes the budget after reconstruction.
+func TestFitMessages_FoldsMultipleTextParts(t *testing.T) {
+	long1 := strings.Repeat("a ", 3000)
+	long2 := strings.Repeat("b ", 3000)
+	imgURL := "data:image/png;base64,AAAA"
+	msgs := []schema.Message{
+		{Role: schema.System, Content: "sys"},
+		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: long1},
+			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
+			}},
+			{Type: schema.ChatMessagePartTypeText, Text: long2},
+		}},
+	}
+	fitted, fitErr := fitMessages("", msgs, 2000)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2", len(fitted))
+	}
+	last := fitted[len(fitted)-1]
+	textParts := 0
+	for _, part := range last.UserInputMultiContent {
+		if part.Type == schema.ChatMessagePartTypeText {
+			textParts++
+		}
+	}
+	if textParts != 1 {
+		t.Fatalf("got %d text parts, want 1 (folded): %+v", textParts, last.UserInputMultiContent)
+	}
+	if total := tokenizer.NumTokensFromString(last.UserInputMultiContent[0].Text); total > 2000 {
+		t.Fatalf("fitted text totals %d tokens, exceeds budget 2000", total)
 	}
 }

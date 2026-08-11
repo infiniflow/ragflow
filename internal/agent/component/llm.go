@@ -1067,13 +1067,21 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 		multiIdx := -1
 		hadText := text != ""
 		if !hadText {
+			// Fold every non-empty text part into the token budget: only the
+			// first text part is written back, so leaving later parts out
+			// would let text exceed the fitted budget after reconstruction.
+			var textParts []string
 			for j, p := range copied[i].UserInputMultiContent {
 				if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
-					text = p.Text
-					multiIdx = j
-					hadText = true
-					break
+					textParts = append(textParts, p.Text)
+					if multiIdx < 0 {
+						multiIdx = j
+					}
 				}
+			}
+			if len(textParts) > 0 {
+				text = strings.Join(textParts, "\n\n")
+				hadText = true
 			}
 		}
 		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
@@ -1100,6 +1108,17 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 		m := copied[src.copiedIdx]
 		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
 			m.UserInputMultiContent[src.multiIdx].Text = all[i].Content
+			// Drop any additional text parts: their content was folded into
+			// the first part before fitting, so keeping them would re-introduce
+			// text outside the token budget.
+			keptParts := m.UserInputMultiContent[:0]
+			for j, part := range m.UserInputMultiContent {
+				if part.Type == schema.ChatMessagePartTypeText && j != src.multiIdx {
+					continue
+				}
+				keptParts = append(keptParts, part)
+			}
+			m.UserInputMultiContent = keptParts
 		} else if all[i].Content != "" {
 			m.Content = all[i].Content
 		}
