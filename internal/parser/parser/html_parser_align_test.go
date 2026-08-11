@@ -336,33 +336,45 @@ SELECT * FROM t
 // accepted divergences are declared in the golden's meta block, not hardcoded
 // here.
 //
-// The baseline lives in testdata/html.python.golden.json as a {meta, items}
+// The baseline lives in testdata/html.python.en.golden.json / testdata/html.python.zh.golden.json as {meta, items}
 // document (see its "meta" block for how to regenerate it from the Python
 // engine — no committed generator script).
 func TestHTMLParser_AlignmentGolden(t *testing.T) {
 	ctx := t.Context()
 	p := NewHTMLParser()
 
-	sample, err := os.ReadFile("testdata/html.sample.html")
-	if err != nil {
-		t.Fatalf("read sample: %v", err)
+	cases := []struct {
+		name   string
+		sample string
+		golden string
+	}{
+		{"en", "testdata/html.sample.en.html", "testdata/html.python.en.golden.json"},
+		{"zh", "testdata/html.sample.zh.html", "testdata/html.python.zh.golden.json"},
 	}
-	res := p.ParseWithResult(ctx, "html.sample.html", sample)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sample, err := os.ReadFile(tc.sample)
+			if err != nil {
+				t.Fatalf("read sample: %v", err)
+			}
+			res := p.ParseWithResult(ctx, tc.sample, sample)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
 
-	doc := LoadGoldenDoc(t, "testdata/html.python.golden.json")
+			doc := LoadGoldenDoc(t, tc.golden)
 
-	// Drop the meta-declared accepted divergences on both sides (here "table"):
-	// Go appends a structured doc_type_kwd:"table" item, while Python keeps the
-	// <table> markup inline as a "text" item. The inline markup remains in both
-	// runs and is still compared — that is exactly what guards against collapse.
-	drop := AcceptedDivergences(doc.Meta)
-	goText := FilterOutDocTypes(res.JSON, drop)
-	pyText := FilterOutDocTypes(doc.Items, drop)
+			// Drop the meta-declared accepted divergences on both sides (here "table"):
+			// Go appends a structured doc_type_kwd:"table" item, while Python keeps the
+			// <table> markup inline as a "text" item. The inline markup remains in both
+			// runs and is still compared — that is exactly what guards against collapse.
+			drop := AcceptedDivergences(doc.Meta)
+			goText := FilterOutDocTypes(res.JSON, drop)
+			pyText := FilterOutDocTypes(doc.Items, drop)
 
-	if ok, diff := CompareAlignment(goText, pyText, HTMLAlignOptions()); !ok {
-		t.Fatalf("html parser not aligned with Python golden:%s", diff)
+			if ok, diff := CompareAlignment(goText, pyText, HTMLAlignOptions()); !ok {
+				t.Fatalf("html parser not aligned with Python golden:%s", diff)
+			}
+		})
 	}
 }

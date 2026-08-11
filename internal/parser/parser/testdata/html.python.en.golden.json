@@ -2,7 +2,7 @@
   "meta": {
     "python_engine": "deepdoc.parser.html_parser.RAGFlowHtmlParser",
     "generator": "rag/flow/parser/parser.py:_html (HtmlParser()(name, blob, 512))",
-    "sample": "internal/parser/parser/testdata/html.sample.html",
+    "sample": "internal/parser/parser/testdata/html.sample.en.html",
     "delimiter": "\\n!?;。；！？",
     "separate_tables": false,
     "accepted_divergences": ["table"],
