@@ -25,8 +25,8 @@
       "kind": "chunk_text",
       "applies_to": ["token__text_backtick", "token__markdown_backtick", "token__html_backtick"],
       "owner_fix_side": "go",
-      "tracking": "TODO: file issue — Go keeps the backtick delimiter itself in chunk text and emits doc_type_kwd on the text/markdown/html path where Python emits only text",
-      "reason": "With a backtick-wrapped delimiter (e.g. `\\n`, _compile_delimiter_pattern, token_chunker.py:70-76) Python takes the custom-pattern branch. On that branch Python's _split_text_by_pattern (rag/flow/chunker/token_chunker.py:80-95) keeps the delimiter text and the finalize step drops it, so a split chunk reads 'first sentence here' WITHOUT the trailing newline; the output is a list of {'text': ...} with no doc_type_kwd (token_chunker.py:341). Go instead keeps the delimiter in the text ('first sentence here\\n', splitKeepingDelim) and, because invokeTextPayload (token.go:298-331, applyChildrenDelim at 1086-1097) defaults every chunk to DocType:'text', emits a doc_type_kwd:'text' that Python never produces. Two Go-only behaviours on the custom-delimiter text path: retained delimiter + an extra field."
+      "tracking": "TODO: file issue — Go emits an extra doc_type_kwd:'text' field on the text/markdown/html backtick path where Python emits only {'text': ...}",
+      "reason": "With a backtick-wrapped delimiter (e.g. `\\n`, _compile_delimiter_pattern, token_chunker.py:70-76) Python takes the custom-pattern branch. On that branch Python's _split_text_by_pattern (rag/flow/chunker/token_chunker.py:80-95) discards the delimiter, and the text path emits a list of {'text': ...} with no doc_type_kwd (token_chunker.py:341). Go no longer keeps the delimiter either: since #17868 it uses splitDroppingDelim, so chunk text matches Python exactly. The remaining Go-only behaviour is an extra doc_type_kwd:'text' field — invokeTextPayload (token.go:323, 338-341) defaults every chunk to DocType:'text', which Python's text-path output never includes."
     }
   ]
 }
