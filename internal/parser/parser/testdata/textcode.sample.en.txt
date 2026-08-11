@@ -2,8 +2,6 @@ RAGFlow parses plain text and source code through the text&code family. This is 
 
 A blank line separates paragraphs. Semicolons also act as delimiters; this clause stays attached to the previous one. The parser keeps the trailing punctuation so sentence boundaries survive the split.
 
-这是第一段中文。逗号不是分隔符，但句号是！第二句以感叹号结尾？第三句以问号结尾。中文段落同样按默认分隔符切分。
-
 def greet(name):
     return f"hello, {name}"
 

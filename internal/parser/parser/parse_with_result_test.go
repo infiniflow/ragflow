@@ -336,7 +336,7 @@ func TestTextParser_ParseWithResult_DefaultDelimiter(t *testing.T) {
 // joins on whitespace, reconciling the boundary difference.
 //
 // No generator script is committed. The baseline is reproducible from the
-// golden's meta block alone (see textcode.python.golden.json: generator,
+// golden's meta block alone (see textcode.python.en.golden.json / textcode.python.zh.golden.json: generator,
 // sample, delimiter, keep_delimiters, chunk_token_num): call the python flow
 // _code on the sample with keep_delimiters=True and the default delimiter set,
 // then project each merged section to {"text": section[0], "doc_type_kwd": "text"}.
@@ -344,23 +344,35 @@ func TestTextParser_AlignmentGolden(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
 
-	sample, err := os.ReadFile("testdata/textcode.sample.txt")
-	if err != nil {
-		t.Fatalf("read sample: %v", err)
+	cases := []struct {
+		name   string
+		sample string
+		golden string
+	}{
+		{"en", "testdata/textcode.sample.en.txt", "testdata/textcode.python.en.golden.json"},
+		{"zh", "testdata/textcode.sample.zh.txt", "testdata/textcode.python.zh.golden.json"},
 	}
-	res := p.ParseWithResult(ctx, "textcode.sample.txt", sample)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sample, err := os.ReadFile(tc.sample)
+			if err != nil {
+				t.Fatalf("read sample: %v", err)
+			}
+			res := p.ParseWithResult(ctx, tc.sample, sample)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
 
-	gd := LoadGoldenDoc(t, "testdata/textcode.python.golden.json")
-	ignore := AcceptedDivergences(gd.Meta)
+			gd := LoadGoldenDoc(t, tc.golden)
+			ignore := AcceptedDivergences(gd.Meta)
 
-	goText := FilterOutDocTypes(FilterByDocType(res.JSON, "text"), ignore)
-	pyText := FilterOutDocTypes(FilterByDocType(gd.Items, "text"), ignore)
+			goText := FilterOutDocTypes(FilterByDocType(res.JSON, "text"), ignore)
+			pyText := FilterOutDocTypes(FilterByDocType(gd.Items, "text"), ignore)
 
-	if ok, diff := CompareAlignment(goText, pyText, TextCodeAlignOptions(DefaultTextCodeDelimiter)); !ok {
-		t.Fatalf("text&code parser not aligned with Python golden:%s", diff)
+			if ok, diff := CompareAlignment(goText, pyText, TextCodeAlignOptions(DefaultTextCodeDelimiter)); !ok {
+				t.Fatalf("text&code parser not aligned with Python golden:%s", diff)
+			}
+		})
 	}
 }
 
