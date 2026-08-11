@@ -39,12 +39,12 @@ const (
 )
 
 type runningChannel struct {
-	channel core.Channel
-	fp      string
+	channel     core.Channel
+	fingerprint string
 }
 
 type failedChannel struct {
-	fp          string
+	fingerprint string
 	attempts    int
 	nextRetryAt time.Time
 }
@@ -64,11 +64,16 @@ func NewRuntime() *Runtime {
 }
 
 // Start launches the chat-channel runtime reconciler in the background.
-func Start(ctx context.Context) *Runtime {
-	rt := NewRuntime()
+func Start(ctx context.Context) (*Runtime, error) {
+	channelRuntime := NewRuntime()
 	service.SetChatChannelRuntimeProvider(whatsappRuntimeSnapshotMap)
-	go rt.Run(ctx)
-	return rt
+
+	if err := channelRuntime.Reconcile(ctx); err != nil {
+		return channelRuntime, fmt.Errorf("failed to reconcile channel: %w", err)
+	}
+
+	go channelRuntime.Run(ctx)
+	return channelRuntime, nil
 }
 
 // Run reconciles configured chat channels until the context is cancelled.
@@ -100,14 +105,14 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 	r.mu.Lock()
 	for accountID, entry := range r.running {
 		wanted, ok := desired[accountID]
-		if !ok || wanted.fp != entry.fp {
+		if !ok || wanted.fp != entry.fingerprint {
 			delete(r.running, accountID)
 			toStop = append(toStop, entry.channel)
 		}
 	}
 	for accountID, failure := range r.failed {
 		wanted, ok := desired[accountID]
-		if !ok || wanted.fp != failure.fp {
+		if !ok || wanted.fp != failure.fingerprint {
 			delete(r.failed, accountID)
 		}
 	}
@@ -133,7 +138,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		r.mu.Lock()
 		_, isRunning := r.running[accountID]
 		failure, failed := r.failed[accountID]
-		retryPending := failed && failure.fp == wanted.fp && now.Before(failure.nextRetryAt)
+		retryPending := failed && failure.fingerprint == wanted.fp && now.Before(failure.nextRetryAt)
 		r.mu.Unlock()
 		if isRunning || retryPending {
 			continue
@@ -149,16 +154,16 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 }
 
 // recordStartFailure saves the next retry window for a failed channel start.
-func (r *Runtime) recordStartFailure(accountID string, fp string, now time.Time) {
+func (r *Runtime) recordStartFailure(accountID string, fingerprint string, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	attempts := 1
-	if failure, ok := r.failed[accountID]; ok && failure.fp == fp {
+	if failure, ok := r.failed[accountID]; ok && failure.fingerprint == fingerprint {
 		attempts = failure.attempts + 1
 	}
 	r.failed[accountID] = failedChannel{
-		fp:          fp,
+		fingerprint: fingerprint,
 		attempts:    attempts,
 		nextRetryAt: now.Add(startRetryDelay(attempts)),
 	}
@@ -268,7 +273,7 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		return err
 	}
 	r.mu.Lock()
-	r.running[accountID] = runningChannel{channel: ch, fp: wanted.fp}
+	r.running[accountID] = runningChannel{channel: ch, fingerprint: wanted.fp}
 	r.mu.Unlock()
 	log.Printf("started chat channel %s:%s", ch.ChannelID(), accountID)
 	return nil
