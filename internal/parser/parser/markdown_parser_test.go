@@ -528,12 +528,16 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 // shared concatenation-normalization alignment tool (align_test.go). Python
 // keeps raw markdown and splits on the delimiter set; Go emits clean per-block
 // text. The comparison normalizes both (markdown syntax, html tags, delimiters
-// stripped; whitespace collapsed) and ignores "table"/"image" items, which are
-// accepted representation differences (PARSER_ALIGNMENT_HANDOFF.md §3.1).
+// stripped; whitespace collapsed) and ignores the doc types the golden declares
+// as accepted divergences (meta.accepted_divergences; PARSER_ALIGNMENT_HANDOFF.md §3.1).
 //
-// Regenerate the baseline with:
-//
-//	.venv/bin/python internal/parser/parser/testdata/gen_markdown_golden.py
+// The baseline (testdata/markdown.python.golden.json) is a {meta, items}
+// document whose "meta" block records how it was produced (generator
+// rag/flow/parser/parser.py:_markdown, sample, delimiter, accepted
+// divergences). No generator script is committed — to regenerate, call
+// _markdown on the sample and dump {meta, items}. The baseline is
+// reproducible from the metadata alone (an AI or human can recreate the thin
+// wrapper on demand).
 func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -547,11 +551,13 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	golden := LoadGolden(t, "testdata/markdown.python.golden.json")
+	gd := LoadGolden(t, "testdata/markdown.python.golden.json")
 
-	// Ignore "table"/"image" items on both sides (accepted divergences).
-	goText := FilterByDocType(res.JSON, "text")
-	pyText := FilterByDocType(golden, "text")
+	// Exclude the doc types the golden declares as accepted divergences
+	// (meta.accepted_divergences) on both sides — no hardcoded list in the test.
+	ignore := AcceptedDivergences(gd.Meta)
+	goText := FilterOutDocTypes(res.JSON, ignore)
+	pyText := FilterOutDocTypes(gd.Items, ignore)
 
 	if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
 		t.Fatalf("markdown parser not aligned with Python golden:%s", diff)

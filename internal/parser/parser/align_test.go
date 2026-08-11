@@ -188,19 +188,73 @@ func diffReport(g, p string) string {
 	return "alignment mismatch after normalization:\n--- GO ---\n" + g + "\n--- PY ---\n" + p
 }
 
-// LoadGolden reads a Python golden JSON file (a JSON list of item objects)
-// produced by the Python flow parser for the same input.
-func LoadGolden(t *testing.T, path string) []map[string]any {
+// GoldenDoc is a {meta, items} Python golden baseline. Meta records how the
+// baseline was produced (generator, sample, delimiter, accepted divergences)
+// so it stays reproducible without a committed generator script; Items is the
+// list of parsed output items compared against Go's parser.
+type GoldenDoc struct {
+	Meta  map[string]any
+	Items []map[string]any
+}
+
+// LoadGolden reads a Python golden JSON file produced by the Python flow
+// parser for the same input. The file is a {meta, items} document; see
+// GoldenDoc.
+func LoadGolden(t *testing.T, path string) *GoldenDoc {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("load golden %s: %v", path, err)
 	}
-	var items []map[string]any
-	if err := json.Unmarshal(data, &items); err != nil {
+	var doc GoldenDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("parse golden %s: %v", path, err)
 	}
-	return items
+	if len(doc.Items) == 0 {
+		t.Fatalf("golden %s has no items", path)
+	}
+	return &doc
+}
+
+// AcceptedDivergences returns the doc_type_kwd values the golden baseline
+// declares as accepted representation differences (e.g. "table"/"image"), so
+// the comparison can ignore them on both sides. Driven entirely by the
+// golden's meta block — the test holds no hardcoded divergence list.
+func AcceptedDivergences(meta map[string]any) []string {
+	raw, ok := meta["accepted_divergences"]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, e := range list {
+		if s, ok := e.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// FilterOutDocTypes returns the items whose doc_type_kwd is NOT in drop. Used
+// to exclude the meta-declared accepted divergences from the comparison.
+func FilterOutDocTypes(items []map[string]any, drop []string) []map[string]any {
+	if len(drop) == 0 {
+		return items
+	}
+	banned := make(map[string]bool, len(drop))
+	for _, d := range drop {
+		banned[d] = true
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		if v, _ := it["doc_type_kwd"].(string); !banned[v] {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // MarkdownAlignOptions returns the normalizer preset for markdown. The order
