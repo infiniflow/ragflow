@@ -31,7 +31,7 @@ func TestVariableAggregator_FirstNonEmpty(t *testing.T) {
 	state.Outputs["cpn_1"] = map[string]any{"y": "second-a"}
 	state.Outputs["cpn_2"] = map[string]any{"y": "second-b"}
 	state.Outputs["cpn_3"] = map[string]any{"y": "second-c"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -84,7 +84,7 @@ func TestVariableAggregator_SkipsEmptyString(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"x": ""}
 	state.Outputs["cpn_1"] = map[string]any{"y": "picked"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -115,7 +115,7 @@ func TestVariableAggregator_MultipleGroups(t *testing.T) {
 	state.Sys["a"] = "alpha"
 	state.Sys["b"] = ""
 	state.Env["c"] = "gamma"
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -163,7 +163,7 @@ func TestVariableAggregator_MultipleGroups(t *testing.T) {
 func TestVariableAggregator_AllEmpty(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Outputs["cpn_0"] = map[string]any{}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
