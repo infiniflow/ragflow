@@ -19,7 +19,6 @@ package component
 import (
 	"context"
 	"errors"
-	"ragflow/internal/dao"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,9 +26,13 @@ import (
 	"time"
 
 	eschema "github.com/cloudwego/eino/schema"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
@@ -1831,5 +1834,120 @@ func TestFitExtractorMessages_KeepsUserTurn(t *testing.T) {
 	}
 	if strings.TrimSpace(fitted[1].Content) == "" {
 		t.Fatal("user turn was emptied")
+	}
+}
+
+// openExtractorContextTestDB returns an in-memory DB with the tenant and
+// tenant-model tables migrated, and dao.DB swapped for the test duration so
+// DAO helpers that default to the global handle behave like production.
+func openExtractorContextTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	prev := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = prev })
+	return db
+}
+
+// seedExtractorContextModel seeds an active OpenAI gpt-4o tenant model
+// (catalog content_length 128000) plus its tenant. tenantLLMID, when
+// non-empty, pins the tenant's default chat model to the tenant-model UUID;
+// otherwise the tenant falls back to the composite llm_id.
+func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
+	t.Helper()
+	status := "1"
+	tenant := entity.Tenant{
+		ID:     "tenant-1",
+		LLMID:  "gpt-4o@openai",
+		Status: &status,
+	}
+	if tenantLLMID != "" {
+		tenant.TenantLLMID = &tenantLLMID
+	}
+	if err := db.Create(&tenant).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-openai",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-openai",
+		InstanceID: "instance-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+}
+
+// extractorStateCtx returns a context carrying a canvas state with the given
+// tenant_id global, as extractorContextLength expects.
+func extractorStateCtx(t *testing.T, tenantID string) context.Context {
+	t.Helper()
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SetGlobal("tenant_id", tenantID)
+	return runtime.WithState(t.Context(), state)
+}
+
+// TestExtractorContextLength_TenantModelUUID verifies extractorContextLength
+// resolves content_length for a tenant_model UUID through the provider
+// catalog.
+func TestExtractorContextLength_TenantModelUUID(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, "0123456789abcdef0123456789abcdef"); got != 128000 {
+		t.Fatalf("extractorContextLength(uuid) = %d, want 128000", got)
+	}
+}
+
+// TestExtractorContextLength_DefaultChatModelPinned verifies the llmID==""
+// fallback resolves the tenant default chat model when it is pinned to a
+// tenant_model UUID.
+func TestExtractorContextLength_DefaultChatModelPinned(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "0123456789abcdef0123456789abcdef")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, ""); got != 128000 {
+		t.Fatalf("extractorContextLength(default pinned uuid) = %d, want 128000", got)
+	}
+}
+
+// TestExtractorContextLength_DefaultChatModelComposite verifies the llmID==""
+// fallback resolves the tenant default chat model from the composite
+// "model@provider" llm_id when no tenant_model is pinned.
+func TestExtractorContextLength_DefaultChatModelComposite(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, ""); got != 128000 {
+		t.Fatalf("extractorContextLength(default composite) = %d, want 128000", got)
+	}
+}
+
+// TestExtractorContextLength_UnknownModelSkips verifies extractorContextLength
+// returns 0 (skip fitting) for an unknown model reference.
+func TestExtractorContextLength_UnknownModelSkips(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, "no-such-model@no-such-provider"); got != 0 {
+		t.Fatalf("extractorContextLength(unknown) = %d, want 0", got)
 	}
 }
