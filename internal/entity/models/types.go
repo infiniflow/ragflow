@@ -144,23 +144,33 @@ type ModelList struct {
 	Models []ModelListItem `json:"data"`
 }
 
+// URLSuffixSpecial maps a model name to a full endpoint URL that
+// overrides the default base URL + suffix assembly for that model.
+// Used by providers such as NVIDIA whose hosted catalog exposes
+// per-model endpoints that do not follow the standard suffix scheme.
+type URLSuffixSpecial struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat          string `json:"chat"`
-	AsyncChat     string `json:"async_chat"`
-	AsyncResult   string `json:"async_result"`
-	Embedding     string `json:"embedding"`
-	Rerank        string `json:"rerank"`
-	TTS           string `json:"tts"`
-	ASR           string `json:"asr"`
-	OCR           string `json:"ocr"`
-	DocumentParse string `json:"doc_parse"`
-	Models        string `json:"models"`
-	Balance       string `json:"balance"`
-	Files         string `json:"files"`
-	Status        string `json:"status"`
-	Tasks         string `json:"tasks"`
-	Task          string `json:"task"`
+	Chat          string             `json:"chat"`
+	AsyncChat     string             `json:"async_chat"`
+	AsyncResult   string             `json:"async_result"`
+	Embedding     string             `json:"embedding"`
+	Rerank        string             `json:"rerank"`
+	TTS           string             `json:"tts"`
+	ASR           string             `json:"asr"`
+	OCR           string             `json:"ocr"`
+	DocumentParse string             `json:"doc_parse"`
+	Models        string             `json:"models"`
+	Balance       string             `json:"balance"`
+	Files         string             `json:"files"`
+	Status        string             `json:"status"`
+	Tasks         string             `json:"tasks"`
+	Task          string             `json:"task"`
+	Special       []URLSuffixSpecial `json:"special"`
 }
 
 type ChatConfig struct {

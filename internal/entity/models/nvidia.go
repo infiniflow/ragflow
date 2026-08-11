@@ -41,6 +41,12 @@ type NvidiaModel struct {
 	baseModel     BaseModel
 	catalogURL    string
 	hostedAPIHost string
+	// specialURLs maps a model name (lowercase) to a full endpoint URL
+	// that overrides the default base URL + suffix assembly. Populated
+	// from url_suffix.special in conf/models/nvidia.json; the hosted
+	// NVIDIA catalog exposes per-model endpoints that do not follow the
+	// standard suffix scheme (e.g. /v1/meta/llama-3.2-11b-vision-instruct).
+	specialURLs map[string]string
 }
 
 // NewNvidiaModel creates a new Nvidia model instance
@@ -53,7 +59,49 @@ func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel
 		},
 		catalogURL:    nvidiaCatalogURL,
 		hostedAPIHost: nvidiaHostedAPIHost,
+		specialURLs:   buildNvidiaSpecialURLs(urlSuffix.Special),
 	}
+}
+
+// buildNvidiaSpecialURLs indexes the special endpoint list by lowercase
+// model name. Entries with an empty name or URL are skipped.
+func buildNvidiaSpecialURLs(special []URLSuffixSpecial) map[string]string {
+	if len(special) == 0 {
+		return nil
+	}
+	urls := make(map[string]string, len(special))
+	for _, entry := range special {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" || strings.TrimSpace(entry.URL) == "" {
+			continue
+		}
+		urls[strings.ToLower(name)] = entry.URL
+	}
+	return urls
+}
+
+// specialURL returns the per-model endpoint override for modelName,
+// or "" when the model has no special endpoint configured.
+func (n *NvidiaModel) specialURL(modelName string) string {
+	if n.specialURLs == nil {
+		return ""
+	}
+	return n.specialURLs[strings.ToLower(strings.TrimSpace(modelName))]
+}
+
+// resolveEndpointURL returns the request URL for a model. When the
+// resolved base URL points at the NVIDIA hosted API (integrate.api.
+// nvidia.com) and the model has a special endpoint override, that full
+// URL is used verbatim. Otherwise the base URL is joined with the
+// provider's default suffix, so self-hosted NIM deployments configured
+// through a custom base URL keep using the standard suffix scheme.
+func (n *NvidiaModel) resolveEndpointURL(baseURL, modelName, defaultSuffix string) string {
+	if n.usesHostedCatalog(baseURL) {
+		if special := n.specialURL(modelName); special != "" {
+			return special
+		}
+	}
+	return fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), defaultSuffix)
 }
 
 func (n *NvidiaModel) NewInstance(baseURL map[string]string) ModelDriver {
@@ -77,7 +125,7 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
+	baseURL := n.resolveEndpointURL(resolvedBaseURL, modelName, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -112,7 +160,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
+	baseURL := n.resolveEndpointURL(resolvedBaseURL, modelName, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
@@ -157,7 +205,7 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, err
 	}
 
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Embedding)
+	baseURL := n.resolveEndpointURL(resolvedBaseURL, *modelName, n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
@@ -269,7 +317,7 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, query strin
 		return nil, err
 	}
 
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Rerank)
+	baseURL := n.resolveEndpointURL(resolvedBaseURL, *modelName, n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {

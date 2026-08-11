@@ -7,7 +7,17 @@
     "chat": "chat/completions",
     "models": "models",
     "embedding": "embeddings",
-    "rerank": "ranking"
+    "rerank": "ranking",
+    "special": [
+      {
+        "name": "meta/llama-3.2-11b-vision-instruct",
+        "url": "https://integrate.api.nvidia.com/v1/meta/llama-3.2-11b-vision-instruct"
+      },
+      {
+        "name": "meta/llama-3.2-90b-vision-instruct",
+        "url": "https://integrate.api.nvidia.com/v1/meta/llama-3.2-90b-vision-instruct"
+      }
+    ]
   },
   "class": "nvidia",
   "models": [
