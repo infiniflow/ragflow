@@ -536,7 +536,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}
 	for _, addr := range addrs {
-		ip := addr.IP
+		ip = addr.IP
 		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 			ip.IsPrivate() || ip.IsUnspecified() {
 			return nil, fmt.Errorf("markdown: rejected image URL resolving to internal address: %s (%s)", host, ip)

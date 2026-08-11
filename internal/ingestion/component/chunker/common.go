@@ -90,8 +90,8 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 // (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
 // glued to a segment: re.split with a captured group keeps delimiters at odd
 // indices, and only the even-index (text) parts are kept. This is the
-// behaviour every delimiter path (primary and children, text/markdown/html
-// and json) must reproduce so a split chunk reads "first sentence here"
+// behavior every delimiter path (primary and children, text/markdown/html
+// and JSON) must reproduce so a split chunk reads "first sentence here"
 // without the trailing delimiter.
 func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
