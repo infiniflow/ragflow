@@ -16,11 +16,14 @@ export function useBulkOperateMCP(mcpList: IMcpServer[]) {
   }, []);
 
   const handleDelete = useCallback(async () => {
-    const ret = await deleteMcpServer(selectedList);
+    const deletedIds = selectedList;
+    const ret = await deleteMcpServer(deletedIds);
     if (ret.code === 0) {
-      resetSelection();
+      setSelectedList((list) =>
+        list.filter((id) => !deletedIds.includes(id)),
+      );
     }
-  }, [deleteMcpServer, selectedList, resetSelection]);
+  }, [deleteMcpServer, selectedList]);
 
   const handleSelectChange = useCallback((id: string, checked: boolean) => {
     setSelectedList((list) => {
