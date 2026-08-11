@@ -97,6 +97,7 @@ func (r *Runtime) Run(ctx context.Context) {
 
 // Reconcile starts, stops, and restarts channel instances to match the database state.
 func (r *Runtime) Reconcile(ctx context.Context) error {
+	var reconcileErr error
 	desired, err := desiredChannels(ctx)
 	if err != nil {
 		return err
@@ -133,6 +134,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 	}
 	if err = syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
 		log.Printf("failed to sync WhatsApp gateway: %v", err)
+		reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
 	}
 
 	now := time.Now()
@@ -148,11 +150,14 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		if err = r.startChannel(ctx, accountID, wanted); err != nil {
 			log.Printf("failed to start chat channel %s (%s): %v", accountID, wanted.channel, err)
 			r.recordStartFailure(accountID, wanted.fingerprint, now)
+			if reconcileErr == nil {
+				reconcileErr = fmt.Errorf("failed to start chat channel %s: %w", accountID, err)
+			}
 			continue
 		}
 		r.clearStartFailure(accountID)
 	}
-	return nil
+	return reconcileErr
 }
 
 // recordStartFailure saves the next retry window for a failed channel start.
