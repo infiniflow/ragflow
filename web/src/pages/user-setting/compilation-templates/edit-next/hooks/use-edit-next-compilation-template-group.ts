@@ -21,7 +21,6 @@ import {
   useUpdateCompilationTemplateGroup,
 } from '@/hooks/use-compilation-template-group-request';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
-import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -48,7 +47,6 @@ export const useEditNextCompilationTemplateGroup = ({
   const { data: detail } = useFetchCompilationTemplateGroup();
   const { data: builtins, kindOptions: builtinKindOptions } =
     useFetchBuiltinCompilationTemplates();
-  const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const { createGroup, loading: createLoading } =
     useCreateCompilationTemplateGroup();
@@ -64,11 +62,7 @@ export const useEditNextCompilationTemplateGroup = ({
     [builtinKindOptions, t],
   );
 
-  const { form } = useCompilationTemplateGroupForm({
-    detail,
-    defaultLlmId: defaultModelDictionary.llm_id,
-    isCreate,
-  });
+  const { form } = useCompilationTemplateGroupForm({ detail });
 
   const { onSubmit } = useCompilationTemplateGroupSubmit({
     isCreate,

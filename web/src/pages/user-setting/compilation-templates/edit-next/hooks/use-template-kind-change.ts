@@ -44,11 +44,7 @@ export const useTemplateKindChange = ({
       if (builtinTemplate) {
         form.setValue(
           `templates.${index}.config`,
-          buildConfigFromBuiltin(
-            builtinTemplate,
-            value,
-            form.getValues(`templates.${index}.llm_id`),
-          ),
+          buildConfigFromBuiltin(builtinTemplate, value),
           { shouldValidate: false },
         );
       }

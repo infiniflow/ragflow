@@ -14,7 +14,6 @@
  *  limitations under the License.
  */
 
-import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -175,12 +174,6 @@ export function TemplateConfiguration({
               resize="vertical"
             />
           </RAGFlowFormItem>
-
-          <ModelTreeSelectFormField
-            name={`templates.${selectedTemplateIndex}.llm_id`}
-            label={t('setting.llmForExtraction')}
-            required
-          />
 
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.kind`}
