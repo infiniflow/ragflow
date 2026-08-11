@@ -135,20 +135,18 @@ func decodeRune(p []byte) (rune, int) {
 	return 0xFFFD, 1
 }
 
-// defaultTextDelimiter is the flow parser's default delimiter set for the
-// text&code family (rag/flow/parser/parser.py:_code → deepdoc TxtParser default
-// "\n!?;。；！？"). The Parser component has no user-facing delimiter config
-// entry (see PARSER_ALIGNMENT_HANDOFF.md §3.3), so this hard-coded default is
-// exactly what the python flow always splits on.
-const defaultTextDelimiter = "\n!?;。；！？"
-
-// defaultTextDelimiterPattern is the regexp alternation of the default
-// delimiter set, each rune re.escape'd to mirror
-// rag/nlp/delim.compile_delimiter_pattern. Go's regexp.Split drops captured
-// delimiters, so splitCapturingDelims walks the match indexes manually to
-// reproduce python's re.split(r"(%s)" % pattern, txt) interleaving.
+// defaultTextDelimiterPattern is the regexp alternation of the flow parser's
+// default delimiter set DefaultTextCodeDelimiter (rag/flow/parser/parser.py:_code
+// → deepdoc TxtParser default "\n!?;。；！？"), each rune re.escape'd to mirror
+// rag/nlp/delim.compile_delimiter_pattern. The Parser component has no user-facing
+// delimiter config entry (see PARSER_ALIGNMENT_HANDOFF.md §3.3), so this default
+// is exactly what the python flow always splits on. The shared DefaultTextCodeDelimiter
+// const lives in delimiter.go so production and the alignment tests use one source
+// of truth. Go's regexp.Split drops captured delimiters, so splitCapturingDelims
+// walks the match indexes manually to reproduce python's re.split(r"(%s)" % pattern, txt)
+// interleaving.
 var (
-	defaultTextDelimiterPattern = buildDelimiterPattern(defaultTextDelimiter)
+	defaultTextDelimiterPattern = buildDelimiterPattern(DefaultTextCodeDelimiter)
 	textDelimiterSplitRe        = regexp.MustCompile(defaultTextDelimiterPattern)
 	textDelimiterExactRe        = regexp.MustCompile("^(?:" + defaultTextDelimiterPattern + ")$")
 )
