@@ -159,7 +159,7 @@ func TestCodeExec_Info(t *testing.T) {
 // collection: SandboxResponse.Metadata["artifacts"] must be
 // surfaced as `_ARTIFACTS` in the tool's JSON envelope so the
 // Message
-// component's artifact markdown formatter can render them.
+// component's artifact Markdown formatter can render them.
 func TestCodeExec_ResultExtractsArtifacts(t *testing.T) {
 	t.Parallel()
 
@@ -222,7 +222,7 @@ func TestCodeExec_ResultDropsBadArtifactShape(t *testing.T) {
 }
 
 // TestCodeExec_ResultExtractsAttachments pins the attachments
-// (rendered to downstream Message markdown) path. Distinct from
+// (rendered to downstream Message Markdown) path. Distinct from
 // artifacts so renderers can route them differently.
 func TestCodeExec_ResultExtractsAttachments(t *testing.T) {
 	t.Parallel()

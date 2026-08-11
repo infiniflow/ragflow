@@ -2154,6 +2154,13 @@ Example: Virtual Hosted Style`,
       modelTypeMessage: 'Please input your model type!',
       addLlmBaseUrl: 'Base URL',
       baseUrlNameMessage: 'Please input your Base URL',
+      mwsApiUrl: 'API URL',
+      mwsApiUrlMessage: 'Please enter the MWS project API URL',
+      mwsApiUrlPlaceholder:
+        'https://gpt.mwsapis.ru/projects/<project>',
+      mwsToken: 'Token',
+      mwsTokenMessage: 'Please enter the MWS Token',
+      mwsTokenPlaceholder: 'MWS service account API key',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
@@ -2399,6 +2406,10 @@ Example: Virtual Hosted Style`,
       loading: 'Loading...',
       selectNode: 'Select a child node to view details',
       noDescription: 'No description',
+      description: 'Description',
+      keywords: 'Keywords',
+      entities: 'Entities',
+      graphContent: 'Full Graph Content',
       docCount: '{{count}} documents',
       deleteAllTitle: 'Delete navigation tree',
       deleteAllDescription:
@@ -2476,6 +2487,7 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      exportCurrentPage: 'Export current page',
       preprocess: {
         preprocess: 'Preprocess',
         mainContent: 'Main content',

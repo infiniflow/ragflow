@@ -60,8 +60,59 @@ export function NavTreeView() {
                   </span>
                 )}
               </header>
-              <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 text-sm text-text-primary whitespace-pre-wrap">
-                {selectedNode.description || t('datasetNav.noDescription')}
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 text-sm text-text-primary space-y-4">
+                <div>
+                  <h4 className="text-xs font-medium text-text-secondary mb-1">
+                    {t('datasetNav.description')}
+                  </h4>
+                  <p className="whitespace-pre-wrap">
+                    {selectedNode.description || t('datasetNav.noDescription')}
+                  </p>
+                </div>
+                {selectedNode.keywords && selectedNode.keywords.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-text-secondary mb-1">
+                      {t('datasetNav.keywords')}
+                    </h4>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedNode.keywords.map((kw, i) => (
+                        <span
+                          key={i}
+                          className="inline-block px-2 py-0.5 rounded text-xs bg-fill-quaternary text-text-secondary"
+                        >
+                          {kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.entities && selectedNode.entities.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-text-secondary mb-1">
+                      {t('datasetNav.entities')}
+                    </h4>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedNode.entities.map((entity, i) => (
+                        <span
+                          key={i}
+                          className="inline-block px-2 py-0.5 rounded text-xs bg-fill-quaternary text-text-secondary"
+                        >
+                          {entity}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.graph_content && (
+                  <div>
+                    <h4 className="text-xs font-medium text-text-secondary mb-1">
+                      {t('datasetNav.graphContent')}
+                    </h4>
+                    <p className="whitespace-pre-wrap text-xs text-text-secondary">
+                      {selectedNode.graph_content}
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
           ) : (

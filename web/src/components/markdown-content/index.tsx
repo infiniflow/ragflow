@@ -57,6 +57,8 @@ import {
   HoverCardTrigger,
 } from '../ui/hover-card';
 import styles from './index.module.less';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import { SafeImg } from '@/components/safe-img';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
 
@@ -211,7 +213,7 @@ const MarkdownContent = ({
           <div className={'space-y-2 max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+                __html: sanitizeHtmlWithImagesAsText(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText)}
               dir="auto"
@@ -303,6 +305,7 @@ const MarkdownContent = ({
             p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
+            img: SafeImg,
             code(props: any) {
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');

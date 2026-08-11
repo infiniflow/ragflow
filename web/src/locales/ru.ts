@@ -1301,6 +1301,13 @@ export default {
       modelTypeMessage: 'Пожалуйста, введите тип вашей модели!',
       addLlmBaseUrl: 'Базовый URL',
       baseUrlNameMessage: 'Пожалуйста, введите ваш базовый URL',
+      mwsApiUrl: 'URL API',
+      mwsApiUrlMessage: 'Введите URL API проекта MWS',
+      mwsApiUrlPlaceholder:
+        'https://gpt.mwsapis.ru/projects/<project>',
+      mwsToken: 'Токен',
+      mwsTokenMessage: 'Введите токен MWS',
+      mwsTokenPlaceholder: 'API-ключ сервисного аккаунта MWS',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:

@@ -24,6 +24,7 @@ from abc import ABC
 from copy import deepcopy
 from urllib.parse import urljoin
 
+import aiohttp
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
@@ -36,6 +37,7 @@ from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -1067,6 +1069,137 @@ class OpenAI_APIChat(Base):
             raise ValueError("url cannot be None")
         model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
+
+
+class MWSChat(Base):
+    """MWS Chat Completions adapter with a documentation-only request body."""
+
+    _FACTORY_NAME = "MWS"
+    _ROLES = {"system", "user", "assistant"}
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        """Initialize chat access for an MWS project and model deployment."""
+        token = require_mws_token(key)
+        self.chat_url = mws_api_url(base_url, "openai/v1/chat/completions")
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        }
+        super().__init__(
+            token,
+            model_name.split("___")[0],
+            mws_api_url(base_url, "openai/v1"),
+            **kwargs,
+        )
+
+    def _clean_conf(self, gen_conf):
+        """Keep only generation parameters documented by the MWS API."""
+        gen_conf = gen_conf or {}
+        cleaned = {}
+        if gen_conf.get("temperature") is not None:
+            cleaned["temperature"] = gen_conf["temperature"]
+        max_tokens = gen_conf.get("max_completion_tokens")
+        if max_tokens is None:
+            max_tokens = gen_conf.get("max_tokens")
+        if max_tokens is not None:
+            cleaned["max_completion_tokens"] = max_tokens
+        return cleaned
+
+    def _request_body(self, history, gen_conf, *, stream):
+        """Build a strict MWS chat request from RAGFlow messages and options."""
+        messages = []
+        for message in history:
+            role = message.get("role") if isinstance(message, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if role not in self._ROLES or not isinstance(content, str):
+                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
+            messages.append({"role": role, "content": content})
+        if not messages:
+            raise ValueError("MWS chat messages are required")
+
+        body = {"model": self.model_name, "messages": messages}
+        body.update(self._clean_conf(gen_conf))
+        if stream:
+            body["stream"] = True
+            body["stream_options"] = {"include_usage": True}
+        return body
+
+    async def _post_json(self, body):
+        """Send a non-streaming MWS chat request and decode its JSON response."""
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+                return await response.json()
+
+    async def _async_chat(self, history, gen_conf, **kwargs):
+        """Return one complete MWS chat answer together with its token usage."""
+        payload = await self._post_json(self._request_body(history, gen_conf, stream=False))
+        self.last_usage = usage_from_response(payload)
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("MWS chat response does not contain choices")
+        choice = choices[0]
+        message = choice.get("message") if isinstance(choice, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            raise ValueError("MWS chat response does not contain message content")
+        answer = content.strip()
+        if choice.get("finish_reason") == "length":
+            answer = self._length_stop(answer)
+        return answer, total_token_count_from_response(payload)
+
+    async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        """Yield MWS SSE content chunks and attach usage to the final chunk."""
+        body = self._request_body(history, gen_conf, stream=True)
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+        pending_content = None
+        estimated_tokens = 0
+        reported_tokens = 0
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    event = json.loads(data)
+                    usage = usage_from_response(event)
+                    if usage["total_tokens"]:
+                        self.last_usage = usage
+                        reported_tokens = usage["total_tokens"]
+
+                    choices = event.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") if isinstance(choice, dict) else None
+                    content = delta.get("content") if isinstance(delta, dict) else None
+                    if not isinstance(content, str) or not content:
+                        continue
+                    if choice.get("finish_reason") == "length":
+                        content = self._length_stop(content)
+                    if pending_content is not None:
+                        yield pending_content, 0
+                    pending_content = content
+                    estimated_tokens += num_tokens_from_string(content)
+
+        yield pending_content or "", reported_tokens or estimated_tokens
 
 
 class Xiaomi(Base):
@@ -2101,25 +2234,6 @@ class LiteLLMBase(ABC):
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
-
-                    # Terminal-tool short-circuit: a terminal tool (e.g. ``rag``)
-                    # already composes the final answer itself, so return its
-                    # result directly instead of feeding it back for another LLM
-                    # round. This mirrors the streaming path
-                    # (``async_chat_streamly_with_tools``), which otherwise lets
-                    # the outer model re-invoke ``rag`` on partial answers until
-                    # ``max_rounds`` is exhausted — the source of multi-hop
-                    # timeouts (single request exceeding the client budget).
-                    _terminal = getattr(self, "terminal_tools", None)
-                    if _terminal:
-                        for tc, name, args, result, err in results:
-                            if name in _terminal and not err:
-                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
-                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-                                if out:
-                                    ans += out
-                                return self._sanitize_answer(ans), tk_count
-
                     history = self._append_history_batch(
                         history,
                         results,

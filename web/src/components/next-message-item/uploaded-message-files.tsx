@@ -47,7 +47,7 @@ function NameWidget({ name, size }: NameWidgetType) {
 }
 export function InnerUploadedMessageFiles({ files = [] }: IProps) {
   return (
-    <section className="flex gap-2 pt-2">
+    <section className="flex gap-2 pt-2 flex-wrap">
       {files?.map((file, idx) => {
         const name = file.name;
         const isFile = file instanceof File;

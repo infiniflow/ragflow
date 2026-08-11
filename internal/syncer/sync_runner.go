@@ -24,32 +24,36 @@ import (
 	"math/rand"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
-	"sync"
 	"time"
 )
 
-// SyncRunner executes one SYNC task with serial batches and parallel items.
+var errSyncTaskCanceled = errors.New("sync task canceled")
+
+const syncCancelCheckInterval = time.Second
+
+// SyncRunner executes one SYNC task by submitting source batches as BatchJobs.
 type SyncRunner struct {
 	config      TaskCoordinatorConfig
 	taskService *service.SyncTaskService
 	sink        service.DocumentSink
 	idResolver  *service.DocumentIDResolver
-	globalItems chan struct{}
+	queue       *SyncJobQueue
 }
 
 // NewSyncRunner creates a SYNC runner.
-func NewSyncRunner(config TaskCoordinatorConfig, taskService *service.SyncTaskService, sink service.DocumentSink, idResolver *service.DocumentIDResolver, globalItems chan struct{}) *SyncRunner {
-	return &SyncRunner{config: config, taskService: taskService, sink: sink, idResolver: idResolver, globalItems: globalItems}
+func NewSyncRunner(config TaskCoordinatorConfig, taskService *service.SyncTaskService, sink service.DocumentSink, idResolver *service.DocumentIDResolver, queue *SyncJobQueue) *SyncRunner {
+	return &SyncRunner{config: config, taskService: taskService, sink: sink, idResolver: idResolver, queue: queue}
 }
 
 // Run executes all sync batches and commits the final waterline.
 func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContext, connector syncerconnector.Connector) error {
+	// sink is nil means this syncer task cannot write it to document, it will fail anyway
 	if r.sink == nil {
 		return errors.New("document sink is not configured")
 	}
 	windowEnd := time.Now().UTC()
 
-	var windowStart *time.Time
+	var windowStart *time.Time // = nil if it is `Full synchronisation`
 	if !service.IsFromBeginning(taskContext.Task.FromBeginning) {
 		windowStart = taskContext.Task.PollRangeStart
 	}
@@ -67,79 +71,114 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 	}
 	defer session.Close()
 
+	// prepare sourceType, waterline, stats, resultChan
 	sourceType := service.SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
-	candidateEnd := windowStart
-	stats := service.SyncStats{}
+	candidateEnd := windowStart  // the waterLine that will write to DB
+	stats := service.SyncStats{} // count `add`, `updated`, `skipped`
+	resultChans := make([]<-chan syncJobResult, 0)
+
 	for {
+		// check if task has been canceled
+		if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+			return err
+		}
+
+		// get a batch of files
 		batch, nextErr := session.NextBatch(ctx)
-		if errors.Is(nextErr, io.EOF) {
+		if errors.Is(nextErr, io.EOF) { // end of file
 			break
 		}
 		if nextErr != nil {
 			return nextErr
 		}
+
 		for _, doc := range batch.Documents {
 			if candidateEnd == nil || doc.UpdatedAt.After(*candidateEnd) {
 				updatedAt := doc.UpdatedAt
-				candidateEnd = &updatedAt
+				candidateEnd = &updatedAt // use `max_update` to push `waterLine`
 			}
 		}
-		batchStats, err := r.processBatch(ctx, taskContext, sourceType, session, batch)
+		// a batch, a syncJob
+		resultChan, err := r.submitBatch(ctx, taskContext, sourceType, session, batch)
 		if err != nil {
 			return err
 		}
-		stats.Add(batchStats)
+		resultChans = append(resultChans, resultChan)
 	}
 
+	// run sync Job
+	var firstErr error
+	for _, resultChan := range resultChans {
+		var jobResult syncJobResult
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case jobResult = <-resultChan:
+		}
+		stats.Add(jobResult.stats)
+		if jobResult.err != nil && firstErr == nil {
+			firstErr = jobResult.err
+		}
+	}
+	if firstErr != nil {
+		return firstErr
+	}
+
+	if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+		return err
+	}
 	if candidateEnd == nil {
 		candidateEnd = &windowEnd
 	}
 	return r.taskService.CompleteSync(ctx, taskContext, *candidateEnd, stats)
 }
 
-// processBatch processes one batch with bounded document concurrency.
-func (r *SyncRunner) processBatch(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (service.SyncStats, error) {
-	sem := make(chan struct{}, r.config.PerTaskItemConcurrency)
-	results := make(chan service.DocumentUpsertResult, len(batch.Documents))
-	errs := make(chan error, len(batch.Documents))
-
-	var wg sync.WaitGroup
-	for _, sourceDocument := range batch.Documents {
-		sourceDocument := sourceDocument
-
-		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
-			if err != nil {
-				errs <- err
-				return
-			}
-			results <- result
-		}()
+// submitBatch submits one source batch as one BatchJob.
+func (r *SyncRunner) submitBatch(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
+	resultChan, err := r.queue.Submit(ctx, func(jobCtx context.Context) (service.SyncStats, error) {
+		return r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+	})
+	if err != nil {
+		return nil, err
 	}
+	return resultChan, nil
+}
 
-	wg.Wait()
-	close(results)
-	close(errs)
-
-	if len(errs) > 0 {
-		return service.SyncStats{}, <-errs
-	}
+// processDocuments
+func (r *SyncRunner) processDocuments(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, documents []syncerconnector.SourceDocument) (service.SyncStats, error) {
 	stats := service.SyncStats{}
 
-	for result := range results {
+	var firstErr error
+	lastCancelCheck := time.Time{}
+	for _, sourceDocument := range documents {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
+		if lastCancelCheck.IsZero() || time.Since(lastCancelCheck) >= syncCancelCheckInterval {
+			if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+				return stats, err
+			}
+			lastCancelCheck = time.Now()
+		}
+		result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
 		stats.AddResult(result)
 	}
-	return stats, nil
+	return stats, firstErr
 }
 
 // processDocumentWithRetry retries transient item failures.
 func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= r.config.ItemRetryCount; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return service.DocumentUpsertResult{}, err
+		}
 		result, err := r.processDocument(ctx, taskContext, sourceType, session, sourceDocument)
 		if err == nil {
 			return result, nil
@@ -171,17 +210,25 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext s
 	return service.DocumentUpsertResult{}, lastErr
 }
 
-// processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
-func (r *SyncRunner) processDocument(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
-	if r.globalItems != nil {
-		select {
-		case <-ctx.Done():
-			return service.DocumentUpsertResult{}, ctx.Err()
-		case r.globalItems <- struct{}{}:
-			defer func() { <-r.globalItems }()
-		}
+// checkCanceled check if the task has been canceled
+func (r *SyncRunner) checkCanceled(ctx context.Context, taskID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
+	canceled, err := r.taskService.IsCanceled(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	if canceled {
+		return errSyncTaskCanceled
+	}
+	return nil
+}
+
+// processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
+func (r *SyncRunner) processDocument(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
 	if err != nil {
 		return service.DocumentUpsertResult{}, err

@@ -14,10 +14,11 @@ export interface SelectedNavNode {
   parentName: string | null;
   name: string;
   description: string;
-  doc_count?: number;
-  // Set when the selection is a structure-graph entity under a document node,
-  // so deleting that document can clear the selection.
   docId?: string;
+  doc_count: number;
+  keywords?: string[];
+  entities?: string[];
+  graph_content?: string;
 }
 
 export function useCompilationNav() {
@@ -133,6 +134,9 @@ export function useCompilationNav() {
         name: node.name,
         description: node.description,
         doc_count: node.doc_count,
+        keywords: node.keywords,
+        entities: node.entities,
+        graph_content: node.graph_content,
       });
     },
     [],

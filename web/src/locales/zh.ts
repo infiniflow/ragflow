@@ -2045,6 +2045,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       loading: '加载中...',
       selectNode: '选择子节点以查看详情',
       noDescription: '暂无描述',
+      description: '描述',
+      keywords: '关键词',
+      entities: '实体',
+      graphContent: '完整图谱内容',
       docCount: '{{count}} 个文档',
       deleteAllTitle: '删除目录树',
       deleteAllDescription: '确定要删除整个目录树吗？此操作无法撤销。',
@@ -2116,6 +2120,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      exportCurrentPage: '导出当页',
       preprocess: {
         preprocess: '预处理',
         mainContent: '主内容',
