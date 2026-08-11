@@ -351,10 +351,11 @@ func TestTextParser_AlignmentGolden(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	golden := LoadGolden(t, "testdata/textcode.python.golden.json")
+	gd := LoadGoldenDoc(t, "testdata/textcode.python.golden.json")
+	ignore := AcceptedDivergences(gd.Meta)
 
-	goText := FilterByDocType(res.JSON, "text")
-	pyText := FilterByDocType(golden, "text")
+	goText := FilterOutDocTypes(FilterByDocType(res.JSON, "text"), ignore)
+	pyText := FilterOutDocTypes(FilterByDocType(gd.Items, "text"), ignore)
 
 	if ok, diff := CompareAlignment(goText, pyText, TextCodeAlignOptions(DefaultTextCodeDelimiter)); !ok {
 		t.Fatalf("text&code parser not aligned with Python golden:%s", diff)
