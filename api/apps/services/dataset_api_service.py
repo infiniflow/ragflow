@@ -1818,8 +1818,8 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     KB-wide (no ``doc_id`` filter), since dataset-merge templates dedup those rows
     across documents.
 
-    ``keywords`` (optional): return the single best-matching entity's 1-hop
-    subgraph (matched entities + neighbors + touching relations) across the kind.
+    ``keywords`` (optional): return the matching entities' subgraph, including
+    neighbors and touching relations, across the kind.
 
     Returns ``(True, {"kind": <kind>, "templates": [...]})`` or
     ``(False, message)`` on auth/validation failure.

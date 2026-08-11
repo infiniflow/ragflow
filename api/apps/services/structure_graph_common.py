@@ -367,11 +367,14 @@ async def keyword_subgraph(
     log_ctx="",
     excluded_doc_ids: set[str] | None = None,
 ) -> tuple[dict | None, list[dict], list[dict]]:
-    """Find the entity rows matching ``base_entity_condition`` for ``keywords``;
-    return ``(bucket_meta, entities, relations)`` for the matched entities'
-    1-hop subgraph (matches + neighbors + touching relations). ``(None, [], [])``
-    when nothing matches or embedding is unavailable. Exact name matching is
-    preferred; vector search is used as a semantic fallback.
+    """Find matching entity rows and return their focused subgraph.
+
+    BM25 provides lexical candidates which are then filtered by entity-name
+    containment. KNN is used as a semantic fallback when lexical search has
+    no valid candidates. Matching entities and their touching neighbors are
+    returned; ``tree`` and ``page_index`` buckets additionally include the
+    full ancestor path to the root. ``(None, [], [])`` is returned when
+    nothing matches or embedding is unavailable.
 
     ``base_entity_condition`` scopes the KNN (e.g. ``{"doc_id":[id],
     "knowledge_graph_kwd":["entity"]}`` or ``{"compilation_template_ids":[...],
@@ -395,9 +398,9 @@ async def keyword_subgraph(
                 valid.append((row, node))
         return valid
 
-    def _name_matches_query(node):
+    def _name_matches_query(node, query):
         name = str(node.get("name") or "").strip().lower()
-        query = text_query.lower()
+        query = query.lower()
         if not name or not query:
             return False
         if query in name:
@@ -409,23 +412,16 @@ async def keyword_subgraph(
     # an exact title/entity name wins over a semantically similar row such as
     # a navigation or summary record.
     text_query = re.sub(r"[ :|\r\n\t,，。？?/`!！&^%()\[\]{}<>*~'\"\\=]+", " ", str(keywords)).strip()
-    text_expr = MatchTextExpr(
-        ["content_ltks^10", "content_sm_ltks"],
-        text_query,
-        GRAPH_KEYWORD_CANDIDATES,
-        {"original_query": keywords},
-    )
-    top_map, text_total = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_CANDIDATES, match_expressions=[text_expr])
-    candidates = [(row, node) for row, node in _valid_top_nodes(top_map) if _name_matches_query(node)]
-    logging.info(
-        "structure graph keyword BM25 (%s): query=%r total=%d returned=%d exact_candidates=%d names=%s",
-        log_ctx,
-        keywords,
-        text_total,
-        len(top_map),
-        len(candidates),
-        [node.get("name") for _, node in candidates],
-    )
+    candidates = []
+    if text_query:
+        text_expr = MatchTextExpr(
+            ["content_ltks^10", "content_sm_ltks"],
+            text_query,
+            GRAPH_KEYWORD_CANDIDATES,
+            {"original_query": keywords},
+        )
+        top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_CANDIDATES, match_expressions=[text_expr])
+        candidates = [(row, node) for row, node in _valid_top_nodes(top_map) if _name_matches_query(node, text_query)]
     # In a hierarchical index, a title containing the keyword is usually an
     # ancestor context, not the requested detail. Prefer matching detail
     # entities so the title is added only through the path-to-root walk; this
@@ -437,7 +433,6 @@ async def keyword_subgraph(
     # Fall back to semantic matching for aliases, paraphrases, and cases
     # where the query does not occur in the stored entity name.
     if not candidates:
-        logging.info("structure graph keyword: falling back to KNN (%s)", log_ctx)
         try:
             qv, _ = await thread_pool_exec(embd_mdl.encode_queries, keywords)
             vec = list(qv)
@@ -455,17 +450,8 @@ async def keyword_subgraph(
             topn=GRAPH_KEYWORD_CANDIDATES,
             extra_options={"similarity": 0.3},
         )
-        top_map, dense_total = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_CANDIDATES, match_expressions=[match_expr])
+        top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_CANDIDATES, match_expressions=[match_expr])
         candidates = _valid_top_nodes(top_map)
-        logging.info(
-            "structure graph keyword KNN (%s): query=%r total=%d returned=%d candidates=%d names=%s",
-            log_ctx,
-            keywords,
-            dense_total,
-            len(top_map),
-            len(candidates),
-            [node.get("name") for _, node in candidates],
-        )
 
     if not candidates:
         return None, [], []
@@ -509,12 +495,12 @@ async def keyword_subgraph(
                         continue
                     seen_rel.add(key)
                     relations.append(edge)
-                    if len(relations) >= GRAPH_EXPANSION_CAP:
-                        break
                     for endpoint in (edge.get("from", ""), edge.get("to", "")):
                         endpoint = str(endpoint).strip()
                         if endpoint and endpoint.lower() not in matched_names:
                             neighbor_names_lower.add(endpoint.lower())
+                    if len(relations) >= GRAPH_EXPANSION_CAP:
+                        break
                 if len(relations) >= GRAPH_EXPANSION_CAP:
                     break
             if len(relations) >= GRAPH_EXPANSION_CAP:
@@ -557,7 +543,7 @@ async def keyword_subgraph(
             ancestor_frontier = next_frontier
             neighbor_names_lower.update(next_frontier)
 
-    entities = matched_nodes
+    entities = list(matched_nodes)
     if neighbor_names_lower:
         nb_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"], name_kwd=sorted(neighbor_names_lower)), OrderByExpr(), GRAPH_EXPANSION_CAP)
         entities.extend(n for n in (project_entity(r) for r in nb_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n)
