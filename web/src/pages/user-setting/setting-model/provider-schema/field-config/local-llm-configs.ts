@@ -107,8 +107,6 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.MWS]: buildLocalConfig(
     LLMFactory.MWS,
     'MWS',
-    ['chat', 'embedding', 'rerank'],
-    undefined,
     false,
     [
       {
