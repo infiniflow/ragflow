@@ -144,7 +144,7 @@ async def list_memory():
     page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
     page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
     try:
-        for field_name in ("tenant_id", "owner_ids", "ids"):
+        for field_name in ("owner_ids", "ids"):
             values = [item.strip() for item in str(filter_params.get(field_name) or "").split(",") if item.strip()]
             validate_rest_api_ids(values, field_name)
     except ValueError as e:
