@@ -63,6 +63,14 @@ type engineReader struct {
 
 // compiledSelectFields are the columns needed to reconstruct a Product from a
 // stored compiled chunk document.
+//
+// wiki_incremental port: the list also selects `kc_kind` and
+// `create_timestamp_flt` (+`create_time`) so the reader can round-trip the
+// wiki product kind (page/section) and the original creation timestamp without
+// re-deriving them (see productFromChunkMap). Without these in the SELECT list,
+// the stored values are invisible to the reader and every merged row would fall
+// back to the compile_kwd-derived kind / a fresh now() timestamp — which both
+// breaks the page/section filter and re-stamps creation time on every rebuild.
 var compiledSelectFields = []string{
 	"id", "doc_id", "tenant_id", "compile_kwd",
 	"available_int",
@@ -70,6 +78,7 @@ var compiledSelectFields = []string{
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
 	"slug_kwd", "type",
+	"kc_kind", "create_timestamp_flt", "create_time",
 }
 
 // wikiSelectFields are the additional columns a wiki page carries (beyond
@@ -126,7 +135,13 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 			if _, ok := c["compile_kwd"]; !ok {
 				continue
 			}
-			if p, ok := productFromChunkMap(c, tenant); ok {
+			// Reverse-map the row's compile_kwd; reject dirty/unknown kinds
+			// (kwdToVariant error) so a malformed row never loads as a product.
+			rowVariant, verr := kwdToVariant(asString(c["compile_kwd"]))
+			if verr != nil {
+				continue
+			}
+			if p, ok := productFromChunkMap(c, tenant, rowVariant); ok {
 				out = append(out, p)
 			}
 		}
@@ -159,7 +174,14 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 // productFromChunkMap reconstructs a kccommon.Product from a stored compiled
 // chunk document. It reads the payload from kc_payload (falling back to
 // content_with_weight) and the embedding from the q_<dim>_vec column.
-func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Product, bool) {
+//
+// expect is the variant the caller is querying for. The stored compile_kwd is
+// reverse-mapped via kwdToVariant and compared against expect; a mismatch (or
+// an unknown/dirty compile_kwd that does not map to any known variant) causes
+// the row to be skipped. This is the canonical dirty-row contract promised by
+// the plan: we never rely on the raw string equality alone, so unknown kinds
+// are rejected consistently rather than leaking into the wrong bucket.
+func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommon.Variant) (kccommon.Product, bool) {
 	content, _ := c["kc_payload"].(string)
 	if content == "" {
 		content, _ = c["content_with_weight"].(string)
@@ -170,6 +192,13 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	id, _ := c["id"].(string)
 	docID, _ := c["doc_id"].(string)
 	variant, _ := c["compile_kwd"].(string)
+	// Dirty-row contract: the raw compile_kwd must reverse-map to the expected
+	// variant. An unknown/dirty kwd (kwdToVariant error) or a mapped variant
+	// that differs from expect is rejected.
+	mapped, err := kwdToVariant(variant)
+	if err != nil || mapped != expect {
+		return kccommon.Product{}, false
+	}
 	merged := isAvailable(c["available_int"])
 
 	meta := map[string]any{}
@@ -226,6 +255,30 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 			meta["kind"] = "entity"
 		}
 	}
+	// wiki_incremental port: round-trip the wiki product kind so the
+	// dataset-level merge can reliably distinguish pages from sections. The
+	// merged writer stores kc_kind; when present it is authoritative. Without
+	// it (legacy rows), derive from compile_kwd: wiki_page -> "page",
+	// wiki_section -> "section". This fix is what stops the processBatch
+	// "Meta.kind==page" filter from deleting every wiki page (previously kind
+	// was empty for wiki pages that had no entity/relation endpoint).
+	if v, ok := c["kc_kind"].(string); ok && v != "" {
+		meta["kind"] = v
+	} else if variant == compileKwdWikiPage {
+		meta["kind"] = "page"
+	} else if variant == compileKwdWikiSection {
+		meta["kind"] = "section"
+	}
+	// wiki_incremental port: restore the original creation timestamp so a
+	// replace-only merge (wikiMerge.Replace) preserves it instead of stamping
+	// a fresh now(). existing rows carry create_timestamp_flt (and optionally
+	// a human-readable create_time string).
+	if v, ok := metaFloat(c, "create_timestamp_flt"); ok {
+		meta["created_at_unix"] = v
+	}
+	if v, ok := c["create_time"].(string); ok && v != "" {
+		meta["created_at"] = v
+	}
 	if v := metaStringSlice(c, "source_chunk_ids"); len(v) > 0 {
 		meta["source_chunk_ids"] = v
 	}
@@ -238,7 +291,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 		ID:       id,
 		DocID:    docID,
 		TenantID: tenant,
-		Variant:  kccommon.Variant(variant),
+		Variant:  expect,
 		Content:  content,
 		Vector:   vec,
 		Meta:     meta,
@@ -266,11 +319,12 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		Limit:      topN,
 		SelectFields: append([]string{"id", "doc_id", "kb_id", "content_with_weight", "kc_payload",
 			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
-			"type", "source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd"},
+			"type", "source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd",
+			"kc_kind", "create_timestamp_flt", "create_time"},
 			wikiSelectFields...),
 		Filter: map[string]interface{}{
 			"available_int": 1,
-			"compile_kwd":   string(variant),
+			"compile_kwd":   compileKwdForVariant(variant),
 		},
 		MatchExprs: []interface{}{
 			&types.MatchDenseExpr{
@@ -286,8 +340,23 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 	if err != nil {
 		return kccommon.Product{}, 0, err
 	}
+	// The KNN Filter scopes compile_kwd, but a foreign/legacy row that slipped
+	// past it must not poison the merge candidate. Reject by the raw compile_kwd
+	// (wiki_page vs wiki_section are distinct keywords even though both map to
+	// VariantWiki); the page/section distinction is resolved downstream by
+	// Meta.kind (see productFromChunkMap).
+	expectKwd := compileKwdForVariant(variant)
 	for _, c := range res.Chunks {
-		p, ok := productFromChunkMap(c, tenant)
+		// The KNN Filter already scopes compile_kwd, but a foreign/legacy row that
+		// slipped past it must not poison the merge candidate. Reject by the
+		// reverse-mapped variant (the dirty-row contract): productFromChunkMap
+		// validates kwdToVariant(c) == variant and drops dirty/unknown kinds. The
+		// raw-keyword check below is a fast pre-filter before the full product
+		// reconstruction.
+		if kwd, ok := c["compile_kwd"].(string); ok && kwd != expectKwd {
+			continue
+		}
+		p, ok := productFromChunkMap(c, tenant, variant)
 		if !ok || !p.Merged {
 			continue
 		}
@@ -333,6 +402,20 @@ func isAvailable(v interface{}) bool {
 		}
 	}
 	return false
+}
+
+// asString normalizes a boxed chunk-map value into a string (used where the
+// backend may return a typed string or a json.Number for a keyword column).
+func asString(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case json.Number:
+		return t.String()
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // toFloat64 normalizes the boxed score field returned by the DocEngine into a

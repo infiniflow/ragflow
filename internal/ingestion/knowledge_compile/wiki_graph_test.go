@@ -156,6 +156,45 @@ func TestProjectWikiGraphRowsWeightEqualsOutlinkCount(t *testing.T) {
 	}
 }
 
+// TestProjectWikiGraphRowsBareSlugOutlinkCompletesGraph asserts the G1 reader
+// parity fix: an outlink given as a bare slug ("beta", not "entity/beta") is
+// resolved to the full slug via the page slug map and still yields a relation,
+// so the wiki nav graph is complete (matching Python dataset_wiki_generator).
+func TestProjectWikiGraphRowsBareSlugOutlinkCompletesGraph(t *testing.T) {
+	w := engineWriter{}
+	pages := []wikiPageProjection{
+		page("entity", "alpha", "beta"), // bare outlink resolves to entity/beta
+		page("entity", "beta"),
+	}
+	rows, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, pages)
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if findRelation(rows, "entity/alpha", "entity/beta") == nil {
+		t.Fatalf("bare-slug outlink must resolve to a relation entity/alpha->entity/beta")
+	}
+}
+
+// TestProjectWikiGraphRowsDropsDanglingAndSelfLoop asserts a dangling outlink
+// (target page absent) and a self-loop (alpha->alpha) are skipped, so the graph
+// never references non-existent vertices.
+func TestProjectWikiGraphRowsDropsDanglingAndSelfLoop(t *testing.T) {
+	w := engineWriter{}
+	pages := []wikiPageProjection{
+		page("entity", "alpha", "alpha", "ghost"), // self-loop + dangling
+	}
+	rows, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, pages)
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if findRelation(rows, "entity/alpha", "entity/alpha") != nil {
+		t.Fatalf("self-loop must be skipped")
+	}
+	if findRelation(rows, "entity/alpha", "entity/ghost") != nil {
+		t.Fatalf("dangling outlink must be skipped")
+	}
+}
+
 // TestProjectWikiGraphRowsFieldMapping verifies the reader-facing display
 // columns are written (aliases_kwd from entity_names_kwd, description_with_weight
 // from summary_with_weight), and the id is the xxhash colon-namespaced form.
