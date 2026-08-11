@@ -163,7 +163,12 @@ def _apply_model_family_policies(
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
-        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+        if provider == SupportedLiteLLMProvider.DeepSeek:
+            _pop_thinking_controls()
+            sanitized_gen_conf.pop("reasoning_effort", None)
+            sanitized_kwargs.pop("reasoning_effort", None)
+            _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type or "disabled"}})
+        elif provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
