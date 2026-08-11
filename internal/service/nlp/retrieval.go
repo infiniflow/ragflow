@@ -531,7 +531,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	return &RetrievalResult{
 		Chunks:  filteredChunks,
 		DocAggs: docAggs,
-		Total:   int64(len(filteredChunks)),
+		Total:   int64(len(validIdx)),
 	}, nil
 }
 
