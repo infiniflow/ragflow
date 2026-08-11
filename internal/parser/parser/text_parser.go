@@ -28,7 +28,7 @@
 // boundaries converge to the Python flow TxtParser (which uses the same
 // delimiter set); the OVER_CAP token merge that Python applies afterwards is
 // intentionally NOT performed here — chunking ownership stays with the
-// downstream Chunker per PARSER_ALIGNMENT_HANDOFF.md §2.3 (decision 1), so
+// downstream Chunker (contract #17799), so
 // item counts differ from Python's merged chunks and are reconciled by the
 // stitch-compare alignment test (align_test.go).
 
@@ -139,7 +139,7 @@ func decodeRune(p []byte) (rune, int) {
 // default delimiter set DefaultTextCodeDelimiter (rag/flow/parser/parser.py:_code
 // → deepdoc TxtParser default "\n!?;。；！？"), each rune re.escape'd to mirror
 // rag/nlp/delim.compile_delimiter_pattern. The Parser component has no user-facing
-// delimiter config entry (see PARSER_ALIGNMENT_HANDOFF.md §3.3), so this default
+// delimiter config entry, so this default
 // is exactly what the python flow always splits on. The shared DefaultTextCodeDelimiter
 // const lives in delimiter.go so production and the alignment tests use one source
 // of truth. Go's regexp.Split drops captured delimiters, so splitCapturingDelims
@@ -197,7 +197,7 @@ func splitCapturingDelims(s string, re *regexp.Regexp) []string {
 // delimiter set, mirroring deepdoc.parser.txt_parser.TxtParser.parser_txt up to
 // (but not including) the OVER_CAP token merge. The token merge is intentionally
 // NOT performed here — chunking ownership stays with the downstream Chunker per
-// PARSER_ALIGNMENT_HANDOFF.md §2.3 (decision 1) — so item counts differ from the
+// contract #17799 — so item counts differ from the
 // python flow's merged chunks and are reconciled by the stitch-compare alignment
 // test (align_test.go).
 //

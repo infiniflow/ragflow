@@ -383,12 +383,17 @@ func TestTextParser_ParseWithResult_NewlineNormalization(t *testing.T) {
 // content-equivalent to Python's _code on the shared sample, using the shared
 // concatenation-normalization alignment tool (align_test.go). Python applies
 // the OVER_CAP token merge (chunking ownership retained by the Go Chunker per
-// PARSER_ALIGNMENT_HANDOFF.md §2.3, decision 1), so item counts differ; the
+// contract #17799), so item counts differ; the
 // comparison normalizes both (delimiters stripped, whitespace collapsed) and
-// joins on whitespace, reconciling the boundary difference.
+// joins on whitespace, so only CONTENT equivalence — not byte-exact layout — is
+// checked. The golden files are a NORMALIZED content baseline, not a verbatim
+// Python transcript: a fresh _code run at chunk_token_num=128 may merge into a
+// different item count/structure (e.g. the en sample collapses to one chunk while
+// the golden keeps prose and code as two items) and may collapse inter-sentence
+// newlines, so do not treat them as byte-exact.
 //
-// No generator script is committed. The baseline is reproducible from the
-// golden's meta block alone (see textcode.python.en.golden.json / textcode.python.zh.golden.json: generator,
+// No generator script is committed. The baseline meta records generator, sample,
+// delimiter, keep_delimiters and chunk_token_num (see textcode.python.en/zh.golden.json);
 // sample, delimiter, keep_delimiters, chunk_token_num): call the python flow
 // _code on the sample with keep_delimiters=True and the default delimiter set,
 // then project each merged section to {"text": section[0], "doc_type_kwd": "text"}.

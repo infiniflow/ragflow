@@ -8,7 +8,7 @@
     "separate_tables": false,
     "accepted_divergences": [],
     "python_engine": "deepdoc.parser.txt_parser.RAGFlowTxtParser",
-    "note": "No generator script is committed. To regenerate: call _code on the sample with keep_delimiters=True (chunk_token_num=128, default delimiter set), project each merged section to {\"text\": section[0], \"doc_type_kwd\": \"text\"}, then dump {meta, items}. The baseline is reproducible from this metadata alone (an AI or human can recreate the thin wrapper on demand)."
+    "note": "No generator script is committed. To regenerate: call _code on the sample with keep_delimiters=True (chunk_token_num=128, default delimiter set), project each merged section to {\"text\": section[0], \"doc_type_kwd\": \"text\"}, then dump {meta, items}. The golden is a NORMALIZED content baseline, not a verbatim Python transcript (see TestTextParser_AlignmentGolden): a fresh _code run at chunk_token_num=128 may merge into a different item count/structure and may collapse inter-sentence newlines, so this file is not byte-exact."
   },
   "items": [
     {
