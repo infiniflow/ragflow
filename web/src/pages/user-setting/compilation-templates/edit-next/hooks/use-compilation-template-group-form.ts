@@ -1,9 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
+import { ModelTypeMap } from '@/components/model-tree-select';
+import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
+import { buildValidModelIds } from '@/utils/llm-util';
 
 import { buildFormSchema, FormSchemaType } from '../schema';
 import { DefaultValues } from '../constant';
@@ -22,8 +25,29 @@ export const useCompilationTemplateGroupForm = ({
 }: UseCompilationTemplateGroupFormOptions) => {
   const { t } = useTranslation();
 
+  const {
+    data: allAddedModels,
+    isFetched: modelsFetched,
+    isError: modelsError,
+  } = useFetchAllAddedModels();
+
+  // null until the model list has actually loaded (or if it failed) — while
+  // unknown, any persisted id is accepted as-is so validation never judges
+  // against the empty placeholder list.
+  const validModelIds = useMemo(
+    () =>
+      modelsFetched && !modelsError
+        ? buildValidModelIds(allAddedModels, ModelTypeMap.llm_id)
+        : null,
+    [allAddedModels, modelsFetched, modelsError],
+  );
+
   const form = useForm<FormSchemaType>({
-    resolver: zodResolver(buildFormSchema(t)),
+    // useForm refreshes its options (including the resolver) on every render,
+    // so this closure always validates against the latest validModelIds.
+    resolver: zodResolver(
+      buildFormSchema(t, (id) => validModelIds?.has(id) ?? true),
+    ),
     defaultValues: DefaultValues,
     mode: 'onChange',
   });

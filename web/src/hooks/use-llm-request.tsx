@@ -104,7 +104,12 @@ export const useFetchAllAddedModels = (
   modelType?: string,
   ownerTenantId?: string,
 ) => {
-  const { data, isFetching: loading } = useQuery<IAddedModel[]>({
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+  } = useQuery<IAddedModel[]>({
     queryKey: [...LlmKeys.allModels(modelType), ownerTenantId],
     initialData: [],
     gcTime: 0,
@@ -122,7 +127,10 @@ export const useFetchAllAddedModels = (
     },
   });
 
-  return { data, loading };
+  // `data` is seeded with `initialData: []`, so it can't tell a real empty
+  // result apart from "fetch hasn't completed yet" — `isFetched` stays false
+  // until a genuine response (or error) arrives.
+  return { data, loading, isFetched, isError };
 };
 
 export function useFindLlmByUuid() {
