@@ -195,20 +195,17 @@ async def send_email_html(to_email: str, subject: str, template_key: str, **cont
     )
 
     await smtp.connect()
-    operation_error = None
     try:
         await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
         await smtp.send_message(msg)
-    except BaseException as exc:
-        operation_error = exc
-        raise
-    finally:
+    except Exception:
         try:
             await smtp.quit()
         except Exception:
-            if operation_error is None:
-                raise
-            logging.exception("Failed to close SMTP connection after email operation error")
+            logging.exception("Failed to close SMTP connection after email error")
+        raise
+    else:
+        await smtp.quit()
 
 
 async def send_invite_email(to_email, invite_url, tenant_id, inviter):

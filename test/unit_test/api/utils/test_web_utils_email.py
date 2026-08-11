@@ -96,7 +96,8 @@ async def test_send_email_preserves_operation_error_when_quit_fails(
             "test",
         )
 
-    assert smtp.events[-1] == "quit"
+    expected_events = ["connect", "login", "quit"] if fail_at == "login" else ["connect", "login", "send", "quit"]
+    assert smtp.events == expected_events
 
 
 @pytest.mark.asyncio
@@ -123,3 +124,5 @@ async def test_send_email_surfaces_quit_failure_after_success(monkeypatch):
             "subject",
             "test",
         )
+
+    assert smtp.events == ["connect", "login", "send", "quit"]
