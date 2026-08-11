@@ -72,10 +72,11 @@ func buildNvidiaSpecialURLs(special []URLSuffixSpecial) map[string]string {
 	urls := make(map[string]string, len(special))
 	for _, entry := range special {
 		name := strings.TrimSpace(entry.Name)
-		if name == "" || strings.TrimSpace(entry.URL) == "" {
+		endpointURL := strings.TrimSpace(entry.URL)
+		if name == "" || endpointURL == "" {
 			continue
 		}
-		urls[strings.ToLower(name)] = entry.URL
+		urls[strings.ToLower(name)] = endpointURL
 	}
 	return urls
 }
