@@ -109,7 +109,6 @@ func TestExeSQL_RejectsNonSelect(t *testing.T) {
 		{"merge cte", `WITH changed AS (MERGE INTO users USING incoming ON users.id = incoming.id WHEN MATCHED THEN UPDATE SET name = incoming.name RETURNING *) SELECT * FROM changed`},
 	}
 
-	ctx
 	ctx := t.Context()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
