@@ -2116,6 +2116,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      exportCurrentPage: '导出当页',
       preprocess: {
         preprocess: '预处理',
         mainContent: '主内容',
