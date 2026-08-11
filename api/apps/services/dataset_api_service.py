@@ -3404,20 +3404,24 @@ async def generate_nav(
                     DocumentService.model.select(
                         DocumentService.model.id,
                         DocumentService.model.name,
-                    ).where(
+                    )
+                    .where(
                         DocumentService.model.kb_id == dataset_id,
-                    ).dicts()
+                    )
+                    .dicts()
                 )
             doc_ids = [str(row["id"]) for row in doc_rows]
             metadata_map = DocMetadataService.get_metadata_for_documents(doc_ids, dataset_id) if doc_ids else {}
             all_docs = []
             for row in doc_rows:
                 did = str(row["id"])
-                all_docs.append({
-                    "id": did,
-                    "name": (row.get("name") or ""),
-                    "meta_fields": metadata_map.get(did, {}),
-                })
+                all_docs.append(
+                    {
+                        "id": did,
+                        "name": (row.get("name") or ""),
+                        "meta_fields": metadata_map.get(did, {}),
+                    }
+                )
 
             # Prefer RAPTOR-generated summaries stored in the knowledge
             # graph (compile_kwd="tree", knowledge_graph_kwd="graph")
@@ -3505,9 +3509,7 @@ async def generate_nav(
                                 "graph_text": graph_text or root_summary,
                             }
                 except Exception:
-                    logging.exception(
-                        "generate_nav: failed to read RAPTOR graph summaries for kb=%s", dataset_id
-                    )
+                    logging.exception("generate_nav: failed to read RAPTOR graph summaries for kb=%s", dataset_id)
 
             documents = []
             for d in all_docs:
@@ -3519,10 +3521,12 @@ async def generate_nav(
                 else:
                     meta = d.get("meta_fields") or {}
                     summary = (meta.get("title") or "").strip() or d.get("name", "")
-                documents.append({
-                    "doc_id": doc_id,
-                    "summary": summary,
-                })
+                documents.append(
+                    {
+                        "doc_id": doc_id,
+                        "summary": summary,
+                    }
+                )
 
         except Exception:
             logging.exception("generate_nav: failed to auto-discover docs for kb=%s", dataset_id)
@@ -3550,7 +3554,7 @@ async def generate_nav(
 
     # Step 2: rebuild the tree from the provided doc→summary pairs.
     upserted = 0
-    for doc in (documents or []):
+    for doc in documents or []:
         doc_id = (doc.get("doc_id") or "").strip()
         summary = doc.get("summary")
         # summary can be a plain string or a RAPTOR tree dict.
@@ -3628,38 +3632,35 @@ async def search_dataset_layers(
     except Exception as e:
         logging.warning(
             "search_dataset_layers: failed to create LLMBundle(EMBEDDING) for tenant=%s: %s: %s",
-            kb.tenant_id, type(e).__name__, e,
+            kb.tenant_id,
+            type(e).__name__,
+            e,
         )
         logging.exception("Full traceback for LLMBundle(EMBEDDING) failure")
         embd_mdl = None
 
     if mode == "nav_doc":
-        return await _search_layers_nav_docs(
-            tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav
-        )
+        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
     elif mode == "nav_cluster":
-        return await _search_layers_nav_clusters(
-            tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav
-        )
+        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(
-            tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav
-        )
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
     elif mode == "chunk":
-        return await _search_layers_chunks(
-            tenant_id, dataset_id, query, top_k, embd_mdl, kb
-        )
+        return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb)
     elif mode == "all":
-        return await _search_layers_all(
-            tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_dataset_nav
-        )
+        return await _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_dataset_nav)
     else:
         return False, f"unknown mode: {mode}"
 
 
 async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
     items = await _nav_search_result(
-        tenant_id, dataset_id, query, top_k, embd_mdl, search_fn,
+        tenant_id,
+        dataset_id,
+        query,
+        top_k,
+        embd_mdl,
+        search_fn,
         type_kwd="nav_doc",
     )
     return True, {"mode": "nav_doc", "total": len(items), "items": items}
@@ -3667,7 +3668,12 @@ async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl,
 
 async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
     items = await _nav_search_result(
-        tenant_id, dataset_id, query, top_k, embd_mdl, search_fn,
+        tenant_id,
+        dataset_id,
+        query,
+        top_k,
+        embd_mdl,
+        search_fn,
         type_kwd="nav_cluster",
     )
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
@@ -3677,29 +3683,39 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
 
     items = await search_nav_tree_descent(
-        tenant_id, dataset_id, query, embd_mdl, top_k=top_k,
+        tenant_id,
+        dataset_id,
+        query,
+        embd_mdl,
+        top_k=top_k,
     )
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
 
 async def _nav_search_result(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, **kwargs):
     results = await search_fn(
-        tenant_id, dataset_id, query,
-        embd_mdl=embd_mdl, top_k=top_k,
+        tenant_id,
+        dataset_id,
+        query,
+        embd_mdl=embd_mdl,
+        top_k=top_k,
         **kwargs,
     )
     items: list[dict] = []
     for r in results:
         doc_id = (r.get("doc_id") or "").strip() if isinstance(r.get("doc_id"), str) else (r.get("doc_ids") or [None])[0]
-        items.append({
-            "doc_id": str(doc_id) if doc_id else "",
-            "score": round(float(r.get("score", 0.0)), 4),
-        })
+        items.append(
+            {
+                "doc_id": str(doc_id) if doc_id else "",
+                "score": round(float(r.get("score", 0.0)), 4),
+            }
+        )
     return items
 
 
 async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb):
     from common import settings
+
     tenant_ids = [tenant_id]
 
     kwargs = {}

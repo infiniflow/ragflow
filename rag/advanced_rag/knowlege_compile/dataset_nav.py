@@ -1374,8 +1374,7 @@ async def search_nav_tree_descent(
         return []
 
     beam_width = 5
-    dense_w = _RECURSE_THRESHOLD  # 0.65, same as search_dataset_nav
-    text_w = 1.0 - dense_w  # 0.35
+    dense_w = _NAV_HYBRID_DENSE_W  # same weight as search_dataset_nav
     vf = _vec_field(vec_dim)
 
     fields = [
@@ -1438,9 +1437,10 @@ async def search_nav_tree_descent(
             r["_score"] = _cosine_sim(vec, r.get(vf))
     else:
         # Route down to beam_width semantically closest root clusters.
-        current_level = sorted(roots_knn, key=lambda r: r.get("_score", 0.0), reverse=True)[:beam_width]
-        for r in current_level:
-            r["_score"] = r.get("_score", 0.0)
+        for r in roots_knn:
+            r["_score"] = _cosine_sim(vec, r.get(vf))
+        roots_knn.sort(key=lambda r: r["_score"], reverse=True)
+        current_level = roots_knn[:beam_width]
 
     if not current_level:
         return []
@@ -1525,14 +1525,14 @@ def _hybrid_fuse(
     text_w = 1.0 - dense_w
     fused: dict[str, tuple[dict, float]] = {}  # key → (row, score)
 
-    # KNN leg.
-    ds_scale = max((abs(_cosine_sim(vec, r.get(vf, []))) for r in knn_rows), default=1.0)
+    # KNN leg: raw cosine * dense_w, matching search_dataset_nav's scale so
+    # both search paths score the dense leg identically.
     for r in knn_rows:
         rk = r.get("name") or r.get("doc_id") or ""
         if not rk:
             continue
         key = f"knn:{rk}"
-        fused[key] = (r, _cosine_sim(vec, r.get(vf, [])) / max(ds_scale, 0.001) * dense_w)
+        fused[key] = (r, _cosine_sim(vec, r.get(vf, [])) * dense_w)
 
     # Text leg.
     for r in text_rows:

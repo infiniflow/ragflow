@@ -2435,4 +2435,3 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
         qps = total_command_count / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency} , iterations: {iterations}")
         print(f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {total_command_count}, SUCCESS: {success_count}, FAILURE: {total_command_count - success_count}")
-

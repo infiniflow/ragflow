@@ -1004,7 +1004,12 @@ async def search_dataset_nav(tenant_id, dataset_id):
         return get_result(data={"mode": request.args.get("mode", "nav_doc"), "total": 0, "items": []})
     mode = (request.args.get("mode") or "nav_doc").strip()
     top_k_raw = request.args.get("top_k")
-    top_k = max(1, int(top_k_raw)) if top_k_raw else None
+    top_k = None
+    if top_k_raw:
+        try:
+            top_k = max(1, int(top_k_raw))
+        except (ValueError, TypeError):
+            return get_error_data_result(message="top_k must be a positive integer")
     try:
         success, result = await dataset_api_service.search_dataset_layers(
             dataset_id,
