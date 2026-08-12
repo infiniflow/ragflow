@@ -499,8 +499,8 @@ func TestNATSSchedulerStartupPublishesDueTasks(t *testing.T) {
 	}
 }
 
-// TestNATSSchedulerBuffersFetchedTasks verifies NATS mode stores excess tasks in the local queue.
-func TestNATSSchedulerBuffersFetchedTasks(t *testing.T) {
+// TestNATSSchedulerBuffersPushedTasks verifies enqueueHandle buffers pushed NATS handles in the local queue.
+func TestNATSSchedulerBuffersPushedTasks(t *testing.T) {
 	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(nil))
 	queue := make(chan TaskEnvelope, 2)
 	scheduler := NewNATSScheduler(queue, taskService, &fakeSyncTaskBroker{})

@@ -28,6 +28,7 @@ import (
 	syncerconnector "ragflow/internal/syncer/connector"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"go.uber.org/zap"
 )
 
 const (
@@ -93,14 +94,16 @@ func (n *NatsEngine) InitSyncerConsumer() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	consumer, err := n.syncerStream.CreateOrUpdatePushConsumer(ctx, syncerPushConsumerConfig())
-	if err != nil && shouldRecreateSyncerConsumer(err) {
+	config := syncerPushConsumerConfig()
+	consumer, err := n.syncerStream.CreateOrUpdatePushConsumer(ctx, config)
+	if err != nil && shouldRecreateSyncerConsumer(ctx, n.syncerStream, config, err) {
+		common.Warn("syncer replacing incompatible NATS consumer", zap.String("consumer", syncerConsumerName), zap.Error(err), zap.Bool("delete", true))
 		if deleteErr := n.syncerStream.DeleteConsumer(ctx, syncerConsumerName); deleteErr != nil {
 			if !strings.Contains(strings.ToLower(deleteErr.Error()), "not found") {
 				return fmt.Errorf("syncer: replace existing consumer: %w", deleteErr)
 			}
 		}
-		consumer, err = n.syncerStream.CreateOrUpdatePushConsumer(ctx, syncerPushConsumerConfig())
+		consumer, err = n.syncerStream.CreateOrUpdatePushConsumer(ctx, config)
 	}
 	if err != nil {
 		return fmt.Errorf("syncer: create push consumer: %w", err)
@@ -154,12 +157,44 @@ func syncerPushConsumerConfig() jetstream.ConsumerConfig {
 	}
 }
 
-func shouldRecreateSyncerConsumer(err error) bool {
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "deliver") ||
-		strings.Contains(message, "pull") ||
-		strings.Contains(message, "max waiting") ||
-		strings.Contains(message, "immutable")
+func shouldRecreateSyncerConsumer(ctx context.Context, stream jetstream.Stream, desired jetstream.ConsumerConfig, err error) bool {
+	var jsErr jetstream.JetStreamError
+	if !errors.As(err, &jsErr) || jsErr.APIError() == nil || jsErr.APIError().ErrorCode != jetstream.JSErrCodeConsumerCreate {
+		return false
+	}
+
+	existing, inspectErr := syncerExistingConsumerConfig(ctx, stream)
+	if inspectErr != nil {
+		common.Warn("syncer consumer replacement skipped", zap.String("consumer", syncerConsumerName), zap.Error(err), zap.NamedError("inspect_error", inspectErr), zap.Bool("delete", false))
+		return false
+	}
+	if existing == nil {
+		common.Warn("syncer consumer replacement skipped", zap.String("consumer", syncerConsumerName), zap.Error(err), zap.Bool("delete", false))
+		return false
+	}
+	return syncerConsumerConfigMismatch(*existing, desired)
+}
+
+func syncerExistingConsumerConfig(ctx context.Context, stream jetstream.Stream) (*jetstream.ConsumerConfig, error) {
+	lister := stream.ListConsumers(ctx)
+	for info := range lister.Info() {
+		if info != nil && info.Name == syncerConsumerName {
+			config := info.Config
+			return &config, nil
+		}
+	}
+	return nil, lister.Err()
+}
+
+func syncerConsumerConfigMismatch(existing, desired jetstream.ConsumerConfig) bool {
+	return existing.Durable != desired.Durable ||
+		existing.Name != desired.Name ||
+		existing.AckPolicy != desired.AckPolicy ||
+		existing.MaxDeliver != desired.MaxDeliver ||
+		existing.MaxAckPending != desired.MaxAckPending ||
+		existing.FilterSubject != desired.FilterSubject ||
+		existing.DeliverSubject != desired.DeliverSubject ||
+		existing.DeliverGroup != desired.DeliverGroup
 }
 
 // PublishSyncerTask publishes one sync_logs task wake-up.

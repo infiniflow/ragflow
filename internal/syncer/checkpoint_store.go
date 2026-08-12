@@ -38,6 +38,24 @@ func newMemorySyncCheckpointStore() *memorySyncCheckpointStore {
 	return &memorySyncCheckpointStore{states: map[string]syncerconnector.SyncCheckpointState{}}
 }
 
+func cloneSyncCheckpointState(state syncerconnector.SyncCheckpointState) syncerconnector.SyncCheckpointState {
+	clone := state
+	if state.WindowStart != nil {
+		windowStart := *state.WindowStart
+		clone.WindowStart = &windowStart
+	}
+
+	if state.Checkpoint != nil {
+		checkpoint := *state.Checkpoint
+		if checkpoint.UpdatedAt != nil {
+			updatedAt := *checkpoint.UpdatedAt
+			checkpoint.UpdatedAt = &updatedAt
+		}
+		clone.Checkpoint = &checkpoint
+	}
+	return clone
+}
+
 func (s *memorySyncCheckpointStore) LoadSyncCheckpoint(ctx context.Context, taskID string) (*syncerconnector.SyncCheckpointState, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -48,7 +66,8 @@ func (s *memorySyncCheckpointStore) LoadSyncCheckpoint(ctx context.Context, task
 	if !ok {
 		return nil, nil
 	}
-	return &state, nil
+	clone := cloneSyncCheckpointState(state)
+	return &clone, nil
 }
 
 func (s *memorySyncCheckpointStore) SaveSyncCheckpoint(ctx context.Context, taskID string, state syncerconnector.SyncCheckpointState) error {
@@ -57,7 +76,7 @@ func (s *memorySyncCheckpointStore) SaveSyncCheckpoint(ctx context.Context, task
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.states[taskID] = state
+	s.states[taskID] = cloneSyncCheckpointState(state)
 	return nil
 }
 

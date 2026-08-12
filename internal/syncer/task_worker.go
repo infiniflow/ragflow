@@ -133,11 +133,11 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 		if ctx.Err() != nil { // the task is canceled by system, this need to rerun
 			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 			w.scheduleRetry(context.WithoutCancel(ctx), taskContext.Task.ID, 3*time.Second)
-			nackEnvelope(envelope)
+			ackEnvelope(envelope)
 			return
 		}
 		if isTransientSyncError(err) {
-			attempts, failed, transientErr := w.taskService.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, fmt.Errorf("sync task transient failure: %w", err), maxTransientTaskRetries)
+			attempts, failed, transientErr := w.taskService.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, err, maxTransientTaskRetries)
 			if transientErr != nil {
 				_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 				nackEnvelope(envelope)

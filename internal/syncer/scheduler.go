@@ -144,7 +144,11 @@ func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
 
 // ScheduleTask publishes a due scheduled task or arms a one-shot timer.
 func (s *Scheduler) ScheduleTask(ctx context.Context, task service.ScheduledSyncTask) error {
-	return s.ScheduleTaskAfter(ctx, task.ID, s.taskDelay(task, time.Now()))
+	delay, schedule := s.taskDelay(task, time.Now())
+	if !schedule {
+		return nil
+	}
+	return s.ScheduleTaskAfter(ctx, task.ID, delay)
 }
 
 // ScheduleTaskAfter publishes a task after delay.
@@ -192,21 +196,22 @@ func (s *Scheduler) stopTimers() {
 	}
 }
 
-func (s *Scheduler) taskDelay(task service.ScheduledSyncTask, now time.Time) time.Duration {
+// taskDelay reports the delay before publication and whether the task must be scheduled at all.
+func (s *Scheduler) taskDelay(task service.ScheduledSyncTask, now time.Time) (time.Duration, bool) {
 	freq := int64(0)
 	switch task.TaskType {
 	case service.TaskTypeSync:
 		freq = task.ConnectorRefreshFreq
 	case service.TaskTypePrune:
 		if !syncerConfigBool(task.ConnectorConfig, "sync_deleted_files") {
-			return 0
+			return 0, false
 		}
 		freq = task.ConnectorPruneFreq
 	}
 	if freq <= 0 || task.UpdateDate == nil {
-		return 0
+		return 0, true
 	}
-	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now)
+	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now), true
 }
 
 func syncerConfigBool(config entity.JSONMap, key string) bool {

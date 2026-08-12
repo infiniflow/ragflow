@@ -110,7 +110,7 @@ func (dao *ConnectorDAO) LinkDatasetConnectors(ctx context.Context, db *gorm.DB,
 	var taskIDs []string
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var kb entity.Knowledgebase
-		if err := db.WithContext(ctx).Select("tenant_id").Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error; err != nil {
+		if err := tx.WithContext(ctx).Select("tenant_id").Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error; err != nil {
 			return err
 		}
 		var err error

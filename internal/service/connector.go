@@ -1036,9 +1036,12 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
+
 	if err = deleteSyncCheckpoints(ctx, oldSyncTaskIDs); err != nil {
-		return false, common.CodeServerError, err
+		common.Warn("delete sync checkpoints failed during rebuild",
+			zap.String("connector_id", connectorID), zap.Error(err))
 	}
+
 	publishSyncerTasks(taskIDs)
 	return true, common.CodeSuccess, nil
 }
