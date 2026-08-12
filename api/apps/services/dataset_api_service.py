@@ -2167,7 +2167,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 
 # Non-folded template kinds that make a doc eligible for each API kind.
 _ALTERATION_ELIGIBLE_TEMPLATE_KINDS = {
-    "wiki": {"artifacts"},
+    "wiki": {"wiki"},
     "graph": {"knowledge_graph"},
     "mindmap": {"mind_map"},
     "timeline": {"timeline"},
