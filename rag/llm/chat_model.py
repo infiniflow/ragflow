@@ -393,6 +393,19 @@ class Base(ABC):
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
+    @staticmethod
+    def _strip_tool_calls(text):
+        """Remove the <tool_call>...</tool_call> traces that _verbose_tool_use
+        accumulates, so the returned answer text never contains the raw tool
+        invocation JSON (which small models otherwise leak when they keep calling
+        a terminal tool until max_rounds). The traces are informational only; the
+        answer text is the model's final relay."""
+        import re as _re
+
+        if not text:
+            return text
+        return _re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=_re.DOTALL)
+
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
             {
@@ -524,7 +537,7 @@ class Base(ABC):
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
 
-                        return ans, tk_count
+                        return self._strip_tool_calls(ans), tk_count
 
                     async def _exec_tool(tc):
                         name = tc.function.name
@@ -558,7 +571,7 @@ class Base(ABC):
                 agg_usage["total_tokens"] += int(_fb.get("total_tokens", 0) or token_count)
                 tk_count = agg_usage["total_tokens"]
                 self.last_usage = dict(agg_usage)
-                return ans, tk_count
+                return self._strip_tool_calls(ans), tk_count
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
@@ -2170,6 +2183,10 @@ class LiteLLMBase(ABC):
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
+        # Per-call reset of the repeated-rag guard so it does not carry over
+        # between different user questions on a reused model instance.
+        self._ctx_rag_calls = 0
+
         ans = ""
         tk_count = 0
         # Aggregate prompt/completion/total across every tool-calling round so the
@@ -2350,13 +2367,18 @@ class LiteLLMBase(ABC):
                             yield ans
                         else:
                             reasoning_start = False
-                            answer += delta.content
+                            # Some models (MiniMax) leak a literal <tool_call>... text
+                            # into the content stream in ADDITION to the structured
+                            # tool_calls field. Strip it from the emitted answer so
+                            # the raw invocation JSON never reaches the user.
+                            _c = self._strip_tool_calls(delta.content) if delta.content else delta.content
+                            answer += _c
                             if _sanitizer is not None:
-                                emitted = _sanitizer.feed(delta.content)
+                                emitted = _sanitizer.feed(_c)
                                 if emitted:
                                     yield emitted
                             else:
-                                yield delta.content
+                                yield _c
 
                         if not _u["total_tokens"]:
                             round_estimate += num_tokens_from_string(delta.content)

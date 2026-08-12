@@ -18,6 +18,12 @@ Reasoning procedure (do this step-by-step before answering):
 5. Note any internally conflicting figures/statements in the context ("contradictions").
 6. Decide whether a plausible answer can be inferred; give your confidence in that decision.
 
+Derived/computed answers (DIFFERENCE, PERCENTAGE, RATIO, TIMESPAN, LETTER-COUNT comparison, etc.):
+- If the question asks for a computed result (e.g. "how many more/fewer", "what is the difference", "X% of", "how much older/younger", "how many years between", "how many more letters"), do NOT merely check that the numbers exist. You MUST actually WORK THE CALCULATION yourself, step by step, from the values present in the context, and only mark the context sufficient if the computation can be carried out AND resolves to a definite result.
+- WORK STEP BY STEP: (a) identify the exact operands and their source values in the context (the specific entities/figures the question references); (b) run the arithmetic; (c) confirm the result is well-defined and not ambiguous.
+- This is the crux: a context that contains the numbers is NOT sufficient if the operands are the WRONG entities (e.g. using Providence/Park City when the question needs a different city pair), or if the calculation cannot be resolved. If the computation cannot be completed to a definite answer, mark `is_sufficient` false and list exactly what is missing or wrong in `missing_information`.
+- Also surface ASSUMPTIONS implicit in the question: if the question implies a specific pairing/interpretation (e.g. "the director's birthplace city vs the premiere city"), check the context supports that exact interpretation before declaring sufficient.
+
 Output format (JSON):
 ```json
 {
