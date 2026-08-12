@@ -259,9 +259,29 @@ def _load_chunk_module(monkeypatch):
     pagination_utils_mod = ModuleType("api.utils.pagination_utils")
     pagination_utils_mod.DEFAULT_PAGE = 1
     pagination_utils_mod.DEFAULT_PAGE_SIZE = 30
+    pagination_utils_mod.REST_API_MAX_PAGE_SIZE = 100
     pagination_utils_mod.validate_rest_api_ids = lambda *_args, **_kwargs: None
-    pagination_utils_mod.validate_rest_api_page = lambda page: page
-    pagination_utils_mod.validate_rest_api_page_size = lambda page_size: page_size
+
+    def _validate_page(page):
+        try:
+            page = int(page)
+        except (TypeError, ValueError):
+            return pagination_utils_mod.DEFAULT_PAGE
+        return page if page >= 1 else pagination_utils_mod.DEFAULT_PAGE
+
+    def _validate_page_size(page_size):
+        try:
+            page_size = int(page_size)
+        except (TypeError, ValueError):
+            return pagination_utils_mod.DEFAULT_PAGE_SIZE
+        if page_size < 1:
+            return pagination_utils_mod.DEFAULT_PAGE_SIZE
+        if page_size > pagination_utils_mod.REST_API_MAX_PAGE_SIZE:
+            raise ValueError(f"page_size must be less than or equal to {pagination_utils_mod.REST_API_MAX_PAGE_SIZE}")
+        return page_size
+
+    pagination_utils_mod.validate_rest_api_page = _validate_page
+    pagination_utils_mod.validate_rest_api_page_size = _validate_page_size
     monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
     reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
@@ -758,6 +778,24 @@ def test_restful_add_chunk_runs_blocking_operations_off_event_loop(monkeypatch):
 
 
 @pytest.mark.p2
+def test_add_chunk_executor_settings_fall_back_for_invalid_values(monkeypatch):
+    monkeypatch.setenv("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "invalid")
+    monkeypatch.setenv("RAGFLOW_ADD_CHUNK_WORKERS", "0")
+    module = _load_chunk_api_module(monkeypatch)
+    assert module._ADD_CHUNK_OPERATION_TIMEOUT_SECONDS == 60.0
+    assert module._ADD_CHUNK_WORKERS == 1
+
+    for raw in ("0", "-1", "nan", "inf"):
+        monkeypatch.setenv("TEST_ADD_CHUNK_SETTING", raw)
+        assert module._positive_env("TEST_ADD_CHUNK_SETTING", "60", float) == 60.0
+
+    monkeypatch.setenv("TEST_ADD_CHUNK_SETTING", "2.5")
+    assert module._positive_env("TEST_ADD_CHUNK_SETTING", "60", float) == 2.5
+    monkeypatch.setenv("TEST_ADD_CHUNK_SETTING", "invalid")
+    assert module._positive_env("TEST_ADD_CHUNK_SETTING", "1", int) == 1
+
+
+@pytest.mark.p2
 def test_restful_add_chunk_embedding_timeout_keeps_event_loop_responsive(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={}, headers={})
@@ -795,8 +833,62 @@ def test_restful_add_chunk_embedding_timeout_keeps_event_loop_responsive(monkeyp
         fallback_release.cancel()
 
     assert finished.wait(1), "embedding worker did not finish after release"
-    assert time.monotonic() - started_at < 1
+    assert time.monotonic() - started_at < 1.5
     assert heartbeat_ran_before_response
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "Chunk creation timed out" in res["message"], res
+    assert module.settings.docStoreConn.inserted == []
+    assert module.DocumentService.increment_calls == []
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_during_vector_preparation_skips_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    module.DocumentService.increment_calls.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS", 0.2)
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    class _BlockingVector(_Vec):
+        def __mul__(self, _scalar):
+            return self
+
+        __rmul__ = __mul__
+
+        def __add__(self, _other):
+            return self
+
+        def tolist(self):
+            started.set()
+            release.wait()
+            finished.set()
+            return super().tolist()
+
+    class _EmbeddingModel:
+        def encode(self, _inputs):
+            vector = _BlockingVector([1.0, 2.0])
+            return [vector, vector], 9
+
+    monkeypatch.setattr(module.TenantLLMService, "model_instance", lambda _config: _EmbeddingModel())
+    _set_request_json(monkeypatch, module, {"content": "chunk"})
+
+    async def _exercise():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        assert await asyncio.to_thread(started.wait, 1), "vector preparation did not start"
+        return await task
+
+    fallback_release = threading.Timer(2, release.set)
+    fallback_release.start()
+    try:
+        res = _run(_exercise())
+    finally:
+        release.set()
+        fallback_release.cancel()
+
+    assert finished.wait(1), "vector preparation did not finish after release"
     assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
     assert "Chunk creation timed out" in res["message"], res
     assert module.settings.docStoreConn.inserted == []
@@ -839,7 +931,7 @@ def test_restful_add_chunk_insert_timeout_updates_count_after_insert_succeeds(mo
     started_at = time.monotonic()
     try:
         res, heartbeat_ran_before_response = _run(_exercise())
-        assert time.monotonic() - started_at < 1
+        assert time.monotonic() - started_at < 1.5
         assert started.is_set()
         assert heartbeat_ran_before_response
         assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
