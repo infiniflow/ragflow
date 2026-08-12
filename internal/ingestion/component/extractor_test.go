@@ -1987,9 +1987,9 @@ func TestExtractorContextFitBudget(t *testing.T) {
 }
 
 // TestFitExtractorMessages_RejectsSystemPromptLoss verifies the guard that a
-// fitting which empties every system message (leaving only the user turn) is
-// rejected instead of sending an instruction-less extraction request: the
-// system prompt carries the extraction contract, so running without it would
+// fitting which empties every system message is rejected instead of sending
+// an instruction-less extraction request: the system prompt carries the
+// extraction contract, so running with an emptied system prompt would
 // silently produce garbage.
 func TestFitExtractorMessages_RejectsSystemPromptLoss(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 300 })

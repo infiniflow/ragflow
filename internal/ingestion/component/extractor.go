@@ -1469,14 +1469,11 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	for i := range msgs {
 		fitMsgs[i] = messagefit.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
 	}
-	messagefit.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
+	kept, keptIdx, _ := messagefit.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
 
-	fitted := make([]eschema.Message, 0, len(msgs))
-	for i := range msgs {
-		if fitMsgs[i].Content == "" {
-			continue // dropped by fitter
-		}
-		msgs[i].Content = fitMsgs[i].Content
+	fitted := make([]eschema.Message, 0, len(kept))
+	for j, i := range keptIdx {
+		msgs[i].Content = kept[j].Content
 		fitted = append(fitted, msgs[i])
 	}
 	if len(fitted) == 0 {
@@ -1486,8 +1483,10 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	// field definitions); sending without it would silently produce
 	// garbage. The proportional trim can empty every system message when
 	// the final user turn alone fills the budget, so require at least one
-	// retained system message — but only when the input actually had one:
-	// systemPrompt is optional and a user-only prompt is a valid request.
+	// retained system message with non-empty content — a system message kept
+	// but trimmed to empty is just as useless as a dropped one. The guard only
+	// applies when the input actually had a system message: systemPrompt is
+	// optional and a user-only prompt is a valid request.
 	hadSystem := false
 	for _, m := range msgs {
 		if m.Role == eschema.System {
@@ -1498,7 +1497,7 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	if hadSystem {
 		keptSystem := false
 		for _, m := range fitted {
-			if m.Role == eschema.System {
+			if m.Role == eschema.System && strings.TrimSpace(m.Content) != "" {
 				keptSystem = true
 				break
 			}
