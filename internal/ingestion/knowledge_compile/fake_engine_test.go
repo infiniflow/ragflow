@@ -33,6 +33,10 @@ type fakeEngine struct {
 	lastSearchReq *types.SearchRequest
 	// lastDeleteCond captures the most recent DeleteChunks condition.
 	lastDeleteCond map[string]interface{}
+	// deleteConds accumulates every DeleteChunks condition in call order, so a
+	// test can assert on a multi-delete clean (e.g. the full-set clean that
+	// sweeps compile_kwd buckets and the scope_kwd="dataset" bucket separately).
+	deleteConds []map[string]interface{}
 	// deleteCount is the number returned by DeleteChunks.
 	deleteCount int64
 }
@@ -44,6 +48,7 @@ func (f *fakeEngine) Search(_ context.Context, req *types.SearchRequest) (*types
 
 func (f *fakeEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, _, _ string) (int64, error) {
 	f.lastDeleteCond = condition
+	f.deleteConds = append(f.deleteConds, condition)
 	return f.deleteCount, nil
 }
 

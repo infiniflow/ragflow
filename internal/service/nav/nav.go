@@ -55,6 +55,20 @@ type UpsertDocInput struct {
 	Embedd   []float32 // optional precomputed embedding
 }
 
+// NavMergeLLM summarizes or merges nav text via an LLM. It mirrors the Python
+// dataset_nav._llm_merge/_llm_create_summary calls. Keeping it a small interface
+// (rather than depending on the agent chat layer) lets the nlp package wire the
+// production chat invoker without an import cycle; nil disables LLM behavior and
+// the implementation falls back to deterministic naming.
+type NavMergeLLM interface {
+	// Merge returns a merged cluster description for one or more source texts
+	// (temperature 0.1, mirroring Python _llm_merge).
+	Merge(ctx context.Context, tenantID string, texts []string) (string, error)
+	// CreateSummary returns a short cluster name + summary for a source text
+	// (mirroring Python _llm_create_summary). Return name="" to fall back.
+	CreateSummary(ctx context.Context, tenantID string, text string) (name, summary string, err error)
+}
+
 // NavService is the single read/write entrypoint for a dataset's navigation
 // tree. It is the only nav consumer used by agent tools, REST handlers and the
 // tree/structure compile-complete hooks.
