@@ -15,7 +15,7 @@ function InnerToolNode({
   isConnectable = true,
   selected,
 }: NodeProps<IToolNode>) {
-  const { edges, getNode, setClickedToolId } = useGraphStore();
+  const { edges, getNode } = useGraphStore();
   const upstreamAgentNodeId = edges.find((x) => x.target === id)?.source;
   const upstreamAgentNode = getNode(upstreamAgentNodeId);
   const { findMcpById } = useFindMcpById();
@@ -61,12 +61,6 @@ function InnerToolNode({
             return (
               <ToolCard
                 key={mcp.mcp_id || `mcp-${idx}`}
-                onClick={(e) => {
-                  if (mcp.mcp_id === Operator.Code) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
                 className="cursor-pointer"
                 data-tool={mcp.mcp_id}
               >
@@ -76,21 +70,16 @@ function InnerToolNode({
           }
 
           const tool = x as unknown as IAgentForm['tools'][number];
+          // Code has no config form, so its card is not interactive: without
+          // data-tool attributes the node click handler ignores the click.
+          const isCode = tool.component_name === Operator.Code;
 
           return (
             <ToolCard
               key={tool.id || `tool-${idx}`}
-              onClick={(e) => {
-                if (tool.component_name === Operator.Code) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
-
-                setClickedToolId(tool.id || tool.component_name);
-              }}
-              className="cursor-pointer"
-              data-tool={tool.component_name}
-              data-tool-id={tool.id}
+              className={isCode ? undefined : 'cursor-pointer'}
+              data-tool={isCode ? undefined : tool.component_name}
+              data-tool-id={isCode ? undefined : tool.id}
             >
               <div className="flex gap-1 items-center pointer-events-none">
                 <OperatorIcon name={tool.component_name as Operator} />
