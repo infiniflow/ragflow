@@ -1,5 +1,6 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
+import { SearchInput } from '@/components/ui/input';
 import { Spin } from '@/components/ui/spin';
 import { TreeView } from '@/components/ui/tree-view';
 import {
@@ -65,10 +66,12 @@ function NavNodeDeleteAction({
 type NavTreeLeftPanelProps = {
   navList: DatasetNavList | null;
   navLoading: boolean;
+  keywords: string;
   childrenMap: Record<string, DatasetNavNode[]>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
+  onKeywordsChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onNodeClick: (node: DatasetNavNode, parentName: string | null) => void;
   onNodeExpand: (node: DatasetNavNode) => void;
   onEntityClick: NavEntityClickHandler;
@@ -79,10 +82,12 @@ type NavTreeLeftPanelProps = {
 export function NavTreeLeftPanel({
   navList,
   navLoading,
+  keywords,
   childrenMap,
   structureMap,
   deleteNavLoading,
   deleteNodeLoading,
+  onKeywordsChange,
   onNodeClick,
   onNodeExpand,
   onEntityClick,
@@ -149,6 +154,10 @@ export function NavTreeLeftPanel({
           </ConfirmDeleteDialog>
         )}
       </section>
+
+      <div className="px-3 pt-2">
+        <SearchInput value={keywords} onChange={onKeywordsChange} />
+      </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-1 pt-2 pb-3">
         {navLoading && treeData.length === 0 ? (
