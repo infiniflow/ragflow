@@ -319,7 +319,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		// A 0 makes fitMessages fall back to the 8192 default budget, which can
 		// silently discard most of a large-context prompt, so surface the
 		// resolution failure for diagnosis.
-		common.Debug("llm: content_length not resolved, falling back to 8192",
+		common.Warn("llm: content_length not resolved, falling back to 8192",
 			zap.String("model_ref", originalModelID),
 			zap.String("driver", p.Driver),
 			zap.String("model_name", p.ModelID))
