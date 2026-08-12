@@ -387,6 +387,17 @@ func TestNodeFromRow_ReadableName(t *testing.T) {
 	if node.DocID != "d3778ef9c0f5495fa4bdadc00a5bf15c" {
 		t.Errorf("nodeFromRow DocID = %q, want the raw doc id preserved", node.DocID)
 	}
+	// A cluster row keeps its stored key verbatim (it is the child-lookup
+	// parent_kwd), even when it looks like a raw id (review Major).
+	clusterRow := map[string]interface{}{
+		"title_kwd":     "cluster_abc12345",
+		"type_kwd":      "nav_cluster",
+		"doc_count_int": 2,
+	}
+	cluster := ns.nodeFromRow(clusterRow, "cluster")
+	if cluster.Name != "cluster_abc12345" {
+		t.Errorf("cluster key = %q, want it kept verbatim as the parent_kwd lookup key", cluster.Name)
+	}
 }
 
 // TestNavService_Search_ReturnsHit asserts acceptance #5.

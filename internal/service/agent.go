@@ -619,7 +619,13 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 	mergeMode := len(categories) == 0 && canvasType == "" && len(tags) == 0
 
 	// Groups-only mode: canvas_category is exactly ["compilation_template_group"].
+	// Template groups are always the caller's own, so they are only visible when
+	// the caller is an effective owner; otherwise (e.g. owner_ids names another
+	// user) return an empty list (review Major).
 	if len(categories) == 1 && wantsGroups {
+		if !sliceContains(effectiveOwnerIDs, userID) {
+			return &ListAgentsResponse{Canvas: []json.RawMessage{}, Total: 0}, common.CodeSuccess, nil
+		}
 		return s.listAgentsGroupsOnly(ctx, userID, keywords, orderBy, desc, page, pageSize)
 	}
 
@@ -870,19 +876,22 @@ func sliceContains[T comparable](s []T, v T) bool {
 
 // slicePage returns a shallow copy of s bounded to the requested page window.
 // A page <= 0 or pageSize <= 0 returns s unchanged (caller did not ask to page).
+// The page bound is checked arithmetically before computing the offset so an
+// unbounded positive page/page_size can never overflow to a negative start and
+// panic (review Critical).
 func slicePage[T any](s []T, page, pageSize int) []T {
 	if page <= 0 || pageSize <= 0 || len(s) == 0 {
 		return s
 	}
-	start := (page - 1) * pageSize
-	if start >= len(s) {
+	// page-1 must be <= (len(s)-1)/pageSize, i.e. start must be < len(s).
+	if page-1 > (len(s)-1)/pageSize {
 		return nil
 	}
-	end := start + pageSize
-	if end > len(s) {
-		end = len(s)
+	start := (page - 1) * pageSize
+	if pageSize >= len(s)-start {
+		return s[start:]
 	}
-	return s[start:end]
+	return s[start : start+pageSize]
 }
 
 // intValuePtr dereferences a *int64 to a plain int64 (0 when nil), used for the

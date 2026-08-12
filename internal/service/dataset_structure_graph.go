@@ -56,7 +56,7 @@ type DocumentStructureGraphResponse struct {
 }
 
 // graphRowSearch runs one raw-row search over the tenant's document index.
-func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectFields []string, filter map[string]interface{}, orderBy *types.OrderByExpr, limit int, matchExprs []interface{}) (map[string]map[string]interface{}, int64, error) {
+func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectFields []string, filter map[string]interface{}, orderBy *types.OrderByExpr, offset, limit int, matchExprs []interface{}) (map[string]map[string]interface{}, int64, error) {
 	docEngine := engine.Get()
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
@@ -72,7 +72,7 @@ func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectField
 	res, err := docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
-		Offset:       0,
+		Offset:       offset,
 		Limit:        limit,
 		SelectFields: selectFields,
 		Filter:       merged,
@@ -459,12 +459,12 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 	excludedDocIDs = excludedDocIDsOrEmpty(excludedDocIDs)
 	bothCond := copyFilter(scope)
 	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
-	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 1, nil)
+	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	if total < graphFullThreshold {
-		fieldMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, nil, int(total), nil)
+		fieldMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, nil, 0, int(total), nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -497,7 +497,7 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 	for len(setA) < graphTopEntities && (entityTotal == -1 || int64(entityOffset) < entityTotal) {
 		cond := copyFilter(scope)
 		cond["knowledge_graph_kwd"] = []string{"entity"}
-		entAMap, entTotal, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, orderBy, graphTopEntities, nil)
+		entAMap, entTotal, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, orderBy, entityOffset, graphTopEntities, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -536,7 +536,7 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 		cond := copyFilter(scope)
 		cond["knowledge_graph_kwd"] = []string{"relation"}
 		cond["from_entity_kwd"] = aNameTerms
-		relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, graphExpansionCap, nil)
+		relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -557,7 +557,7 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 		cond := copyFilter(scope)
 		cond["knowledge_graph_kwd"] = []string{"entity"}
 		cond["name_kwd"] = sortedKeys(targetNamesLower)
-		tgtMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, graphExpansionCap, nil)
+		tgtMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, 0, graphExpansionCap, nil)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -723,19 +723,15 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	// normal mode: discover buckets from per-doc graph blob rows.
 	metaFields := []string{"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
 	metaRows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
-		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"graph"}}, nil, 1000, nil)
+		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"graph"}}, nil, 0, 1000, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	templateMetaByID := map[string]map[string]interface{}{}
-	for tid, m := range templateMeta {
-		templateMetaByID[tid] = m
-	}
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
 	for _, row := range metaRows {
-		meta, scope := resolveGraphBucket(row, templateMeta, templateMetaByID, in.DocumentID)
+		meta, scope := resolveGraphBucket(row, templateMeta, in.DocumentID)
 		bid := graphStr(meta["template_id"])
 		if _, ok := bucketMetas[bid]; !ok {
 			bucketMetas[bid] = meta
@@ -794,7 +790,7 @@ func containsStr(list []string, v string) bool {
 }
 
 // resolveGraphBucket mirrors Python _resolve_bucket.
-func resolveGraphBucket(row map[string]interface{}, templateMeta, templateMetaByID map[string]map[string]interface{}, documentID string) (map[string]interface{}, map[string]interface{}) {
+func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[string]interface{}, documentID string) (map[string]interface{}, map[string]interface{}) {
 	compileKwd := firstStringValue(row["compile_kwd"])
 	kindVal := firstStringValue(row["compilation_template_kind_kwd"])
 	if kindVal == "" {
@@ -804,14 +800,10 @@ func resolveGraphBucket(row map[string]interface{}, templateMeta, templateMetaBy
 	if tid != "" {
 		kindNorm := compilationTemplateKind(kindVal)
 		meta := templateMeta[tid]
-		if meta == nil {
-			if _, ok := templateMetaByID[tid]; !ok {
-				// Fall back to kind-only resolution; no DB lookup in this path.
-				templateMetaByID[tid] = nil
-			}
-			meta = templateMetaByID[tid]
-		}
-		if meta == nil {
+		// Only a unique kind match can substitute a missing template meta; an
+		// empty kindNorm must never match (review Major — the previous nil
+		// round-trip stored a nil entry that the kind-only loop then matched).
+		if meta == nil && kindNorm != "" {
 			kindMatches := []map[string]interface{}{}
 			for _, m := range templateMeta {
 				if compilationTemplateKind(graphStr(m["kind"])) == kindNorm {
@@ -875,7 +867,7 @@ func rowTemplateID(row map[string]interface{}) string {
 
 func (s *DatasetArtifactService) appendRaptorBlob(ctx context.Context, tenantID, datasetID, documentID string, grouped map[string]DocumentStructureGraphTemplate) {
 	rows, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"content_with_weight", "compile_kwd"},
-		map[string]interface{}{"doc_id": []string{documentID}, "compile_kwd": []string{"raptor_graph"}}, nil, 16, nil)
+		map[string]interface{}{"doc_id": []string{documentID}, "compile_kwd": []string{"raptor_graph"}}, nil, 0, 16, nil)
 	if err != nil {
 		return
 	}
@@ -984,7 +976,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			TopN:         graphKeywordCandidates,
 			ExtraOptions: map[string]interface{}{"original_query": keywords},
 		}
-		topMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, graphKeywordCandidates, []interface{}{textExpr})
+		topMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, 0, graphKeywordCandidates, []interface{}{textExpr})
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1019,7 +1011,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			TopN:              graphKeywordCandidates,
 			ExtraOptions:      map[string]interface{}{"similarity": 0.3},
 		}
-		topMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, graphKeywordCandidates, []interface{}{denseExpr})
+		topMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, 0, graphKeywordCandidates, []interface{}{denseExpr})
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1030,7 +1022,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 	}
 
 	scopeForTemplate := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
-		return resolveGraphBucket(row, templateMeta, templateMeta, documentID)
+		return resolveGraphBucket(row, templateMeta, documentID)
 	}
 	bucketMeta, scope := scopeForTemplate(candidates[0].row)
 	bucketID := graphStr(bucketMeta["template_id"])
@@ -1064,7 +1056,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 				cond := copyFilter(scope)
 				cond["knowledge_graph_kwd"] = []string{"relation"}
 				cond[field] = terms
-				relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, graphExpansionCap, nil)
+				relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap, nil)
 				if err != nil {
 					return nil, nil, nil, err
 				}
@@ -1112,7 +1104,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			cond := copyFilter(scope)
 			cond["knowledge_graph_kwd"] = []string{"relation"}
 			cond["to_entity_kwd"] = sortedKeys(ancestorFrontier)
-			relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, graphExpansionCap-len(relations), nil)
+			relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap-len(relations), nil)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -1149,7 +1141,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		cond := copyFilter(scope)
 		cond["knowledge_graph_kwd"] = []string{"entity"}
 		cond["name_kwd"] = sortedKeys(neighborNamesLower)
-		nbMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, graphExpansionCap, nil)
+		nbMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, 0, graphExpansionCap, nil)
 		if err != nil {
 			return nil, nil, nil, err
 		}

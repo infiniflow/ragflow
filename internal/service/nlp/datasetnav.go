@@ -184,8 +184,12 @@ func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string
 		name = n
 	}
 	// A raw id (doc_id or "cluster_<hash>") is not a human-readable name; fall
-	// back to a title derived from the payload description.
-	if graphIsRawID(name) {
+	// back to a title derived from the payload description. Cluster names are the
+	// child-lookup key (parent_kwd references them verbatim), so they must stay
+	// intact; only non-cluster (leaf) rows get the readable fallback, otherwise
+	// GET /navigation/{cluster}/children would no longer match (review Major).
+	isCluster := firstStringValue(row["type_kwd"]) == "nav_cluster"
+	if !isCluster && graphIsRawID(name) {
 		name = ""
 	}
 	node := nav.NavNode{

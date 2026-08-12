@@ -449,44 +449,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 	switch p.Variant {
 	case common.VariantStructure:
 		// knowledge_graph_kwd: "entity" | "relation" | "graph".
-		if kind != "" {
-			if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
-				return err
-			}
-		}
-		// Relations carry from/to entity endpoints (from_entity_kwd / to_entity_kwd).
-		if kind == "relation" {
-			if v := metaString(p.Meta, "from"); v != "" {
-				if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
-					return err
-				}
-			}
-			if v := metaString(p.Meta, "to"); v != "" {
-				if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
-					return err
-				}
-			}
-		}
-		// Entities carry their canonical name on name_kwd (lowercased, mirroring
-		// Python's _struct_to_doc_storage_doc; the structure-graph endpoints
-		// filter/sort on it) plus entity_type_kwd and mention_count_int.
-		if kind == "entity" {
-			if v := metaString(p.Meta, "name"); v != "" {
-				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
-					return err
-				}
-			}
-			if v := metaString(p.Meta, "entity_type"); v != "" {
-				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
-					return err
-				}
-			}
-		}
-		if v, ok := metaInt(p.Meta, "mention_count"); ok {
-			if err := doc.SetExtraValue("mention_count_int", v); err != nil {
-				return err
-			}
-		}
+		return applyStructureGraphColumns(doc, p, kind)
 
 	case common.VariantWiki:
 		// One artifact_page row per wiki page; section rows reuse the same
@@ -573,42 +536,10 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			// The tree is also projected onto the structure-graph shape (Python
 			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
 			// relation rows carry knowledge_graph_kwd and the compact graph blob
-			// (kind "graph") is the /structure/graph discovery row. Emit the same
-			// columns the structure variant does.
-			if kind != "" {
-				if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
-					return err
-				}
-			}
-			if kind == "relation" {
-				if v := metaString(p.Meta, "from"); v != "" {
-					if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
-						return err
-					}
-				}
-				if v := metaString(p.Meta, "to"); v != "" {
-					if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
-						return err
-					}
-				}
-			}
-			if kind == "entity" {
-				if v := metaString(p.Meta, "name"); v != "" {
-					if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
-						return err
-					}
-				}
-				if v := metaString(p.Meta, "entity_type"); v != "" {
-					if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
-						return err
-					}
-				}
-			}
-			if v, ok := metaInt(p.Meta, "mention_count"); ok {
-				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
-					return err
-				}
-			}
+			// (kind "graph") is the /structure/graph discovery row. This is the
+			// same storage contract as the structure variant, so both share
+			// applyStructureGraphColumns.
+			return applyStructureGraphColumns(doc, p, kind)
 		default:
 			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
 			// raptor_layer_int records tree depth.
@@ -652,6 +583,53 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		}
 	}
 
+	return nil
+}
+
+// applyStructureGraphColumns emits the structure-graph row columns shared by the
+// structure and tree variants (Python _struct_to_doc_storage_doc contract):
+//   - knowledge_graph_kwd: "entity" | "relation" | "graph"
+//   - relations: from_entity_kwd / to_entity_kwd
+//   - entities: name_kwd (lowercased) / entity_type_kwd
+//   - mention_count_int
+//
+// Keeping this in one helper prevents the two variants' storage contracts from
+// diverging (review Major).
+func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind string) error {
+	if kind != "" {
+		if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
+			return err
+		}
+	}
+	if kind == "relation" {
+		if v := metaString(p.Meta, "from"); v != "" {
+			if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
+				return err
+			}
+		}
+		if v := metaString(p.Meta, "to"); v != "" {
+			if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
+				return err
+			}
+		}
+	}
+	if kind == "entity" {
+		if v := metaString(p.Meta, "name"); v != "" {
+			if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+				return err
+			}
+		}
+		if v := metaString(p.Meta, "entity_type"); v != "" {
+			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+				return err
+			}
+		}
+	}
+	if v, ok := metaInt(p.Meta, "mention_count"); ok {
+		if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
