@@ -1416,7 +1416,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if llmID == "" {
 		return 0
 	}
-	return dao.ResolveModelContentLength(ctx, db, llmID, "", "")
+	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —

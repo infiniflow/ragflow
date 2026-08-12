@@ -18,51 +18,127 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/entity"
 )
 
-// ResolveModelContentLength returns the chat model's context window
+// ResolveModelContentLength returns the chat model's effective context window
 // (content_length) in tokens for modelRef — a tenant_model UUID or a
 // composite "model@provider" / "model@instance@provider" reference — or 0
-// when it cannot be resolved. driver and modelName are an optional provider
-// catalog fallback used when modelRef is not a resolvable tenant id (for
-// example when no database is available); pass empty strings to skip it.
+// when it cannot be resolved. tenantID scopes the composite-reference lookup
+// to the tenant's own provider/instance/model rows. driver and modelName are
+// an optional provider catalog fallback used when modelRef is not a
+// resolvable tenant id (for example when no database is available); pass
+// empty strings to skip it.
+//
+// Resolution order (mirrors Python's model_extra.get("max_tokens") semantics):
+//  1. Tenant configuration first: when the tenant_model row is active and
+//     carries a positive "max_tokens" override in its extra JSON, that custom
+//     context window wins and no catalog data is read.
+//  2. Only with no override, fall back to the provider catalog's
+//     content_length (via the tenant row, the composite reference parts, or
+//     the resolved driver + model name).
 //
 // This is the shared implementation behind the agent LLM component, the
 // ingestion Extractor, and service.ModelProviderService — those packages
 // cannot import each other (import cycles), so the lookup lives here.
-func ResolveModelContentLength(ctx context.Context, db *gorm.DB, modelRef, driver, modelName string) int {
-	// 1. Composite "model@provider" / "model@instance@provider" reference:
-	//    look up the provider catalog directly. A composite reference cannot
-	//    be a tenant-model UUID, so resolve it before touching the database.
-	if pureName, _, providerName, ok := splitCompositeModelRef(modelRef); ok {
+func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, modelRef, driver, modelName string) int {
+	if db == nil {
+		db = DB
+	}
+	pureName, instanceName, providerName, composite := splitCompositeModelRef(modelRef)
+
+	// 1. Tenant-configured override: resolve the tenant_model row before any
+	//    catalog read and return the custom context window when present.
+	obj := lookupTenantModel(ctx, db, tenantID, modelRef, pureName, instanceName, providerName, composite)
+	if obj != nil && obj.Status == "active" {
+		if v := modelExtraMaxTokens(obj.Extra); v > 0 {
+			return v
+		}
+	}
+
+	// 2. Catalog fallbacks (only when there is no custom override).
+	// 2a. Active tenant row → its provider row → catalog content_length.
+	if obj != nil && obj.Status == "active" {
+		if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
+			if mdl, err := GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContentLength != nil {
+				return *mdl.ContentLength
+			}
+		}
+	}
+	// 2b. Composite reference with no tenant row → catalog by reference parts.
+	if composite {
 		if mdl, err := GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContentLength != nil {
 			return *mdl.ContentLength
 		}
 	}
-	if db == nil {
-		db = DB
-	}
-	// 2. Tenant model UUID: read content_length from its provider catalog row.
-	if db != nil && modelRef != "" {
-		if obj, err := NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && obj != nil && obj.Status == "active" {
-			if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-				if mdl, err := GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContentLength != nil {
-					return *mdl.ContentLength
-				}
-			}
-		}
-	}
-	// 3. Resolved driver + bare model name: fallback when modelRef is a
-	//    tenant id that could not be resolved without a database.
+	// 2c. Resolved driver + bare model name: fallback when modelRef is a
+	//     tenant id that could not be resolved without a database.
 	if driver != "" && modelName != "" {
 		if mdl, err := GetModelProviderManager().GetModelByName(driver, modelName); err == nil && mdl.ContentLength != nil {
 			return *mdl.ContentLength
 		}
 	}
 	return 0
+}
+
+// lookupTenantModel resolves the tenant_model row for modelRef — by UUID, or
+// for a composite reference through the tenant's provider/instance rows (chat
+// model type). Returns nil when the row cannot be resolved.
+func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pureName, instanceName, providerName string, composite bool) *entity.TenantModel {
+	if db == nil {
+		return nil
+	}
+	if composite {
+		if tenantID == "" {
+			return nil
+		}
+		provider, err := NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+		if err != nil || provider == nil {
+			return nil
+		}
+		instance, err := NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
+		if err != nil || instance == nil {
+			return nil
+		}
+		obj, err := NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, db, provider.ID, instance.ID, int(entity.ModelTypeChat), pureName)
+		if err != nil || obj == nil {
+			return nil
+		}
+		return obj
+	}
+	if modelRef == "" {
+		return nil
+	}
+	obj, err := NewTenantModelDAO().GetByID(ctx, db, modelRef)
+	if err != nil || obj == nil {
+		return nil
+	}
+	return obj
+}
+
+// modelExtraMaxTokens returns the per-model "max_tokens" override from the
+// tenant_model.extra JSON, or 0 when absent/invalid/non-positive. Mirrors
+// Python's model_extra.get("max_tokens") — the custom context-window length a
+// user configures for a model.
+func modelExtraMaxTokens(extra string) int {
+	if strings.TrimSpace(extra) == "" {
+		return 0
+	}
+	var m struct {
+		MaxTokens *int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal([]byte(extra), &m); err != nil || m.MaxTokens == nil {
+		return 0
+	}
+	if *m.MaxTokens <= 0 {
+		return 0
+	}
+	return *m.MaxTokens
 }
 
 // splitCompositeModelRef splits a composite "model@provider" or
