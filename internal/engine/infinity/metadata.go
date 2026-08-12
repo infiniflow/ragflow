@@ -387,8 +387,7 @@ func (e *Engine) deleteMetadataWithTable(table *infinity.Table, condition map[st
 	filter := buildFilterFromCondition(condition, clmns)
 
 	if len(condition) > 0 && (filter == "" || filter == "1=1") {
-		common.Warn("INFINITY delete aborted: non-empty condition yielded unconstrained filter")
-		return 0, nil
+		return 0, fmt.Errorf("INFINITY delete aborted: non-empty condition yielded unconstrained filter")
 	}
 
 	delResp, err := table.Delete(filter)

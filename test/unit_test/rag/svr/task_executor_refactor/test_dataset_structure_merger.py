@@ -94,7 +94,8 @@ class TestRecordDocDeletion:
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
-            record_doc_deletion(tenant_id, kb_id, "doc_1")
+            with pytest.raises(RuntimeError, match="insert failed"):
+                record_doc_deletion(tenant_id, kb_id, "doc_1")
             assert (("ragflow_tenant_123", kb_id)) not in _UPGRADED_TABLES
 
             record_doc_deletion(tenant_id, kb_id, "doc_2")

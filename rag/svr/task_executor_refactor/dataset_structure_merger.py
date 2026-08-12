@@ -211,6 +211,7 @@ def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
         _UPGRADED_TABLES.add((index, kb_id))
     except Exception:
         logging.exception("structure_merge: failed to record doc deletion kb=%s doc=%s", kb_id, doc_id)
+        raise
 
 
 # ---------------------------------------------------------------------------

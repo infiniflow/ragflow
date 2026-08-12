@@ -275,7 +275,7 @@ class InfinityConnectionBase(DocStoreConnection):
             return lst
         return sep.join(lst)
 
-    def equivalent_condition_to_str(self, condition: dict, table_instance=None) -> str | None:
+    def equivalent_condition_to_str(self, condition: dict, table_instance=None, is_delete: bool = False) -> str | None:
         assert "_id" not in condition
         columns = {}
         if table_instance:
@@ -351,13 +351,12 @@ class InfinityConnectionBase(DocStoreConnection):
                         # query that returns nothing.
                         escaped = item.replace("'", "''")
                         list_conditions.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped}')")
-                    # else: either the column is unknown to the table (we
-                    # cannot tell the type, so we skip the predicate rather
-                    # than emit a query that Infinity will reject) or the
-                    # item is non-string on a legacy Varchar column (see
-                    # comment above).
+                    elif is_delete:
+                        raise ValueError(f"Cannot build delete predicate for column '{k}' (type='{col_type}') with value {item!r}")
                 if list_conditions:
                     cond.append("(" + " or ".join(list_conditions) + ")")
+                elif is_delete:
+                    raise ValueError(f"No valid delete predicate could be generated for column '{k}'")
             elif k in {"compile_kwd", "type_kwd", "parent_kwd"}:
                 values = v if isinstance(v, list) else [v]
                 exact_conditions = []
@@ -718,13 +717,11 @@ class InfinityConnectionBase(DocStoreConnection):
             except Exception:
                 self.logger.warning(f"Skipped deleting from table {table_name} since the table doesn't exist.")
                 return 0
-            filter = self.equivalent_condition_to_str(condition, table_instance)
+            filter = self.equivalent_condition_to_str(condition, table_instance, is_delete=True)
             if condition and (not filter or filter == "1=1"):
-                self.logger.warning(
-                    "INFINITY delete aborted: non-empty condition produced an unconstrained filter on table %s.",
-                    table_name,
-                )
-                return 0
+                msg = f"INFINITY delete aborted: non-empty condition produced an unconstrained filter on table {table_name}."
+                self.logger.error(msg)
+                raise ValueError(msg)
             self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
             res = table_instance.delete(filter)
             return res.deleted_rows

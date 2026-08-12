@@ -345,10 +345,10 @@ class TestOtherConditionBranches:
 
 
 class TestDeleteSafety:
-    """``delete()`` must abort and return 0 if a non-empty condition generates
-    an unconstrained filter ('1=1') to prevent accidental table truncation."""
+    """``delete()`` must abort and raise ValueError if a non-empty condition generates
+    an unconstrained filter ('1=1') or unmapped predicate to prevent accidental table truncation."""
 
-    def test_delete_aborts_when_condition_yields_unconstrained_filter(self):
+    def test_delete_raises_when_condition_yields_unconstrained_filter(self):
         inst = _InfinityConnection.__new__(_InfinityConnection)
         inst.dbName = "default_db"
         inst.logger = MagicMock()
@@ -363,11 +363,51 @@ class TestDeleteSafety:
         inf_conn.get_database.return_value = db
 
         with patch.object(inst.connPool, "get_conn", return_value=inf_conn), patch.object(inst.connPool, "release_conn"):
-            deleted = inst.delete({"source_doc_ids": ["doc-1"]}, "ragflow_tenant", "kb-1")
+            with pytest.raises(ValueError, match="Cannot build delete predicate|unconstrained filter"):
+                inst.delete({"source_doc_ids": ["doc-1"]}, "ragflow_tenant", "kb-1")
 
-        # Must abort (return 0) and MUST NOT call table.delete()
-        assert deleted == 0
+        # Must NOT call table.delete()
         table.delete.assert_not_called()
+
+    def test_delete_raises_value_error_for_unmapped_delete_predicate(self):
+        inst = _InfinityConnection.__new__(_InfinityConnection)
+        inst.dbName = "default_db"
+        inst.logger = MagicMock()
+        inst.connPool = MagicMock()
+
+        inf_conn = MagicMock()
+        db = MagicMock()
+        table = MagicMock()
+        table.show_columns.return_value.rows.return_value = [("other_col", "Varchar", "", "")]
+        db.get_table.return_value = table
+        inf_conn.get_database.return_value = db
+
+        with patch.object(inst.connPool, "get_conn", return_value=inf_conn), patch.object(inst.connPool, "release_conn"):
+            with pytest.raises(ValueError, match="Cannot build delete predicate"):
+                inst.delete({"source_doc_ids": ["doc-1"]}, "ragflow_tenant", "kb-1")
+
+        table.delete.assert_not_called()
+
+    def test_legacy_varchar_chunk_table_delete_by_source_doc_ids(self):
+        inst = _InfinityConnection.__new__(_InfinityConnection)
+        inst.dbName = "default_db"
+        inst.logger = MagicMock()
+        inst.connPool = MagicMock()
+
+        inf_conn = MagicMock()
+        db = MagicMock()
+        table = MagicMock()
+        # Schema with legacy Varchar column
+        table.show_columns.return_value.rows.return_value = [("source_doc_ids", "Varchar", "", "")]
+        table.delete.return_value = MagicMock(deleted_rows=5)
+        db.get_table.return_value = table
+        inf_conn.get_database.return_value = db
+
+        with patch.object(inst.connPool, "get_conn", return_value=inf_conn), patch.object(inst.connPool, "release_conn"):
+            deleted = inst.delete({"source_doc_ids": ["doc-123"]}, "ragflow_tenant", "kb-1")
+
+        assert deleted == 5
+        table.delete.assert_called_once_with("(filter_fulltext('source_doc_ids', 'doc-123'))")
 
 
 if __name__ == "__main__":
