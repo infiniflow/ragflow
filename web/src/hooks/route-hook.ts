@@ -85,27 +85,36 @@ export const useGetPaginationParams = () => {
   };
 };
 
+const PageSizeStorageKeyPrefix = 'RAGFlowPageSize:';
+
+const getStoredPageSize = (pathname: string) =>
+  Number(localStorage.getItem(`${PageSizeStorageKeyPrefix}${pathname}`));
+
 export const useSetPaginationParams = () => {
   const [queryParameters, setSearchParams] = useSearchParams();
-  // const newQueryParameters: URLSearchParams = useMemo(
-  //   () => new URLSearchParams(queryParameters.toString()),
-  //   [queryParameters],
-  // );
+  const { pathname } = useLocation();
 
   const setPaginationParams = useCallback(
     (page: number = 1, pageSize?: number) => {
       queryParameters.set('page', page.toString());
       if (pageSize) {
         queryParameters.set('size', pageSize.toString());
+        // Persist the page size per main page so it survives navigation
+        // to other pages, where the URL search params are dropped.
+        localStorage.setItem(
+          `${PageSizeStorageKeyPrefix}${pathname}`,
+          pageSize.toString(),
+        );
       }
       setSearchParams(queryParameters);
     },
-    [setSearchParams, queryParameters],
+    [setSearchParams, queryParameters, pathname],
   );
 
   return {
     setPaginationParams,
     page: Number(queryParameters.get('page')) || 1,
-    size: Number(queryParameters.get('size')) || 50,
+    size:
+      Number(queryParameters.get('size')) || getStoredPageSize(pathname) || 50,
   };
 };

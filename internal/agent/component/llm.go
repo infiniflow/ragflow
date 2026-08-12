@@ -27,8 +27,8 @@ import (
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/component/messagefit"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
@@ -309,7 +309,6 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
-
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -1024,8 +1023,6 @@ func validateFittedMessages(msgFit []schema.Message) string {
 // fitted messages and an error string (empty on success).
 // Mirrors Python's LLM.fit_messages in PR #16413.
 func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	// Convert schema.Message → []map[string]interface{} for fitting.
-	all := make([]map[string]interface{}, 0, 1+len(msgs))
 	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
 	copied := make([]schema.Message, len(msgs))
 	for i, m := range msgs {
@@ -1046,162 +1043,87 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 			UserInputMultiContent: cloned,
 		}
 	}
-	// System prompt first (when not already embedded in msgs).
+
+	// Convert to messagefit.Message. Track where each entry's text lives
+	// (plain Content or a multi-modal text part) so the fitted text can be
+	// written back to the right field. Entries with no text at all
+	// (image-only turns) carry an empty Content in messagefit and survive
+	// fitting when kept.
+	type fitSource struct {
+		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
+		multiIdx      int  // -1 means the text lives in Content
+		textInContent bool // the original message carried text in Content
+	}
+	all := make([]messagefit.Message, 0, 1+len(copied))
+	sources := make([]fitSource, 0, 1+len(copied))
+
 	if systemPrompt != "" {
-		all = append(all, map[string]interface{}{
-			"role":    "system",
-			"content": systemPrompt,
-		})
+		all = append(all, messagefit.Message{Role: "system", Content: systemPrompt})
+		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
 	}
-	for _, m := range copied {
-		entry := map[string]interface{}{
-			"role":    string(m.Role),
-			"content": m.Content,
+
+	for i := range copied {
+		text := copied[i].Content
+		multiIdx := -1
+		hadText := text != ""
+		if !hadText {
+			// Fold every non-empty text part into the token budget: only the
+			// first text part is written back, so leaving later parts out
+			// would let text exceed the fitted budget after reconstruction.
+			var textParts []string
+			for j, p := range copied[i].UserInputMultiContent {
+				if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
+					textParts = append(textParts, p.Text)
+					if multiIdx < 0 {
+						multiIdx = j
+					}
+				}
+			}
+			if len(textParts) > 0 {
+				text = strings.Join(textParts, "\n\n")
+				hadText = true
+			}
 		}
-		if len(m.UserInputMultiContent) > 0 {
-			entry["user_input_multi_content"] = m.UserInputMultiContent
-		}
-		all = append(all, entry)
+		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
+		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
 	}
+
 	// Use 97% of effective context as the token budget.
 	budget := contextFitBudget(maxLength)
-	_, fitted := messageFitInRaw(all, budget)
+	kept, keptIdx, _ := messagefit.Fit(all, budget)
 
-	// Convert back to []schema.Message.
-	result := make([]schema.Message, 0, len(fitted))
-	for _, m := range fitted {
-		role, _ := m["role"].(string)
-		content, _ := m["content"].(string)
-		msg := schema.Message{
-			Role:    schema.RoleType(role),
-			Content: content,
+	// Convert back to []schema.Message. messagefit.Fit reports exactly which
+	// entries are kept (keptIdx); dropped entries are simply absent, so no
+	// empty-content sentinel is needed and image-only turns are preserved.
+	result := make([]schema.Message, 0, len(kept))
+	for j, i := range keptIdx {
+		src := sources[i]
+		if src.copiedIdx < 0 {
+			result = append(result, schema.Message{Role: schema.System, Content: kept[j].Content})
+			continue
 		}
-		if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
-			msg.UserInputMultiContent = multi
+		m := copied[src.copiedIdx]
+		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
+			m.UserInputMultiContent[src.multiIdx].Text = kept[j].Content
+			// Drop any additional text parts: their content was folded into
+			// the first part before fitting, so keeping them would re-introduce
+			// text outside the token budget.
+			keptParts := m.UserInputMultiContent[:0]
+			for k, part := range m.UserInputMultiContent {
+				if part.Type == schema.ChatMessagePartTypeText && k != src.multiIdx {
+					continue
+				}
+				keptParts = append(keptParts, part)
+			}
+			m.UserInputMultiContent = keptParts
+		} else if src.textInContent {
+			// Always write the fitted text back (even when trimmed to empty):
+			// leaving the original would send untrimmed content past the budget.
+			m.Content = kept[j].Content
 		}
-		result = append(result, msg)
+		result = append(result, m)
 	}
 	return result, validateFittedMessages(result)
-}
-
-// messageFitInRaw trims messages to fit within a token budget. Operates on
-// raw []map[string]interface{} (role + content). Returns the token count
-// used and the trimmed slice. Mirrors Python's message_fit_in in
-// rag/prompts/generator.py.
-//
-// Strategy:
-//  1. If everything fits → return as-is.
-//  2. Keep all system messages + the last user/assistant message.
-//  3. If still too large, trim content proportionally:
-//     - System dominates (>80%) → preserve last message first.
-//     - Otherwise → preserve system first.
-func messageFitInRaw(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
-	if maxTokens <= 0 {
-		maxTokens = 8192
-	}
-
-	// Step 1: everything fits.
-	totalTokens := countAllTokens(messages)
-	if totalTokens < maxTokens {
-		return totalTokens, messages
-	}
-
-	// Step 2: keep all system messages + the last non-system message.
-	result := make([]map[string]interface{}, 0)
-	for _, m := range messages {
-		if role, _ := m["role"].(string); role == "system" {
-			result = append(result, m)
-		}
-	}
-	if len(messages) > 0 {
-		last := messages[len(messages)-1]
-		if role, _ := last["role"].(string); role != "system" {
-			result = append(result, last)
-		}
-	}
-	if len(result) == 0 {
-		return 0, result
-	}
-
-	totalTokens = countAllTokens(result)
-	if totalTokens < maxTokens {
-		return totalTokens, result
-	}
-
-	// Step 3: trim content to fit.
-	ll := tokenizer.NumTokensFromString(stringContent(result[0]))
-	ll2 := tokenizer.NumTokensFromString(stringContent(result[len(result)-1]))
-	total := ll + ll2
-	if total <= 0 {
-		return 0, result
-	}
-
-	if len(result) == 1 {
-		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), maxTokens))
-		return countAllTokens(result), result
-	}
-
-	if float64(ll)/float64(total) > 0.8 {
-		preservedLast := min(ll2, maxTokens)
-		setContent(result[len(result)-1], tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), preservedLast))
-		remaining := max(0, maxTokens-preservedLast)
-		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), remaining))
-	} else {
-		preservedSystem := min(ll, maxTokens)
-		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), preservedSystem))
-		remaining := max(0, maxTokens-preservedSystem)
-		setContent(result[len(result)-1], tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), remaining))
-	}
-
-	return countAllTokens(result), result
-}
-
-// countAllTokens returns the total token count across all messages.
-func countAllTokens(messages []map[string]interface{}) int {
-	total := 0
-	for _, m := range messages {
-		total += tokenizer.NumTokensFromString(stringContent(m))
-	}
-	return total
-}
-
-// stringContent extracts the display text from a message map, or "".
-// For plain messages the text lives in "content"; for multimodal messages
-// (with images) it lives in a text part of "user_input_multi_content".
-func stringContent(m map[string]interface{}) string {
-	s, _ := m["content"].(string)
-	if s != "" {
-		return s
-	}
-	if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
-		for _, part := range multi {
-			if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
-				return part.Text
-			}
-		}
-	}
-	return ""
-}
-
-// setContent writes text into a message map's display field. When the
-// message has user_input_multi_content parts, the first text part is
-// updated; otherwise the plain "content" field is set.
-func setContent(m map[string]interface{}, text string) {
-	if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
-		for i, part := range multi {
-			if part.Type == schema.ChatMessagePartTypeText {
-				multi[i].Text = text
-				return
-			}
-		}
-		// No existing text part – prepend one.
-		m["user_input_multi_content"] = append(
-			[]schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: text}},
-			multi...,
-		)
-		return
-	}
-	m["content"] = text
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and

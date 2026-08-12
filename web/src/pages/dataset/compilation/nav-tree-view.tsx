@@ -14,11 +14,13 @@ export function NavTreeView() {
   const {
     navList,
     navLoading,
+    keywords,
     childrenMap,
     structureMap,
     selectedNode,
     deleteNavLoading,
     deleteNodeLoading,
+    handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,
     handleEntityClick,
@@ -33,10 +35,12 @@ export function NavTreeView() {
           <NavTreeLeftPanel
             navList={navList}
             navLoading={navLoading}
+            keywords={keywords}
             childrenMap={childrenMap}
             structureMap={structureMap}
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}
+            onKeywordsChange={handleKeywordsChange}
             onNodeClick={handleNodeClick}
             onNodeExpand={handleNodeExpand}
             onEntityClick={handleEntityClick}

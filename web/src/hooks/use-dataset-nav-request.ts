@@ -19,26 +19,32 @@ import { DatasetNavList } from '@/interfaces/database/dataset-nav';
 import i18n from '@/locales/config';
 import datasetNavService from '@/services/dataset-nav-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { trim } from 'lodash';
 
 import { useKnowledgeBaseId } from './use-knowledge-request';
 
 export const DatasetNavKeys = {
   all: (kbId: string) => ['dataset_nav', kbId] as const,
-  list: (kbId: string) => ['dataset_nav', kbId, 'list'] as const,
+  list: (kbId: string, keywords = '') =>
+    ['dataset_nav', kbId, 'list', keywords] as const,
   children: (kbId: string, name: string) =>
     ['dataset_nav', kbId, 'children', name] as const,
 };
 
-export function useFetchDatasetNav() {
+export function useFetchDatasetNav(keywords = '') {
   const kbId = useKnowledgeBaseId();
+  const trimmedKeywords = trim(keywords);
 
   const { data, isFetching: loading } = useQuery<DatasetNavList | null>({
-    queryKey: DatasetNavKeys.list(kbId),
+    queryKey: DatasetNavKeys.list(kbId, trimmedKeywords),
     initialData: null,
     enabled: !!kbId,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await datasetNavService.getNav({ datasetId: kbId });
+      const { data } = await datasetNavService.getNav({
+        datasetId: kbId,
+        keywords: trimmedKeywords,
+      });
       return data?.data ?? null;
     },
   });
