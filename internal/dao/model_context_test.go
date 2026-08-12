@@ -170,6 +170,27 @@ func TestResolveModelContentLength_InactiveInstanceCompositeFallsBackToCatalog(t
 	}
 }
 
+// TestResolveModelContentLength_InactiveModelCompositeFallsBackToCatalog
+// verifies that a composite reference whose model row is inactive does not
+// apply the override or the tenant-row catalog read; it falls back to the
+// catalog by reference parts (gpt-4o → 128000).
+func TestResolveModelContentLength_InactiveModelCompositeFallsBackToCatalog(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
+	if err := db.Model(&entity.TenantModel{}).
+		Where("id = ?", "0123456789abcdef0123456789abcdef").
+		Update("status", "inactive").Error; err != nil {
+		t.Fatalf("set model inactive: %v", err)
+	}
+
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("inactive-model composite = %d, want catalog 128000", got)
+	}
+}
+
 // TestResolveModelContentLength_ExtraOverrideStringForm verifies that a
 // max_tokens override persisted as a JSON string is still honored (some
 // callers persist extra.max_tokens as a string).
