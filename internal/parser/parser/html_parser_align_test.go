@@ -240,6 +240,76 @@ func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
 	}
 }
 
+// TestHTMLParser_MultipleTablesOrdering is the HTML counterpart of
+// TestMarkdownParser_MultipleTablesOrdering: two top-level tables must each be
+// emitted as a SINGLE structured doc_type_kwd:"table" item, in document order,
+// bracketing the "Middle." paragraph (not relocated to the end of the stream —
+// the old deferred-append behaviour this PR removes). Cell text of both tables
+// must be present and in source order.
+func TestHTMLParser_MultipleTablesOrdering(t *testing.T) {
+	ctx := t.Context()
+	p := NewHTMLParser()
+	const html = `<html><body>
+<h1>Title</h1>
+<table>
+<tr><th>A</th><th>B</th></tr>
+<tr><td>x</td><td>y</td></tr>
+</table>
+<p>Middle.</p>
+<table>
+<tr><th>C</th><th>D</th></tr>
+<tr><td>p</td><td>q</td></tr>
+</table>
+<p>End.</p>
+</body></html>`
+
+	res := p.ParseWithResult(ctx, "doc.html", []byte(html))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	var tableItemIdx []int
+	titleIdx, middleIdx, endIdx := -1, -1, -1
+	for i, it := range res.JSON {
+		text, _ := it["text"].(string)
+		switch it["doc_type_kwd"] {
+		case "text":
+			switch text {
+			case "Title":
+				titleIdx = i
+			case "Middle.":
+				middleIdx = i
+			case "End.":
+				endIdx = i
+			}
+		case "table":
+			tableItemIdx = append(tableItemIdx, i)
+		default:
+			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
+		}
+	}
+
+	if titleIdx < 0 || middleIdx < 0 || endIdx < 0 {
+		t.Fatalf("missing anchor text item (title=%d middle=%d end=%d)", titleIdx, middleIdx, endIdx)
+	}
+	if len(tableItemIdx) != 2 {
+		t.Fatalf("table items = %d, want 2", len(tableItemIdx))
+	}
+	// Both tables appear in document order, bracketing "Middle.":
+	// table1 before Middle, table2 between Middle and End.
+	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
+		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
+	}
+	t1, _ := res.JSON[tableItemIdx[0]]["text"].(string)
+	t2, _ := res.JSON[tableItemIdx[1]]["text"].(string)
+	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
+		t.Errorf("first table item missing x/y cells: %q", t1)
+	}
+	if !strings.Contains(t2, "p") || !strings.Contains(t2, "q") {
+		t.Errorf("second table item missing p/q cells: %q", t2)
+	}
+}
+
 // TestHTMLParser_NestedListItemsPreserved verifies a nested <ul> (a list
 // containing a sublist) does NOT lose any item text — i.e. it is NOT subject to
 // the same kind of collapse the table path once had. Unlike tables (whose markup is
@@ -446,15 +516,11 @@ func TestHTMLParser_AlignmentGolden(t *testing.T) {
 			goText := filterTableDivergence(res.JSON, drop)
 			pyText := filterTableDivergence(doc.Items, drop)
 
-			// filterTableDivergence drops the table from the prose comparison, so
-			// assert the table is still present on BOTH sides independently —
-			// otherwise a regression that silently drops the table would pass.
-			if !hasTableRepresentation(res.JSON) {
-				t.Errorf("Go HTML output missing any table representation; items: %#v", res.JSON)
-			}
-			if !hasTableRepresentation(doc.Items) {
-				t.Errorf("Python HTML golden missing any table representation; items: %#v", doc.Items)
-			}
+			// filterTableDivergence drops the table from the prose comparison;
+			// the table-equivalence guard below (assertTablesEquivalent) checks
+			// the table cell content still matches Python, so a collapse or
+			// dropped column on either side is caught independently.
+			assertTablesEquivalent(t, res.JSON, doc.Items)
 
 			if ok, diff := CompareAlignment(goText, pyText, HTMLAlignOptions()); !ok {
 				t.Fatalf("html parser not aligned with Python golden:%s", diff)

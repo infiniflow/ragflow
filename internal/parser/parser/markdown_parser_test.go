@@ -639,15 +639,11 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 			goText := filterTableDivergence(res.JSON, ignore)
 			pyText := filterTableDivergence(gd.Items, ignore)
 
-			// filterTableDivergence drops the table from the prose comparison, so
-			// assert the table is still present on BOTH sides independently —
-			// otherwise a regression that silently drops the table would pass.
-			if !hasTableRepresentation(res.JSON) {
-				t.Errorf("Go markdown output missing any table representation; items: %#v", res.JSON)
-			}
-			if !hasTableRepresentation(gd.Items) {
-				t.Errorf("Python markdown golden missing any table representation; items: %#v", gd.Items)
-			}
+			// filterTableDivergence drops the table from the prose comparison;
+			// the table-equivalence guard below (assertTablesEquivalent) checks
+			// the table cell content still matches Python, so a collapse or
+			// dropped column on either side is caught independently.
+			assertTablesEquivalent(t, res.JSON, gd.Items)
 
 			if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
 				t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
