@@ -243,6 +243,12 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
     for d in all_docs or []:
         if str(d.get("id")) in skip_doc_ids:
             continue
+        # Disabled documents remain in the document table and still retain
+        # their compilation-template configuration, but their source chunks
+        # have ``available_int=0``. They must not make the KB look buildable:
+        # after a Wiki clear there is intentionally no MAP input for them.
+        if str(d.get("status", "1")) != "1":
+            continue
         pc = d.get("parser_config") or {}
         template_ids: list[str] = []
         seen_template_ids: set[str] = set()
@@ -312,7 +318,34 @@ async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
     return doc_ids
 
 
-async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
+async def _wiki_delete_map_rows_for_docs(
+    tenant_id: str,
+    kb_id: str,
+    doc_ids: set[str],
+) -> None:
+    """Remove MAP resume rows so the next run must re-extract the documents."""
+    if not doc_ids:
+        return
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {
+                "compile_kwd": [WIKI_MAP_COMPILE_KWD],
+                "doc_id": sorted(str(doc_id) for doc_id in doc_ids),
+            },
+            search.index_name(tenant_id),
+            kb_id,
+        )
+    except Exception:
+        logging.exception(
+            "wiki: failed to invalidate MAP resume rows for kb=%s docs=%s",
+            kb_id,
+            sorted(doc_ids),
+        )
+        raise
+
+
+async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool | None:
     """True when at least one compiled wiki page already exists for the KB.
 
     Used to tell "nothing changed and pages already exist" (a genuine no-op)
@@ -341,7 +374,7 @@ async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
         return bool(settings.docStoreConn.get_total(res))
     except Exception:
         logging.exception("wiki: page existence probe failed for kb=%s", kb_id)
-        return False
+        return None
 
 
 async def _wiki_delete_deleted_doc_state(
@@ -1589,6 +1622,7 @@ async def run_wiki_incremental(
     embedding_model,
     load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
     plan: bool = False,
+    _map_rebuild_retry: bool = False,
 ) -> None:
     """Dual-mode wiki compilation with incremental support.
 
@@ -1663,7 +1697,7 @@ async def run_wiki_incremental(
     eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id, skip_doc_ids=deleted_doc_ids)
 
     if not eligible and not is_incremental:
-        progress(1.0, "No documents configured for wiki compilation.")
+        progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
 
     # Re-resolve plan (Mode B) from the ELIGIBLE docs' templates. Each eligible
@@ -1823,12 +1857,15 @@ async def run_wiki_incremental(
 
     if not all_map_results and not deleted_doc_ids:
         # Nothing fresh, changed, or deleted this run. Skip only when there is
-        # genuinely nothing to build: no MAP rows at all, or a compiled baseline
-        # already exists. When MAP rows exist but no pages were ever produced
-        # (e.g. a prior run persisted MAP then failed before REDUCE, so every
-        # chunk now looks "unchanged"), fall through — ``map_results=None`` below
-        # makes wiki_compile_incremental rebuild pages from the stored extracts.
-        if not existing_map_doc_ids or await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
+        # genuinely nothing to build: an existing MAP baseline already has
+        # compiled pages. When the Wiki was explicitly cleared, both
+        # ``existing_map_doc_ids`` and the pages are gone; eligible documents
+        # must go through the first full MAP/REDUCE/REFINE run again. Likewise,
+        # when MAP rows exist but no pages were ever produced (for example a
+        # prior run stopped after MAP), fall through so the compiler can rebuild
+        # pages from the stored extracts.
+        has_compiled_pages = await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) if existing_map_doc_ids else None
+        if existing_map_doc_ids and has_compiled_pages is True:
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,
@@ -1854,6 +1891,31 @@ async def run_wiki_incremental(
                 logging.exception("wiki: up-to-date page-graph persist failed for kb=%s", ctx.kb_id)
 
             progress(1.0, "Wiki is up to date.")
+            return
+        if existing_map_doc_ids and has_compiled_pages is False and not _map_rebuild_retry:
+            # A first build can be interrupted after MAP rows are written. If
+            # those rows are subsequently removed or become unreadable, the
+            # resume check still suppresses MAP and the restore phase sees no
+            # payload. Invalidate only the affected documents and retry once;
+            # the second invocation then treats them as a clean MAP build.
+            stale_doc_ids = {str(doc.get("id")) for doc, _ in eligible if doc.get("id")}
+            logging.warning(
+                "wiki: MAP resume state is unusable with no compiled pages; forcing one MAP rebuild kb=%s docs=%s",
+                ctx.kb_id,
+                sorted(stale_doc_ids),
+            )
+            try:
+                await _wiki_delete_map_rows_for_docs(ctx.tenant_id, ctx.kb_id, stale_doc_ids)
+            except Exception:
+                progress(-1, "Failed to reset stale MAP state for wiki rebuild.")
+                return
+            await run_wiki_incremental(
+                ctx=ctx,
+                embedding_model=embedding_model,
+                load_chunks_for_doc=load_chunks_for_doc,
+                plan=plan,
+                _map_rebuild_retry=True,
+            )
             return
         logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
 

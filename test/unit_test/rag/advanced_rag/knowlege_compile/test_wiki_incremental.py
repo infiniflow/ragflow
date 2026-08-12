@@ -69,7 +69,7 @@ class MockChatModel:
         self.max_length = 4096
         self._canned = canned
 
-    async def async_chat(self, system_prompt, messages, **kwargs):
+    async def async_chat(self, system_prompt, messages, request_conf=None, **kwargs):
         return self._canned
 
     def __enter__(self):
@@ -87,6 +87,7 @@ def make_doc_store(search_results: list[dict] | None = None):
     conn.insert = AsyncMock(return_value=None)
     conn.update = AsyncMock(return_value=None)
     conn.delete = AsyncMock(return_value=None)
+    conn.refresh_idx = MagicMock(return_value=True)
 
     def _get_fields(res, fields):
         hits = res.get("hits", {}).get("hits", [])
@@ -831,6 +832,40 @@ async def test_doc_page_source_entity_names():
     assert len(dps.get("page_ids", [])) == 2
 
 
+@pytest.mark.asyncio
+async def test_doc_page_source_update_targets_only_tracking_row():
+    """Updating tracking state must never rewrite source chunks sharing doc_id."""
+    tracking_id = _wiki._stable_row_id(_wiki.WIKI_DOC_PAGE_SOURCE_COMPILE_KWD, "kb1", "doc_1")
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "id": tracking_id,
+                    "doc_id": "doc_1",
+                    "compile_kwd": _wiki.WIKI_DOC_PAGE_SOURCE_COMPILE_KWD,
+                    "page_ids": '["concept/A"]',
+                    "entity_names": '["Apple"]',
+                    "source_chunk_hashes": "{}",
+                    "map_checksum": "old",
+                }
+            }
+        ]
+    )
+
+    with patch("common.settings.docStoreConn", doc_store):
+        await _wiki._wiki_update_doc_page_source(
+            "t1",
+            "kb1",
+            "doc_1",
+            ["concept/B"],
+            entity_names=["Apple"],
+            map_checksum="new",
+        )
+
+    condition = doc_store.update.call_args.args[0]
+    assert condition == {"id": tracking_id}
+
+
 # ---- End-to-end: Entity Matching → REDUCE ---------------------------------
 
 
@@ -1015,6 +1050,10 @@ async def test_finalize_writes_outlinks():
     else:
         pytest.fail("No update for concept/A found")
 
+    # Page updates stay cheap (no per-row refresh), then one visibility barrier
+    # makes the finalized outlinks searchable before the canvas graph reloads.
+    doc_store.refresh_idx.assert_called_once_with(_wiki.search.index_name("t1"))
+
 
 async def test_finalize_auto_links_mentions():
     """_wiki_finalize auto-links standalone mentions of other pages' names."""
@@ -1059,6 +1098,49 @@ async def test_finalize_auto_links_mentions():
     assert google_upd["outlinks_int"] == 1
 
 
+@pytest.mark.asyncio
+async def test_finalize_preserves_merged_entity_name_as_link_label():
+    """A merged page must not replace a member mention with its page title."""
+    search_results = [
+        {
+            "_source": {
+                "slug_kwd": "entity/五色棒",
+                "title_kwd": "五色棒",
+                "entity_names_kwd": ["五色棒", "治世之能臣，乱世之奸雄"],
+                "md_with_weight": "五色棒是曹操早年的刑具。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/许劭",
+                "title_kwd": "许劭",
+                "entity_names_kwd": ["许劭"],
+                "md_with_weight": "许劭评价曹操。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/曹操",
+                "title_kwd": "曹操",
+                "entity_names_kwd": ["曹操"],
+                "md_with_weight": "曹操闻言大喜。曹操提到治世之能臣，乱世之奸雄。",
+                "page_type_kwd": "entity",
+            }
+        },
+    ]
+    doc_store = make_doc_store(search_results)
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "entity/曹操")
+    assert "[治世之能臣，乱世之奸雄](artifact/kb1/entity/五色棒)" in update["md_with_weight"]
+
+
 def test_inside_wikilink():
     content = "before [[entity/X]] after"
     assert _wiki._inside_wikilink(content, content.index("entity"))
@@ -1075,6 +1157,10 @@ def test_extract_outlinks_from_content():
     ]
     assert _wiki._wiki_extract_outlinks_from_content("") == []
     assert _wiki._wiki_extract_outlinks_from_content("no links here") == []
+
+
+def test_extract_outlinks_uses_page_id_for_piped_links():
+    assert _wiki._wiki_extract_outlinks_from_content("[[entity/五色棒|治世之能臣，乱世之奸雄]]") == ["entity/五色棒"]
 
 
 @pytest.mark.asyncio
@@ -1347,6 +1433,76 @@ def test_topics_for_docs_only_returns_source_scoped_candidates():
 
 
 @pytest.mark.asyncio
+async def test_topic_candidates_are_ranked_by_page_embedding():
+    class TopicEmbedding:
+        def encode(self, texts):
+            vectors = []
+            for text in texts:
+                vectors.append([1.0, 0.0] if "target" in text or "page" in text else [0.0, 1.0])
+            return np.asarray(vectors, dtype=np.float32), 0
+
+    model = TopicEmbedding()
+    topic_embeddings = await _wiki._wiki_prepare_topic_embeddings({"doc": ["unrelated", "target"]}, model)
+    ranked = await _wiki._wiki_rank_topic_candidates(
+        "page",
+        [{"statement": "page evidence"}],
+        [],
+        None,
+        ["unrelated", "target"],
+        topic_embeddings,
+        model,
+    )
+
+    assert ranked == ["target", "unrelated"]
+
+    ranked_without_cache = await _wiki._wiki_rank_topic_candidates(
+        "page",
+        [{"statement": "page evidence"}],
+        [],
+        None,
+        ["unrelated", "target"],
+        None,
+        model,
+    )
+
+    assert ranked_without_cache == ["target", "unrelated"]
+
+
+def test_topics_for_docs_includes_global_topic_pool():
+    assert _wiki._wiki_topics_for_docs(
+        ["doc_1"],
+        {"doc_1": ["MAP topic"]},
+        {_wiki._normalize_key("Generated topic"): "Generated topic"},
+    ) == ["MAP topic", "Generated topic"]
+
+
+@pytest.mark.asyncio
+async def test_plan_does_not_use_embedding_as_final_fallback():
+    entities = [{"entity_name": f"entity-{idx}", "claims": []} for idx in range(2)]
+    vectors = np.eye(2, dtype=np.float32)
+
+    with patch(f"{_wiki.__name__}._wiki_llm_partition_candidate", return_value=None), patch(f"{_wiki.__name__}._wiki_cluster_entities", return_value=[entities]) as cluster:
+        groups = await _wiki._wiki_llm_group_entities(entities, vectors, MockChatModel(), kb_id="kb1")
+
+    assert groups == [[entities[0]], [entities[1]]]
+    cluster.assert_called_once_with(entities, vectors, target_count=1)
+
+
+def test_wiki_log_stats_emits_structured_json():
+    with patch(f"{_wiki.__name__}.logging.info") as info:
+        _wiki._wiki_log_stats("ROUTE", "summary", llm_new=2, final_new=1)
+
+    prefix, payload = info.call_args.args
+    assert prefix == "wiki stats %s"
+    assert json.loads(payload) == {
+        "event": "summary",
+        "final_new": 1,
+        "llm_new": 2,
+        "stage": "ROUTE",
+    }
+
+
+@pytest.mark.asyncio
 async def test_page_router_skips_knn_when_no_existing_pages():
     """A first Mode B build should cluster directly without page-index searches."""
     entities = [
@@ -1366,11 +1522,11 @@ async def test_page_router_skips_knn_when_no_existing_pages():
     ):
         assignments = await _wiki._wiki_page_router(
             affected_entities=entities,
-            chat_mdl=MockChatModel(),
+            chat_mdl=MockChatModel(canned="[[0, 1]]"),
             embd_mdl=embd_mdl,
             tenant_id="t1",
             kb_id="kb1",
-            existing_page_ids=set(),
+            existing_pages={},
         )
 
     assert assignments == {"_new_entity/apple": entities}
@@ -1431,6 +1587,208 @@ async def test_llm_router_can_choose_existing_page_or_new():
         decisions = await _wiki._wiki_llm_route_batches(route_items, MockChatModel())
 
     assert decisions == {0: "entity/a", 1: "NEW"}
+
+
+@pytest.mark.asyncio
+async def test_llm_router_retries_only_missing_decisions():
+    route_items = [
+        ({"entity_name": "Alpha"}, [{"page_id": "entity/a", "title": "A"}]),
+        ({"entity_name": "Beta"}, [{"page_id": "entity/b", "title": "B"}]),
+    ]
+    responses = [
+        '[{"id": 0, "page": "entity/a"}]',
+        '[{"id": 1, "page": "entity/b"}]',
+    ]
+
+    with patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, side_effect=responses) as ask:
+        decisions = await _wiki._wiki_llm_route_batches(route_items, MockChatModel())
+
+    assert decisions == {0: "entity/a", 1: "entity/b"}
+    assert ask.call_count == 2
+    retry_items = ask.call_args_list[1].args[2].split("Items:\n", 1)[1]
+    assert '"id": 1' in retry_items
+    assert '"id": 0' not in retry_items
+
+
+def test_route_candidates_include_owner_relations_and_cooccurrence():
+    existing_pages = {
+        "entity/owner": {"title_kwd": "Owner", "entity_names_kwd": ["Alpha"], "source_chunk_ids": []},
+        "entity/relation": {"title_kwd": "Relation", "entity_names_kwd": ["Beta"], "source_chunk_ids": []},
+        "entity/chunk": {"title_kwd": "Chunk", "entity_names_kwd": ["Gamma"], "source_chunk_ids": ["c1"]},
+    }
+    entity_pages = {"alpha": {"entity/owner"}, "beta": {"entity/relation"}, "gamma": {"entity/chunk"}}
+    chunk_pages = {"c1": {"entity/chunk"}}
+    entity = {
+        "entity_name": "Alpha",
+        "relations": [{"entity": "Beta", "type": "uses"}],
+        "source_chunk_ids": ["c1"],
+    }
+
+    candidates = _wiki._wiki_expand_route_candidates(entity, [], existing_pages, entity_pages, chunk_pages)
+
+    by_page = {candidate["page_id"]: candidate for candidate in candidates}
+    assert by_page["entity/owner"]["signals"] == ["current_owner"]
+    assert by_page["entity/relation"]["signals"] == ["relation"]
+    assert by_page["entity/chunk"]["signals"] == ["cooccurrence"]
+    assert by_page["entity/chunk"]["cooccurrence_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_page_router_keeps_current_owner_when_llm_fails():
+    entity = {"entity_name": "Alpha", "entity_type": "org", "claims": [], "action": "update"}
+    existing_pages = {
+        "entity/alpha": {
+            "title_kwd": "Alpha",
+            "entity_names_kwd": ["Alpha"],
+            "source_chunk_ids": [],
+        }
+    }
+    doc_store = make_doc_store()
+    doc_store.search = MagicMock(return_value={"hits": {"total": {"value": 0}, "hits": []}})
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, return_value="not json") as ask,
+    ):
+        assignments = await _wiki._wiki_page_router(
+            affected_entities=[entity],
+            chat_mdl=MockChatModel(),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            existing_pages=existing_pages,
+        )
+
+    assert assignments == {"entity/alpha": [entity]}
+    assert ask.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_page_router_confirms_new_with_candidate_neighbors():
+    entity = {"entity_name": "5G", "entity_type": "technology", "claims": [], "action": "create"}
+    existing_pages = {
+        "entity/huawei": {
+            "title_kwd": "Huawei",
+            "summary_with_weight": "A technology company",
+            "entity_names_kwd": ["Huawei"],
+            "source_chunk_ids": [],
+            "outlinks_kwd": ["entity/telecom"],
+        },
+        "entity/telecom": {
+            "title_kwd": "Telecommunications",
+            "summary_with_weight": "Mobile network technologies",
+            "entity_names_kwd": ["Telecommunications"],
+            "source_chunk_ids": [],
+        },
+    }
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": "entity/huawei",
+                    "title_kwd": "Huawei",
+                    "summary_with_weight": "A technology company",
+                    "entity_names_kwd": ["Huawei"],
+                    "_score": 0.7,
+                }
+            }
+        ]
+    )
+    doc_store.search = MagicMock(
+        return_value={
+            "hits": {
+                "total": {"value": 1},
+                "hits": [
+                    {
+                        "_source": {
+                            "slug_kwd": "entity/huawei",
+                            "title_kwd": "Huawei",
+                            "summary_with_weight": "A technology company",
+                            "entity_names_kwd": ["Huawei"],
+                            "_score": 0.7,
+                        }
+                    }
+                ],
+            }
+        }
+    )
+    responses = ['[{"id": 0, "page": "NEW"}]', '[{"id": 0, "page": "entity/telecom"}]']
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, side_effect=responses),
+    ):
+        assignments = await _wiki._wiki_page_router(
+            affected_entities=[entity],
+            chat_mdl=MockChatModel(),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            existing_pages=existing_pages,
+        )
+
+    assert assignments == {"entity/telecom": [entity]}
+
+
+@pytest.mark.asyncio
+async def test_page_router_confirms_new_even_without_extra_neighbors():
+    entity = {"entity_name": "Alpha product", "entity_type": "product", "claims": [], "action": "create"}
+    existing_pages = {
+        "entity/alpha": {
+            "title_kwd": "Alpha",
+            "summary_with_weight": "Alpha products",
+            "entity_names_kwd": ["Alpha"],
+            "source_chunk_ids": [],
+        }
+    }
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": "entity/alpha",
+                    "title_kwd": "Alpha",
+                    "summary_with_weight": "Alpha products",
+                    "entity_names_kwd": ["Alpha"],
+                    "_score": 0.7,
+                }
+            }
+        ]
+    )
+    doc_store.search = MagicMock(
+        return_value={
+            "hits": {
+                "total": {"value": 1},
+                "hits": [
+                    {
+                        "_source": {
+                            "slug_kwd": "entity/alpha",
+                            "title_kwd": "Alpha",
+                            "summary_with_weight": "Alpha products",
+                            "entity_names_kwd": ["Alpha"],
+                            "_score": 0.7,
+                        }
+                    }
+                ],
+            }
+        }
+    )
+    responses = ['[{"id": 0, "page": "NEW"}]', '[{"id": 0, "page": "entity/alpha"}]']
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, side_effect=responses) as ask,
+    ):
+        assignments = await _wiki._wiki_page_router(
+            affected_entities=[entity],
+            chat_mdl=MockChatModel(),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            existing_pages=existing_pages,
+        )
+
+    assert assignments == {"entity/alpha": [entity]}
+    assert ask.call_count == 2
 
 
 def test_spherical_clustering_is_input_order_independent():
