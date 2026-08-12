@@ -30,13 +30,11 @@ from common.data_source.utils import get_file_ext
 T = TypeVar("T")
 
 
-
 # List of directories/Files to exclude
 exclude_patterns = [
     "logs",
     ".github/",
     ".gitlab/",
-    ".pre-commit-config.yaml",
 ]
 
 
@@ -97,16 +95,15 @@ def _convert_issue_to_document(issue: Any) -> Document:
     return doc
 
 
-def _convert_code_to_document(
-    project: Project, file: Any, url: str, projectName: str, projectOwner: str
-) -> Document:
-    
+def _convert_code_to_document(project: Project, file: Any, url: str, projectName: str, projectOwner: str) -> Document:
+
     # Dynamically get the default branch from the project object
     default_branch = project.default_branch
 
     # Fetch the file content using the correct branch
     file_content_obj = project.files.get(
-        file_path=file["path"], ref=default_branch  # Use the default branch
+        file_path=file["path"],
+        ref=default_branch,  # Use the default branch
     )
     # BoxConnector uses raw bytes for blob. Keep the same here.
     file_content_bytes = file_content_obj.decode()
@@ -126,9 +123,7 @@ def _convert_code_to_document(
             # committed_date is ISO string like "2024-01-01T00:00:00.000+00:00"
             committed_date = commits[0].committed_date
             if isinstance(committed_date, str):
-                last_commit_at = datetime.strptime(
-                    committed_date, "%Y-%m-%dT%H:%M:%S.%f%z"
-                ).astimezone(timezone.utc)
+                last_commit_at = datetime.strptime(committed_date, "%Y-%m-%dT%H:%M:%S.%f%z").astimezone(timezone.utc)
             elif isinstance(committed_date, datetime):
                 last_commit_at = committed_date.astimezone(timezone.utc)
     except Exception:
@@ -182,9 +177,7 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.gitlab_client: gitlab.Gitlab | None = None
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
-        self.gitlab_client = gitlab.Gitlab(
-            credentials["gitlab_url"], private_token=credentials["gitlab_access_token"]
-        )
+        self.gitlab_client = gitlab.Gitlab(credentials["gitlab_url"], private_token=credentials["gitlab_access_token"])
         return None
 
     def validate_connector_settings(self) -> None:
@@ -199,33 +192,21 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             )
 
         except gitlab.exceptions.GitlabAuthenticationError as e:
-            raise CredentialExpiredError(
-                "Invalid or expired GitLab credentials."
-            ) from e
+            raise CredentialExpiredError("Invalid or expired GitLab credentials.") from e
 
         except gitlab.exceptions.GitlabAuthorizationError as e:
-            raise InsufficientPermissionsError(
-                "Insufficient permissions to access GitLab resources."
-            ) from e
+            raise InsufficientPermissionsError("Insufficient permissions to access GitLab resources.") from e
 
         except gitlab.exceptions.GitlabGetError as e:
-            raise ConnectorValidationError(
-                "GitLab project not found or not accessible."
-            ) from e
+            raise ConnectorValidationError("GitLab project not found or not accessible.") from e
 
         except Exception as e:
-            raise UnexpectedValidationError(
-                f"Unexpected error while validating GitLab settings: {e}"
-            ) from e
+            raise UnexpectedValidationError(f"Unexpected error while validating GitLab settings: {e}") from e
 
-    def _fetch_from_gitlab(
-        self, start: datetime | None = None, end: datetime | None = None
-    ) -> GenerateDocumentsOutput:
+    def _fetch_from_gitlab(self, start: datetime | None = None, end: datetime | None = None) -> GenerateDocumentsOutput:
         if self.gitlab_client is None:
             raise ConnectorMissingCredentialError("Gitlab")
-        project: Project = self.gitlab_client.projects.get(
-            f"{self.project_owner}/{self.project_name}"
-        )
+        project: Project = self.gitlab_client.projects.get(f"{self.project_owner}/{self.project_name}")
 
         start_utc = start.astimezone(timezone.utc) if start else None
         end_utc = end.astimezone(timezone.utc) if end else None
@@ -244,7 +225,6 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                             continue
 
                         if file["type"] == "blob":
-
                             doc = _convert_code_to_document(
                                 project,
                                 file,
@@ -277,9 +257,7 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             for mr_batch in _batch_gitlab_objects(merge_requests, self.batch_size):
                 mr_doc_batch: list[Document] = []
                 for mr in mr_batch:
-                    mr.updated_at = datetime.strptime(
-                        mr.updated_at, "%Y-%m-%dT%H:%M:%S.%f%z"
-                    )
+                    mr.updated_at = datetime.strptime(mr.updated_at, "%Y-%m-%dT%H:%M:%S.%f%z")
                     if start_utc is not None and mr.updated_at <= start_utc:
                         yield mr_doc_batch
                         return
@@ -294,9 +272,7 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             for issue_batch in _batch_gitlab_objects(issues, self.batch_size):
                 issue_doc_batch: list[Document] = []
                 for issue in issue_batch:
-                    issue.updated_at = datetime.strptime(
-                        issue.updated_at, "%Y-%m-%dT%H:%M:%S.%f%z"
-                    )
+                    issue.updated_at = datetime.strptime(issue.updated_at, "%Y-%m-%dT%H:%M:%S.%f%z")
                     # Avoid re-syncing the last-seen item.
                     if start_utc is not None and issue.updated_at <= start_utc:
                         yield issue_doc_batch
@@ -309,9 +285,7 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def load_from_state(self) -> GenerateDocumentsOutput:
         return self._fetch_from_gitlab()
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> GenerateDocumentsOutput:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> GenerateDocumentsOutput:
         start_datetime = datetime.fromtimestamp(start, tz=timezone.utc)
         end_datetime = datetime.fromtimestamp(end, tz=timezone.utc)
         return self._fetch_from_gitlab(start_datetime, end_datetime)
@@ -320,9 +294,7 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if self.gitlab_client is None:
             raise ConnectorMissingCredentialError("Gitlab")
 
-        project: Project = self.gitlab_client.projects.get(
-            f"{self.project_owner}/{self.project_name}"
-        )
+        project: Project = self.gitlab_client.projects.get(f"{self.project_owner}/{self.project_name}")
 
         slim_batch: list[SlimDocument] = []
 

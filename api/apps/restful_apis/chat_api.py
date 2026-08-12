@@ -16,6 +16,7 @@
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -23,19 +24,24 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 from quart import Response, request
+from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_type_and_name,
+    get_api_key,
+    get_composite_model_name_by_id,
+    get_model_config_by_id,
     get_tenant_default_model_by_type,
+    resolve_model_config,
+    resolve_model_id,
 )
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
-from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.dialog_service import DialogService, gen_mindmap, rag_agent
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
     check_duplicate_ids,
@@ -45,17 +51,50 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
+from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
 
+
+def _sanitize_json_floats(obj):
+    """Replace NaN/Infinity floats with None so the result is RFC 8259 JSON.
+
+    `json.dumps` emits the literal tokens `NaN`/`Infinity` by default
+    (allow_nan=True). Those tokens are valid Python JSON output but invalid
+    per the JSON spec, and downstream proxies / Go consumers reject the
+    response with `failed to encode response: json: unsupported value: NaN`
+    (fixes #15245). Retrieval scores (similarity, vector_similarity,
+    term_similarity) can become NaN when an aggregation runs over an empty
+    set or when a similarity denominator is zero, so the chat completions
+    stream is the realistic trigger.
+
+    `isinstance(obj, float)` alone catches Python float and numpy.float64
+    (a float subclass) but misses numpy.float32 / numpy.float16 and any
+    other duck-typed numeric. Probe via math.isnan/isinf in a try/except
+    so any object math can evaluate gets sanitized — without changing
+    upstream callers like chunks_format or rag/nlp/search.py.
+    """
+    try:
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    except TypeError:
+        pass
+    if isinstance(obj, dict):
+        return {k: _sanitize_json_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_json_floats(v) for v in obj)
+    return obj
+
+
 _DEFAULT_PROMPT_CONFIG = {
     "system": (
-        'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. '
-        'Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the '
+        "You are an intelligent assistant. Please summarize the content of the dataset to answer the question. "
+        "Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the "
         'question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" '
         "Answers need to consider chat history.\n"
         "      Here is the knowledge base:\n"
@@ -63,7 +102,7 @@ _DEFAULT_PROMPT_CONFIG = {
         "      The above is the knowledge base."
     ),
     "prologue": "Hi! I'm your assistant. What can I do for you?",
-    "parameters": [{"key": "knowledge", "optional": False}],
+    "parameters": [{"key": "knowledge", "optional": False}, {"key": "date", "optional": True}],
     "empty_response": "Sorry! No relevant content was found in the knowledge base!",
     "quote": True,
     "tts": False,
@@ -110,16 +149,34 @@ def _has_knowledge_placeholder(prompt_config):
 def _validate_name(name, *, required=True):
     if name is None:
         if required:
-            return None, "`name` is required."
+            return None, "`name` is required"
         return None, None
     if not isinstance(name, str):
-        return None, "Chat name must be a string."
+        return None, "chat name must be a string"
     name = name.strip()
     if not name:
-        return None, "`name` is required." if required else "`name` cannot be empty."
+        return None, "`name` is required" if required else "`name` cannot be empty"
     if len(name.encode("utf-8")) > 255:
-        return None, f"Chat name length is {len(name.encode('utf-8'))} which is larger than 255."
+        return None, f"chat name length is {len(name.encode('utf-8'))} which is larger than 255"
     return name, None
+
+
+def _validate_prompt_parameters(prompt_config):
+    parameters = prompt_config.get("parameters")
+    if not isinstance(parameters, list):
+        return None
+
+    keys = []
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        key = parameter.get("key")
+        if key is None:
+            continue
+        if key in keys:
+            return f"`parameters` contains duplicate key: {key}"
+        keys.append(key)
+    return None
 
 
 def _build_session_response(conv: dict) -> dict:
@@ -130,10 +187,7 @@ def _build_session_response(conv: dict) -> dict:
 
 
 async def _ensure_owned_chat(chat_id):
-    return await thread_pool_exec(
-        DialogService.query,
-        tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value
-    )
+    return await thread_pool_exec(DialogService.query, tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value)
 
 
 def _build_default_completion_dialog():
@@ -153,7 +207,7 @@ def _build_default_completion_dialog():
     )
 
 
-async def _create_session_for_completion(chat_id, dialog, user_id):
+async def _create_session_for_completion(chat_id, dialog, user_id, save_session=True):
     conv = {
         "id": get_uuid(),
         "dialog_id": chat_id,
@@ -162,6 +216,9 @@ async def _create_session_for_completion(chat_id, dialog, user_id):
         "user_id": user_id,
         "reference": [],
     }
+    if not save_session:
+        conv["id"] = None
+        return SimpleNamespace(**conv)
     await thread_pool_exec(ConversationService.save, **conv)
     ok, conv_obj = await thread_pool_exec(ConversationService.get_by_id, conv["id"])
     if not ok:
@@ -236,41 +293,68 @@ def _normalize_completion_messages(req):
     return (messages, msg), None
 
 
-async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
-    if not llm_id:
-        return None
-
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
+def _llm_model_type(llm_setting):
     model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
-        model_type = "chat"
+    if isinstance(model_type, list):
+        return "vision" if "vision" in model_type else "chat"
+    return model_type if isinstance(model_type, str) and model_type in {"chat", "vision"} else "chat"
 
-    if not await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
-        return f"`llm_id` {llm_id} doesn't exist"
+
+async def _normalize_model_pair(req, tenant_id, name_field, id_field, model_type):
+    """Validate and synchronize a model name with its tenant-model ID."""
+    if name_field not in req and id_field not in req:
+        return None
+
+    model_name = req.get(name_field)
+    model_id = req.get(id_field)
+    resolved_name_id = None
+
+    if model_name is not None and not isinstance(model_name, str):
+        return f"`{name_field}` must be a string"
+    if model_id is not None and not isinstance(model_id, str):
+        return f"`{id_field}` must be a tenant model id"
+
+    if model_id:
+        try:
+            await thread_pool_exec(get_model_config_by_id, tenant_id, model_type, model_id)
+        except LookupError as e:
+            logging.error("Fail to get %s config by tenant model id %s: %s", model_type, model_id, e)
+            return f"`{id_field}` must be a valid tenant model id"
+
+    if model_name:
+        if model_type == "rerank" and model_name.split("@")[0] in _DEFAULT_RERANK_MODELS:
+            if model_id:
+                return f"`{name_field}` and `{id_field}` must refer to the same model"
+        else:
+            try:
+                # A name field may already contain a tenant model ID. Resolve it
+                # strictly first, then fall back to the composite model name.
+                try:
+                    await thread_pool_exec(get_model_config_by_id, tenant_id, model_type, model_name)
+                    resolved_name_id = model_name
+                except LookupError:
+                    resolved_name_id = await thread_pool_exec(resolve_model_id, tenant_id, model_type, model_name)
+            except LookupError as e:
+                logging.error("Fail to resolve %s %s: %s", name_field, model_name, e)
+                return f"`{name_field}` {model_name} doesn't exist"
+
+    if model_id and model_name:
+        if resolved_name_id != model_id:
+            return f"`{name_field}` and `{id_field}` must refer to the same model"
+    elif model_name:
+        req[id_field] = resolved_name_id
+    elif model_id:
+        try:
+            req[name_field] = await thread_pool_exec(get_composite_model_name_by_id, model_id)
+        except LookupError as e:
+            logging.error("Fail to get composite name for %s %s: %s", id_field, model_id, e)
+            return f"`{id_field}` must be a valid tenant model id"
+    else:
+        # Clearing one side must not leave a stale ID/name on the other side.
+        req[id_field] = None
+        req[name_field] = ""
+
     return None
-
-
-async def _validate_rerank_id(rerank_id, tenant_id):
-    if not rerank_id:
-        return None
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(rerank_id)
-    if llm_name in _DEFAULT_RERANK_MODELS:
-        return None
-    if await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type="rerank",
-    ):
-        return None
-    return f"`rerank_id` {rerank_id} doesn't exist"
 
 
 # def _validate_prompt_config(prompt_config):
@@ -301,9 +385,9 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
             return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
-    embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]
-    if len(set(embd_ids)) > 1:
-        return f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}'
+    err = validate_dataset_embedding_models(kbs)
+    if err:
+        return err
 
     return normalized_ids
 
@@ -317,6 +401,8 @@ def _apply_prompt_defaults(req):
 
     if req.get("kb_ids") and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
         prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
+    if not any(p.get("key") == "date" for p in prompt_config.get("parameters", [])):
+        prompt_config.setdefault("parameters", []).append({"key": "date", "optional": True})
 
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821
@@ -330,7 +416,7 @@ async def create():
 
         # Validate tenant_id should not be provided
         if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided.")
+            return get_data_error_result(message="`tenant_id` must not be provided")
 
         # Validate name
         name, err = _validate_name(req.get("name"), required=True)
@@ -345,27 +431,32 @@ async def create():
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
+        if req.get("llm_id") is None and req.get("tenant_llm_id") is None:
+            req["llm_id"] = tenant.tenant_llm_id
+        if "rerank_id" not in req and "tenant_rerank_id" not in req:
+            req["rerank_id"] = ""
 
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "llm_id", "tenant_llm_id", _llm_model_type(req.get("llm_setting")))
+        if err:
+            return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "rerank_id", "tenant_rerank_id", "rerank")
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
-        req.setdefault("llm_id", tenant.llm_id)
+        req.setdefault("llm_id", tenant.tenant_llm_id)
         if req["llm_id"] is None:
-            req["llm_id"] = tenant.llm_id
+            req["llm_id"] = tenant.tenant_llm_id
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
@@ -379,7 +470,6 @@ async def create():
         # if err:
         #     return get_data_error_result(message=err)
 
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -389,7 +479,7 @@ async def create():
             tenant_id=current_user.id,
             status=StatusEnum.VALID.value,
         ):
-            return get_data_error_result(message="Duplicated chat name in creating chat.")
+            return get_data_error_result(message="duplicated chat name in creating chat")
 
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
@@ -417,40 +507,51 @@ async def list_chats():
     if chat_id or name:
         keywords = ""
 
-    try:
-        page_number = int(request.args.get("page", 0))
-        items_per_page = int(request.args.get("page_size", 0))
+    if orderby not in ("create_time", "update_time", "name"):
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
 
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        authorized_owner_ids = {member["tenant_id"] for member in tenants}
-        authorized_owner_ids.add(current_user.id)
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as ex:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(ex))
+
+    try:
+        # Invalid or negative pagination values fall back to defaults
+        # instead of leaking internal conversion/SQL errors.
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
 
         if owner_ids:
-            requested_owner_ids = set(owner_ids)
-            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
-            if unauthorized_owner_ids:
-                logging.warning(
-                    "Rejected list_chats request: user=%s attempted unauthorized owner_ids=%s",
-                    current_user.id,
-                    sorted(unauthorized_owner_ids),
-                )
-                return get_json_result(
-                    data=False,
-                    message="Only authorized owner_ids can be queried.",
-                    code=RetCode.OPERATING_ERROR,
-                )
-            effective_owner_ids = list(requested_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                owner_ids,
+                current_user.id,
+                0,
+                0,
+                orderby,
+                desc,
+                keywords,
+                **exact_filters,
+            )
+            chats = [chat for chat in chats if chat["tenant_id"] in owner_ids]
+            total = len(chats)
+            if page_number and items_per_page:
+                start = (page_number - 1) * items_per_page
+                chats = chats[start : start + items_per_page]
         else:
-            effective_owner_ids = list(authorized_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                [],
+                current_user.id,
+                page_number,
+                items_per_page,
+                orderby,
+                desc,
+                keywords,
+                **exact_filters,
+            )
 
-        chats, total = await thread_pool_exec(
-            DialogService.get_by_tenant_ids,
-            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
-        )
-
-        return get_json_result(
-            data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}
-        )
+        return get_json_result(data={"chats": [_build_chat_response(chat) for chat in chats], "total": total})
     except Exception as ex:
         return server_error_response(ex)
 
@@ -463,13 +564,15 @@ async def get_chat(chat_id):
         for tenant in tenants:
             if await thread_pool_exec(
                 DialogService.query,
-                tenant_id=tenant.tenant_id, id=chat_id, status=StatusEnum.VALID.value,
+                tenant_id=tenant.tenant_id,
+                id=chat_id,
+                status=StatusEnum.VALID.value,
             ):
                 break
         else:
             return get_json_result(
                 data=False,
-                message="No authorization.",
+                message="no authorization",
                 code=RetCode.AUTHENTICATION_ERROR,
             )
 
@@ -485,9 +588,7 @@ async def get_chat(chat_id):
 @login_required
 async def update_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
-            data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
-        )
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         req = await get_request_json()
@@ -501,7 +602,7 @@ async def update_chat(chat_id):
         current_chat = current_chat.to_dict()
 
         if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided.")
+            return get_data_error_result(message="`tenant_id` must not be provided")
 
         if "name" in req:
             name, err = _validate_name(req.get("name"), required=True)
@@ -516,19 +617,20 @@ async def update_chat(chat_id):
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
-
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        effective_llm_setting = req.get("llm_setting", current_chat.get("llm_setting", {}))
+        err = await _normalize_model_pair(req, current_user.id, "llm_id", "tenant_llm_id", _llm_model_type(effective_llm_setting))
+        if err:
+            return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "rerank_id", "tenant_rerank_id", "rerank")
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
@@ -539,8 +641,6 @@ async def update_chat(chat_id):
         # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
-
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -554,7 +654,7 @@ async def update_chat(chat_id):
                 status=StatusEnum.VALID.value,
             )
         ):
-            return get_data_error_result(message="Duplicated chat name.")
+            return get_data_error_result(message="duplicated chat name")
 
         if not DialogService.update_by_id(chat_id, req):
             return get_data_error_result(message="Chat not found!")
@@ -571,9 +671,7 @@ async def update_chat(chat_id):
 @login_required
 async def patch_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
-            data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
-        )
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         req = await get_request_json()
@@ -600,19 +698,27 @@ async def patch_chat(chat_id):
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
+        if "llm_setting" in req:
+            if not isinstance(req["llm_setting"], dict):
+                return get_data_error_result(message="`llm_setting` should be an object.")
+            llm_setting = deepcopy(current_chat.get("llm_setting") or {})
+            llm_setting.update(req["llm_setting"])
+            req["llm_setting"] = llm_setting
 
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        effective_llm_setting = req.get("llm_setting", current_chat.get("llm_setting", {}))
+        err = await _normalize_model_pair(req, current_user.id, "llm_id", "tenant_llm_id", _llm_model_type(effective_llm_setting))
+        if err:
+            return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "rerank_id", "tenant_rerank_id", "rerank")
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             prompt_config = deepcopy(current_chat.get("prompt_config", {}))
             prompt_config.update(req["prompt_config"])
             req["prompt_config"] = prompt_config
@@ -620,18 +726,12 @@ async def patch_chat(chat_id):
             # if err:
             #     return get_data_error_result(message=err)
 
-        if "llm_setting" in req:
-            llm_setting = deepcopy(current_chat.get("llm_setting", {}))
-            llm_setting.update(req["llm_setting"])
-            req["llm_setting"] = llm_setting
-
         # if "prompt_config" in req or "kb_ids" in req:
         #     prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))
         #     kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         #     if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #         return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -645,7 +745,7 @@ async def patch_chat(chat_id):
                 status=StatusEnum.VALID.value,
             )
         ):
-            return get_data_error_result(message="Duplicated chat name.")
+            return get_data_error_result(message="duplicated chat name")
 
         if not DialogService.update_by_id(chat_id, req):
             return get_data_error_result(message="Failed to update chat.")
@@ -662,9 +762,7 @@ async def patch_chat(chat_id):
 @login_required
 async def delete_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
-            data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
-        )
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
@@ -684,12 +782,7 @@ async def bulk_delete_chats():
     ids = req.get("ids")
     if not ids:
         if req.get("delete_all") is True:
-            ids = [
-                chat.id
-                for chat in DialogService.query(
-                    tenant_id=current_user.id, status=StatusEnum.VALID.value
-                )
-            ]
+            ids = [chat.id for chat in DialogService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)]
             if not ids:
                 return get_json_result(data={})
         else:
@@ -731,7 +824,7 @@ async def bulk_delete_chats():
 async def create_session(chat_id):
     """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, dia = DialogService.get_by_id(chat_id)
@@ -739,7 +832,7 @@ async def create_session(chat_id):
             return get_data_error_result(message="Chat not found!")
         name = req.get("name", "New session")
         if not isinstance(name, str) or not name.strip():
-            return get_data_error_result(message="`name` can not be empty.")
+            return get_data_error_result(message="`name` can not be empty")
         name = name.strip()[:255]
         conv = {
             "id": get_uuid(),
@@ -765,19 +858,21 @@ async def list_sessions(chat_id):
         if not await _ensure_owned_chat(chat_id):
             return get_json_result(
                 data=False,
-                message="No authorization.",
+                message="no authorization",
                 code=RetCode.AUTHENTICATION_ERROR,
             )
-        page_number = int(request.args.get("page", 1))
-        items_per_page = int(request.args.get("page_size", 30))
+        # Invalid or negative pagination values fall back to defaults
+        # instead of leaking internal conversion/SQL errors.
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
         orderby = request.args.get("orderby", "create_time")
+        if orderby not in ("create_time", "update_time", "name"):
+            return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")
         name = request.args.get("name")
         user_id = request.args.get("user_id")
-        convs = ConversationService.get_list(
-            chat_id, page_number, items_per_page, orderby, desc, session_id, name, user_id
-        )
+        convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, session_id, name, user_id)
         if items_per_page == 0:
             convs = []
         return get_json_result(data=[_build_session_response(c) for c in convs])
@@ -789,7 +884,7 @@ async def list_sessions(chat_id):
 @login_required
 async def get_session(chat_id, session_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
         if not ok:
@@ -813,19 +908,19 @@ async def get_session(chat_id, session_id):
 @login_required
 async def update_session(chat_id, session_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         if not ConversationService.query(id=session_id, dialog_id=chat_id):
             return get_data_error_result(message="Session not found!")
         if "message" in req or "messages" in req:
-            return get_data_error_result(message="`messages` cannot be changed.")
+            return get_data_error_result(message="`messages` cannot be changed")
         if "reference" in req:
-            return get_data_error_result(message="`reference` cannot be changed.")
+            return get_data_error_result(message="`reference` cannot be changed")
         name = req.get("name")
         if name is not None:
             if not isinstance(name, str) or not name.strip():
-                return get_data_error_result(message="`name` can not be empty.")
+                return get_data_error_result(message="`name` can not be empty")
             req["name"] = name.strip()[:255]
         update_fields = {k: v for k, v in req.items() if k not in {"id", "dialog_id", "chat_id", "user_id"}}
         if not ConversationService.update_by_id(session_id, update_fields):
@@ -842,9 +937,12 @@ async def update_session(chat_id, session_id):
 @login_required
 async def delete_sessions(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
-        req = await get_request_json()
+        try:
+            req = await get_request_json()
+        except BadRequest:
+            return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Malformed JSON syntax: Missing commas/brackets or invalid encoding")
         if not req:
             return get_json_result(data={})
 
@@ -893,7 +991,7 @@ async def delete_sessions(chat_id):
 @login_required
 async def delete_session_message(chat_id, session_id, msg_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok or conv.dialog_id != chat_id:
@@ -905,7 +1003,8 @@ async def delete_session_message(chat_id, session_id, msg_id):
             assert conv["message"][i + 1]["id"] == msg_id
             conv["message"].pop(i)
             conv["message"].pop(i)
-            conv["reference"].pop(max(0, i // 2 - 1))
+            ref_index = (i - 1) // 2
+            conv["reference"].pop(ref_index)
             break
         ConversationService.update_by_id(conv["id"], conv)
         return get_json_result(data=_build_session_response(conv))
@@ -918,7 +1017,7 @@ async def delete_session_message(chat_id, session_id, msg_id):
 async def update_message_feedback(chat_id, session_id, msg_id):
     owned = await _ensure_owned_chat(chat_id)
     if not owned:
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, conv = ConversationService.get_by_id(session_id)
@@ -1020,24 +1119,28 @@ async def transcription():
     uploaded = files["file"]
 
     ALLOWED_EXTS = {
-        ".wav", ".mp3", ".m4a", ".aac",
-        ".flac", ".ogg", ".webm",
-        ".opus", ".wma",
+        ".wav",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".flac",
+        ".ogg",
+        ".webm",
+        ".opus",
+        ".wma",
     }
 
     filename = uploaded.filename or ""
     suffix = os.path.splitext(filename)[-1].lower()
     if suffix not in ALLOWED_EXTS:
-        return get_data_error_result(
-            message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
-        )
+        return get_data_error_result(message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}")
 
     fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
     await uploaded.save(temp_audio_path)
 
     try:
-        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
+        default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.ASR)
     except Exception as e:
         return get_data_error_result(message=str(e))
 
@@ -1100,12 +1203,12 @@ async def recommendation():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
+        chat_model_config = resolve_model_config(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)
 
-    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
     if "parameter" in gen_conf:
         del gen_conf["parameter"]
     prompt = load_prompt("related_question")
@@ -1132,6 +1235,9 @@ async def session_completion(chat_id_in_arg=""):
         return error
     request_messages, request_msg = normalized
     pass_all_history_messages = _get_bool_request_flag(req, "pass_all_history_messages", "pass_all_history", default=False)
+    store_history_messages = _get_bool_request_flag(req, "store_history_messages", "store_history", default=True)
+    if not store_history_messages and not pass_all_history_messages:
+        return get_data_error_result(message="`pass_all_history_messages` must be true when `store_history_messages` is false.")
     msg = request_msg
     message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""
@@ -1139,11 +1245,7 @@ async def session_completion(chat_id_in_arg=""):
     session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
-    chat_model_config = {}
-    for model_config in ["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens"]:
-        config = req.get(model_config)
-        if config:
-            chat_model_config[model_config] = config
+    chat_model_config = pop_generation_config(req)
 
     try:
         conv = None
@@ -1154,7 +1256,7 @@ async def session_completion(chat_id_in_arg=""):
             if not await _ensure_owned_chat(chat_id):
                 return get_json_result(
                     data=False,
-                    message="No authorization.",
+                    message="no authorization",
                     code=RetCode.AUTHENTICATION_ERROR,
                 )
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
@@ -1167,7 +1269,7 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id, save_session=store_history_messages)
                 session_id = conv.id
 
             if pass_all_history_messages:
@@ -1186,7 +1288,6 @@ async def session_completion(chat_id_in_arg=""):
                     msg.append(m)
         else:
             dia = _build_default_completion_dialog()
-            dia.llm_setting = chat_model_config
 
         req.pop("messages", None)
         req.pop("question", None)
@@ -1198,11 +1299,23 @@ async def session_completion(chat_id_in_arg=""):
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
-            if not await thread_pool_exec(TenantLLMService.get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
+            if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
+        elif not dia.llm_id:
+            logging.info("empty chat_model_id in req, use default chat model.")
+            _, tenant_info = TenantService.get_by_id(dia.tenant_id)
+            if not tenant_info or not tenant_info.llm_id:
+                raise LookupError("No default chat model for tenant.")
+            dia.llm_id = tenant_info.llm_id
+            merge_generation_config(dia, chat_model_config)
 
+        legacy = _get_bool_request_flag(
+            req,
+            "legacy",
+            default=False,
+        )
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
@@ -1216,10 +1329,54 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
-                    ans = _format_answer(ans)
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
-                if conv is not None:
+                if legacy:
+                    # v0.23.0-style streaming: emit accumulated answer text and
+                    # reconstruct raw <think>...</think> markers from the newer
+                    # start_to_think/end_to_think events.
+                    legacy_answer = ""
+                    final_answer = None
+                    async for ans in rag_agent(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        if ans.get("final"):
+                            final_answer = ans
+                            continue
+                        if ans.get("start_to_think"):
+                            legacy_answer += "<think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        if ans.get("end_to_think"):
+                            legacy_answer += "</think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        delta = ans.get("answer") or ""
+                        if not delta:
+                            continue
+                        legacy_answer += delta
+                        legacy_chunk = {**ans, "answer": legacy_answer}
+                        legacy_chunk.pop("start_to_think", None)
+                        legacy_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                    if final_answer is not None:
+                        final_chunk = {**final_answer, "answer": final_answer.get("answer") or legacy_answer}
+                        final_chunk.pop("start_to_think", None)
+                        final_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": final_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                else:
+                    async for ans in rag_agent(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                if conv is not None and store_history_messages:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
                 logging.exception(ex)
@@ -1235,11 +1392,11 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, False, **req):
+        async for ans in rag_agent(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
-            if conv is not None:
+            if conv is not None and store_history_messages:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
-        return get_json_result(data=answer)
+        return get_json_result(data=_sanitize_json_floats(answer))
     except Exception as ex:
         return server_error_response(ex)

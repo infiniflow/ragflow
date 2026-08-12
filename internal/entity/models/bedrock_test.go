@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -206,8 +207,8 @@ func TestMapChatConfigToInferenceForwardsAllFields(t *testing.T) {
 	if inf == nil {
 		t.Fatal("expected non-nil inferenceConfig")
 	}
-	if inf.MaxTokens == nil || *inf.MaxTokens != 4096 {
-		t.Errorf("maxTokens=%v", inf.MaxTokens)
+	if inf.MaxTokens != nil {
+		t.Errorf("maxTokens should be omitted, got %v", inf.MaxTokens)
 	}
 	if inf.Temperature == nil || *inf.Temperature != 0.5 {
 		t.Errorf("temperature=%v", inf.Temperature)
@@ -327,6 +328,8 @@ func newBedrockServer(t *testing.T, wantMethod, wantPath string, handler http.Ha
 }
 
 func TestBedrockChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/anthropic.claude-3-haiku-20240307-v1:0/converse",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -350,9 +353,9 @@ func TestBedrockChatHappyPath(t *testing.T) {
 
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	resp, err := m.ChatWithMessages("anthropic.claude-3-haiku-20240307-v1:0",
+	resp, err := m.ChatWithMessages(ctx, "anthropic.claude-3-haiku-20240307-v1:0",
 		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -368,24 +371,30 @@ func TestBedrockChatHappyPath(t *testing.T) {
 }
 
 func TestBedrockChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
-	_, err := m.ChatWithMessages("m", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
+	_, err := m.ChatWithMessages(ctx, "m", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("want api-key error, got %v", err)
 	}
 }
 
 func TestBedrockChatRequiresModelID(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
-	_, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+	_, err := m.ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model id is required") {
 		t.Errorf("want model-required error, got %v", err)
 	}
 }
 
 func TestBedrockChatPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/m/converse",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -396,9 +405,9 @@ func TestBedrockChatPropagatesHTTPError(t *testing.T) {
 
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	_, err := m.ChatWithMessages("m",
+	_, err := m.ChatWithMessages(ctx, "m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil)
+		&APIConfig{ApiKey: &key}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("want 401 propagated, got %v", err)
 	}
@@ -408,6 +417,8 @@ func TestBedrockChatPropagatesHTTPError(t *testing.T) {
 }
 
 func TestBedrockListModelsParsesCatalog(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodGet,
 		"/foundation-models",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -424,7 +435,7 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	got, err := m.ListModels(&APIConfig{ApiKey: &key})
+	got, err := m.ListModels(ctx, &APIConfig{ApiKey: &key})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -438,13 +449,15 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 		t.Fatalf("len(got)=%d want %d (%v)", len(got), len(want), got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d]=%q want %q", i, got[i], want[i])
+		if got[i].Name != want[i] {
+			t.Errorf("got[%d]=%s want %q", i, got[i].Name, want[i])
 		}
 	}
 }
 
 func TestBedrockCheckConnectionDelegates(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodGet,
 		"/foundation-models",
 		func(w http.ResponseWriter, r *http.Request) {
@@ -453,7 +466,7 @@ func TestBedrockCheckConnectionDelegates(t *testing.T) {
 	defer srv.Close()
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	if err := m.CheckConnection(&APIConfig{ApiKey: &key}); err == nil || !strings.Contains(err.Error(), "403") {
+	if err := m.CheckConnection(ctx, &APIConfig{ApiKey: &key}); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("want 403 surfaced via ListModels, got %v", err)
 	}
 }
@@ -497,6 +510,8 @@ func encodeBedrockEventFrames(t *testing.T, events []struct {
 }
 
 func TestBedrockStreamDecodesContentDeltas(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	frames := encodeBedrockEventFrames(t, []struct {
 		eventType   string
 		messageType string
@@ -520,9 +535,9 @@ func TestBedrockStreamDecodesContentDeltas(t *testing.T) {
 	key := validBedrockKey()
 	var chunks []string
 	sawDone := false
-	err := m.ChatStreamlyWithSender("m",
+	err := m.ChatStreamlyWithSender(ctx, "m",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &key}, nil,
+		&APIConfig{ApiKey: &key}, nil, nil,
 		func(c *string, _ *string) error {
 			if c == nil {
 				return nil
@@ -546,6 +561,8 @@ func TestBedrockStreamDecodesContentDeltas(t *testing.T) {
 }
 
 func TestBedrockStreamSurfacesException(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	frames := encodeBedrockEventFrames(t, []struct {
 		eventType   string
 		messageType string
@@ -568,9 +585,9 @@ func TestBedrockStreamSurfacesException(t *testing.T) {
 
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	err := m.ChatStreamlyWithSender("m",
+	err := m.ChatStreamlyWithSender(ctx, "m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil,
+		&APIConfig{ApiKey: &key}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "exception") {
 		t.Errorf("want exception surfaced, got %v", err)
@@ -578,6 +595,8 @@ func TestBedrockStreamSurfacesException(t *testing.T) {
 }
 
 func TestBedrockStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Connection closed cleanly after a delta but before messageStop.
 	// This used to be silently treated as success, masking truncated
 	// answers; the driver must now surface a "stream ended before
@@ -599,23 +618,76 @@ func TestBedrockStreamFailsWithoutTerminal(t *testing.T) {
 
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	err := m.ChatStreamlyWithSender("m",
+	err := m.ChatStreamlyWithSender(ctx, "m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil,
+		&APIConfig{ApiKey: &key}, nil, nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("want truncation error, got %v", err)
 	}
 }
 
+func TestBedrockStreamRecordsUsageFromPostMessageStopMetadata(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	// The AWS Bedrock Converse-Stream protocol sends a final
+	// "metadata" frame AFTER messageStop carrying token usage. The
+	// driver must not exit the decoder on messageStop, otherwise this
+	// metadata (and therefore the captured usage) is silently dropped.
+	frames := encodeBedrockEventFrames(t, []struct {
+		eventType   string
+		messageType string
+		payload     []byte
+	}{
+		{eventType: "messageStart", payload: []byte(`{"role":"assistant"}`)},
+		{eventType: "contentBlockDelta", payload: []byte(`{"delta":{"text":"hi"},"contentBlockIndex":0}`)},
+		{eventType: "messageStop", payload: []byte(`{"stopReason":"end_turn"}`)},
+		{
+			eventType: "metadata",
+			payload:   []byte(`{"usage":{"inputTokens":7,"outputTokens":3,"totalTokens":10},"metrics":{"latencyMs":42}}`),
+		},
+	})
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/m/converse-stream",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+			_, _ = w.Write(frames)
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	usage := &common.ModelUsage{}
+	cfg := &ChatConfig{}
+	err := m.ChatStreamlyWithSender(ctx, "m",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &key}, cfg, usage,
+		func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if usage.InputTokens != 7 || usage.OutputTokens != 3 || usage.TotalTokens != 10 {
+		t.Errorf("modelUsage=(%d,%d,%d), want (7,3,10)", usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
+	}
+	if cfg.UsageResult == nil {
+		t.Fatal("UsageResult is nil, want populated from post-messageStop metadata")
+	}
+	if cfg.UsageResult.PromptTokens != 7 || cfg.UsageResult.CompletionTokens != 3 || cfg.UsageResult.TotalTokens != 10 {
+		t.Errorf("UsageResult=(%d,%d,%d), want (7,3,10)", cfg.UsageResult.PromptTokens, cfg.UsageResult.CompletionTokens, cfg.UsageResult.TotalTokens)
+	}
+}
+
 func TestBedrockStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
 	stream := false
-	err := m.ChatStreamlyWithSender("m",
+	err := m.ChatStreamlyWithSender(ctx, "m",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &key},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream must be true") {
 		t.Errorf("want stream-true guard, got %v", err)
@@ -623,11 +695,13 @@ func TestBedrockStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestBedrockStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
-	err := m.ChatStreamlyWithSender("m",
+	err := m.ChatStreamlyWithSender(ctx, "m",
 		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &key}, nil, nil)
+		&APIConfig{ApiKey: &key}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
 		t.Errorf("want sender-required error, got %v", err)
 	}
@@ -646,48 +720,239 @@ func TestLookupBedrockEventHeader(t *testing.T) {
 	}
 }
 
-func TestBedrockEmbedReturnsNoSuchMethod(t *testing.T) {
+func TestBedrockTitanEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	var seenInputs []string
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/amazon.titan-embed-text-v2:0/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockTitanEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			seenInputs = append(seenInputs, body.InputText)
+			if body.Dimensions == nil || *body.Dimensions != 256 {
+				t.Errorf("dimensions=%v, want 256", body.Dimensions)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if body.InputText == "alpha" {
+				_, _ = w.Write([]byte(`{"embedding":[0.1,0.2]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"embedding":[0.3,0.4]}`))
+			}
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "amazon.titan-embed-text-v2:0"
+	got, err := m.Embed(ctx, &model, []string{"alpha", "beta"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 256}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(seenInputs) != 2 || seenInputs[0] != "alpha" || seenInputs[1] != "beta" {
+		t.Fatalf("seen inputs=%v", seenInputs)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got)=%d want 2", len(got))
+	}
+	if got[0].Index != 0 || got[0].Embedding[0] != 0.1 || got[1].Index != 1 || got[1].Embedding[0] != 0.3 {
+		t.Errorf("embeddings=%+v", got)
+	}
+}
+
+func TestBedrockTitanV1OmitsDimension(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/amazon.titan-embed-text-v1/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			if strings.Contains(string(raw), "dimensions") {
+				t.Errorf("Titan v1 body must not include dimensions: %s", string(raw))
+			}
+			_, _ = w.Write([]byte(`{"embedding":[0.1,0.2]}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "amazon.titan-embed-text-v1"
+	if _, err := m.Embed(ctx, &model, []string{"alpha"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 256}, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
+func TestBedrockCohereEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/cohere.embed-english-v3/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockCohereEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			if len(body.Texts) != 2 || body.Texts[0] != "first" || body.Texts[1] != "second" {
+				t.Errorf("texts=%v", body.Texts)
+			}
+			if body.InputType != "search_document" {
+				t.Errorf("input_type=%q want search_document", body.InputType)
+			}
+			if body.OutputDimension != nil {
+				t.Errorf("v3 output_dimension=%v, want omitted", *body.OutputDimension)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"embeddings":[[1,2],[3,4]]}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "cohere.embed-english-v3"
+	got, err := m.Embed(ctx, &model, []string{"first", "second"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 128}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(got) != 2 || got[0].Index != 0 || got[0].Embedding[0] != 1 || got[1].Index != 1 || got[1].Embedding[0] != 3 {
+		t.Errorf("embeddings=%+v", got)
+	}
+}
+
+func TestBedrockCohereV4ForwardsDimensionAndParsesTypedResponse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/cohere.embed-v4:0/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockCohereEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			if body.OutputDimension == nil || *body.OutputDimension != 512 {
+				t.Errorf("output_dimension=%v, want 512", body.OutputDimension)
+			}
+			_, _ = w.Write([]byte(`{"embeddings":{"float":[[0.5,0.6]]}}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "cohere.embed-v4:0"
+	got, err := m.Embed(ctx, &model, []string{"first"}, &APIConfig{ApiKey: &key}, &EmbeddingConfig{Dimension: 512}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(got) != 1 || got[0].Index != 0 || got[0].Embedding[0] != 0.5 {
+		t.Errorf("embeddings=%+v", got)
+	}
+}
+
+func TestBedrockEmbedShortCircuitsEmptyInput(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	m := newBedrockForTest("http://unused")
+	got, err := m.Embed(ctx, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Embed empty: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got)=%d want 0", len(got))
+	}
+}
+
+func TestBedrockEmbedRequiresAPIKeyAndModel(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	model := "x"
-	if _, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: want no-such-method, got %v", err)
+	if _, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("Embed: want api-key error, got %v", err)
+	}
+	key := validBedrockKey()
+	blank := " "
+	if _, err := m.Embed(ctx, &blank, []string{"a"}, &APIConfig{ApiKey: &key}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("Embed: want model-required error, got %v", err)
+	}
+}
+
+func TestBedrockEmbedRejectsUnsupportedModel(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	m := newBedrockForTest("http://unused")
+	key := validBedrockKey()
+	model := "anthropic.claude-3-haiku-20240307-v1:0"
+	if _, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &key}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported embedding model") {
+		t.Errorf("Embed: want unsupported-model error, got %v", err)
+	}
+}
+
+func TestBedrockEmbedPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/amazon.titan-embed-text-v2:0/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"message":"bad input"}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "amazon.titan-embed-text-v2:0"
+	if _, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &key}, nil, nil); err == nil || !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "bad input") {
+		t.Errorf("Embed: want HTTP error with body, got %v", err)
 	}
 }
 
 func TestBedrockRerankReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	model := "x"
-	if _, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: want no-such-method, got %v", err)
 	}
 }
 
 func TestBedrockBalanceReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
-	if _, err := m.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: want no-such-method, got %v", err)
 	}
 }
 
 func TestBedrockAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: want no-such-method, got %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: want no-such-method, got %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: want no-such-method, got %v", err)
 	}
-	if _, err := m.ParseFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ParseFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile: want no-such-method, got %v", err)
 	}
-	if _, err := m.ListTasks(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ListTasks(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ListTasks: want no-such-method, got %v", err)
 	}
-	if _, err := m.ShowTask("t", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ShowTask(ctx, "t", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ShowTask: want no-such-method, got %v", err)
 	}
 }

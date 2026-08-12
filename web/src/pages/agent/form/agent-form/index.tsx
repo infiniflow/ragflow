@@ -157,11 +157,11 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.tags?.includes('IMAGE2TEXT') && (
+          <LargeModelFormField></LargeModelFormField>
+          {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
             <QueryVariable
               name="visual_files_var"
-              label="Visual Input File"
+              label={t('flow.visualInputFile')}
               types={[VariableType.File]}
             ></QueryVariable>
           )}
@@ -204,7 +204,7 @@ function AgentForm({ node }: INextOperatorForm) {
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+          <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField

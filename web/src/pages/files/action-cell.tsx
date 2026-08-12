@@ -177,7 +177,7 @@ export function ActionCell({
                     <FileIcon name={name} type={type}></FileIcon>
                   </span>
                   <span
-                    className={cn('truncate text-xs', {
+                    className={cn('truncate text-xs text-wrap', {
                       ['cursor-pointer']: isFolder,
                     })}
                   >

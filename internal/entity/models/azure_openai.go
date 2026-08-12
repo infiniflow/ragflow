@@ -17,96 +17,56 @@
 package models
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
+	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 // azureAPIVersion is the Azure OpenAI REST API version sent as the
-// api-version query parameter on every request. Azure requires this on
-// all data-plane calls; 2024-10-21 is the latest GA (non-preview) version.
 const azureAPIVersion = "2024-10-21"
 
 // AzureOpenAIModel implements ModelDriver for Azure OpenAI.
-//
-// Azure OpenAI is not a base-URL swap of the OpenAI driver. It differs in
-// three ways that this driver handles:
-//   - Endpoints are deployment-scoped:
-//     {baseURL}/deployments/{deployment}/{op}?api-version={azureAPIVersion}
-//     The model name passed in is the Azure deployment name, which goes in
-//     the URL path rather than the request body.
-//   - Authentication uses the "api-key" header, not "Authorization: Bearer".
-//   - Listing models means listing deployments via {baseURL}/deployments.
-//
-// The base URL is user-supplied (e.g. https://<resource>.openai.azure.com/openai)
-// because each Azure resource has its own endpoint; there is no shared default.
 type AzureOpenAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewAzureOpenAIModel creates a new Azure OpenAI model instance.
-//
-// The transport mirrors the OpenAI driver: clone http.DefaultTransport to
-// keep Go's defaults (proxy, dial keep-alive, HTTP/2, TLS handshake) and
-// only tune the connection pool. The Client has no overall Timeout so SSE
-// streams in ChatStreamlyWithSender are not cut off; non-streaming callers
-// wrap each request in context.WithTimeout, and ResponseHeaderTimeout caps
-// how long we wait for the first response header.
 func NewAzureOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *AzureOpenAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &AzureOpenAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
+			// Azure OpenAI authenticates with the non-standard "api-key"
+			// header instead of "Authorization: Bearer".
+			authHeader: func(cfg *APIConfig) (string, string) {
+				return "api-key", *cfg.ApiKey
+			},
 		},
 	}
 }
 
-func (z *AzureOpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAzureOpenAIModel(baseURL, z.URLSuffix)
+func (a *AzureOpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewAzureOpenAIModel(baseURL, a.baseModel.URLSuffix)
 }
 
-func (z *AzureOpenAIModel) Name() string {
+func (a *AzureOpenAIModel) Name() string {
 	return "azure-openai"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an error if
-// no entry exists. A misconfigured region fails fast with a clear message
-// instead of silently producing a relative URL the transport then rejects.
-func (z *AzureOpenAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := z.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("azure-openai: no base URL configured for region %q", region)
-	}
-	return base, nil
-}
-
 // deploymentURL builds a deployment-scoped data-plane URL of the form
-// {baseURL}/deployments/{deployment}/{op}?api-version={azureAPIVersion}.
-func (z *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string {
+func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string {
 	return fmt.Sprintf("%s/deployments/%s/%s?api-version=%s",
 		strings.TrimRight(baseURL, "/"), deployment, op, azureAPIVersion)
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (z *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -117,37 +77,23 @@ func (z *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message
 		return nil, fmt.Errorf("deployment name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := z.deploymentURL(baseURL, modelName, z.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat)
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// The deployment (and therefore the model) is identified by the URL path,
-	// so Azure does not take a "model" field in the body.
+	// Azure preserves its own body shape (no "model" field; deployment is in
+	// the URL; temperature defaults to 1) rather than using buildRequestBody
+	// which would inject an unknown "model" field Azure rejects.
 	reqBody := map[string]interface{}{
-		"messages":    apiMessages,
+		"messages":    buildChatMessages(messages),
 		"stream":      false,
 		"temperature": 1,
 	}
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
 		if chatModelConfig.Temperature != nil {
 			reqBody["temperature"] = *chatModelConfig.Temperature
 		}
@@ -159,85 +105,23 @@ func (z *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := a.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = rc
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
 // sender function. Used for streaming chat responses with no extra channel.
-func (z *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if len(messages) == 0 {
-		return fmt.Errorf("messages is empty")
+func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
 	}
 
 	if modelName == "" {
@@ -248,39 +132,21 @@ func (z *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 		return fmt.Errorf("sender is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := z.deploymentURL(baseURL, modelName, z.URLSuffix.Chat)
-
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat)
 
 	reqBody := map[string]interface{}{
-		"messages": apiMessages,
+		"messages": buildChatMessages(messages),
 		"stream":   true,
 	}
 
 	if chatModelConfig != nil {
-		// This code path only knows how to read SSE, so refuse an explicit
-		// stream=false rather than mis-parsing a single JSON response as a
-		// stream and emitting no chunks.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
-		}
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
 		if chatModelConfig.Temperature != nil {
 			reqBody["temperature"] = *chatModelConfig.Temperature
@@ -293,102 +159,14 @@ func (z *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	// Request token usage in streaming response. Azure OpenAI only
+	// includes usage in the final chunk when stream_options.include_usage
+	// is set.
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	// Background context: SSE streams are long-lived so we attach no hard
-	// deadline. The transport's ResponseHeaderTimeout caps connection setup.
-	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: bump the scanner buffer to 1MB so a long data: line is
-	// never silently truncated by the default 64KB cap.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	// sawTerminal flips true when upstream signals the stream is done (a
-	// "[DONE]" marker or a non-empty finish_reason). If the body closes
-	// before either, we must not emit a synthetic "[DONE]" that would hide
-	// a truncated response from the caller.
-	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		if content, ok := delta["content"].(string); ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-			break
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !sawTerminal {
-		return fmt.Errorf("azure-openai: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
+	return a.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type azureEmbeddingResponse struct {
@@ -398,32 +176,26 @@ type azureEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-// Embed turns a list of texts into embedding vectors using the Azure OpenAI
-// embeddings deployment. The output has one vector per input, in the same
-// order the inputs were given.
-func (z *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
+// Embed turns a list of texts into embedding vectors
+func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("deployment name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := z.deploymentURL(baseURL, *modelName, z.URLSuffix.Embedding)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := a.deploymentURL(baseURL, *modelName, a.baseModel.URLSuffix.Embedding)
 
 	// As with chat, the deployment is in the URL path, so no "model" field.
 	reqBody := map[string]interface{}{
@@ -433,46 +205,15 @@ func (z *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := a.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Azure OpenAI embeddings API error: %s, body: %s", resp.Status, string(body))
+		return nil, err
 	}
 
 	var parsed azureEmbeddingResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	// Azure returns one item per input, but does not guarantee response
-	// order. Each item's Index refers to its position in the input list, so
-	// place vectors by Index to honor the documented input-order guarantee.
-	// Reject an out-of-range index instead of panicking.
 	embeddings := make([]EmbeddingData, len(texts))
 	for _, d := range parsed.Data {
 		if d.Index < 0 || d.Index >= len(embeddings) {
@@ -488,122 +229,80 @@ func (z *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 }
 
 // ListModels returns the deployment names visible to the configured API key.
-// Azure exposes deployments (not a shared model catalog) at
-// {baseURL}/deployments?api-version={azureAPIVersion}.
-func (z *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (a *AzureOpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s?api-version=%s",
-		strings.TrimRight(baseURL, "/"), z.URLSuffix.Models, azureAPIVersion)
+		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, azureAPIVersion)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	body, err := a.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid deployments list format")
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
-	for _, item := range data {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		// Each deployment object exposes its name under "id".
-		id, ok := m["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, id)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the endpoint
-// and API key.
-func (z *AzureOpenAIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
+func (a *AzureOpenAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := a.ListModels(ctx, apiConfig)
 	return err
 }
 
 // Balance is not exposed by the Azure OpenAI API.
-func (z *AzureOpenAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (a *AzureOpenAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // Rerank is not exposed by the Azure OpenAI API.
-func (z *AzureOpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AzureOpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AzureOpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

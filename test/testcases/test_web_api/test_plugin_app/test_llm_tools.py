@@ -51,6 +51,7 @@ class _DummyManager:
     def route(self, *_args, **_kwargs):
         def decorator(func):
             return func
+
         return decorator
 
 

@@ -1,15 +1,34 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 // src/pages/next-search/search-setting.tsx
 
 import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import {
+  LLMIdFormField,
+  LlmSettingEnabledSchema,
   LlmSettingFieldItems,
-  LlmSettingSchema,
+  LlmSettingFieldSchema,
 } from '@/components/llm-setting-items/next';
 import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
@@ -23,14 +42,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
-import {
-  useComposeLlmOptionsByModelTypes,
-  useSelectLlmOptionsByModelType,
-} from '@/hooks/use-llm-request';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,7 +53,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { LlmModelType } from '../dataset/dataset/constant';
 import {
   ISearchAppDetailProps,
   IUpdateSearchProps,
@@ -70,10 +83,7 @@ const SearchSettingFormSchema = z
       use_rerank: z.boolean(),
       top_k: z.number(),
       summary: z.boolean(),
-      llm_setting: z.object({
-        ...LlmSettingSchema,
-        parameter: z.string().optional(),
-      }),
+      llm_setting: z.object({ ...LlmSettingFieldSchema, ...LLMIdFormField }),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
       doc_ids: z.array(z.string()),
@@ -89,6 +99,7 @@ const SearchSettingFormSchema = z
         .optional(),
       ...MetadataFilterSchema,
     }),
+    ...LlmSettingEnabledSchema,
   })
   .superRefine((data, ctx) => {
     if (data.search_config.use_rerank && !data.search_config.rerank_id) {
@@ -135,7 +146,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           search_config?.vector_similarity_weight ?? 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
-        similarity_threshold: search_config?.similarity_threshold || 0.2,
+        similarity_threshold: search_config?.similarity_threshold ?? 0.2,
         use_kg: false,
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
@@ -149,12 +160,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           top_p: llm_setting?.top_p || 0,
           frequency_penalty: llm_setting?.frequency_penalty || 0,
           presence_penalty: llm_setting?.presence_penalty || 0,
-          temperatureEnabled: llm_setting?.temperature ? true : false,
-          topPEnabled: llm_setting?.top_p ? true : false,
-          presencePenaltyEnabled: llm_setting?.presence_penalty ? true : false,
-          frequencyPenaltyEnabled: llm_setting?.frequency_penalty
-            ? true
-            : false,
         },
         chat_settingcross_languages: [],
         highlight: false,
@@ -171,6 +176,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               : undefined,
         },
       },
+      temperatureEnabled: llm_setting?.temperature_enabled ?? true,
+      topPEnabled: llm_setting?.top_p_enabled ?? true,
+      presencePenaltyEnabled: llm_setting?.presence_penalty_enabled ?? true,
+      frequencyPenaltyEnabled: llm_setting?.frequency_penalty_enabled ?? true,
     });
   }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
 
@@ -187,16 +196,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       setWidth0('w-[440px]');
     }
   }, [open]);
-
-  const allOptions = useSelectLlmOptionsByModelType();
-  const rerankModelOptions = useMemo(() => {
-    return allOptions[LlmModelType.Rerank];
-  }, [allOptions]);
-
-  const aiSummeryModelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
 
   const rerankModelDisabled = useWatch({
     control: formMethods.control,
@@ -274,7 +273,23 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   ) => {
     try {
       setFormSubmitLoading(true);
-      const { search_config, ...other_formdata } = formData;
+      const {
+        search_config,
+        temperatureEnabled: _temperatureEnabled,
+        topPEnabled: _topPEnabled,
+        presencePenaltyEnabled: _presencePenaltyEnabled,
+        frequencyPenaltyEnabled: _frequencyPenaltyEnabled,
+        maxTokensEnabled: _maxTokensEnabled,
+        ...other_formdata
+      } = formData as IUpdateSearchProps & {
+        tenant_id: string;
+        temperatureEnabled?: boolean;
+        topPEnabled?: boolean;
+        presencePenaltyEnabled?: boolean;
+        frequencyPenaltyEnabled?: boolean;
+        maxTokensEnabled?: boolean;
+      };
+      void _maxTokensEnabled;
       const {
         llm_setting,
         vector_similarity_weight,
@@ -289,6 +304,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         top_p: llm_setting.top_p,
         frequency_penalty: llm_setting.frequency_penalty,
         presence_penalty: llm_setting.presence_penalty,
+        temperature_enabled: _temperatureEnabled,
+        top_p_enabled: _topPEnabled,
+        frequency_penalty_enabled: _frequencyPenaltyEnabled,
+        presence_penalty_enabled: _presencePenaltyEnabled,
       } as IllmSettingProps;
       const referenceMetadata = other_config.reference_metadata;
       const normalizedReferenceMetadata = referenceMetadata
@@ -344,15 +363,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       >
         <Form {...formMethods}>
           <form
-            onSubmit={formMethods.handleSubmit(
-              (data) => {
-                console.log('Form submitted with data:', data);
-                onSubmit(data as unknown as IUpdateSearchProps);
-              },
-              (errors) => {
-                console.log('Validation errors:', errors);
-              },
-            )}
+            onSubmit={formMethods.handleSubmit((data) => {
+              onSubmit(data as unknown as IUpdateSearchProps);
+            })}
             className="space-y-6"
           >
             <AvatarNameDescription avatarField="avatar" />
@@ -381,8 +394,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       }}
                     />
                   </FormControl>
-                  <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
-                    Show chunk metadata
+                  <FormLabel tooltip={t('chat.showChunkMetadataTip')}>
+                    {t('chat.showChunkMetadata')}
                   </FormLabel>
                 </FormItem>
               )}
@@ -393,15 +406,15 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 name="search_config.reference_metadata.fields"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel tooltip="Select which metadata fields to display with each chunk">
-                      Metadata fields
+                    <FormLabel tooltip={t('chat.metadataFieldsTip')}>
+                      {t('chat.metadataFields')}
                     </FormLabel>
                     <FormControl className="bg-bg-input">
                       <MultiSelect
                         options={metadataFieldOptions}
                         onValueChange={field.onChange}
                         showSelectAll={false}
-                        placeholder="Please select"
+                        placeholder={t('common.pleaseSelect')}
                         maxCount={20}
                         defaultValue={
                           Array.isArray(field.value) ? field.value : []
@@ -447,16 +460,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   // rules={{ required: 'Model is required' }}
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
-                      <FormLabel>
-                        <span className="text-destructive mr-1"> *</span>
-                        {t('chat.model')}
-                      </FormLabel>
+                      <FormLabel required>{t('chat.model')}</FormLabel>
                       <FormControl>
-                        <RAGFlowSelect
+                        <ModelTreeSelect
+                          modelTypes={['rerank']}
                           {...field}
-                          options={rerankModelOptions}
-                          triggerClassName={'bg-bg-input'}
-                          // disabled={disabled}
                           placeholder={t('chat.model')}
                         />
                       </FormControl>
@@ -524,7 +532,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               // ></LlmSettingFieldItems>
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
-                options={aiSummeryModelOptions}
                 showFields={[
                   'temperature',
                   'top_p',

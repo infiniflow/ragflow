@@ -22,6 +22,7 @@ export interface IDataset {
   description?: string;
   document_count: number;
   embedding_model: string;
+  embedding_model_name?: string;
   size?: number;
   graphrag_task_finish_at: string;
   graphrag_task_id: Nullable<string>;
@@ -33,6 +34,7 @@ export interface IDataset {
   nickname: string;
   pagerank: number;
   parser_config: Parserconfig;
+  parser_id?: string;
   permission: string;
   pipeline_id: string;
   raptor_task_finish_at: string;
@@ -48,6 +50,14 @@ export interface IDataset {
   vector_similarity_weight: number;
   connectors: IConnector[];
 }
+
+export type IDatasetFilter = {
+  owner: Array<{
+    id: string;
+    label: string;
+    count: number;
+  }>;
+};
 
 interface Parserconfig {
   auto_keywords: number;
@@ -74,6 +84,7 @@ interface Parserconfig {
 
 interface Raptor {
   clustering_method?: 'gmm' | 'ahc';
+  ext?: { clustering_method: 'gmm' | 'ahc'; tree_builder: 'raptor' | 'psi' };
   max_cluster: number;
   max_token: number;
   prompt: string;
@@ -166,6 +177,7 @@ export interface IChunk {
   doc_id: string;
   doc_name: string;
   doc_type_kwd?: ChunkDocType;
+  document_url?: string;
   image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords
@@ -220,4 +232,80 @@ export type IRenameTag = { fromTag: string; toTag: string };
 export interface IKnowledgeGraph {
   graph: Record<string, any>;
   mind_map: import('@antv/g6/lib/types').TreeData;
+}
+
+export interface IArtifact {
+  slug: string;
+  title: string;
+  page_type?: string;
+  summary?: string;
+}
+
+export interface IArtifactTopic {
+  topic: string;
+  title: string;
+  slug: string;
+}
+
+export interface IArtifactPage {
+  slug: string;
+  title: string;
+  page_type: string;
+  content_md_rendered: string;
+  summary: string;
+  entity_names: string[];
+  outlinks: string[];
+  related_kb_pages: string[];
+  source_chunk_ids: string[];
+  source_doc_ids: string[];
+}
+
+export interface IWikiCommit {
+  id: string;
+  title: string;
+  comments: string;
+  user_id: string;
+  create_time: number;
+  create_date: string;
+  user_nickname: string;
+}
+
+export interface IWikiCommitDetail extends IWikiCommit {
+  diff: string;
+  content_after: string;
+}
+
+export interface IWikiCommitListResponse {
+  total: number;
+  items: IWikiCommit[];
+}
+
+export interface IArtifactGraphEntity {
+  slug: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  type: string;
+  weight: number;
+  source_chunk_ids?: string[];
+}
+
+export interface IArtifactAlteration {
+  removed: number;
+  newly_uploaded: number;
+  removed_doc_ids: string[];
+  newly_uploaded_doc_ids: string[];
+  involved_doc_ids: string[];
+  eligible_doc_ids: string[];
+}
+
+export interface IArtifactGraphRelation {
+  from: string;
+  to: string;
+  type?: string;
+}
+
+export interface IArtifactGraph {
+  entities: IArtifactGraphEntity[];
+  relations: IArtifactGraphRelation[];
 }

@@ -18,6 +18,7 @@ import {
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
+  useRegenerateMessage,
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import {
@@ -27,7 +28,7 @@ import {
 } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { IClientConversation } from '@/interfaces/database/chat';
+import { IClientConversation, IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -38,6 +39,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -48,9 +50,7 @@ import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
 } from '../../hooks/use-button-disabled';
-import { useCreateConversationBeforeSendMessage } from '../../hooks/use-chat-url';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
-import { useSendMessage } from '../../hooks/use-send-chat-message';
 import {
   HandlePressEnterType,
   useSendSingleMessage,
@@ -60,7 +60,6 @@ import { useUploadFile } from '../../hooks/use-upload-file';
 import { buildMessageItemReference } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
 import { useShowInternet } from '../use-show-internet';
-import { useSetDefaultModel } from './use-set-default-model';
 
 type MultipleChatBoxProps = {
   controller: AbortController;
@@ -105,16 +104,20 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { patchChat } = usePatchChat();
 
-  const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
-    useSendSingleMessage({
-      controller,
-      value,
-      setValue,
-      files,
-      clearFiles,
-    });
-
-  const { regenerateMessage } = useSendMessage(controller);
+  const {
+    removeMessageById,
+    derivedMessages,
+    handlePressEnter,
+    sendLoading,
+    sendMessage,
+    removeMessagesAfterCurrentMessage,
+  } = useSendSingleMessage({
+    controller,
+    value,
+    setValue,
+    files,
+    clearFiles,
+  });
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -131,11 +134,46 @@ const ChatCard = forwardRef(function ChatCard(
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
+  // Regenerate within this card: reuse the card's own message state and
+  // resend with the card's model settings (llm_id, temperature, ...).
+  const sendCardMessage = useCallback(
+    ({ message, messages }: { message: IMessage; messages?: IMessage[] }) =>
+      sendMessage({
+        message,
+        messages,
+        ...form.getValues(),
+        storeHistoryMessages: false,
+        omitSessionId: true,
+      }),
+    [sendMessage, form],
+  );
+
+  const { regenerateMessage } = useRegenerateMessage({
+    removeMessagesAfterCurrentMessage,
+    sendMessage: sendCardMessage,
+    messages: derivedMessages,
+  });
+
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
   const findLlmByUuid = useFindLlmByUuid();
 
-  useSetDefaultModel(form);
+  // Each card must keep its own independently selected model after the initial
+  // sync. Without this guard, clicking "Apply" in one card patches the dialog
+  // (which invalidates [FetchChat] and refetches currentDialog), and the
+  // changed currentDialog.llm_id would then overwrite every other card's
+  // llm_id via this effect. Sync only when dialogId changes (initial load or
+  // conversation switch), not when currentDialog.llm_id changes due to Apply.
+  const syncedDialogIdRef = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (
+      syncedDialogIdRef.current !== dialogId &&
+      currentDialog?.llm_id
+    ) {
+      form.setValue('llm_id', currentDialog.llm_id);
+      syncedDialogIdRef.current = dialogId;
+    }
+  }, [currentDialog?.llm_id, dialogId, form]);
 
   const isLatestChat = idx === chatBoxIds.length - 1;
 
@@ -151,18 +189,24 @@ const ChatCard = forwardRef(function ChatCard(
       params: {
         ...currentDialog,
         llm_id: llmId,
+        tenant_llm_id: llmId,
         llm_setting: {
           ...omit(values, 'llm_id'),
           model_type: findLlmByUuid(llmId)?.model_type || 'chat',
         },
       },
     });
-  }, [currentDialog, dialogId, form, patchChat]);
+  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
 
   useImperativeHandle(
     ref,
     (): HandlePressEnterType => (params) =>
-      handlePressEnter({ ...params, ...form.getValues() }),
+      handlePressEnter({
+        ...params,
+        ...form.getValues(),
+        storeHistoryMessages: false,
+        omitSessionId: true,
+      }),
   );
 
   useEffect(() => {
@@ -184,6 +228,7 @@ const ChatCard = forwardRef(function ChatCard(
               <LargeModelFormFieldWithoutFilter
                 triggerTestId="chat-detail-multimodel-card-model-select"
                 optionTestIdPrefix="chat-detail-llm-option-"
+                ownerTenantId={currentDialog?.tenant_id}
               ></LargeModelFormFieldWithoutFilter>
             </Form>
           </div>
@@ -205,7 +250,7 @@ const ChatCard = forwardRef(function ChatCard(
                 <p>{t('chat.applyModelConfigs')}</p>
               </TooltipContent>
             </Tooltip>
-            {!isLatestChat || chatBoxIds.length === 3 ? (
+            {chatBoxIds.length > 1 && (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -215,7 +260,8 @@ const ChatCard = forwardRef(function ChatCard(
               >
                 <Trash2 />
               </Button>
-            ) : (
+            )}
+            {isLatestChat && idx < 2 && (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -257,6 +303,7 @@ const ChatCard = forwardRef(function ChatCard(
                   regenerateMessage={regenerateMessage}
                   sendLoading={sendLoading}
                   clickDocumentButton={clickDocumentButton}
+                  showLikeButton={false}
                 ></MessageItem>
               );
             })}
@@ -276,9 +323,6 @@ export function MultipleChatBox({
   stopOutputMessage,
   conversation,
 }: MultipleChatBoxProps) {
-  const { createConversationBeforeSendMessage } =
-    useCreateConversationBeforeSendMessage();
-
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
@@ -320,21 +364,14 @@ export function MultipleChatBox({
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
 
-      const data = await createConversationBeforeSendMessage(value);
-
-      if (data === undefined) {
-        return;
-      }
-
       Object.values(boxesRef.current).forEach((box) => {
         box?.({
           enableInternet,
           enableThinking,
-          ...data,
         });
       });
     },
-    [createConversationBeforeSendMessage, value],
+    [value],
   );
 
   return (

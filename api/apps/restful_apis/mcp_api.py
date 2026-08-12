@@ -21,6 +21,7 @@ from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.user_service import TenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.web_utils import get_float, safe_json_parse
 from common.constants import VALID_MCP_SERVER_TYPES
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
@@ -70,8 +71,8 @@ def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple
 @login_required
 async def list_mcp() -> Response:
     keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
+    page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+    items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
     orderby = request.args.get("orderby", "create_time")
     if request.args.get("desc", "true").lower() == "false":
         desc = False
@@ -79,6 +80,13 @@ async def list_mcp() -> Response:
         desc = True
 
     mcp_ids = _get_mcp_ids_from_args()
+    try:
+        validate_rest_api_ids(mcp_ids, "mcp_ids")
+    except ValueError as e:
+        from api.utils.api_utils import get_error_argument_result
+
+        return get_error_argument_result(str(e))
+
     try:
         servers = MCPServerService.get_servers(current_user.id, mcp_ids, 0, 0, orderby, desc, keywords) or []
         total = len(servers)
@@ -183,6 +191,10 @@ async def update(mcp_id: str) -> Response:
     server_name = req.get("name", mcp_server.name)
     if server_name and len(server_name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
+    if server_name and server_name != mcp_server.name:
+        e, _ = MCPServerService.get_by_name_and_tenant(name=server_name, tenant_id=current_user.id)
+        if e:
+            return get_data_error_result(message="Duplicated MCP server name.")
     url = req.get("url", mcp_server.url)
     hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url)
     if url_error:

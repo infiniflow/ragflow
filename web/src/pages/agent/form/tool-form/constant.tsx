@@ -8,7 +8,10 @@ import ExeSQLForm from './exesql-form';
 import GithubForm from './github-form';
 import GoogleForm from './google-form';
 import GoogleScholarForm from './google-scholar-form';
+import KeenableForm from './keenable-form';
 import PubMedForm from './pubmed-form';
+import QueritForm from './querit-form';
+import BGPTForm from './bgpt-form';
 import RetrievalForm from './retrieval-form';
 import SearXNGForm from './searxng-form';
 import TavilyForm from './tavily-form';
@@ -22,6 +25,7 @@ export const ToolFormConfigMap = {
   [Operator.DuckDuckGo]: DuckDuckGoForm,
   [Operator.Wikipedia]: WikipediaForm,
   [Operator.PubMed]: PubMedForm,
+  [Operator.BGPT]: BGPTForm,
   [Operator.ArXiv]: ArXivForm,
   [Operator.Google]: GoogleForm,
   [Operator.Bing]: BingForm,
@@ -33,6 +37,8 @@ export const ToolFormConfigMap = {
   [Operator.Email]: EmailForm,
   [Operator.TavilySearch]: TavilyForm,
   [Operator.TavilyExtract]: TavilyForm,
+  [Operator.QueritSearch]: QueritForm,
   [Operator.WenCai]: WenCaiForm,
   [Operator.SearXNG]: SearXNGForm,
+  [Operator.KeenableSearch]: KeenableForm,
 };

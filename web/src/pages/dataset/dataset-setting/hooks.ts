@@ -1,8 +1,6 @@
-import { LlmModelType } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
 
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import { checkEmbedding } from '@/services/knowledge-service';
 import { useIsFetching } from '@tanstack/react-query';
@@ -14,17 +12,12 @@ import { z } from 'zod';
 import { formSchema } from './form-schema';
 
 // The value that does not need to be displayed in the analysis method Select
-const HiddenFields = ['email', 'picture', 'audio'];
+const HiddenFields = ['email', 'picture', 'audio', 'resume'];
 
 export function useSelectChunkMethodList() {
   const parserList = useSelectParserList();
 
   return parserList.filter((x) => !HiddenFields.some((y) => y === x.value));
-}
-
-export function useSelectEmbeddingModelOptions() {
-  const allOptions = useSelectLlmOptionsByModelType();
-  return allOptions[LlmModelType.Embedding];
 }
 
 export function useHasParsedDocument(isEdit?: boolean) {
@@ -47,6 +40,8 @@ export const useFetchKnowledgeConfigurationOnMount = (
       raptor: {
         ...form.formState?.defaultValues?.parser_config?.raptor,
         ...knowledgeDetails.parser_config?.raptor,
+        clustering_method:
+          knowledgeDetails.parser_config?.raptor?.ext?.clustering_method,
         use_raptor: true,
       },
       graphrag: {

@@ -142,7 +142,6 @@ class Extractor:
             async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int, task_id=""):
                 nonlocal error_count
                 async with limiter:
-
                     if task_id and has_canceled(task_id):
                         raise TaskCanceledException(f"Task {task_id} was cancelled during entity extraction")
 
@@ -158,10 +157,7 @@ class Extractor:
                         if error_count > max_errors:
                             raise Exception(f"Maximum error count ({max_errors}) reached. Last errors: {str(e)}")
 
-            tasks = [
-                asyncio.create_task(worker((doc_id, ck), i, len(chunks), task_id))
-                for i, ck in enumerate(chunks)
-            ]
+            tasks = [asyncio.create_task(worker((doc_id, ck), i, len(chunks), task_id)) for i, ck in enumerate(chunks)]
 
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)
@@ -207,10 +203,7 @@ class Extractor:
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled before nodes merging")
 
-        tasks = [
-            asyncio.create_task(self._merge_nodes(en_nm, ents, all_entities_data, task_id))
-            for en_nm, ents in maybe_nodes.items()
-        ]
+        tasks = [asyncio.create_task(self._merge_nodes(en_nm, ents, all_entities_data, task_id)) for en_nm, ents in maybe_nodes.items()]
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -236,11 +229,7 @@ class Extractor:
 
         tasks = []
         for (src, tgt), rels in maybe_edges.items():
-            tasks.append(
-                asyncio.create_task(
-                    self._merge_edges(src, tgt, rels, all_relationships_data, task_id)
-                )
-            )
+            tasks.append(asyncio.create_task(self._merge_edges(src, tgt, rels, all_relationships_data, task_id)))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:

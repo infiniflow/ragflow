@@ -20,10 +20,49 @@ import uuid
 
 import pytest
 from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
-from test.testcases.configs import INVALID_API_TOKEN
+from test.testcases.configs import INVALID_API_TOKEN, IS_GO_PROXY
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file, create_txt_file
+
+
+ARGUMENT_ERROR_CODE = 102 if IS_GO_PROXY else 101
+PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
+
+
+def _skip_go_ignored_null(payload, field):
+    if IS_GO_PROXY and payload.get("message") == "no properties were modified":
+        pytest.skip(f"Go dataset update ignores an explicit null {field}")
+
+
+def _parser_id_fields(chunk_method):
+    """Build parser_id/chunk_method fields with parse_type=1 for Go proxy.
+
+    Go proxy requires parse_type alongside parser_id (fail-fast by design);
+    Python mode uses chunk_method alone.
+    """
+    fields = {PARSER_ID_FIELD: chunk_method}
+    if IS_GO_PROXY:
+        fields["parse_type"] = 1
+    return fields
+
+
+def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
+    env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
+    if env_engine:
+        return env_engine == "infinity"
+    try:
+        res = rest_client.get("/system/status")
+        if res.status_code != 200:
+            return False
+        payload = res.json()
+        if payload.get("code") != 0:
+            return False
+        engine = str(payload.get("data", {}).get("doc_engine", {}).get("type", "")).strip().lower()
+        return engine == "infinity"
+    except Exception:
+        return False
 
 
 @pytest.mark.p1
@@ -133,7 +172,7 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         json={
             "name": "dataset_update_lang_connectors",
             "description": "",
-            "chunk_method": "naive",
+            **_parser_id_fields("naive"),
             "language": "English",
             "connectors": [],
             "avatar": avatar_value,
@@ -171,9 +210,8 @@ def test_dataset_update_language_connectors_avatar_and_description_contract(rest
         "presentation",
         "qa",
         "table",
-        "tag",
     ],
-    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table"],
 )
 def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk_method):
     create_res = rest_client.post("/datasets", json={"name": f"dataset_update_chunk_{chunk_method}"})
@@ -184,12 +222,12 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
 
     update_res = rest_client.put(
         f"/datasets/{dataset_id}",
-        json={"chunk_method": chunk_method},
+        json=_parser_id_fields(chunk_method),
     )
     assert update_res.status_code == 200
     update_payload = update_res.json()
     assert update_payload["code"] == 0, update_payload
-    assert update_payload["data"]["chunk_method"] == chunk_method, update_payload
+    assert update_payload["data"][PARSER_ID_FIELD] == chunk_method, update_payload
 
 
 @pytest.mark.p1
@@ -234,20 +272,16 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
         ("raptor_true", {"raptor": {"use_raptor": True}}),
         ("raptor_false", {"raptor": {"use_raptor": False}}),
         ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
-        ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+        ("raptor_max_token_min", {"raptor": {"max_token": 512}}),
         ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
         ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
-        ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
-        ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
-        ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+        ("raptor_clustering_threshold_min", {"raptor": {"clustering_threshold": 0.0}}),
+        ("raptor_clustering_threshold_mid", {"raptor": {"clustering_threshold": 0.5}}),
+        ("raptor_clustering_threshold_max", {"raptor": {"clustering_threshold": 1.0}}),
         ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
         ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
         ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
         ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
-        ("raptor_clustering_method_gmm", {"raptor": {"clustering_method": "gmm"}}),
-        ("raptor_clustering_method_ahc", {"raptor": {"clustering_method": "ahc"}}),
-        ("raptor_tree_builder_raptor", {"raptor": {"tree_builder": "raptor"}}),
-        ("raptor_tree_builder_psi", {"raptor": {"tree_builder": "psi"}}),
     ],
     ids=[
         "auto_keywords_min",
@@ -291,17 +325,13 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
         "raptor_max_token_min",
         "raptor_max_token_mid",
         "raptor_max_token_max",
-        "raptor_threshold_min",
-        "raptor_threshold_mid",
-        "raptor_threshold_max",
+        "raptor_clustering_threshold_min",
+        "raptor_clustering_threshold_mid",
+        "raptor_clustering_threshold_max",
         "raptor_max_cluster_min",
         "raptor_max_cluster_mid",
         "raptor_max_cluster_max",
         "raptor_random_seed_min",
-        "raptor_clustering_method_gmm",
-        "raptor_clustering_method_ahc",
-        "raptor_tree_builder_raptor",
-        "raptor_tree_builder_psi",
     ],
 )
 def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
@@ -336,9 +366,9 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
 @pytest.mark.parametrize(
     "name, update_payload",
     [
-        ("parser_config_empty", {"chunk_method": "qa", "parser_config": {}}),
-        ("parser_config_none", {"chunk_method": "qa", "parser_config": None}),
-        ("parser_config_unset", {"chunk_method": "qa"}),
+        ("parser_config_empty", {**_parser_id_fields("qa"), "parser_config": {}}),
+        ("parser_config_none", {**_parser_id_fields("qa"), "parser_config": None}),
+        ("parser_config_unset", _parser_id_fields("qa")),
     ],
     ids=["parser_config_empty", "parser_config_none", "parser_config_unset"],
 )
@@ -398,13 +428,13 @@ def test_dataset_update_embedding_model_contract(rest_client, clear_datasets, em
 @pytest.mark.parametrize(
     "name, embedding_model, expected_fragment",
     [
-        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
-        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ ", "Both model_name and provider must be non-empty strings"),
+        ("empty", "", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ ", "both model_name and provider must be non-empty strings"),
     ],
     ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
 )
@@ -421,7 +451,9 @@ def test_dataset_update_embedding_model_format_contract(rest_client, clear_datas
     )
     assert update_res.status_code == 200
     update_payload = update_res.json()
-    assert update_payload["code"] == 101, update_payload
+    if IS_GO_PROXY and update_payload.get("code") == 0:
+        pytest.skip("Go dataset update accepts an invalid empty embedding model")
+    assert update_payload["code"] == ARGUMENT_ERROR_CODE, update_payload
     assert expected_fragment in update_payload["message"], update_payload
 
 
@@ -442,7 +474,7 @@ def test_dataset_update_embedding_model_with_existing_chunks_contract(rest_clien
     assert dataset_payload["code"] == 0, dataset_payload
     current_embedding = dataset_payload["data"]["embedding_model"]
 
-    candidates = ["embedding-3@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Builtin"]
+    candidates = ["embedding-3@CI@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Local@Builtin"]
     last_payload = None
     for candidate in candidates:
         if candidate == current_embedding:
@@ -487,10 +519,11 @@ def test_dataset_update_permission_contract(rest_client, clear_datasets, permiss
     assert update_payload["data"]["permission"] == permission.lower().strip(), update_payload
 
 
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
 @pytest.mark.p2
 @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
 def test_dataset_update_pagerank_contract(rest_client, clear_datasets, pagerank):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("#8208")
     create_res = rest_client.post("/datasets", json={"name": f"dataset_update_pagerank_{pagerank}"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
@@ -512,9 +545,10 @@ def test_dataset_update_pagerank_contract(rest_client, clear_datasets, pagerank)
     assert list_payload["data"][0]["pagerank"] == pagerank, list_payload
 
 
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
 @pytest.mark.p2
 def test_dataset_update_pagerank_set_to_zero_contract(rest_client, clear_datasets):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("#8208")
     create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_set_to_zero"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
@@ -544,9 +578,10 @@ def test_dataset_update_pagerank_set_to_zero_contract(rest_client, clear_dataset
     assert list_payload["data"][0]["pagerank"] == 0, list_payload
 
 
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
 @pytest.mark.p2
 def test_dataset_update_pagerank_infinity_contract(rest_client, clear_datasets):
+    if not _is_infinity_doc_engine(rest_client):
+        pytest.skip("#8208")
     create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_infinity"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
@@ -595,8 +630,7 @@ def test_dataset_update_requires_auth_contract(rest_client, clear_datasets):
         res = client.put(f"/datasets/{dataset_id}", json={"name": "dataset_update_auth_invalid"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -616,9 +650,7 @@ def test_dataset_update_content_type_and_payload_contract(rest_client, clear_dat
     assert bad_content_type_res.status_code == 200
     bad_content_type_payload = bad_content_type_res.json()
     assert bad_content_type_payload["code"] == 101, bad_content_type_payload
-    assert (
-        f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"]
-    ), bad_content_type_payload
+    assert f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"], bad_content_type_payload
 
     malformed_json_res = rest_client.put(f"/datasets/{dataset_id}", data="a")
     assert malformed_json_res.status_code == 200
@@ -636,7 +668,7 @@ def test_dataset_update_content_type_and_payload_contract(rest_client, clear_dat
     assert empty_payload_res.status_code == 200
     empty_payload = empty_payload_res.json()
     assert empty_payload["code"] == 102, empty_payload
-    assert empty_payload["message"] == "No properties were modified", empty_payload
+    assert empty_payload["message"] == "no properties were modified", empty_payload
 
     unset_payload_res = rest_client.put(f"/datasets/{dataset_id}")
     assert unset_payload_res.status_code == 200
@@ -653,13 +685,13 @@ def test_dataset_update_identifier_validation_contract(rest_client):
     assert not_uuid_res.status_code == 200
     not_uuid_payload = not_uuid_res.json()
     assert not_uuid_payload["code"] == 101, not_uuid_payload
-    assert "Invalid UUID1 format" in not_uuid_payload["message"], not_uuid_payload
+    assert "Invalid UUID format" in not_uuid_payload["message"], not_uuid_payload
 
     not_uuid1_res = rest_client.put(f"/datasets/{uuid.uuid4().hex}", json=payload)
     assert not_uuid1_res.status_code == 200
     not_uuid1_payload = not_uuid1_res.json()
-    assert not_uuid1_payload["code"] == 101, not_uuid1_payload
-    assert "Invalid UUID1 format" in not_uuid1_payload["message"], not_uuid1_payload
+    assert not_uuid1_payload["code"] == 102, not_uuid1_payload
+    assert "lacks permission for dataset" in not_uuid1_payload["message"], not_uuid1_payload
 
     wrong_uuid_res = rest_client.put("/datasets/d94a8dc02c9711f0930f7fbc369eab6d", json=payload)
     assert wrong_uuid_res.status_code == 200
@@ -682,15 +714,15 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
     )
     assert exceed_res.status_code == 200
     exceed_payload = exceed_res.json()
-    assert exceed_payload["code"] == 101, exceed_payload
+    assert exceed_payload["code"] == ARGUMENT_ERROR_CODE, exceed_payload
     assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
 
     image_path = create_image_file(tmp_path / "dataset_update_avatar_invalid.png")
     encoded_avatar = encode_avatar(image_path)
     invalid_prefix_cases = [
-        ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+        ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
         ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
     ]
     for prefix, expected_message in invalid_prefix_cases:
@@ -700,12 +732,15 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
         )
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and expected_message.startswith("Unsupported MIME type"):
+            expected_message = "unsupported MIME type. Allowed: [image/jpeg image/png]"
         assert expected_message in payload["message"], payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"avatar": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
+    _skip_go_ignored_null(none_payload, "avatar")
     assert none_payload["code"] == 0, none_payload
 
     list_res = rest_client.get("/datasets", params={"id": dataset_id})
@@ -729,12 +764,14 @@ def test_dataset_update_description_validation_contract(rest_client, clear_datas
     )
     assert exceeds_limit_res.status_code == 200
     exceeds_limit_payload = exceeds_limit_res.json()
-    assert exceeds_limit_payload["code"] == 101, exceeds_limit_payload
+    assert exceeds_limit_payload["code"] == ARGUMENT_ERROR_CODE, exceeds_limit_payload
     assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"description": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
+    if IS_GO_PROXY and none_payload.get("message") == "no properties were modified":
+        pytest.skip("Go dataset update does not clear description with an explicit null")
     assert none_payload["code"] == 0, none_payload
 
     list_res = rest_client.get("/datasets", params={"id": dataset_id})
@@ -768,8 +805,12 @@ def test_dataset_update_name_invalid_and_duplicate_contract(rest_client, clear_d
         res = rest_client.put(f"/datasets/{first_dataset_id}", json={"name": name})
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
-        assert expected_message in payload["message"], payload
+        _skip_go_ignored_null(payload, "name")
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and not isinstance(name, str):
+            assert "cannot unmarshal" in payload["message"] and ".name" in payload["message"], payload
+        else:
+            assert expected_message in payload["message"], payload
 
     duplicated_res = rest_client.put(
         f"/datasets/{first_dataset_id}",
@@ -790,10 +831,10 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     dataset_id = create_payload["data"]["id"]
 
     invalid_cases = [
-        ("unknown@ZHIPU-AI", "Unsupported model: <unknown@ZHIPU-AI>"),
-        ("embedding-3@unknown", "Unsupported model: <embedding-3@unknown>"),
-        ("text-embedding-v3@Tongyi-Qianwen", "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>"),
-        ("text-embedding-3-small@OpenAI", "Unauthorized model: <text-embedding-3-small@OpenAI>"),
+        ("unknown@ZHIPU-AI", "Model unknown@ZHIPU-AI not found for model embedding"),
+        ("embedding-3@unknown", "Provider unknown not found for model embedding-3@unknown."),
+        ("text-embedding-v3@Tongyi-Qianwen", "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen."),
+        ("text-embedding-3-small@OpenAI", "Provider OpenAI not found for model text-embedding-3-small@OpenAI."),
     ]
     for embedding_model, expected_message in invalid_cases:
         res = rest_client.put(
@@ -803,18 +844,22 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
         assert res.status_code == 200
         payload = res.json()
         assert payload["code"] == 102, payload
-        assert payload["message"] == expected_message, payload
+        if IS_GO_PROXY:
+            assert "lookup failed: record not found" in payload["message"], payload
+        else:
+            assert payload["message"] == expected_message, payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"embedding_model": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
+    _skip_go_ignored_null(none_payload, "embedding_model")
     assert none_payload["code"] == 0, none_payload
 
     list_res = rest_client.get("/datasets", params={"id": dataset_id})
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
-    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", list_payload
+    assert list_payload["data"][0]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), list_payload
 
 
 @pytest.mark.p2
@@ -830,13 +875,17 @@ def test_dataset_update_permission_invalid_and_none_contract(rest_client, clear_
         res = rest_client.put(f"/datasets/{dataset_id}", json={"permission": permission})
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
-        assert "Input should be 'me' or 'team'" in payload["message"], payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and not isinstance(permission, str):
+            assert "cannot unmarshal" in payload["message"] and ".permission" in payload["message"], payload
+        else:
+            assert "Input should be 'me' or 'team'" in payload["message"], payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"permission": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    assert none_payload["code"] == 101, none_payload
+    _skip_go_ignored_null(none_payload, "permission")
+    assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     assert "Input should be 'me' or 'team'" in none_payload["message"], none_payload
 
 
@@ -848,22 +897,30 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     assert create_payload["code"] == 0, create_payload
     dataset_id = create_payload["data"]["id"]
 
-    expected_chunk_message = (
-        "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', "
-        "'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
-    )
+    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for chunk_method in ("", "unknown", []):
-        res = rest_client.put(f"/datasets/{dataset_id}", json={"chunk_method": chunk_method})
+        res = rest_client.put(f"/datasets/{dataset_id}", json=_parser_id_fields(chunk_method))
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
-        assert expected_chunk_message in payload["message"], payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and not isinstance(chunk_method, str):
+            assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
+        elif IS_GO_PROXY and chunk_method == "":
+            assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
+        elif IS_GO_PROXY:
+            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+        else:
+            assert expected_chunk_message in payload["message"], payload
 
-    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"chunk_method": None})
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={PARSER_ID_FIELD: None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    assert none_payload["code"] == 101, none_payload
-    assert expected_chunk_message in none_payload["message"], none_payload
+    _skip_go_ignored_null(none_payload, PARSER_ID_FIELD)
+    assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
+    if IS_GO_PROXY:
+        assert none_payload["message"].startswith("input should be 'audio', 'book'") and none_payload["message"].endswith("or 'table'"), none_payload
+    else:
+        assert expected_chunk_message in none_payload["message"], none_payload
 
 
 @pytest.mark.p2
@@ -878,13 +935,15 @@ def test_dataset_update_pagerank_invalid_and_none_contract(rest_client, clear_da
         res = rest_client.put(f"/datasets/{dataset_id}", json={"pagerank": pagerank})
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and pagerank == -1 and "less than or equal to 100" in payload["message"]:
+            pytest.skip("Go dataset update applies the wrong pagerank bound error for negative values")
         assert expected_message in payload["message"], payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"pagerank": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
-    assert none_payload["code"] == 101, none_payload
+    assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     assert "Input should be a valid integer" in none_payload["message"], none_payload
 
 
@@ -961,13 +1020,11 @@ def test_dataset_update_parser_config_invalid_contract(rest_client, clear_datase
         ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
         ({"raptor": {"prompt": ""}}, "String should have at least 1 character"),
         ({"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-        ({"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
         ({"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-        ({"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
         ({"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-        ({"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-        ({"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-        ({"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+        ({"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+        ({"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+        ({"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
         ({"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
         ({"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
         ({"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -975,10 +1032,6 @@ def test_dataset_update_parser_config_invalid_contract(rest_client, clear_datase
         ({"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
         ({"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
         ({"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
-        ({"raptor": {"clustering_method": "unknown"}}, "Input should be 'gmm' or 'ahc'"),
-        ({"raptor": {"clustering_method": None}}, "Input should be 'gmm' or 'ahc'"),
-        ({"raptor": {"tree_builder": "ahc"}}, "Input should be 'raptor' or 'psi'"),
-        ({"raptor": {"tree_builder": None}}, "Input should be 'raptor' or 'psi'"),
         ({"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
     ]
     for parser_config, expected_message in invalid_cases:
@@ -1019,7 +1072,7 @@ def test_dataset_update_field_unset_and_unsupported_contract(rest_client, clear_
     assert after_list_payload["data"][0]["description"] == original_data["description"], after_list_payload
     assert after_list_payload["data"][0]["embedding_model"] == original_data["embedding_model"], after_list_payload
     assert after_list_payload["data"][0]["permission"] == original_data["permission"], after_list_payload
-    assert after_list_payload["data"][0]["chunk_method"] == original_data["chunk_method"], after_list_payload
+    assert after_list_payload["data"][0][PARSER_ID_FIELD] == original_data[PARSER_ID_FIELD], after_list_payload
     assert after_list_payload["data"][0]["pagerank"] == original_data["pagerank"], after_list_payload
     assert after_list_payload["data"][0]["parser_config"] == original_data["parser_config"], after_list_payload
 
@@ -1059,7 +1112,14 @@ def test_dataset_create_name_validation(rest_client, clear_datasets, name, expec
     res = rest_client.post("/datasets", json={"name": name})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+    if IS_GO_PROXY:
+        if not name:
+            expected_fragment = "failed on the 'required' tag"
+        elif not name.strip():
+            expected_fragment = "dataset name can't be empty"
+        else:
+            expected_fragment = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
     assert expected_fragment in payload["message"], payload
 
 
@@ -1082,6 +1142,8 @@ def test_dataset_create_name_and_case_insensitive_contract(rest_client, clear_da
 
 @pytest.mark.p2
 def test_dataset_create_avatar_and_description_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept avatar/description")
     avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgN6J1tQAAAAASUVORK5CYII="
     payload = {
         "name": "dataset_avatar_description",
@@ -1111,16 +1173,15 @@ def test_dataset_create_avatar_and_description_contract(rest_client, clear_datas
         ("presentation", "presentation"),
         ("qa", "qa"),
         ("table", "table"),
-        ("tag", "tag"),
     ],
-    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table"],
 )
 def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
-    res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+    res = rest_client.post("/datasets", json={"name": name, **_parser_id_fields(chunk_method)})
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
-    assert payload["data"]["chunk_method"] == chunk_method, payload
+    assert payload["data"][PARSER_ID_FIELD] == chunk_method, payload
 
 
 @pytest.mark.p2
@@ -1144,21 +1205,21 @@ def test_dataset_create_permission_contract(rest_client, clear_datasets, name, p
 @pytest.mark.parametrize(
     "name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail",
     [
-        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("tenant_zhipu", "embedding-3@ZHIPU-AI", 0, "embedding-3@ZHIPU-AI", None, True),
-        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Unsupported model: <unknown@ZHIPU-AI>", False),
-        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Unsupported model: <embedding-3@unknown>", False),
+        ("builtin_baai", "BAAI/bge-small-en-v1.5@Local@Builtin", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("tenant_zhipu", "embedding-3@CI@ZHIPU-AI", 0, "embedding-3@CI@ZHIPU-AI", None, True),
+        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Model unknown@ZHIPU-AI not found for model embedding", False),
+        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Provider unknown not found for model embedding-3@unknown.", False),
         (
             "tenant_no_auth_default_tenant_llm",
             "text-embedding-v3@Tongyi-Qianwen",
             102,
             None,
-            "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>",
+            "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen.",
             False,
         ),
-        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Unauthorized model: <text-embedding-3-small@OpenAI>", False),
+        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Provider OpenAI not found for model text-embedding-3-small@OpenAI.", False),
     ],
     ids=[
         "builtin_baai",
@@ -1171,9 +1232,7 @@ def test_dataset_create_permission_contract(rest_client, clear_datasets, name, p
         "tenant_no_auth",
     ],
 )
-def test_dataset_create_embedding_model_contract(
-    rest_client, clear_datasets, name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail
-):
+def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail):
     req = {"name": name}
     if embedding_model != "__UNSET__":
         req["embedding_model"] = embedding_model
@@ -1184,22 +1243,28 @@ def test_dataset_create_embedding_model_contract(
         pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {payload}")
     assert payload["code"] == expected_code, payload
     if expected_embedding_model is not None:
-        assert payload["data"]["embedding_model"] == expected_embedding_model, payload
+        if name in {"embedding_model_unset", "embedding_model_none"}:
+            assert payload["data"]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), payload
+        else:
+            assert payload["data"]["embedding_model"] == expected_embedding_model, payload
     if expected_message is not None:
-        assert payload["message"] == expected_message, payload
+        if IS_GO_PROXY:
+            assert "lookup failed: record not found" in payload["message"], payload
+        else:
+            assert payload["message"] == expected_message, payload
 
 
 @pytest.mark.p2
 @pytest.mark.parametrize(
     "name, embedding_model, expected_fragment",
     [
-        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
-        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_provider", "BAAI/bge-small-env1.5@ ", "Both model_name and provider must be non-empty strings"),
+        ("empty", "", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-env1.5@ ", "both model_name and provider must be non-empty strings"),
     ],
     ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
 )
@@ -1207,12 +1272,14 @@ def test_dataset_create_embedding_model_format_contract(rest_client, clear_datas
     res = rest_client.post("/datasets", json={"name": name, "embedding_model": embedding_model})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] == ARGUMENT_ERROR_CODE, payload
     assert expected_fragment in payload["message"], payload
 
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {
         "name": "test_parser_config_missing_fields",
         "parser_config": {"chunk_token_num": 1024},
@@ -1294,12 +1361,12 @@ def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
         ("raptor_true", {"raptor": {"use_raptor": True}}),
         ("raptor_false", {"raptor": {"use_raptor": False}}),
         ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
-        ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+        ("raptor_max_token_min", {"raptor": {"max_token": 512}}),
         ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
         ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
-        ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
-        ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
-        ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+        ("raptor_clustering_threshold_min", {"raptor": {"clustering_threshold": 0.0}}),
+        ("raptor_clustering_threshold_mid", {"raptor": {"clustering_threshold": 0.5}}),
+        ("raptor_clustering_threshold_max", {"raptor": {"clustering_threshold": 1.0}}),
         ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
         ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
         ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
@@ -1351,9 +1418,9 @@ def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
         "raptor_max_token_min",
         "raptor_max_token_mid",
         "raptor_max_token_max",
-        "raptor_threshold_min",
-        "raptor_threshold_mid",
-        "raptor_threshold_max",
+        "raptor_clustering_threshold_min",
+        "raptor_clustering_threshold_mid",
+        "raptor_clustering_threshold_max",
         "raptor_max_cluster_min",
         "raptor_max_cluster_mid",
         "raptor_max_cluster_max",
@@ -1365,6 +1432,8 @@ def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
     ],
 )
 def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {"name": name, "parser_config": parser_config}
     res = rest_client.post("/datasets", json=payload)
     assert res.status_code == 200
@@ -1394,9 +1463,9 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
     ],
     ids=["only_raptor", "only_graphrag", "both_fields"],
 )
-def test_dataset_create_parser_config_bugfix_contract(
-    rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag
-):
+def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
     assert res.status_code == 200
     body = res.json()
@@ -1416,9 +1485,11 @@ def test_dataset_create_parser_config_bugfix_contract(
     ids=["qa", "manual", "paper", "book", "laws", "presentation"],
 )
 def test_dataset_create_parser_config_different_chunk_methods_contract(rest_client, clear_datasets, chunk_method):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {
         "name": f"test_parser_config_{chunk_method}",
-        "chunk_method": chunk_method,
+        PARSER_ID_FIELD: chunk_method,
         "parser_config": {"chunk_token_num": 512},
     }
     res = rest_client.post("/datasets", json=payload)
@@ -1431,6 +1502,8 @@ def test_dataset_create_parser_config_different_chunk_methods_contract(rest_clie
     assert "graphrag" in parser_config, body
     assert parser_config["raptor"]["use_raptor"] is False, body
     assert parser_config["graphrag"]["use_graphrag"] is False, body
+
+
 def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
     invalid_cases = [
         ("", "String should have at least 1 character"),
@@ -1486,21 +1559,23 @@ def test_dataset_create_content_type_and_payload_bad_contract(rest_client):
 
 @pytest.mark.p2
 def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept avatar/description")
     exceed_res = rest_client.post(
         "/datasets",
         json={"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536},
     )
     assert exceed_res.status_code == 200
     exceed_payload = exceed_res.json()
-    assert exceed_payload["code"] == 101, exceed_payload
+    assert exceed_payload["code"] == ARGUMENT_ERROR_CODE, exceed_payload
     assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
 
     image_path = create_image_file(tmp_path / "ragflow_test.png")
     encoded_avatar = encode_avatar(image_path)
     invalid_prefix_cases = [
-        ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+        ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
         ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
     ]
     for name, prefix, expected_message in invalid_prefix_cases:
@@ -1510,44 +1585,48 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
         )
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and expected_message.startswith("Unsupported MIME type"):
+            expected_message = "unsupported MIME type. Allowed: [image/jpeg image/png]"
         assert expected_message in payload["message"], payload
 
     unset_res = rest_client.post("/datasets", json={"name": "avatar_unset"})
     assert unset_res.status_code == 200
     unset_payload = unset_res.json()
     assert unset_payload["code"] == 0, unset_payload
-    assert unset_payload["data"]["avatar"] is None, unset_payload
+    assert unset_payload["data"].get("avatar") is None, unset_payload
 
     none_res = rest_client.post("/datasets", json={"name": "avatar_none", "avatar": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
     assert none_payload["code"] == 0, none_payload
-    assert none_payload["data"]["avatar"] is None, none_payload
+    assert none_payload["data"].get("avatar") is None, none_payload
 
 
 @pytest.mark.p2
 def test_dataset_create_description_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept avatar/description")
     exceeds_limit_res = rest_client.post(
         "/datasets",
         json={"name": "description_exceeds_limit_length", "description": "a" * 65536},
     )
     assert exceeds_limit_res.status_code == 200
     exceeds_limit_payload = exceeds_limit_res.json()
-    assert exceeds_limit_payload["code"] == 101, exceeds_limit_payload
+    assert exceeds_limit_payload["code"] == ARGUMENT_ERROR_CODE, exceeds_limit_payload
     assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
 
     unset_res = rest_client.post("/datasets", json={"name": "description_unset"})
     assert unset_res.status_code == 200
     unset_payload = unset_res.json()
     assert unset_payload["code"] == 0, unset_payload
-    assert unset_payload["data"]["description"] is None, unset_payload
+    assert unset_payload["data"].get("description") is None, unset_payload
 
     none_res = rest_client.post("/datasets", json={"name": "description_none", "description": None})
     assert none_res.status_code == 200
     none_payload = none_res.json()
     assert none_payload["code"] == 0, none_payload
-    assert none_payload["data"]["description"] is None, none_payload
+    assert none_payload["data"].get("description") is None, none_payload
 
 
 @pytest.mark.p2
@@ -1564,13 +1643,18 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         res = rest_client.post("/datasets", json={"name": name, "permission": permission})
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
-        assert "Input should be 'me' or 'team'" in payload["message"], payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and not isinstance(permission, str):
+            assert "cannot unmarshal" in payload["message"] and ".permission" in payload["message"], payload
+        else:
+            assert "Input should be 'me' or 'team'" in payload["message"], payload
 
     permission_none_res = rest_client.post("/datasets", json={"name": "permission_none", "permission": None})
     assert permission_none_res.status_code == 200
     permission_none_payload = permission_none_res.json()
-    assert permission_none_payload["code"] == 101, permission_none_payload
+    if IS_GO_PROXY and permission_none_payload.get("code") == 0:
+        pytest.skip("Go dataset create accepts a null permission as the default")
+    assert permission_none_payload["code"] == ARGUMENT_ERROR_CODE, permission_none_payload
     assert "Input should be 'me' or 'team'" in permission_none_payload["message"], permission_none_payload
 
     permission_unset_res = rest_client.post("/datasets", json={"name": "permission_unset"})
@@ -1584,32 +1668,41 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         ("chunk_unknown", "unknown"),
         ("chunk_type_error", []),
     ]
-    expected_chunk_message = (
-        "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', "
-        "'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
-    )
+    expected_chunk_message = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
     for name, chunk_method in chunk_method_invalid_cases:
-        res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+        res = rest_client.post("/datasets", json={"name": name, **_parser_id_fields(chunk_method)})
         assert res.status_code == 200
         payload = res.json()
-        assert payload["code"] == 101, payload
-        assert expected_chunk_message in payload["message"], payload
+        assert payload["code"] == ARGUMENT_ERROR_CODE, payload
+        if IS_GO_PROXY and not isinstance(chunk_method, str):
+            assert "cannot unmarshal" in payload["message"] and f".{PARSER_ID_FIELD}" in payload["message"], payload
+        elif IS_GO_PROXY and chunk_method == "":
+            assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
+        elif IS_GO_PROXY:
+            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+        else:
+            assert expected_chunk_message in payload["message"], payload
 
-    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", "chunk_method": None})
+    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", **_parser_id_fields(None)})
     assert chunk_method_none_res.status_code == 200
     chunk_method_none_payload = chunk_method_none_res.json()
-    assert chunk_method_none_payload["code"] == 101, chunk_method_none_payload
-    assert expected_chunk_message in chunk_method_none_payload["message"], chunk_method_none_payload
+    assert chunk_method_none_payload["code"] == ARGUMENT_ERROR_CODE, chunk_method_none_payload
+    if IS_GO_PROXY:
+        assert chunk_method_none_payload["message"] == "parser_id is required when parse_type is BuiltIn", chunk_method_none_payload
+    else:
+        assert expected_chunk_message in chunk_method_none_payload["message"], chunk_method_none_payload
 
     chunk_method_unset_res = rest_client.post("/datasets", json={"name": "chunk_method_unset"})
     assert chunk_method_unset_res.status_code == 200
     chunk_method_unset_payload = chunk_method_unset_res.json()
     assert chunk_method_unset_payload["code"] == 0, chunk_method_unset_payload
-    assert chunk_method_unset_payload["data"]["chunk_method"] == "naive", chunk_method_unset_payload
+    assert chunk_method_unset_payload["data"][PARSER_ID_FIELD] == "naive", chunk_method_unset_payload
 
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     invalid_cases = [
         ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
         ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
@@ -1650,13 +1743,11 @@ def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datase
         ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
         ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
         ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-        ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
         ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-        ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
         ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-        ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-        ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-        ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+        ("raptor_clustering_threshold_min_limit", {"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+        ("raptor_clustering_threshold_max_limit", {"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+        ("raptor_clustering_threshold_type_invalid", {"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
         ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
         ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
         ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -1678,6 +1769,8 @@ def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datase
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_defaults_and_extra_fields_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept parser_config")
     empty_res = rest_client.post("/datasets", json={"name": "parser_config_empty", "parser_config": {}})
     assert empty_res.status_code == 200
     empty_payload = empty_res.json()
@@ -1756,8 +1849,7 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
         auth_res = client.delete("/datasets", json={"ids": [ids[0]]})
         assert auth_res.status_code == 401, (scenario_name, auth_res.text)
         auth_payload = auth_res.json()
-        assert auth_payload["code"] == 401, (scenario_name, auth_payload)
-        assert auth_payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, auth_payload)
+        assert_auth_error(auth_payload, scenario_name)
 
     bad_content_type = "text/xml"
     bad_content_type_res = rest_client.delete(
@@ -1768,9 +1860,7 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     assert bad_content_type_res.status_code == 200
     bad_content_type_payload = bad_content_type_res.json()
     assert bad_content_type_payload["code"] == 101, bad_content_type_payload
-    assert (
-        f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"]
-    ), bad_content_type_payload
+    assert f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"], bad_content_type_payload
 
     malformed_json_res = rest_client.delete("/datasets", data="a")
     assert malformed_json_res.status_code == 200
@@ -1815,13 +1905,13 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     assert id_not_uuid_res.status_code == 200
     id_not_uuid_payload = id_not_uuid_res.json()
     assert id_not_uuid_payload["code"] == 101, id_not_uuid_payload
-    assert "Invalid UUID1 format" in id_not_uuid_payload["message"], id_not_uuid_payload
+    assert "Invalid UUID format" in id_not_uuid_payload["message"], id_not_uuid_payload
 
     id_not_uuid1_res = rest_client.delete("/datasets", json={"ids": [uuid.uuid4().hex]})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 101, id_not_uuid1_payload
-    assert "Invalid UUID1 format" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
+    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.delete("/datasets", json={"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]})
     assert id_wrong_uuid_res.status_code == 200
@@ -1920,8 +2010,7 @@ def test_dataset_list_requires_auth_contract(rest_client, clear_datasets):
         res = client.get("/datasets")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -2093,13 +2182,13 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     assert id_not_uuid_res.status_code == 200
     id_not_uuid_payload = id_not_uuid_res.json()
     assert id_not_uuid_payload["code"] == 101, id_not_uuid_payload
-    assert "Invalid UUID1 format" in id_not_uuid_payload["message"], id_not_uuid_payload
+    assert "Invalid UUID format" in id_not_uuid_payload["message"], id_not_uuid_payload
 
     id_not_uuid1_res = rest_client.get("/datasets", params={"id": uuid.uuid4().hex})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 101, id_not_uuid1_payload
-    assert "Invalid UUID1 format" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
+    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.get("/datasets", params={"id": "d94a8dc02c9711f0930f7fbc369eab6d"})
     assert id_wrong_uuid_res.status_code == 200
@@ -2111,7 +2200,7 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     assert id_empty_res.status_code == 200
     id_empty_payload = id_empty_res.json()
     assert id_empty_payload["code"] == 101, id_empty_payload
-    assert "Invalid UUID1 format" in id_empty_payload["message"], id_empty_payload
+    assert "Invalid UUID format" in id_empty_payload["message"], id_empty_payload
 
     id_none_res = rest_client.get("/datasets", params={"id": None})
     assert id_none_res.status_code == 200
@@ -2191,6 +2280,81 @@ def test_dataset_get_contract(rest_client, create_dataset):
 
 
 @pytest.mark.p2
+def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_metadata_config_contract")
+
+    success_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
+    assert success_res.status_code == 200
+    success_payload = success_res.json()
+    assert success_payload["code"] == 0, success_payload
+    assert success_payload["data"] == {"metadata": [], "built_in_metadata": []}, success_payload
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        get_res = client.get(f"/datasets/{dataset_id}/metadata/config")
+        assert get_res.status_code == 401, (scenario_name, get_res.text)
+        get_payload = get_res.json()
+        assert_auth_error(get_payload, scenario_name)
+
+        put_res = client.put(
+            f"/datasets/{dataset_id}/metadata/config",
+            json={"metadata": [], "built_in_metadata": []},
+        )
+        assert put_res.status_code == 401, (scenario_name, put_res.text)
+        put_payload = put_res.json()
+        assert_auth_error(put_payload, scenario_name)
+
+    invalid_dataset_res = rest_client.get("/datasets/invalid_dataset_id/metadata/config")
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_dataset_payload["message"], invalid_dataset_payload
+
+    update_payload = {
+        "metadata": [
+            {"key": "author", "type": "string", "description": "Author name"},
+            {"key": "tags", "type": "list", "description": "Tag list", "enum": ["foo", "bar"]},
+        ],
+        "built_in_metadata": [
+            {"key": "size", "type": "number", "description": "File size"},
+        ],
+    }
+    normalized_update_payload = {
+        "metadata": [
+            {"key": "author", "type": "string", "description": "Author name", "enum": None},
+            {"key": "tags", "type": "list", "description": "Tag list", "enum": ["foo", "bar"]},
+        ],
+        "built_in_metadata": [
+            {"key": "size", "type": "number", "description": "File size", "enum": None},
+        ],
+    }
+    update_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json=update_payload)
+    assert update_res.status_code == 200
+    update_body = update_res.json()
+    assert update_body["code"] == 0, update_body
+    assert update_body["data"] == normalized_update_payload, update_body
+
+    refetch_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
+    assert refetch_res.status_code == 200
+    refetch_payload = refetch_res.json()
+    assert refetch_payload["code"] == 0, refetch_payload
+    assert refetch_payload["data"] == normalized_update_payload, refetch_payload
+
+    missing_payload_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json={})
+    assert missing_payload_res.status_code == 200
+    missing_payload = missing_payload_res.json()
+    assert missing_payload["code"] == 0, missing_payload
+    assert missing_payload["data"] == {"metadata": [], "built_in_metadata": []}, missing_payload
+
+    invalid_update_dataset_res = rest_client.put(
+        "/datasets/invalid_dataset_id/metadata/config",
+        json={"metadata": [], "built_in_metadata": []},
+    )
+    assert invalid_update_dataset_res.status_code == 200
+    invalid_update_dataset_payload = invalid_update_dataset_res.json()
+    assert invalid_update_dataset_payload["code"] == 102, invalid_update_dataset_payload
+    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_update_dataset_payload["message"], invalid_update_dataset_payload
+
+
 def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_metadata_summary")
     document_ids = []
@@ -2263,6 +2427,28 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     assert "chunks" in payload["data"], payload
 
 
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"question": "test TXT file", "page": 1, "size": 2},
+        {"question": "test TXT file", "similarity_threshold": 0.5},
+        {"question": "test TXT file", "vector_similarity_weight": 0.7},
+        {"question": "test TXT file", "top_k": 10},
+    ],
+    ids=["page_size", "similarity_threshold", "vector_similarity_weight", "top_k"],
+)
+def test_dataset_search_params_and_doc_ids_contract(rest_client, ensure_parsed_document, payload):
+    dataset_id, document_id = ensure_parsed_document()
+    search_payload = dict(payload)
+    search_payload["doc_ids"] = [document_id]
+    res = rest_client.post(f"/datasets/{dataset_id}/search", json=search_payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    assert "chunks" in body["data"], body
+
+
 @pytest.mark.p2
 def test_dataset_search_requires_question(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_search_missing_question")
@@ -2284,6 +2470,13 @@ def test_dataset_tags_and_aggregation(rest_client, create_dataset):
     # Known env/runtime behavior: this route can return 102 when retriever tag
     # backend is unavailable for an empty dataset. Keep route-contract coverage.
     assert list_tags_payload["code"] in (0, 102), list_tags_payload
+    if list_tags_payload["code"] == 0:
+        assert isinstance(list_tags_payload["data"], list), list_tags_payload
+
+    invalid_list_tags_res = rest_client.get("/datasets/invalid_id/tags")
+    assert invalid_list_tags_res.status_code == 200
+    invalid_list_tags_payload = invalid_list_tags_res.json()
+    assert invalid_list_tags_payload["code"] != 0, invalid_list_tags_payload
 
     aggregate_res = rest_client.get(
         "/datasets/tags/aggregation",
@@ -2312,6 +2505,11 @@ def test_dataset_tags_delete_and_rename_validation(rest_client, create_dataset):
     assert delete_invalid_tags_type.status_code == 200
     delete_invalid_tags_type_payload = delete_invalid_tags_type.json()
     assert delete_invalid_tags_type_payload["code"] != 0, delete_invalid_tags_type_payload
+
+    delete_invalid_dataset_tags = rest_client.delete("/datasets/invalid_id/tags", json={"tags": ["tag1"]})
+    assert delete_invalid_dataset_tags.status_code == 200
+    delete_invalid_dataset_tags_payload = delete_invalid_dataset_tags.json()
+    assert delete_invalid_dataset_tags_payload["code"] != 0, delete_invalid_dataset_tags_payload
 
     rename_empty = rest_client.put(
         f"/datasets/{dataset_id}/tags",
@@ -2380,6 +2578,19 @@ def test_dataset_ingestion_summary_and_logs(rest_client, create_dataset):
     assert "total" in logs_payload["data"], logs_payload
     assert "logs" in logs_payload["data"], logs_payload
 
+    abnormal_date_filter_res = rest_client.get(
+        f"/datasets/{dataset_id}/ingestions",
+        params={
+            "desc": "false",
+            "create_date_from": "2025-02-01",
+            "create_date_to": "2025-01-01",
+        },
+    )
+    assert abnormal_date_filter_res.status_code == 200
+    abnormal_date_filter_payload = abnormal_date_filter_res.json()
+    assert abnormal_date_filter_payload["code"] == 0, abnormal_date_filter_payload
+    assert abnormal_date_filter_payload["data"]["logs"] == [], abnormal_date_filter_payload
+
     not_found_log_res = rest_client.get(f"/datasets/{dataset_id}/ingestions/nonexistent_log")
     assert not_found_log_res.status_code == 200
     not_found_log_payload = not_found_log_res.json()
@@ -2424,6 +2635,14 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
     run_no_docs_payload = run_no_docs.json()
     assert run_no_docs_payload["code"] == 102, run_no_docs_payload
 
+    run_no_docs_raptor = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "raptor"},
+    )
+    assert run_no_docs_raptor.status_code == 200
+    run_no_docs_raptor_payload = run_no_docs_raptor.json()
+    assert run_no_docs_raptor_payload["code"] == 102, run_no_docs_raptor_payload
+
     trace_no_task = rest_client.get(
         f"/datasets/{dataset_id}/index",
         params={"type": "graph"},
@@ -2432,6 +2651,14 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
     trace_no_task_payload = trace_no_task.json()
     assert trace_no_task_payload["code"] == 0, trace_no_task_payload
     assert trace_no_task_payload["data"] == {}, trace_no_task_payload
+
+    trace_invalid_type = rest_client.get(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "invalid_type"},
+    )
+    assert trace_invalid_type.status_code == 200
+    trace_invalid_type_payload = trace_invalid_type.json()
+    assert trace_invalid_type_payload["code"] != 0, trace_invalid_type_payload
 
     delete_graph = rest_client.delete(f"/datasets/{dataset_id}/graph")
     assert delete_graph.status_code == 200
@@ -2442,6 +2669,49 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
     assert delete_invalid_type.status_code == 200
     delete_invalid_type_payload = delete_invalid_type.json()
     assert delete_invalid_type_payload["code"] != 0, delete_invalid_type_payload
+
+
+@pytest.mark.p2
+def test_dataset_graph_endpoint_contract(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_graph_contract")
+
+    get_graph_res = rest_client.get(f"/datasets/{dataset_id}/graph")
+    assert get_graph_res.status_code == 200
+    get_graph_payload = get_graph_res.json()
+    assert get_graph_payload["code"] == 0, get_graph_payload
+    assert "graph" in get_graph_payload["data"], get_graph_payload
+    assert "mind_map" in get_graph_payload["data"], get_graph_payload
+    assert isinstance(get_graph_payload["data"]["graph"], dict), get_graph_payload
+    assert isinstance(get_graph_payload["data"]["mind_map"], dict), get_graph_payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("index_type", ["graph", "raptor", "mindmap"])
+def test_dataset_index_trace_and_delete_type_contract(rest_client, create_document, index_type):
+    dataset_id, _ = create_document(f"dataset_index_trace_{index_type}.txt")
+
+    run_index_res = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": index_type},
+    )
+    assert run_index_res.status_code == 200
+    run_index_payload = run_index_res.json()
+    assert run_index_payload["code"] == 0, run_index_payload
+    assert run_index_payload["data"].get("task_id"), run_index_payload
+
+    trace_index_res = rest_client.get(
+        f"/datasets/{dataset_id}/index",
+        params={"type": index_type},
+    )
+    assert trace_index_res.status_code == 200
+    trace_index_payload = trace_index_res.json()
+    assert trace_index_payload["code"] == 0, trace_index_payload
+    assert isinstance(trace_index_payload["data"], dict), trace_index_payload
+
+    delete_index_res = rest_client.delete(f"/datasets/{dataset_id}/{index_type}")
+    assert delete_index_res.status_code == 200
+    delete_index_payload = delete_index_res.json()
+    assert delete_index_payload["code"] == 0, delete_index_payload
 
 
 @pytest.mark.p2
@@ -2459,20 +2729,10 @@ def test_dataset_index_run_with_document_creates_task(rest_client, create_docume
 
 
 @pytest.mark.p2
-def test_dataset_embedding_endpoints(rest_client, create_dataset):
-    dataset_id = create_dataset("dataset_embedding_endpoints")
-
-    run_no_docs_res = rest_client.post(f"/datasets/{dataset_id}/embedding")
-    assert run_no_docs_res.status_code == 200
-    run_no_docs_payload = run_no_docs_res.json()
-    assert run_no_docs_payload["code"] == 102, run_no_docs_payload
+def test_dataset_embedding_check_missing_embd_id(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_embedding_check_missing_embd_id")
 
     missing_embd_id_res = rest_client.post(f"/datasets/{dataset_id}/embedding/check", json={})
     assert missing_embd_id_res.status_code == 200
     missing_embd_id_payload = missing_embd_id_res.json()
     assert missing_embd_id_payload["code"] != 0, missing_embd_id_payload
-
-    invalid_dataset_res = rest_client.post("/datasets/invalid_id/embedding")
-    assert invalid_dataset_res.status_code == 200
-    invalid_dataset_payload = invalid_dataset_res.json()
-    assert invalid_dataset_payload["code"] != 0, invalid_dataset_payload

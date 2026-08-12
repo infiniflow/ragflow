@@ -14,7 +14,7 @@ import {
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback, useContext } from 'react';
+import { memo, useCallback, useContext, useEffect, useRef } from 'react';
 import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitComponentData } from '../hooks/use-chat-logic';
@@ -50,9 +50,40 @@ function AgentChatBox() {
   });
 
   const { setDerivedMessages } = useContext(AgentChatContext);
-  setDerivedMessages?.(derivedMessages);
+  // Sync the derived messages to the AgentChatContext — must run as an
+  // effect, not in the render body. Calling setDerivedMessages(...)
+  // synchronously during render (the previous shape) targets
+  // AgentCanvas's state while AgentChatBox is still rendering, which
+  // triggers React's "Cannot update a component (AgentCanvas) while
+  // rendering a different component (AgentChatBox)" warning. The
+  // effect runs after commit so the setState targets a stable
+  // component subtree.
+  useEffect(() => {
+    setDerivedMessages?.(derivedMessages);
+  }, [derivedMessages, setDerivedMessages]);
 
   const isTaskMode = useIsTaskMode();
+
+  const inputWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Keep the message list anchored to its bottom edge while the input box
+  // changes height (drag-to-resize or autosize), so history shifts up/down
+  // together with the input instead of being covered by it.
+  useEffect(() => {
+    const wrapper = inputWrapperRef.current;
+    const container = messageContainerRef.current;
+    if (!wrapper || !container) return;
+    let previousHeight = wrapper.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const delta = wrapper.clientHeight - previousHeight;
+      previousHeight = wrapper.clientHeight;
+      if (delta !== 0) {
+        container.scrollTop += delta;
+      }
+    });
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [messageContainerRef]);
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
@@ -87,7 +118,7 @@ function AgentChatBox() {
                   clickDocumentButton={clickDocumentButton}
                   index={i}
                   showLikeButton={false}
-                  sendLoading={sendLoading}
+                  sendLoading={sendLoading && derivedMessages.length - 1 === i}
                 >
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 === i && (
@@ -119,20 +150,22 @@ function AgentChatBox() {
           <div ref={scrollRef} />
         </div>
         {isTaskMode || (
-          <NextMessageInput
-            value={value}
-            sendLoading={sendLoading}
-            disabled={isWaiting}
-            sendDisabled={sendLoading || isWaiting}
-            isUploading={loading || isWaiting}
-            resize="vertical"
-            onPressEnter={handlePressEnter}
-            onInputChange={handleInputChange}
-            stopOutputMessage={stopOutputMessage}
-            onUpload={handleUploadFile}
-            removeFile={removeFile}
-            conversationId=""
-          />
+          <div ref={inputWrapperRef}>
+            <NextMessageInput
+              value={value}
+              sendLoading={sendLoading}
+              disabled={isWaiting}
+              sendDisabled={sendLoading || isWaiting}
+              isUploading={loading || isWaiting}
+              resize="vertical"
+              onPressEnter={handlePressEnter}
+              onInputChange={handleInputChange}
+              stopOutputMessage={stopOutputMessage}
+              onUpload={handleUploadFile}
+              removeFile={removeFile}
+              conversationId=""
+            />
+          </div>
         )}
       </section>
       {visible && (

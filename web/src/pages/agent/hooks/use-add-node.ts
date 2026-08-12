@@ -1,4 +1,4 @@
-import { useFetchModelId } from '@/hooks/logic-hooks';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { t } from 'i18next';
@@ -16,6 +16,7 @@ import {
   initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
+  initialCompilationValues,
   initialCrawlerValues,
   initialDataOperationsValues,
   initialDocGeneratorValues,
@@ -29,12 +30,15 @@ import {
   initialInvokeValues,
   initialIterationStartValues,
   initialIterationValues,
+  initialKeenableValues,
   initialListOperationsValues,
   initialLoopValues,
   initialMessageValues,
   initialNoteValues,
   initialParserValues,
   initialPubMedValues,
+  initialBGPTValues,
+  initialQueritValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSearXNGValues,
@@ -123,13 +127,17 @@ function useAddGroupNode() {
   return { addGroupNode };
 }
 export const useInitializeOperatorParams = () => {
-  const llmId = useFetchModelId();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const llmId = defaultModelDictionary.llm_id;
 
   const initialFormValuesMap = useMemo(() => {
     return {
       [Operator.Begin]: initialBeginValues,
       [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
+      [Operator.Categorize]: {
+        ...initialCategorizeValues,
+        llm_id: llmId,
+      },
       [Operator.RewriteQuestion]: {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
@@ -138,6 +146,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
+      [Operator.BGPT]: initialBGPTValues,
       [Operator.ArXiv]: initialArXivValues,
       [Operator.Google]: initialGoogleValues,
       [Operator.Bing]: initialBingValues,
@@ -159,6 +168,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.QueritSearch]: initialQueritValues,
+      [Operator.KeenableSearch]: initialKeenableValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
@@ -174,6 +185,7 @@ export const useInitializeOperatorParams = () => {
         sys_prompt: t('flow.prompts.system.summary'),
         prompts: t('flow.prompts.user.summary'),
       },
+      [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,

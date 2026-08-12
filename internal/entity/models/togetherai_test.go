@@ -60,6 +60,8 @@ func TestTogetherAIFactory(t *testing.T) {
 }
 
 func TestTogetherAIChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -76,8 +78,8 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{
-					"content":   "pong",
-					"reasoning": "thinking",
+					"content":           "pong",
+					"reasoning_content": "thinking",
 				},
 			}},
 		})
@@ -91,10 +93,12 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 	stop := []string{"END"}
 	effort := "high"
 	resp, err := newTogetherAIForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"openai/gpt-oss-20b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -108,6 +112,8 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 }
 
 func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "Qwen/Qwen3.5-9B" {
 			t.Errorf("model=%v", body["model"])
@@ -135,10 +141,12 @@ func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
 	apiKey := "test-key"
 	thinking := false
 	resp, err := newTogetherAIForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"Qwen/Qwen3.5-9B",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -149,14 +157,18 @@ func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
 }
 
 func TestTogetherAIChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
-	_, err := newTogetherAIForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newTogetherAIForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 }
 
 func TestTogetherAIStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -165,11 +177,11 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 			t.Errorf("stream=%v want true", body["stream"])
 		}
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Errorf("Accept=%q", got)
+			t.Errorf("Accept=%q, want text/event-stream", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
-			`data: {"choices":[{"delta":{"reasoning":"think "}}]}`+"\n"+
+			`data: {"choices":[{"delta":{"reasoning_content":"think "}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":"Hello"}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n",
 		)
@@ -180,9 +192,10 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 	var content []string
 	var reasoning []string
 	err := newTogetherAIForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"meta-llama/Llama-3.3-70B-Instruct-Turbo",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, r *string) error {
 			if c != nil {
 				content = append(content, *c)
@@ -205,6 +218,8 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 }
 
 func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
@@ -216,9 +231,10 @@ func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	err := newTogetherAIForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"meta-llama/Llama-3.3-70B-Instruct-Turbo",
 		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey}, nil,
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(c *string, _ *string) error {
 			if c != nil {
 				chunks = append(chunks, *c)
@@ -235,6 +251,8 @@ func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
 }
 
 func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s", r.Method)
@@ -251,24 +269,30 @@ func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	model := newTogetherAIForTest(srv.URL)
-	models, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "openai/gpt-oss-20b,meta-llama/Llama-3.3-70B-Instruct-Turbo" {
+	if joinModelNames(models, ",") != "openai/gpt-oss-20b,meta-llama/Llama-3.3-70B-Instruct-Turbo" {
 		t.Errorf("models=%v", models)
 	}
-	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
 func TestTogetherAIUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newTogetherAIForTest("http://unused")
-	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank error=%v", err)
+	apiKey := "test-key"
+	// Rerank IS implemented; with nil documents it short-circuits to empty response (no error).
+	// It should NOT be blocked by APIConfigCheck.
+	if _, err := m.Rerank(ctx, nil, "", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Errorf("Rerank error=%v (expected no error for empty documents)", err)
 	}
-	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	// Balance IS a stub → "no such method"
+	if _, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
 }

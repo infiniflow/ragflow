@@ -15,6 +15,7 @@
 #
 import contextlib
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -24,6 +25,7 @@ import psycopg2
 import pyodbc
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
+from common.ssrf_guard import assert_host_is_safe
 
 
 class ExeSQLParam(ToolParamBase):
@@ -32,17 +34,10 @@ class ExeSQLParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "execute_sql",
             "description": "This is a tool that can execute SQL.",
-            "parameters": {
-                "sql": {
-                    "type": "string",
-                    "description": "The SQL needs to be executed.",
-                    "default": "{sys.query}",
-                    "required": True
-                }
-            }
+            "parameters": {"sql": {"type": "string", "description": "The SQL needs to be executed.", "default": "{sys.query}", "required": True}},
         }
         super().__init__()
         self.db_type = "mysql"
@@ -54,7 +49,7 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino', 'oceanbase'])
+        self.check_valid_value(self.db_type, "Choose DB type", ["mysql", "postgres", "mariadb", "mssql", "IBM DB2", "trino", "oceanbase"])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
@@ -69,12 +64,7 @@ class ExeSQLParam(ToolParamBase):
                 raise ValueError("For the security reason, it does not support database named rag_flow.")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "sql": {
-                "name": "SQL",
-                "type": "line"
-            }
-        }
+        return {"sql": {"name": "SQL", "type": "line"}}
 
 
 class ExeSQL(ToolBase, ABC):
@@ -88,6 +78,7 @@ class ExeSQL(ToolBase, ABC):
         def convert_decimals(obj):
             from decimal import Decimal
             import math
+
             if isinstance(obj, float):
                 # Handle NaN and Infinity which are not valid JSON values
                 if math.isnan(obj) or math.isinf(obj):
@@ -123,26 +114,36 @@ class ExeSQL(ToolBase, ABC):
         if self.check_if_canceled("ExeSQL processing"):
             return
 
+        # The DB host/port are node-author-controlled and are connected to
+        # server-side, so guard against SSRF (internal hosts, loopback, cloud
+        # metadata) the same way the `test_db_connection` endpoint does. Connect
+        # to the validated, resolved public IP so a later DNS change cannot
+        # rebind the host to an internal address (mirrors agent_api.py).
+        logging.info(f"ExeSQL validating database host: {self._param.host}")
+        try:
+            safe_host = assert_host_is_safe(self._param.host)
+        except ValueError as e:
+            logging.warning(f"ExeSQL rejected database host {self._param.host}: {e}")
+            raise Exception(f"Database host '{self._param.host}' is not allowed: {e}")
+        logging.info(f"ExeSQL validated database host {self._param.host} -> {safe_host}")
+
         sqls = sql.split(";")
         if self._param.db_type in ["mysql", "mariadb"]:
-            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
-                                 port=self._param.port, password=self._param.password)
-        elif self._param.db_type == 'oceanbase':
-            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
-                                 port=self._param.port, password=self._param.password, charset='utf8mb4')
-        elif self._param.db_type == 'postgres':
-            db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
-                                  port=self._param.port, password=self._param.password)
-        elif self._param.db_type == 'mssql':
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=safe_host, port=self._param.port, password=self._param.password)
+        elif self._param.db_type == "oceanbase":
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=safe_host, port=self._param.port, password=self._param.password, charset="utf8mb4")
+        elif self._param.db_type == "postgres":
+            db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=safe_host, port=self._param.port, password=self._param.password)
+        elif self._param.db_type == "mssql":
             conn_str = (
-                    r'DRIVER={ODBC Driver 17 for SQL Server};'
-                    r'SERVER=' + self._param.host + ',' + str(self._param.port) + ';'
-                    r'DATABASE=' + self._param.database + ';'
-                    r'UID=' + self._param.username + ';'
-                    r'PWD=' + self._param.password
+                r"DRIVER={ODBC Driver 17 for SQL Server};"
+                r"SERVER=" + safe_host + "," + str(self._param.port) + ";"
+                r"DATABASE=" + self._param.database + ";"
+                r"UID=" + self._param.username + ";"
+                r"PWD=" + self._param.password
             )
             db = pyodbc.connect(conn_str)
-        elif self._param.db_type == 'trino':
+        elif self._param.db_type == "trino":
             try:
                 import trino
                 from trino.auth import BasicAuthentication
@@ -171,26 +172,14 @@ class ExeSQL(ToolBase, ABC):
 
             try:
                 db = trino.dbapi.connect(
-                    host=self._param.host,
-                    port=int(self._param.port or 8080),
-                    user=self._param.username or "ragflow",
-                    catalog=catalog,
-                    schema=schema or "default",
-                    http_scheme=http_scheme,
-                    auth=auth
+                    host=safe_host, port=int(self._param.port or 8080), user=self._param.username or "ragflow", catalog=catalog, schema=schema or "default", http_scheme=http_scheme, auth=auth
                 )
             except Exception as e:
                 raise Exception("Database Connection Failed! \n" + str(e))
-        elif self._param.db_type == 'IBM DB2':
+        elif self._param.db_type == "IBM DB2":
             import ibm_db
-            conn_str = (
-                f"DATABASE={self._param.database};"
-                f"HOSTNAME={self._param.host};"
-                f"PORT={self._param.port};"
-                f"PROTOCOL=TCPIP;"
-                f"UID={self._param.username};"
-                f"PWD={self._param.password};"
-            )
+
+            conn_str = f"DATABASE={self._param.database};HOSTNAME={safe_host};PORT={self._param.port};PROTOCOL=TCPIP;UID={self._param.username};PWD={self._param.password};"
             try:
                 conn = ibm_db.connect(conn_str, "", "")
             except Exception as e:
@@ -208,28 +197,37 @@ class ExeSQL(ToolBase, ABC):
                         continue
                     single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
 
-                    stmt = ibm_db.exec_immediate(conn, single_sql)
-                    rows = []
-                    row = ibm_db.fetch_assoc(stmt)
-                    while row and len(rows) < self._param.max_records:
-                        if self.check_if_canceled("ExeSQL processing"):
-                            return
-                        rows.append(row)
+                    try:
+                        stmt = ibm_db.exec_immediate(conn, single_sql)
+                        rows = []
                         row = ibm_db.fetch_assoc(stmt)
+                        while row and len(rows) < self._param.max_records:
+                            if self.check_if_canceled("ExeSQL processing"):
+                                return
+                            rows.append(row)
+                            row = ibm_db.fetch_assoc(stmt)
 
-                    if not rows:
-                        sql_res.append({"content": "No record in the database!"})
+                        if not rows:
+                            sql_res.append({"content": "No record in the database!"})
+                            continue
+
+                        df = pd.DataFrame(rows)
+                        for col in df.columns:
+                            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                                df[col] = df[col].dt.strftime("%Y-%m-%d")
+
+                        df = df.where(pd.notnull(df), None)
+
+                        sql_res.append(convert_decimals(df.to_dict(orient="records")))
+                        formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
+                    except Exception as e:
+                        # Keep the node alive on a bad statement: report and continue.
+                        with contextlib.suppress(Exception):
+                            ibm_db.rollback(conn)
+                        msg = f"SQL Execution Failed: {single_sql}\n{str(e)}"
+                        sql_res.append({"content": msg})
+                        formalized_content.append(msg)
                         continue
-
-                    df = pd.DataFrame(rows)
-                    for col in df.columns:
-                        if pd.api.types.is_datetime64_any_dtype(df[col]):
-                            df[col] = df[col].dt.strftime("%Y-%m-%d")
-
-                    df = df.where(pd.notnull(df), None)
-
-                    sql_res.append(convert_decimals(df.to_dict(orient="records")))
-                    formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
             finally:
                 with contextlib.suppress(Exception):
                     ibm_db.close(conn)
@@ -251,7 +249,7 @@ class ExeSQL(ToolBase, ABC):
                 if self.check_if_canceled("ExeSQL processing"):
                     return
 
-                single_sql = single_sql.replace('```', '').strip()
+                single_sql = single_sql.replace("```", "").strip()
                 if not single_sql:
                     continue
                 single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
@@ -259,25 +257,36 @@ class ExeSQL(ToolBase, ABC):
                     sql_res.append({"content": "For security reasons, INSERT, UPDATE, and DELETE statements are not supported."})
                     formalized_content.append("For security reasons, INSERT, UPDATE, and DELETE statements are not supported.")
                     continue
-                cursor.execute(single_sql)
-                if cursor.rowcount == 0:
-                    sql_res.append({"content": "No record in the database!"})
-                    break
-                if self._param.db_type == 'mssql':
-                    single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records),
-                                                           columns=[desc[0] for desc in cursor.description])
-                else:
-                    single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
-                    single_res.columns = [i[0] for i in cursor.description]
+                try:
+                    cursor.execute(single_sql)
+                    if cursor.rowcount == 0:
+                        sql_res.append({"content": "No record in the database!"})
+                        break
+                    if self._param.db_type == "mssql":
+                        single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records), columns=[desc[0] for desc in cursor.description])
+                    else:
+                        single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
+                        single_res.columns = [i[0] for i in cursor.description]
 
-                for col in single_res.columns:
-                    if pd.api.types.is_datetime64_any_dtype(single_res[col]):
-                        single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
+                    for col in single_res.columns:
+                        if pd.api.types.is_datetime64_any_dtype(single_res[col]):
+                            single_res[col] = single_res[col].dt.strftime("%Y-%m-%d")
 
-                single_res = single_res.where(pd.notnull(single_res), None)
+                    single_res = single_res.where(pd.notnull(single_res), None)
 
-                sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
-                formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
+                    sql_res.append(convert_decimals(single_res.to_dict(orient="records")))
+                    formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
+                except Exception as e:
+                    # A failing statement must not abort the node: report it and keep
+                    # going so earlier results survive and later statements still run.
+                    # The rollback clears PostgreSQL's aborted-transaction state, which
+                    # would otherwise make every subsequent statement fail too.
+                    with contextlib.suppress(Exception):
+                        db.rollback()
+                    msg = f"SQL Execution Failed: {single_sql}\n{str(e)}"
+                    sql_res.append({"content": msg})
+                    formalized_content.append(msg)
+                    continue
         finally:
             with contextlib.suppress(Exception):
                 cursor.close()

@@ -44,7 +44,7 @@ const ChatContainer = () => {
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      changeLanguageAsync(locale);
+      changeLanguageAsync(locale, { persist: false });
     }
   }, [locale, visibleAvatar]);
 
@@ -60,6 +60,7 @@ const ChatContainer = () => {
         title={chatInfo.title}
         avatar={chatInfo.avatar}
         handleReset={removeAllMessagesExceptFirst}
+        hideReset={sendLoading}
       >
         <div className="flex flex-1 flex-col p-2.5 h-[90vh] m-3">
           <div
@@ -115,7 +116,9 @@ const ChatContainer = () => {
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
                 showReasoning
-                showInternet={chatInfo?.has_tavily_key}
+                showInternet={
+                  chatInfo?.has_web_search_provider ?? chatInfo?.has_tavily_key
+                }
               ></NextMessageInput>
             </div>
           </div>
