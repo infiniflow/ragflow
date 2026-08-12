@@ -265,6 +265,67 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 // TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
 // in the agent canvas are resolved to their real provider/model name, driver,
 // and credentials before the LLM call is dispatched.
+// TestLLM_Invoke_UUIDModel_ResolvesContentLength verifies the tenant-model
+// UUID path of content_length resolution end to end: with a real in-memory
+// DB row for gpt-4o@OpenAI, the fitting budget comes from the catalog's
+// content_length (128000) rather than the 8192 fallback, so a 40k-token
+// prompt survives.
+func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-uuid-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-uuid-1",
+		ProviderID:   "provider-uuid-1",
+		InstanceName: "default",
+		APIKey:       "test-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-uuid-1",
+		InstanceID: "instance-uuid-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "0123456789abcdef0123456789abcdef"})
+	if _, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; UUID content_length resolution failed (want preserved under gpt-4o 128k)", got)
+	}
+}
+
 func TestLLM_ResolvesTenantModelID(t *testing.T) {
 	db := setupComponentTestDB(t)
 	pushComponentDB(t, db)
@@ -454,15 +515,163 @@ func TestFitMessages_FoldsMultipleTextParts(t *testing.T) {
 	}
 	last := fitted[len(fitted)-1]
 	textParts := 0
+	imageParts := 0
 	for _, part := range last.UserInputMultiContent {
-		if part.Type == schema.ChatMessagePartTypeText {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
 			textParts++
+		case schema.ChatMessagePartTypeImageURL:
+			imageParts++
 		}
 	}
 	if textParts != 1 {
 		t.Fatalf("got %d text parts, want 1 (folded): %+v", textParts, last.UserInputMultiContent)
 	}
+	if imageParts != 1 {
+		t.Fatalf("image part lost after trimming: %+v", last.UserInputMultiContent)
+	}
 	if total := tokenizer.NumTokensFromString(last.UserInputMultiContent[0].Text); total > 2000 {
 		t.Fatalf("fitted text totals %d tokens, exceeds budget 2000", total)
+	}
+}
+
+// TestFitMessages_ImageOnlyLastTurnOverBudget locks the over-budget path where
+// an image-only turn is the last non-system message (ll2 = 0 tokens): the
+// fitter keeps it, gives the whole budget to the system messages, and the
+// image-only turn must survive reconstruction untouched.
+func TestFitMessages_ImageOnlyLastTurnOverBudget(t *testing.T) {
+	imgURL := "data:image/png;base64,AAAA"
+	msgs := []schema.Message{
+		{Role: schema.System, Content: strings.Repeat("s ", 3000)}, // dominates (>80% of tokens)
+		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
+			}},
+		}},
+	}
+	fitted, fitErr := fitMessages("", msgs, 500)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2 (system + image-only turn)", len(fitted))
+	}
+	if fitted[0].Role != schema.System || fitted[0].Content == msgs[0].Content {
+		t.Fatalf("system should be trimmed to the budget: %+v", fitted[0])
+	}
+	if total := tokenizer.NumTokensFromString(fitted[0].Content); total > 500 {
+		t.Fatalf("system exceeds budget after fit: %d tokens", total)
+	}
+	last := fitted[len(fitted)-1]
+	if last.Role != schema.User || len(last.UserInputMultiContent) != 1 || last.UserInputMultiContent[0].Type != schema.ChatMessagePartTypeImageURL {
+		t.Fatalf("image-only turn lost or modified after over-budget fitting: %+v", last)
+	}
+}
+
+// TestLLM_Invoke_MaxTokensStillOutputCapAndNotBudget pins the core semantics
+// of the content_length change: the canvas max_tokens must still reach the
+// invoker as the generation cap, but must NOT be the message-fitting budget.
+// A small max_tokens with a 40k-token prompt would be trimmed to ~500 tokens
+// under the old behavior; the prompt must survive under the content_length
+// budget.
+func TestLLM_Invoke_MaxTokensStillOutputCapAndNotBudget(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	maxOut := 512
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@openai", MaxTokens: &maxOut})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	// Generation cap still flows to the invoker.
+	if stub.captured.MaxTokens == nil || *stub.captured.MaxTokens != maxOut {
+		t.Fatalf("MaxTokens = %v, want %d (generation cap must still be forwarded)", stub.captured.MaxTokens, maxOut)
+	}
+	// ...but is not the fitting budget: the 40k prompt must survive.
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; max_tokens must not be the fitting budget", got)
+	}
+}
+
+// TestLLM_Invoke_UnresolvableModelFallsBackTo8192 verifies the fallback: when
+// content_length cannot be resolved, fitting falls back to the 8192 budget
+// (matching Python's chat_mdl.max_length default) instead of panicking or
+// passing the oversized prompt through.
+func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "no-such-model@no-such-provider"})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got >= 8000 {
+		t.Fatalf("user message not trimmed under the 8192 fallback budget: %d tokens", got)
+	}
+}
+
+// TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
+// fitting budget in Invoke is the chat model's context window
+// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// canvas max_tokens / the 8192 fallback. A user prompt far larger than the
+// 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
+// through to the invoker untrimmed.
+//
+// NOTE: this test couples to the provider catalog ("gpt-4o" must carry a
+// content_length well above 8000). The >=8000 threshold is robust to catalog
+// bumps; if gpt-4o's content_length were ever lowered below ~8k, the test
+// failing is the correct signal.
+func TestLLM_Invoke_UsesModelContentLengthBudget(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	// ~40k tokens: > 8192 (the fallback default) but << 128000 (gpt-4o).
+	bigPrompt := strings.Repeat("x ", 20000)
+
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@openai"})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatalf("no user message captured: %+v", stub.captured.Messages)
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; want it preserved under the gpt-4o content_length budget, got head: %.80q", got, userContent)
+	}
+	if !strings.Contains(userContent, bigPrompt) {
+		t.Fatal("user prompt was modified by fitting despite fitting the content_length budget")
 	}
 }

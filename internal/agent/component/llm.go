@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/component/messagefit"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
@@ -305,9 +306,23 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// reference selected in the agent canvas is passed verbatim to the LLM
 	// driver, causing 400s for custom-added models.
 	var err error
+	originalModelID := p.ModelID
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+	// Resolve the model's context window (content_length) for message
+	// fitting. 0 means the model is unknown → fitMessages falls back to
+	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
+	contentLength := dao.ResolveModelContentLength(ctx, db, originalModelID, p.Driver, p.ModelID)
+	if contentLength <= 0 {
+		// A 0 makes fitMessages fall back to the 8192 default budget, which can
+		// silently discard most of a large-context prompt, so surface the
+		// resolution failure for diagnosis.
+		common.Warn("llm: content_length not resolved, falling back to 8192",
+			zap.String("model_ref", originalModelID),
+			zap.String("driver", p.Driver),
+			zap.String("model_name", p.ModelID))
 	}
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
@@ -420,16 +435,15 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	}
 	// Apply message fitting (trim to context window) after all
 	// prompt/history/sys.files augmentation and before invoking the
-	// LLM. Mirrors Python's message_fit_in in PR #16413.
+	// LLM. Mirrors Python's message_fit_in in PR #16413. The budget is
+	// the model's context window (content_length), resolved from the
+	// model config above — NOT the canvas max_tokens, which caps
+	// generation length only.
 	{
-		maxCtx := 0
-		if p.MaxTokens != nil {
-			maxCtx = *p.MaxTokens
-		}
 		// The system prompt is already embedded as the first message
 		// in msgs by buildMessagesWithImages; pass "" so fitMessages
 		// does not duplicate it.
-		fitted, fitErr := fitMessages("", msgs, maxCtx)
+		fitted, fitErr := fitMessages("", msgs, contentLength)
 		if fitErr != "" {
 			return map[string]any{"content": fitErr}, nil
 		}
@@ -1010,10 +1024,10 @@ func validateFittedMessages(msgFit []schema.Message) string {
 	}
 	last := msgFit[len(msgFit)-1]
 	if last.Role != schema.User {
-		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model max_tokens context setting"
+		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model content_length context setting"
 	}
 	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
-		return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
+		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
 	}
 	return ""
 }
