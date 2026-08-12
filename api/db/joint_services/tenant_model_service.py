@@ -41,6 +41,12 @@ from api.utils.model_utils import calculate_model_type, get_model_type_human
 
 logger = logging.getLogger(__name__)
 
+# Instance name used when materializing the system-wide default models
+# (user_default_llm) for a tenant. Matches the "model@default@provider" form
+# normalized by the model_id_config migration so the runtime (LLMBundle) and the
+# settings UI both resolve the seeded models.
+_DEFAULT_INSTANCE_NAME = "default"
+
 
 def _factory_model_types(llm: dict) -> list[str]:
     model_type = llm.get("model_type")
@@ -160,6 +166,81 @@ def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
         "paddleocr-from-env",
         _collect_env_config(PADDLEOCR_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG),
     )
+
+
+def seed_tenant_default_models(tenant_id: str) -> None:
+    """Materialize the system-wide default models (``user_default_llm``) for a tenant.
+
+    The default model configuration exposed via ``settings.CHAT_CFG`` /
+    ``EMBEDDING_CFG`` / ... is otherwise only used to write the model *name* on
+    the tenant row. The model catalog (``tenant_model_provider`` /
+    ``tenant_model_instance`` / ``tenant_model``) additionally requires
+    provider/instance/model rows for a model to resolve, so without this step a
+    newly created tenant cannot use the configured default models and the
+    settings UI reports them as unavailable.
+
+    Each configured model is attached to a single ``default`` instance of its
+    provider, which matches the ``model@default@provider`` form normalized by
+    the ``model_id_config`` migration so both the runtime (LLMBundle) and the
+    settings UI resolve the model. Idempotent: only inserts what is missing and
+    never overwrites or removes existing rows.
+    """
+    for model_type_str, cfg in (
+        (LLMType.CHAT.value, settings.CHAT_CFG),
+        (LLMType.EMBEDDING.value, settings.EMBEDDING_CFG),
+        (LLMType.RERANK.value, settings.RERANK_CFG),
+        (LLMType.ASR.value, settings.ASR_CFG),
+        (LLMType.VISION.value, settings.VISION_CFG),
+    ):
+        _seed_default_model(tenant_id, model_type_str, cfg)
+
+
+def _seed_default_model(tenant_id: str, model_type_str: str, cfg: dict) -> None:
+    factory = (cfg.get("factory") or "").strip()
+    composite_name = (cfg.get("model") or "").strip()
+    if not factory or not composite_name:
+        return
+    # composite_name carries the factory suffix ("name@factory"); drop it to get
+    # the bare model name. rsplit keeps any '@' embedded in the model name intact.
+    pure_name = composite_name.rsplit("@", 1)[0] if "@" in composite_name else composite_name
+    if not pure_name:
+        return
+
+    try:
+        provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, factory)
+        if not provider_obj:
+            TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=factory)
+            provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, factory)
+        if not provider_obj:
+            return
+
+        instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, _DEFAULT_INSTANCE_NAME)
+        if not instance_obj:
+            extra = json.dumps({"base_url": cfg["base_url"]}) if cfg.get("base_url") else "{}"
+            instance_obj = TenantModelInstanceService.create_instance(
+                provider_id=provider_obj.id,
+                instance_name=_DEFAULT_INSTANCE_NAME,
+                api_key=cfg.get("api_key") or "",
+                extra=extra,
+            )
+        if not instance_obj:
+            return
+
+        existing = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_name)
+        wanted_type = calculate_model_type([model_type_str])
+        if existing:
+            if existing.model_type & wanted_type == 0:
+                TenantModelService.update_model(existing.id, {"model_type": existing.model_type | wanted_type})
+        else:
+            TenantModelService.insert(
+                model_name=pure_name,
+                provider_id=provider_obj.id,
+                instance_id=instance_obj.id,
+                model_type=wanted_type,
+                extra=json.dumps({"max_tokens": 8192}),
+            )
+    except Exception:  # model seeding must never break registration
+        logger.exception("Failed to seed default %s model for tenant %s", model_type_str, tenant_id)
 
 
 def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum):

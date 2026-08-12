@@ -34,6 +34,7 @@ from api.db.services.task_service import TaskService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.db.services.memory_service import MemoryService
+from api.db.joint_services.tenant_model_service import seed_tenant_default_models
 from memory.services.messages import MessageService
 from rag.nlp import search
 from common.constants import ActiveEnum
@@ -97,6 +98,7 @@ def create_new_user(user_info: dict) -> dict:
         TenantService.insert(**tenant)
         UserTenantService.insert(**usr_tenant)
         # TenantLLMService.insert_many(tenant_llm)
+        seed_tenant_default_models(user_id)
         FileService.insert(file)
 
         return {
