@@ -395,16 +395,55 @@ class Base(ABC):
 
     @staticmethod
     def _strip_tool_calls(text):
-        """Remove the <tool_call>...</tool_call> traces that _verbose_tool_use
+        """Remove <tool_call>...</tool_call> traces that _verbose_tool_use
         accumulates, so the returned answer text never contains the raw tool
         invocation JSON (which small models otherwise leak when they keep calling
         a terminal tool until max_rounds). The traces are informational only; the
-        answer text is the model's final relay."""
+        answer text is the model's final relay.
+
+        Robust against malformed output: small models frequently emit partially
+        mangled tool-call markup (nested blocks, a closing tag missing its `<`,
+        or a truncated tail). We therefore loop until nothing changes, match both
+        well-formed and degraded open/close delimiters, and drop any dangling
+        tool-call tail left at the end of the string.
+        """
         import re as _re
 
         if not text:
             return text
-        return _re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=_re.DOTALL)
+
+        # Well-formed block: <tool_call> ... </tool_call>  (non-greedy).
+        _block = _re.compile(r"<tool_call>.*?</tool_call>", _re.DOTALL)
+        # Degraded variants small models produce:
+        #   - opening tag missing its '<'   -> "tool_call>.../tool_call>"
+        #   - closing tag missing its '<'   -> "<tool_call>...\n/tool_call>"
+        #   - generic markup pairs like "invoke name=\"...\" .../invoke>"
+        #   - both open and close missing their '<' (very mangled output)
+        # Closing delimiters are matched leniently: allow a missing leading '<'
+        # so "<tool_call>.../tool_call>" and "<tool_call>...\n/tool_call>" and
+        # "<tool_call>.../invoke>" all get dropped.
+        _degraded = _re.compile(
+            r"<?tool_call>.*?(?:</?tool_call>|/?tool_call>|/?invoke>)"
+            r"|invoke name=[\"'][^\"']*[\"'][^>]*>.*?(?:</invoke>|/?invoke>)",
+            _re.DOTALL,
+        )
+
+        prev = None
+        cur = text
+        # Loop: a single pass can leave a nested/second block behind, and the
+        # malformed closing tag only becomes matchable after the enclosing block
+        # is removed. Iterate to fixpoint.
+        while prev != cur:
+            prev = cur
+            cur = _block.sub("", cur)
+            cur = _degraded.sub("", cur)
+
+        # Drop a dangling tool-call tail: a truncated "<tool_call>..." with no
+        # close, or a leftover "/tool_call>" / "tool_call>" that the block pass
+        # left at the very end of the string.
+        cur = _re.sub(r"(?:<?tool_call>|/?tool_call>)\s*$", "", cur)
+        # Trim stray leading/trailing blank lines the removals can leave behind.
+        return cur.strip()
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(

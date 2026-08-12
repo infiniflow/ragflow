@@ -17,11 +17,23 @@ For each claim, classify its assertions:
 - SUPPORTED: the evidence explicitly supports it, including a semantic paraphrase.
 - UNGROUNDED: the evidence lacks the content, or the claimed relation/value contradicts the evidence, or the assertion over-claims beyond the evidence.
 
-Derived / computed assertions (a DIFFERENCE, PERCENTAGE, RATIO, TIMESPAN, or
-LETTER-COUNT comparison the report computes):
-- When a report states a computed result (e.g. "there were 12,000 more votes",
-  "a 5% increase", "2 years apart", "the name has 1 more letter"), VERIFY THE
-  CALCULATION YOURSELF from the values in the evidence, step by step.
+Derived / computed assertions — APPLY ONLY IF the report actually states a
+computed/derived result that the QUESTION explicitly asks for:
+- These rules are STRICTLY CONDITIONAL. They apply ONLY when the question asks
+  for a DERIVED result (a DIFFERENCE, PERCENTAGE, RATIO, TIMESPAN, or
+  LETTER-COUNT comparison) AND the report states that computed result.
+- If the question is a PLAIN FACTUAL question (e.g. "what year", "what is the
+  name", "when did X happen") and the report simply states facts, do NOT apply
+  the recompute rules. Judge groundedness normally: each assertion just needs to
+  be supported by (or semantically paraphrased from) the evidence. Do NOT flag a
+  factual assertion UNGROUNDED merely because an adjacent number in the evidence
+  was not combined into a calculation — the question never asked for one.
+- HOW TO TELL: check whether the QUESTION requests a computed result AND the
+  report states that computed result. Either missing → skip this section.
+- WHEN APPLICABLE and the report states a computed result (e.g. "there were
+  12,000 more votes", "a 5% increase", "2 years apart", "the name has 1 more
+  letter"), VERIFY THE CALCULATION YOURSELF from the values in the evidence,
+  step by step.
 - EVERY OPERAND of the computation must have its explicit value in the evidence,
   AND the operands must be the RIGHT entities the question references (e.g. the
   correct city pair for a letter-count difference, not a near-miss pair). Then
