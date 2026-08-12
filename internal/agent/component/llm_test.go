@@ -467,6 +467,71 @@ func TestFitMessages_FoldsMultipleTextParts(t *testing.T) {
 	}
 }
 
+// TestLLM_Invoke_MaxTokensStillOutputCapAndNotBudget pins the core semantics
+// of the content_length change: the canvas max_tokens must still reach the
+// invoker as the generation cap, but must NOT be the message-fitting budget.
+// A small max_tokens with a 40k-token prompt would be trimmed to ~500 tokens
+// under the old behavior; the prompt must survive under the content_length
+// budget.
+func TestLLM_Invoke_MaxTokensStillOutputCapAndNotBudget(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	maxOut := 512
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@openai", MaxTokens: &maxOut})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	// Generation cap still flows to the invoker.
+	if stub.captured.MaxTokens == nil || *stub.captured.MaxTokens != maxOut {
+		t.Fatalf("MaxTokens = %v, want %d (generation cap must still be forwarded)", stub.captured.MaxTokens, maxOut)
+	}
+	// ...but is not the fitting budget: the 40k prompt must survive.
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; max_tokens must not be the fitting budget", got)
+	}
+}
+
+// TestLLM_Invoke_UnresolvableModelFallsBackTo8192 verifies the fallback: when
+// content_length cannot be resolved, fitting falls back to the 8192 budget
+// (matching Python's chat_mdl.max_length default) instead of panicking or
+// passing the oversized prompt through.
+func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "no-such-model@no-such-provider"})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got >= 8000 {
+		t.Fatalf("user message not trimmed under the 8192 fallback budget: %d tokens", got)
+	}
+}
+
 // TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
 // fitting budget in Invoke is the chat model's context window
 // (content_length) resolved via dao.ResolveModelContentLength — NOT the
