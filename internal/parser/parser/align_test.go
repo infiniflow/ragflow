@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -293,6 +294,47 @@ func FilterOutDocTypes(items []map[string]any, drop []string) []map[string]any {
 		}
 	}
 	return out
+}
+
+// filterTableDivergence applies the "table" accepted divergence on BOTH sides
+// of the alignment comparison. Go emits a table as a single
+// doc_type_kwd:"table" item (already dropped by FilterOutDocTypes), while
+// Python keeps the <table> markup inlined as a doc_type_kwd:"text" item. To
+// ignore the table content entirely on both sides, items whose text is a
+// leading <table element are also dropped. This keeps the comparison focused
+// on the non-table prose, which is what guards against structural collapse.
+func filterTableDivergence(items []map[string]any, drop []string) []map[string]any {
+	items = FilterOutDocTypes(items, drop)
+	if !slices.Contains(drop, "table") {
+		return items
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		if text, _ := it["text"].(string); strings.HasPrefix(strings.TrimSpace(strings.ToLower(text)), "<table") {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// hasTableRepresentation reports whether items contain a table at all: either a
+// structured doc_type_kwd:"table" item, or an inlined <table> text item (Python's
+// HTML path keeps the table markup inline as a "text" item). It is used by the
+// alignment golden tests to assert a table is present on BOTH sides, because
+// filterTableDivergence drops table content from the prose comparison — without
+// this guard a regression that silently drops the table from either side would
+// still pass the (now table-free) alignment comparison.
+func hasTableRepresentation(items []map[string]any) bool {
+	for _, it := range items {
+		if kd, _ := it["doc_type_kwd"].(string); kd == "table" {
+			return true
+		}
+		if text, _ := it["text"].(string); strings.HasPrefix(strings.TrimSpace(strings.ToLower(text)), "<table") {
+			return true
+		}
+	}
+	return false
 }
 
 // MarkdownAlignOptions returns the normalizer preset for Markdown. The order

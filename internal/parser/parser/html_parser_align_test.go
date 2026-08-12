@@ -7,20 +7,14 @@ import (
 	"testing"
 )
 
-// TestHTMLParser_TableProducesStructuredItems asserts the HTML table
-// alignment fix (approach a, mirroring markdown_parser.go:305-328 and
-// :366-367): a <table> must NOT be flattened into a single text blob. The
-// parser must emit two items:
-//
-//  1. an inlined copy in the text flow (doc_type_kwd:"text") whose text keeps
-//     the <table> markup, so embedding/retrieval/LLM rendering preserve the
-//     row/column structure (no "collapse");
-//  2. a structured table item (doc_type_kwd:"table", ck_type:"table") appended
-//     after the walk, consumed by the downstream chunker (attachMediaContext).
-//
-// Before the fix, walkHTMLBlocks ran htmlLeafText over the <table>, producing
-// ONE flat item (e.g. "Name Age Alice 30") tagged ck_type:"table" but with no
-// markup — this test fails on that behavior.
+// TestHTMLParser_TableProducesStructuredItems asserts the HTML table contract:
+// a <table> is emitted as exactly ONE structured doc_type_kwd:"table"/
+// ck_type:"table" item, in its original document position (not relocated to
+// the end), with NO duplicate doc_type_kwd:"text" copy carrying the <table>
+// markup. Keeping the full <table>…</table> markup (not flattened) preserves
+// row/column structure for embedding/retrieval/LLM rendering, and the single
+// structured item is what the downstream chunker keeps as a discrete,
+// independently retrievable chunk.
 func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 	const html = `<html><body>
 <h1>Employee Table</h1>
@@ -37,67 +31,67 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	var inlinedText, structuredText string
-	inlinedIdx, structuredIdx, trailingIdx := -1, -1, -1
+	var tableText string
+	tableIdx, headingIdx, trailingIdx, inlineTableCount := -1, -1, -1, 0
 	for i, it := range res.JSON {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
 		case "text":
 			if strings.Contains(text, "<table") {
-				inlinedText = text
-				inlinedIdx = i
+				inlineTableCount++
+			}
+			if text == "Employee Table" {
+				headingIdx = i
 			}
 			if text == "Trailing paragraph" {
 				trailingIdx = i
 			}
 		case "table":
-			structuredText = text
-			structuredIdx = i
+			tableText = text
+			tableIdx = i
+		default:
+			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
 		}
 	}
 
-	if inlinedIdx < 0 {
-		t.Fatalf("no inlined doc_type_kwd:\"text\" item contains <table> markup; got items: %#v", res.JSON)
-	}
-	if !strings.Contains(inlinedText, "<table") ||
-		!strings.Contains(inlinedText, "Name") ||
-		!strings.Contains(inlinedText, "Alice") {
-		t.Errorf("inlined table copy missing markup/cells: %q", inlinedText)
-	}
-
-	if structuredIdx < 0 {
+	if tableIdx < 0 {
 		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted; got items: %#v", res.JSON)
 	}
-	if got, want := res.JSON[structuredIdx]["ck_type"], "table"; got != want {
+	if got, want := res.JSON[tableIdx]["ck_type"], "table"; got != want {
 		t.Errorf("structured table item ck_type = %v, want %v", got, want)
 	}
-	if structuredText != inlinedText {
-		t.Errorf("structured table text differs from inlined copy:\n inlined=%q\n struct =%q", inlinedText, structuredText)
+	if !strings.Contains(tableText, "<table") ||
+		!strings.Contains(tableText, "Name") ||
+		!strings.Contains(tableText, "Alice") {
+		t.Errorf("structured table text missing markup/cells: %q", tableText)
 	}
-
-	// The structured table item must be appended after the walk, i.e. after
-	// the in-walk text items (mirrors markdown_parser.go:366-367). The trailing
-	// <p> is an in-walk text item, so the structured item must come after it.
+	// No duplicate inline text copy of the table markup.
+	if inlineTableCount != 0 {
+		t.Errorf("found %d doc_type_kwd:\"text\" item(s) containing <table> markup; the table must not be duplicated as text", inlineTableCount)
+	}
+	// In document order: between the heading and the trailing paragraph,
+	// NOT relocated after the trailing paragraph.
+	if headingIdx < 0 {
+		t.Fatalf("heading item missing")
+	}
 	if trailingIdx < 0 {
-		t.Fatalf("trailing paragraph text item missing; got items: %#v", res.JSON)
+		t.Fatalf("trailing paragraph item missing")
 	}
-	if structuredIdx <= trailingIdx {
-		t.Errorf("structured table item at index %d must come after the trailing paragraph at index %d", structuredIdx, trailingIdx)
+	if tableIdx <= headingIdx {
+		t.Errorf("structured table item at %d must come after heading at %d", tableIdx, headingIdx)
+	}
+	if tableIdx >= trailingIdx {
+		t.Errorf("structured table item at %d must come before trailing paragraph at %d (not relocated to end)", tableIdx, trailingIdx)
 	}
 }
 
-// TestHTMLParser_NestedTableProducesStructuredItems asserts the table fix also
-// covers tables that are NOT direct children of <body> — i.e. a <table> wrapped
-// in a layout container such as <div>/<section>/<article> (the common real-world
-// case). walkHTMLBlocks only special-cases a <table> that is a direct child of
-// the walk root; a nested <table> is reached via the default-branch leaf-text
-// extractor (htmlLeafText → walkHTMLLeaf). Before the fix, that path ran
-// htmlLeafText over the wrapper, flattening the table into a single text blob
-// ("Name Age Alice 30") with no markup — the same collapse as the top-level case,
-// just hidden one level deeper. After the fix, walkHTMLLeaf must render the
-// <table> markup inline (so it survives inside the wrapper's single text item)
-// AND register a structured doc_type_kwd:"table"/ck_type:"table" item (appended
-// after the walk like the top-level path).
+// TestHTMLParser_NestedTableProducesStructuredItems asserts the contract also
+// covers tables wrapped in a layout container such as <div>/<section>/<article>
+// (the common real-world case). walkHTMLBlocks only special-cases a <table> that
+// is a direct child of <body>; a nested <table> is reached via htmlLeafText →
+// walkHTMLLeaf. The nested <table> must be emitted as exactly ONE structured
+// doc_type_kwd:"table" item in document order, with NO duplicate inline text
+// copy — the parent container's prose stays clean of raw <table> tags.
 func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 	const html = `<html><body>
 <h1>Heading</h1>
@@ -116,53 +110,133 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	var inlinedText, structuredText string
-	inlinedIdx, structuredIdx, trailingIdx := -1, -1, -1
+	var tableText string
+	tableIdx, headingIdx, trailingIdx, inlineTableCount := -1, -1, -1, 0
 	for i, it := range res.JSON {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
 		case "text":
 			if strings.Contains(text, "<table") {
-				inlinedText = text
-				inlinedIdx = i
+				inlineTableCount++
+			}
+			if text == "Heading" {
+				headingIdx = i
 			}
 			if text == "Trailing paragraph" {
 				trailingIdx = i
 			}
 		case "table":
-			structuredText = text
-			structuredIdx = i
+			tableText = text
+			tableIdx = i
+		default:
+			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
 		}
 	}
 
-	if inlinedIdx < 0 {
-		t.Fatalf("no inlined doc_type_kwd:\"text\" item contains <table> markup (nested table flattened?); got items: %#v", res.JSON)
-	}
-	if !strings.Contains(inlinedText, "<table") ||
-		!strings.Contains(inlinedText, "Name") ||
-		!strings.Contains(inlinedText, "Alice") {
-		t.Errorf("inlined nested table copy missing markup/cells: %q", inlinedText)
-	}
-
-	if structuredIdx < 0 {
+	if tableIdx < 0 {
 		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted for nested table; got items: %#v", res.JSON)
 	}
-	if got, want := res.JSON[structuredIdx]["ck_type"], "table"; got != want {
+	if got, want := res.JSON[tableIdx]["ck_type"], "table"; got != want {
 		t.Errorf("structured nested table item ck_type = %v, want %v", got, want)
 	}
-	if !strings.Contains(structuredText, "<table") ||
-		!strings.Contains(structuredText, "Name") ||
-		!strings.Contains(structuredText, "Alice") {
-		t.Errorf("structured nested table item missing markup/cells: %q", structuredText)
+	if !strings.Contains(tableText, "<table") ||
+		!strings.Contains(tableText, "Name") ||
+		!strings.Contains(tableText, "Alice") {
+		t.Errorf("structured nested table item missing markup/cells: %q", tableText)
+	}
+	// No duplicate inline text copy of the table markup.
+	if inlineTableCount != 0 {
+		t.Errorf("found %d doc_type_kwd:\"text\" item(s) containing <table> markup; nested table must not be duplicated as inline text", inlineTableCount)
+	}
+	// In document order: between the heading and the trailing paragraph,
+	// NOT relocated after the trailing paragraph.
+	if headingIdx < 0 {
+		t.Fatalf("heading item missing")
+	}
+	if trailingIdx < 0 {
+		t.Fatalf("trailing paragraph item missing")
+	}
+	if tableIdx <= headingIdx {
+		t.Errorf("structured nested table item at %d must come after heading at %d", tableIdx, headingIdx)
+	}
+	if tableIdx >= trailingIdx {
+		t.Errorf("structured nested table item at %d must come before trailing paragraph at %d (not relocated to end)", tableIdx, trailingIdx)
+	}
+}
+
+// TestHTMLParser_NestedTableWithSurroundingText guards the structural contract
+// for a <table> nested inside a container that also carries prose before AND
+// after the table (the common real-world shape, e.g.
+// "<div><p>Before.</p><table>…</table><p>After.</p></div>"). The table must be
+// emitted as ONE structured doc_type_kwd:"table" item, and the surrounding prose
+// must be split into SEPARATE clean text items bracketing the table in document
+// order — NOT merged into a single blob that embeds the raw <table> markup.
+// This locks in the fix that removed the inline writeText(markup) of the table
+// into the parent's text flow (the old code would produce one text item
+// "Before <table>…</table> After").
+func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
+	const html = `<html><body>
+<div class="box">
+<p>Before the table.</p>
+<table>
+<tr><th>Name</th><th>Age</th></tr>
+<tr><td>Alice</td><td>30</td></tr>
+</table>
+<p>After the table.</p>
+</div>
+</body></html>`
+
+	p := NewHTMLParser()
+	res := p.ParseWithResult(context.Background(), "nested.html", []byte(html))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	// The structured table item must be appended after the walk, i.e. after
-	// every in-walk text item (mirrors the top-level path and markdown).
-	if trailingIdx < 0 {
-		t.Fatalf("trailing paragraph text item missing; got items: %#v", res.JSON)
+	var tableText string
+	tableIdx, beforeIdx, afterIdx, inlineTableCount := -1, -1, -1, 0
+	for i, it := range res.JSON {
+		text, _ := it["text"].(string)
+		switch it["doc_type_kwd"] {
+		case "text":
+			if strings.Contains(text, "<table") {
+				inlineTableCount++
+			}
+			if text == "Before the table." {
+				beforeIdx = i
+			}
+			if text == "After the table." {
+				afterIdx = i
+			}
+		case "table":
+			tableText = text
+			tableIdx = i
+		default:
+			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
+		}
 	}
-	if structuredIdx <= inlinedIdx || structuredIdx <= trailingIdx {
-		t.Errorf("structured nested table item at index %d must come after the inlined text item at %d and trailing paragraph at %d", structuredIdx, inlinedIdx, trailingIdx)
+
+	if tableIdx < 0 {
+		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted; got items: %#v", res.JSON)
+	}
+	if !strings.Contains(tableText, "<table") ||
+		!strings.Contains(tableText, "Name") ||
+		!strings.Contains(tableText, "Alice") {
+		t.Errorf("structured table item missing markup/cells: %q", tableText)
+	}
+	// No duplicate inline text copy of the table markup.
+	if inlineTableCount != 0 {
+		t.Errorf("found %d doc_type_kwd:\"text\" item(s) containing <table> markup; nested table must not be duplicated as inline text", inlineTableCount)
+	}
+	// The surrounding prose is split into clean text items bracketing the
+	// table in document order — NOT collapsed into one blob embedding the tags.
+	if beforeIdx < 0 {
+		t.Fatalf("'Before the table.' text item missing")
+	}
+	if afterIdx < 0 {
+		t.Fatalf("'After the table.' text item missing")
+	}
+	if !(beforeIdx < tableIdx && tableIdx < afterIdx) {
+		t.Errorf("document order wrong: before=%d table=%d after=%d (prose must bracket table, not merge into one blob)", beforeIdx, tableIdx, afterIdx)
 	}
 }
 
@@ -365,12 +439,22 @@ func TestHTMLParser_AlignmentGolden(t *testing.T) {
 			doc := LoadGoldenDoc(t, tc.golden)
 
 			// Drop the meta-declared accepted divergences on both sides (here "table"):
-			// Go appends a structured doc_type_kwd:"table" item, while Python keeps the
-			// <table> markup inline as a "text" item. The inline markup remains in both
-			// runs and is still compared — that is exactly what guards against collapse.
+			// Go emits a single structured doc_type_kwd:"table" item, while Python keeps
+			// the <table> markup inlined as a "text" item. filterTableDivergence drops
+			// the table content from both sides so the comparison stays on non-table prose.
 			drop := AcceptedDivergences(doc.Meta)
-			goText := FilterOutDocTypes(res.JSON, drop)
-			pyText := FilterOutDocTypes(doc.Items, drop)
+			goText := filterTableDivergence(res.JSON, drop)
+			pyText := filterTableDivergence(doc.Items, drop)
+
+			// filterTableDivergence drops the table from the prose comparison, so
+			// assert the table is still present on BOTH sides independently —
+			// otherwise a regression that silently drops the table would pass.
+			if !hasTableRepresentation(res.JSON) {
+				t.Errorf("Go HTML output missing any table representation; items: %#v", res.JSON)
+			}
+			if !hasTableRepresentation(doc.Items) {
+				t.Errorf("Python HTML golden missing any table representation; items: %#v", doc.Items)
+			}
 
 			if ok, diff := CompareAlignment(goText, pyText, HTMLAlignOptions()); !ok {
 				t.Fatalf("html parser not aligned with Python golden:%s", diff)
