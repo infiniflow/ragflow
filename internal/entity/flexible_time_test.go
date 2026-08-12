@@ -33,9 +33,9 @@ func TestFlexibleTimeScan(t *testing.T) {
 	}
 
 	var parsed FlexibleTime
-	// Go-written varchar value with fractional seconds.
-	if err := parsed.Scan("2026-08-12 15:32:12.99303409"); err != nil {
-		t.Fatalf("scan string: %v", err)
+	// MySQL driver returns varchar column values as []byte with fractional seconds.
+	if err := parsed.Scan([]byte("2026-08-12 15:32:12.99303409")); err != nil {
+		t.Fatalf("scan bytes: %v", err)
 	}
 	if got := parsed.Time().Format("2006-01-02 15:04:05"); got != "2026-08-12 15:32:12" {
 		t.Fatalf("parsed time = %s", got)
