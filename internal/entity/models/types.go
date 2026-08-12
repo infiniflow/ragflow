@@ -113,7 +113,6 @@ type ListModelResponse struct {
 	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
 	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
-	URL           string         `json:"url"`
 }
 
 type ParseFileResponse struct {

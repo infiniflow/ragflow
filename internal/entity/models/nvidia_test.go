@@ -82,23 +82,6 @@ func TestParseNvidiaModelListPrefersPresetMetadata(t *testing.T) {
 	}
 }
 
-func TestParseNvidiaModelListBackfillsPresetURL(t *testing.T) {
-	modelURL := "https://integrate.api.nvidia.com/v1/meta/llama-3.2-11b-vision-instruct"
-	provider := &Provider{Models: []*Model{
-		{Name: "meta/llama-3.2-11b-vision-instruct", URL: modelURL},
-	}}
-
-	models := parseNvidiaModelList(ModelList{Models: []ModelListItem{
-		{ID: "meta/llama-3.2-11b-vision-instruct", OwnedBy: "meta"},
-	}}, provider)
-	if len(models) != 1 {
-		t.Fatalf("len(models) = %d, want 1", len(models))
-	}
-	if models[0].URL != modelURL {
-		t.Fatalf("URL = %q, want %q", models[0].URL, modelURL)
-	}
-}
-
 func TestParseNvidiaModelListInfersTypesForPresetWithoutTypes(t *testing.T) {
 	preset := &Model{Name: "nvidia/nv-embed-v1"}
 	models := parseNvidiaModelList(ModelList{Models: []ModelListItem{
