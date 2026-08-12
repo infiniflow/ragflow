@@ -30,3 +30,17 @@ def test_token_chunker_imports_without_pdf_parser_symbols(pdf_parser_stub, monke
     token_chunker = importlib.import_module("rag.flow.chunker.token_chunker")
 
     assert callable(token_chunker._merge_text_chunks_by_token_size)
+
+    position_tag = "@@1\t10\t20\t30\t40##"
+    extracted_tags = []
+
+    class RuntimePdfParser:
+        @staticmethod
+        def extract_positions(value):
+            extracted_tags.append(value)
+            return [([0], 10.0, 20.0, 30.0, 40.0)]
+
+    monkeypatch.setattr(pdf_parser_stub, "RAGFlowPdfParser", RuntimePdfParser, raising=False)
+
+    assert token_chunker.extract_pdf_positions({"position_tag": position_tag}) == [[1, 10.0, 20.0, 30.0, 40.0]]
+    assert extracted_tags == [position_tag]
