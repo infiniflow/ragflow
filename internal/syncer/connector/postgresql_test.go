@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -176,10 +177,10 @@ func TestPostgreSQLConnectorOpenSyncAllTables(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")).WillReturnRows(
 			sqlmock.NewRows([]string{"table_name"}).AddRow("products").AddRow("orders"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM products")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "public"."products"`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Product"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM orders")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "public"."orders"`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(2, "Order"),
 		)
 	})
@@ -238,6 +239,80 @@ func TestPostgreSQLConnectorOpenPrune(t *testing.T) {
 		batch.Documents[0].SourceID != "postgresql:mydb:3" ||
 		batch.Documents[1].SourceID != "postgresql:mydb:4" {
 		t.Fatalf("slim documents = %+v", batch.Documents)
+	}
+}
+
+// TestPostgreSQLConnectorDSN verifies connector-controlled sslmode and connect_timeout.
+func TestPostgreSQLConnectorDSN(t *testing.T) {
+	var captured string
+	connector := newFixturePostgresConnector(t, map[string]any{
+		"host":     "127.0.0.1",
+		"port":     "5432",
+		"database": "mydb",
+		"credentials": map[string]any{
+			"username": "postgres",
+			"password": "p@ss:word",
+		},
+	}, nil)
+	connector.openDB = func(dsn string) (*sql.DB, error) {
+		captured = dsn
+		return nil, nil
+	}
+	if _, err := connector.open(); err != nil {
+		t.Fatalf("open failed: %v", err)
+	}
+	parsed, err := url.Parse(captured)
+	if err != nil {
+		t.Fatalf("parse dsn %q: %v", captured, err)
+	}
+	if got := parsed.Query().Get("sslmode"); got != "prefer" {
+		t.Fatalf("sslmode = %q", got)
+	}
+	if got := parsed.Query().Get("connect_timeout"); got != "30" {
+		t.Fatalf("connect_timeout = %q", got)
+	}
+	if parsed.User.Username() != "postgres" {
+		t.Fatalf("username = %q", parsed.User.Username())
+	}
+	if pass, _ := parsed.User.Password(); pass != "p@ss:word" {
+		t.Fatalf("password = %q", pass)
+	}
+	if parsed.Host != "127.0.0.1:5432" || parsed.Path != "/mydb" {
+		t.Fatalf("host/path = %q %q", parsed.Host, parsed.Path)
+	}
+}
+
+// TestPostgreSQLConnectorOpenSyncMixedCaseTable verifies schema-qualified
+// quoting of a catalog-discovered mixed-case table name.
+func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
+	connector := newFixturePostgresConnector(t, map[string]any{
+		"host":      "127.0.0.1",
+		"port":      "5432",
+		"database":  "mydb",
+		"id_column": "id",
+		"credentials": map[string]any{
+			"username": "postgres",
+			"password": "secret",
+		},
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")).WillReturnRows(
+			sqlmock.NewRows([]string{"table_name"}).AddRow("MixedCase"),
+		)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "public"."MixedCase"`)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Item"),
+		)
+	})
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql:mydb:1" {
+		t.Fatalf("documents = %+v", batch.Documents)
 	}
 }
 

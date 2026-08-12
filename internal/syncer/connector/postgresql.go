@@ -26,13 +26,17 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const defaultPostgresBatchSize = 32
+const (
+	defaultPostgresBatchSize      = 32
+	defaultPostgresConnectTimeout = 30
+)
 
 // PostgreSQLConnector imports PostgreSQL rows as documents.
 //
@@ -54,6 +58,8 @@ type PostgreSQLConnector struct {
 	batchSize       int
 	username        string
 	password        string
+	sslmode         string
+	connectTimeout  int
 
 	openDB func(dsn string) (*sql.DB, error)
 }
@@ -70,9 +76,14 @@ func NewPostgreSQLConnector(config map[string]any) (*PostgreSQLConnector, error)
 		batchSize:       configInt(config["batch_size"], defaultPostgresBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
+		sslmode:         strings.TrimSpace(stringConfig(config["sslmode"])),
+		connectTimeout:  configInt(config["connect_timeout"], defaultPostgresConnectTimeout),
 		openDB: func(dsn string) (*sql.DB, error) {
 			return sql.Open("pgx", dsn)
 		},
+	}
+	if connector.sslmode == "" {
+		connector.sslmode = "prefer"
 	}
 	connector.query = connector.sanitizeQuery(stringConfig(config["query"]))
 	connector.contentColumns = connector.splitColumns(config["content_columns"])
@@ -142,7 +153,10 @@ func (c *PostgreSQLConnector) OpenPrune(ctx context.Context, request PruneReques
 	return &postgresPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
 
-// open builds a PostgreSQL connection from the connector settings.
+// open builds a PostgreSQL connection from the connector settings. The DSN
+// carries connector-controlled sslmode (default prefer, matching Python's
+// psycopg2) and a finite connect_timeout so an unreachable host cannot hang
+// a sync worker.
 func (c *PostgreSQLConnector) open() (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
@@ -150,6 +164,10 @@ func (c *PostgreSQLConnector) open() (*sql.DB, error) {
 		Host:   fmt.Sprintf("%s:%d", c.host, c.port),
 		Path:   "/" + url.PathEscape(c.database),
 	}
+	query := dsn.Query()
+	query.Set("sslmode", c.sslmode)
+	query.Set("connect_timeout", strconv.Itoa(c.connectTimeout))
+	dsn.RawQuery = query.Encode()
 	return c.openDB(dsn.String())
 }
 
@@ -176,9 +194,16 @@ func (c *PostgreSQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]st
 	}
 	queries := make([]string, 0, len(tables))
 	for _, table := range tables {
-		queries = append(queries, fmt.Sprintf("SELECT * FROM %s", table))
+		queries = append(queries, fmt.Sprintf("SELECT * FROM \"public\".%s", quotePostgresIdentifier(table)))
 	}
 	return queries, nil
+}
+
+// quotePostgresIdentifier double-quotes an identifier for PostgreSQL, escaping
+// any embedded double quotes, so catalog-discovered names with mixed case or
+// special characters survive the unquoted lowercase folding.
+func quotePostgresIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 // buildSyncQueries applies the incremental window when a timestamp column exists.
