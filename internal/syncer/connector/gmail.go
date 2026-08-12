@@ -100,7 +100,9 @@ func (c *GmailConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 	if !request.FromBeginning && request.WindowStart != nil {
 		query = gmailTimeRangeQuery(request.WindowStart, request.WindowEnd)
 	}
-	return &gmailSyncSession{connector: c, users: users, batchSize: c.batchSize, query: query}, nil
+	session := &gmailSyncSession{connector: c, users: users, batchSize: c.batchSize, query: query}
+	session.applyResume(request.Resume)
+	return session, nil
 }
 
 // OpenPrune opens one complete Gmail prune snapshot session.
@@ -288,21 +290,27 @@ func (c *GmailConnector) getJSON(ctx context.Context, client *http.Client, apiUR
 }
 
 type gmailSyncSession struct {
-	connector *GmailConnector
-	users     []string
-	userIndex int
-	pageToken string
-	batchSize int
-	query     string
-	buffer    []SourceDocument
+	connector       *GmailConnector
+	users           []string
+	userIndex       int
+	pageToken       string
+	batchSize       int
+	query           string
+	buffer          []gmailBufferedDocument
+	resumePageToken string
+	resumeOffset    int
 }
 
 // NextBatch returns the next Gmail document batch.
 func (s *gmailSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	documents := make([]SourceDocument, 0, s.batchSize)
+	var checkpoint *SyncCheckpoint
 	if len(s.buffer) > 0 {
 		n := min(s.batchSize, len(s.buffer))
-		documents = append(documents, s.buffer[:n]...)
+		for _, buffered := range s.buffer[:n] {
+			documents = append(documents, buffered.document)
+			checkpoint = buffered.checkpoint
+		}
 		s.buffer = s.buffer[n:]
 	}
 	for len(documents) < s.batchSize {
@@ -318,13 +326,19 @@ func (s *gmailSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		remaining := s.batchSize - len(documents)
 		if len(batch) > remaining {
-			documents = append(documents, batch[:remaining]...)
+			for _, buffered := range batch[:remaining] {
+				documents = append(documents, buffered.document)
+				checkpoint = buffered.checkpoint
+			}
 			s.buffer = append(s.buffer, batch[remaining:]...)
 			break
 		}
-		documents = append(documents, batch...)
+		for _, buffered := range batch {
+			documents = append(documents, buffered.document)
+			checkpoint = buffered.checkpoint
+		}
 	}
-	return SyncBatch{Documents: documents}, nil
+	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
 // Close closes the Gmail sync session.
@@ -333,9 +347,10 @@ func (s *gmailSyncSession) Close() error {
 }
 
 // nextDocumentPage fetches one Gmail list page and expands threads.
-func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocument, error) {
+func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]gmailBufferedDocument, error) {
 	userEmail := s.users[s.userIndex]
-	page, err := s.connector.listThreads(ctx, userEmail, s.query, s.pageToken, gmailItemsPerPage)
+	requestPageToken := s.pageToken
+	page, err := s.connector.listThreads(ctx, userEmail, s.query, requestPageToken, gmailItemsPerPage)
 	if err != nil {
 		if isGmailDisabled(err) {
 			s.advanceUser()
@@ -343,7 +358,8 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocume
 		}
 		return nil, err
 	}
-	documents := make([]SourceDocument, 0, len(page.Threads))
+	documents := make([]gmailBufferedDocument, 0, len(page.Threads))
+	pageOffset := 0
 	for _, item := range page.Threads {
 		thread, err := s.connector.loadThread(ctx, userEmail, item.ID)
 		if err != nil {
@@ -354,7 +370,14 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocume
 		}
 		doc, ok := thread.toSourceDocument(userEmail)
 		if ok {
-			documents = append(documents, doc)
+			pageOffset++
+			if s.shouldSkipResumedDocument(requestPageToken, pageOffset) {
+				continue
+			}
+			documents = append(documents, gmailBufferedDocument{
+				document:   doc,
+				checkpoint: gmailSyncCheckpoint(userEmail, requestPageToken, pageOffset, doc),
+			})
 		}
 	}
 	if page.NextPageToken == "" {
@@ -365,10 +388,79 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocume
 	return documents, nil
 }
 
+// applyResume apply resume if resume is available
+func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+	if checkpoint == nil || checkpoint.Cursor == "" {
+		return
+	}
+	var cursor gmailSyncCursor
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return
+	}
+	if cursor.UserEmail == "" {
+		return
+	}
+	for index, userEmail := range s.users {
+		if userEmail != cursor.UserEmail {
+			continue
+		}
+		s.userIndex = index
+		s.pageToken = cursor.PageToken
+		s.resumePageToken = cursor.PageToken
+		if cursor.Offset > 0 {
+			s.resumeOffset = cursor.Offset
+		}
+		return
+	}
+}
+
+func (s *gmailSyncSession) shouldSkipResumedDocument(pageToken string, offset int) bool {
+	if s.resumeOffset <= 0 {
+		return false
+	}
+	if pageToken != s.resumePageToken {
+		s.resumeOffset = 0
+		s.resumePageToken = ""
+		return false
+	}
+	if offset <= s.resumeOffset {
+		return true
+	}
+	s.resumeOffset = 0
+	s.resumePageToken = ""
+	return false
+}
+
 // advanceUser moves a Gmail session to the next mailbox.
 func (s *gmailSyncSession) advanceUser() {
 	s.userIndex++
 	s.pageToken = ""
+	s.resumePageToken = ""
+	s.resumeOffset = 0
+}
+
+type gmailBufferedDocument struct {
+	document   SourceDocument
+	checkpoint *SyncCheckpoint
+}
+
+type gmailSyncCursor struct {
+	UserEmail string `json:"user_email"`
+	PageToken string `json:"page_token,omitempty"`
+	Offset    int    `json:"offset"`
+}
+
+func gmailSyncCheckpoint(userEmail, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
+	cursor, err := json.Marshal(gmailSyncCursor{UserEmail: userEmail, PageToken: pageToken, Offset: offset})
+	if err != nil {
+		return nil
+	}
+	updatedAt := doc.UpdatedAt
+	return &SyncCheckpoint{
+		Cursor:    string(cursor),
+		UpdatedAt: &updatedAt,
+		SourceID:  doc.SourceID,
+	}
 }
 
 type gmailPruneSession struct {
@@ -523,12 +615,7 @@ func (t gmailThread) toSourceDocument(userEmail string) (SourceDocument, bool) {
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
-		Fingerprint: stableFingerprint(map[string]any{
-			"thread_id":  t.ID,
-			"updated_at": updatedAt,
-			"blob":       string(blob),
-			"metadata":   metadata,
-		}),
+		Fingerprint:        contentFingerprint(blob),
 	}, true
 }
 

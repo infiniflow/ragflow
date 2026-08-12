@@ -119,6 +119,13 @@ func (s fakeConnectorService) RebuildConnector(context.Context, string, string, 
 	return true, common.CodeSuccess, nil
 }
 
+func (s fakeConnectorService) ResumeFailedSync(context.Context, string, string, *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
+	if s.err != nil {
+		return false, s.code, s.err
+	}
+	return true, common.CodeSuccess, nil
+}
+
 func TestConnectorHandlerStartBoxWebOAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

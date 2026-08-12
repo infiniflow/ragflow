@@ -29,6 +29,10 @@ func stableFingerprint(value any) string {
 	if err != nil {
 		data = []byte(fmt.Sprint(value))
 	}
+	return contentFingerprint(data)
+}
+
+func contentFingerprint(data []byte) string {
 	sum := xxh3.Hash128(data).Bytes()
 	return hex.EncodeToString(sum[:])
 }
