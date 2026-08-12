@@ -327,6 +327,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	}
 	var all strings.Builder
 	sawTitle, sawTrailing, sawTableItem, sawInlineTable := false, false, false, false
+	tableCount := 0
 	for _, item := range res.JSON {
 		text, _ := item["text"].(string)
 		all.WriteString(text)
@@ -342,6 +343,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 			}
 		case "table":
 			sawTableItem = true
+			tableCount++
 			if !strings.Contains(text, "<table") {
 				t.Fatalf("table item text is not raw <table> HTML: %q", text)
 			}
@@ -362,6 +364,9 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	}
 	if !sawTableItem {
 		t.Fatal("separate doc_type_kwd:\"table\" item not emitted")
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 	if !sawTrailing {
 		t.Fatal("trailing paragraph content not present in concatenated items")
@@ -386,7 +391,7 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 	}
 
 	var tableText string
-	tableIdx, beforeIdx, afterIdx, inlineTableCount := -1, -1, -1, 0
+	tableIdx, beforeIdx, afterIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
 	for i, item := range res.JSON {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
@@ -403,6 +408,7 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 		case "table":
 			tableText = text
 			tableIdx = i
+			tableCount++
 			if !strings.Contains(text, "<table") {
 				t.Fatalf("table item text is not raw <table> HTML: %q", text)
 			}
@@ -414,6 +420,9 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 
 	if tableIdx < 0 {
 		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted; got items: %#v", res.JSON)
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 	if !strings.Contains(tableText, "Name") || !strings.Contains(tableText, "Alice") {
 		t.Errorf("structured table item missing cell text: %q", tableText)
@@ -509,6 +518,7 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	sawInlined, sawTableItem := false, false
+	tableCount := 0
 	for _, item := range res.JSON {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
@@ -518,6 +528,7 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 			}
 		case "table":
 			sawTableItem = true
+			tableCount++
 			if !strings.Contains(text, "<table") {
 				t.Fatalf("raw table item text is not raw <table> HTML: %q", text)
 			}
@@ -531,6 +542,9 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 	}
 	if !sawTableItem {
 		t.Fatal("raw <table> HTML block not emitted as single doc_type_kwd:\"table\" item")
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 }
 

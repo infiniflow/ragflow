@@ -32,7 +32,7 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 	}
 
 	var tableText string
-	tableIdx, headingIdx, trailingIdx, inlineTableCount := -1, -1, -1, 0
+	tableIdx, headingIdx, trailingIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
 	for i, it := range res.JSON {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
@@ -49,6 +49,7 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 		case "table":
 			tableText = text
 			tableIdx = i
+			tableCount++
 		default:
 			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
 		}
@@ -56,6 +57,9 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 
 	if tableIdx < 0 {
 		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted; got items: %#v", res.JSON)
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 	if got, want := res.JSON[tableIdx]["ck_type"], "table"; got != want {
 		t.Errorf("structured table item ck_type = %v, want %v", got, want)
@@ -111,7 +115,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 	}
 
 	var tableText string
-	tableIdx, headingIdx, trailingIdx, inlineTableCount := -1, -1, -1, 0
+	tableIdx, headingIdx, trailingIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
 	for i, it := range res.JSON {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
@@ -128,6 +132,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 		case "table":
 			tableText = text
 			tableIdx = i
+			tableCount++
 		default:
 			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
 		}
@@ -135,6 +140,9 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 
 	if tableIdx < 0 {
 		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted for nested table; got items: %#v", res.JSON)
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 	if got, want := res.JSON[tableIdx]["ck_type"], "table"; got != want {
 		t.Errorf("structured nested table item ck_type = %v, want %v", got, want)
@@ -193,7 +201,7 @@ func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
 	}
 
 	var tableText string
-	tableIdx, beforeIdx, afterIdx, inlineTableCount := -1, -1, -1, 0
+	tableIdx, beforeIdx, afterIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
 	for i, it := range res.JSON {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
@@ -210,6 +218,7 @@ func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
 		case "table":
 			tableText = text
 			tableIdx = i
+			tableCount++
 		default:
 			t.Fatalf("unexpected doc_type_kwd %q", it["doc_type_kwd"])
 		}
@@ -217,6 +226,9 @@ func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
 
 	if tableIdx < 0 {
 		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted; got items: %#v", res.JSON)
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 	if !strings.Contains(tableText, "<table") ||
 		!strings.Contains(tableText, "Name") ||
