@@ -2,6 +2,7 @@ package nlp
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 
@@ -385,6 +386,168 @@ func TestNavService_NavDocDepth(t *testing.T) {
 	}
 }
 
+// TestNavService_RemoveDoc_CascadesToEmptyCluster covers A3: after removing a
+// doc, a cluster left with no docs and no children is pruned (cleanupEmptyCluster),
+// and the doc is dropped from its parent cluster's doc_ids_kwd.
+func TestNavService_RemoveDoc_CascadesToEmptyCluster(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	// d1 creates a root cluster (name derived from its summary hash).
+	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d1"); err != nil {
+		t.Fatal(err)
+	}
+	// The nav_doc is gone, and the root cluster (now empty) is pruned.
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" && row["doc_id"] == "d1" {
+			t.Error("nav_doc for d1 should have been removed")
+		}
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] != "" {
+			t.Error("root cluster should have been pruned when empty")
+		}
+	}
+}
+
+// TestNavService_MaybeSplitCluster_SplitsOverfull covers A2: a cluster with more
+// than maxDocsPerCluster direct docs is split into two siblings. The overfull
+// state is seeded directly (InsertChunks) rather than via UpsertDoc, because
+// UpsertDoc triggers the split during seeding once the count crosses the
+// threshold — the manual split trigger here must act on an already-overfull,
+// not-yet-split cluster.
+func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	clusterName := "root_cluster"
+	// Seed the overfull cluster directly: one nav_cluster (parent=root sentinel,
+	// depth 1) carrying 55 nav_doc children.
+	idx := sTestNavIndex(ns)
+	rows := []map[string]interface{}{
+		{
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      "nav_cluster",
+			"title_kwd":     clusterName,
+			"parent_kwd":    navRootParent,
+			"depth_int":     1,
+			"doc_count_int": 55, // over the maxDocsPerCluster=50 threshold
+			"doc_ids_kwd":   []string{},
+		},
+	}
+	for i := 0; i < 55; i++ {
+		rows = append(rows, map[string]interface{}{
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      "nav_doc",
+			"title_kwd":     fmt.Sprintf("d%02d", i),
+			"parent_kwd":    clusterName,
+			"depth_int":     2,
+			"doc_id":        fmt.Sprintf("d%02d", i),
+			"doc_count_int": 1,
+		})
+	}
+	if _, err := eng.InsertChunks(context.Background(), rows, idx, "kb1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err != nil {
+		t.Fatal(err)
+	}
+	splitA := clusterName + ":A"
+	splitB := clusterName + ":B"
+	foundA, foundB := false, false
+	var countA, countB int
+	var idsA, idsB []string
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == splitA {
+			foundA = true
+			countA = intValAny(row["doc_count_int"])
+			idsA = firstStringSlice(row["doc_ids_kwd"])
+		}
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == splitB {
+			foundB = true
+			countB = intValAny(row["doc_count_int"])
+			idsB = firstStringSlice(row["doc_ids_kwd"])
+		}
+	}
+	if !foundA || !foundB {
+		t.Errorf("split clusters :A / :B missing (A=%v B=%v)", foundA, foundB)
+	}
+	// Review issue 5: the split clusters must inherit the aggregate doc count so
+	// they stay searchable and support deletion bookkeeping — they must not be
+	// empty shells.
+	if countA == 0 && countB == 0 {
+		t.Errorf("split clusters must carry aggregate doc_count_int (A=%d B=%d)", countA, countB)
+	}
+	if countA+countB != 55 {
+		t.Errorf("split clusters must preserve all 55 docs (A=%d B=%d)", countA, countB)
+	}
+	if len(idsA)+len(idsB) != 55 {
+		t.Errorf("split clusters must preserve all 55 doc ids (A=%v B=%v)", idsA, idsB)
+	}
+	// Review issue 5/6: every child must be reparented under :A or :B, and the
+	// original cluster must be gone (not left orphaned).
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" {
+			p, _ := row["parent_kwd"].(string)
+			if p != splitA && p != splitB {
+				t.Errorf("nav_doc %v left orphaned under parent %q", row["title_kwd"], p)
+			}
+		}
+	}
+	origGone := true
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == clusterName {
+			origGone = false
+		}
+	}
+	if !origGone {
+		t.Error("original cluster should have been deleted after split")
+	}
+	// A production nav_doc has doc_id but no doc_ids_kwd. Removing one after a
+	// split must update the replacement cluster that inherited its membership.
+	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d00"); err != nil {
+		t.Fatalf("RemoveDoc after split: %v", err)
+	}
+	var remainingCount, remainingIDs int
+	for _, row := range eng.rows {
+		if row["type_kwd"] != "nav_cluster" {
+			continue
+		}
+		remainingCount += intValAny(row["doc_count_int"])
+		for _, id := range firstStringSlice(row["doc_ids_kwd"]) {
+			if id == "d00" {
+				t.Errorf("removed doc d00 still present in split cluster membership")
+			}
+			remainingIDs++
+		}
+	}
+	if remainingCount != 54 || remainingIDs != 54 {
+		t.Errorf("RemoveDoc after split must update count and membership: count=%d ids=%d", remainingCount, remainingIDs)
+	}
+}
+
+// sTestNavIndex returns the nav index name for a test NavService (tenant "t1").
+func sTestNavIndex(ns *NavService) string {
+	return "ragflow_t1"
+}
+
 func navUpsertInput(tenant, kb, doc, summary string) nav.UpsertDocInput {
 	return nav.UpsertDocInput{TenantID: tenant, KbID: kb, DocID: doc, Summary: summary}
+}
+
+// intValAny coerces a stored integer value (int/int64/float64) from the mem
+// engine row into an int for assertions.
+func intValAny(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	}
+	return 0
 }
