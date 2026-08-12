@@ -75,6 +75,23 @@ const maxColumnCount = 4
 // touching those.
 const minColLineFrac = 0.12
 
+// maxPageExtent caps the X span a single line may plausibly occupy. A line
+// wider than this is treated as a malformed coordinate (mirrors pdf-inspector's
+// MAX_PAGE_EXTENT=14400 guard) and excluded from the column projection so it
+// cannot balloon the page extent and collapse multi-column detection.
+const maxPageExtent = 14400.0
+
+// maxTrimFraction is the largest fraction of lines robustPageExtent may discard
+// as outliers. If more than this fraction is anomalous, the page is trusted
+// as-is: the "anomalies" are the norm, not noise.
+const maxTrimFraction = 0.10
+
+// maxBins caps the histogram allocation in gapColumnCount/detectColumnCount2D so
+// a malformed (ballooned) page extent cannot trigger an OOM-scale allocation
+// (mirrors pdf-inspector's bin cap). When the extent is huge, the bin is
+// widened so the projection still resolves real gutters.
+const maxBins = 65536
+
 // gapMinFrac: a horizontal run of low coverage counts as a column gap only if
 // it is at least this fraction of the page width. Reused by both gapColumnCount
 // and the 2D both-sides gutter rescue so the two detectors agree on what a
@@ -256,19 +273,38 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 	if n == 0 {
 		return 1
 	}
-	minX0, width := pageExtent(lines)
+	// A1: image/equation placeholders must not feed the projection — a figure
+	// spanning the gutter would otherwise fill the gap and mask a real column
+	// boundary.
+	lines = textProjectionLines(lines)
+	if len(lines) == 0 {
+		return 1
+	}
+	// A2: robust page extent discards malformed/outlier lines so a single bad
+	// box cannot balloon the width and collapse detection to one column.
+	minX0, width := robustPageExtent(lines)
 	if width <= 0 {
 		return 1
 	}
 	minGap := gapMinFrac * width
-	nb := int(width/binPt) + 1
+	// Cap the bin count so a ballooned extent cannot allocate an OOM-scale
+	// histogram. When the extent is huge, widen the bin so the projection still
+	// resolves real gutters.
+	effBin := binPt
+	if width/float64(maxBins) > effBin {
+		effBin = width / float64(maxBins)
+	}
+	nb := int(width/effBin) + 1
+	if nb < 1 {
+		nb = 1
+	}
 	cov := make([]int, nb)
 	for _, b := range lines {
-		i0 := int((b.X0 - minX0) / binPt)
+		i0 := int((b.X0 - minX0) / effBin)
 		if i0 < 0 {
 			i0 = 0
 		}
-		i1 := int((b.X1 - minX0) / binPt)
+		i1 := int((b.X1 - minX0) / effBin)
 		if i1 > nb-1 {
 			i1 = nb - 1
 		}
@@ -281,7 +317,7 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 	run := 0.0
 	for _, c := range cov {
 		if float64(c) < thr {
-			run += binPt
+			run += effBin
 		} else {
 			if run >= minGap {
 				cols++
@@ -340,24 +376,35 @@ const shortLineFrac = 0.45
 // (pruneColumns, minColLineFrac) is the final guard: a spurious second block
 // with too few lines is dropped.
 func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
-	minX0, width := pageExtent(lines)
+	// A1: strip figure/equation boxes (they span the gutter and would fill the
+	// projection, hiding a real column boundary). A2: robust extent so a
+	// malformed box cannot balloon the page width / histogram allocation.
+	projLines := textProjectionLines(lines)
+	minX0, width := robustPageExtent(projLines)
 	if width <= 0 {
 		return 0, nil
 	}
-	body := dropFullWidth(lines, width)
+	body := dropFullWidth(projLines, width)
 	body = dropWide(body, width, bridgingFrac)
 	if len(body) < 4 {
 		return 0, nil
 	}
-	nb := int(width/binPt) + 1
+	// Cap the bin count so a ballooned extent cannot allocate an OOM-scale
+	// histogram. When the extent is huge, widen the bin so the projection still
+	// resolves real gutters.
+	effBin := binPt
+	if width/float64(maxBins) > effBin {
+		effBin = width / float64(maxBins)
+	}
+	nb := int(width/effBin) + 1
 	proj := make([]int, nb)
 	for _, b := range body {
 		w := utf8.RuneCountInString(b.Text)
 		if w <= 0 {
 			w = 1
 		}
-		i0 := clampInt(int((b.X0-minX0)/binPt), 0, nb-1)
-		i1 := clampInt(int((b.X1-minX0)/binPt), 0, nb-1)
+		i0 := clampInt(int((b.X0-minX0)/effBin), 0, nb-1)
+		i1 := clampInt(int((b.X1-minX0)/effBin), 0, nb-1)
 		for i := i0; i <= i1; i++ {
 			proj[i] += w
 		}
@@ -381,7 +428,7 @@ func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
 	// bug; such pages fall back to the confidence-labeling track (issue #18079).
 	const valleyFrac = 0.30
 	minGap := gapMinFrac * width
-	edge := int(0.05 * width / binPt)
+	edge := int(0.05 * width / effBin)
 	if edge < 0 {
 		edge = 0
 	}
@@ -399,11 +446,11 @@ func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
 			for j < nb && float64(proj[j]) < valleyFrac*float64(pk) {
 				j++
 			}
-			runW := float64(j-i) * binPt
+			runW := float64(j-i) * effBin
 			isInterior := i > edge && j-1 < nb-1-edge
 			if runW >= minGap && isInterior {
 				count++
-				valleyC = minX0 + float64(i+j)*binPt/2
+				valleyC = minX0 + float64(i+j)*effBin/2
 			}
 			i = j
 		} else {
@@ -660,6 +707,102 @@ func pageExtent(lines []pdf.TextBox) (minX0, width float64) {
 		}
 	}
 	return minX0, maxX1 - minX0
+}
+
+// textProjectionLines returns the lines that should feed the column
+// projection. Image and equation placeholders are excluded because a figure
+// that spans the gutter would otherwise fill the gutter's gap and mask a real
+// column boundary (mirrors pdf-inspector stripping image placeholders). Table
+// boxes are intentionally kept: the existing tableMaxColFrac gate already
+// handles narrow table columns, and dropping them here would widen the blast
+// radius unnecessarily.
+func textProjectionLines(lines []pdf.TextBox) []pdf.TextBox {
+	out := make([]pdf.TextBox, 0, len(lines))
+	for _, b := range lines {
+		switch b.LayoutType {
+		case pdf.LayoutTypeFigure, pdf.LayoutTypeEquation:
+			continue
+		default:
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// robustPageExtent returns the X extent (minX0, width) of the text body,
+// discarding a small number of outlier lines (malformed coordinates / stray
+// boxes) that would otherwise balloon the extent and collapse multi-column
+// detection. Normal pages return exactly pageExtent's result.
+func robustPageExtent(lines []pdf.TextBox) (minX0, width float64) {
+	if len(lines) == 0 {
+		return 0, 0
+	}
+	// Drop implausibly wide (malformed) lines outright: a single box with an
+	// absurd X1 (e.g. 1e6) would otherwise set the page width to 1e6.
+	work := make([]pdf.TextBox, 0, len(lines))
+	dropped := 0
+	for _, b := range lines {
+		if b.X1-b.X0 > maxPageExtent {
+			dropped++
+			continue
+		}
+		work = append(work, b)
+	}
+	if len(work) == 0 || float64(dropped)/float64(len(lines)) >= maxTrimFraction {
+		// Everything malformed, or too many dropped: the outliers are the
+		// norm. Fall back to the raw extent so the page is never altered.
+		return pageExtent(lines)
+	}
+	// Cluster lines by left edge; discard clusters separated from the main
+	// body by more than a full page width, provided they are a minority.
+	return clusteredExtent(work)
+}
+
+// clusteredExtent keeps the largest cluster of lines (by count) and returns its
+// extent, but only when the discarded minority is below maxTrimFraction;
+// otherwise it returns the raw extent of all lines. This catches outliers whose
+// width alone is plausible (e.g. a tiny box placed at an absurd X coordinate).
+func clusteredExtent(lines []pdf.TextBox) (minX0, width float64) {
+	if len(lines) <= 1 {
+		return pageExtent(lines)
+	}
+	xs := make([]float64, len(lines))
+	for i, b := range lines {
+		xs[i] = b.X0
+	}
+	sort.Float64s(xs)
+	// Split into clusters at gaps larger than a full page.
+	clusters := [][]float64{{xs[0]}}
+	for i := 1; i < len(xs); i++ {
+		if xs[i]-xs[i-1] > maxPageExtent {
+			clusters = append(clusters, []float64{xs[i]})
+		} else {
+			clusters[len(clusters)-1] = append(clusters[len(clusters)-1], xs[i])
+		}
+	}
+	if len(clusters) == 1 {
+		return pageExtent(lines)
+	}
+	best := 0
+	for i := 1; i < len(clusters); i++ {
+		if len(clusters[i]) > len(clusters[best]) {
+			best = i
+		}
+	}
+	dropped := len(lines) - len(clusters[best])
+	if float64(dropped)/float64(len(lines)) >= maxTrimFraction {
+		return pageExtent(lines)
+	}
+	lo, hi := clusters[best][0], clusters[best][0]
+	for _, x := range clusters[best] {
+		if x < lo {
+			lo = x
+		}
+		if x > hi {
+			hi = x
+		}
+	}
+	return lo, hi - lo
 }
 
 // snapX0s pulls x0 values within indentTol of minX0 back to minX0, so slightly
