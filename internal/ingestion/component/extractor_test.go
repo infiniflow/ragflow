@@ -48,7 +48,10 @@ type stubExtractorChatInvoker struct {
 	// lastReq records the most recent call's request for inspection
 	// (e.g. driver / model name resolved from the llm_id).
 	lastReq extractorChatRequest
-	calls   atomic.Int32
+	// requests records every call's request in order, for assertions
+	// that must inspect per-chunk fan-out (each call's user message).
+	requests []extractorChatRequest
+	calls    atomic.Int32
 }
 
 // stubResponse couples a Content value and an Err. tests populate
@@ -62,6 +65,7 @@ func (s *stubExtractorChatInvoker) Chat(_ context.Context, req extractorChatRequ
 	s.calls.Add(1)
 	s.mu.Lock()
 	s.lastReq = req
+	s.requests = append(s.requests, req)
 	var resp stubResponse
 	if len(s.responses) > 0 {
 		resp = s.responses[0]
@@ -1657,25 +1661,88 @@ func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.
 
 // TestExtractorComponent_Invoke_ResumeTemplateChunksPath verifies the resume
 // template path: a prompt referencing {@chunks} (e.g. {TitleChunker:FlatMiceFix@chunks})
-// must still deliver the chunk body to the LLM. {@chunks} is resolved by
-// substitutePromptPlaceholders in buildExtractorMessages, NOT by the simple
-// placeholder loop — so contentPlaceholders does not see it, suppression must
-// not trigger, and the chunk text arrives via the automatic append. Regression
-// guard: if someone adds {@chunks} to contentPlaceholders or the suppression
-// logic starts matching regex-style placeholders, the resume path silently
-// breaks (chunk body vanishes from the LLM call).
+// must be resolved per chunk to the current chunk's text — matching Python's
+// `args[chunks_key] = ck["text"]` (extractor.py:102) — not to an all-chunks
+// join, and the chunk body must appear exactly once (the automatic append in
+// buildExtractorMessages is suppressed, so there is no duplication).
 func TestExtractorComponent_Invoke_ResumeTemplateChunksPath(t *testing.T) {
 	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		FieldName: "out",
-		Prompt:    "Resume: {TitleChunker:FlatMiceFix@chunks}",
+		Prompt:    "Content: {TitleChunker:FlatMiceFix@chunks}",
 		LLMID:     "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "resume chunk body"}},
+		"chunks": []map[string]any{
+			{"text": "chunk A body"},
+			{"text": "chunk B body"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	if got := stub.Calls(); got != 2 {
+		t.Fatalf("LLM calls = %d, want 2 (per-chunk fan-out)", got)
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if len(stub.requests) != 2 {
+		t.Fatalf("recorded requests = %d, want 2", len(stub.requests))
+	}
+	want := []struct {
+		body  string
+		other string
+	}{
+		{"chunk A body", "chunk B body"},
+		{"chunk B body", "chunk A body"},
+	}
+	for i, req := range stub.requests {
+		var user string
+		for _, msg := range req.Messages {
+			if msg.Role == eschema.User {
+				user = msg.Content
+			}
+		}
+		// {@chunks} must be resolved to the current chunk's text.
+		if strings.Contains(user, "{TitleChunker:FlatMiceFix@chunks}") {
+			t.Errorf("call %d: prompt still contains literal @chunks placeholder: %q", i, user)
+		}
+		// Current chunk's body must appear exactly once (substitution +
+		// suppressed append), and no other chunk's body may leak in.
+		if n := strings.Count(user, want[i].body); n != 1 {
+			t.Errorf("call %d: chunk body %q appears %d times, want 1: %q", i, want[i].body, n, user)
+		}
+		if strings.Contains(user, want[i].other) {
+			t.Errorf("call %d: saw other chunk body %q — must be per-chunk, not all-chunks join: %q", i, want[i].other, user)
+		}
+	}
+}
+
+// TestExtractorComponent_Invoke_ResumeTemplateChunksPathContentWithWeight
+// verifies the {@chunks} fallback path: when a chunk carries only
+// content_with_weight (no "text" field), {@chunks} resolves to the
+// content_with_weight value (extractor.go prefers content_with_weight over
+// text). This pins the Go behavior that intentionally diverges from Python
+// (which strictly reads ck["text"] and would get an empty body here); a
+// future "parity" change must not drop the fallback or the body silently
+// vanishes from the LLM call.
+func TestExtractorComponent_Invoke_ResumeTemplateChunksPathContentWithWeight(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "meta"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Content: {TitleChunker:FlatMiceFix@chunks}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"content_with_weight": "weighted body"}},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -1683,20 +1750,128 @@ func TestExtractorComponent_Invoke_ResumeTemplateChunksPath(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var user string
 	for _, msg := range stub.lastReq.Messages {
 		if msg.Role == eschema.User {
-			userContent = msg.Content
+			user = msg.Content
 		}
 	}
-	// {@chunks} must be resolved by substitutePromptPlaceholders.
-	if strings.Contains(userContent, "{TitleChunker:FlatMiceFix@chunks}") {
-		t.Errorf("prompt still contains literal @chunks placeholder: %q", userContent)
+	if strings.Contains(user, "{TitleChunker:FlatMiceFix@chunks}") {
+		t.Errorf("prompt still contains literal @chunks placeholder: %q", user)
 	}
-	// Chunk body must arrive in the final message (via the append path,
-	// since {@chunks} does not suppress the automatic chunk-text append).
-	if !strings.Contains(userContent, "resume chunk body") {
-		t.Errorf("chunk body missing from LLM call — resume path broken: %q", userContent)
+	if n := strings.Count(user, "weighted body"); n != 1 {
+		t.Errorf("chunk body appears %d times, want 1 (resolved via content_with_weight): %q", n, user)
+	}
+}
+
+// TestExtractorComponent_Invoke_ResumeTemplateChunksPathSystemPrompt verifies
+// that {@chunks} in the SYSTEM prompt resolves to the current chunk body and
+// suppresses the user-message append (the subS=true path). The body must
+// appear in the system message exactly once and must NOT be duplicated into
+// the user message.
+func TestExtractorComponent_Invoke_ResumeTemplateChunksPathSystemPrompt(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "meta"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName:    "out",
+		Prompt:       "Extract metadata.",
+		SystemPrompt: "Context: {TitleChunker:FlatMiceFix@chunks}",
+		LLMID:        "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "sys body"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var sys, user string
+	for _, msg := range stub.lastReq.Messages {
+		switch msg.Role {
+		case eschema.System:
+			sys = msg.Content
+		case eschema.User:
+			user = msg.Content
+		}
+	}
+	if strings.Contains(sys, "{TitleChunker:FlatMiceFix@chunks}") {
+		t.Errorf("system prompt still contains literal @chunks placeholder: %q", sys)
+	}
+	if n := strings.Count(sys, "sys body"); n != 1 {
+		t.Errorf("system message body appears %d times, want 1: %q", n, sys)
+	}
+	if strings.Contains(user, "sys body") {
+		t.Errorf("chunk body duplicated into user message (append not suppressed): %q", user)
+	}
+}
+
+// TestSubstituteChunkPlaceholders_AtChunks pins the @chunks branch of
+// substituteChunkPlaceholders directly: {Cmp:Param@chunks} resolves to
+// chunkText and reports substituted=true. The component/param names are
+// matched but ignored.
+func TestSubstituteChunkPlaceholders_AtChunks(t *testing.T) {
+	got, sub := substituteChunkPlaceholders(
+		"Content: {TitleChunker:FlatMiceFix@chunks}",
+		map[string]any{"text": "x"},
+		"body",
+	)
+	if !sub {
+		t.Error("substituted = false, want true (body embedded)")
+	}
+	if got != "Content: body" {
+		t.Errorf("got %q, want %q", got, "Content: body")
+	}
+}
+
+// TestSubstituteChunkPlaceholders_AtChunksMultiple pins that every @chunks
+// occurrence is replaced, regardless of the component/param names.
+func TestSubstituteChunkPlaceholders_AtChunksMultiple(t *testing.T) {
+	got, sub := substituteChunkPlaceholders(
+		"A: {TitleChunker:FlatMiceFix@chunks} B: {X:Y@chunks}",
+		map[string]any{"text": "x"},
+		"body",
+	)
+	if !sub {
+		t.Error("substituted = false, want true")
+	}
+	if got != "A: body B: body" {
+		t.Errorf("got %q, want %q", got, "A: body B: body")
+	}
+}
+
+// TestSubstituteChunkPlaceholders_AtChunksEmptyBody pins the degenerate case:
+// an empty chunk body still resolves {@chunks} (to empty) and reports
+// substituted=true, so the append is suppressed and no literal placeholder
+// leaks to the LLM.
+func TestSubstituteChunkPlaceholders_AtChunksEmptyBody(t *testing.T) {
+	got, sub := substituteChunkPlaceholders(
+		"Content: {TitleChunker:FlatMiceFix@chunks}",
+		map[string]any{},
+		"",
+	)
+	if !sub {
+		t.Error("substituted = false, want true (regex matched even with empty body)")
+	}
+	if got != "Content: " {
+		t.Errorf("got %q, want %q", got, "Content: ")
+	}
+}
+
+// TestSubstituteChunkPlaceholders_NoAtChunks pins that a prompt without an
+// @chunks pattern is untouched and reports substituted=false (no body embed,
+// so the automatic append still fires).
+func TestSubstituteChunkPlaceholders_NoAtChunks(t *testing.T) {
+	prompt := "Plain: no placeholder"
+	got, sub := substituteChunkPlaceholders(prompt, map[string]any{"text": "x"}, "body")
+	if sub {
+		t.Error("substituted = true, want false (no content placeholder matched)")
+	}
+	if got != prompt {
+		t.Errorf("got %q, want unchanged %q", got, prompt)
 	}
 }
 

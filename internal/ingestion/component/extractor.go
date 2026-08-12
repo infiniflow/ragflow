@@ -696,11 +696,11 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			// buildExtractorMessages appends chunkText to the user message
-			// unconditionally. Substitute first; if a content-bearing
-			// placeholder ({text}/{chunks}/{content_with_weight}) was actually
-			// replaced, the chunk body is already in the prompt — suppress
-			// the append to avoid duplication.
+			// buildExtractorMessages appends chunkText to the user message only
+			// when it is non-empty. Substitute first; if a content-bearing
+			// placeholder ({text}/{chunks}/{content_with_weight} or the resume
+			// template's {@chunks}) embedded the chunk body, clear chunkText so
+			// the append is suppressed and the body appears exactly once.
 			var subP, subS bool
 			callIn.prompt, subP = substituteChunkPlaceholders(in.prompt, ck, text)
 			callIn.systemPrompt, subS = substituteChunkPlaceholders(in.systemPrompt, ck, text)
@@ -1133,7 +1133,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	if err != nil {
 		return nil, err
 	}
-	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
+	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText)
 	inv := getExtractorChatInvoker()
 	req := extractorChatRequest{
 		Driver:    driver,
@@ -1360,18 +1360,12 @@ func isBareTenantModelID(s string) bool {
 // substituting the chunk text into the args dict is preserved
 // without invoking a template engine.
 //
-// Prompt placeholders of the form `{ComponentName:ParamName@chunks}`
-// are substituted with the joined text of all upstream chunks
-// when chunks is non-empty. The python rag/flow/extractor/extractor.py
-// build_existing_prompt path performs the same substitution at
-// runtime; the Go port surfaces it as a regex on the prompt
-// template so the resume template's `{TitleChunker:FlatMiceFix@chunks}`
-// reference resolves without invoking a template engine.
-//
-// Substitution is opt-in: when chunks is nil/empty the placeholder
-// is left intact so a misconfigured template surfaces as a
-// clear pattern rather than silently disappearing.
-func buildExtractorMessages(system, prompt, chunkText string, chunks []map[string]any) []eschema.Message {
+// Prompt placeholder substitution ({field_name} and
+// {CmpName:ParamName@chunks}) happens per chunk beforehand in
+// substituteChunkPlaceholders, which reports whether a content-bearing
+// placeholder embedded the chunk body. Here chunkText is appended only
+// when it was not already embedded, so the chunk body appears once.
+func buildExtractorMessages(system, prompt, chunkText string) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
 	if system != "" {
 		out = append(out, eschema.Message{Role: eschema.System, Content: system})
@@ -1389,62 +1383,15 @@ func buildExtractorMessages(system, prompt, chunkText string, chunks []map[strin
 		// unchanged.
 		user = " "
 	}
-	user = substitutePromptPlaceholders(user, chunks)
 	out = append(out, eschema.Message{Role: eschema.User, Content: user})
 	return out
 }
 
-// substitutePromptPlaceholders replaces `{ComponentName:ParamName@chunks}`
-// patterns in the user prompt with the joined text of all upstream
-// chunks. The python rag/flow/extractor/extractor.py:build_existing_prompt
-// path performs the same substitution at runtime using a Jinja
-// template; the Go port keeps the regex form because the LLM
-// driver does not require Jinja and the surface is small enough to
-// avoid pulling in a template engine.
-//
-// Pattern grammar:
-//
-//	{CmpName:ParamName@chunks}
-//
-// The CmpName and ParamName are both matched but ignored — the
-// substitute is always "the joined chunk text" today, because the
-// only @chunks reference in production templates is the resume
-// template's `{TitleChunker:FlatMiceFix@chunks}` pattern. The
-// CmpName/ParamName parsing exists so a future per-component
-// substitution can extend the function without breaking the
-// existing call sites.
-func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string {
-	if prompt == "" || len(chunks) == 0 {
-		return prompt
-	}
-	// Build the substitution payload once. Each chunk's text is
-	// joined with a blank line so a downstream LLM sees clear
-	// chunk boundaries.
-	var b strings.Builder
-	for i, ck := range chunks {
-		t, _ := ck["text"].(string)
-		if t == "" {
-			t, _ = ck["content_with_weight"].(string)
-		}
-		if t == "" {
-			continue
-		}
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(t)
-	}
-	repl := b.String()
-	if repl == "" {
-		return prompt
-	}
-	return placeholderRE.ReplaceAllString(prompt, repl)
-}
-
 // placeholderRE matches `{CmpName:ParamName@chunks}` patterns in
-// Extractor user prompts. The CMP / Param groups are ignored for
-// the @chunks variant but kept so the regex rejects arbitrary
-// placeholders (a future per-component substitution extends here).
+// Extractor prompts (the resume template's
+// `{TitleChunker:FlatMiceFix@chunks}`). substituteChunkPlaceholders
+// resolves them to the current chunk's text; the CMP / Param groups
+// are matched but ignored.
 var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
 
 // simplePlaceholderRE matches simple {field_name} placeholders
@@ -1470,7 +1417,9 @@ var contentPlaceholders = map[string]bool{
 // the prompt with values from the current chunk map. The special
 // aliases "text" and "chunks" map to chunkText (the current chunk's
 // primary text), matching Python's `args[chunks_key] = ck["text"]` at
-// extractor.py:102. Unmatched placeholders are left as-is.
+// extractor.py:102. `{CmpName:ParamName@chunks}` (the resume template's
+// `{TitleChunker:FlatMiceFix@chunks}`) is likewise resolved to the
+// current chunk's text. Unmatched placeholders are left as-is.
 //
 // The "text" placeholder falls back to chunkText when the chunk has no
 // explicit "text" field — e.g. when only content_with_weight is present.
@@ -1505,6 +1454,14 @@ func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText str
 		}
 		return match // leave unknown placeholders as-is
 	})
+	// Resolve `{CmpName:ParamName@chunks}` (the resume template's
+	// `{TitleChunker:FlatMiceFix@chunks}`) to the current chunk's text.
+	// The chunk body is embedded, so buildExtractorMessages must not
+	// append chunkText again.
+	if placeholderRE.MatchString(out) {
+		out = placeholderRE.ReplaceAllString(out, chunkText)
+		substituted = true
+	}
 	return out, substituted
 }
 
