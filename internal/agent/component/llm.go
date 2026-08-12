@@ -1047,19 +1047,18 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 	// Convert to messagefit.Message. Track where each entry's text lives
 	// (plain Content or a multi-modal text part) so the fitted text can be
 	// written back to the right field. Entries with no text at all
-	// (image-only turns) have hadText=false and are preserved even though
-	// messagefit represents them with an empty Content.
+	// (image-only turns) carry an empty Content in messagefit and survive
+	// fitting when kept.
 	type fitSource struct {
 		copiedIdx int // index into copied; -1 for the synthetic system prompt
 		multiIdx  int // -1 means the text lives in Content
-		hadText   bool
 	}
 	all := make([]messagefit.Message, 0, 1+len(copied))
 	sources := make([]fitSource, 0, 1+len(copied))
 
 	if systemPrompt != "" {
 		all = append(all, messagefit.Message{Role: "system", Content: systemPrompt})
-		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0, hadText: true})
+		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
 	}
 
 	for i := range copied {
@@ -1085,42 +1084,39 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 			}
 		}
 		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
-		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, hadText: hadText})
+		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx})
 	}
 
 	// Use 97% of effective context as the token budget.
 	budget := contextFitBudget(maxLength)
-	messagefit.Fit(all, budget)
+	kept, keptIdx, _ := messagefit.Fit(all, budget)
 
-	// Convert back to []schema.Message. messagefit marks dropped entries by
-	// emptying their Content; image-only entries were already empty before
-	// fitting and are always preserved.
-	result := make([]schema.Message, 0, len(all))
-	for i := range all {
+	// Convert back to []schema.Message. messagefit.Fit reports exactly which
+	// entries are kept (keptIdx); dropped entries are simply absent, so no
+	// empty-content sentinel is needed and image-only turns are preserved.
+	result := make([]schema.Message, 0, len(kept))
+	for j, i := range keptIdx {
 		src := sources[i]
-		if all[i].Content == "" && src.hadText {
-			continue // dropped by fitter
-		}
 		if src.copiedIdx < 0 {
-			result = append(result, schema.Message{Role: schema.System, Content: all[i].Content})
+			result = append(result, schema.Message{Role: schema.System, Content: kept[j].Content})
 			continue
 		}
 		m := copied[src.copiedIdx]
 		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
-			m.UserInputMultiContent[src.multiIdx].Text = all[i].Content
+			m.UserInputMultiContent[src.multiIdx].Text = kept[j].Content
 			// Drop any additional text parts: their content was folded into
 			// the first part before fitting, so keeping them would re-introduce
 			// text outside the token budget.
 			keptParts := m.UserInputMultiContent[:0]
-			for j, part := range m.UserInputMultiContent {
-				if part.Type == schema.ChatMessagePartTypeText && j != src.multiIdx {
+			for k, part := range m.UserInputMultiContent {
+				if part.Type == schema.ChatMessagePartTypeText && k != src.multiIdx {
 					continue
 				}
 				keptParts = append(keptParts, part)
 			}
 			m.UserInputMultiContent = keptParts
-		} else if all[i].Content != "" {
-			m.Content = all[i].Content
+		} else if kept[j].Content != "" {
+			m.Content = kept[j].Content
 		}
 		result = append(result, m)
 	}
