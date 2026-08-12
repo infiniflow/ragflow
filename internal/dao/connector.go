@@ -413,8 +413,11 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 			return "", err
 		}
 		if err == nil {
-			pollRangeStart = latest.PollRangeEnd
 			totalDocsIndexed = latest.TotalDocsIndexed
+			if latest.PollRangeEnd != nil {
+				pollRangeEnd := latest.PollRangeEnd.Time()
+				pollRangeStart = &pollRangeEnd
+			}
 		}
 	}
 
@@ -431,7 +434,7 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		TaskType:         taskType,
 		Status:           string(entity.TaskStatusSchedule),
 		FromBeginning:    &fromBeginning,
-		PollRangeStart:   pollRangeStart,
+		PollRangeStart:   entity.NewFlexibleTime(pollRangeStart),
 		TimeStarted:      &now,
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,

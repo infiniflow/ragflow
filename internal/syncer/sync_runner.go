@@ -55,7 +55,10 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 
 	var windowStart *time.Time // = nil if it is `Full synchronisation`
 	if !service.IsFromBeginning(taskContext.Task.FromBeginning) {
-		windowStart = taskContext.Task.PollRangeStart
+		if pollRangeStart := taskContext.Task.PollRangeStart; pollRangeStart != nil {
+			start := pollRangeStart.Time()
+			windowStart = &start
+		}
 	}
 
 	session, err := connector.OpenSync(ctx, syncerconnector.SyncRequest{

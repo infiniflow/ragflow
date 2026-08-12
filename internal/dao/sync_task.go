@@ -445,7 +445,7 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 		TaskType:         taskType,
 		Status:           SyncStatusSchedule,
 		FromBeginning:    &reindex,
-		PollRangeStart:   pollRangeStart,
+		PollRangeStart:   entity.NewFlexibleTime(pollRangeStart),
 		TimeStarted:      &now,
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,
