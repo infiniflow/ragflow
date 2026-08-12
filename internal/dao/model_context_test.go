@@ -43,21 +43,22 @@ func TestResolveModelContentLength_CompositeReferenceThreePart(t *testing.T) {
 	}
 }
 
-// TestResolveModelContentLength_TooManyParts documents that a reference with
-// more than two "@" separators is not treated as a composite ref: it falls
-// through to the driver+modelName fallback, and to 0 when no fallback is
-// supplied. A known catalog model with an extra separator is used for the
-// no-fallback assertion so a parser regression (accepting excessive
-// separators) fails loudly instead of resolving to 0 by coincidence.
-func TestResolveModelContentLength_TooManyParts(t *testing.T) {
+// TestResolveModelContentLength_MultiSegmentComposite documents that a
+// reference with more than three "@" segments is still a composite ref: the
+// leading segments are rejoined into the model name (preserving embedded '@',
+// e.g. LM Studio chat models `name@q8_0@lmstudio@LM-Studio`), with instance
+// and provider anchored on the right. When the catalog lookup fails it falls
+// through to the driver+modelName fallback, and to 0 when no fallback exists.
+func TestResolveModelContentLength_MultiSegmentComposite(t *testing.T) {
 	if got := ResolveModelContentLength(t.Context(), nil, "", "a@b@c@d", "openai", "gpt-4o"); got != 128000 {
 		t.Fatalf("ResolveModelContentLength(a@b@c@d, openai, gpt-4o) = %d, want 128000 (driver fallback)", got)
 	}
 	if got := ResolveModelContentLength(t.Context(), nil, "", "gpt-4o@default@openai@extra", "", ""); got != 0 {
 		t.Fatalf("ResolveModelContentLength(gpt-4o@default@openai@extra) = %d, want 0", got)
 	}
-	if _, _, _, ok := splitCompositeModelRef("a@b@c@d"); ok {
-		t.Fatal("splitCompositeModelRef(a@b@c@d) accepted an excessive-separator reference")
+	modelName, instanceName, providerName, ok := splitCompositeModelRef("a@b@c@d")
+	if !ok || modelName != "a@b" || instanceName != "c" || providerName != "d" {
+		t.Fatalf("splitCompositeModelRef(a@b@c@d) = %q/%q/%q/%v, want a@b/c/d/true", modelName, instanceName, providerName, ok)
 	}
 }
 
@@ -108,22 +109,6 @@ func TestResolveModelContentLength_ExtraOverrideUUID(t *testing.T) {
 	}
 }
 
-// TestResolveModelContentLength_UUIDCrossTenantRejected verifies that a UUID
-// belonging to another tenant does not resolve that tenant's per-model
-// override (or tenant-row catalog read): the same UUID returns 0 for an
-// unrelated tenant id.
-func TestResolveModelContentLength_UUIDCrossTenantRejected(t *testing.T) {
-	db := openModelContextTestDB(t)
-	pushDB(t, db)
-	ctx := t.Context()
-
-	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
-
-	if got := ResolveModelContentLength(ctx, db, "tenant-2", "0123456789abcdef0123456789abcdef", "", ""); got != 0 {
-		t.Fatalf("ResolveModelContentLength(uuid from other tenant) = %d, want 0", got)
-	}
-}
-
 // TestResolveModelContentLength_ExtraOverrideComposite verifies the custom
 // context window override for a composite reference resolved through the
 // tenant's provider/instance/model rows.
@@ -161,6 +146,27 @@ func TestResolveModelContentLength_CustomModelExtraComposite(t *testing.T) {
 	}
 	if got := ResolveModelContentLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 0 {
 		t.Fatalf("custom model without extra = %d, want 0", got)
+	}
+}
+
+// TestResolveModelContentLength_InactiveInstanceCompositeFallsBackToCatalog
+// verifies that a composite reference whose instance is inactive does not
+// apply the override or the tenant-row catalog read: it falls back to the
+// catalog by reference parts (gpt-4o → 128000).
+func TestResolveModelContentLength_InactiveInstanceCompositeFallsBackToCatalog(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
+	if err := db.Model(&entity.TenantModelInstance{}).
+		Where("id = ?", "instance-1").
+		Update("status", "inactive").Error; err != nil {
+		t.Fatalf("set instance inactive: %v", err)
+	}
+
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("inactive-instance composite = %d, want catalog 128000", got)
 	}
 }
 

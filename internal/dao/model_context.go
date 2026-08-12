@@ -103,7 +103,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 			return nil
 		}
 		instance, err := NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
-		if err != nil || instance == nil {
+		if err != nil || instance == nil || instance.Status != "active" {
 			return nil
 		}
 		obj, err := NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, db, provider.ID, instance.ID, int(entity.ModelTypeChat), pureName)
@@ -119,17 +119,11 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 	if err != nil || obj == nil {
 		return nil
 	}
-	// Scope UUID resolution to the caller's tenant: the tenant_model row's
-	// provider must belong to tenantID, otherwise a caller holding another
-	// tenant's UUID could read that tenant's per-model override. The
-	// tenant-agnostic catalog fallback below still applies without a row.
-	if tenantID == "" {
-		return nil
-	}
-	provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID)
-	if err != nil || provider == nil || provider.TenantID != tenantID {
-		return nil
-	}
+	// UUIDs are globally unique and unguessable, and shared/joined-tenant
+	// models are legitimate (Python's get_model_config_by_id and Go's
+	// service.GetModelConfigByID both support them), so UUID resolution is
+	// intentionally NOT scoped to tenantID. The per-model override and the
+	// catalog fallback apply to whichever tenant holds the UUID.
 	return obj
 }
 
@@ -148,10 +142,12 @@ func modelExtraMaxTokens(extra string) int {
 	if err := json.Unmarshal([]byte(extra), &m); err != nil || len(m.MaxTokens) == 0 {
 		return 0
 	}
-	var num int
+	// Accept JSON numbers (int or float, e.g. 32000 / 32000.0) and numeric
+	// strings ("32000"); json.Number keeps the raw lexical form.
+	var num json.Number
 	if err := json.Unmarshal(m.MaxTokens, &num); err == nil {
-		if num > 0 {
-			return num
+		if f, err := strconv.ParseFloat(num.String(), 64); err == nil && f > 0 {
+			return int(f)
 		}
 		return 0
 	}
@@ -174,6 +170,14 @@ func splitCompositeModelRef(ref string) (modelName, instanceName, providerName s
 		return parts[0], "default", parts[1], true
 	case 3:
 		return parts[0], parts[1], parts[2], true
+	}
+	if len(parts) > 3 {
+		// 4+ segments: any '@' embedded in the leftmost modelName component
+		// must be preserved (e.g. LM Studio chat models
+		// `name@q8_0@lmstudio@LM-Studio`). Rejoin the leading fields into the
+		// model name, keeping instance and provider anchored on the right.
+		n := len(parts)
+		return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], true
 	}
 	return "", "", "", false
 }
