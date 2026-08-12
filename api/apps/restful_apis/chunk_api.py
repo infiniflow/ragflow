@@ -20,6 +20,7 @@ import contextvars
 import datetime
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -72,8 +73,24 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
-_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS = float(os.environ.get("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "60"))
-_ADD_CHUNK_WORKERS = max(1, int(os.environ.get("RAGFLOW_ADD_CHUNK_WORKERS", "1")))
+
+
+def _positive_env(name, default, cast):
+    """Read a strictly positive environment value or return its default."""
+    raw = os.environ.get(name, default)
+    try:
+        value = cast(raw)
+    except (TypeError, ValueError):
+        logging.warning("Invalid %s=%r; falling back to %s", name, raw, default)
+        return cast(default)
+    if not math.isfinite(value) or value <= 0:
+        logging.warning("Invalid %s=%r; expected a positive finite value, falling back to %s", name, raw, default)
+        return cast(default)
+    return value
+
+
+_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS = _positive_env("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "60", float)
+_ADD_CHUNK_WORKERS = _positive_env("RAGFLOW_ADD_CHUNK_WORKERS", "1", int)
 _ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(
     max_workers=_ADD_CHUNK_WORKERS,
     thread_name_prefix="add-chunk",
@@ -81,7 +98,7 @@ _ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(
 
 
 class _AddChunkOperationTimeout(TimeoutError):
-    pass
+    """Raised when add-chunk work exceeds its request deadline."""
 
 
 async def _run_add_chunk_operation(func, *args, stop_event=None):
@@ -1107,6 +1124,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     stop_event = threading.Event()
 
     def _add_chunk_sync():
+        """Embed, index, and count one chunk as one consistency unit."""
         if stop_event.is_set():
             return
         v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
@@ -1114,6 +1132,8 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             return
         v = 0.1 * v[0] + 0.9 * v[1]
         d[f"q_{len(v)}_vec"] = v.tolist()
+        if stop_event.is_set():
+            return
         settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
 
