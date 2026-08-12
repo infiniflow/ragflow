@@ -1050,8 +1050,9 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 	// (image-only turns) carry an empty Content in messagefit and survive
 	// fitting when kept.
 	type fitSource struct {
-		copiedIdx int // index into copied; -1 for the synthetic system prompt
-		multiIdx  int // -1 means the text lives in Content
+		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
+		multiIdx      int  // -1 means the text lives in Content
+		textInContent bool // the original message carried text in Content
 	}
 	all := make([]messagefit.Message, 0, 1+len(copied))
 	sources := make([]fitSource, 0, 1+len(copied))
@@ -1084,7 +1085,7 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 			}
 		}
 		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
-		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx})
+		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
 	}
 
 	// Use 97% of effective context as the token budget.
@@ -1115,7 +1116,9 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 				keptParts = append(keptParts, part)
 			}
 			m.UserInputMultiContent = keptParts
-		} else if kept[j].Content != "" {
+		} else if src.textInContent {
+			// Always write the fitted text back (even when trimmed to empty):
+			// leaving the original would send untrimmed content past the budget.
 			m.Content = kept[j].Content
 		}
 		result = append(result, m)

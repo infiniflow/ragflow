@@ -398,6 +398,35 @@ func TestFitMessages_DropsMiddleWhenOverBudget(t *testing.T) {
 	}
 }
 
+// TestFitMessages_SystemKeptButEmptied locks the write-back for a system
+// message that the fitter keeps but trims to empty (the final user turn alone
+// fills the budget): the fitted (empty) content must be written back instead
+// of the original, so the conversation stays within the budget.
+func TestFitMessages_SystemKeptButEmptied(t *testing.T) {
+	origSys := strings.Repeat("s ", 3000) // dominates (>80% of tokens)
+	msgs := []schema.Message{
+		{Role: schema.System, Content: origSys},
+		{Role: schema.User, Content: strings.Repeat("u ", 600)}, // alone exceeds the budget
+	}
+	fitted, fitErr := fitMessages("", msgs, 500)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2 (both kept)", len(fitted))
+	}
+	if fitted[0].Role != schema.System || fitted[0].Content != "" {
+		t.Fatalf("system should be kept but trimmed to empty, got %+v", fitted[0])
+	}
+	if fitted[1].Role != schema.User || fitted[1].Content == origSys {
+		t.Fatalf("user turn wrong after fitting: %+v", fitted[1])
+	}
+	total := tokenizer.NumTokensFromString(fitted[0].Content) + tokenizer.NumTokensFromString(fitted[1].Content)
+	if total > 500 {
+		t.Fatalf("fitted total %d exceeds budget 500", total)
+	}
+}
+
 // TestFitMessages_FoldsMultipleTextParts verifies that every non-empty text
 // part of a multi-modal message participates in the token budget: the parts
 // are folded into a single fitted text on the first text part and additional
