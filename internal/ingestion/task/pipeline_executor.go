@@ -63,7 +63,6 @@ type PipelineExecutor struct {
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
-	requireResume   bool // when true, the pipeline run passes WithRequireResume
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -142,14 +141,6 @@ func (s *PipelineExecutor) WithRunPipelineFunc(f func(ctx context.Context, dsl s
 // unset, the pipeline runs DB-independent (progress events are dropped).
 func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *PipelineExecutor {
 	s.progressSink = sink
-	return s
-}
-
-// WithRequireResume makes the pipeline refuse to start when no checkpoint
-// store is resolvable (Redis down or not configured). Production ingestion
-// sets this; tests skip it so they can exercise runPlain without Redis.
-func (s *PipelineExecutor) WithRequireResume() *PipelineExecutor {
-	s.requireResume = true
 	return s
 }
 

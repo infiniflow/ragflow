@@ -744,7 +744,7 @@ func (e *Ingestor) safeGetTerminal(ctx context.Context, taskID string) (terminal
 
 // ackOrNack settles the MQ message according to the terminal flag: Ack if the
 // task reached a durably-persisted terminal status, Nack otherwise so the
-// broker redelivers and resumes. A nil handle (standalone/test path) is a no-op.
+// broker redelivers the task. A nil handle (standalone/test path) is a no-op.
 func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 	if taskCtx.Handle == nil {
 		return
@@ -957,7 +957,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 			return dsl, parserID, nil
 		})
 	}
-	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
+	result, err := executor.WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}

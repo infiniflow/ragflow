@@ -126,54 +126,6 @@ func TestOptions_WithLoopMaxIterations_Positive(t *testing.T) {
 	}
 }
 
-// TestOptions_CheckpointBuilder_Default is non-empty. The default
-// builder must be set so the loop is usable without an explicit
-// WithLoopCheckpointIDBuilder.
-func TestOptions_CheckpointBuilder_Default(t *testing.T) {
-	opts := getLoopOptions(nil)
-	if opts.checkpointBuilder == nil {
-		t.Fatal("default checkpoint builder is nil")
-	}
-	id := opts.checkpointBuilder("k", 3)
-	if id == "" {
-		t.Error("default builder returned empty id")
-	}
-}
-
-// TestOptions_CheckpointBuilder_Override asserts the user-supplied
-// builder is used.
-func TestOptions_CheckpointBuilder_Override(t *testing.T) {
-	var gotKey string
-	var gotIter int
-	b := func(key string, iter int) string {
-		gotKey = key
-		gotIter = iter
-		return "cp:" + key + ":" + itoa(iter)
-	}
-	opts := getLoopOptions([]LoopOption{WithLoopCheckpointIDBuilder(b)})
-	id := opts.checkpointBuilder("loopKey", 5)
-	if id != "cp:loopKey:5" {
-		t.Errorf("builder output: got %q, want %q", id, "cp:loopKey:5")
-	}
-	if gotKey != "loopKey" || gotIter != 5 {
-		t.Errorf("builder args: got key=%q iter=%d, want key=%q iter=5", gotKey, gotIter, "loopKey")
-	}
-}
-
-// TestOptions_CheckpointBuilder_NilIgnored asserts that a nil
-// builder passed via the option is ignored.
-func TestOptions_CheckpointBuilder_NilIgnored(t *testing.T) {
-	opts := getLoopOptions([]LoopOption{WithLoopCheckpointIDBuilder(nil)})
-	if opts.checkpointBuilder == nil {
-		t.Error("nil builder should be ignored, but default is also nil — test is inconclusive")
-	}
-	// The default builder is non-nil so the option is a no-op.
-	id := opts.checkpointBuilder("k", 1)
-	if id == "" {
-		t.Error("builder produced empty id")
-	}
-}
-
 // TestOptions_RunOptionsForwarded asserts that the options set via
 // WithLoopRunOptions are passed to every nested sub-workflow call.
 // We use a counter sub-workflow and check that the run option is
@@ -317,7 +269,7 @@ func TestOptions_CompileFailureIsolated(t *testing.T) {
 	}
 }
 
-// TestOptions_SentinelErrorsExist is a smoke test that all four
+// TestOptions_SentinelErrorsExist is a smoke test that all
 // sentinel error values are non-nil. The behavioural assertions
 // live in loop_test.go and loop_integration_test.go; this test
 // pins the existence of the symbols so refactors cannot drop
@@ -325,8 +277,6 @@ func TestOptions_CompileFailureIsolated(t *testing.T) {
 func TestOptions_SentinelErrorsExist(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrLoopMaxIterationsExceeded": ErrLoopMaxIterationsExceeded,
-		"ErrLoopSubGraphInterrupted":   ErrLoopSubGraphInterrupted,
-		"ErrLoopResumeStateInvalid":    ErrLoopResumeStateInvalid,
 		"ErrLoopQuitConditionFailed":   ErrLoopQuitConditionFailed,
 	}
 	for name, e := range sentinels {
@@ -339,8 +289,8 @@ func TestOptions_SentinelErrorsExist(t *testing.T) {
 	if !errors.Is(ErrLoopMaxIterationsExceeded, ErrLoopMaxIterationsExceeded) {
 		t.Error("ErrLoopMaxIterationsExceeded is not Is-self")
 	}
-	if !errors.Is(ErrLoopSubGraphInterrupted, ErrLoopSubGraphInterrupted) {
-		t.Error("ErrLoopSubGraphInterrupted is not Is-self")
+	if !errors.Is(ErrLoopQuitConditionFailed, ErrLoopQuitConditionFailed) {
+		t.Error("ErrLoopQuitConditionFailed is not Is-self")
 	}
 }
 

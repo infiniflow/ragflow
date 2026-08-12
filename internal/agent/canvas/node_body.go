@@ -36,7 +36,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"strconv"
-	"strings"
 	"time"
 
 	"ragflow/internal/agent/runtime"
@@ -56,17 +55,11 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 //
 //  1. isLegacyNoOp(name) → legacyNoOpBody (echo + __legacy_noop__ tag).
 //     DSL v1 sentinels like "ExitLoop" land here.
-//  2. name is "UserFillUp" (case-insensitive) → UserFillUpNodeBody.
-//     This route takes precedence over the regular factory path so
-//     the eino interrupt semantics replace the legacy
-//     UserFillUpComponent.Invoke body. UserFillUpNodeBody calls
-//     compose.Interrupt on first execution and reads the resume
-//     payload via compose.GetResumeContext on subsequent runs.
-//  3. runtime.DefaultFactory() is non-nil → call the factory once to
+//  2. runtime.DefaultFactory() is non-nil → call the factory once to
 //     construct a runtime.Component, then return a body that delegates
 //     to that component's Invoke. A factory error surfaces here with
 //     the cpn_id wrapped for diagnostics.
-//  4. otherwise → placeholderBody. This is the canvas-package-only
+//  3. otherwise → placeholderBody. This is the canvas-package-only
 //     fallback used when no factory has been registered (most commonly
 //     in canvas-only unit tests that do not import the component
 //     package). Production runs always have a factory installed via
@@ -74,9 +67,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 //
 // The returned body always tags the output map with __cpn_id__ so the
 // shared statePost handler can persist the result into the per-cpn
-// Outputs bucket. UserFillUpNodeBody tags its output itself so the
-// interrupt-driven branch still attributes the resume payload to the
-// right cpn.
+// Outputs bucket.
 // ctxKeyOverrideParams carries the run-level override map into
 // BuildWorkflow so a component's params can be merged with it
 // at compile time. The map is keyed by cpnID; each component only sees the
@@ -136,17 +127,6 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params ma
 	}
 	if isLegacyNoOp(name) {
 		return legacyNoOpBody(cpnID), nil
-	}
-	// UserFillUp routes to the eino interrupt-based node body
-	// regardless of whether the legacy UserFillUpComponent is
-	// registered. The component's Invoke path renders tips / fields
-	// but never emits an interrupt signal — it was the missing
-	// producer half of the old sentinel chain. With this routing,
-	// every UserFillUp node pauses the graph on first execution
-	// (compose.Interrupt) and resumes from the orchestrator's
-	// compose.ResumeWithData call.
-	if strings.EqualFold(name, "UserFillUp") {
-		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := resolveComponentFactory(ctx); factory != nil {
 		comp, err := factory(name, params)

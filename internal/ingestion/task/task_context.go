@@ -67,7 +67,7 @@ type TaskContext struct {
 	// the terminal Ack/Nack:
 	//   - TaskKindIngestion: ack on a durably-persisted terminal status and
 	//     nack otherwise (e.g. shutdown mid-task) so the message is redelivered
-	//     and resumed after restart.
+	//     after restart.
 	//   - TaskKindMemory: ack on success and on terminal failure (task absent,
 	//     already-failed, or progress=-1 persisted by HandleSaveToMemoryTask);
 	//     nack on transient failure (task-load DB error before any marker, or

@@ -528,8 +528,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 
 // readUserInput extracts the user_input field from the JSON body if
 // present, otherwise from the ?user_input= query string. An empty body
-// (no body sent) is treated as "" so the resume cycle still works
-// when the client only passes ?session_id=...&user_input=... on the URL.
+// (no body sent) is treated as "".
 func readUserInput(c *gin.Context) string {
 	if c.Request.ContentLength > 0 {
 		var body struct {
@@ -1072,7 +1071,6 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
-	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
@@ -1107,54 +1105,6 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 		}
 	}
 	return ""
-}
-
-// extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
-// shape: `inputs` is an object keyed by form field name, and each entry carries
-// a nested `value`. The current chat-completion resume path consumes a single
-// string payload, so we lift the first field's value and stringify it.
-func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
-	if len(inputs) == 0 {
-		return nil
-	}
-	if len(inputs) == 1 {
-		for _, raw := range inputs {
-			if field, ok := raw.(map[string]interface{}); ok {
-				if v, ok := field["value"]; ok {
-					return v
-				}
-			}
-			return raw
-		}
-	}
-
-	out := make(map[string]any, len(inputs))
-	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if v, ok := field["value"]; ok {
-				out[name] = v
-				continue
-			}
-		}
-		out[name] = raw
-	}
-	return out
-}
-
-func countInputValues(inputs map[string]interface{}) int {
-	count := 0
-	for _, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if _, exists := field["value"]; exists {
-				count++
-			}
-			continue
-		}
-		if raw != nil {
-			count++
-		}
-	}
-	return count
 }
 
 func userInputMeta(userInput any) []zap.Field {
@@ -1206,8 +1156,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		zap.Bool("openai_compatible", req.OpenAICompat),
 		zap.Bool("query_present", req.Query != ""),
 		zap.Int("query_length", len(req.Query)),
-		zap.Int("inputs_count", len(req.Inputs)),
-		zap.Int("inputs_with_values_count", countInputValues(req.Inputs)),
 		zap.Int("messages_count", len(req.Messages)),
 	)
 
@@ -1250,14 +1198,12 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		}
 	}
 
-	// Real canvas run — derive userInput from `query` first, then fall
-	// back to the last user message (covers the front-end that posts
+	// Real canvas run — derive userInput from `query`, falling back to
+	// the last user message (covers the front-end that posts
 	// running_hint_text without a top-level `query`).
 	var userInput any = req.Query
 	if req.Query == "" {
-		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
-			userInput = extracted
-		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
+		if extracted := extractLastUserContent(req.Messages); extracted != "" {
 			userInput = extracted
 		}
 	}

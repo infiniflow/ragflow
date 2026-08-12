@@ -36,7 +36,7 @@ func TestRunnerUsesSessionMetadata(t *testing.T) {
 	root := map[string]any{}
 	started := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
-	events := r.Run(ctx, blockingRun(started), "canvas-1", "session-1", nil, root)
+	events := r.Run(ctx, blockingRun(started), "canvas-1", "session-1", root)
 	<-started
 	if got := root["__session_id__"]; got != "session-1" {
 		t.Fatalf("session metadata = %v, want session-1", got)
@@ -56,7 +56,7 @@ func TestRunnerParentContextCancelsManagedRun(t *testing.T) {
 		close(returned)
 		return nil, ctx.Err()
 	}
-	events := r.Run(ctx, run, "canvas", "session", nil, map[string]any{})
+	events := r.Run(ctx, run, "canvas", "session", map[string]any{})
 	<-started
 	cancel()
 	waitClosed(t, events)

@@ -30,7 +30,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cloudwego/eino/compose"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -316,19 +315,6 @@ type AgentService struct {
 	// in-memory; a follow-up phase moves to Redis per plan §4.9.
 	runner *canvas.Runner
 
-	// Phase 4.4 V2 — Redis-backed run infrastructure. nil = in-memory
-	// / no-tracking (test path, current production boot path until
-	// cmd/server_main.go wires them in v3.6.0).
-	//
-	// checkpointStore + stateSerializer feed canvas.WithCheckPointStore
-	// / canvas.WithStateSerializer so every Compile's check-point
-	// payload and CanvasState snapshot round-trip to Redis.
-	checkpointStore canvas.CheckPointStore
-	stateSerializer canvas.StateSerializer
-
-	// runTracker records per-run lifecycle (Start / MarkSucceeded /
-	// MarkFailed / MarkCancelled) to Redis hash "agent:run:{id}".
-	runTracker     *canvas.RunTracker
 	runMu          sync.Mutex
 	activeSessions map[string]*activeAgentRun
 }
@@ -337,7 +323,6 @@ type activeAgentRun struct {
 	userID          string
 	canvasID        string
 	sessionID       string
-	leaseToken      string
 	cancelRun       context.CancelFunc
 	cancelRequested atomic.Bool
 }
@@ -354,24 +339,6 @@ func (r *activeAgentRun) requestCancel() {
 
 // NewAgentService create agent service
 func NewAgentService() *AgentService {
-	return NewAgentServiceWithOptions(nil, nil, nil)
-}
-
-// NewAgentServiceWithOptions is the production constructor that
-// injects the Redis-backed run infrastructure. The zero-arg
-// NewAgentService() remains as a thin wrapper that calls this with
-// all-nil options so existing call sites (cmd/server_main.go,
-// handler tests, agent_test.go) keep compiling.
-//
-// Phase 4.4 V2: production boot wiring is deferred to v3.6.0; until
-// then, tests can construct AgentService instances with mocked
-// stores/tracker to exercise the real Compile/Invoke path without
-// requiring Redis.
-func NewAgentServiceWithOptions(
-	cp canvas.CheckPointStore,
-	ser canvas.StateSerializer,
-	rt *canvas.RunTracker,
-) *AgentService {
 	if stub, ok := agenttool.GetSandboxClient().(interface{ IsStubSandboxClient() bool }); ok && stub.IsStubSandboxClient() {
 		agenttool.SetSandboxClient(agentsandbox.NewManagerClient())
 	}
@@ -385,9 +352,6 @@ func NewAgentServiceWithOptions(
 		compilationTemplateGroupDAO: dao.NewCompilationTemplateGroupDAO(),
 		runner:                      canvas.NewRunner(),
 		activeSessions:              make(map[string]*activeAgentRun),
-		checkpointStore:             cp,
-		stateSerializer:             ser,
-		runTracker:                  rt,
 	}
 }
 
@@ -924,8 +888,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 //
 // Reset does NOT create a new user_canvas_version row. It also does NOT touch
 // the in-flight run state of any currently executing canvas session; active
-// session cancellation and lease ownership remain the responsibility of the
-// run service, not this DSL reset operation.
+// session cancellation remains the responsibility of the run service, not
+// this DSL reset operation.
 //
 // Errors propagate the same way as GetAgent: a missing canvas, or a
 // canvas that the user has no access to, surfaces as
@@ -1128,22 +1092,15 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 }
 
 // RunAgent starts a run for the given canvas and returns a channel of
-// orchestrator events the HTTP layer streams back as SSE. The driver owns
-// the wait-for-user cycle (eino interrupt, gap-analysis §11.6.4): the
-// RunFunc returns an interrupt error when a UserFillUp node pauses the
-// graph, the driver persists the interrupt id keyed by (canvasID,
-// sessionID), and resumes when the next call supplies a non-empty
-// userInput — at which point it injects (__resume_interrupt_id__,
-// __resume_data__) into root so the RunFunc can call
-// compose.ResumeWithData(ctx, id, data) before invoking the workflow.
+// orchestrator events the HTTP layer streams back as SSE.
 //
-// sessionID is required for the multi-turn cycle: the handler generates
-// one (UUID) on the first call and reuses it on follow-up posts. version
+// sessionID identifies the conversation turn: the handler generates one
+// (UUID) on the first call and reuses it on follow-up posts. version
 // selects the published UserCanvasVersion row; "" uses the latest version.
 //
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
-// for the full production chain (real Compile/Invoke, resume path,
-// error-layering contract).
+// for the full production chain (real Compile/Invoke, error-layering
+// contract).
 func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
@@ -1153,15 +1110,12 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
-	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
-	lockToken := utility.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
 	active := &activeAgentRun{
-		userID:     userID,
-		canvasID:   canvasID,
-		sessionID:  sessionID,
-		leaseToken: lockToken,
-		cancelRun:  cancelRun,
+		userID:    userID,
+		canvasID:  canvasID,
+		sessionID: sessionID,
+		cancelRun: cancelRun,
 	}
 	releaseLocal := func() {
 		s.runMu.Lock()
@@ -1170,77 +1124,34 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 		s.runMu.Unlock()
 	}
-	// Make the distributed lease the first run-lifecycle mutation after canvas
-	// access is authorized. All version, session, and DSL initialization happens
-	// only after other instances can observe and cancel this starting run.
-	if s.runTracker != nil {
-		registered, registerErr := s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
-			SessionID: sessionID,
-			Token:     lockToken,
-			UserID:    userID,
-			CanvasID:  canvasID,
-			RunID:     runID,
-		})
-		if registerErr != nil {
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-			cleanupCancel()
-			releaseLocal()
-			cancelRun()
-			return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
-		}
-		if !registered {
-			releaseLocal()
-			cancelRun()
-			return nil, ErrAgentSessionBusy
-		}
-	}
-
 	s.runMu.Lock()
 	if _, exists := s.activeSessions[sessionID]; exists {
 		s.runMu.Unlock()
-		if s.runTracker != nil {
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-			cleanupCancel()
-		}
 		cancelRun()
 		return nil, ErrAgentSessionBusy
 	}
 	s.activeSessions[sessionID] = active
 	s.runMu.Unlock()
 
-	if s.runTracker == nil {
-		// Without the distributed registry, clear a marker left by a prior
-		// local run before starting the watcher. A concurrent local Cancel also
-		// calls cancelRun directly, so this cleanup cannot lose that signal.
-		clearCtx, cancelClear := context.WithTimeout(ctx, time.Second)
-		_ = canvas.ClearCancel(clearCtx, sessionID)
-		cancelClear()
-	}
+	// Clear a marker left by a prior local run before starting the watcher.
+	// A concurrent local Cancel also calls cancelRun directly, so this cleanup
+	// cannot lose that signal.
+	clearCtx, cancelClear := context.WithTimeout(ctx, time.Second)
+	_ = canvas.ClearCancel(clearCtx, sessionID)
+	cancelClear()
 
 	releaseRegistration := func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-		if s.runTracker != nil {
-			_, releaseErr := s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-			if releaseErr != nil {
-				common.Warn("agent run: release active session failed", zap.String("session_id", sessionID), zap.Error(releaseErr))
-			}
-		} else {
-			_ = canvas.ClearCancel(cleanupCtx, sessionID)
-		}
+		_ = canvas.ClearCancel(cleanupCtx, sessionID)
 		cleanupCancel()
 		releaseLocal()
 	}
 
-	// Start cancellation and lease watchers as soon as the active registration
-	// is visible. This keeps the lease alive during initialization and preserves
-	// a cancel marker published before Compile/Invoke begins.
+	// Start the cancellation watcher as soon as the active registration is
+	// visible. This preserves a cancel marker published before Compile/Invoke
+	// begins.
 	watchCtx, cancelWatch := context.WithCancel(context.WithoutCancel(ctx))
 	go canvas.WatchCancel(watchCtx, sessionID, active.requestCancel)
-	if s.runTracker != nil {
-		go s.runTracker.WatchActiveSession(watchCtx, sessionID, lockToken, active.requestCancel)
-	}
 	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	if requested, checkErr := canvas.CancelRequested(checkCtx, sessionID); checkErr != nil {
 		common.Warn("agent run: initial cancel check failed",
@@ -1380,17 +1291,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	// The stable run id is derived from the canvas and session. It is only a
-	// checkpoint/status storage key; session_id remains the public run and
-	// cancellation identity.
-	// Recover a pending UserFillUp interrupt from Redis when this request
-	// lands on a different process.
-	if userInput != nil && s.runTracker != nil {
-		if interruptID, ok, ierr := s.runTracker.GetInterruptID(ctx, runID); ierr == nil && ok {
-			root["__resume_interrupt_id__"] = interruptID
-			root["__resume_data__"] = userInput
-		}
-	}
 	if userInput != nil {
 		root["user_input"] = userInput
 	}
@@ -1416,17 +1316,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	// the caller's configured provider key.
 	root["tenant_id"] = userID
 
-	// Preserve the historical RunTracker tenant dimension separately.
-	// Existing tests and log filters expect the joined tenant id in the
-	// run hash, but runtime state must keep tenant_id=userID.
-	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID); terr == nil && len(tenantIDs) > 0 {
-		root["run_tenant_id"] = tenantIDs[0]
-	} else if terr != nil {
-		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run tracker tenant not populated)",
-			zap.String("user_id", userID),
-			zap.Error(terr))
-	}
-
 	// v3.6.1 diagnostic: log what RunAgent put into root so we can
 	// confirm tenant_id / user_id / session_id / user_input all
 	// reached the buildRunFunc closure (which runs in the runner's
@@ -1439,11 +1328,11 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		zap.Any("userInput", root["user_input"]))
 
 	// Cancellation of the HTTP request must reach the workflow, but it must
-	// not stop the Redis watchers while the real Runner goroutine is still
+	// not stop the Redis watcher while the real Runner goroutine is still
 	// unwinding. Otherwise, a non-cooperative external call can outlive the
-	// lease, allowing a second process to acquire the same session. The
+	// marker, leaving a stale cancellation pending for the session. The
 	// detached watcher context is canceled only after inner has closed and
-	// cleanup has taken ownership of the lease release.
+	// cleanup has taken ownership of the release.
 	lifecycleDone := make(chan struct{})
 	go func() {
 		select {
@@ -1452,7 +1341,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		case <-lifecycleDone:
 		}
 	}()
-	inner := s.runner.Run(runCtx, run, canvasID, sessionID, userInput, root)
+	inner := s.runner.Run(runCtx, run, canvasID, sessionID, root)
 
 	out := make(chan canvas.RunEvent, 8)
 	go func() {
@@ -1464,17 +1353,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 				active.cancelRequested.Store(true)
 			}
 			cancelRun()
-			if active.cancelRequested.Load() {
-				if s.runTracker != nil {
-					statusCtx, cancelStatus := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-					err := s.runTracker.MarkCancelled(statusCtx, runID)
-					cancelStatus()
-					if err != nil {
-						common.Warn("agent run: mark session cancelled failed",
-							zap.String("session_id", sessionID), zap.Error(err))
-					}
-				}
-			}
 			releaseRegistration()
 		}()
 		for ev := range inner {
@@ -1514,14 +1392,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 // (cpn="answer", bucket="answer") so the answer extraction in
 // first-pass lookup picks it up; the same trick the V1 placeholder
 // used (the v3.5.2 fix landed this, and we keep it).
-//
-// Resume path: Runner.Run injects (__resume_interrupt_id__,
-// __resume_data__) into root when userInput arrives on a session
-// that previously paused at a wait-for-user interrupt. We consume
-// them here and decorate ctx with compose.ResumeWithData so the
-// targeted UserFillUp node (compile.go:53-55 lists them via
-// compose.WithInterruptBeforeNodes) resumes and reads the user's
-// follow-up via compose.GetResumeContext.
 func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanvasVersion, dsl map[string]any) canvas.RunFunc {
 	return func(ctx context.Context, root map[string]any) (*canvas.CanvasState, error) {
 		if err := ctx.Err(); err != nil {
@@ -1581,11 +1451,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		userInput := root["user_input"]
 
-		resumeID, isResume := root["__resume_interrupt_id__"].(string)
-		if !isResume || resumeID == "" {
-			wsData, _ := json.Marshal(map[string]any{"inputs": userInput})
-			emit("workflow_started", string(wsData))
-		}
+		wsData, _ := json.Marshal(map[string]any{"inputs": userInput})
+		emit("workflow_started", string(wsData))
 
 		runID := runIDFor(canvasID, root)
 		state := canvas.NewCanvasState(runID, sessionID)
@@ -1613,7 +1480,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// DSL → *Canvas.
 		c, err := decodeCanvasFromDSL(dsl)
 		if err != nil {
-			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
 		// Close MCP tool adapters and any other closeable resources
@@ -1688,7 +1554,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
 			files, ferr := fileSvc.ParseAgentUploads(ctx, userID, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
-				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
 			}
 			state.Sys["files"] = files
@@ -1696,48 +1561,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		state.IncrementConversationTurns()
 		ctx2 = runtime.WithState(ctx2, state)
 
-		// Resume path. The user input is the resume payload for the
-		// previously-paused UserFillUp node — it should NOT also be
-		// presented to UserFillUp:Menu (the first interactive node)
-		// as a fresh "menu selection". Without this distinction, on
-		// the follow-up RunAgent call sys.query=resume_payload would
-		// be consumed by initialUserFillUpData in the menu body, the
-		// menu would pick up the resume text as a brand-new branch
-		// choice, Switch:Route would route to that branch, and the
-		// previously-paused branch would be silently dropped (the
-		// "second input doesn't resume" symptom). Clear sys.query so
-		// the menu's initial-input fast path returns false and the
-		// body falls through to compose.Interrupt — the menu pauses
-		// for fresh input next time the user actually wants a
-		// different branch.
-		if isResume && resumeID != "" {
-			resumeData := root["__resume_data__"]
-			delete(root, "__resume_interrupt_id__")
-			delete(root, "__resume_data__")
-			state.Sys["query"] = ""
-			ctx2 = compose.ResumeWithData(ctx2, resumeID, resumeData)
-		}
-
-		if s.runTracker != nil {
-			_ = s.runTracker.Start(ctx2, runID, canvasID,
-				tenantIDFromRoot(root), "")
-		}
-
 		// Compile.
-		var cc *canvas.CompiledCanvas
-		switch {
-		case s.checkpointStore != nil && s.stateSerializer != nil:
-			cc, err = canvas.Compile(ctx2, c,
-				canvas.WithCheckPointStore(s.checkpointStore),
-				canvas.WithStateSerializer(s.stateSerializer),
-			)
-		case s.checkpointStore != nil:
-			cc, err = canvas.Compile(ctx2, c,
-				canvas.WithCheckPointStore(s.checkpointStore),
-			)
-		default:
-			cc, err = canvas.Compile(ctx2, c)
-		}
+		cc, err := canvas.Compile(ctx2, c)
 		if err != nil {
 			common.Debug("RunAgent compile err",
 				zap.String("canvas", canvasID),
@@ -1745,47 +1570,17 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("run", runID),
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
-			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
 			return nil, fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err)
 		}
 
-		cpID := ""
-		if s.checkpointStore != nil {
-			cpID = runID
-		}
-
 		// Invoke.
-		var invokeOpts []compose.Option
-		if cpID != "" {
-			invokeOpts = []compose.Option{compose.WithCheckPointID(cpID)}
-		}
-		// On a resume, the user input is the resume payload for the
-		// previously-paused UserFillUp node — it does NOT represent
-		// a fresh sys.query. The 'BEGIN' node writes inputs["query"]
-		// straight into state.Sys["query"] (begin.go:76), and
-		// UserFillUp:Menu's initialUserFillUpData reads sys.query
-		// back to drive the menu's initial-input fast path. If we
-		// pass userInput through here on a resume, the menu would
-		// re-consume the resume text as a brand-new branch choice
-		// and Switch:Route would route to a fresh branch — the
-		// previously-paused branch would be silently dropped (the
-		// "second input doesn't resume" symptom reported for
-		// categorize / iteration / code / wait_input etc.).
-		wfInput := userInput
-		if isResume && resumeID != "" {
-			wfInput = ""
-		}
-		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, map[string]any{"query": userInput})
 		err = invokeErr
 		if errors.Is(err, context.Canceled) || errors.Is(ctx2.Err(), context.Canceled) {
 			// A user stop or client disconnect must not be turned into a
 			// failed/succeeded run and must not append a synthetic assistant
 			// message after the workflow has observed cancellation.
 			return nil, context.Canceled
-		}
-
-		if cpID != "" && s.runTracker != nil {
-			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
 		}
 
 		// Collect answer and references from the state snapshot.
@@ -1835,34 +1630,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("run", runID),
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
-			if canvas.IsInterruptError(err) {
-				resumeID := canvas.RootInterruptID(canvas.ExtractInterruptContexts(err))
-				if resumeID != "" && s.runTracker != nil {
-					_ = s.runTracker.AttachInterrupt(ctx2, runID, resumeID)
-					_ = s.runTracker.MarkWaiting(ctx2, runID)
-				}
-				if answer != "" {
-					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
-				}
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
-					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
-				}
-				if answer != "" && shouldEmitMessage {
-					if !messageEventsEmitted {
-						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
-					}
-
-					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: referencePayload,
-					})
-					emit("message_end", string(meData))
-				}
-				return state, err
-			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, assistantOutput)
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
-					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
 				if !messageEventsEmitted && shouldEmitMessage {
@@ -1887,18 +1657,14 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 				wfData, _ := json.Marshal(wfPayload)
 				emit("workflow_finished", string(wfData))
-
-				s.markRunSucceeded(ctx2, runID)
 				return state, nil
 			}
-			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, fmt.Errorf("canvas invoke: %w", err)
 		}
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		appendAssistantHistory(state, assistantOutput)
 		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
-			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 		}
 		if !messageEventsEmitted && shouldEmitMessage {
@@ -1925,8 +1691,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		wfData, _ := json.Marshal(wfPayload)
 		emit("workflow_finished", string(wfData))
-
-		s.markRunSucceeded(ctx2, runID)
 		return state, nil
 	}
 }
@@ -1987,9 +1751,8 @@ func deriveAgentSessionName(userInput any) string {
 	return string(runes)
 }
 
-// alone for first-touch runs, canvasID + sessionID for resumed runs
-// (so two concurrent sessions on the same canvas don't collide in
-// the snapshot map).
+// The run id is canvasID + sessionID so two concurrent sessions on the
+// same canvas don't collide in the state snapshot map.
 func runIDFor(canvasID string, root map[string]any) string {
 	if s, ok := root["session_id"].(string); ok && s != "" {
 		return canvasID + "-" + s
@@ -2295,58 +2058,12 @@ func pythonOutputKeyPriority(key string) int {
 	}
 }
 
-// tenantIDFromRoot returns the optional run-tracker tenant id that
-// RunAgent populated on the root map. Runtime components use
-// root["tenant_id"] / state.Sys["tenant_id"] for the caller tenant;
-// RunTracker keeps the historical joined-tenant dimension separately.
-// Empty when absent — the RunTracker stores "" as the tenant id, which
-// the test suite already exercises.
-func tenantIDFromRoot(root map[string]any) string {
-	if s, ok := root["run_tenant_id"].(string); ok {
-		return s
-	}
-	if s, ok := root["tenant_id"].(string); ok {
-		return s
-	}
-	return ""
-}
-
 func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
 	if err == nil || answer == "" {
 		return false
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "[GraphRunError] no tasks to execute")
-}
-
-// markRunSucceeded records the run as completed successfully via
-// the Redis-backed RunTracker. No-op when tracker is nil (test path)
-// or when the underlying Redis call fails (degraded boot).
-func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
-	if s.runTracker == nil {
-		return
-	}
-	if err := s.runTracker.MarkSucceeded(ctx, runID); err != nil {
-		common.Warn("service: RunAgent runTracker.MarkSucceeded (best-effort, run not blocked)",
-			zap.String("run_id", runID),
-			zap.Error(err))
-	}
-	_ = s.runTracker.ClearInterruptID(ctx, runID)
-}
-
-// markRunFailed records the run as failed (with reason) via the
-// Redis-backed RunTracker. No-op when tracker is nil or the
-// underlying Redis call fails.
-func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) {
-	if s.runTracker == nil {
-		return
-	}
-	if err := s.runTracker.MarkFailed(ctx, runID, reason); err != nil {
-		common.Warn("service: RunAgent runTracker.MarkFailed (best-effort, run not blocked)",
-			zap.String("run_id", runID),
-			zap.String("reason", reason),
-			zap.Error(err))
-	}
 }
 
 // normalisedDSLForRun returns the DSL map for the given version, or
@@ -2373,12 +2090,6 @@ func (s *AgentService) CancelSessionRun(ctx context.Context, userID, sessionID s
 			return ErrAgentNotOwner
 		}
 		active.requestCancel()
-		if s.runTracker != nil {
-			if _, err := s.runTracker.RequestCancelActiveSession(ctx, sessionID, active.leaseToken); err != nil {
-				common.Warn("agent cancel: redis publish failed", zap.String("session_id", sessionID), zap.Error(err))
-			}
-			return nil
-		}
 		if err := canvas.RequestCancel(ctx, sessionID); err != nil {
 			// Local cancellation is already effective; Redis failure only
 			// prevents cross-instance propagation.
@@ -2386,28 +2097,9 @@ func (s *AgentService) CancelSessionRun(ctx context.Context, userID, sessionID s
 		}
 		return nil
 	}
-	if s.runTracker != nil {
-		remote, err := s.runTracker.GetActiveSession(ctx, sessionID)
-		if err != nil {
-			return fmt.Errorf("agent cancel: read active session: %w: %w", err, ErrAgentStorageError)
-		}
-		if remote != nil {
-			if remote.UserID != "" && remote.UserID != userID {
-				return ErrAgentNotOwner
-			}
-			requested, err := s.runTracker.RequestCancelActiveSession(ctx, sessionID, remote.Token)
-			if err != nil {
-				return fmt.Errorf("agent cancel: publish remote marker: %w: %w", err, ErrAgentStorageError)
-			}
-			if !requested {
-				return nil
-			}
-			return nil
-		}
-	}
-	// A persisted conversation is not evidence of an active run. Once both the
-	// local registration and the distributed lease are absent, cancellation is
-	// an idempotent no-op. Publishing a session-scoped marker here would race
-	// completed-run cleanup and could cancel a later run that reuses sessionID.
+	// A persisted conversation is not evidence of an active run. Once the
+	// local registration is absent, cancellation is an idempotent no-op.
+	// Publishing a session-scoped marker here would race completed-run
+	// cleanup and could cancel a later run that reuses sessionID.
 	return nil
 }

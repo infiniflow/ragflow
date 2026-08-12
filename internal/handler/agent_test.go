@@ -926,54 +926,6 @@ func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DerivesUserInputFromInputs covers the wait-for-user
-// resume path used by the front-end: the follow-up submit posts `inputs`
-// instead of a top-level `query`. The handler must lift the nested field value
-// and pass it through as the resumed user input.
-func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","session_id":"s1","inputs":{"text":{"name":"text","value":"a b c d e","type":"line"}}}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	var captured any
-	runner := &captureChatRunner{captured: &captured}
-	h := &AgentHandler{chatRunner: runner}
-	h.AgentChatCompletions(c)
-
-	if captured != "a b c d e" {
-		t.Errorf("userInput = %#v, want %q (nested inputs.value)", captured, "a b c d e")
-	}
-}
-
-func TestAgentChatCompletions_DerivesStructuredUserInputFromInputs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","session_id":"s1","inputs":{"kb":{"name":"KB","value":"da1","type":"line"},"query":{"name":"Query","value":"合同","type":"line"}}}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	var captured any
-	runner := &captureChatRunner{captured: &captured}
-	h := &AgentHandler{chatRunner: runner}
-	h.AgentChatCompletions(c)
-
-	got, ok := captured.(map[string]any)
-	if !ok {
-		t.Fatalf("userInput type = %T, want map[string]any", captured)
-	}
-	if got["kb"] != "da1" || got["query"] != "合同" {
-		t.Fatalf("userInput = %#v, want kb=da1 query=合同", got)
-	}
-}
-
 // captureChatRunner records the userInput and files it was called with and
 // returns an empty (closed) channel. Used to assert on argument
 // derivation without exercising the runner.

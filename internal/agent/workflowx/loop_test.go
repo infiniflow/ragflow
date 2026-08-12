@@ -16,10 +16,8 @@
 
 // loop_test.go — pure logic and state-machine tests for the loop
 // extension. These tests build minimal outer/sub workflows and
-// assert the documented behavior of the loop state machine
-// without exercising full eino checkpoint persistence. Integration
-// scenarios (real checkpoint store, interrupt/resume) live in
-// loop_integration_test.go.
+// assert the documented behavior of the loop state machine.
+// Integration scenarios live in loop_integration_test.go.
 package workflowx
 
 import (
@@ -203,9 +201,8 @@ func TestLoop_DefaultSafetyMaxIterationsExceeded(t *testing.T) {
 	}
 	options := getLoopOptions(nil)
 	options.maxIterations = 3
-	options.enableSubCheckpoint = false
 
-	_, err = runLoopInvoke(context.Background(), "loop", compiledSub, 0, shouldQuit, options)
+	_, err = runLoopInvoke(context.Background(), compiledSub, 0, shouldQuit, options)
 	if !errors.Is(err, ErrLoopMaxIterationsExceeded) {
 		t.Fatalf("runLoopInvoke: got %v, want ErrLoopMaxIterationsExceeded", err)
 	}
@@ -298,9 +295,6 @@ func TestLoop_SubErrorStopsLoop(t *testing.T) {
 	_, err = compiled.Invoke(context.Background(), 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
-	}
-	if errors.Is(err, ErrLoopSubGraphInterrupted) {
-		t.Errorf("non-interrupt sub error must NOT be wrapped as ErrLoopSubGraphInterrupted: %v", err)
 	}
 	if !strings.Contains(err.Error(), "sub-fail") {
 		t.Errorf("error %q must propagate 'sub-fail'", err)

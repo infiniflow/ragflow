@@ -50,13 +50,9 @@ package workflowx
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"sync"
-
-	"github.com/google/uuid"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
@@ -75,9 +71,7 @@ const (
 	LoopStreamFinalOnly LoopStreamMode = "final_only"
 
 	// LoopStreamEveryIteration exposes each iteration's stream in
-	// sequence. Resume is iteration-granular: iterations already
-	// fully published are not replayed, while the interrupted
-	// iteration may be replayed from its start.
+	// sequence.
 	LoopStreamEveryIteration LoopStreamMode = "every_iteration"
 )
 
@@ -119,18 +113,6 @@ var (
 	// limits are normal termination, matching the canvas Python runtime.
 	ErrLoopMaxIterationsExceeded = errors.New("workflowx: loop max iterations exceeded")
 
-	// ErrLoopSubGraphInterrupted is wrapped around an interrupt error
-	// emitted by the sub-workflow. The original interrupt is still
-	// accessible via errors.Unwrap for callers that want to inspect
-	// it.
-	ErrLoopSubGraphInterrupted = errors.New("workflowx: sub-workflow interrupted")
-
-	// ErrLoopResumeStateInvalid is returned when the loop is being
-	// resumed but the saved state is missing, malformed, or refers
-	// to a non-positive iteration. This is a hard failure: the loop
-	// cannot safely continue from an inconsistent starting point.
-	ErrLoopResumeStateInvalid = errors.New("workflowx: resume state invalid")
-
 	// ErrLoopQuitConditionFailed wraps a non-nil error returned by
 	// the user-supplied LoopCondition. The loop aborts immediately.
 	ErrLoopQuitConditionFailed = errors.New("workflowx: quit condition failed")
@@ -141,15 +123,13 @@ var (
 type LoopOption func(*loopOptions)
 
 type loopOptions struct {
-	maxIterations       int
-	maxIterationsSet    bool
-	compileOpts         []compose.GraphCompileOption
-	runOpts             []compose.Option
-	streamMode          LoopStreamMode
-	checkpointBuilder   func(nodeKey string, iteration int) string
-	enableSubCheckpoint bool
-	onStart             func(context.Context, any)
-	onFinish            func(context.Context, error)
+	maxIterations    int
+	maxIterationsSet bool
+	compileOpts      []compose.GraphCompileOption
+	runOpts          []compose.Option
+	streamMode       LoopStreamMode
+	onStart          func(context.Context, any)
+	onFinish         func(context.Context, error)
 }
 
 // WithLoopMaxIterations caps the loop at n iterations. The cap is checked
@@ -167,8 +147,7 @@ func WithLoopMaxIterations(n int) LoopOption {
 }
 
 // WithLoopCompileOptions appends compile options to the inner sub-
-// workflow's Compile call. Useful for wiring a CheckPointStore or
-// Serializer just for the sub-graph.
+// workflow's Compile call.
 func WithLoopCompileOptions(opts ...compose.GraphCompileOption) LoopOption {
 	return func(o *loopOptions) {
 		o.compileOpts = append(o.compileOpts, opts...)
@@ -205,56 +184,9 @@ func WithLoopStream(mode LoopStreamMode) LoopOption {
 	}
 }
 
-// WithLoopCheckpointIDBuilder supplies a deterministic checkpoint ID
-// for each sub-workflow invocation. eino does not expose the active
-// outer checkpoint ID through ctx, so the loop extension cannot
-// derive child IDs by itself.
-//
-// If the builder is not supplied, a reserved-namespace default is
-// used that combines the loop node key and the iteration number with
-// a UUID. The default is fine for ad-hoc invocations but does NOT
-// guarantee re-entrant resume: a resumed run would derive a fresh
-// UUID and the sub-workflow would not find the partial state from
-// the interrupted run. Production callers that need checkpoint/
-// resume MUST supply a builder that returns stable IDs across
-// invocations (e.g. "<parent-id>:<nodeKey>:<iteration>").
-func WithLoopCheckpointIDBuilder(b func(nodeKey string, iteration int) string) LoopOption {
-	return func(o *loopOptions) {
-		if b != nil {
-			o.checkpointBuilder = b
-		}
-	}
-}
-
-// WithLoopEnableSubCheckpoint opts the loop into passing
-// compose.WithCheckPointID to the sub-workflow on every nested
-// Invoke/Stream call and persisting the nested sub-workflow
-// checkpoint through an internal bridge store.
-//
-// The default is true. Disabling it is only useful when the caller
-// explicitly wants the smaller/no-sub-checkpoint behavior and
-// accepts that resume may replay the in-flight iteration from the
-// beginning.
-func WithLoopEnableSubCheckpoint(enable bool) LoopOption {
-	return func(o *loopOptions) {
-		o.enableSubCheckpoint = enable
-	}
-}
-
-// defaultCheckpointBuilder returns a UUID-based child checkpoint ID.
-// It is intentionally non-deterministic so that callers who do not
-// configure WithLoopCheckpointIDBuilder get a fresh sub-checkpoint
-// on every iteration, which is the safe default for invocations
-// that do not need cross-run resume.
-func defaultCheckpointBuilder(nodeKey string, iteration int) string {
-	return fmt.Sprintf("workflowx-cp:%s:%d:%s", nodeKey, iteration, uuid.NewString())
-}
-
 func getLoopOptions(opts []LoopOption) *loopOptions {
 	o := &loopOptions{
-		streamMode:          LoopStreamFinalOnly,
-		checkpointBuilder:   defaultCheckpointBuilder,
-		enableSubCheckpoint: true,
+		streamMode: LoopStreamFinalOnly,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -263,24 +195,6 @@ func getLoopOptions(opts []LoopOption) *loopOptions {
 		o.maxIterations = defaultMaxIterations
 	}
 	return o
-}
-
-// loopInterruptState is the loop-local checkpoint payload. It is
-// marshaled to []byte and stored as the state argument of
-// StatefulInterrupt / CompositeInterrupt so a resumed run can
-// continue from the interrupted iteration rather than restart.
-//
-// The struct intentionally avoids a generic field for the input
-// value: storing CurrentInput as []byte (the JSON encoding produced
-// by the loop itself) sidesteps the need for callers to register
-// generic types with the schema package — see plan §"Type shape".
-type loopInterruptState struct {
-	Iteration       int               `json:"iteration"`
-	CurrentInput    []byte            `json:"current_input"`
-	StreamMode      LoopStreamMode    `json:"stream_mode"`
-	SubCheckpointID string            `json:"sub_checkpoint_id"`
-	SubCheckpoints  map[string][]byte `json:"sub_checkpoints,omitempty"`
-	ReplayChunks    [][]byte          `json:"replay_chunks,omitempty"`
 }
 
 // AddLoopNode appends a loop node to the outer workflow `wf`. The
@@ -316,11 +230,7 @@ func AddLoopNode[T any](ctx context.Context, wf *compose.Workflow[T, T], key str
 	// Compile the sub-workflow up front. Surface compile-time
 	// failures directly so the caller never sees a half-built outer
 	// workflow.
-	compileOpts := append([]compose.GraphCompileOption{}, options.compileOpts...)
-	if options.enableSubCheckpoint {
-		compileOpts = append(compileOpts, compose.WithCheckPointStore(newLoopBridgeStore()))
-	}
-	compiled, err := sub.Compile(ctx, compileOpts...)
+	compiled, err := sub.Compile(ctx, options.compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("workflowx: compile sub workflow %q: %w", key, err)
 	}
@@ -334,7 +244,7 @@ func AddLoopNode[T any](ctx context.Context, wf *compose.Workflow[T, T], key str
 			if options.onStart != nil {
 				options.onStart(ctx, input)
 			}
-			out, err := runLoopInvoke(ctx, key, compiled, input, shouldQuit, options)
+			out, err := runLoopInvoke(ctx, compiled, input, shouldQuit, options)
 			if options.onFinish != nil {
 				options.onFinish(ctx, err)
 			}
@@ -344,7 +254,7 @@ func AddLoopNode[T any](ctx context.Context, wf *compose.Workflow[T, T], key str
 			if options.onStart != nil {
 				options.onStart(ctx, input)
 			}
-			reader, err := runLoopStream(ctx, key, compiled, input, shouldQuit, options)
+			reader, err := runLoopStream(ctx, compiled, input, shouldQuit, options)
 			if err != nil {
 				if options.onFinish != nil {
 					options.onFinish(ctx, err)
@@ -363,134 +273,16 @@ func AddLoopNode[T any](ctx context.Context, wf *compose.Workflow[T, T], key str
 	return wf.AddLambdaNode(key, lambda), nil
 }
 
-// loopSnapshot captures the live state of an in-flight loop run.
-// It is used by both invoke and stream paths to share the resume
-// detection logic.
-type loopSnapshot struct {
-	startIteration int
-	current        []byte // JSON-encoded current input
-	streamMode     LoopStreamMode
-	subCheckID     string
-	subCheckpoints map[string][]byte
-	replayChunks   [][]byte
-}
-
-// loadLoopSnapshot reads the loop state from the context if the
-// current run is a resume. On a fresh run it returns a zero snapshot
-// that drives iteration 1 with the outer input.
-func loadLoopSnapshot[T any](ctx context.Context, defaultMode LoopStreamMode) (loopSnapshot, error) {
-	wasInterrupted, hasState, payload := compose.GetInterruptState[[]byte](ctx)
-	if !wasInterrupted || !hasState {
-		return loopSnapshot{
-			startIteration: 1,
-			streamMode:     defaultMode,
-		}, nil
-	}
-	var st loopInterruptState
-	if err := json.Unmarshal(payload, &st); err != nil {
-		return loopSnapshot{}, fmt.Errorf("%w: decode state: %v", ErrLoopResumeStateInvalid, err)
-	}
-	if st.Iteration < 1 {
-		return loopSnapshot{}, fmt.Errorf("%w: bad iteration %d", ErrLoopResumeStateInvalid, st.Iteration)
-	}
-	if st.CurrentInput == nil {
-		return loopSnapshot{}, fmt.Errorf("%w: missing current_input", ErrLoopResumeStateInvalid)
-	}
-	streamMode := st.StreamMode
-	if streamMode == "" {
-		streamMode = defaultMode
-	}
-	return loopSnapshot{
-		startIteration: st.Iteration,
-		current:        st.CurrentInput,
-		streamMode:     streamMode,
-		subCheckID:     st.SubCheckpointID,
-		subCheckpoints: cloneCheckpointMap(st.SubCheckpoints),
-		replayChunks:   cloneByteSlices(st.ReplayChunks),
-	}, nil
-}
-
-// encodeState marshals a loop snapshot to the persisted form.
-func encodeState(s loopSnapshot) ([]byte, error) {
-	return json.Marshal(loopInterruptState{
-		Iteration:       s.startIteration,
-		CurrentInput:    s.current,
-		StreamMode:      s.streamMode,
-		SubCheckpointID: s.subCheckID,
-		SubCheckpoints:  cloneCheckpointMap(s.subCheckpoints),
-		ReplayChunks:    cloneByteSlices(s.replayChunks),
-	})
-}
-
 // runLoopInvoke executes the loop on the invoke path. It is the
-// body of the loop lambda's Invoke handler. See the package doc and
-// plan §"Invoke path" for the documented state machine.
-func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runnable[T, T], input T, shouldQuit LoopCondition[T], options *loopOptions) (T, error) {
+// body of the loop lambda's Invoke handler.
+func runLoopInvoke[T any](ctx context.Context, sub compose.Runnable[T, T], input T, shouldQuit LoopCondition[T], options *loopOptions) (T, error) {
 	var zero T
-
-	snap, err := loadLoopSnapshot[T](ctx, options.streamMode)
-	if err != nil {
-		return zero, err
-	}
-
-	// Resolve the starting input. On a fresh run it is the outer
-	// lambda input. On a resume it is the JSON blob we persisted.
-	var current T
-	if snap.startIteration == 1 && snap.current == nil {
-		current = input
-	} else {
-		if err := json.Unmarshal(snap.current, &current); err != nil {
-			return zero, fmt.Errorf("%w: decode current input: %v", ErrLoopResumeStateInvalid, err)
-		}
-	}
-
-	iteration := snap.startIteration
-	subCheckID := snap.subCheckID
-	bridgeState := newLoopBridgeState(snap.subCheckpoints)
+	current := input
+	iteration := 1
 
 	for {
-		// Derive the per-iteration child checkpoint ID. On a fresh
-		// run this is the caller's builder output; on a resume the
-		// saved ID is reused so the sub-workflow can pick up where
-		// it left off.
-		if subCheckID == "" {
-			subCheckID = options.checkpointBuilder(nodeKey, iteration)
-		}
-
-		// Marshal the input we are about to feed the sub-workflow.
-		// We persist the JSON so a resume can re-feed the same
-		// input without re-running the previous iteration.
-		currentJSON, err := json.Marshal(current)
-		if err != nil {
-			return zero, fmt.Errorf("workflowx: marshal iteration %d input: %w", iteration, err)
-		}
-
-		subCtx := withLoopBridgeState(ctx, bridgeState)
-		next, runErr := sub.Invoke(subCtx, current, withSubCheckpoint(options.runOpts, subCheckID, options.enableSubCheckpoint)...)
+		next, runErr := sub.Invoke(ctx, current, options.runOpts...)
 		if runErr != nil {
-			if isInterruptError(runErr) {
-				// Persist loop state, then propagate the
-				// interrupt so the outer graph sees a
-				// composite interrupt that the caller can
-				// resume via the standard eino
-				// ResumeWithData / BatchResumeWithData
-				// primitives.
-				state, mErr := encodeState(loopSnapshot{
-					startIteration: iteration,
-					current:        currentJSON,
-					streamMode:     snap.streamMode,
-					subCheckID:     subCheckID,
-					subCheckpoints: bridgeState.snapshot(),
-				})
-				if mErr != nil {
-					return zero, fmt.Errorf("workflowx: encode interrupt state: %w", mErr)
-				}
-				// errors.Join preserves the sentinel via
-				// errors.Is while the framework still
-				// sees the composite interrupt error.
-				return zero, errors.Join(ErrLoopSubGraphInterrupted,
-					compose.CompositeInterrupt(ctx, nil, state, runErr))
-			}
 			return zero, fmt.Errorf("workflowx: iteration %d: %w", iteration, runErr)
 		}
 
@@ -501,7 +293,6 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 			return zero, fmt.Errorf("%w: iteration %d: %v", ErrLoopQuitConditionFailed, iteration, qErr)
 		}
 		if quit {
-			bridgeState.delete(subCheckID)
 			return next, nil
 		}
 
@@ -510,19 +301,14 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 		// case. Explicit caps are normal termination; the default cap is
 		// the runaway-loop safety net and remains an error.
 		if iteration >= options.maxIterations {
-			bridgeState.delete(subCheckID)
 			if options.maxIterationsSet {
 				return next, nil
 			}
 			return zero, fmt.Errorf("%w: %d", ErrLoopMaxIterationsExceeded, options.maxIterations)
 		}
 
-		bridgeState.delete(subCheckID)
 		current = next
 		iteration++
-		// Reset the per-iteration child ID so the next iteration
-		// derives a fresh one.
-		subCheckID = ""
 	}
 }
 
@@ -536,112 +322,35 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 //  2. The stream-mode policy decides whether each iteration's reader
 //     is concatenated into a single output reader (FinalOnly) or
 //     released eagerly (EveryIteration).
-//
-// Interrupt propagation follows the same CompositeInterrupt pattern
-// as the invoke path. The persisted state carries the StreamMode
-// and the per-iteration sub-checkpoint ID so a resume can re-emit
-// from the interrupted iteration.
-//
-// Resume semantics are mode-specific (per plan §"Checkpoint /
-// Resume Design"):
-//
-//   - FinalOnly: only the in-flight final iteration's stream may be
-//     re-emitted. Earlier iterations' streams were never exposed to
-//     the caller.
-//   - EveryIteration: the resumed run re-emits the full stream from
-//     iteration 1. Downstream consumers MUST be replay-tolerant.
 func runLoopStream[T any](
 	ctx context.Context,
-	nodeKey string,
 	sub compose.Runnable[T, T],
 	input T,
 	shouldQuit LoopCondition[T],
 	options *loopOptions,
 ) (*schema.StreamReader[T], error) {
 	var zero T
+	current := input
+	iteration := 1
 
-	snap, err := loadLoopSnapshot[T](ctx, options.streamMode)
-	if err != nil {
-		return nil, err
-	}
-
-	var current T
-	if snap.startIteration == 1 && snap.current == nil {
-		current = input
-	} else {
-		if err := json.Unmarshal(snap.current, &current); err != nil {
-			return nil, fmt.Errorf("%w: decode current input: %v", ErrLoopResumeStateInvalid, err)
-		}
-	}
-
-	iteration := snap.startIteration
-	subCheckID := snap.subCheckID
-	bridgeState := newLoopBridgeState(snap.subCheckpoints)
-
+	streamMode := options.streamMode
 	// Pre-allocate the per-iteration readers we will concatenate.
 	// The readers are populated lazily by `produce` below and then
-	// consumed by the merge step. We need an upper bound so we can
-	// size the slice: maxIterations is always set (default or
-	// user-supplied), so a bound of maxIterations - snap.startIteration + 1
-	// is safe and tight.
-	remaining := max(options.maxIterations-snap.startIteration+1, 1)
+	// consumed by the merge step. maxIterations is always set
+	// (default or user-supplied), so it is a safe upper bound.
+	streamReaders := make([]*schema.StreamReader[T], 0, options.maxIterations)
 
-	streamMode := snap.streamMode
-	streamReaders := make([]*schema.StreamReader[T], 0, remaining)
-	replayHistory := cloneByteSlices(snap.replayChunks)
-	prefilledReplay := false
-	if streamMode == LoopStreamEveryIteration && len(replayHistory) > 0 {
-		// Resume is iteration-granular, not chunk-granular: we can
-		// deterministically replay fully persisted iteration output,
-		// but the public Eino APIs do not expose a reliable downstream
-		// chunk cursor for "resume from the first un-emitted chunk".
-		replayed, derr := decodeReplayChunks[T](replayHistory)
-		if derr != nil {
-			return nil, fmt.Errorf("%w: decode replay chunks: %v", ErrLoopResumeStateInvalid, derr)
-		}
-		streamReaders = append(streamReaders, schema.StreamReaderFromArray(replayed))
-		prefilledReplay = true
-	}
 	pipeErrCh := make(chan error, 1)
 	allClosed := make(chan struct{})
 
 	// produce runs the loop body in a goroutine and feeds the
 	// per-iteration stream readers into streamReaders. The first
-	// error terminates the loop. On interrupt the loop persists
-	// state and re-throws via CompositeInterrupt, which is
-	// propagated to the pipe below.
+	// error terminates the loop.
 	go func() {
 		defer close(allClosed)
 		for {
-			if subCheckID == "" {
-				subCheckID = options.checkpointBuilder(nodeKey, iteration)
-			}
-			currentJSON, jerr := json.Marshal(current)
-			if jerr != nil {
-				pipeErrCh <- fmt.Errorf("workflowx: marshal iteration %d input: %w", iteration, jerr)
-				return
-			}
-
-			subCtx := withLoopBridgeState(ctx, bridgeState)
-			reader, serr := sub.Stream(subCtx, current, withSubCheckpoint(options.runOpts, subCheckID, options.enableSubCheckpoint)...)
+			reader, serr := sub.Stream(ctx, current, options.runOpts...)
 			if serr != nil {
-				if isInterruptError(serr) {
-					state, mErr := encodeState(loopSnapshot{
-						startIteration: iteration,
-						current:        currentJSON,
-						streamMode:     streamMode,
-						subCheckID:     subCheckID,
-						subCheckpoints: bridgeState.snapshot(),
-						replayChunks:   replayHistory,
-					})
-					if mErr != nil {
-						pipeErrCh <- fmt.Errorf("workflowx: encode interrupt state: %w", mErr)
-						return
-					}
-					pipeErrCh <- errors.Join(ErrLoopSubGraphInterrupted,
-						compose.CompositeInterrupt(ctx, nil, state, serr))
-					return
-				}
 				pipeErrCh <- fmt.Errorf("workflowx: iteration %d: %w", iteration, serr)
 				return
 			}
@@ -652,24 +361,7 @@ func runLoopStream[T any](
 			// `next` for the next iteration.
 			collected, cerr := readAllStream(reader)
 			if cerr != nil {
-				if isInterruptError(cerr) {
-					state, mErr := encodeState(loopSnapshot{
-						startIteration: iteration,
-						current:        currentJSON,
-						streamMode:     streamMode,
-						subCheckID:     subCheckID,
-						subCheckpoints: bridgeState.snapshot(),
-						replayChunks:   replayHistory,
-					})
-					if mErr != nil {
-						pipeErrCh <- fmt.Errorf("workflowx: encode interrupt state: %w", mErr)
-						return
-					}
-					pipeErrCh <- errors.Join(ErrLoopSubGraphInterrupted,
-						compose.CompositeInterrupt(ctx, nil, state, cerr))
-					return
-				}
-				pipeErrCh <- cerr
+				pipeErrCh <- fmt.Errorf("workflowx: iteration %d stream: %w", iteration, cerr)
 				return
 			}
 			if len(collected) == 0 {
@@ -677,30 +369,7 @@ func runLoopStream[T any](
 				return
 			}
 			next := collected[len(collected)-1]
-			replay := collected
-			if streamMode == LoopStreamFinalOnly {
-				// Defer the decision: only the LAST
-				// iteration's stream is exposed. We
-				// accumulate all iterations here and
-				// release the last one when the loop
-				// ends. The intermediate readers are
-				// kept referenced until the loop exits
-				// to prevent premature stream close.
-				replay = collected
-			}
-
-			if !(streamMode == LoopStreamEveryIteration && prefilledReplay && iteration == snap.startIteration) {
-				streamReaders = append(streamReaders, schema.StreamReaderFromArray(replay))
-			}
-			prefilledReplay = false
-			if streamMode == LoopStreamEveryIteration {
-				encoded, eerr := encodeReplayChunks(collected)
-				if eerr != nil {
-					pipeErrCh <- fmt.Errorf("workflowx: encode replay chunks: %w", eerr)
-					return
-				}
-				replayHistory = append(replayHistory, encoded...)
-			}
+			streamReaders = append(streamReaders, schema.StreamReaderFromArray(collected))
 
 			quit, qErr := shouldQuit(ctx, iteration, current, next)
 			if qErr != nil {
@@ -708,21 +377,17 @@ func runLoopStream[T any](
 				return
 			}
 			if quit {
-				bridgeState.delete(subCheckID)
 				return
 			}
 			if iteration >= options.maxIterations {
-				bridgeState.delete(subCheckID)
 				if options.maxIterationsSet {
 					return
 				}
 				pipeErrCh <- fmt.Errorf("%w: %d", ErrLoopMaxIterationsExceeded, options.maxIterations)
 				return
 			}
-			bridgeState.delete(subCheckID)
 			current = next
 			iteration++
-			subCheckID = ""
 		}
 	}()
 
@@ -737,8 +402,7 @@ func runLoopStream[T any](
 			// according to streamMode, then signal any error
 			// from the goroutine.
 			sendIterations(streamReaders, streamMode, outWriter)
-			// Drain any pending error. If we get an interrupt
-			// or other error from produce, surface it.
+			// Drain any pending error from produce.
 			select {
 			case err := <-pipeErrCh:
 				if err != nil {
@@ -749,9 +413,8 @@ func runLoopStream[T any](
 		case err := <-pipeErrCh:
 			// Produce emitted an error before closing; the
 			// readers produced so far are still useful only
-			// for LoopStreamEveryIteration. We re-emit them
-			// so the resume contract is honored, then
-			// surface the error.
+			// for LoopStreamEveryIteration. Re-emit them,
+			// then surface the error.
 			if streamMode == LoopStreamEveryIteration {
 				sendIterations(streamReaders, streamMode, outWriter)
 			}
@@ -825,7 +488,7 @@ func sendIterations[T any](readers []*schema.StreamReader[T], mode LoopStreamMod
 
 // readAllStream drains sr and returns every value emitted. The
 // reader is closed on return. EOF terminates the read; any other
-// non-nil error is propagated so interrupt-like errors are not lost.
+// non-nil error is propagated.
 func readAllStream[T any](sr *schema.StreamReader[T]) ([]T, error) {
 	defer sr.Close()
 	var out []T
@@ -839,177 +502,4 @@ func readAllStream[T any](sr *schema.StreamReader[T]) ([]T, error) {
 		}
 		out = append(out, v)
 	}
-}
-
-// isInterruptError reports whether err is an eino interrupt signal
-// (Interrupt, StatefulInterrupt, CompositeInterrupt, sub-graph
-// interrupt, or the deprecated and-rerun form). Detecting
-// interrupts is required so we can persist loop state and re-throw
-// via CompositeInterrupt.
-func isInterruptError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if _, ok := compose.ExtractInterruptInfo(err); ok {
-		return true
-	}
-	if _, ok := compose.IsInterruptRerunError(err); ok {
-		return true
-	}
-	return false
-}
-
-// withSubCheckpoint returns opts with a leading WithCheckPointID
-// carrying the loop's per-iteration child id. The id is set
-// on every nested Invoke/Stream so the sub-workflow's interrupt
-// state is persisted under a stable key. The caller-supplied
-// opts follow; a user-provided WithCheckPointID would shadow
-// the loop's id, which is the intended precedence.
-//
-// enable gates the option injection. When false, the loop still
-// propagates sub-workflow interrupts correctly, but the nested
-// sub-workflow does not get a checkpoint namespace and resume of
-// an in-flight iteration may replay from the beginning.
-func withSubCheckpoint(opts []compose.Option, cpID string, enable bool) []compose.Option {
-	if !enable {
-		return opts
-	}
-	out := make([]compose.Option, 0, len(opts)+1)
-	out = append(out, compose.WithCheckPointID(cpID))
-	out = append(out, opts...)
-	return out
-}
-
-type loopBridgeStoreKey struct{}
-
-type loopBridgeState struct {
-	mu   sync.RWMutex
-	data map[string][]byte
-}
-
-func newLoopBridgeState(data map[string][]byte) *loopBridgeState {
-	cloned := cloneCheckpointMap(data)
-	if cloned == nil {
-		cloned = make(map[string][]byte)
-	}
-	return &loopBridgeState{data: cloned}
-}
-
-func (s *loopBridgeState) get(id string) ([]byte, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	v, ok := s.data[id]
-	if !ok {
-		return nil, false
-	}
-	buf := make([]byte, len(v))
-	copy(buf, v)
-	return buf, true
-}
-
-func (s *loopBridgeState) set(id string, payload []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.data == nil {
-		s.data = make(map[string][]byte)
-	}
-	buf := make([]byte, len(payload))
-	copy(buf, payload)
-	s.data[id] = buf
-}
-
-func (s *loopBridgeState) delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.data, id)
-}
-
-func (s *loopBridgeState) snapshot() map[string][]byte {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneCheckpointMap(s.data)
-}
-
-type loopBridgeStore struct{}
-
-func newLoopBridgeStore() *loopBridgeStore {
-	return &loopBridgeStore{}
-}
-
-func withLoopBridgeState(ctx context.Context, state *loopBridgeState) context.Context {
-	return context.WithValue(ctx, loopBridgeStoreKey{}, state)
-}
-
-func (s *loopBridgeStore) Get(ctx context.Context, checkPointID string) ([]byte, bool, error) {
-	state, ok := ctx.Value(loopBridgeStoreKey{}).(*loopBridgeState)
-	if !ok || state == nil {
-		return nil, false, nil
-	}
-	payload, found := state.get(checkPointID)
-	return payload, found, nil
-}
-
-func (s *loopBridgeStore) Set(ctx context.Context, checkPointID string, checkPoint []byte) error {
-	state, ok := ctx.Value(loopBridgeStoreKey{}).(*loopBridgeState)
-	if !ok || state == nil {
-		return nil
-	}
-	state.set(checkPointID, checkPoint)
-	return nil
-}
-
-func cloneCheckpointMap(src map[string][]byte) map[string][]byte {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make(map[string][]byte, len(src))
-	for k, v := range src {
-		buf := make([]byte, len(v))
-		copy(buf, v)
-		dst[k] = buf
-	}
-	return dst
-}
-
-func cloneByteSlices(src [][]byte) [][]byte {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make([][]byte, len(src))
-	for i, v := range src {
-		buf := make([]byte, len(v))
-		copy(buf, v)
-		dst[i] = buf
-	}
-	return dst
-}
-
-func encodeReplayChunks[T any](chunks []T) ([][]byte, error) {
-	if len(chunks) == 0 {
-		return nil, nil
-	}
-	out := make([][]byte, 0, len(chunks))
-	for _, chunk := range chunks {
-		b, err := json.Marshal(chunk)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, nil
-}
-
-func decodeReplayChunks[T any](chunks [][]byte) ([]T, error) {
-	if len(chunks) == 0 {
-		return nil, nil
-	}
-	out := make([]T, 0, len(chunks))
-	for _, chunk := range chunks {
-		var v T
-		if err := json.Unmarshal(chunk, &v); err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	return out, nil
 }

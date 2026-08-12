@@ -20,7 +20,7 @@
 // assertion on the loop output. It is kept in its own file (rather
 // than mixed in with loop_integration_test.go) so newcomers can find
 // the smallest working example without scrolling past dozens of
-// interrupt / resume / stream-mode tests.
+// stream-mode tests.
 //
 // If you change this test, also revisit the package doc comment in
 // loop.go and the .claude/plans/eino-workflow-loop.md plan, since
@@ -61,9 +61,6 @@ func TestExample_AddLoopNode(t *testing.T) {
 
 	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
-		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
-			return "example-loop:" + itoa(iter)
-		}),
 	)
 	if err != nil {
 		t.Fatalf("AddLoopNode: %v", err)

@@ -48,7 +48,7 @@ import (
 // ProgressPhase classifies a component lifecycle event emitted by
 // TrackProgress. The integer values are stable and persisted in the
 // ingestion_task_log.phase column, so they are part of the data contract
-// (see internal/ingestion/pipeline PROGRESS_LOG_RESUME_PLAN §5.1):
+// (see internal/ingestion/pipeline):
 //
 //	PhaseEnter = 0  component just started
 //	PhaseExit  = 1  component finished cleanly
@@ -72,8 +72,7 @@ const (
 // Err is non-nil only when Phase == PhaseError.
 //
 // ProgressEvent deliberately does NOT carry the component's output:
-// resume is owned by the framework's eino checkpoint, so progress is
-// purely observational (plan §5.1 / §5.3). Keeping the event free of
+// progress is purely observational. Keeping the event free of
 // output also avoids serializing large payloads on every event.
 //
 // Concrete sinks (ingestion task-log writer, in-memory test recorder)

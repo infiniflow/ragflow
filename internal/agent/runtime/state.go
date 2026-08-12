@@ -39,8 +39,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/cloudwego/eino/compose"
 )
 
 // CanvasState is the per-run shared state bag that all components read/write
@@ -56,7 +54,7 @@ import (
 //   - Retrieval   : aggregate retrieval result (chunks, doc_aggs)
 //   - Globals     : cross-canvas-instance globals
 //   - CancelFlag  : set when cancel signal received; nodes may poll
-//   - RunID       : unique per-run identifier (used by RunTracker + CheckPointStore)
+//   - RunID       : unique per-run identifier
 type CanvasState struct {
 	mu                 sync.RWMutex
 	activeHistoryIndex int
@@ -113,19 +111,6 @@ func (s *CanvasState) EnsureSysDate() {
 	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
 }
 
-// init registers CanvasState with eino's internal type registry so
-// that eino's StatePre/Post handler chain (which uses its own
-// InternalSerializer, NOT stdlib encoding/json) recognises the
-// type during the deepCopyState call that fires on every interrupt
-// boundary. eino's serialization registry requires the type to
-// implement both json.Marshaler AND json.Unmarshaler; CanvasState
-// has both (below). Without this init, the interrupt path surfaces
-// "failed to marshal state: unknown type: runtime.CanvasState"
-// and the resume cycle is blocked at the eino layer.
-func init() {
-	_ = compose.RegisterSerializableType[CanvasState]("runtime.CanvasState")
-}
-
 // canvasStateJSON is the wire shape used by MarshalJSON / UnmarshalJSON.
 // Defined so the field tags and omitempty semantics are pinned in one
 // place. The CancelFlag is round-tripped as a bool (atomic.Bool can't
@@ -145,22 +130,14 @@ type canvasStateJSON struct {
 	SessionID          string                    `json:"session_id"`
 }
 
-// MarshalJSON serialises the CanvasState for eino's StatePre/Post
-// handler chain (which JSON-encodes the state on every node boundary
-// when a StateSerializer is wired) and for Redis-backed CheckPointStore
-// payloads.
-//
-// Eino's interrupt path hit "failed to marshal state: unknown
-// type: runtime.CanvasState"
-// because the struct had no MarshalJSON and contained a sync.RWMutex
-// (unexported) + atomic.Bool (indirected; serialises as 8 bytes
-// without explicit handling). This hook defines the stable wire shape
-// (canvasStateJSON) and serialises through it.
+// MarshalJSON serialises the CanvasState into the stable wire shape
+// (canvasStateJSON). The struct contains a sync.RWMutex (unexported)
+// and an atomic.Bool (indirected; serialises as 8 bytes without
+// explicit handling), so the explicit hook defines the JSON form.
 //
 // Concurrency: the lock is held briefly while we snapshot the maps;
-// readers may briefly block during marshal, which is fine for the
-// checkpoint/serializer hot path. The lock is read-only so concurrent
-// SetVar calls also proceed.
+// readers may briefly block during marshal. The lock is read-only so
+// concurrent SetVar calls also proceed.
 func (s *CanvasState) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -190,10 +167,11 @@ func (s *CanvasState) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON restores the wire shape produced by MarshalJSON.
-// Cancels the read-lock contention: an unmarshal only happens during
-// checkpoint restore (rare) and boot, so we accept the lock-acquire
-// cost. atomic.Bool is allocated so the loaded value lands on a real
-// pointer (nodes may poll it concurrently with unmarshal completion).
+// Cancels the read-lock contention: an unmarshal only happens when
+// the state is deserialised at node boundaries, so we accept the
+// lock-acquire cost. atomic.Bool is allocated so the loaded value
+// lands on a real pointer (nodes may poll it concurrently with
+// unmarshal completion).
 func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	var snap canvasStateJSON
 	if err := json.Unmarshal(b, &snap); err != nil {

@@ -267,51 +267,19 @@ func TestDecodeCanvasFromDSL_PreservesNodeParents(t *testing.T) {
 	}
 }
 
-// TestNewAgentServiceWithOptions_NilOptions pins that the new
-// constructor accepts all-nil options and produces a usable
-// service (no panic on field init, no nil-deref when running
-// without Redis). Existing test sites rely on this — the
-// zero-arg NewAgentService() now just delegates here.
-func TestNewAgentServiceWithOptions_NilOptions(t *testing.T) {
+// TestNewAgentService_ConstructsPins that the constructor produces a
+// usable service (no panic on field init).
+func TestNewAgentService_Constructs(t *testing.T) {
 	t.Parallel()
-	svc := NewAgentServiceWithOptions(nil, nil, nil)
+	svc := NewAgentService()
 	if svc == nil {
-		t.Fatal("NewAgentServiceWithOptions returned nil")
+		t.Fatal("NewAgentService returned nil")
 	}
 	if svc.runner == nil {
 		t.Error("runner is nil after construction")
 	}
-	if svc.checkpointStore != nil {
-		t.Error("checkpointStore should be nil when constructed with nil")
-	}
-	if svc.stateSerializer != nil {
-		t.Error("stateSerializer should be nil when constructed with nil")
-	}
-	if svc.runTracker != nil {
-		t.Error("runTracker should be nil when constructed with nil")
-	}
 	if svc.canvasDAO == nil || svc.versionDAO == nil {
 		t.Error("DAOs should be non-nil after construction")
-	}
-}
-
-// TestNewAgentService_DefaultsToNilOptions pins that the legacy
-// zero-arg NewAgentService() is functionally equivalent to
-// NewAgentServiceWithOptions(nil, nil, nil) — the field values
-// must match exactly so existing call sites don't observe a
-// behavioural change.
-func TestNewAgentService_DefaultsToNilOptions(t *testing.T) {
-	t.Parallel()
-	a := NewAgentService()
-	b := NewAgentServiceWithOptions(nil, nil, nil)
-	if a.checkpointStore != b.checkpointStore {
-		t.Errorf("checkpointStore mismatch: %v vs %v", a.checkpointStore, b.checkpointStore)
-	}
-	if a.stateSerializer != b.stateSerializer {
-		t.Errorf("stateSerializer mismatch: %v vs %v", a.stateSerializer, b.stateSerializer)
-	}
-	if a.runTracker != b.runTracker {
-		t.Errorf("runTracker mismatch: %v vs %v", a.runTracker, b.runTracker)
 	}
 }
 

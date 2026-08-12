@@ -1524,8 +1524,7 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 // when chunks is non-empty. The python rag/flow/extractor/extractor.py
 // build_existing_prompt path performs the same substitution at
 // runtime; the Go port surfaces it as a regex on the prompt
-// template so the resume template's `{TitleChunker:FlatMiceFix@chunks}`
-// reference resolves without invoking a template engine.
+// template so the reference resolves without invoking a template engine.
 //
 // Substitution is opt-in: when chunks is nil/empty the placeholder
 // is left intact so a misconfigured template surfaces as a
@@ -1566,9 +1565,7 @@ func buildExtractorMessages(system, prompt, chunkText string, chunks []map[strin
 //	{CmpName:ParamName@chunks}
 //
 // The CmpName and ParamName are both matched but ignored — the
-// substitute is always "the joined chunk text" today, because the
-// only @chunks reference in production templates is the resume
-// template's `{TitleChunker:FlatMiceFix@chunks}` pattern. The
+// substitute is always "the joined chunk text" today. The
 // CmpName/ParamName parsing exists so a future per-component
 // substitution can extend the function without breaking the
 // existing call sites.

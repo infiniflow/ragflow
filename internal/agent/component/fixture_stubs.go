@@ -40,9 +40,9 @@ import (
 	"context"
 	"fmt"
 
-	"ragflow/internal/agent/runtime"
-
 	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // ----- Retrieval -----
@@ -325,10 +325,7 @@ func buildLLMParamFromV1Params(p map[string]any) (LLMParam, error) {
 const componentNameAnswer = "Answer"
 
 // AnswerStub is a fixture stub for the Answer component. Answer
-// is the agent's "wait for user" node (it pairs with ExeSQL or
-// Message in conversational flows). The real implementation
-// pauses the run and resumes on user input via the eino
-// interrupt path (see canvas/interrupt_resume.go); the stub
+// pairs with ExeSQL or Message in conversational flows; the stub
 // returns an empty answer immediately so the e2e flow can
 // complete.
 type AnswerStub struct{}
@@ -341,9 +338,7 @@ func NewAnswerStub(_ map[string]any) (Component, error) {
 // Name returns the registered component name.
 func (a *AnswerStub) Name() string { return componentNameAnswer }
 
-// Invoke returns an empty answer. Real implementation will block
-// until the user provides input; the stub is fire-and-forget so
-// the e2e flow doesn't deadlock.
+// Invoke returns an empty answer.
 func (a *AnswerStub) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Mirror the no-state-check pattern of Message/Retrieval: we
 	// don't read state, but the signature must match.

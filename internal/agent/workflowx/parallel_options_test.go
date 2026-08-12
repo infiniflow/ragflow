@@ -22,12 +22,12 @@ package workflowx
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/compose"
 )
 
@@ -59,80 +59,18 @@ func TestOptions_WithParallelMaxConcurrency_NegativeKeepsDefault(t *testing.T) {
 	}
 }
 
-// TestOptions_ParallelCheckpointBuilder_Default is non-empty.
-func TestOptions_ParallelCheckpointBuilder_Default(t *testing.T) {
-	opts := getParallelOptions(nil)
-	if opts.checkpointBuilder == nil {
-		t.Fatal("default checkpoint builder is nil")
-	}
-	id := opts.checkpointBuilder("k", 3)
-	if id == "" {
-		t.Error("default builder returned empty id")
-	}
-	// The default format must be deterministic: same key+index
-	// produces the same id.
-	id2 := opts.checkpointBuilder("k", 3)
-	if id != id2 {
-		t.Errorf("default builder not deterministic: %q vs %q", id, id2)
-	}
-	// And it must contain the key and index so callers can
-	// disambiguate parallel nodes.
-	if !strings.Contains(id, "k") || !strings.Contains(id, "3") {
-		t.Errorf("default id %q must contain key and index", id)
-	}
-}
-
-// TestOptions_ParallelCheckpointBuilder_Override asserts the
-// user-supplied builder is used and called with stable (key, idx).
-func TestOptions_ParallelCheckpointBuilder_Override(t *testing.T) {
-	var gotKey string
-	var gotIdx int
-	b := func(key string, idx int) string {
-		gotKey = key
-		gotIdx = idx
-		return "cp:" + key + ":" + itoa(idx)
-	}
-	opts := getParallelOptions([]ParallelOption{WithParallelCheckpointIDBuilder(b)})
-	id := opts.checkpointBuilder("parKey", 5)
-	if id != "cp:parKey:5" {
-		t.Errorf("builder output: got %q, want %q", id, "cp:parKey:5")
-	}
-	if gotKey != "parKey" || gotIdx != 5 {
-		t.Errorf("builder args: got key=%q idx=%d, want key=%q idx=5", gotKey, gotIdx, "parKey")
-	}
-}
-
-// TestOptions_ParallelCheckpointBuilder_NilIgnored asserts that a
-// nil builder is ignored.
-func TestOptions_ParallelCheckpointBuilder_NilIgnored(t *testing.T) {
-	opts := getParallelOptions([]ParallelOption{WithParallelCheckpointIDBuilder(nil)})
-	if opts.checkpointBuilder == nil {
-		t.Fatal("default builder should remain after nil override")
-	}
-}
-
-// TestOptions_EnableSubCheckpoint_Default asserts the default
-// is true (sub-checkpoint enabled).
-func TestOptions_EnableSubCheckpoint_Default(t *testing.T) {
-	opts := getParallelOptions(nil)
-	if !opts.enableSubCheckpoint {
-		t.Error("default enableSubCheckpoint: got false, want true")
-	}
-}
-
-// TestOptions_EnableSubCheckpoint_False is honored.
-func TestOptions_EnableSubCheckpoint_False(t *testing.T) {
-	opts := getParallelOptions([]ParallelOption{WithParallelEnableSubCheckpoint(false)})
-	if opts.enableSubCheckpoint {
-		t.Error("explicit false not honored")
-	}
-}
-
 // TestOptions_ParallelRunOptionsForwarded asserts the run
 // options are passed to every per-item sub-workflow Invoke. We
-// assert that the run option count matches the call count.
+// attach a callback run option and assert that it fires once per
+// sub-workflow call.
 func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
 	var calls atomic.Int32
+	var optionCalls atomic.Int32
+	h := callbacks.NewHandlerBuilder().OnStartFn(func(ctx context.Context, _ *callbacks.RunInfo, _ callbacks.CallbackInput) context.Context {
+		optionCalls.Add(1)
+		return ctx
+	}).Build()
+
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
 		calls.Add(1)
@@ -145,7 +83,7 @@ func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
 	outer := compose.NewWorkflow[[]int, []int]()
 	pNode, err := AddParallelNode(context.Background(), outer, "par", sub,
 		WithParallelMaxConcurrency(0),
-		WithParallelRunOptions(compose.WithCheckPointID("ignored-by-inner")),
+		WithParallelRunOptions(compose.WithCallbacks(h)),
 	)
 	if err != nil {
 		t.Fatalf("AddParallelNode: %v", err)
@@ -162,6 +100,13 @@ func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
 	}
 	if got := calls.Load(); got != 4 {
 		t.Errorf("sub calls: got %d, want 4", got)
+	}
+	// The callback fires for the sub-workflow and its inner node
+	// (two timings per invoke), so it must be well above zero — the
+	// assertion is that the run option reached the per-item
+	// sub-workflow Invoke calls.
+	if got := optionCalls.Load(); got < 4 {
+		t.Errorf("run option callback calls: got %d, want >= 4", got)
 	}
 }
 
@@ -267,7 +212,6 @@ func TestOptions_ParallelCompileFailureIsolated(t *testing.T) {
 func TestOptions_ParallelSentinelErrorsExist(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrParallelCompileFailed":          ErrParallelCompileFailed,
-		"ErrParallelResumeStateInvalid":     ErrParallelResumeStateInvalid,
 		"ErrParallelOuterStreamUnsupported": ErrParallelOuterStreamUnsupported,
 	}
 	for name, e := range sentinels {
@@ -278,121 +222,7 @@ func TestOptions_ParallelSentinelErrorsExist(t *testing.T) {
 	if !errors.Is(ErrParallelCompileFailed, ErrParallelCompileFailed) {
 		t.Error("ErrParallelCompileFailed is not Is-self")
 	}
-	if !errors.Is(ErrParallelResumeStateInvalid, ErrParallelResumeStateInvalid) {
-		t.Error("ErrParallelResumeStateInvalid is not Is-self")
-	}
 	if !errors.Is(ErrParallelOuterStreamUnsupported, ErrParallelOuterStreamUnsupported) {
 		t.Error("ErrParallelOuterStreamUnsupported is not Is-self")
-	}
-}
-
-// TestOptions_EmptyBuilderReturnRejectsEmptyID asserts that
-// returning "" from the per-item checkpoint ID builder is
-// treated as "skip WithCheckPointID for this item". This is
-// tested via the runParallelFanout integration by ensuring the
-// sub-workflow still gets called.
-func TestOptions_EmptyBuilderReturnRejectsEmptyID(t *testing.T) {
-	var calls atomic.Int32
-	sub := compose.NewWorkflow[int, int]()
-	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
-		calls.Add(1)
-		return in + 1, nil
-	})
-	node := sub.AddLambdaNode("op", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("op")
-
-	compiled, err := sub.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile sub: %v", err)
-	}
-	opts := getParallelOptions([]ParallelOption{
-		WithParallelMaxConcurrency(0),
-		WithParallelCheckpointIDBuilder(func(_ string, _ int) string {
-			return ""
-		}),
-	})
-	bridge := newParallelBridgeState(nil)
-	got, err := runParallelInvoke(context.Background(), "par", compiled, []int{0, 1, 2}, opts, bridge)
-	if err != nil {
-		t.Fatalf("invoke: %v", err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("got len %d, want 3", len(got))
-	}
-	if calls.Load() != 3 {
-		t.Errorf("sub calls: got %d, want 3", calls.Load())
-	}
-}
-
-// TestOptions_EnableSubCheckpointFalse_NoPerItemID asserts that
-// WithParallelEnableSubCheckpoint(false) does not inject a
-// per-item WithCheckPointID. We verify by counting the
-// successful invocations — the absence of a checkpoint id is
-// safe because the sub-workflow has no checkpoint store in this
-// test.
-func TestOptions_EnableSubCheckpointFalse_NoPerItemID(t *testing.T) {
-	var calls atomic.Int32
-	sub := compose.NewWorkflow[int, int]()
-	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
-		calls.Add(1)
-		return in + 1, nil
-	})
-	node := sub.AddLambdaNode("op", lambda)
-	node.AddInput(compose.START)
-	sub.End().AddInput("op")
-
-	compiled, err := sub.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile sub: %v", err)
-	}
-	opts := getParallelOptions([]ParallelOption{
-		WithParallelMaxConcurrency(0),
-		WithParallelEnableSubCheckpoint(false),
-	})
-	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(context.Background(), "par", compiled, []int{0, 1, 2}, opts, bridge)
-	if err != nil {
-		t.Fatalf("invoke: %v", err)
-	}
-	if calls.Load() != 3 {
-		t.Errorf("sub calls: got %d, want 3", calls.Load())
-	}
-}
-
-// TestOptions_ParallelInterruptState_JSONRoundtrip asserts the
-// persisted state survives an encode/decode cycle cleanly. This
-// is the contract for resume: the resumed run reads the same
-// fields back.
-func TestOptions_ParallelInterruptState_JSONRoundtrip(t *testing.T) {
-	in := ParallelInterruptState{
-		OriginalInputsJSON: []byte(`[0,1,2]`),
-		CompletedResults:   map[int]any{0: "a", 2: "c"},
-		InterruptedIndices: []int{1},
-		TotalCount:         3,
-		ItemCheckpoints:    map[string][]byte{"x": []byte("y")},
-	}
-	b, err := encodeParallelState(in)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
-	var out ParallelInterruptState
-	if err := json.Unmarshal(b, &out); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if out.TotalCount != 3 {
-		t.Errorf("TotalCount: got %d, want 3", out.TotalCount)
-	}
-	if len(out.InterruptedIndices) != 1 || out.InterruptedIndices[0] != 1 {
-		t.Errorf("InterruptedIndices: got %v, want [1]", out.InterruptedIndices)
-	}
-	if len(out.CompletedResults) != 2 {
-		t.Errorf("CompletedResults len: got %d, want 2", len(out.CompletedResults))
-	}
-	if v, ok := out.CompletedResults[0]; !ok || v != "a" {
-		t.Errorf("CompletedResults[0]: got %v, want a", v)
-	}
-	if v, ok := out.CompletedResults[2]; !ok || v != "c" {
-		t.Errorf("CompletedResults[2]: got %v, want c", v)
 	}
 }

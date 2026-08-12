@@ -26,14 +26,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// injectResumeState wires a test-only backdoor payload into
-// ctx. The parallel snapshot loader checks
-// parallelResumeBackdoorKey first; this lets unit tests drive
-// the resume path without a real eino checkpoint store.
-func injectResumeState(ctx context.Context, payload []byte) context.Context {
-	return context.WithValue(ctx, parallelResumeBackdoorKey{}, payload)
-}
-
 // testCountingRunnable is a hand-rolled compose.Runnable used
 // by the parallel extension's unit tests. It records the
 // number of Invoke calls and optionally blocks on a release

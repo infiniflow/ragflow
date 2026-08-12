@@ -25,7 +25,6 @@ import (
 	"os/signal"
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
-	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/retrievalbridge"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
@@ -785,20 +784,7 @@ func startServer(ctx context.Context) {
 	)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	// Install the agent service's Redis-backed run infrastructure
-	// (CheckPointStore / StateSerializer / RunTracker). When Redis
-	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
-	// the constructors return errors, and we fall through to the
-	// in-memory / no-tracking path: the agent service treats nil
-	// options as the in-memory test path, so graceful degradation
-	// is a 1-line if-not-nil pass-through — no separate "boot" mode
-	// required.
-	agentOpts := buildAgentRunOptions()
-	agentService := service.NewAgentServiceWithOptions(
-		agentOpts.checkpointStore,
-		agentOpts.stateSerializer,
-		agentOpts.runTracker,
-	)
+	agentService := service.NewAgentService()
 	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
@@ -977,52 +963,6 @@ func startServer(ctx context.Context) {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
-}
-
-// agentRunOptions bundles the three optional injection slots the
-// agent service accepts via NewAgentServiceWithOptions: the Redis-
-// backed CheckPointStore, StateSerializer, and RunTracker. The
-// fields stay nil when the underlying constructors fail (Redis
-// unreachable, etc.); the agent service treats nil as "in-memory
-// / no-tracking" so the server continues to serve traffic without
-// requiring Redis to be up.
-type agentRunOptions struct {
-	checkpointStore canvas.CheckPointStore
-	stateSerializer canvas.StateSerializer
-	runTracker      *canvas.RunTracker
-}
-
-// buildAgentRunOptions installs the Redis-backed run infrastructure
-// when Redis is available. The Redis client is the one already
-// initialized at the top of main; the TTL is a conservative 24h for
-// both the checkpoint store and the run tracker. On any error
-// (Redis down at boot, constructor panic, nil-Redis fallback) we
-// log and return a zero-value struct — the agent service falls back
-// to the in-memory path transparently.
-func buildAgentRunOptions() agentRunOptions {
-	var out agentRunOptions
-	if !redis.IsEnabled() || redis.Get() == nil {
-		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
-		return out
-	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
-	out.checkpointStore = cp
-	// stateSerializer is intentionally left nil. eino's default
-	// InternalSerializer (used when no compose.WithSerializer is
-	// passed at compile time) already knows how to round-trip
-	// runtime.CanvasState because the runtime package registers
-	// it via compose.RegisterSerializableType[CanvasState] in
-	// init(). Overriding with RAGFlow's plain-JSON
-	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
-	// bytes the InternalSerializer cannot decode on the resume
-	// pass — the UserFillUp two-node pattern surfaces this as
-	// "load checkpoint from store fail: cannot unmarshal object
-	// into Go struct field checkpoint.Channels of type
-	// compose.channel". Rely on eino's default instead.
-	rt := canvas.NewRunTracker(24 * time.Hour)
-	out.runTracker = rt
-	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
-	return out
 }
 
 // configureTTSSynthesizer installs the audio.ModelProviderFunc
