@@ -80,14 +80,15 @@ def _resolve_pdf_parse_method(raw_parse_method):
     if not raw_parse_method or lowered in _PDF_PARSE_METHODS_WITHOUT_MODEL_LOOKUP:
         return parse_method, None
 
-    from api.db.services.tenant_model_instance_service import TenantModelInstanceService
-    from api.db.services.tenant_model_provider_service import TenantModelProviderService
     from api.db.services.tenant_model_service import TenantModelService
 
     exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
     if not exist:
         _LOGGER.debug("PDF parser reference did not resolve to a tenant model; using the configured method.")
         return parse_method, None
+
+    from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+    from api.db.services.tenant_model_provider_service import TenantModelProviderService
 
     provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
