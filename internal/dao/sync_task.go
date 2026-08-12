@@ -273,7 +273,7 @@ func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTask
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&entity.SyncLogs{}).Where("id = ? AND status = ?", taskContext.Task.ID, SyncStatusRunning).Updates(map[string]any{
 			"status":             SyncStatusDone,
-			"poll_range_end":     pollRangeEnd,
+			"poll_range_end":     entity.FlexibleTime(pollRangeEnd),
 			"new_docs_indexed":   newDocs,
 			"total_docs_indexed": gorm.Expr("total_docs_indexed + ?", totalDocs),
 			"error_msg":          errorMsg,

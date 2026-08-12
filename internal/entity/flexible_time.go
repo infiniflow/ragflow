@@ -74,9 +74,17 @@ func (f *FlexibleTime) parse(value string) error {
 	return fmt.Errorf("cannot parse %q as time", value)
 }
 
-// Value implements driver.Valuer.
+// Value implements driver.Valuer. The shared sync_logs columns are varchar
+// and the metadata DSN renders time.Time in the local zone, so an explicit
+// UTC ISO string is written to keep the stored instant unambiguous. The
+// layout mirrors Python's DateTimeTzField.db_value (datetime.isoformat on a
+// UTC value): 6-digit microseconds and a "+00:00" offset.
 func (f FlexibleTime) Value() (driver.Value, error) {
-	return time.Time(f), nil
+	value := time.Time(f)
+	if value.IsZero() {
+		return nil, nil
+	}
+	return value.UTC().Format("2006-01-02T15:04:05.999999-07:00"), nil
 }
 
 // Time returns the underlying time value.

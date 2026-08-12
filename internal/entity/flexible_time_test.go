@@ -64,6 +64,26 @@ func TestFlexibleTimeScan(t *testing.T) {
 	}
 }
 
+// TestFlexibleTimeValue verifies UTC ISO string serialization for varchar writes.
+func TestFlexibleTimeValue(t *testing.T) {
+	value := FlexibleTime(time.Date(2026, 8, 12, 10, 2, 1, 795728000, time.UTC))
+	got, err := value.Value()
+	if err != nil {
+		t.Fatalf("value: %v", err)
+	}
+	if got != "2026-08-12T10:02:01.795728+00:00" {
+		t.Fatalf("value = %q", got)
+	}
+	var zero FlexibleTime
+	got, err = zero.Value()
+	if err != nil {
+		t.Fatalf("zero value: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("zero value = %v, want nil", got)
+	}
+}
+
 // TestFlexibleTimeJSON verifies RFC3339 JSON round-trip.
 func TestFlexibleTimeJSON(t *testing.T) {
 	original := FlexibleTime(time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC))
