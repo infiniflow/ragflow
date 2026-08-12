@@ -1486,16 +1486,26 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	// field definitions); sending without it would silently produce
 	// garbage. The proportional trim can empty every system message when
 	// the final user turn alone fills the budget, so require at least one
-	// retained system message.
-	keptSystem := false
-	for _, m := range fitted {
+	// retained system message — but only when the input actually had one:
+	// systemPrompt is optional and a user-only prompt is a valid request.
+	hadSystem := false
+	for _, m := range msgs {
 		if m.Role == eschema.System {
-			keptSystem = true
+			hadSystem = true
 			break
 		}
 	}
-	if !keptSystem {
-		return nil, errors.New("extractor: message fitting emptied the system prompt; check the chat model context length setting or reduce the prompt size")
+	if hadSystem {
+		keptSystem := false
+		for _, m := range fitted {
+			if m.Role == eschema.System {
+				keptSystem = true
+				break
+			}
+		}
+		if !keptSystem {
+			return nil, errors.New("extractor: message fitting emptied the system prompt; check the chat model context length setting or reduce the prompt size")
+		}
 	}
 	last := fitted[len(fitted)-1]
 	if last.Role != eschema.User || strings.TrimSpace(last.Content) == "" {

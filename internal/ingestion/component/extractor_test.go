@@ -1796,11 +1796,10 @@ func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *tes
 	}
 }
 
-// TestFitExtractorMessages_RejectsEmptyUserTurn verifies the guard added for
-// review feedback: when messagefit's proportional trim would empty the final
-// user turn (the system prompt alone exceeds the context budget), the
-// extractor surfaces a clear error instead of sending [system, user:""] to
-// the provider.
+// TestFitExtractorMessages_RejectsEmptyUserTurn verifies that when
+// messagefit's proportional trim would empty the final user turn (the system
+// prompt alone exceeds the context budget), the extractor surfaces a clear
+// error instead of sending [system, user:""] to the provider.
 func TestFitExtractorMessages_RejectsEmptyUserTurn(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 500 })
 	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
@@ -1837,9 +1836,34 @@ func TestFitExtractorMessages_KeepsUserTurn(t *testing.T) {
 	}
 }
 
+// TestFitExtractorMessages_NoSystemPromptKeepsUserTurn verifies that a
+// user-only request (no system prompt configured) is not rejected by the
+// system-prompt guard: the guard only applies when a system message was
+// actually present, so a valid prompt-only extractor keeps working once the
+// model's content_length is resolvable.
+func TestFitExtractorMessages_NoSystemPromptKeepsUserTurn(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 2000 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	msgs := []eschema.Message{
+		{Role: eschema.User, Content: strings.Repeat("u ", 3000)},
+	}
+	fitted, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs)
+	if err != nil {
+		t.Fatalf("unexpected error for user-only prompt: %v", err)
+	}
+	if len(fitted) != 1 || fitted[0].Role != eschema.User {
+		t.Fatalf("got %d messages, want the single user turn: %+v", len(fitted), fitted)
+	}
+	if strings.TrimSpace(fitted[0].Content) == "" {
+		t.Fatal("user turn was emptied")
+	}
+}
+
 // openExtractorContextTestDB returns an in-memory DB with the tenant and
-// tenant-model tables migrated, and dao.DB swapped for the test duration so
-// DAO helpers that default to the global handle behave like production.
+// tenant-model tables migrated. Tests pass the returned handle explicitly to
+// extractorContextLength, defaultChatModelRef, and dao.ResolveModelContentLength,
+// so no global DAO state is touched.
 func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
@@ -1849,9 +1873,6 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	prev := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = prev })
 	return db
 }
 
