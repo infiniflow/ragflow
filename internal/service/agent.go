@@ -303,12 +303,13 @@ var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
 type AgentService struct {
-	canvasDAO           *dao.UserCanvasDAO
-	canvasTemplateDAO   *dao.CanvasTemplateDAO
-	userDAO             *dao.UserDAO
-	userTenantDAO       *dao.UserTenantDAO
-	versionDAO          *dao.UserCanvasVersionDAO
-	api4ConversationDAO *dao.API4ConversationDAO
+	canvasDAO                   *dao.UserCanvasDAO
+	canvasTemplateDAO           *dao.CanvasTemplateDAO
+	userDAO                     *dao.UserDAO
+	userTenantDAO               *dao.UserTenantDAO
+	versionDAO                  *dao.UserCanvasVersionDAO
+	api4ConversationDAO         *dao.API4ConversationDAO
+	compilationTemplateGroupDAO *dao.CompilationTemplateGroupDAO
 
 	// driver is the per-process runner that drives canvas
 	// invocations and produces SSE events. V1 persistence is
@@ -375,17 +376,18 @@ func NewAgentServiceWithOptions(
 		agenttool.SetSandboxClient(agentsandbox.NewManagerClient())
 	}
 	return &AgentService{
-		canvasDAO:           dao.NewUserCanvasDAO(),
-		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
-		userDAO:             dao.NewUserDAO(),
-		userTenantDAO:       dao.NewUserTenantDAO(),
-		versionDAO:          dao.NewUserCanvasVersionDAO(),
-		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
-		runner:              canvas.NewRunner(),
-		activeSessions:      make(map[string]*activeAgentRun),
-		checkpointStore:     cp,
-		stateSerializer:     ser,
-		runTracker:          rt,
+		canvasDAO:                   dao.NewUserCanvasDAO(),
+		canvasTemplateDAO:           dao.NewCanvasTemplateDAO(),
+		userDAO:                     dao.NewUserDAO(),
+		userTenantDAO:               dao.NewUserTenantDAO(),
+		versionDAO:                  dao.NewUserCanvasVersionDAO(),
+		api4ConversationDAO:         dao.NewAPI4ConversationDAO(),
+		compilationTemplateGroupDAO: dao.NewCompilationTemplateGroupDAO(),
+		runner:                      canvas.NewRunner(),
+		activeSessions:              make(map[string]*activeAgentRun),
+		checkpointStore:             cp,
+		stateSerializer:             ser,
+		runTracker:                  rt,
 	}
 }
 
@@ -419,6 +421,114 @@ type AgentItem struct {
 type ListAgentsResponse struct {
 	Canvas []*AgentItem `json:"canvas"`
 	Total  int64        `json:"total"`
+}
+
+// CompilationTemplateGroupCategory is the synthetic canvas_category the
+// frontend uses to filter compilation template groups through the merged
+// /agents endpoint. Mirrors Python _COMPILATION_TEMPLATE_GROUP_CATEGORY.
+const CompilationTemplateGroupCategory = "compilation_template_group"
+
+// AgentOwnerFilter is one owner option in the agents filter response.
+type AgentOwnerFilter struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+// AgentCategoryFilter is one canvas_category option in the agents filter
+// response.
+type AgentCategoryFilter struct {
+	ID    string `json:"id"`
+	Count int64  `json:"count"`
+}
+
+// AgentFiltersResponse is the response body for
+// GET /api/v1/agents?type=filter.
+type AgentFiltersResponse struct {
+	Filter struct {
+		Owner          []AgentOwnerFilter    `json:"owner"`
+		CanvasCategory []AgentCategoryFilter `json:"canvas_category"`
+	} `json:"filter"`
+	Total int64 `json:"total"`
+}
+
+// ListAgentFilters returns the owner/category aggregations backing the
+// agents page filter bar. Mirrors the ?type=filter branch of Python
+// agent_api.list_agents.
+func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*AgentFiltersResponse, common.ErrorCode, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to get tenant IDs: %w", err)
+	}
+	ownerIDs := make([]string, 0, len(tenantIDs)+1)
+	seen := make(map[string]struct{}, len(tenantIDs)+1)
+	seen[userID] = struct{}{}
+	ownerIDs = append(ownerIDs, userID)
+	for _, id := range tenantIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ownerIDs = append(ownerIDs, id)
+	}
+
+	owners, err := s.canvasDAO.GetOwnerFilter(ctx, dao.DB, ownerIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent owners: %w", err)
+	}
+	categories, err := s.canvasDAO.GetCategoryFilter(ctx, dao.DB, ownerIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent categories: %w", err)
+	}
+	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
+	}
+
+	ownerFilters := make([]AgentOwnerFilter, 0, len(owners)+1)
+	for _, o := range owners {
+		label := o.ID
+		if o.Label != nil && *o.Label != "" {
+			label = *o.Label
+		}
+		ownerFilters = append(ownerFilters, AgentOwnerFilter{ID: o.ID, Label: label, Count: o.Count})
+	}
+	if groupCount > 0 {
+		idx := -1
+		for i := range ownerFilters {
+			if ownerFilters[i].ID == userID {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			ownerFilters[idx].Count += groupCount
+		} else {
+			nickname, nerr := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
+			if nerr != nil {
+				nickname = ""
+			}
+			ownerFilters = append(ownerFilters, AgentOwnerFilter{ID: userID, Label: nickname, Count: groupCount})
+		}
+	}
+
+	categoryFilters := make([]AgentCategoryFilter, 0, len(categories)+1)
+	for _, c := range categories {
+		categoryFilters = append(categoryFilters, AgentCategoryFilter{ID: c.ID, Count: c.Count})
+	}
+	if groupCount > 0 {
+		categoryFilters = append(categoryFilters, AgentCategoryFilter{ID: CompilationTemplateGroupCategory, Count: groupCount})
+	}
+
+	var total int64
+	for _, o := range ownerFilters {
+		total += o.Count
+	}
+
+	resp := &AgentFiltersResponse{Total: total}
+	resp.Filter.Owner = ownerFilters
+	resp.Filter.CanvasCategory = categoryFilters
+	return resp, common.CodeSuccess, nil
 }
 
 type AgentTagCount struct {

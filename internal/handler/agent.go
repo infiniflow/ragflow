@@ -187,6 +187,19 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		return
 	}
 
+	// Filter-aggregation mode: the agents page filter bar fetches
+	// GET /api/v1/agents?type=filter and expects
+	// {filter: {owner, canvas_category}, total} instead of a canvas list.
+	if c.Query("type") == "filter" {
+		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID)
+		if err != nil {
+			common.ResponseWithCodeData(c, code, false, err.Error())
+			return
+		}
+		common.SuccessWithData(c, filters, "success")
+		return
+	}
+
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
 	canvasType := c.Query("canvas_type")

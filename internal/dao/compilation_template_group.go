@@ -59,6 +59,17 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 	return groups, nil
 }
 
+// CountSavedByTenant counts the tenant's own valid groups; built-in groups
+// (empty tenant_id) are excluded, mirroring the group_count query in Python
+// get_owner_filter / get_category_filter.
+func (dao *CompilationTemplateGroupDAO) CountSavedByTenant(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
+		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid)).
+		Count(&count).Error
+	return count, err
+}
+
 // GetSaved returns a single valid group for the tenant (or built-in), or nil.
 func (dao *CompilationTemplateGroupDAO) GetSaved(ctx context.Context, db *gorm.DB, tenantID, groupID string) (*entity.CompilationTemplateGroup, error) {
 	var g entity.CompilationTemplateGroup
