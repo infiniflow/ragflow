@@ -342,6 +342,13 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 // gutters survive.
 const bridgingFrac = 0.60
 
+// medianFullWidthFrac is the full-width threshold for the L3 median-width
+// detector. It is lower than dropFullWidth's 0.9 because the median path
+// buckets by normalized center x and only needs to exclude lines that would
+// otherwise dominate every bucket; lines between 0.8 and 0.9 width are rare
+// and keeping them out of the buckets avoids a single wide line skewing cents.
+const medianFullWidthFrac = 0.80
+
 // medianColCap: max column count the median-width-ratio signal (L3, from PR
 // #10475's page_w/median_w) may assign. Capped at 3 so a raw_cols estimate of
 // 4 (common on 3-column pages) does not over-shoot, and well under
@@ -363,7 +370,9 @@ const shortLineFrac = 0.45
 // Method (faithful to tool-py/column_detectors.gap_glyph_body_column_counts,
 // extended with bridging removal): project the BODY — full-width lines dropped
 // by dropFullWidth, then any still-wide bridging line dropped at
-// bridgingFrac*width — onto the x-axis with glyph-density weighting, and look
+// bridgingFrac*width — onto the x-axis with glyph-count-per-bin weighting
+// (each covered bin receives the line's full rune count, so a wide line
+// contributes proportionally more), and look
 // for INTERIOR valleys (low-ink runs bounded by high ink on both sides, wider
 // than gapMinFrac*width, and not at the page edge). A single clean gutter
 // splits the page into two real columns.
@@ -461,11 +470,14 @@ func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
 		return 0, nil
 	}
 	// Split the body at the single valley into left/right blocks; each
-	// centroid is the mean X0 of its lines.
+	// centroid is the mean X0 of its lines. Classify by b.X0 (not the center)
+	// so the split agrees with pruneColumns' X0-based assignment — lines whose
+	// center and X0 fall on opposite sides of the valley would otherwise be
+	// counted differently by the two steps.
 	var leftSum, rightSum float64
 	lc, rc := 0, 0
 	for _, b := range body {
-		if (b.X0+b.X1)/2 < valleyC {
+		if b.X0 < valleyC {
 			leftSum += b.X0
 			lc++
 		} else {
@@ -585,12 +597,20 @@ func detectColumnCountMedian(lines []pdf.TextBox) (int, []float64) {
 		k = 2
 	}
 	// Bucket non-full-width lines by normalized center x, mirroring PR #10475.
-	fwThr := 0.8 * width
+	// Collect the SAME non-full-width lines into body so the prune step counts
+	// the line set that produced the centroids — otherwise full-width
+	// titles/abstracts (which the bucket loop skips) would be re-counted by
+	// pruneColumns, inflate one column, and let a real multi-column page
+	// collapse to one. This is the same discipline balancedBodyK2 and
+	// detectColumnCount2D already follow.
+	fwThr := medianFullWidthFrac * width
+	body := make([]pdf.TextBox, 0, len(lines))
 	buckets := make([][]float64, k)
 	for _, b := range lines {
 		if b.X1-b.X0 >= fwThr {
 			continue
 		}
+		body = append(body, b)
 		cx := 0.5 * (b.X0 + b.X1)
 		norm := (cx - minX0) / width
 		if norm < 0 {
@@ -622,7 +642,7 @@ func detectColumnCountMedian(lines []pdf.TextBox) (int, []float64) {
 	// Require each column to hold enough lines (the same guard used by the
 	// rest of the detector) so a sparse side column does not become a false
 	// split.
-	if pk, pc, ok := pruneColumns(lines, cents); ok {
+	if pk, pc, ok := pruneColumns(body, cents); ok {
 		return pk, pc
 	}
 	return 0, nil

@@ -87,11 +87,9 @@ func TestSyntheticSparseSecondColumn(t *testing.T) {
 	}
 }
 
-// TODO #18079: a 2D spatial column detector splits this into 2.
-//
-// This fixture models the shape of a title-bridged double column: a CLEAN
-// vertical gutter plus a full-width title block at the very top that bridges
-// the gutter. The two body columns do NOT overlap in x0.
+// TestSyntheticTitleBridgedDouble models a title-bridged double column: a
+// CLEAN vertical gutter plus a full-width title block at the very top that
+// bridges the gutter. The two body columns do NOT overlap in x0.
 //
 // The heading bridge is NOT a discriminant signal. What recovers the page is:
 // (1) dropFullWidth drops the full-width title, and (2) detectColumnCount2D
@@ -116,11 +114,6 @@ func TestSyntheticSparseSecondColumn(t *testing.T) {
 //   - 12 >= 0.12*42 = 5.04, so the both-sides prune gate (minColLineFrac)
 //     accepts it. TestSyntheticSparseSecondColumn (right=3, 3 < 0.12*33) stays
 //     1, so the recover/stay-1 split is carried by right-column count.
-//
-// NOTE (historical): an earlier version of this fixture wrongly modeled the
-// right column as stackedColumn(200,440,...) with x0=200 INSIDE the left's
-// x1=240, i.e. overlapping columns and no gutter. That does not match the
-// real misses; do not design the 2D detector against that shape.
 func TestSyntheticTitleBridgedDouble(t *testing.T) {
 	boxes := concat(
 		concat(
@@ -156,5 +149,29 @@ func TestSyntheticMedianWidthDouble(t *testing.T) {
 	)
 	if got := columnCount(boxes); got != 2 {
 		t.Errorf("median-width gutter-less double: got %d, want 2", got)
+	}
+}
+
+// TestSyntheticMedianWidthDoubleWithTitle locks the L3 median detector's prune
+// discipline: it must prune on the SAME non-full-width lines that produced the
+// centroids, not the full line set. A gutter-less double with a full-width
+// title exercises the path where, before the fix, the title (counted by
+// pruneColumns into the left column) inflated n and collapsed the sparse right
+// column to a single column. After the fix the detector recovers 2.
+//
+// Geometry: left [50,250] (29 lines), right [250,450] (4 lines) — adjacent,
+// no gutter; plus one full-width title [50,450]. Without the title the right
+// column is 4/33 = 0.121 >= minColLineFrac (0.12) -> 2; with the title counted
+// in, 4/34 = 0.118 < 0.12 -> 1 (the pre-fix bug).
+func TestSyntheticMedianWidthDoubleWithTitle(t *testing.T) {
+	boxes := concat(
+		concat(
+			stackedColumn(50, 250, 29, 10, 10), // left body column [50,250]
+			stackedColumn(250, 450, 4, 10, 20), // right body column [250,450]: adjacent, no gutter
+		),
+		stackedColumn(50, 450, 1, 10, 10), // full-width title [50,450]
+	)
+	if got := columnCount(boxes); got != 2 {
+		t.Errorf("median-width gutter-less double with title: got %d, want 2", got)
 	}
 }
