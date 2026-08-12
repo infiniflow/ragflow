@@ -345,7 +345,7 @@ async def _wiki_delete_map_rows_for_docs(
         raise
 
 
-async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
+async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool | None:
     """True when at least one compiled wiki page already exists for the KB.
 
     Used to tell "nothing changed and pages already exist" (a genuine no-op)
@@ -374,7 +374,7 @@ async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
         return bool(settings.docStoreConn.get_total(res))
     except Exception:
         logging.exception("wiki: page existence probe failed for kb=%s", kb_id)
-        return False
+        return None
 
 
 async def _wiki_delete_deleted_doc_state(
@@ -1864,7 +1864,8 @@ async def run_wiki_incremental(
         # when MAP rows exist but no pages were ever produced (for example a
         # prior run stopped after MAP), fall through so the compiler can rebuild
         # pages from the stored extracts.
-        if existing_map_doc_ids and await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
+        has_compiled_pages = await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) if existing_map_doc_ids else None
+        if existing_map_doc_ids and has_compiled_pages is True:
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,
@@ -1891,7 +1892,7 @@ async def run_wiki_incremental(
 
             progress(1.0, "Wiki is up to date.")
             return
-        if not await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) and not _map_rebuild_retry:
+        if existing_map_doc_ids and has_compiled_pages is False and not _map_rebuild_retry:
             # A first build can be interrupted after MAP rows are written. If
             # those rows are subsequently removed or become unreadable, the
             # resume check still suppresses MAP and the restore phase sees no
@@ -1903,7 +1904,11 @@ async def run_wiki_incremental(
                 ctx.kb_id,
                 sorted(stale_doc_ids),
             )
-            await _wiki_delete_map_rows_for_docs(ctx.tenant_id, ctx.kb_id, stale_doc_ids)
+            try:
+                await _wiki_delete_map_rows_for_docs(ctx.tenant_id, ctx.kb_id, stale_doc_ids)
+            except Exception:
+                progress(-1, "Failed to reset stale MAP state for wiki rebuild.")
+                return
             await run_wiki_incremental(
                 ctx=ctx,
                 embedding_model=embedding_model,

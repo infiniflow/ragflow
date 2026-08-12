@@ -1032,7 +1032,8 @@ async def _load_map_relations(tenant_id: str, kb_id: str, excluded_doc_ids: set[
             logging.exception("wiki: failed to load map relations for kb=%s", kb_id)
             return relations
         for row in field_map.values():
-            if str(row.get("doc_id") or "") in (excluded_doc_ids or set()):
+            row_doc_ids = _as_str_list(row.get("doc_id"))
+            if excluded_doc_ids and any(doc_id in excluded_doc_ids for doc_id in row_doc_ids):
                 continue
             raw = row.get("content_with_weight")
             if isinstance(raw, str):
@@ -1054,7 +1055,11 @@ async def _load_map_relations(tenant_id: str, kb_id: str, excluded_doc_ids: set[
     return relations
 
 
-async def _wiki_load_pages_for_graph(tenant_id: str, kb_id: str) -> list[dict]:
+async def _wiki_load_pages_for_graph(
+    tenant_id: str,
+    kb_id: str,
+    excluded_doc_ids: set[str] | None = None,
+) -> list[dict]:
     """Reload compiled wiki_page rows and project them onto the canvas-graph
     shape expected by ``dataset_wiki_generator.build_wiki_page_graph``.
 
@@ -1148,7 +1153,11 @@ async def _wiki_load_pages_for_graph(tenant_id: str, kb_id: str) -> list[dict]:
                 if isinstance(name, str) and name.strip():
                     name_to_slug.setdefault(name.strip(), slug)
         try:
-            map_relations = await _load_map_relations(tenant_id, kb_id)
+            if excluded_doc_ids is None:
+                from api.db.services.document_service import DocumentService
+
+                excluded_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+            map_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=excluded_doc_ids)
         except Exception:
             logging.exception("wiki: failed to load MAP relations for graph fallback kb=%s", kb_id)
             map_relations = []
@@ -1368,8 +1377,8 @@ def _wiki_topics_for_docs(
             if not isinstance(topic, str):
                 continue
             topic = topic.strip()
-            key = topic.casefold()
-            if not topic or key == WIKI_TOPIC_FALLBACK.casefold() or key in seen:
+            key = _normalize_key(topic)
+            if not topic or key == _normalize_key(WIKI_TOPIC_FALLBACK) or key in seen:
                 continue
             seen.add(key)
             topics.append(topic)
@@ -1462,15 +1471,17 @@ async def _wiki_rank_topic_candidates(
         return candidates[:WIKI_PAGE_TOPIC_CANDIDATE_LIMIT]
     query = query / query_norm
 
-    missing_topics = [topic for topic in candidates if not topic_embeddings or topic not in topic_embeddings]
+    local_topic_embeddings = dict(topic_embeddings or {})
+    missing_topics = [topic for topic in candidates if topic not in local_topic_embeddings]
     if missing_topics:
         encoded, _ = await thread_pool_exec(embd_mdl.encode, missing_topics)
+        local_topic_embeddings.update({topic: vector for topic, vector in zip(missing_topics, encoded, strict=True)})
         if topic_embeddings is not None:
             topic_embeddings.update({topic: vector for topic, vector in zip(missing_topics, encoded, strict=True)})
 
     ranked = []
     for topic in candidates:
-        vector = np.asarray(topic_embeddings.get(topic), dtype=np.float32) if topic_embeddings else None
+        vector = np.asarray(local_topic_embeddings.get(topic), dtype=np.float32) if topic in local_topic_embeddings else None
         if vector is None or vector.size == 0:
             continue
         norm = np.linalg.norm(vector)
@@ -1993,7 +2004,7 @@ async def _wiki_refine_page(
             existing_topic = existing_topic[0] if existing_topic else ""
         topic = str(existing_topic or WIKI_TOPIC_FALLBACK).strip()
     topic_key = _normalize_key(topic)
-    candidate_keys = {_normalize_key(candidate) for candidate in topic_candidates or []}
+    candidate_keys = {_normalize_key(candidate) for candidate in topic_candidates or [] if candidate}
     is_new_topic = bool(topic and topic_key not in candidate_keys)
     added_to_candidates = False
     if is_new_topic and topic_pool is not None:
@@ -2076,7 +2087,6 @@ async def _wiki_refine_page(
     # Mode B embeds the generated page subject for subsequent routing. A
     # centroid of member vectors favors lexical similarity and loses thematic
     # relations (for example a company and a technology it develops).
-    from common.misc_utils import thread_pool_exec
     from rag.nlp import rag_tokenizer
 
     if page_embedding is None:
@@ -3129,7 +3139,10 @@ async def _wiki_finalize(
     # MAP to connect pages. A page-to-page edge is created whenever both
     # endpoints resolve to compiled wiki pages. This is the primary source of
     # graph connections — far more reliable than prose [[wikilinks]].
-    map_relations = await _load_map_relations(tenant_id, kb_id)
+    from api.db.services.document_service import DocumentService
+
+    disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+    map_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=disabled_doc_ids)
     relation_edges: dict[str, set[str]] = {}  # pid → {target slug}
     if map_relations:
         for rel in map_relations:
@@ -3713,9 +3726,9 @@ async def wiki_compile_incremental(
             doc_to_entities.setdefault(did, []).append(cname)
     del canonical_map
 
+    topic_embeddings = await _wiki_prepare_topic_embeddings(doc_topics, embd_mdl, list(topic_pool.values()))
+    topic_pool_lock = asyncio.Lock()
     if plan:
-        topic_embeddings = await _wiki_prepare_topic_embeddings(doc_topics, embd_mdl, list(topic_pool.values()))
-        topic_pool_lock = asyncio.Lock()
         summary = await _wiki_mode_b_run(
             deltas=deltas,
             existing_pages=existing_pages,
@@ -3733,8 +3746,6 @@ async def wiki_compile_incremental(
             topic_pool_lock=topic_pool_lock,
         )
     else:
-        topic_embeddings = await _wiki_prepare_topic_embeddings(doc_topics, embd_mdl, list(topic_pool.values()))
-        topic_pool_lock = asyncio.Lock()
         # Mode A: every entity AND concept becomes a page (no PLAN grouping).
         # Each canonical entity/concept compiles to its own wiki page.
         summary = await _wiki_mode_a_run(

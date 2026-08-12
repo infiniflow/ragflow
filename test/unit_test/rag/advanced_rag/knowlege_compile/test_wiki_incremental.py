@@ -69,7 +69,7 @@ class MockChatModel:
         self.max_length = 4096
         self._canned = canned
 
-    async def async_chat(self, system_prompt, messages, **kwargs):
+    async def async_chat(self, system_prompt, messages, request_conf=None, **kwargs):
         return self._canned
 
     def __enter__(self):
@@ -1052,7 +1052,7 @@ async def test_finalize_writes_outlinks():
 
     # Page updates stay cheap (no per-row refresh), then one visibility barrier
     # makes the finalized outlinks searchable before the canvas graph reloads.
-    doc_store.refresh_idx.assert_called_once_with("ragflow_t1")
+    doc_store.refresh_idx.assert_called_once_with(_wiki.search.index_name("t1"))
 
 
 async def test_finalize_auto_links_mentions():
@@ -1455,12 +1455,24 @@ async def test_topic_candidates_are_ranked_by_page_embedding():
 
     assert ranked == ["target", "unrelated"]
 
+    ranked_without_cache = await _wiki._wiki_rank_topic_candidates(
+        "page",
+        [{"statement": "page evidence"}],
+        [],
+        None,
+        ["unrelated", "target"],
+        None,
+        model,
+    )
+
+    assert ranked_without_cache == ["target", "unrelated"]
+
 
 def test_topics_for_docs_includes_global_topic_pool():
     assert _wiki._wiki_topics_for_docs(
         ["doc_1"],
         {"doc_1": ["MAP topic"]},
-        {"generated": "Generated topic"},
+        {_wiki._normalize_key("Generated topic"): "Generated topic"},
     ) == ["MAP topic", "Generated topic"]
 
 
@@ -1510,7 +1522,7 @@ async def test_page_router_skips_knn_when_no_existing_pages():
     ):
         assignments = await _wiki._wiki_page_router(
             affected_entities=entities,
-            chat_mdl=MockChatModel(),
+            chat_mdl=MockChatModel(canned="[[0, 1]]"),
             embd_mdl=embd_mdl,
             tenant_id="t1",
             kb_id="kb1",

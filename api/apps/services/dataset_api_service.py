@@ -4547,7 +4547,8 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
         page_size = 1000
         damaged_row_ids: list[str] = []
         while True:
-            res = settings.docStoreConn.search(
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
                 fields,
                 [],
                 {"compile_kwd": ["wiki_doc_page_source"]},
@@ -4566,7 +4567,8 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
                 break
             offset += page_size
         for row_id in damaged_row_ids:
-            settings.docStoreConn.update(
+            await thread_pool_exec(
+                settings.docStoreConn.update,
                 {"id": row_id},
                 {"remove": "compile_kwd"},
                 index_nm,
