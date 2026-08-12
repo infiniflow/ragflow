@@ -285,9 +285,7 @@ const routeConfigOptions = [
         children: [
           {
             path: Routes.UserSetting,
-            element: (
-              <Navigate to={`/user-setting${Routes.DataSource}`} replace />
-            ),
+            element: <Navigate to={`/user-setting/model`} replace />,
           },
           {
             path: `${Routes.UserSetting}/profile`,
