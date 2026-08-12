@@ -43,6 +43,7 @@ import (
 
 	iow "ragflow/internal/agent/component/io"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -349,7 +350,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 		}
 	}
 	if !strings.Contains(content, "{{") {
-		return stripThinking(content), nil
+		return strings.TrimSpace(common.StripThinkTrailing(content)), nil
 	}
 
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
@@ -363,14 +364,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 	if err != nil {
 		return "", fmt.Errorf("resolve content template: %w", err)
 	}
-	return stripThinking(resolved), nil
-}
-
-func stripThinking(content string) string {
-	if idx := strings.LastIndex(content, "</think>"); idx >= 0 {
-		return strings.TrimSpace(content[idx+len("</think>"):])
-	}
-	return content
+	return strings.TrimSpace(common.StripThinkTrailing(resolved)), nil
 }
 
 func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bool, error) {

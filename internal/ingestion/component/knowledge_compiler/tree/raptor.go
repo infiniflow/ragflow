@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/tokenizer"
 )
@@ -370,9 +371,8 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 		content := resp.Content
 		// Strip reasoning preamble up to the final thinking close tag
 		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)).
-		if i := strings.LastIndex(content, "</think>"); i >= 0 {
-			content = content[i+len("</think>"):]
-		} else if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
+		content = rfcommon.StripThinkTrailing(content)
+		if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
 			content = content[i+len("</think:6124c78e>"):]
 		}
 		// Python raises on the "**ERROR**" marker; treat it as a retryable error.
