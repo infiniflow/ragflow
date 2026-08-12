@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -231,7 +232,8 @@ func (m *replayModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChat
 
 // passthroughTool echoes its input as a tool result.
 type passthroughTool struct {
-	name string
+	name  string
+	calls atomic.Int32
 }
 
 func (t *passthroughTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -245,5 +247,6 @@ func (t *passthroughTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 }
 
 func (t *passthroughTool) InvokableRun(_ context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	t.calls.Add(1)
 	return argumentsInJSON, nil
 }

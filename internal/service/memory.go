@@ -814,16 +814,17 @@ func sameStringSet(a, b []string) bool {
 //	err := service.DeleteMemory(ctx, "user123", "memory456")
 func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID string) error {
 	// Verify the caller has access to this memory
-	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
 		return err
 	}
 
 	// TODO: Delete associated message index - Implementation pending MessageService
-	// messageService := NewMessageService()
-	// hasIndex, _ := messageService.HasIndex(memory.TenantID, memoryID)
-	// if hasIndex {
-	//     messageService.DeleteMessage(nil, memory.TenantID, memoryID)
-	// }
+	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
+			return fmt.Errorf("delete memory messages: %w", err)
+		}
+	}
 
 	// Delete memory record
 	if err := s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
@@ -850,8 +851,12 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{
-		"forget_at":     forgetTime,
-		"forget_at_flt": now.UnixMilli(),
+		"forget_at": forgetTime,
+	}
+	// OceanBase/SeekDB memory tables contain forget_at but no forget_at_flt.
+	// Keep the existing companion-field update for other engines.
+	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{
 		"id": messageDocID,
@@ -1042,8 +1047,28 @@ func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filter
 	if len(memories) == 0 {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
+	if err := validateMemorySearchModels(memories); err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 
 	return s.queryMessage(ctx, memories, filterDict, params)
+}
+
+func validateMemorySearchModels(memories []*entity.Memory) error {
+	if len(memories) == 0 {
+		return nil
+	}
+	firstKey := memorySearchEmbeddingKey(memories[0])
+	for _, memory := range memories[1:] {
+		if memorySearchEmbeddingKey(memory) != firstKey {
+			return fmt.Errorf("memories use different embedding models")
+		}
+	}
+	return nil
+}
+
+func memorySearchEmbeddingKey(memory *entity.Memory) string {
+	return "embedding:" + strings.TrimSpace(memory.EmbdID)
 }
 
 func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {

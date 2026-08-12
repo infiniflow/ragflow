@@ -13,7 +13,8 @@
   "models": [
     {
       "name": "llama-3.1-8b-instant",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -23,7 +24,8 @@
     },
     {
       "name": "llama-3.3-70b-versatile",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -33,7 +35,8 @@
     },
     {
       "name": "openai/gpt-oss-120b",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -43,7 +46,8 @@
     },
     {
       "name": "openai/gpt-oss-20b",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -53,7 +57,8 @@
     },
     {
       "name": "groq/compound",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -63,7 +68,8 @@
     },
     {
       "name": "groq/compound-mini",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -73,27 +79,8 @@
     },
     {
       "name": "openai/gpt-oss-20b",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "meta-llama/llama-4-scout-17b-16e-instruct",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "qwen/qwen3-32b",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],

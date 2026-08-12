@@ -50,7 +50,7 @@ func TestApplyPDFPostProcess_AssignsDocTypeKeywords(t *testing.T) {
 	applyPDFPostProcess(result, pdfPostProcessOptions{})
 	// doc_type_kwd is derived from layout type only. A pre-set Image no
 	// longer reclassifies a section as "image" — cropping happens lazily
-	// at markdown serialization / chunk time (see pdf_parser_common.go).
+	// at Markdown serialization / chunk time (see pdf_parser_common.go).
 	want := []string{"table", "image", "text", "text"}
 	for i, s := range result.Sections {
 		if s.DocTypeKwd != want[i] {

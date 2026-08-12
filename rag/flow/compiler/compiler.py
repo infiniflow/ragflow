@@ -370,6 +370,7 @@ class Compiler(ProcessBase, LLM):
         tenant_id: str,
         kb_id: str,
         doc_id: str,
+        doc_name: str,
     ) -> None:
         """Build and persist tree graphs from the pipeline's in-memory chunks.
 
@@ -452,6 +453,7 @@ class Compiler(ProcessBase, LLM):
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     embedding_model,
                     compilation_template_id=template_id,
                 )
@@ -460,6 +462,7 @@ class Compiler(ProcessBase, LLM):
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     compile_kwd="tree",
                     compilation_template_id=template_id,
                 )
@@ -516,6 +519,11 @@ class Compiler(ProcessBase, LLM):
 
         tenant_id = self._canvas.get_tenant_id()
         doc_id = self._canvas._doc_id
+        doc_name = ""
+        if doc_id:
+            found, document = DocumentService.get_by_id(doc_id)
+            if found and document:
+                doc_name = document.name
         kb_id = getattr(self._canvas, "_kb_id", None) or DocumentService.get_knowledgebase_id(doc_id)
         language = self._compile_language(kwargs)
 
@@ -650,6 +658,7 @@ class Compiler(ProcessBase, LLM):
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
             )
 
         if non_tree_templates:
@@ -681,6 +690,7 @@ class Compiler(ProcessBase, LLM):
                     tenant_id=tenant_id,
                     kb_id=kb_id,
                     doc_id=doc_id,
+                    doc_name=doc_name,
                     language=language,
                     chunk_batches=_chunk_batches(),
                     progress_cb=self._compile_progress,

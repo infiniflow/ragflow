@@ -80,9 +80,8 @@ const ExtractorForm = ({
   useFormChangeCallback(form, onValuesChange);
 
   const ownerTenantId = useOwnerTenantId();
-  const isToc = form.getValues('field_name') === 'toc';
 
-  const { treeData, loadData } = useTagFileTree();
+  const { treeData, loadData } = useTagFileTree(form.watch('tag_file_id'));
 
   return (
     <Form {...form}>
@@ -131,20 +130,15 @@ const ExtractorForm = ({
           )}
         </RAGFlowFormItem>
 
-        {!isToc && (
-          <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
-            <PromptEditor
-              placeholder={t('flow.messagePlaceholder')}
-              showToolbar={true}
-              baseOptions={promptOptions}
-            ></PromptEditor>
-          </RAGFlowFormItem>
-        )}
+        <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+          <PromptEditor
+            placeholder={t('flow.messagePlaceholder')}
+            showToolbar={true}
+            baseOptions={promptOptions}
+          ></PromptEditor>
+        </RAGFlowFormItem>
 
-        <RAGFlowFormItem
-          label={isToc ? t('flow.tocDataSource') : t('flow.userPrompt')}
-          name="prompts"
-        >
+        <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
           <PromptEditor
             showToolbar={true}
             baseOptions={promptOptions}

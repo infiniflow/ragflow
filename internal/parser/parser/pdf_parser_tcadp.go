@@ -21,14 +21,14 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	}
 	baseURL := strings.TrimSpace(parser.TCADPAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPApiServerURL))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIServerURL))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.TCADPAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIKey))
 	}
 	requestBody := map[string]any{
 		"file_type":              "PDF",

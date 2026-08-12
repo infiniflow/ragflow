@@ -83,7 +83,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
@@ -141,6 +141,7 @@
                         "auto_questions": 0,
                         "llm_id": "",
                         "auto_tags": 0,
+                        "tag_file_id": "",
                         "enable_metadata": 0,
                         "metadata": []
                     }
@@ -264,7 +265,7 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "token_size",
+                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"

@@ -206,7 +206,7 @@ func (dao *ChatDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, upda
 	}
 	if result.RowsAffected == 0 {
 		var count int64
-		if err := DB.Model(&entity.Chat{}).Where("id = ?", id).Count(&count).Error; err != nil {
+		if err := db.WithContext(ctx).Model(&entity.Chat{}).Where("id = ?", id).Count(&count).Error; err != nil {
 			return err
 		}
 		if count == 0 {

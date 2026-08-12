@@ -44,7 +44,7 @@ import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
-  keywords_similarity_weight: z.coerce.number(),
+  keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
   top_k: z.coerce.number(),
   dataset_ids: z.array(z.string()),

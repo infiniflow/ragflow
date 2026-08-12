@@ -15,7 +15,8 @@
   "models": [
     {
       "name": "hy3",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -25,7 +26,8 @@
     },
     {
       "name": "hy3-preview",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -35,7 +37,8 @@
     },
     {
       "name": "kimi-k3",
-      "max_tokens": 131072,
+      "content_length": 1000000,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -45,7 +48,8 @@
     },
     {
       "name": "kimi-k2.7-code-highspeed",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -55,7 +59,8 @@
     },
     {
       "name": "kimi-k2.7-code",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -65,7 +70,8 @@
     },
     {
       "name": "glm-5.2",
-      "max_tokens": 131072,
+      "content_length": 1000000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -75,7 +81,8 @@
     },
     {
       "name": "minimax-m3",
-      "max_tokens": 131072,
+      "content_length": 1024000,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -85,7 +92,8 @@
     },
     {
       "name": "deepseek-v4-flash-202605",
-      "max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
@@ -95,7 +103,8 @@
     },
     {
       "name": "deepseek-v4-pro-202606",
-      "max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
@@ -105,7 +114,8 @@
     },
     {
       "name": "deepseek-v4-pro",
-      "max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
@@ -115,7 +125,8 @@
     },
     {
       "name": "deepseek-v4-flash",
-      "max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 393216,
       "model_types": [
         "chat"
       ],
@@ -125,7 +136,8 @@
     },
     {
       "name": "hy-mt2-pro",
-      "max_tokens": 8192,
+      "content_length": 8192,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -135,7 +147,8 @@
     },
     {
       "name": "hy-mt2-plus",
-      "max_tokens": 8192,
+      "content_length": 8192,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -145,7 +158,8 @@
     },
     {
       "name": "hy-mt2-lite",
-      "max_tokens": 8192,
+      "content_length": 8192,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -155,7 +169,8 @@
     },
     {
       "name": "hy-role",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -165,7 +180,8 @@
     },
     {
       "name": "hunyuan-role-latest",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -175,7 +191,8 @@
     },
     {
       "name": "qwen3.5-flash",
-      "max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],
@@ -185,7 +202,8 @@
     },
     {
       "name": "qwen3.5-plus",
-      "max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],
@@ -195,7 +213,8 @@
     },
     {
       "name": "glm-5.1",
-      "max_tokens": 131072,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -205,7 +224,8 @@
     },
     {
       "name": "glm-5",
-      "max_tokens": 131072,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -215,7 +235,8 @@
     },
     {
       "name": "glm-5-turbo",
-      "max_tokens": 131072,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -225,7 +246,8 @@
     },
     {
       "name": "kimi-k2.6",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -235,7 +257,8 @@
     },
     {
       "name": "kimi-k2.5",
-      "max_tokens": 131072,
+      "content_length": 262144,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -245,7 +268,8 @@
     },
     {
       "name": "minimax-m2.7",
-      "max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -255,7 +279,8 @@
     },
     {
       "name": "minimax-m2.5",
-      "max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -265,7 +290,8 @@
     },
     {
       "name": "deepseek-v3.2",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -275,7 +301,8 @@
     },
     {
       "name": "glm-5v-turbo",
-      "max_tokens": 131072,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -286,7 +313,8 @@
     },
     {
       "name": "hy-vision-2.0-instruct",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat",
         "vision"
@@ -297,7 +325,8 @@
     },
     {
       "name": "youtu-vita",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat",
         "vision"
@@ -308,7 +337,8 @@
     },
     {
       "name": "hunyuan-t1-vision-20250916",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat",
         "vision"
@@ -319,7 +349,8 @@
     },
     {
       "name": "hunyuan-turbos-vision-video-20250728",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat",
         "vision"
@@ -333,28 +364,32 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 50
     },
     {
       "name": "kinfra-text-embedding-4b",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 50
     },
     {
       "name": "kinfra-vl-embedding-2b",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 50
     },
     {
       "name": "kinfra-vl-embedding-8b",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 50
     }
   ]
 }

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import MarkdownEditor from '@/components/markdown-editor';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
@@ -72,14 +88,14 @@ export function BlueprintsStep({
 
   const instructionPath =
     `templates.${selectedTemplateIndex}.config.instruction` as const;
-  const pageExamplePath =
-    `templates.${selectedTemplateIndex}.config.page_example` as const;
+  const examplePath =
+    `templates.${selectedTemplateIndex}.config.example` as const;
   const useBlueprintPath =
     `templates.${selectedTemplateIndex}.config.use_blueprint` as const;
 
-  const pageExample = useWatch({
+  const example = useWatch({
     control: form.control,
-    name: pageExamplePath,
+    name: examplePath,
   });
 
   const instruction = useWatch({
@@ -100,7 +116,7 @@ export function BlueprintsStep({
     return selectedItem?.name ?? '';
   }, [treeData, selectedItemId]);
 
-  const hasTemplateData = Boolean(selectedItemId || instruction || pageExample);
+  const hasTemplateData = Boolean(selectedItemId || instruction || example);
 
   const handleSelect = useCallback(
     (item?: TreeDataItem) => {
@@ -113,11 +129,11 @@ export function BlueprintsStep({
       form.setValue(instructionPath, preset.instruction, {
         shouldValidate: false,
       });
-      form.setValue(pageExamplePath, preset.page_example, {
+      form.setValue(examplePath, preset.example, {
         shouldValidate: false,
       });
     },
-    [form, instructionPath, pageExamplePath],
+    [form, instructionPath, examplePath],
   );
 
   const handleToggleBlueprint = useCallback(
@@ -128,11 +144,11 @@ export function BlueprintsStep({
     [form, useBlueprintPath],
   );
 
-  const handlePageExampleChange = useCallback(
+  const handleExampleChange = useCallback(
     (value: string) => {
-      form.setValue(pageExamplePath, value, { shouldValidate: false });
+      form.setValue(examplePath, value, { shouldValidate: false });
     },
-    [form, pageExamplePath],
+    [form, examplePath],
   );
 
   return (
@@ -173,12 +189,16 @@ export function BlueprintsStep({
                 <Textarea rows={6} />
               </RAGFlowFormItem>
 
-              <div className="flex-1 min-h-0 flex flex-col">
+              <RAGFlowFormItem
+                name={examplePath}
+                label={t('setting.example')}
+                className="flex-1 min-h-0"
+              >
                 <MarkdownEditor
-                  content={String(pageExample ?? '')}
-                  onChange={handlePageExampleChange}
+                  content={String(example ?? '')}
+                  onChange={handleExampleChange}
                 />
-              </div>
+              </RAGFlowFormItem>
             </div>
           ) : (
             <BlueprintsEmptyState />

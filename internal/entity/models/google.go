@@ -172,9 +172,8 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		defaultConfig := &APIConfig{}
-		if apiConfig != nil {
-			defaultConfig.BaseURL = apiConfig.BaseURL
-		}
+		defaultConfig.BaseURL = apiConfig.BaseURL
+
 		baseURL, err = g.baseModel.GetBaseURL(defaultConfig)
 		if err != nil {
 			return ""
@@ -439,6 +438,36 @@ func googleToolCalls(functionCalls []*genai.FunctionCall) []map[string]interface
 	return toolCalls
 }
 
+// googleUsageFromMetadata converts the SDK's
+// GenerateContentResponseUsageMetadata into the package's TokenUsage.
+// It returns nil when the metadata is absent so callers can pass the
+// result directly to recordResponseUsage without a separate presence
+// check. Per the SDK, TotalTokenCount is the authoritative sum of
+// prompt + candidates + tool-use prompt + thoughts, so we sum the
+// per-bucket counts the same way and use TotalTokenCount as-is when
+// it is present. ToolUsePromptTokenCount is treated as part of the
+// prompt (it is input billed to the user even though the SDK counts
+// it separately from PromptTokenCount).
+func googleUsageFromMetadata(m *genai.GenerateContentResponseUsageMetadata) *TokenUsage {
+	if m == nil {
+		return nil
+	}
+	in := int(m.PromptTokenCount + m.ToolUsePromptTokenCount)
+	out := int(m.CandidatesTokenCount + m.ThoughtsTokenCount)
+	total := int(m.TotalTokenCount)
+	if in == 0 && out == 0 && total == 0 {
+		return nil
+	}
+	if total == 0 {
+		total = in + out
+	}
+	return &TokenUsage{
+		PromptTokens:     in,
+		CompletionTokens: out,
+		TotalTokens:      total,
+	}
+}
+
 func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -477,6 +506,7 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 
 	// Extract text from response
 	answer := response.Text()
+	recordResponseUsage(modelUsage, response.ResponseID, googleUsageFromMetadata(response.UsageMetadata), "chat")
 
 	return &ChatResponse{Answer: &answer, ToolCalls: googleToolCalls(response.FunctionCalls())}, nil
 }
@@ -516,6 +546,11 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 	var toolCalls []map[string]interface{}
 
+	// Capture the most recent UsageMetadata across the stream so we
+	// can record it once after the iterator finishes. Each chunk may
+	// carry partial counts; the SDK's authoritative total is in the
+	// final chunk's UsageMetadata.
+	var streamUsage *TokenUsage
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
@@ -552,6 +587,18 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 				return err
 			}
 		}
+
+		if u := googleUsageFromMetadata(response.UsageMetadata); u != nil {
+			streamUsage = u
+		}
+	}
+
+	if streamUsage != nil {
+		// Use the shared applyStreamUsage path so chatConfig.UsageResult
+		// and the clickhouse collection happen together — matching the
+		// behaviour of every other streaming driver — and so we do
+		// not collect the same usage twice.
+		applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	}
 
 	if chatModelConfig != nil && len(toolCalls) > 0 {

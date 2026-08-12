@@ -247,7 +247,7 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("missing results field")
 	}
 
-	// Get markdown
+	// Get Markdown
 	for _, fileObj := range results {
 
 		fileMap, ok := fileObj.(map[string]interface{})

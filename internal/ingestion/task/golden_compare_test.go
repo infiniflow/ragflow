@@ -12,7 +12,7 @@ func TestProcessPipelineOutputForGolden_Markdown(t *testing.T) {
 		"markdown": "# Title\n\nContent",
 	}
 
-	result, err := ProcessPipelineOutputForGolden(input, "doc-1", "kb-1", "sample.md")
+	result, err := ProcessPipelineOutputForGolden(input, "doc-1", "sample.md")
 	if err != nil {
 		t.Fatalf("ProcessPipelineOutputForGolden: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestProcessChunksForPipeline_StableFields(t *testing.T) {
 		},
 	}
 
-	meta, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "sample.md", now)
+	meta, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", "sample.md", now)
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}

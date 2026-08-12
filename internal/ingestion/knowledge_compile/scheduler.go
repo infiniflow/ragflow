@@ -23,9 +23,11 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -41,14 +43,23 @@ var ErrClaimTokenMismatch = errors.New("knowledge_compile: claim token mismatch"
 // scheduling truth.
 const notifySubject = "notify.kc.workers"
 
+// Dataset compile lifecycle states. Defined in entity so the scheduler, the
+// dataset service (status API) and tests share one source of truth.
+const (
+	DatasetStateIdle      = entity.DatasetStateIdle
+	DatasetStatePending   = entity.DatasetStatePending
+	DatasetStateRunning   = entity.DatasetStateRunning
+	DatasetStateCompleted = entity.DatasetStateCompleted
+)
+
 // BacklogEntry is one scheduling unit appended to a KB's backlog (Option E
-// §11.4). It carries the doc id plus the original event kind/seq so the
-// consumer can re-apply the same out-of-order / tombstone guards as the
-// broker-based design without re-reading the queue.
+// §11.4). It carries the doc id plus the original event kind so the consumer
+// can re-apply the same tombstone handling as the broker-based design without
+// re-reading the queue. The backlog is an ordered log; the last event for a
+// given doc (by append order) wins, so no sequence number is needed.
 type BacklogEntry struct {
 	DocID     string `json:"doc_id"`
 	EventType string `json:"event_type"`
-	Seq       uint64 `json:"seq"`
 }
 
 // ClaimResult is returned by Scheduler.Claim: the KB's tenant plus the closed
@@ -72,7 +83,7 @@ type Publisher interface {
 	// Publish records one doc event in the dataset's durable backlog and wakes
 	// idle workers. It is transactional so concurrent publishers do not clobber
 	// each other's backlog, and it always pairs the append with a notify.
-	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error
+	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error
 }
 
 // Claimer is the consumer-side role (Option E §11.5). A cluster of competing
@@ -94,6 +105,34 @@ type Claimer interface {
 	// Ack removes the claimed batch from inflight; clears the claim metadata
 	// only when backlog is also empty.
 	Ack(ctx context.Context, datasetID, token string, batch []BacklogEntry) (backlogRemaining int, err error)
+
+	// SetError records a diagnostic message for a failed batch without changing
+	// the lifecycle state (the batch is left for retry, so state stays running).
+	// It is best-effort for observability. token must be the claim token of the
+	// batch that failed: the update only applies while that exact claim is still
+	// live, so a stale worker whose lease was reclaimed cannot overwrite the
+	// status of the worker that took over.
+	SetError(ctx context.Context, datasetID, token, errMsg string) error
+
+	// CancelInflight drops the live claim for a dataset back into the backlog so
+	// a rewrite can start from a clean index. The token is intentionally NOT
+	// checked: this is the rewrite's authoritative cancel. Workers verify their
+	// claim token inside the dataset write lock before every destructive write, so
+	// a cancelled worker cannot write after the rebuild clears storage. It is a safe no-op when
+	// there is no live lease (the dataset is idle or already drained). The dropped
+	// batch is re-marked pending (not deleted) so it is reclaimed and re-checked
+	CancelInflight(ctx context.Context, datasetID, token string) error
+
+	// WithDatasetLock executes fn while holding an exclusive per-dataset lock
+	// that serializes against both writer side effects and dataset rebuilds
+	// (RebuildDataset). It is the synchronization that closes the TOCTOU gap
+	// between a worker's claim validation and its destructive write: the caller
+	// must compare its claim token and perform the write inside fn. fn
+	// runs inside a transaction that holds the dataset row lock for its whole
+	// duration (MySQL) or a per-row mutex (Fake), so rebuild and writes are
+	// mutually exclusive. claimToken is read under the lock; the caller must not
+	// re-read it on a separate connection.
+	WithDatasetLock(ctx context.Context, datasetID string, fn func(claimToken string) error) error
 
 	// SubscribeNotify returns a channel of dataset ids pushed by Publish, or nil
 	// when the implementation has no push wake-up (callers fall back to polling).
@@ -164,11 +203,28 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 // workers. The append is transactional (concurrent publishers do not clobber
 // each other's backlog), and the notify is always paired with the append so a
 // producer never needs a separate Notify call.
-func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error {
+func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error {
+	return s.publish(ctx, tenantID, datasetID, docID, eventType)
+}
+
+// loadRow fetches the dataset scheduling row (no lock). Returns nil (no error)
+// when the row does not exist yet.
+func (s *mysqlScheduler) loadRow(ctx context.Context, datasetID string) (*entity.KnowledgeCompileDataset, error) {
+	var row entity.KnowledgeCompileDataset
+	if err := s.db.WithContext(ctx).Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error {
 	if s.db == nil {
 		return nil
 	}
-	entry := BacklogEntry{DocID: docID, EventType: eventType, Seq: seq}
+	entry := BacklogEntry{DocID: docID, EventType: eventType}
 	// KnowledgeCompileDataset.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
 	// UPDATE below also takes an InnoDB gap lock for a not-yet-existing dataset;
 	// concurrent publishers for the same dataset serialize on that lock and the
@@ -197,12 +253,56 @@ func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID
 		backlog := parseEntries(row.BacklogDocIDs)
 		backlog = append(backlog, entry)
 		row.BacklogDocIDs = marshalEntries(backlog)
+		// Surface a pending state unless a worker is already running (a live lease
+		// means the consumer is mid-merge on this KB; a pending transition would
+		// wrongly hide that). completed -> pending when new work arrives.
+		if row.State != DatasetStateRunning {
+			row.State = DatasetStatePending
+		}
 		return tx.Save(&row).Error
 	})
 	if err != nil {
 		return fmt.Errorf("knowledge_compile: publish backlog %s: %w", datasetID, err)
 	}
+	common.Info("knowledge_compile: published backlog entry",
+		zap.String("dataset_id", datasetID),
+		zap.String("tenant_id", tenantID),
+		zap.String("doc_id", docID),
+		zap.String("event_type", eventType))
 	return s.notify(ctx, datasetID)
+}
+
+// WithDatasetLock executes fn under an exclusive per-dataset row lock. It locks
+// the dataset row (SELECT ... FOR UPDATE) and runs fn inside the same
+// transaction, so the row lock is held for the entire duration of fn and any
+// concurrent WithDatasetLock on the same dataset blocks until fn returns. This
+// is what makes a worker's claim-token check + destructive write atomic against
+// a concurrent RebuildDataset.
+//
+// The claim token passed to fn is read within this transaction, so the check in
+// fn does not need (and must not attempt) a separate DB read that would deadlock
+// against the held row lock. fn runs inside the transaction; if it returns an
+// error the transaction is rolled back
+// and the error is propagated unchanged (any DB write performed inside fn is
+// rolled back, so no partial side effect persists on an aborted write).
+func (s *mysqlScheduler) WithDatasetLock(ctx context.Context, datasetID string, fn func(claimToken string) error) error {
+	if s.db == nil {
+		// No DB (test/no-op scheduler): nothing to serialize against.
+		return fn("")
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row := entity.KnowledgeCompileDataset{
+			DatasetID:      datasetID,
+			BacklogDocIDs:  "[]",
+			InflightDocIDs: "[]",
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("dataset_id = ?", datasetID).
+			FirstOrCreate(&row).Error; err != nil {
+			return err
+		}
+		return fn(row.ClaimToken)
+	})
 }
 
 // claimRow atomically claims the closed batch from the row identified by
@@ -238,9 +338,18 @@ func (s *mysqlScheduler) claimRow(ctx context.Context, tx *gorm.DB, datasetID st
 	row.ClaimToken = generateHolder()
 	exp := now.Add(s.leaseTTL)
 	row.ClaimExpiresAt = &exp
+	row.State = DatasetStateRunning
+	row.ErrorMsg = ""
 	if err := tx.Save(&row).Error; err != nil {
 		return ClaimResult{}, false, err
 	}
+	common.Info("knowledge_compile: claimed dataset batch",
+		zap.String("dataset_id", row.DatasetID),
+		zap.String("tenant_id", row.TenantID),
+		zap.Int("batch_size", len(batch)),
+		zap.Int("backlog_remaining", len(backlog)-n),
+		zap.String("token", row.ClaimToken),
+		zap.Any("batch", batch))
 	return ClaimResult{DatasetID: row.DatasetID, TenantID: row.TenantID, Entries: batch, Token: row.ClaimToken}, true, nil
 }
 
@@ -286,16 +395,100 @@ func (s *mysqlScheduler) Ack(ctx context.Context, datasetID, token string, batch
 			row.ClaimToken = ""
 			row.ClaimExpiresAt = nil
 		}
+		remaining = len(parseEntries(row.BacklogDocIDs))
+		// Backlog still has work -> pending; drained to empty -> completed.
+		if remaining > 0 {
+			row.State = DatasetStatePending
+		} else {
+			row.State = DatasetStateCompleted
+			now := time.Now()
+			row.LastCompletedAt = &now
+		}
 		if err := tx.Save(&row).Error; err != nil {
 			return err
 		}
-		remaining = len(parseEntries(row.BacklogDocIDs))
 		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
+	common.Info("knowledge_compile: acked dataset batch",
+		zap.String("dataset_id", datasetID),
+		zap.Int("batch_size", len(batch)),
+		zap.Int("backlog_remaining", remaining),
+		zap.Any("batch", batch))
 	return remaining, nil
+}
+
+// SetError records a best-effort diagnostic on the dataset row when a batch
+// merge fails (consumer failure path). It does not change the lifecycle state:
+// a failed batch is left in backlog for retry, so the row stays running/pending
+// and the error message is surfaced by the status API for diagnosis.
+//
+// token scopes the write to the exact claim that failed: the update only lands
+// while that claim token is still live on the row. If the original worker's
+// lease expired and another worker took over (a new claim token), a stale
+// SetError from the old worker is a no-op and cannot overwrite the new worker's
+// status/diagnostic.
+func (s *mysqlScheduler) SetError(ctx context.Context, datasetID, token, errMsg string) error {
+	if s.db == nil {
+		return nil
+	}
+	msg := errMsg
+	if len(msg) > 4000 {
+		msg = msg[:4000]
+	}
+	res := s.db.WithContext(ctx).Model(&entity.KnowledgeCompileDataset{}).
+		Where("dataset_id = ? AND claim_token = ?", datasetID, token).
+		Update("error_msg", msg)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		common.Warn("knowledge_compile: set_error ignored (claim token mismatch / lease reclaimed)",
+			zap.String("dataset_id", datasetID))
+	}
+	return nil
+}
+
+// CancelInflight drops the live claim for a dataset back into the backlog so a
+// rewrite can start from a clean index. It is a no-op when there is no live
+// lease. The dropped batch is re-marked pending and is reprocessed after the
+// rebuild republishes the dataset documents.
+func (s *mysqlScheduler) CancelInflight(ctx context.Context, datasetID, token string) error {
+	if s.db == nil {
+		return nil
+	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row entity.KnowledgeCompileDataset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		// No live lease (idle or already drained) → nothing to cancel.
+		now := time.Now()
+		liveLease := row.ClaimOwner != "" && row.ClaimExpiresAt != nil && row.ClaimExpiresAt.After(now)
+		if !liveLease {
+			return nil
+		}
+		inflight := parseEntries(row.InflightDocIDs)
+		backlog := parseEntries(row.BacklogDocIDs)
+		backlog = append(backlog, inflight...)
+		row.InflightDocIDs = "[]"
+		row.ClaimOwner = ""
+		row.ClaimToken = ""
+		row.ClaimExpiresAt = nil
+		row.BacklogDocIDs = marshalEntries(backlog)
+		row.State = DatasetStatePending
+		return tx.Save(&row).Error
+	})
+	if err != nil {
+		return fmt.Errorf("knowledge_compile: cancel inflight %s: %w", datasetID, err)
+	}
+	return nil
 }
 
 func (s *mysqlScheduler) TouchClaim(ctx context.Context, datasetID, token string, ttl time.Duration) (bool, error) {
@@ -307,6 +500,10 @@ func (s *mysqlScheduler) TouchClaim(ctx context.Context, datasetID, token string
 		Update("claim_expires_at", time.Now().Add(ttl))
 	if res.Error != nil {
 		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		common.Warn("knowledge_compile: claim touch failed (lease lost or token mismatch)",
+			zap.String("dataset_id", datasetID), zap.String("token", token))
 	}
 	return res.RowsAffected > 0, nil
 }
@@ -405,9 +602,14 @@ func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.T
 		cur.ClaimOwner = ""
 		cur.ClaimToken = ""
 		cur.ClaimExpiresAt = nil
+		cur.State = DatasetStatePending
 		if err := tx.Save(&cur).Error; err != nil {
 			return "", false, err
 		}
+		common.Warn("knowledge_compile: reclaimed expired inflight lease",
+			zap.String("dataset_id", cur.DatasetID),
+			zap.String("tenant_id", cur.TenantID),
+			zap.Int("reclaimed_entries", len(inflight)))
 		return cur.DatasetID, true, nil
 	}
 	return "", false, nil
@@ -420,7 +622,13 @@ func (s *mysqlScheduler) notify(ctx context.Context, datasetID string) error {
 		return nil
 	}
 	payload, _ := json.Marshal(map[string]string{"dataset_id": datasetID})
-	return s.mq.PublishKnowledgeCompile(notifySubject, payload)
+	if err := s.mq.PublishKnowledgeCompile(notifySubject, payload); err != nil {
+		common.Warn("knowledge_compile: publish notify failed (workers will poll)",
+			zap.String("dataset_id", datasetID), zap.Error(err))
+		return err
+	}
+	common.Info("knowledge_compile: published worker notify", zap.String("dataset_id", datasetID))
+	return nil
 }
 
 func (s *mysqlScheduler) SubscribeNotify(ctx context.Context) (<-chan string, error) {
@@ -431,7 +639,7 @@ func (s *mysqlScheduler) SubscribeNotify(ctx context.Context) (<-chan string, er
 }
 
 // removeEntries drops every entry in batch from the inflight slice (match by
-// doc_id + event_type + seq). The batch is the exact set the worker claimed, so
+// doc_id + event_type). The batch is the exact set the worker claimed, so
 // this is a precise removal, not a "clear all" — any inflight added by a
 // concurrent claim is preserved.
 func removeEntries(inflight, batch []BacklogEntry) []BacklogEntry {
@@ -461,6 +669,11 @@ type fakeRow struct {
 	owner    string
 	token    string
 	expires  *time.Time
+	state    string
+	errorMsg string
+	// writeMu serializes per-dataset writer side effects and rebuilds, mirroring
+	// the MySQL scheduler's WithDatasetLock row lock.
+	writeMu sync.Mutex
 }
 
 // FakeScheduler is an in-memory Publisher + Claimer used by tests. It mirrors
@@ -485,8 +698,12 @@ func NewFakeScheduler() *FakeScheduler {
 
 func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
-// Publish appends one doc event and pushes a notify (same as the MySQL path).
-func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error {
+// Publish appends one doc event and pushes a notify (same contract as MySQL).
+func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string) error {
+	return f.publish(tenantID, datasetID, docID, eventType)
+}
+
+func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.rows[datasetID]
@@ -497,7 +714,11 @@ func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, e
 	if r.tenant == "" {
 		r.tenant = tenantID
 	}
-	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType, Seq: seq})
+	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType})
+	// Mirror the MySQL scheduler: surface pending unless a worker is running.
+	if r.state != DatasetStateRunning {
+		r.state = DatasetStatePending
+	}
 	select {
 	case f.notifyCh <- datasetID:
 	default:
@@ -528,6 +749,8 @@ func (f *FakeScheduler) Claim(_ context.Context, datasetID string) (ClaimResult,
 	r.token = generateHolder()
 	exp := now.Add(f.leaseTTL)
 	r.expires = &exp
+	r.state = DatasetStateRunning
+	r.errorMsg = ""
 	return ClaimResult{DatasetID: datasetID, TenantID: r.tenant, Entries: batch, Token: r.token}, true, nil
 }
 
@@ -545,6 +768,12 @@ func (f *FakeScheduler) Ack(_ context.Context, datasetID, token string, batch []
 	if len(r.inflight) == 0 {
 		r.owner, r.token, r.expires = "", "", nil
 	}
+	// Mirror the MySQL scheduler: backlog still has work -> pending; drained -> completed.
+	if len(r.backlog) > 0 {
+		r.state = DatasetStatePending
+	} else {
+		r.state = DatasetStateCompleted
+	}
 	return len(r.backlog), nil
 }
 
@@ -560,6 +789,80 @@ func (f *FakeScheduler) TouchClaim(_ context.Context, datasetID, token string, _
 	return true, nil
 }
 
+func (f *FakeScheduler) SetError(_ context.Context, datasetID, token, errMsg string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.rows[datasetID]
+	if !ok || r.token != token {
+		return nil
+	}
+	r.errorMsg = errMsg
+	return nil
+}
+
+// WithDatasetLock executes fn under the per-row write mutex, mirroring the MySQL
+// scheduler's row-lock semantics: a rebuild and a writer's destructive side
+// effect on the same dataset are mutually exclusive. claimToken is read under
+// the lock.
+func (f *FakeScheduler) WithDatasetLock(_ context.Context, datasetID string, fn func(claimToken string) error) error {
+	f.mu.Lock()
+	r, ok := f.rows[datasetID]
+	if !ok {
+		r = &fakeRow{}
+		f.rows[datasetID] = r
+	}
+	f.mu.Unlock()
+
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	f.mu.Lock()
+	claimToken := r.token
+	f.mu.Unlock()
+	return fn(claimToken)
+}
+
+// CancelInflight drops the live claim back into the backlog (mirrors MySQL).
+func (f *FakeScheduler) CancelInflight(_ context.Context, datasetID, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.rows[datasetID]
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	live := r.owner != "" && r.expires != nil && r.expires.After(now)
+	if !live {
+		return nil
+	}
+	r.backlog = append(r.backlog, r.inflight...)
+	r.inflight = nil
+	r.owner, r.token, r.expires = "", "", nil
+	r.state = DatasetStatePending
+	return nil
+}
+
+// fakeReclaimExpired finds one dataset with an expired lease and non-empty
+// inflight, moves the inflight batch back to backlog, clears the lease, and
+// marks the row pending — mirroring the MySQL scheduler's reclaimOne. It returns
+// the reclaimed dataset id, or "" when nothing is expired. The lock must already
+// be held by the caller.
+func (f *FakeScheduler) fakeReclaimExpired(now time.Time) string {
+	for id, r := range f.rows {
+		if r.owner != "" && r.expires != nil && r.expires.After(now) {
+			continue
+		}
+		if len(r.inflight) > 0 {
+			r.backlog = append(r.backlog, r.inflight...)
+			r.inflight = nil
+			r.owner, r.token, r.expires = "", "", nil
+			// reclaimOne: inflight -> backlog, lease cleared -> pending.
+			r.state = DatasetStatePending
+			return id
+		}
+	}
+	return ""
+}
+
 // TryClaim mirrors the production flow: claim a ready dataset, otherwise reclaim
 // an expired lease and claim it.
 func (f *FakeScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error) {
@@ -573,18 +876,7 @@ func (f *FakeScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error)
 		}
 	}
 	if readyID == "" {
-		for id, r := range f.rows {
-			if r.owner != "" && r.expires != nil && r.expires.After(now) {
-				continue
-			}
-			if len(r.inflight) > 0 {
-				r.backlog = append(r.backlog, r.inflight...)
-				r.inflight = nil
-				r.owner, r.token, r.expires = "", "", nil
-				expiredID = id
-				break
-			}
-		}
+		expiredID = f.fakeReclaimExpired(now)
 	}
 	f.mu.Unlock()
 	if readyID != "" {

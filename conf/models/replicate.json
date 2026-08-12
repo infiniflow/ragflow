@@ -12,28 +12,32 @@
   "models": [
     {
       "name": "meta/llama-4-maverick-instruct",
-      "max_tokens": 8192,
+      "content_length": 1048576,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ]
     },
     {
       "name": "meta/llama-4-scout-instruct",
-      "max_tokens": 8192,
+      "content_length": 10485760,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ]
     },
     {
       "name": "meta/meta-llama-3-70b-instruct",
-      "max_tokens": 8192,
+      "content_length": 8000,
+      "max_output": 8000,
       "model_types": [
         "chat"
       ]
     },
     {
       "name": "meta/meta-llama-3-8b-instruct",
-      "max_tokens": 8192,
+      "content_length": 8000,
+      "max_output": 8000,
       "model_types": [
         "chat"
       ]
@@ -43,14 +47,16 @@
       "max_tokens": 384,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 16
     },
     {
       "name": "ibm-granite/granite-embedding-278m-multilingual:1f76d42a05f120e12272746d5a2d86b525c13420773f795a4cbef9117d8685f1",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 16
     }
   ]
 }

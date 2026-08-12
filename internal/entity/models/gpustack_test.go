@@ -168,7 +168,7 @@ func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
 func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		for _, k := range []string{"model", "messages", "stream", "max_tokens", "temperature", "top_p", "stop"} {
+		for _, k := range []string{"model", "messages", "stream", "temperature", "top_p", "stop"} {
 			if _, present := body[k]; !present {
 				t.Errorf("documented field %q missing from request body", k)
 			}

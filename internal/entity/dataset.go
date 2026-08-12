@@ -130,7 +130,7 @@ type Knowledgebase struct {
 }
 
 // TableName returns the table name for Knowledgebase model
-func (Knowledgebase) TableName() string {
+func (kb *Knowledgebase) TableName() string {
 	return "knowledgebase"
 }
 

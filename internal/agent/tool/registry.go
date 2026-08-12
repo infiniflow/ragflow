@@ -40,6 +40,7 @@ var registry = map[string]Factory{
 	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
 	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
+	"wiki_query":                 noConfig("wiki_query", func() einotool.BaseTool { return NewWikiQueryTool() }),
 	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
 	"duckduckgo":                 buildDuckDuckGoTool,
 	"email":                      buildEmailTool,
@@ -415,6 +416,11 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 			defaults.DatasetIDs = ids
 		}
 	}
+	if ids, ok, err := stringSliceParam(params, "memory_ids"); err != nil {
+		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
+	} else if ok {
+		defaults.MemoryIDs = ids
+	}
 	if v, ok := intParam(params, "top_n"); ok {
 		defaults.TopN = v
 	}
@@ -428,8 +434,11 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
 	}
+	if v, ok := boolParam(params, "toc_enhance"); ok {
+		defaults.TOCEnhance = v
+	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
-		defaults.SimilarityThreshold = v
+		defaults.SimilarityThreshold = &v
 	}
 	if v, ok := floatParam(params, "keywords_similarity_weight"); ok {
 		if v < 0 || v > 1 {
@@ -443,6 +452,32 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 			return nil, fmt.Errorf("agent tool: retrieval tool requires string node-level param empty_response")
 		}
 		defaults.EmptyResponse = emptyResponse
+	}
+	if value, ok := params["rerank_id"]; ok {
+		rerankID, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires string node-level param rerank_id")
+		}
+		defaults.RerankID = rerankID
+	}
+	if languages, ok, err := stringSliceParam(params, "cross_languages"); err != nil {
+		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
+	} else if ok {
+		defaults.CrossLanguages = languages
+	}
+	if value, ok := params["meta_data_filter"]; ok {
+		filter, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires object node-level param meta_data_filter")
+		}
+		defaults.MetaDataFilter = cloneStringAnyMap(filter)
+	}
+	if value, ok := params["retrieval_from"]; ok {
+		retrievalFrom, ok := value.(string)
+		if !ok || (retrievalFrom != "dataset" && retrievalFrom != "memory") {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires retrieval_from to be dataset or memory")
+		}
+		defaults.RetrievalFrom = retrievalFrom
 	}
 	return NewRetrievalToolWithDefaults(defaults), nil
 }

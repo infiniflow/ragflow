@@ -90,7 +90,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
-                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
             providers.append(provider)
         providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
@@ -113,7 +113,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
-                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
             providers.append(provider)
     providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
@@ -865,6 +865,8 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
         if any_passed:
             msg = ""
+        else:
+            msg = msg or "No model passed verification"
 
     success = bool(passed_types)
     return success, "success" if success else msg, model_verify_result

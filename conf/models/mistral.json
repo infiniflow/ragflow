@@ -15,7 +15,8 @@
   "models": [
     {
       "name": "mistral-large-latest",
-      "max_tokens": 128000,
+      "content_length": 262144,
+      "max_output": 262144,
       "model_types": [
         "chat"
       ],
@@ -37,7 +38,8 @@
     },
     {
       "name": "mistral-medium-latest",
-      "max_tokens": 128000,
+      "content_length": 262144,
+      "max_output": 262144,
       "model_types": [
         "chat"
       ],
@@ -47,7 +49,8 @@
     },
     {
       "name": "mistral-small-latest",
-      "max_tokens": 128000,
+      "content_length": 262144,
+      "max_output": 262144,
       "model_types": [
         "chat"
       ],
@@ -57,7 +60,8 @@
     },
     {
       "name": "ministral-8b-latest",
-      "max_tokens": 128000,
+      "content_length": 262144,
+      "max_output": 262144,
       "model_types": [
         "chat"
       ],
@@ -67,7 +71,8 @@
     },
     {
       "name": "ministral-3b-latest",
-      "max_tokens": 128000,
+      "content_length": 262144,
+      "max_output": 262144,
       "model_types": [
         "chat"
       ],
@@ -77,7 +82,8 @@
     },
     {
       "name": "pixtral-large-latest",
-      "max_tokens": 128000,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat",
         "vision"
@@ -88,7 +94,8 @@
     },
     {
       "name": "codestral-latest",
-      "max_tokens": 256000,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -98,7 +105,8 @@
     },
     {
       "name": "open-mistral-nemo",
-      "max_tokens": 128000,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -108,7 +116,8 @@
     },
     {
       "name": "open-mistral-7b",
-      "max_tokens": 32000,
+      "content_length": 32768,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -118,7 +127,8 @@
     },
     {
       "name": "open-mixtral-8x7b",
-      "max_tokens": 32000,
+      "content_length": 32768,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -128,7 +138,8 @@
     },
     {
       "name": "open-mixtral-8x22b",
-      "max_tokens": 64000,
+      "content_length": 65536,
+      "max_output": 65536,
       "model_types": [
         "chat"
       ],
@@ -138,7 +149,8 @@
     },
     {
       "name": "magistral-medium-latest",
-      "max_tokens": 40000,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -148,7 +160,8 @@
     },
     {
       "name": "magistral-small-latest",
-      "max_tokens": 40000,
+      "content_length": 131072,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -161,7 +174,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 16
     },
     {
       "name": "mistral-ocr-2512",

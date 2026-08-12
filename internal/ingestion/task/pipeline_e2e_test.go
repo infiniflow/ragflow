@@ -32,7 +32,7 @@ import (
 	"ragflow/internal/engine/infinity"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/ingestion/testutil"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/service"
 )
 
@@ -67,7 +67,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 			esPassword = "infini_rag_flow"
 		}
 
-		cfg := &server.ElasticsearchConfig{
+		cfg := config.ElasticsearchConfig{
 			Hosts:    esHost,
 			Username: esUser,
 			Password: esPassword,
@@ -91,7 +91,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 			return nil, func() {}
 		}
 
-		cfg := &server.InfinityConfig{
+		cfg := config.InfinityConfig{
 			URI:          infURI,
 			DBName:       "ragflow_e2e_test",
 			PostgresPort: 5432,

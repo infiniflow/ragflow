@@ -56,7 +56,7 @@ func HandleNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chat
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
 			model, _ := result["model"].(string)
-			common.Info("StreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
+			common.Info("NonStreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
 		}
 	}
 

@@ -44,10 +44,6 @@ export function useCommitArtifact({
     setIsOpen(true);
   }, [form]);
 
-  const close = useCallback(() => {
-    setIsOpen(false);
-  }, []);
-
   const handleConfirm = useCallback(
     async (values: CommitFormValues) => {
       if (!pageType || !slug) return;
@@ -72,7 +68,7 @@ export function useCommitArtifact({
   return {
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,

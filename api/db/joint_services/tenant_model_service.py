@@ -551,6 +551,38 @@ def get_composite_model_name_by_id(model_id: str) -> str:
     return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
 
 
+def get_composite_model_name_by_ids(model_ids: list[str]) -> dict[str, str]:
+    """Convert a list of tenant_model.id values to a dict mapping each id
+    to its composite model name string ``model_name@instance_name@provider_name``.
+    Model ids that cannot be resolved are silently skipped.
+    """
+    if not model_ids:
+        return {}
+
+    models = list(TenantModelService.get_by_ids(model_ids))
+    if not models:
+        return {}
+
+    instance_ids = list({m.instance_id for m in models})
+    provider_ids = list({m.provider_id for m in models})
+
+    instances = list(TenantModelInstanceService.get_by_ids(instance_ids)) if instance_ids else []
+    instance_map = {i.id: i for i in instances}
+
+    providers = list(TenantModelProviderService.get_by_ids(provider_ids)) if provider_ids else []
+    provider_map = {p.id: p for p in providers}
+
+    result: dict[str, str] = {}
+    for m in models:
+        inst = instance_map.get(m.instance_id)
+        prov = provider_map.get(m.provider_id)
+        if not inst or not prov:
+            continue
+        result[m.id] = f"{m.model_name}@{inst.instance_name}@{prov.provider_name}"
+
+    return result
+
+
 def ensure_mistral_ocr_from_env(tenant_id: str) -> str | None:
     return _ensure_ocr_provider_from_env(
         tenant_id,

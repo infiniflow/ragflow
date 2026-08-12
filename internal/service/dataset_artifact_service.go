@@ -18,6 +18,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
+
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -165,7 +169,15 @@ type WikiPageItem struct {
 // ListWikiPages lists wiki pages for a dataset with optional page_type/topic
 // filters and pagination.
 func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, datasetID, pageType, topic string, page, pageSize int) ([]WikiPageItem, int64, error) {
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}}
+	// Only surface the merged dataset-level pages. Each unique (page_type, slug)
+	// can also have a per-document source row (available_int=0); without this
+	// filter the same entity/concept would appear once per source doc. Python's
+	// list_wiki_pages has no such duplication because its writer emits one row
+	// per page, so mirror that by selecting the merged rows (available_int=1).
+	filter := map[string]interface{}{
+		"compile_kwd":   []string{CompileKwdWikiPage},
+		"available_int": 1, // merged dataset-level rows only (see engine available_int handling)
+	}
 	if pageType != "" {
 		filter["page_type_kwd"] = []string{pageType}
 	}
@@ -181,10 +193,18 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 	}
 	items := make([]WikiPageItem, 0, len(chunks))
 	for _, c := range chunks {
+		pageType := firstStringValue(c["page_type_kwd"])
+		// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
+		// contract); expose the bare slug to the frontend so it can be placed in
+		// a single URL path segment (gin :slug does not match '/').
+		bareSlug := firstStringValue(c["slug_kwd"])
+		if pageType != "" {
+			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
+		}
 		items = append(items, WikiPageItem{
-			Slug:     firstStringValue(c["slug_kwd"]),
+			Slug:     bareSlug,
 			Title:    firstStringValue(c["title_kwd"]),
-			PageType: firstStringValue(c["page_type_kwd"]),
+			PageType: pageType,
 			Topic:    firstStringValue(c["topic_kwd"]),
 			Summary:  firstStringValue(c["summary_with_weight"]),
 		})
@@ -192,13 +212,15 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 	return items, total, nil
 }
 
-// WikiPageDetail is the full wiki page payload.
+// WikiPageDetail is the full wiki page payload. The content field is exposed as
+// content_md_rendered to match the frontend IArtifactPage contract (and Python's
+// get_wiki_page), which renders it directly.
 type WikiPageDetail struct {
 	Slug           string   `json:"slug"`
 	Title          string   `json:"title"`
 	PageType       string   `json:"page_type"`
 	Topic          string   `json:"topic"`
-	ContentMd      string   `json:"content_md"`
+	ContentMd      string   `json:"content_md_rendered"`
 	Summary        string   `json:"summary"`
 	EntityNames    []string `json:"entity_names"`
 	Outlinks       []string `json:"outlinks"`
@@ -209,16 +231,21 @@ type WikiPageDetail struct {
 
 // GetWikiPage returns a single wiki page by page_type and slug.
 func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string) (*WikiPageDetail, error) {
+	// Match Python's get_wiki_page contract (dataset_api_service.py): slug_kwd
+	// is stored as the full "<page_type>/<slug>" form, and list_wiki_pages
+	// returns the bare slug. Reconstruct the full form deterministically so the
+	// filter matches the stored value exactly.
 	slugKwd := pageType + "/" + slug
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{pageType},
 		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "content_with_weight",
-			"summary_with_weight", "entity_names_kwd", "outlinks_kwd", "related_kb_pages_kwd",
-			"source_chunk_ids", "source_doc_ids"},
+		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "md_with_weight",
+			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
+			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)
 	if err != nil {
 		return nil, err
@@ -227,12 +254,26 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		return nil, nil
 	}
 	c := chunks[0]
+	// Python stores the page body in md_with_weight (incremental writer), falling
+	// back to content_with_weight for legacy rows; mirror that here.
+	content := firstStringValue(c["md_with_weight"])
+	if content == "" {
+		content = firstStringValue(c["content_with_weight"])
+	}
+	// slug_kwd is the full "<page_type>/<slug>" form; expose the bare slug so a
+	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
+	// "<page_type>/" prefix being doubled (matches ListWikiPages).
+	detailPageType := firstStringValue(c["page_type_kwd"])
+	detailSlug := firstStringValue(c["slug_kwd"])
+	if detailPageType != "" {
+		detailSlug = strings.TrimPrefix(detailSlug, detailPageType+"/")
+	}
 	detail := &WikiPageDetail{
-		Slug:           firstStringValue(c["slug_kwd"]),
+		Slug:           detailSlug,
 		Title:          firstStringValue(c["title_kwd"]),
-		PageType:       firstStringValue(c["page_type_kwd"]),
+		PageType:       detailPageType,
 		Topic:          firstStringValue(c["topic_kwd"]),
-		ContentMd:      firstStringValue(c["content_with_weight"]),
+		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
@@ -251,11 +292,14 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	if docEngine == nil {
 		return nil, fmt.Errorf("document engine is not initialized")
 	}
+	// Python contract: slug_kwd is stored as "page_type/slug"; reconstruct it
+	// deterministically from the bare slug (see GetWikiPage).
 	slugKwd := pageType + "/" + slug
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{pageType},
 		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page only
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
 	if err != nil {
@@ -270,6 +314,9 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	}
 	update := map[string]interface{}{}
 	if contentMd != "" {
+		// GetWikiPage prefers md_with_weight and falls back to content_with_weight,
+		// so write both to keep the edit readable regardless of the row's writer.
+		update["md_with_weight"] = contentMd
 		update["content_with_weight"] = contentMd
 	}
 	if title != "" {
@@ -300,9 +347,10 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{"concept", "entity"},
+		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"topic_kwd", "title_kwd", "slug_kwd"}, 0, 1000, nil)
+		[]string{"topic_kwd", "title_kwd", "slug_kwd", "page_type_kwd"}, 0, 1000, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -313,12 +361,17 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		if t == "" {
 			continue
 		}
+		pageType := firstStringValue(c["page_type_kwd"])
+		bareSlug := firstStringValue(c["slug_kwd"])
+		if pageType != "" {
+			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
+		}
 		counts[t]++
 		if _, ok := metas[t]; !ok {
 			metas[t] = WikiTopicItem{
 				Topic: t,
 				Title: firstStringValue(c["title_kwd"]),
-				Slug:  firstStringValue(c["slug_kwd"]),
+				Slug:  bareSlug,
 			}
 		}
 	}
@@ -327,9 +380,22 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		it.PageCount = counts[t]
 		items = append(items, it)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Topic < items[j].Topic })
+	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
+	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
+	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
+	// which orders Chinese by pinyin and handles Latin/digits/other scripts
+	// correctly, case-insensitively, without assuming topics are all-Chinese.
+	sort.Slice(items, func(i, j int) bool {
+		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
+	})
 	return items, int64(len(items)), nil
 }
+
+// wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
+// selects the CLDR zh collation (pinyin-based for Han), while Latin/digits and
+// other scripts sort naturally, case-insensitively. It is safe for concurrent
+// use after construction.
+var wikiTopicCollator = collate.New(language.Chinese)
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
 type WikiGraph struct {
@@ -357,7 +423,7 @@ type WikiGraphRelation struct {
 // GetWikiGraph returns the wiki entity/relation graph for a dataset.
 func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, datasetID string) (*WikiGraph, error) {
 	entityChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}},
+		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}, "available_int": 1},
 		[]string{"slug_kwd", "title_kwd", "aliases_kwd", "description_with_weight", "entity_type_kwd", "weight_int", "source_chunk_ids"},
 		0, 1000, (&types.OrderByExpr{}).Desc("weight_int"))
 	if err != nil {
@@ -370,27 +436,43 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	graph := &WikiGraph{Entities: []WikiGraphEntity{}, Relations: []WikiGraphRelation{}}
 	for _, c := range entityChunks {
 		w := intValue(c["weight_int"])
+		// Match the GetWikiPage / ListWikiPages contract: expose the bare slug
+		// and the pure page_type (no "wiki_" prefix, no "<page_type>/" prefix)
+		// so the frontend can build artifact/<page_type>/<slug> links that
+		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
+		// "wiki_topic"); strip the prefix. slug_kwd stores the full
+		// "<page_type>/<slug>" form; expose the trailing bare slug.
+		fullSlug := firstStringValue(c["slug_kwd"])
+		bareSlug := fullSlug
+		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
+		if idx := strings.LastIndex(bareSlug, "/"); idx >= 0 {
+			pageType = bareSlug[:idx]
+			bareSlug = bareSlug[idx+1:]
+		}
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
-			Slug:           firstStringValue(c["slug_kwd"]),
+			Slug:           bareSlug,
 			Name:           firstStringValue(c["title_kwd"]),
 			Aliases:        toStringSlice(c["aliases_kwd"]),
 			Description:    firstStringValue(c["description_with_weight"]),
-			Type:           firstStringValue(c["entity_type_kwd"]),
+			Type:           pageType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
 		})
 	}
 	if len(fromKwds) > 0 {
 		relChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "from_kwd": fromKwds},
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "available_int": 1, "from_kwd": fromKwds},
 			[]string{"from_kwd", "to_kwd"}, 0, 10000, nil)
 		if err != nil {
 			return nil, err
 		}
 		for _, c := range relChunks {
+			// Relations reference endpoints by their full "<page_type>/<slug>"
+			// form in ES; expose them as bare slugs so the frontend's
+			// nodesBySlug (keyed on the entity's bare slug) can resolve edges.
 			graph.Relations = append(graph.Relations, WikiGraphRelation{
-				From: firstStringValue(c["from_kwd"]),
-				To:   firstStringValue(c["to_kwd"]),
+				From: bareWikiSlug(firstStringValue(c["from_kwd"])),
+				To:   bareWikiSlug(firstStringValue(c["to_kwd"])),
 			})
 		}
 	}
@@ -825,6 +907,18 @@ func firstStringValue(v interface{}) string {
 		}
 	}
 	return ""
+}
+
+// bareWikiSlug strips the "<page_type>/" prefix from a full wiki slug
+// ("topic/yellow-turban-rebellion" -> "yellow-turban-rebellion"), matching the
+// bare-slug form the graph UI keys nodes/relations on. Slugs with no prefix are
+// returned unchanged.
+func bareWikiSlug(slug string) string {
+	s := strings.TrimSpace(slug)
+	if idx := strings.LastIndex(s, "/"); idx >= 0 && idx < len(s)-1 {
+		return s[idx+1:]
+	}
+	return s
 }
 
 // toStringSlice normalizes an ES field value (string or list) to []string.

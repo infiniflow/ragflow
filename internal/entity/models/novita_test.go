@@ -254,6 +254,64 @@ func TestNovitaStreamExtractsDeltaReasoningContent(t *testing.T) {
 	}
 }
 
+// TestNovitaStreamRecordsUsageWithoutChatConfig pins that the streaming
+// handler records a usage event even when chatConfig is nil. The old
+// `if found && chatConfig != nil` guard dropped the usage entirely for nil
+// chatConfig, diverging from the shared HandleStreamingResponse which
+// records usage whenever the stream carries it and only uses chatConfig to
+// expose UsageResult.
+func TestNovitaStreamRecordsUsageWithoutChatConfig(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+
+	sse := "" +
+		`data: {"choices":[{"index":0,"delta":{"content":"hello"}}]}` + "\n" +
+		`data: {"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}` + "\n" +
+		`data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n" +
+		`data: [DONE]` + "\n"
+
+	t.Run("nil chatConfig completes without dropping the usage event", func(t *testing.T) {
+		srv := newNovitaSSEServer(t, "/openai/v1/chat/completions", sse)
+		defer srv.Close()
+
+		apiKey := "test-key"
+		err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
+			ctx,
+			"deepseek/deepseek-v3.1",
+			[]Message{{Role: "user", Content: "x"}},
+			&APIConfig{ApiKey: &apiKey}, nil, nil,
+			func(c *string, r *string) error { return nil },
+		)
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+	})
+
+	t.Run("non-nil chatConfig exposes the streamed usage", func(t *testing.T) {
+		srv := newNovitaSSEServer(t, "/openai/v1/chat/completions", sse)
+		defer srv.Close()
+
+		apiKey := "test-key"
+		chatConfig := &ChatConfig{}
+		err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
+			ctx,
+			"deepseek/deepseek-v3.1",
+			[]Message{{Role: "user", Content: "x"}},
+			&APIConfig{ApiKey: &apiKey}, chatConfig, nil,
+			func(c *string, r *string) error { return nil },
+		)
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+		if chatConfig.UsageResult == nil {
+			t.Fatal("chatConfig.UsageResult is nil, want the streamed usage")
+		}
+		if chatConfig.UsageResult.PromptTokens != 3 || chatConfig.UsageResult.CompletionTokens != 5 || chatConfig.UsageResult.TotalTokens != 8 {
+			t.Fatalf("UsageResult=%#v, want prompt=3 completion=5 total=8", chatConfig.UsageResult)
+		}
+	})
+}
+
 // TestNovitaChatPropagatesEnableThinking pins the maintainer's
 // requested behaviour: when ChatConfig.Thinking is set, the driver
 // MUST forward it as Novita's documented `enable_thinking` body field

@@ -134,7 +134,7 @@ func TestSeedBuiltinCompilationTemplatesForTenant(t *testing.T) {
 	}
 
 	// ResolveGroupTemplateIDs resolves the built-in group for any tenant.
-	resolved, err := NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, "some-other-tenant", []string{BuiltinCompilationTemplateGroupID})
+	resolved, err := NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, db, "some-other-tenant", []string{BuiltinCompilationTemplateGroupID})
 	if err != nil {
 		t.Fatalf("resolve built-in group: %v", err)
 	}

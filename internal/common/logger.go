@@ -157,9 +157,15 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 	)
 
 	if serviceName != "" {
-		Logger = zap.New(core, zap.AddCallerSkip(1)).Named(serviceName)
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		).Named(serviceName)
 	} else {
-		Logger = zap.New(core, zap.AddCallerSkip(1))
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		)
 	}
 	Sugar = Logger.Sugar()
 

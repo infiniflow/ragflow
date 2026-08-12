@@ -402,9 +402,11 @@ async def _wiki_delete_deleted_doc_state(
 
     deleted = set(deleted_doc_ids)
     derived_kwds = list(WIKI_DERIVED_COMPILE_KWDS)
-    select_fields = ["id", "source_doc_ids"]
+    select_fields = ["id", "source_doc_ids", "compile_kwd", "slug_kwd", "page_type_kwd"]
     to_delete: list[str] = []
     to_shrink: list[tuple[str, list[str]]] = []
+    page_history_to_delete: list[tuple[str, str, str]] = []
+    failed_delete_row_ids: set[str] = set()
     offset = 0
     page_size = 1000
     while True:
@@ -440,21 +442,44 @@ async def _wiki_delete_deleted_doc_state(
                 to_shrink.append((row_id, remaining))
             else:
                 to_delete.append(row_id)
+                if row.get("compile_kwd") == WIKI_PAGE_COMPILE_KWD:
+                    slug = row.get("slug_kwd")
+                    if isinstance(slug, str) and slug:
+                        page_history_to_delete.append((row_id, slug, row.get("page_type_kwd") or "concept"))
         if len(field_map) < page_size:
             break
         offset += page_size
 
     # Drop rows with no surviving owner (delete by id in batches).
     for i in range(0, len(to_delete), page_size):
+        batch_ids = to_delete[i : i + page_size]
         try:
-            await thread_pool_exec(
+            deleted_count = await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"id": to_delete[i : i + page_size]},
+                {"id": batch_ids},
                 index,
                 kb_id,
             )
+            if not isinstance(deleted_count, int) or deleted_count != len(batch_ids):
+                failed_delete_row_ids.update(batch_ids)
         except Exception:
             logging.exception("wiki: failed to drop orphaned derived rows in kb=%s", kb_id)
+            failed_delete_row_ids.update(batch_ids)
+
+    if page_history_to_delete:
+        from api.db.services.file_commit_service import FileCommitService
+
+        for row_id, slug, page_type in page_history_to_delete:
+            if row_id in failed_delete_row_ids:
+                continue
+            try:
+                FileCommitService.delete_page_history(kb_id, page_type, slug)
+            except Exception:
+                logging.exception(
+                    "wiki: failed to delete version history for removed page=%s kb=%s",
+                    slug,
+                    kb_id,
+                )
 
     # Shrink rows still owned by surviving docs to just those docs.
     for row_id, remaining in to_shrink:
@@ -522,12 +547,52 @@ async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
     return None
 
 
-async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool) -> None:
+async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | None:
+    """Return the embedding-space identity recorded by the previous build."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["embedding_model_kwd"],
+            [],
+            {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["embedding_model_kwd"]) or {}
+        for row in fm.values():
+            value = row.get("embedding_model_kwd")
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            return str(value).strip() or None
+    except Exception:
+        logging.exception("wiki: failed to load embedding model meta for kb=%s", kb_id)
+    return None
+
+
+def _wiki_embedding_fingerprint(embedding_model) -> str:
+    config = getattr(embedding_model, "model_config", {}) or {}
+    factory = str(config.get("llm_factory") or "").strip()
+    model_id = str(config.get("id") or config.get("llm_id") or "").strip()
+    name = str(config.get("llm_name") or getattr(embedding_model, "llm_name", "")).strip()
+    return ":".join(part for part in (factory, model_id, name) if part)
+
+
+async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool, embedding_fingerprint: str = "") -> None:
     index = search.index_name(tenant_id)
     row = {
         "id": _wiki_mode_meta_id(kb_id),
         "compile_kwd": "wiki_mode_meta",
         "plan_kwd": "true" if plan else "false",
+        "embedding_model_kwd": embedding_fingerprint,
         "kb_id": kb_id,
         "create_timestamp_flt": float(__import__("time").time()),
     }
@@ -560,6 +625,7 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
         "wiki_page_graph",
         "wiki_page_topic",
         "wiki_compilation_plan",
+        "wiki_plan_group",
         "wiki_reduce_result",
         "wiki_page_draft",
         "wiki_doc_page_source",
@@ -733,15 +799,17 @@ async def persist_wiki_pages(
 
     # Capture the prior rendered content for every slug we're about to
     # overwrite, so the per-page commit row downstream has a real diff
-    # baseline. Single batch read by slug_kwd IN [...] — one round-trip
-    # regardless of page count. Failures here degrade gracefully.
+    # baseline. Prefer md_with_weight because that is the canonical field
+    # consumed by the Wiki page API, with content_with_weight as fallback.
+    # Single batch read by slug_kwd IN [...] — one round-trip regardless of
+    # page count. Failures here degrade gracefully.
     target_slugs: list[str] = [(p.get("slug") or "").strip() for p in pages if isinstance(p.get("slug"), str) and p.get("slug")]
     prior_by_slug: dict[str, str] = {}
     if target_slugs:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "slug_kwd", "content_with_weight"],
+                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
                 [],
                 {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "slug_kwd": list(target_slugs)},
                 [],
@@ -753,11 +821,11 @@ async def persist_wiki_pages(
             )
             field_map = settings.docStoreConn.get_fields(
                 res,
-                ["id", "slug_kwd", "content_with_weight"],
+                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
             )
             for row in (field_map or {}).values():
                 s = row.get("slug_kwd")
-                c = row.get("content_with_weight")
+                c = row.get("md_with_weight") or row.get("content_with_weight")
                 if isinstance(s, str) and isinstance(c, str):
                     prior_by_slug[s] = c
         except Exception:
@@ -838,6 +906,7 @@ async def persist_wiki_pages(
                 "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
                 "source_chunk_ids": list(page.get("source_chunk_ids") or []),
                 "source_doc_ids": list(page.get("source_doc_ids") or []),
+                "md_with_weight": content_md,
                 "content_with_weight": content_md,
                 # Summary kept verbatim alongside the rendered body so the
                 # viewer can render it as a distinct (smaller) block above
@@ -862,12 +931,44 @@ async def persist_wiki_pages(
         return
 
     try:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
+        insert_errors = await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
     except Exception:
         logging.exception(
             "wiki_persist: bulk insert failed for kb=%s (rows=%d)",
             kb_id_str,
             len(rows),
+        )
+        return
+
+    if insert_errors:
+        logging.warning(
+            "wiki_persist: page insert returned %d error(s) for kb=%s",
+            len(insert_errors),
+        )
+
+    # Verify the rows that are actually visible after the bulk operation. Some
+    # backends can report partial bulk failures without raising, so recording a
+    # version for every input page would create history for pages that were not
+    # persisted.
+    try:
+        persisted_res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id", "slug_kwd"],
+            [],
+            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "id": [row["id"] for row in rows]},
+            [],
+            OrderByExpr(),
+            0,
+            len(rows),
+            index,
+            [ctx.kb_id],
+        )
+        persisted_fields = settings.docStoreConn.get_fields(persisted_res, ["id", "slug_kwd"])
+        persisted_page_slugs = {row.get("slug_kwd") for row in (persisted_fields or {}).values() if isinstance(row.get("slug_kwd"), str)}
+    except Exception:
+        logging.exception(
+            "wiki_persist: failed to verify persisted pages for kb=%s; skipping history records",
+            kb_id_str,
         )
         return
 
@@ -886,9 +987,7 @@ async def persist_wiki_pages(
     # compile.
     for page in pages:
         slug = (page.get("slug") or "").strip()
-        if not slug:
-            continue
-        if not prior_by_slug.get(slug, ""):
+        if not slug or slug not in persisted_page_slugs:
             continue
         content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
         action = (page.get("action") or "CREATE").upper()
@@ -1283,11 +1382,14 @@ async def run_wiki(
 
     # ``kb_chat_llm_id`` is captured from the first eligible template and
     # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
-    # ``kb_writer_example`` follows the same first-template-wins rule.
+    # Writer instructions and page examples follow the same first-template-
+    # wins rule.
     first_parser_cfg = resolved_eligible[0][2]
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
     kb_chat_llm_id: Optional[str] = (first_parser_cfg.get("llm_id") or "").strip() or None
+    first_instruction = first_parser_cfg.get("instruction")
     first_example = first_parser_cfg.get("example")
+    kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
     kb_writer_example: Optional[str] = first_example if isinstance(first_example, str) and first_example.strip() else None
     map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
     n_docs = len(resolved_eligible)
@@ -1456,6 +1558,7 @@ async def run_wiki(
             kb_id=ctx.kb_id,
             max_workers=WIKI_REFINE_WORKERS,
             callback=_stage_cb("[wiki REFINE]"),
+            instruction=kb_writer_instruction,
             example=kb_writer_example,
         )
     except Exception:
@@ -1496,7 +1599,7 @@ async def run_wiki_incremental(
 
     Mode B (plan=True):
         PLAN groups entities → per-page REFINE.
-        Incremental: Page Router (KNN) routes entities to existing pages.
+        Incremental: embeddings retrieve page candidates; the LLM makes final routes.
 
     Args:
         ctx: Task context
@@ -1585,14 +1688,22 @@ async def run_wiki_incremental(
     # pages), so switching modes must reset all wiki-derived state and rebuild
     # from scratch instead of incrementally mixing old-mode and new-mode pages.
     prev_plan = await _wiki_load_mode_plan(ctx.tenant_id, ctx.kb_id)
-    if prev_plan is not None and bool(prev_plan) != bool(plan) and is_incremental:
-        progress(0.05, f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'}); rebuilding wiki from scratch...")
+    previous_embedding = await _wiki_load_embedding_fingerprint(ctx.tenant_id, ctx.kb_id)
+    current_embedding = _wiki_embedding_fingerprint(embedding_model)
+    mode_changed = prev_plan is not None and bool(prev_plan) != bool(plan)
+    embedding_changed = bool(previous_embedding and current_embedding and previous_embedding != current_embedding)
+    if is_incremental and (mode_changed or embedding_changed):
+        if mode_changed:
+            reason = f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'})"
+        else:
+            reason = "Embedding model changed"
+        progress(0.05, f"{reason}; rebuilding wiki from scratch...")
         await _wiki_reset_all_wiki_state(ctx.tenant_id, ctx.kb_id)
         # Everything is gone; this is now a first build.
         is_incremental = False
         existing_map_doc_ids = set()
         deleted_doc_ids = set()
-    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan))
+    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan), current_embedding)
 
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
@@ -1718,16 +1829,12 @@ async def run_wiki_incremental(
         # chunk now looks "unchanged"), fall through — ``map_results=None`` below
         # makes wiki_compile_incremental rebuild pages from the stored extracts.
         if not existing_map_doc_ids or await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
-            # No compile needed, but still (re)group existing pages under topics —
-            # cheap (embed + stamp) and it backfills pages built before topic
-            # grouping existed. Topic labels are loaded from the persisted MAP rows.
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
-                _wiki_assign_topics,
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,
             )
 
-            progress(0.9, "Wiki is up to date; recomputing cross-references + topics ...")
+            progress(0.9, "Wiki is up to date; recomputing cross-references ...")
             # FINALIZE recomputes outlinks / auto-links / dead-link cleanup from
             # the persisted pages (zero LLM cost) so a re-run backfills graph
             # edges for pages written before auto-linking existed.
@@ -1735,7 +1842,6 @@ async def run_wiki_incremental(
                 await _wiki_finalize(ctx.tenant_id, ctx.kb_id, embedding_model)
             except Exception:
                 logging.exception("wiki: up-to-date FINALIZE failed for kb=%s", ctx.kb_id)
-            await _wiki_assign_topics(embedding_model, ctx.tenant_id, ctx.kb_id, callback=lambda p, msg: progress(p, msg))
 
             # (Re)materialize the canvas graph so pages built before graph
             # persistence existed (or a graph lost to an interrupted run) still

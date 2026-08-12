@@ -112,8 +112,8 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
 	}
 
-	if err := s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
-		s.updateTaskProgress(taskID, -1, err.Error())
+	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
+		s.updateTaskProgress(ctx, taskID, -1, err.Error())
 		return fmt.Errorf("%w: %v", ErrMemoryTaskTerminal, err)
 	}
 	return nil
@@ -133,7 +133,7 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	}
 	extractTypes := getTypesToExtract(memoryTypes)
 	if len(extractTypes) == 0 {
-		s.updateTaskProgress(taskID, 1.0, fmt.Sprintf("Memory '%s' don't need to extract.", memoryID))
+		s.updateTaskProgress(ctx, taskID, 1.0, fmt.Sprintf("Memory '%s' don't need to extract.", memoryID))
 		return nil
 	}
 
@@ -142,20 +142,20 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 		return err
 	}
 	if len(extracted) == 0 {
-		s.updateTaskProgress(taskID, 1.0, "No memory extracted from raw message.")
+		s.updateTaskProgress(ctx, taskID, 1.0, "No memory extracted from raw message.")
 		return nil
 	}
-	s.updateTaskProgress(taskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extracted)))
+	s.updateTaskProgress(ctx, taskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extracted)))
 
 	now := time.Now().UTC()
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(generateRawMessageID(ctx), sourceID, memoryID, msg, item, now))
 	}
-	if err := s.embedAndSaveMessages(ctx, mem, messages); err != nil {
+	if err = s.embedAndSaveMessages(ctx, mem, messages); err != nil {
 		return err
 	}
-	s.updateTaskProgress(taskID, 1.0, "Message saved successfully.")
+	s.updateTaskProgress(ctx, taskID, 1.0, "Message saved successfully.")
 	return nil
 }
 
@@ -195,7 +195,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	}
 	chatModel := models.NewChatModel(driver, &modelName, apiConfig)
 
-	s.updateTaskProgress(taskID, 0.15, "Prepared prompts and LLM.")
+	s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
 	temperature := mem.Temperature
 	resp, err := chatModel.ModelDriver.ChatWithMessages(ctx, modelName, messages, apiConfig, &models.ChatConfig{Temperature: &temperature}, nil)
 	if err != nil {
@@ -204,7 +204,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	if resp == nil || resp.Answer == nil {
 		return nil, errors.New("empty response from chat model")
 	}
-	s.updateTaskProgress(taskID, 0.35, "Get extracted result from LLM.")
+	s.updateTaskProgress(ctx, taskID, 0.35, "Get extracted result from LLM.")
 
 	return parseMemoryExtraction(*resp.Answer, extractTypes), nil
 }
@@ -294,12 +294,12 @@ func formatMemoryTime(value string, fallback time.Time) string {
 // updateTaskProgress stamps and persists task progress, mirroring
 // Python TaskService.update_progress call sites. Failures are logged
 // and swallowed so progress reporting never breaks extraction.
-func (s *MemoryMessageService) updateTaskProgress(taskID string, progress float64, msg string) {
+func (s *MemoryMessageService) updateTaskProgress(ctx context.Context, taskID string, progress float64, msg string) {
 	if s == nil || s.taskDAO == nil || taskID == "" {
 		return
 	}
 	stamped := time.Now().Format(memoryTimeLayout) + " " + msg
-	if err := s.taskDAO.UpdateProgress(taskID, progress, stamped); err != nil {
+	if err := s.taskDAO.UpdateProgress(ctx, dao.DB, taskID, progress, stamped); err != nil {
 		common.Warn("memory: update task progress failed", zap.Error(err))
 	}
 }
