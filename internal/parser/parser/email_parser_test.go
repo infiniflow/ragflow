@@ -18,6 +18,7 @@ package parser
 
 import (
 	"encoding/base64"
+	"os"
 	"strings"
 	"testing"
 )
@@ -110,15 +111,110 @@ func TestEmailParser_EmlText(t *testing.T) {
 	}
 }
 
-func TestEmailParser_MsgNotSupported(t *testing.T) {
+// TestEmailParser_MsgSupported parses a real Outlook .msg fixture and verifies
+// the Go output aligns with the Python flow parser _email() .msg branch
+// (rag/flow/parser/parser.py). Replaces the old "MsgNotSupported" test now that
+// .msg is supported via gomsg.
+func TestEmailParser_MsgSupported(t *testing.T) {
 	ctx := t.Context()
-	p := NewEmailParser()
-	result := p.ParseWithResult(ctx, "test.msg", []byte{})
-	if result.Err == nil {
-		t.Fatal("expected error for .msg file")
+	data, err := os.ReadFile("testdata/sample.msg")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
 	}
-	if !strings.Contains(result.Err.Error(), ".msg") {
-		t.Errorf("error should mention .msg: %v", result.Err)
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
+	})
+
+	result := p.ParseWithResult(ctx, "sample.msg", data)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if len(result.JSON) != 1 {
+		t.Fatalf("expected 1 JSON item, got %d", len(result.JSON))
+	}
+	item := result.JSON[0]
+
+	if v, ok := item["from"].(string); !ok || v != "<christoph@freiraum.xyz>" {
+		t.Errorf("from: got %q", v)
+	}
+	if v, ok := item["to"].(string); !ok || v != "<christoph@freiraum.xyz>" {
+		t.Errorf("to: got %q", v)
+	}
+	if v, ok := item["subject"].(string); !ok || v != "asdf" {
+		t.Errorf("subject: got %q", v)
+	}
+	if v, ok := item["date"].(string); !ok || v != "2018-03-24 00:06:29+08:00" {
+		t.Errorf("date: got %q, want 2018-03-24 00:06:29+08:00", v)
+	}
+	if v, ok := item["text"].(string); !ok || v != " \r\n\r\n" {
+		t.Errorf("text: got %q", v)
+	}
+	// The .msg branch must NOT emit text_html (matches Python _email .msg branch).
+	if _, ok := item["text_html"]; ok {
+		t.Error("text_html must be absent for .msg")
+	}
+	meta, ok := item["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata missing or wrong type: %T", item["metadata"])
+	}
+	if v, ok := meta["message_id"].(string); !ok || v == "" {
+		t.Errorf("metadata message_id: got %q", v)
+	}
+	// Empty in_reply_to mirrors extract_msg's None -> JSON null.
+	if v, ok := meta["in_reply_to"]; ok && v != nil {
+		t.Errorf("metadata in_reply_to: got %v, want nil", v)
+	}
+	if _, ok := meta["in_reply_to"]; !ok {
+		t.Error("metadata in_reply_to key must be present")
+	}
+	atts, ok := item["attachments"].([]map[string]any)
+	if !ok {
+		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+	}
+	if len(atts) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(atts))
+	}
+	if fn, _ := atts[0]["filename"].(string); fn != "5AAoPFgV-nJ965R7o-98C38840-4454-4750-9AEF-F53DB3E37548.jpg" {
+		t.Errorf("filename = %q", fn)
+	}
+	if pl, _ := atts[0]["payload"].(string); len(pl) != 122784 {
+		t.Errorf("payload length = %d, want 122784", len(pl))
+	}
+}
+
+// TestEmailParser_MsgMetadataAlwaysPresent verifies the .msg branch emits
+// metadata unconditionally (matching the Python contract) even when "metadata"
+// is omitted from the configured fields.
+func TestEmailParser_MsgMetadataAlwaysPresent(t *testing.T) {
+	ctx := t.Context()
+	data, err := os.ReadFile("testdata/sample.msg")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "subject"}, // "metadata" intentionally absent
+	})
+
+	result := p.ParseWithResult(ctx, "sample.msg", data)
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0]
+
+	if _, ok := item["metadata"].(map[string]any); !ok {
+		t.Fatalf("metadata must always be present for .msg, got %T", item["metadata"])
+	}
+	// Basic fields not in fields are dropped.
+	for _, dropped := range []string{"to", "date", "body", "attachments"} {
+		if _, ok := item[dropped]; ok {
+			t.Errorf("%s should be dropped when not in fields", dropped)
+		}
 	}
 }
 

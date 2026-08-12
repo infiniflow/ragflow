@@ -29,17 +29,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/AkmalOt/gomsg"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 )
 
-// EmailParser parses .eml (RFC 5322 email) files into structured
-// JSON or plain-text output. Mirrors Python's _email() method in
-// rag/flow/parser/parser.py.
-//
-// .msg (Outlook) files are not supported in the Go path; callers
-// receive a clear error.
+// EmailParser parses .eml (RFC 5322 email) and .msg (Outlook OLE2) files
+// into structured JSON or plain-text output. Mirrors Python's _email()
+// method in rag/flow/parser/parser.py, whose .msg branch uses extract_msg.
 type EmailParser struct {
 	fields       []string
 	outputFormat string
@@ -76,13 +74,17 @@ func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 
 func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
-	if ext == ".msg" {
-		return ParseResult{
-			Err: fmt.Errorf("email: .msg (Outlook) files are not supported in the Go parser; use .eml format"),
-		}
-	}
 
-	emailContent := parseEML(bytes.NewReader(data), p.fields)
+	var content map[string]any
+	if ext == ".msg" {
+		msg, err := parseMSG(data, p.fields)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("email: .msg: %w", err)}
+		}
+		content = msg
+	} else {
+		content = parseEML(bytes.NewReader(data), p.fields)
+	}
 
 	outputFormat := p.outputFormat
 	if outputFormat == "" {
@@ -90,17 +92,17 @@ func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data
 	}
 
 	if outputFormat == "json" {
-		emailContent["doc_type_kwd"] = "text"
+		content["doc_type_kwd"] = "text"
 		return ParseResult{
 			OutputFormat: "json",
 			File:         map[string]any{"name": filename},
-			JSON:         []map[string]any{emailContent},
+			JSON:         []map[string]any{content},
 		}
 	}
 
 	// Text output: flatten fields into a single string.
 	var sb strings.Builder
-	for k, v := range emailContent {
+	for k, v := range content {
 		switch val := v.(type) {
 		case string:
 			sb.WriteString(k)
@@ -416,4 +418,129 @@ func decodeTransform(payload []byte, decoder *encoding.Decoder) (string, error) 
 		return string(decoded), nil
 	}
 	return "", fmt.Errorf("decode produced replacement characters")
+}
+
+// parseMSG parses an Outlook .msg (OLE2 compound document) file using the
+// gomsg library, mirroring the Python flow parser's _email() .msg branch
+// (rag/flow/parser/parser.py), which parses via extract_msg. The output map
+// shares the same field shape as parseEML so the downstream json/text
+// assembly in ParseWithResult is reused unchanged.
+func parseMSG(data []byte, fields []string) (map[string]any, error) {
+	target := targetFieldsSet(fields)
+
+	msg, err := gomsg.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	content := map[string]any{}
+
+	if target["from"] {
+		content["from"] = formatSender(msg)
+	}
+	if target["to"] {
+		content["to"] = formatRecipient(msg.DisplayTo)
+	}
+	if target["cc"] {
+		content["cc"] = formatRecipient(msg.DisplayCC)
+	}
+	if target["bcc"] {
+		content["bcc"] = formatRecipient(msg.DisplayBCC)
+	}
+	if target["date"] {
+		// Match Python extract_msg's datetime string form (e.g.
+		// "2018-03-24 00:06:29+08:00") rather than RFC3339.
+		content["date"] = msg.Date.Format("2006-01-02 15:04:05-07:00")
+	}
+	if target["subject"] {
+		content["subject"] = msg.Subject
+	}
+
+	// Always emit metadata to match the Python flow parser contract, which
+	// unconditionally builds a {message_id, in_reply_to} metadata dict for
+	// .msg files regardless of whether "metadata" is in the configured fields.
+	// Empty values are emitted as nil (JSON null) to match extract_msg's None.
+	content["metadata"] = map[string]any{
+		"message_id":  orNil(msg.MessageID),
+		"in_reply_to": orNil(msg.InReplyTo),
+	}
+
+	if target["body"] {
+		// Mirror Python: prefer the plain body, fall back to the HTML body
+		// when the plain body is empty. The .msg branch emits only "text"
+		// (never "text_html"), matching the Python _email .msg contract exactly.
+		text := msg.Body
+		if strings.TrimSpace(text) == "" && len(msg.BodyHTML) > 0 {
+			text = string(msg.BodyHTML)
+		}
+		content["text"] = text
+	}
+
+	if target["attachments"] {
+		attachments := make([]map[string]any, 0, len(msg.Attachments))
+		for _, a := range msg.Attachments {
+			// Python's extract_msg exposes the attachment payload as raw bytes
+			// decoded as utf-8; mirror that via a string cast. Embedded .msg
+			// attachments expose no raw bytes via gomsg (only a parsed
+			// EmbeddedMessage), so their payload is empty here — a known
+			// divergence from Python noted in MSG_PARSER_HANDOFF.md.
+			attachments = append(attachments, map[string]any{
+				"filename": a.DisplayName(),
+				"payload":  string(a.Data()),
+			})
+		}
+		content["attachments"] = attachments
+	}
+
+	return content, nil
+}
+
+// primarySenderEmail prefers the SMTP address, falling back to the raw email
+// address when SMTP is unavailable (e.g. an EX address type).
+func primarySenderEmail(msg *gomsg.Message) string {
+	if msg.SenderSMTP != "" {
+		return msg.SenderSMTP
+	}
+	return msg.SenderEmail
+}
+
+// formatSender renders the .msg sender the way extract_msg's "sender" string
+// is displayed: "Display Name <email>" when a distinct display name is present,
+// otherwise "<email>" (matching extract_msg's angular-bracket form for an
+// address with no display name).
+func formatSender(msg *gomsg.Message) string {
+	email := primarySenderEmail(msg)
+	if msg.SenderName != "" && msg.SenderName != email {
+		return msg.SenderName + " <" + email + ">"
+	}
+	if email != "" {
+		return "<" + email + ">"
+	}
+	return msg.SenderName
+}
+
+// formatRecipient renders a display recipient string the way extract_msg does:
+// a bare single email address is wrapped in angle brackets, while a string
+// that already contains an address form (display name, or multiple recipients)
+// is returned unchanged.
+func formatRecipient(display string) string {
+	if display == "" {
+		return ""
+	}
+	if strings.Contains(display, "<") {
+		return display
+	}
+	if !strings.ContainsAny(display, ",;") && strings.Contains(display, "@") {
+		return "<" + display + ">"
+	}
+	return display
+}
+
+// orNil maps an empty string to nil so it serializes as JSON null, matching
+// extract_msg's None for absent properties.
+func orNil(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
