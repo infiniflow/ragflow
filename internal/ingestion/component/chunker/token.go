@@ -310,16 +310,35 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 }
 
 // invokeTextPayload handles plain-text input (output_format in
-// {markdown,text,html} on the python side).
+// {Markdown,text,html} on the python side).
 func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	if text == "" {
 		return emptyOutputs()
 	}
 
+	// No active delimiter at all: single-section merge that only re-splits
+	// oversized sections on sentence boundaries.
 	if !hasActiveDelimiter(delimPattern) {
-		return c.mergeByTokenSize(text, childrenPattern)
+		return c.mergeByTokenSize(text, nil, childrenPattern)
 	}
 
+	// Custom (backtick-wrapped) delimiter: one chunk per segment, no token
+	// merge — mirrors Python naive_merge's has_custom branch
+	// (token_chunker.py:1194-1213).
+	if hasCustomDelim(c.param.Delimiters) {
+		return c.chunkPerSegment(text, delimPattern, childrenPattern)
+	}
+
+	// Bare delimiter: split into paragraphs (delimiter dropped), then merge
+	// by token size — mirrors Python naive_merge's default branch. This is
+	// the #17723 fix: bare delimiters were previously ignored entirely.
+	return c.mergeByTokenSize(text, delimPattern, childrenPattern)
+}
+
+// chunkPerSegment splits text on a custom (backtick) delimiter and emits one
+// chunk per segment with no token-size merge. Mirrors Python naive_merge's
+// has_custom branch (token_chunker.py:1194-1213).
+func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	parts := splitDroppingDelim(text, delimPattern)
 	cleaned := make([]string, 0, len(parts))
 	for _, p := range parts {
@@ -341,12 +360,6 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		textDocs = append(textDocs, schema.ChunkDoc{Text: s, DocType: "text", CKType: "text"})
 	}
 	docs := applyChildrenDelimText(textDocs, childrenPattern)
-
-	// Python's naive_merge: a custom (backtick) delimiter yields one chunk
-	// per segment and no token-size merge (naive_merge:1194-1213). A
-	// non-custom active delimiter cannot reach here — delimPattern is
-	// non-nil only when a backtick delimiter exists, so the split-then-
-	// merge branch was unreachable and has been removed.
 	return chunkOutputs(docs)
 }
 
@@ -390,7 +403,7 @@ func computeOverlapPrefix(prevText string, overlappedPct float64) (string, int) 
 // unconditional overlap prefix), matching Python naive_merge / token_chunker.
 // When overlap>0 the previous chunk's tail is always prepended, so a chunk may
 // exceed chunk_token_size by up to the overlap amount.
-func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
+func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
 	// Clamp to [0,100] so the merge math below never produces a
@@ -408,48 +421,76 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 	// naive_merge runs text.replace("\r\n", "\n").replace("\r", "\n"),
 	// then treats the input string as one section.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
-	sections := []string{text}
-	if len(sections) == 0 {
-		return emptyOutputs()
-	}
 
-	// Build merge units from the (single) section. Each unit is a paragraph
-	// (split on sentence delimiters when the section exceeds target); its
-	// token count is precomputed so mergeUnits can keep a running sum.
+	// Build the merge units.
+	//
+	// When a bare (non-custom) delimiter is active we split the text into
+	// paragraphs (the delimiter is DROPPED, mirroring Python naive_merge) and
+	// use each paragraph VERBATIM as a unit. This preserves the original
+	// inter-paragraph whitespace, so the merged text matches the source (and
+	// Python naive_merge); an oversized paragraph also stands alone (#17799)
+	// instead of being re-split — both matching Python.
+	//
+	// Otherwise (no active delimiter) the whole text is a single section and
+	// oversized sections are re-split on production sentence delimiters, which
+	// injects "\n" to mirror Python's sentence-boundary handling. This is the
+	// historical behavior and must stay byte-for-byte identical.
+	useDelimSplit := hasActiveDelimiter(delimPattern) && !hasCustomDelim(c.param.Delimiters)
 	var units []schema.ChunkDoc
-	for _, sec := range sections {
-		sec = strings.TrimSpace(sec)
-		if sec == "" {
-			continue
-		}
-		t := "\n" + sec
-		tk := tokenizeStr(t)
-		if tk <= target {
-			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk), CKType: "text"})
-			continue
-		}
-		// Oversized section: split on production sentence delimiters into
-		// units. An oversize unit (still exceeds the budget) is kept whole —
-		// no atom-split, matching Python naive_merge. Per the unified
-		// algorithm an over-budget unit STANDS ALONE (#17799): never merged
-		// into the previous chunk.
-		parts := sentenceDelimiter.Split(sec, -1)
-		hadPart := false
-		for _, part := range parts {
-			// Keep the raw split fragment, including any inter-line trailing
-			// whitespace (Python's naive_merge builds each unit from
-			// "\n" + sub_sec with its trailing space, never TrimSpaced). Only
-			// genuinely empty fragments are skipped.
-			if part == "" {
+	if useDelimSplit {
+		// Mirror Python naive_merge's default path (rag/nlp/__init__.py:1406-1415):
+		// split on the delimiter, DROP the delimiter text, and prepend "\n" to
+		// each kept paragraph. The sub-sec keeps its original surrounding
+		// whitespace (e.g. the trailing space before the delimiter); only the
+		// delimiter itself is removed. No sentence re-split is performed here —
+		// an oversize paragraph stands alone as its own chunk, matching Python.
+		for _, sub := range splitDroppingDelim(text, delimPattern) {
+			if sub == "" {
 				continue
 			}
-			hadPart = true
-			seg := "\n" + part
-			units = append(units, schema.ChunkDoc{Text: seg, TKNums: intPtr(tokenizeStr(seg)), CKType: "text"})
-		}
-		if !hadPart {
+			t := "\n" + sub
 			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
 		}
+	} else {
+		sections := []string{text}
+		for _, sec := range sections {
+			sec = strings.TrimSpace(sec)
+			if sec == "" {
+				continue
+			}
+			t := "\n" + sec
+			tk := tokenizeStr(t)
+			if tk <= target {
+				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk), CKType: "text"})
+				continue
+			}
+			// Oversized section: split on production sentence delimiters into
+			// units. An oversize unit (still exceeds the budget) is kept whole
+			// — no atom-split, matching Python naive_merge. Per the unified
+			// algorithm an over-budget unit STANDS ALONE (#17799): never merged
+			// into the previous chunk.
+			parts := sentenceDelimiter.Split(sec, -1)
+			hadPart := false
+			for _, part := range parts {
+				// Keep the raw split fragment, including any inter-line
+				// trailing whitespace (Python's naive_merge builds each unit
+				// from "\n" + sub_sec with its trailing space, never TrimSpaced).
+				// Only genuinely empty fragments are skipped.
+				if part == "" {
+					continue
+				}
+				hadPart = true
+				seg := "\n" + part
+				units = append(units, schema.ChunkDoc{Text: seg, TKNums: intPtr(tokenizeStr(seg)), CKType: "text"})
+			}
+			if !hadPart {
+				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
+			}
+		}
+	}
+
+	if len(units) == 0 {
+		return emptyOutputs()
 	}
 
 	// Merge with the unified core (scaled overlap threshold + unconditional

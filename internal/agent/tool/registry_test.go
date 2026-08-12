@@ -48,6 +48,7 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "CodeExec", wantToolName: "execute_code"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "QueritContents", wantToolName: "querit_contents"},
 		{name: "QueritSearch", wantToolName: "querit_search"},
 		{name: "TavilyExtract", wantToolName: "tavily_extract"},
 		{name: "TavilySearch", wantToolName: "tavily_search"},
@@ -134,13 +135,34 @@ func TestBuildByName_QueritAliases(t *testing.T) {
 	}
 }
 
+func TestBuildByName_QueritContentsAliases(t *testing.T) {
+	for _, name := range []string{"querit_contents", "queritcontents", "QueritContents"} {
+		built, err := BuildByName(name, map[string]any{
+			"api_key":       "stored-key",
+			"format":        "html",
+			"crawl_timeout": float64(20),
+			"extras_meta":   true,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName(%q): %v", name, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName(%q) returned %T, want *QueritContentsTool", name, built)
+		}
+		if contents.defaults.Format != "html" || contents.defaults.CrawlTimeout != 20 || !contents.defaults.ExtrasMeta {
+			t.Fatalf("BuildByName(%q) defaults = %#v", name, contents.defaults)
+		}
+	}
+}
+
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
-		"querit", "querit_search",
+		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -204,7 +226,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
-		"querit", "querit_search",
+		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -275,6 +297,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"wikipedia":             "wikipedia_search",
 		"wikipedia_search":      "wikipedia_search",
 		"querit":                "querit_search",
+		"querit_contents":       "querit_contents",
 		"querit_search":         "querit_search",
 	}
 	for _, name := range names {

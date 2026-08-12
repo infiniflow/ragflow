@@ -81,7 +81,7 @@ func refineFromPlan(ctx context.Context, deps common.Deps, llmID, plan string) (
 	return resp.Content, nil
 }
 
-// Section is one heading block parsed out of a wiki page's markdown body. The
+// Section is one heading block parsed out of a wiki page's Markdown body. The
 // page itself is a separate product; sections live as children linked via
 // parent_id so the retrieval-side can scope queries to a section (e.g. user
 // asks "what does the page say about X?" and the SIDE picks the page + the X
@@ -92,7 +92,7 @@ type Section struct {
 	Content string // section body until the next heading of equal-or-lower depth
 }
 
-// ParseOutline splits a wiki page's markdown body into a flat section list.
+// ParseOutline splits a wiki page's Markdown body into a flat section list.
 // Headings are ATX style ("#", "##", ...). The page is treated as a single
 // implicit "preamble" section when it starts with non-heading text. The page
 // itself is *not* in the result; buildPageProducts emits it separately so
@@ -171,7 +171,7 @@ func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []
 
 // buildWikiPageProducts turns multiple wiki page drafts into page + section
 // products. Each page result becomes one page product and one section product
-// per heading in its markdown body.
+// per heading in its Markdown body.
 func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []common.Product {
 	if len(pages) == 0 {
 		appcommon.Info("wiki: buildWikiPageProducts skipped (no refined pages)",
@@ -273,7 +273,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 	return out
 }
 
-// firstHeading returns the first markdown "# "-prefixed line, trimmed.
+// firstHeading returns the first Markdown "# "-prefixed line, trimmed.
 func firstHeading(md string) string {
 	for _, line := range strings.Split(md, "\n") {
 		s := strings.TrimSpace(line)

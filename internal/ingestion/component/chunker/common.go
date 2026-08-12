@@ -77,21 +77,23 @@ func stringListFromAny(in []any) []string {
 // ---------------------------------------------------------------------------
 
 // compileDelimPattern compiles a TokenChunker-style []string delimiter list.
-// Only backtick-wrapped entries produce an active pattern (Python
-// token_chunker / rag/nlp/delim list helper); plain (non-backtick) entries
-// are ignored here. mergeByTokenSize uses its own hardcoded sentenceDelimiter,
-// not this list. Canonical single-string parser_config.delimiter parsing
-// lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// Every non-empty entry is active, including bare (non-backtick) delimiters,
+// mirroring Python naive_merge / rag/nlp/delim where bare single-character
+// delimiters still split. Backtick-wrapped entries contribute their inner
+// content. invokeTextPayload decides whether an active delimiter yields one
+// chunk per segment (custom/backtick, no merge) or splits into paragraphs that
+// are merged by token size (bare). Canonical single-string parser_config.delimiter
+// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	return chunk.CompileDelimiterListPattern(delims)
+	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
 // splitDroppingDelim mirrors Python's _split_text_by_pattern
 // (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
 // glued to a segment: re.split with a captured group keeps delimiters at odd
 // indices, and only the even-index (text) parts are kept. This is the
-// behaviour every delimiter path (primary and children, text/markdown/html
-// and json) must reproduce so a split chunk reads "first sentence here"
+// behavior every delimiter path (primary and children, text/markdown/html
+// and JSON) must reproduce so a split chunk reads "first sentence here"
 // without the trailing delimiter.
 func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {

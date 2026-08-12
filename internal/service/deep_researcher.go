@@ -682,14 +682,14 @@ func (dr *DeepResearcher) chatOnce(
 	return *resp.Answer, nil
 }
 
-// cleanLLMResponse strips think tags, markdown fences, and trailing backticks.
+// cleanLLMResponse strips think tags, Markdown fences, and trailing backticks.
 var thinkTagRe = regexp.MustCompile(`(?s)^.*?</think>`)
 var trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
 var cleanResponseRe = regexp.MustCompile(`(?s)(^.*?</think>|` + "```json\\n" + `|` + "```\\n*$" + `)`)
 var trailingBacktickRe = regexp.MustCompile("```\\n*$")
 
 func cleanLLMResponse(raw string) string {
-	// Strip think tags, markdown fences
+	// Strip think tags, Markdown fences
 	raw = cleanResponseRe.ReplaceAllString(raw, "")
 
 	// Also handle trailing ```` in case any remain after the regex pass

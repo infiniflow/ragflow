@@ -13,6 +13,16 @@ import sys
 import types
 from unittest.mock import MagicMock
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _mock_disabled_document_lookup(monkeypatch):
+    """Keep knowledge-compile unit tests independent of the MySQL database."""
+    from api.db.services.document_service import DocumentService
+
+    monkeypatch.setattr(DocumentService, "get_disabled_doc_ids_by_kb_id", MagicMock(return_value=set()))
+
 
 async def _fake_thread_pool_exec(fn, *args, **kwargs):
     """Execute the function directly (no actual thread pool)."""

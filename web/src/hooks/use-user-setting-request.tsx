@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
@@ -178,7 +194,36 @@ export const useSelectParserList = (): Array<{
           const translated = t(key);
           return translated !== key ? translated : title;
         };
-        return pipelineList.map((item) => ({
+        // Order the Go pipeline catalog the same way as the Python
+        // backend's parser_ids (settings.PARSERS), so the chunk-method
+        // dropdown lists commonly used methods first. The Python "naive"
+        // slot corresponds to the Go "general" pipeline. Go-only pipelines
+        // (e.g. knowledge_compiler) keep their API order at the end.
+        const pythonParserOrder = [
+          'general', // "naive" in Python parser_ids
+          'qa',
+          'resume',
+          'manual',
+          'table',
+          'paper',
+          'book',
+          'laws',
+          'presentation',
+          'picture',
+          'one',
+          'audio',
+          'email',
+          'tag',
+        ];
+        const order = new Map(
+          pythonParserOrder.map((id, index) => [id, index]),
+        );
+        const sortedList = [...pipelineList].sort(
+          (a, b) =>
+            (order.get(a.id) ?? pythonParserOrder.length) -
+            (order.get(b.id) ?? pythonParserOrder.length),
+        );
+        return sortedList.map((item) => ({
           value: item.id,
           label: labelFromAPI(item.id, item.title),
         }));

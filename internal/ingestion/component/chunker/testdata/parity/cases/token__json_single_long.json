@@ -1,0 +1,18 @@
+{
+ "id": "token__json_single_long",
+ "component": "TokenChunker",
+ "notes": "One json item far over chunk_token_size=32 must be sub-split by token budget. Single item, so the per-item merge divergence cannot interfere — this isolates the oversize split itself.",
+ "param": {
+  "chunk_token_size": 32
+ },
+ "input": {
+  "name": "t",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega second alpha beta gamma delta epsilon zeta eta theta iota kappa",
+    "doc_type_kwd": "text"
+   }
+  ]
+ }
+}

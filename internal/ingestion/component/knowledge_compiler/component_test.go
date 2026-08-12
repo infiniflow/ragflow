@@ -15,7 +15,6 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
-	"ragflow/internal/service/nav"
 
 	"gorm.io/gorm"
 )
@@ -255,124 +254,6 @@ func TestKnowledgeCompiler_Datasetnav_NoVariant(t *testing.T) {
 		if !errors.Is(err, common.ErrUnknownVariant) {
 			t.Fatalf("KindToVariant(%q) err = %v, want ErrUnknownVariant", kind, err)
 		}
-	}
-}
-
-// fakeNavSvc records the most recent UpsertDoc call so a test can assert the
-// tree by-product hook feeds the nav service the root document summary.
-type fakeNavSvc struct {
-	mu      sync.Mutex
-	called  bool
-	summary string
-	docID   string
-	kbID    string
-}
-
-func (f *fakeNavSvc) UpsertDoc(_ context.Context, in nav.UpsertDocInput) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.called = true
-	f.summary = in.Summary
-	f.docID = in.DocID
-	f.kbID = in.KbID
-	return nil
-}
-func (f *fakeNavSvc) RemoveDoc(context.Context, string, string, string) error { return nil }
-func (f *fakeNavSvc) Search(context.Context, string, string, string, []float32, int) ([]nav.NavHit, error) {
-	return nil, nil
-}
-func (f *fakeNavSvc) ListClusters(context.Context, string, string, int, int) ([]nav.NavNode, int64, error) {
-	return nil, 0, nil
-}
-func (f *fakeNavSvc) ListChildren(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
-	return nil, 0, nil
-}
-
-// TestKnowledgeCompiler_TreeNavByProduct asserts the tree compile-complete hook
-// writes the dataset-nav by-product: after tree.Run produces a root product,
-// upsertTreeNav calls NavService.UpsertDoc with the root summary and the
-// doc/dataset context, and never aborts on failure.
-func TestKnowledgeCompiler_TreeNavByProduct(t *testing.T) {
-	fake := &fakeNavSvc{}
-	nav.SetNavService(fake)
-	t.Cleanup(func() { nav.SetNavService(nil) })
-
-	deps := common.Deps{
-		TenantID:  "t1",
-		DatasetID: "kb1",
-		Chat:      proseChat{},
-		Embed:     mockEmbedder{dim: 8},
-	}
-	products := []common.Product{
-		{Content: "section one body", Meta: map[string]any{"kind": "summary", "level": 0}},
-		{Content: "overall doc theme root summary", Vector: []float32{0.1, 0.2}, Meta: map[string]any{"kind": "root", "level": -1}},
-	}
-	upsertTreeNav(context.Background(), deps, "d1", products)
-
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if !fake.called {
-		t.Fatal("upsertTreeNav did not call NavService.UpsertDoc")
-	}
-	if fake.docID != "d1" {
-		t.Errorf("doc_id = %q, want d1", fake.docID)
-	}
-	if fake.kbID != "kb1" {
-		t.Errorf("kb_id = %q, want kb1", fake.kbID)
-	}
-	if !strings.Contains(fake.summary, "overall doc theme root summary") {
-		t.Errorf("summary = %q, want the tree root summary", fake.summary)
-	}
-}
-
-// TestKnowledgeCompiler_TreeNavByProduct_NilServiceDoesNotAbort asserts the
-// by-product hook tolerates a missing NavService without erroring (nav is a
-// derived artifact; its absence must never abort compilation).
-func TestKnowledgeCompiler_TreeNavByProduct_NilServiceDoesNotAbort(t *testing.T) {
-	nav.SetNavService(nil)
-	t.Cleanup(func() { nav.SetNavService(nil) })
-	// Should not panic and must return normally.
-	upsertTreeNav(context.Background(), common.Deps{}, "d1",
-		[]common.Product{{Content: "x", Meta: map[string]any{"kind": "root"}}})
-}
-
-// TestKnowledgeCompiler_StructureNavByProduct asserts the structure/page_index
-// by-product hook summarizes the graph product entities and feeds NavService.
-func TestKnowledgeCompiler_StructureNavByProduct(t *testing.T) {
-	fake := &fakeNavSvc{}
-	nav.SetNavService(fake)
-	t.Cleanup(func() { nav.SetNavService(nil) })
-
-	graphJSON := `{"entities":[{"name":"Engine","description":"a propulsion device"},{"name":"Fuel","description":"combustion source"}]}`
-	products := []common.Product{
-		{Content: graphJSON, Vector: []float32{0.1, 0.2}, Meta: map[string]any{"kind": "graph", "compile_kwd": "page_index"}},
-	}
-	// The by-product embeds the SUMMARY (not the graph JSON vector), so an
-	// embedder must be present.
-	upsertStructureNav(context.Background(), common.Deps{TenantID: "t1", DatasetID: "kb1", Embed: mockEmbedder{dim: 8}}, "d1", products)
-
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if !fake.called {
-		t.Fatal("upsertStructureNav did not call NavService.UpsertDoc")
-	}
-	if fake.docID != "d1" {
-		t.Errorf("doc_id = %q, want d1", fake.docID)
-	}
-	if !strings.Contains(fake.summary, "Engine: a propulsion device") {
-		t.Errorf("summary = %q, want entity descriptions", fake.summary)
-	}
-}
-
-// TestPageIndexSummary asserts entity descriptions are concatenated into a
-// document summary.
-func TestPageIndexSummary(t *testing.T) {
-	got := pageIndexSummary(`{"entities":[{"name":"A","description":"one  thing"},{"name":"B","description":""}]}`)
-	if !strings.Contains(got, "A: one thing") {
-		t.Errorf("summary = %q, want entity A", got)
-	}
-	if strings.Contains(got, "B") {
-		t.Errorf("summary should skip empty-description entity, got %q", got)
 	}
 }
 
@@ -730,7 +611,7 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 
 	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
-		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1", "plan": true,
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -789,7 +670,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 
 	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
-		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1", "plan": true,
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1293,6 +1174,53 @@ func TestKnowledgeCompiler_TenantFromGlobals(t *testing.T) {
 	})
 	if gotTenant != "tenant-from-globals" {
 		t.Fatalf("template resolver saw tenant %q, want %q (tenant_id must be read from CanvasState.Globals)", gotTenant, "tenant-from-globals")
+	}
+}
+
+func TestOverlayTemplateConfigPlanPrecedence(t *testing.T) {
+	boolPtr := func(value bool) *bool { return &value }
+
+	cases := []struct {
+		name    string
+		initial *bool
+		cfg     map[string]any
+		want    bool
+	}{
+		{
+			name: "unset_uses_template_plan",
+			cfg:  map[string]any{"plan": true},
+			want: true,
+		},
+		{
+			name: "no_plan_disables_plan",
+			cfg:  map[string]any{"no_plan": true, "plan": true},
+			want: false,
+		},
+		{
+			name:    "explicit_dsl_false_overrides_template",
+			initial: boolPtr(false),
+			cfg:     map[string]any{"plan": true},
+			want:    false,
+		},
+		{
+			name:    "explicit_dsl_true_overrides_no_plan",
+			initial: boolPtr(true),
+			cfg:     map[string]any{"no_plan": true},
+			want:    true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			param := common.Param{Plan: tc.initial}
+			overlayTemplateConfig(&param, tc.cfg)
+			if param.Plan == nil {
+				t.Fatal("Plan = nil after template config")
+			}
+			if *param.Plan != tc.want {
+				t.Errorf("Plan = %t, want %t", *param.Plan, tc.want)
+			}
+		})
 	}
 }
 

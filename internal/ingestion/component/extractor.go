@@ -80,6 +80,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/component/messagefit"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -696,17 +698,16 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
-			callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
-			// buildExtractorMessages appends chunkText to the user
-			// message unconditionally. When the chunk text was already
-			// embedded via a {text}/{chunks} placeholder above, passing
-			// it again would duplicate the content in the final prompt.
-			// Suppress the automatic append in that case (the keyword/
-			// question helper paths do the same by passing "").
+			// buildExtractorMessages appends chunkText to the user message
+			// unconditionally. Substitute first; if a content-bearing
+			// placeholder ({text}/{chunks}/{content_with_weight}) was actually
+			// replaced, the chunk body is already in the prompt — suppress
+			// the append to avoid duplication.
+			var subP, subS bool
+			callIn.prompt, subP = substituteChunkPlaceholders(in.prompt, ck, text)
+			callIn.systemPrompt, subS = substituteChunkPlaceholders(in.systemPrompt, ck, text)
 			callChunkText := text
-			if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
-				strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
+			if subP || subS {
 				callChunkText = ""
 			}
 			ans, callErr := c.callText(timeoutCtx, db, callIn, callChunkText)
@@ -1042,12 +1043,21 @@ func cleanLLMText(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
-// matching Python's keyword_extraction and question_proposal post-processing.
-func cleanExtractionResult(s string) string {
+// stripTrailingThink mirrors Python's re.sub(r"^.*</think>", "", s, re.DOTALL)
+// in generator.py's post-processing (e.g. gen_metadata:960): cut everything
+// through the LAST `</think>` so a mid-text reasoning block preceded by a
+// preamble is stripped on top of cleanLLMText's leading-only cleanup.
+func stripTrailingThink(s string) string {
 	if i := strings.LastIndex(s, "</think>"); i >= 0 {
 		s = s[i+len("</think>"):]
 	}
+	return s
+}
+
+// cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
+// matching Python's keyword_extraction and question_proposal post-processing.
+func cleanExtractionResult(s string) string {
+	s = stripTrailingThink(s)
 	s = strings.TrimSpace(s)
 	if strings.Contains(s, "**ERROR**") {
 		return ""
@@ -1135,6 +1145,11 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		return nil, err
 	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
+	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
+	if fitErr != nil {
+		return nil, fitErr
+	}
+	msgs = fitted
 	inv := getExtractorChatInvoker()
 	req := extractorChatRequest{
 		Driver:    driver,
@@ -1193,6 +1208,13 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	if s == "" {
 		return nil, nil
 	}
+	// Second cleanup layer, mirroring Python gen_metadata's
+	// re.sub(r"^.*</think>", "", ans, re.DOTALL): cleanLLMText only strips a
+	// leading <think>, so a mid-text reasoning block preceded by a preamble
+	// would otherwise survive into JSON parsing and silently drop the whole
+	// metadata extraction that Python would have kept. No **ERROR** check here
+	// — Python's gen_metadata has none either.
+	s = stripTrailingThink(s)
 	parsed, ok := tryParseJSONObject(s)
 	if !ok {
 		return nil, nil
@@ -1355,6 +1377,158 @@ func isBareTenantModelID(s string) bool {
 	return true
 }
 
+// extractorContextLengthOverride is a narrow test seam mirroring
+// extractorChatTargetResolverOverride: it lets unit tests supply a context
+// length without a real tenant model row, so the message-fitting wiring in
+// callRaw/llmTagChunk can be exercised without a DB. When set,
+// extractorContextLength consults it first.
+var (
+	extractorContextLengthOverrideMu sync.RWMutex
+	extractorContextLengthOverride   func(ctx context.Context, llmID string) int
+)
+
+// SetExtractorContextLengthOverride swaps the package-level context-length
+// resolver for tests. Pass nil to restore the default. Concurrent-safe.
+func SetExtractorContextLengthOverride(fn func(ctx context.Context, llmID string) int) {
+	extractorContextLengthOverrideMu.Lock()
+	defer extractorContextLengthOverrideMu.Unlock()
+	extractorContextLengthOverride = fn
+}
+
+func getExtractorContextLengthOverride() func(ctx context.Context, llmID string) int {
+	extractorContextLengthOverrideMu.RLock()
+	defer extractorContextLengthOverrideMu.RUnlock()
+	return extractorContextLengthOverride
+}
+
+// extractorContextLength returns the chat model's context window
+// (content_length) for the effective chat model used by a call, or 0 when
+// unavailable. Mirrors Python's chat_mdl.max_length. Used as the token
+// budget for message fitting so oversized prompts are trimmed instead of
+// rejected by the provider. When llm_id is empty the call falls back to the
+// tenant default chat model (see resolveExtractorChatTarget), so the same
+// model is resolved here; otherwise the default-model path would never get
+// message fitting. Returns 0 (skip fitting) when the model is unknown (e.g.
+// unit tests with synthetic llm_id or no canvas state).
+func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int {
+	if fn := getExtractorContextLengthOverride(); fn != nil {
+		return fn(ctx, llmID)
+	}
+	if db == nil {
+		db = dao.DB
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return 0
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return 0
+	}
+	if llmID == "" {
+		llmID = defaultChatModelRef(ctx, db, tid)
+	}
+	if llmID == "" {
+		return 0
+	}
+	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
+}
+
+// defaultChatModelRef returns the tenant's default chat model reference —
+// the tenant_model UUID when one is pinned, otherwise the composite
+// "model@provider" id — or "" when the tenant has no default chat model.
+func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) string {
+	if db == nil {
+		// No database to read the tenant's default chat model from.
+		return ""
+	}
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
+	if err != nil || tenant == nil {
+		return ""
+	}
+	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
+		return *tenant.TenantLLMID
+	}
+	return tenant.LLMID
+}
+
+// extractorContextFitBudget returns 97% of the model's context window as the
+// fitting budget, mirroring the agent component's contextFitBudget. The
+// margin leaves headroom for the difference between the cl100k tokenizer used
+// for counting and the model's own tokenizer, plus per-message formatting
+// overhead, so a fitted prompt stays inside the provider's real context limit
+// instead of landing exactly on it.
+func extractorContextFitBudget(ctxLen int) int {
+	budget := int(float64(ctxLen) * 0.97)
+	if budget < 1 {
+		// Never hand messagefit a <=0 budget: Fit treats <=0 as the 8192
+		// default, which would stop trimming entirely for a tiny context.
+		return 1
+	}
+	return budget
+}
+
+// fitExtractorMessages trims msgs to the chat model's context window using
+// the shared messagefit fitter (mirrors Python's message_fit_in), dropping
+// entries the fitter removed. It returns a clear error instead of letting a
+// conversation whose final user turn was trimmed to empty reach the provider:
+// the proportional trim can do that when the system prompt alone exceeds the
+// context budget, and providers reject empty user turns with an obscure error
+// after retries.
+func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs []eschema.Message) ([]eschema.Message, error) {
+	ctxLen := extractorContextLength(ctx, db, llmID)
+	if ctxLen <= 0 {
+		return msgs, nil
+	}
+	fitMsgs := make([]messagefit.Message, len(msgs))
+	for i := range msgs {
+		fitMsgs[i] = messagefit.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
+	}
+	kept, keptIdx, _ := messagefit.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
+
+	fitted := make([]eschema.Message, 0, len(kept))
+	for j, i := range keptIdx {
+		msgs[i].Content = kept[j].Content
+		fitted = append(fitted, msgs[i])
+	}
+	if len(fitted) == 0 {
+		return nil, errors.New("extractor: message fitting dropped every message; check the chat model context length setting")
+	}
+	// The system prompt carries the extraction contract (output format,
+	// field definitions); sending without it would silently produce
+	// garbage. The proportional trim can empty every system message when
+	// the final user turn alone fills the budget, so require at least one
+	// retained system message with non-empty content — a system message kept
+	// but trimmed to empty is just as useless as a dropped one. The guard only
+	// applies when the input actually had a system message: systemPrompt is
+	// optional and a user-only prompt is a valid request.
+	hadSystem := false
+	for _, m := range msgs {
+		if m.Role == eschema.System {
+			hadSystem = true
+			break
+		}
+	}
+	if hadSystem {
+		keptSystem := false
+		for _, m := range fitted {
+			if m.Role == eschema.System && strings.TrimSpace(m.Content) != "" {
+				keptSystem = true
+				break
+			}
+		}
+		if !keptSystem {
+			return nil, errors.New("extractor: message fitting emptied the system prompt; check the chat model context length setting or reduce the prompt size")
+		}
+	}
+	last := fitted[len(fitted)-1]
+	if last.Role != eschema.User || strings.TrimSpace(last.Content) == "" {
+		return nil, errors.New("extractor: message fitting emptied the final user turn; check the chat model context length setting or reduce the prompt size")
+	}
+	return fitted, nil
+}
+
 // buildExtractorMessages assembles system + user messages for
 // one extraction call. The user prompt is rendered as
 // "<prompt>\n\n<chunkText>" so the python behavior of
@@ -1455,39 +1629,67 @@ var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
 // (agent/component/base.py:602-609).
 var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
 
+// contentPlaceholders are the simple placeholders that resolve to the
+// chunk body. Substituting any of them indicates the chunk body is
+// already embedded in the prompt — so the automatic append in
+// buildExtractorMessages must be suppressed to avoid duplication.
+// "text" and "chunks" both map to chunkText (the primary chunk body);
+// "content_with_weight" is a chunk field carrying the weighted body.
+var contentPlaceholders = map[string]bool{
+	"text":                true,
+	"chunks":              true,
+	"content_with_weight": true,
+}
+
 // substituteChunkPlaceholders replaces {field_name} placeholders in
 // the prompt with values from the current chunk map. The special
-// alias "chunks" maps to chunkText (the current chunk's primary
-// text), matching Python's `args[chunks_key] = ck["text"]` at
+// aliases "text" and "chunks" map to chunkText (the current chunk's
+// primary text), matching Python's `args[chunks_key] = ck["text"]` at
 // extractor.py:102. Unmatched placeholders are left as-is.
-func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
+//
+// The "text" placeholder falls back to chunkText when the chunk has no
+// explicit "text" field — e.g. when only content_with_weight is present.
+// This makes {text}'s resolved value match the append path's `text`
+// variable (which also falls back content_with_weight → text).
+//
+// Returns the substituted prompt and whether any content-bearing
+// placeholder was replaced (i.e. the chunk body is now in the prompt).
+func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) (string, bool) {
 	if prompt == "" || ck == nil {
-		return prompt
+		return prompt, false
 	}
-	// Build lookup: chunk fields + "chunks" alias
-	lookup := make(map[string]string, len(ck)+1)
+	// Build lookup: chunk fields + "chunks" alias + "text" fallback.
+	lookup := make(map[string]string, len(ck)+2)
 	for k, v := range ck {
 		lookup[k] = fmt.Sprintf("%v", v)
+	}
+	if _, has := lookup["text"]; !has {
+		lookup["text"] = chunkText
 	}
 	if _, has := lookup["chunks"]; !has {
 		lookup["chunks"] = chunkText
 	}
-	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
+	var substituted bool
+	out := simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
 		key := match[1 : len(match)-1] // strip { }
 		if val, ok := lookup[key]; ok {
+			if contentPlaceholders[key] {
+				substituted = true
+			}
 			return val
 		}
 		return match // leave unknown placeholders as-is
 	})
+	return out, substituted
 }
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when
-// s is not a JSON object. Trims common markdown code fences
+// s is not a JSON object. Trims common Markdown code fences
 // (```json ... ```) before parsing.
 func tryParseJSONObject(s string) (map[string]any, bool) {
 	trimmed := strings.TrimSpace(s)
-	// Strip a surrounding markdown code fence. Models commonly wrap JSON in
+	// Strip a surrounding Markdown code fence. Models commonly wrap JSON in
 	// ```json ... ``` (language tag on the opening line) but some emit the tag
 	// on its own line (```\njson\n{...}); Python's json_repair tolerates both,
 	// encoding/json does not, so we drop the fence and any bare leading

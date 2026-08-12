@@ -9,14 +9,23 @@ export enum FlowType {
 
 export const FlowTypeConfig: Record<
   FlowType,
-  { icon: LucideIcon; labelKey: string }
+  { icon: LucideIcon; labelKey: string; color: string }
 > = {
-  [FlowType.Agent]: { icon: Network, labelKey: 'tabList.workflow' },
+  [FlowType.Agent]: {
+    icon: Network,
+    labelKey: 'tabList.workflow',
+    color: 'var(--team-member)',
+  },
   [FlowType.Compiler]: {
     icon: Shapes,
     labelKey: 'tabList.compilationOperator',
+    color: 'var(--team-department)',
   },
-  [FlowType.Flow]: { icon: Route, labelKey: 'tabList.ingestionPipeline' },
+  [FlowType.Flow]: {
+    icon: Route,
+    labelKey: 'tabList.ingestionPipeline',
+    color: 'var(--team-group)',
+  },
 };
 
 /**

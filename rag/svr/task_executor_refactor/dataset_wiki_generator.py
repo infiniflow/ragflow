@@ -243,6 +243,12 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
     for d in all_docs or []:
         if str(d.get("id")) in skip_doc_ids:
             continue
+        # Disabled documents remain in the document table and still retain
+        # their compilation-template configuration, but their source chunks
+        # have ``available_int=0``. They must not make the KB look buildable:
+        # after a Wiki clear there is intentionally no MAP input for them.
+        if str(d.get("status", "1")) != "1":
+            continue
         pc = d.get("parser_config") or {}
         template_ids: list[str] = []
         seen_template_ids: set[str] = set()
@@ -312,7 +318,34 @@ async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
     return doc_ids
 
 
-async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
+async def _wiki_delete_map_rows_for_docs(
+    tenant_id: str,
+    kb_id: str,
+    doc_ids: set[str],
+) -> None:
+    """Remove MAP resume rows so the next run must re-extract the documents."""
+    if not doc_ids:
+        return
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {
+                "compile_kwd": [WIKI_MAP_COMPILE_KWD],
+                "doc_id": sorted(str(doc_id) for doc_id in doc_ids),
+            },
+            search.index_name(tenant_id),
+            kb_id,
+        )
+    except Exception:
+        logging.exception(
+            "wiki: failed to invalidate MAP resume rows for kb=%s docs=%s",
+            kb_id,
+            sorted(doc_ids),
+        )
+        raise
+
+
+async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool | None:
     """True when at least one compiled wiki page already exists for the KB.
 
     Used to tell "nothing changed and pages already exist" (a genuine no-op)
@@ -341,7 +374,7 @@ async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
         return bool(settings.docStoreConn.get_total(res))
     except Exception:
         logging.exception("wiki: page existence probe failed for kb=%s", kb_id)
-        return False
+        return None
 
 
 async def _wiki_delete_deleted_doc_state(
@@ -547,12 +580,52 @@ async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
     return None
 
 
-async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool) -> None:
+async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | None:
+    """Return the embedding-space identity recorded by the previous build."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["embedding_model_kwd"],
+            [],
+            {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["embedding_model_kwd"]) or {}
+        for row in fm.values():
+            value = row.get("embedding_model_kwd")
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            return str(value).strip() or None
+    except Exception:
+        logging.exception("wiki: failed to load embedding model meta for kb=%s", kb_id)
+    return None
+
+
+def _wiki_embedding_fingerprint(embedding_model) -> str:
+    config = getattr(embedding_model, "model_config", {}) or {}
+    factory = str(config.get("llm_factory") or "").strip()
+    model_id = str(config.get("id") or config.get("llm_id") or "").strip()
+    name = str(config.get("llm_name") or getattr(embedding_model, "llm_name", "")).strip()
+    return ":".join(part for part in (factory, model_id, name) if part)
+
+
+async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool, embedding_fingerprint: str = "") -> None:
     index = search.index_name(tenant_id)
     row = {
         "id": _wiki_mode_meta_id(kb_id),
         "compile_kwd": "wiki_mode_meta",
         "plan_kwd": "true" if plan else "false",
+        "embedding_model_kwd": embedding_fingerprint,
         "kb_id": kb_id,
         "create_timestamp_flt": float(__import__("time").time()),
     }
@@ -585,6 +658,7 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
         "wiki_page_graph",
         "wiki_page_topic",
         "wiki_compilation_plan",
+        "wiki_plan_group",
         "wiki_reduce_result",
         "wiki_page_draft",
         "wiki_doc_page_source",
@@ -1548,6 +1622,7 @@ async def run_wiki_incremental(
     embedding_model,
     load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
     plan: bool = False,
+    _map_rebuild_retry: bool = False,
 ) -> None:
     """Dual-mode wiki compilation with incremental support.
 
@@ -1558,7 +1633,7 @@ async def run_wiki_incremental(
 
     Mode B (plan=True):
         PLAN groups entities → per-page REFINE.
-        Incremental: Page Router (KNN) routes entities to existing pages.
+        Incremental: embeddings retrieve page candidates; the LLM makes final routes.
 
     Args:
         ctx: Task context
@@ -1622,7 +1697,7 @@ async def run_wiki_incremental(
     eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id, skip_doc_ids=deleted_doc_ids)
 
     if not eligible and not is_incremental:
-        progress(1.0, "No documents configured for wiki compilation.")
+        progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
 
     # Re-resolve plan (Mode B) from the ELIGIBLE docs' templates. Each eligible
@@ -1647,14 +1722,22 @@ async def run_wiki_incremental(
     # pages), so switching modes must reset all wiki-derived state and rebuild
     # from scratch instead of incrementally mixing old-mode and new-mode pages.
     prev_plan = await _wiki_load_mode_plan(ctx.tenant_id, ctx.kb_id)
-    if prev_plan is not None and bool(prev_plan) != bool(plan) and is_incremental:
-        progress(0.05, f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'}); rebuilding wiki from scratch...")
+    previous_embedding = await _wiki_load_embedding_fingerprint(ctx.tenant_id, ctx.kb_id)
+    current_embedding = _wiki_embedding_fingerprint(embedding_model)
+    mode_changed = prev_plan is not None and bool(prev_plan) != bool(plan)
+    embedding_changed = bool(previous_embedding and current_embedding and previous_embedding != current_embedding)
+    if is_incremental and (mode_changed or embedding_changed):
+        if mode_changed:
+            reason = f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'})"
+        else:
+            reason = "Embedding model changed"
+        progress(0.05, f"{reason}; rebuilding wiki from scratch...")
         await _wiki_reset_all_wiki_state(ctx.tenant_id, ctx.kb_id)
         # Everything is gone; this is now a first build.
         is_incremental = False
         existing_map_doc_ids = set()
         deleted_doc_ids = set()
-    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan))
+    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan), current_embedding)
 
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
@@ -1774,22 +1857,21 @@ async def run_wiki_incremental(
 
     if not all_map_results and not deleted_doc_ids:
         # Nothing fresh, changed, or deleted this run. Skip only when there is
-        # genuinely nothing to build: no MAP rows at all, or a compiled baseline
-        # already exists. When MAP rows exist but no pages were ever produced
-        # (e.g. a prior run persisted MAP then failed before REDUCE, so every
-        # chunk now looks "unchanged"), fall through — ``map_results=None`` below
-        # makes wiki_compile_incremental rebuild pages from the stored extracts.
-        if not existing_map_doc_ids or await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
-            # No compile needed, but still (re)group existing pages under topics —
-            # cheap (embed + stamp) and it backfills pages built before topic
-            # grouping existed. Topic labels are loaded from the persisted MAP rows.
+        # genuinely nothing to build: an existing MAP baseline already has
+        # compiled pages. When the Wiki was explicitly cleared, both
+        # ``existing_map_doc_ids`` and the pages are gone; eligible documents
+        # must go through the first full MAP/REDUCE/REFINE run again. Likewise,
+        # when MAP rows exist but no pages were ever produced (for example a
+        # prior run stopped after MAP), fall through so the compiler can rebuild
+        # pages from the stored extracts.
+        has_compiled_pages = await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) if existing_map_doc_ids else None
+        if existing_map_doc_ids and has_compiled_pages is True:
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
-                _wiki_assign_topics,
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,
             )
 
-            progress(0.9, "Wiki is up to date; recomputing cross-references + topics ...")
+            progress(0.9, "Wiki is up to date; recomputing cross-references ...")
             # FINALIZE recomputes outlinks / auto-links / dead-link cleanup from
             # the persisted pages (zero LLM cost) so a re-run backfills graph
             # edges for pages written before auto-linking existed.
@@ -1797,7 +1879,6 @@ async def run_wiki_incremental(
                 await _wiki_finalize(ctx.tenant_id, ctx.kb_id, embedding_model)
             except Exception:
                 logging.exception("wiki: up-to-date FINALIZE failed for kb=%s", ctx.kb_id)
-            await _wiki_assign_topics(embedding_model, ctx.tenant_id, ctx.kb_id, callback=lambda p, msg: progress(p, msg))
 
             # (Re)materialize the canvas graph so pages built before graph
             # persistence existed (or a graph lost to an interrupted run) still
@@ -1810,6 +1891,31 @@ async def run_wiki_incremental(
                 logging.exception("wiki: up-to-date page-graph persist failed for kb=%s", ctx.kb_id)
 
             progress(1.0, "Wiki is up to date.")
+            return
+        if existing_map_doc_ids and has_compiled_pages is False and not _map_rebuild_retry:
+            # A first build can be interrupted after MAP rows are written. If
+            # those rows are subsequently removed or become unreadable, the
+            # resume check still suppresses MAP and the restore phase sees no
+            # payload. Invalidate only the affected documents and retry once;
+            # the second invocation then treats them as a clean MAP build.
+            stale_doc_ids = {str(doc.get("id")) for doc, _ in eligible if doc.get("id")}
+            logging.warning(
+                "wiki: MAP resume state is unusable with no compiled pages; forcing one MAP rebuild kb=%s docs=%s",
+                ctx.kb_id,
+                sorted(stale_doc_ids),
+            )
+            try:
+                await _wiki_delete_map_rows_for_docs(ctx.tenant_id, ctx.kb_id, stale_doc_ids)
+            except Exception:
+                progress(-1, "Failed to reset stale MAP state for wiki rebuild.")
+                return
+            await run_wiki_incremental(
+                ctx=ctx,
+                embedding_model=embedding_model,
+                load_chunks_for_doc=load_chunks_for_doc,
+                plan=plan,
+                _map_rebuild_retry=True,
+            )
             return
         logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
 

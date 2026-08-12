@@ -20,6 +20,9 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
@@ -46,7 +49,6 @@ const (
 	FieldStructureIndexType = "structure_index_type"
 	FieldStructureKind      = "structure_kind"
 	FieldPageID             = "page_id"
-	FieldGraphType          = "graph_type"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -377,9 +379,22 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		it.PageCount = counts[t]
 		items = append(items, it)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Topic < items[j].Topic })
+	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
+	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
+	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
+	// which orders Chinese by pinyin and handles Latin/digits/other scripts
+	// correctly, case-insensitively, without assuming topics are all-Chinese.
+	sort.Slice(items, func(i, j int) bool {
+		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
+	})
 	return items, int64(len(items)), nil
 }
+
+// wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
+// selects the CLDR zh collation (pinyin-based for Han), while Latin/digits and
+// other scripts sort naturally, case-insensitively. It is safe for concurrent
+// use after construction.
+var wikiTopicCollator = collate.New(language.Chinese)
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
 type WikiGraph struct {
@@ -604,38 +619,6 @@ func (s *DatasetArtifactService) DeleteStructures(ctx context.Context, tenantID,
 	return len(ids), nil
 }
 
-// DocGraphItem is a single node/edge entry in a document's structure graph.
-type DocGraphItem struct {
-	ID       string `json:"id"`
-	Content  string `json:"content"`
-	SourceID string `json:"source_id"`
-}
-
-// GetDocumentGraph returns the structure graph of a single document.
-func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, tenantID, datasetID, documentID, graphType string) ([]DocGraphItem, int64, error) {
-	filter := map[string]interface{}{
-		"doc_id":             []string{documentID},
-		"compiled_graph_kwd": []string{"graph"},
-	}
-	if graphType != "" {
-		filter[FieldGraphType] = []string{graphType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"id", "content_with_weight", "source_id"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]DocGraphItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, DocGraphItem{
-			ID:       firstStringValue(c["id"]),
-			Content:  firstStringValue(c["content_with_weight"]),
-			SourceID: firstStringValue(c["source_id"]),
-		})
-	}
-	return items, total, nil
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -666,28 +649,12 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	return len(ids), nil
 }
 
-// NavigationItem is a single navigation cluster (REST response shape, kept
-// stable for frontend compatibility).
-type NavigationItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// NavChildItem is a single child entry under a navigation cluster (REST
-// response shape, kept stable for frontend compatibility).
-type NavChildItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// ListNavClusters returns the navigation clusters of a dataset. It is DEPRECATED
-// and now delegates to the ES-backed NavService (internal/service datasetnav):
-// the previous implementation queried nav_cluster_kwd/count_int fields that
-// Python never writes, so it could never read the real nav tree. Do not add
-// field-level patches here — route everything through NavService.
-func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]NavigationItem, int64, error) {
+// ListNavClusters returns the navigation clusters of a dataset. It delegates to
+// the ES-backed NavService and returns the frontend DatasetNavNode shape
+// (snake_case NavNode JSON), matching Python GET /navigation exactly. The old
+// NavigationItem{name,title,count} shape did not match the frontend interface
+// and has been removed.
+func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
@@ -696,16 +663,12 @@ func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavigationItem, 0, len(nodes))
-	for _, n := range nodes {
-		items = append(items, NavigationItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
-// ListNavChildren returns the children of a navigation cluster. DEPRECATED —
-// delegates to NavService.ListChildren.
-func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]NavChildItem, int64, error) {
+// ListNavChildren returns the children of a navigation cluster in the frontend
+// DatasetNavNode shape.
+func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
@@ -714,11 +677,7 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavChildItem, 0, len(nodes))
-	for _, n := range nodes {
-		items = append(items, NavChildItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
 // DeleteNav removes the direct nav_doc children of every root cluster of a

@@ -19,7 +19,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/common"
@@ -51,8 +50,9 @@ func TestKGSearchSelectFields(t *testing.T) {
 		SelectFields: []string{"entity_kwd", "entity_type_kwd", "rank_flt"},
 		Limit:        10,
 	}
+	ctx := t.Context()
 
-	result, err := engine.Search(context.Background(), req)
+	result, err := engine.Search(ctx, req)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}

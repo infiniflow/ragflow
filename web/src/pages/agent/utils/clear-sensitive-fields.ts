@@ -7,6 +7,7 @@ const apiKeyOperators = [
   Operator.Google,
   Operator.KeenableSearch,
   Operator.BGPT,
+  Operator.QueritContents,
   Operator.QueritSearch,
 ];
 
@@ -15,7 +16,7 @@ function isQueritOperator(value: unknown) {
     return false;
   }
 
-  return ['querit', 'queritsearch'].includes(
+  return ['querit', 'queritcontents', 'queritsearch'].includes(
     value.replace(/_/g, '').toLowerCase(),
   );
 }

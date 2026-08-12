@@ -87,6 +87,15 @@ type ConnectorService struct {
 	userTenantDAO *dao.UserTenantDAO
 }
 
+type syncTaskPublisher interface {
+	PublishSyncerTask(taskID string) error
+}
+
+var getSyncerTaskPublisher = func() (syncTaskPublisher, bool) {
+	publisher, ok := engine.GetMessageQueueEngine().(syncTaskPublisher)
+	return publisher, ok
+}
+
 // NewConnectorService create connector service
 func NewConnectorService() *ConnectorService {
 	return &ConnectorService{
@@ -921,7 +930,11 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
-			if err = s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID); err != nil {
+			taskIDs, err := s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID)
+			if err != nil {
+				return nil, common.CodeServerError, err
+			}
+			if err = publishSyncerTasks(taskIDs); err != nil {
 				return nil, common.CodeServerError, err
 			}
 		} else if isConnectorCancelStatus(req.Status) {
@@ -929,7 +942,11 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 				return nil, common.CodeServerError, err
 			}
 		} else if isConnectorScheduleStatus(req.Status) {
-			if err = s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID); err != nil {
+			taskIDs, err := s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID)
+			if err != nil {
+				return nil, common.CodeServerError, err
+			}
+			if err = publishSyncerTasks(taskIDs); err != nil {
 				return nil, common.CodeServerError, err
 			}
 		}
@@ -989,10 +1006,33 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	s.deleteConnectorDocumentChunks(ctx, connector.TenantID, kbID, documents)
 
-	if err = s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents); err != nil {
+	taskIDs, err := s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if err = publishSyncerTasks(taskIDs); err != nil {
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+func publishSyncerTasks(taskIDs []string) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	publisher, ok := getSyncerTaskPublisher()
+	if !ok {
+		return fmt.Errorf("syncer task publisher is not configured")
+	}
+	for _, taskID := range taskIDs {
+		if taskID == "" {
+			continue
+		}
+		if err := publisher.PublishSyncerTask(taskID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *ConnectorService) deleteConnectorDocumentChunks(ctx context.Context, tenantID, kbID string, documents []*entity.Document) {

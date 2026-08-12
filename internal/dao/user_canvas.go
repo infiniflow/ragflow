@@ -410,6 +410,61 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, owne
 	return canvases, total, nil
 }
 
+// OwnerFilterItem is one row of the owner aggregation backing the
+// ?type=filter branch of the agents list endpoint.
+type OwnerFilterItem struct {
+	ID    string  `gorm:"column:id"`
+	Label *string `gorm:"column:label"`
+	Count int64   `gorm:"column:count"`
+}
+
+// CategoryFilterItem is one row of the canvas_category aggregation backing
+// the ?type=filter branch of the agents list endpoint.
+type CategoryFilterItem struct {
+	ID    string `gorm:"column:id"`
+	Count int64  `gorm:"column:count"`
+}
+
+// visibleToUserScope scopes a user_canvas query to rows the user can see:
+// team-permission canvases owned by ownerIDs plus everything the user owns.
+func visibleToUserScope(db *gorm.DB, ownerIDs []string, userID string) *gorm.DB {
+	return db.Model(&entity.UserCanvas{}).
+		Where("user_canvas.user_id IN ?", ownerIDs).
+		Where(
+			db.Where("user_canvas.permission = ?", "team").
+				Or("user_canvas.user_id = ?", userID))
+}
+
+// GetOwnerFilter aggregates visible canvases by owner, joining the user
+// table for the display label. Mirrors Python
+// UserCanvasService.get_owner_filter.
+func (dao *UserCanvasDAO) GetOwnerFilter(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string) ([]*OwnerFilterItem, error) {
+	if len(ownerIDs) == 0 {
+		return nil, nil
+	}
+	var items []*OwnerFilterItem
+	err := visibleToUserScope(db.WithContext(ctx), ownerIDs, userID).
+		Select("user_canvas.user_id AS id, user.nickname AS label, COUNT(user_canvas.id) AS count").
+		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
+		Group("user_canvas.user_id, user.nickname").
+		Scan(&items).Error
+	return items, err
+}
+
+// GetCategoryFilter aggregates visible canvases by canvas_category.
+// Mirrors Python UserCanvasService.get_category_filter.
+func (dao *UserCanvasDAO) GetCategoryFilter(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string) ([]*CategoryFilterItem, error) {
+	if len(ownerIDs) == 0 {
+		return nil, nil
+	}
+	var items []*CategoryFilterItem
+	err := visibleToUserScope(db.WithContext(ctx), ownerIDs, userID).
+		Select("user_canvas.canvas_category AS id, COUNT(user_canvas.id) AS count").
+		Group("user_canvas.canvas_category").
+		Scan(&items).Error
+	return items, err
+}
+
 // ListTags returns tag usage counts across canvases visible to userID.
 func (dao *UserCanvasDAO) ListTags(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, canvasCategory string) (map[string]int, error) {
 	if len(ownerIDs) == 0 {

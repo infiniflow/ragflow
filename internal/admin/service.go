@@ -252,7 +252,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	rerankModel := ""
 	var ttsModel *string = nil
 	var ocrModel *string = nil
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
+	parserIDs := "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
 		chatModel = cfg.GetDefaultChatModel().Name
@@ -1038,7 +1038,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	messageQueueStatus := messageQueueImpl.CheckStatus()
 	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
 
-	results = append(results, s.GetEEServicesStatus()...)
+	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {

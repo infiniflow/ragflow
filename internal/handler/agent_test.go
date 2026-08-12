@@ -393,9 +393,12 @@ func setupAgentRouter(svc agentServiceIface) *gin.Engine {
 
 func TestListAgents_Success(t *testing.T) {
 	title := "My Agent"
+	agentJSON, _ := json.Marshal(service.AgentItem{
+		ID: "canvas-1", Title: &title, Permission: "me", CanvasCategory: "agent_canvas",
+	})
 	svc := &fakeAgentService{
 		result: &service.ListAgentsResponse{
-			Canvas: []*service.AgentItem{{ID: "canvas-1", Title: &title, Permission: "me", CanvasCategory: "agent_canvas"}},
+			Canvas: []json.RawMessage{agentJSON},
 			Total:  1,
 		},
 		code: common.CodeSuccess,

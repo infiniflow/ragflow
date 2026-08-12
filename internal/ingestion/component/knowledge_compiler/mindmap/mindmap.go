@@ -6,8 +6,8 @@
 // and shaped into the {"id","children"} mind-map tree. The tree emits as one
 // product per node with parent links.
 //
-// Per PORT_PLAN.md the markdown source is the LLM's reply, NOT the source
-// document markdown, so the Parser component is not reused.
+// Per PORT_PLAN.md the Markdown source is the LLM's reply, NOT the source
+// document Markdown, so the Parser component is not reused.
 package mindmap
 
 import (

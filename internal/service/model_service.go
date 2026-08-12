@@ -3451,6 +3451,24 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, 
 	return m.ResolveModelConfig(ctx, tenantID, modelType, modelName)
 }
 
+// GetTenantDefaultModelRef returns the composite model reference (the
+// "<model>@<instance>@<provider>" form stored on the tenant, e.g.
+// "MiniMax-M3@mm@MiniMax") that callers pass on to model config resolution.
+// Unlike GetTenantDefaultModelByType — which resolves the driver/API config and
+// returns a bare model name — this returns the reference verbatim so it can be
+// used as an llmID for a later ResolveModelConfig/Chat round-trip.
+func (m *ModelProviderService) GetTenantDefaultModelRef(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
+	}
+	modelName, _ := defaultModelRefs(tenant, modelType)
+	if strings.TrimSpace(modelName) == "" {
+		return "", fmt.Errorf("no default %s model is set", modelType)
+	}
+	return modelName, nil
+}
+
 // GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
 func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	common.Debug("GetModelConfigByID",
@@ -3576,64 +3594,22 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 	return m.GetModelConfigFromProviderInstance(ctx, tenantID, modelType, modelRef)
 }
 
-// ResolveModelContextLength returns the chat model's context window
-// (content_length) in tokens, or 0 when unknown. After the all_models.json
-// migration (PR #17839) content_length is the total context window and
-// max_output is the generation cap; the knowledge_compiler prompt-budget logic
-// needs the context window, not the output cap. modelRef accepts either a
-// tenant model UUID or a "model@instance@provider" composite name.
+// ResolveModelContextLength returns the chat model's effective context window
+// (content_length) in tokens, or 0 when unknown. content_length is the total
+// context window and max_output is the generation cap; the
+// knowledge_compiler prompt-budget logic needs the context window, not the
+// output cap. modelRef accepts either a tenant model UUID or a
+// "model@instance@provider" composite name.
+//
+// The resolution is delegated to dao.ResolveModelContentLength so every
+// consumer shares one path: a tenant-configured "max_tokens" override in the
+// tenant_model.extra wins, otherwise the provider catalog's content_length is
+// used (D22/D23).
 func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
 	if strings.TrimSpace(modelRef) == "" {
 		return 0, fmt.Errorf("model ref is required")
 	}
-	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
-		return m.modelContextLengthByID(ctx, modelObj)
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, err
-	}
-	pureName, _, providerName, err := parseModelName(modelRef)
-	if err != nil {
-		return 0, err
-	}
-	return m.modelContextLengthByName(providerName, pureName)
-}
-
-// modelContextLengthByID reads content_length from the factory catalog for a
-// tenant model row (by id).
-func (m *ModelProviderService) modelContextLengthByID(ctx context.Context, modelObj *entity.TenantModel) (int, error) {
-	if modelObj.Status != "active" {
-		return 0, fmt.Errorf("tenant model id=%s is disabled", modelObj.ID)
-	}
-	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID)
-	if err != nil {
-		return 0, err
-	}
-	if provider == nil {
-		return 0, fmt.Errorf("provider id=%s not found for model id=%s", modelObj.ProviderID, modelObj.ID)
-	}
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.ContentLength != nil {
-		return *mi.ContentLength, nil
-	}
-	return 0, nil
-}
-
-// modelContextLengthByName reads content_length from the factory catalog for a
-// "model@provider" style reference. It is best-effort: an unknown provider or
-// model returns 0 (caller falls back to a default context length).
-func (m *ModelProviderService) modelContextLengthByName(providerName, pureName string) (int, error) {
-	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
-	if targetProvider == nil {
-		return 0, fmt.Errorf("model provider config not found: %s", providerName)
-	}
-	for i := range targetProvider.Models {
-		if strings.EqualFold(targetProvider.Models[i].Name, pureName) {
-			if targetProvider.Models[i].ContentLength != nil {
-				return *targetProvider.Models[i].ContentLength, nil
-			}
-			return 0, nil
-		}
-	}
-	return 0, nil
+	return dao.ResolveModelContentLength(ctx, dao.DB, tenantID, modelRef, "", ""), nil
 }
 
 func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {

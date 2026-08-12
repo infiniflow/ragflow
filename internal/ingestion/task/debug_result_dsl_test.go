@@ -401,7 +401,7 @@ func TestDeepCopy_MapSliceIsDeep(t *testing.T) {
 }
 
 // TestDetectFormat_Priority locks the format selection order
-// (chunks > json > text > html > markdown) used to pick a component's payload
+// (chunks > json > text > html > Markdown) used to pick a component's payload
 // key. A component that emits multiple recognized keys must surface the
 // highest-priority one, matching NormalizeChunks and the front-end tab render.
 func TestDetectFormat_Priority(t *testing.T) {
