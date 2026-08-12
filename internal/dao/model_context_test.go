@@ -88,7 +88,7 @@ func TestResolveModelContentLength_TenantModelUUID(t *testing.T) {
 
 	seedOpenAIChatModel(t, db, "")
 
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
 		t.Fatalf("ResolveModelContentLength(uuid) = %d, want 128000", got)
 	}
 }
@@ -103,8 +103,24 @@ func TestResolveModelContentLength_ExtraOverrideUUID(t *testing.T) {
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
 
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
 		t.Fatalf("ResolveModelContentLength(uuid+extra) = %d, want 32000 (custom override wins over catalog 128000)", got)
+	}
+}
+
+// TestResolveModelContentLength_UUIDCrossTenantRejected verifies that a UUID
+// belonging to another tenant does not resolve that tenant's per-model
+// override (or tenant-row catalog read): the same UUID returns 0 for an
+// unrelated tenant id.
+func TestResolveModelContentLength_UUIDCrossTenantRejected(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
+
+	if got := ResolveModelContentLength(ctx, db, "tenant-2", "0123456789abcdef0123456789abcdef", "", ""); got != 0 {
+		t.Fatalf("ResolveModelContentLength(uuid from other tenant) = %d, want 0", got)
 	}
 }
 
@@ -158,7 +174,7 @@ func TestResolveModelContentLength_ExtraOverrideStringForm(t *testing.T) {
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": "32000"}`)
 
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
 		t.Fatalf("ResolveModelContentLength(string-form extra) = %d, want 32000", got)
 	}
 }
@@ -172,7 +188,7 @@ func TestResolveModelContentLength_NonNumericStringExtraFallsBackToCatalog(t *te
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": "huge"}`)
 
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
 		t.Fatalf("ResolveModelContentLength(non-numeric string extra) = %d, want catalog 128000", got)
 	}
 }
@@ -187,7 +203,7 @@ func TestResolveModelContentLength_InvalidExtraFallsBackToCatalog(t *testing.T) 
 
 	seedOpenAIChatModel(t, db, `{bad json`)
 
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
 		t.Fatalf("ResolveModelContentLength(invalid extra) = %d, want catalog 128000", got)
 	}
 }
@@ -201,7 +217,7 @@ func TestResolveModelContentLength_ZeroExtraFallsBackToCatalog(t *testing.T) {
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 0}`)
 
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
 		t.Fatalf("ResolveModelContentLength(zero extra) = %d, want catalog 128000", got)
 	}
 }
@@ -223,7 +239,7 @@ func TestResolveModelContentLength_InactiveTenantModel(t *testing.T) {
 	}
 
 	// The UUID is not a composite ref, so an inactive row yields 0.
-	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 0 {
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 0 {
 		t.Fatalf("inactive tenant model = %d, want 0", got)
 	}
 }

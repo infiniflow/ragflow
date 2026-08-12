@@ -119,6 +119,17 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 	if err != nil || obj == nil {
 		return nil
 	}
+	// Scope UUID resolution to the caller's tenant: the tenant_model row's
+	// provider must belong to tenantID, otherwise a caller holding another
+	// tenant's UUID could read that tenant's per-model override. The
+	// tenant-agnostic catalog fallback below still applies without a row.
+	if tenantID == "" {
+		return nil
+	}
+	provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID)
+	if err != nil || provider == nil || provider.TenantID != tenantID {
+		return nil
+	}
 	return obj
 }
 
