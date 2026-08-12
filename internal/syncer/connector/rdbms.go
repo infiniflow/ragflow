@@ -20,19 +20,26 @@ import (
 	"context"
 	"crypto/md5"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
 	defaultRDBMSBatchSize = 32
 	defaultMySQLPort      = 3306
+	defaultPostgresPort   = 5432
+
+	rdbmsTypeMySQL      = "mysql"
+	rdbmsTypePostgreSQL = "postgresql"
 )
 
 var (
@@ -59,16 +66,30 @@ type RDBMSConnector struct {
 	batchSize       int
 	username        string
 	password        string
+	dbType          string
 
 	openDB func(dsn string) (*sql.DB, error)
 }
 
-// NewRDBMSConnector creates an RDBMS (MySQL) connector from Python-compatible config.
+// NewRDBMSConnector creates a MySQL connector from Python-compatible config.
 func NewRDBMSConnector(config map[string]any) (*RDBMSConnector, error) {
+	return newRDBMSConnector(config, rdbmsTypeMySQL, defaultMySQLPort)
+}
+
+// NewPostgreSQLConnector creates a PostgreSQL connector from Python-compatible config.
+func NewPostgreSQLConnector(config map[string]any) (*RDBMSConnector, error) {
+	return newRDBMSConnector(config, rdbmsTypePostgreSQL, defaultPostgresPort)
+}
+
+func newRDBMSConnector(config map[string]any, dbType string, defaultPort int) (*RDBMSConnector, error) {
 	credentials, _ := config["credentials"].(map[string]any)
+	driverName := "mysql"
+	if dbType == rdbmsTypePostgreSQL {
+		driverName = "pgx"
+	}
 	return &RDBMSConnector{
 		host:            strings.TrimSpace(stringConfig(config["host"])),
-		port:            configInt(config["port"], defaultMySQLPort),
+		port:            configInt(config["port"], defaultPort),
 		database:        strings.TrimSpace(stringConfig(config["database"])),
 		query:           sanitizeRDBMSQuery(stringConfig(config["query"])),
 		contentColumns:  splitRDBMSColumns(config["content_columns"]),
@@ -78,8 +99,9 @@ func NewRDBMSConnector(config map[string]any) (*RDBMSConnector, error) {
 		batchSize:       configInt(config["batch_size"], defaultRDBMSBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
+		dbType:          dbType,
 		openDB: func(dsn string) (*sql.DB, error) {
-			return sql.Open("mysql", dsn)
+			return sql.Open(driverName, dsn)
 		},
 	}, nil
 }
@@ -90,7 +112,7 @@ func (c *RDBMSConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("rdbms connector is nil")
 	}
 	if c.username == "" {
-		return fmt.Errorf("RDBMS (mysql): missing username")
+		return fmt.Errorf("RDBMS (%s): missing username", c.dbType)
 	}
 	if c.host == "" {
 		return fmt.Errorf("Database host is required")
@@ -103,14 +125,22 @@ func (c *RDBMSConnector) Validate(ctx context.Context) error {
 	}
 	db, err := c.open()
 	if err != nil {
-		return fmt.Errorf("Failed to connect to MySQL: %w", err)
+		return fmt.Errorf("Failed to connect to %s: %w", c.dbDisplayName(), err)
 	}
 	defer db.Close()
 	var one int
 	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
-		return fmt.Errorf("Failed to connect to MySQL: %w", err)
+		return fmt.Errorf("Failed to connect to %s: %w", c.dbDisplayName(), err)
 	}
 	return nil
+}
+
+// dbDisplayName returns the human-readable database name for error messages.
+func (c *RDBMSConnector) dbDisplayName() string {
+	if c.dbType == rdbmsTypePostgreSQL {
+		return "PostgreSQL"
+	}
+	return "MySQL"
 }
 
 // OpenSync opens one RDBMS sync session.
@@ -146,8 +176,17 @@ func (c *RDBMSConnector) OpenPrune(ctx context.Context, request PruneRequest) (P
 	return &rdbmsPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
 
-// open builds a MySQL connection with Python-compatible settings.
+// open builds a database connection with Python-compatible settings.
 func (c *RDBMSConnector) open() (*sql.DB, error) {
+	if c.dbType == rdbmsTypePostgreSQL {
+		dsn := url.URL{
+			Scheme: "postgres",
+			User:   url.UserPassword(c.username, c.password),
+			Host:   fmt.Sprintf("%s:%d", c.host, c.port),
+			Path:   "/" + url.PathEscape(c.database),
+		}
+		return c.openDB(dsn.String())
+	}
 	cfg := mysql.NewConfig()
 	cfg.User = c.username
 	cfg.Passwd = c.password
@@ -165,7 +204,11 @@ func (c *RDBMSConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string,
 	if c.query != "" {
 		return []string{c.query}, nil
 	}
-	rows, err := db.QueryContext(ctx, "SHOW TABLES")
+	tablesQuery := "SHOW TABLES"
+	if c.dbType == rdbmsTypePostgreSQL {
+		tablesQuery = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+	}
+	rows, err := db.QueryContext(ctx, tablesQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -209,10 +252,10 @@ func (c *RDBMSConnector) buildSyncQueries(bases []string, request SyncRequest) [
 func (c *RDBMSConnector) buildTimeFilteredQuery(base string, start, end *time.Time) string {
 	conditions := []string{}
 	if start != nil {
-		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s >= %s", c.timestampColumn, formatMySQLDatetime(*start)))
+		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s >= %s", c.timestampColumn, formatRDBMSDatetime(c.dbType, *start)))
 	}
 	if end != nil {
-		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, formatMySQLDatetime(*end)))
+		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, formatRDBMSDatetime(c.dbType, *end)))
 	}
 	query := c.wrapQuery(base)
 	if len(conditions) > 0 {
@@ -257,8 +300,12 @@ func stripRDBMSOrderBy(query string) string {
 	return cleaned
 }
 
-// formatMySQLDatetime renders a UTC time as a MySQL datetime literal.
-func formatMySQLDatetime(value time.Time) string {
+// formatRDBMSDatetime renders a UTC time as a SQL datetime literal, using the
+// MySQL "YYYY-MM-DD HH:MM:SS" form or the ISO-8601 form PostgreSQL accepts.
+func formatRDBMSDatetime(dbType string, value time.Time) string {
+	if dbType == rdbmsTypePostgreSQL {
+		return "'" + value.UTC().Format(time.RFC3339Nano) + "'"
+	}
 	return "'" + value.UTC().Format("2006-01-02 15:04:05") + "'"
 }
 
@@ -283,10 +330,21 @@ func (c *RDBMSConnector) scanRow(rows *sql.Rows) (map[string]any, []string, erro
 	return row, columns, nil
 }
 
-// normalizeRDBMSValue converts driver byte slices to strings.
+// normalizeRDBMSValue converts driver-specific values into plain strings so
+// content and metadata rendering stay dialect-agnostic. Byte slices (MySQL
+// text, PostgreSQL jsonb) and driver value types (PostgreSQL numeric) become
+// their text form; time.Time passes through untouched.
 func normalizeRDBMSValue(value any) any {
 	if bytes, ok := value.([]byte); ok {
 		return string(bytes)
+	}
+	if _, ok := value.(time.Time); ok {
+		return value
+	}
+	if valuer, ok := value.(driver.Valuer); ok {
+		if converted, err := valuer.Value(); err == nil {
+			return normalizeRDBMSValue(converted)
+		}
 	}
 	return value
 }
@@ -327,16 +385,16 @@ func (c *RDBMSConnector) buildContent(row map[string]any, columns []string) stri
 }
 
 // buildDocumentID derives the stable document id, matching the Python format
-// "mysql:<database>:<id value>" with an MD5 content fallback.
+// "<db_type>:<database>:<id value>" with an MD5 content fallback.
 func (c *RDBMSConnector) buildDocumentID(row map[string]any, orderedColumns []string) string {
 	if c.idColumn != "" {
 		if value, ok := row[c.idColumn]; ok && value != nil {
-			return fmt.Sprintf("mysql:%s:%s", c.database, fmt.Sprint(value))
+			return fmt.Sprintf("%s:%s:%s", c.dbType, c.database, fmt.Sprint(value))
 		}
 	}
 	content := c.buildContent(row, c.contentColumnsForRow(row, orderedColumns))
 	sum := md5.Sum([]byte(content))
-	return fmt.Sprintf("mysql:%s:%s", c.database, hex.EncodeToString(sum[:]))
+	return fmt.Sprintf("%s:%s:%s", c.dbType, c.database, hex.EncodeToString(sum[:]))
 }
 
 // rowToSourceDocument converts a database row into the syncer model.
