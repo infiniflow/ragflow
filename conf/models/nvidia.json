@@ -72,6 +72,7 @@
       "name": "meta/llama-3.2-11b-vision-instruct",
       "content_length": 131072,
       "max_output": 8192,
+      "url":"https://integrate.api.nvidia.com/v1/meta/llama-3.2-11b-vision-instruct",
       "model_types": [
         "chat",
         "vision"
@@ -97,6 +98,7 @@
       "name": "meta/llama-3.2-90b-vision-instruct",
       "content_length": 131072,
       "max_output": 8192,
+      "url":"https://integrate.api.nvidia.com/v1/meta/llama-3.2-90b-vision-instruct",
       "model_types": [
         "chat",
         "vision"
