@@ -765,12 +765,6 @@ export default {
       <ul>
       <li>비전 감지 모델을 사용하여 텍스트를 더 작은 세그먼트로 분할합니다.</li>
       <li>그런 다음 '텍스트 chunk 토큰 수'에서 지정한 임계값을 초과할 때까지 인접 세그먼트를 결합하여 chunk를 생성합니다.</li></ul></p>`,
-      general: `<p>지원 파일 형식: <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
-      <p>이 방법은 'naive' 방식으로 파일을 chunk합니다: </p>
-      <p>
-      <ul>
-      <li>비전 감지 모델을 사용하여 텍스트를 더 작은 세그먼트로 분할합니다.</li>
-      <li>그런 다음 '텍스트 chunk 토큰 수'에서 지정한 임계값을 초과할 때까지 인접 세그먼트를 결합하여 chunk를 생성합니다.</li></ul></p>`,
       paper: `<p><b>PDF</b> 파일만 지원됩니다.</p><p>
       논문은 <i>abstract, 1.1, 1.2</i> 등 섹션별로 분할됩니다. </p><p>
       이 방식은 LLM이 논문을 더 효과적으로 요약하고 더 포괄적이고 이해하기 쉬운 응답을 제공할 수 있게 합니다.

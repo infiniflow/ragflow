@@ -756,12 +756,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       <ul>
       <li>Metinleri daha küçük bölümlere ayırmak için görüntü algılama modeli kullanılır.</li>
       <li>Ardından, token sayısı 'Metin için parça token sayısı' ile belirtilen eşiği aşana kadar bitkişik bölümler birleştirilir ve bir parça oluşturulur.</li></ul></p>`,
-      general: `<p>Desteklenen dosya formatları: <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
-      <p>Bu yöntem dosyaları 'basit' bir yöntemle parçalar: </p>
-      <p>
-      <ul>
-      <li>Metinleri daha küçük bölümlere ayırmak için görüntü algılama modeli kullanılır.</li>
-      <li>Ardından, token sayısı 'Metin için parça token sayısı' ile belirtilen eşiği aşana kadar bitkişik bölümler birleştirilir ve bir parça oluşturulur.</li></ul></p>`,
       paper: `<p>Yalnızca <b>PDF</b> dosyası desteklenir.</p><p>
       Makaleler <i>özet, 1.1, 1.2</i> gibi bölümlere ayrılır. </p><p>
       Bu yaklaşım, LLM'in makaleyi daha etkili özetlemesini ve daha kapsamlı, anlaşılır yanıtlar vermesini sağlar.

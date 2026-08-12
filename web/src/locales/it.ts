@@ -785,12 +785,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       <ul>
       <li>Usa un modello di rilevamento visivo per dividere i testi in segmenti più piccoli.</li>
       <li>Poi, combina segmenti adiacenti finché il conteggio dei token supera la soglia specificata da 'Numero token chunk per testo', a quel punto viene creato un chunk.</li></ul></p>`,
-      general: `<p>I formati file supportati sono <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
-      <p>Questo metodo suddivide i file usando un metodo 'naive': </p>
-      <p>
-      <ul>
-      <li>Usa un modello di rilevamento visivo per dividere i testi in segmenti più piccoli.</li>
-      <li>Poi, combina segmenti adiacenti finché il conteggio dei token supera la soglia specificata da 'Numero token chunk per testo', a quel punto viene creato un chunk.</li></ul></p>`,
       paper: `<p>Solo file <b>PDF</b> è supportato.</p><p>
       I paper saranno divisi per sezione, come <i>abstract, 1.1, 1.2</i>. </p><p>
       Questo approccio consente all'LLM di riassumere il paper in modo più efficace e di fornire risposte più complete e comprensibili.

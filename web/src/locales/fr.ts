@@ -816,12 +816,6 @@ Nous supposons que le manuel a une structure de sections hiérarchique, utilisan
 <ul>
 <li>Utilise un modèle de détection visuelle pour diviser les textes en segments plus petits.</li>
 <li>Combine ensuite les segments adjacents jusqu'à ce que le nombre de tokens dépasse le seuil spécifié, moment auquel un segment est créé.</li></ul></p>`,
-      general: `<p>Les formats de fichiers pris en charge sont <b>MD, MDX, DOCX, XLSX, XLS, PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
-<p>Cette méthode découpe les fichiers de façon 'naïve' :</p>
-<p>
-<ul>
-<li>Utilise un modèle de détection visuelle pour diviser les textes en segments plus petits.</li>
-<li>Combine ensuite les segments adjacents jusqu'à ce que le nombre de tokens dépasse le seuil spécifié, moment auquel un segment est créé.</li></ul></p>`,
       paper: `<p>Seul le format <b>PDF</b> est pris en charge.</p><p>
 Les articles seront divisés par section, comme <i>résumé, 1.1, 1.2</i>. </p><p>
 Cette approche permet au LLM de résumer l'article plus efficacement et de fournir des réponses plus complètes.
