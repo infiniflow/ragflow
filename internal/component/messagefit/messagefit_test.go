@@ -7,16 +7,6 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-func countMessages(msgs []Message) int {
-	total := 0
-	for _, m := range msgs {
-		if m.Content != "" {
-			total += len(m.Content) // rough proxy; not token-accurate
-		}
-	}
-	return total
-}
-
 func TestFit_AllFits(t *testing.T) {
 	msgs := []Message{
 		{Role: "system", Content: "hello"},
