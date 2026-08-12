@@ -166,6 +166,7 @@ type Model struct {
 	Thinking      *ModelThinking `json:"thinking"`
 	Tools         *ModelTools    `json:"tools"`
 	Class         *string        `json:"class"`
+	URL           string         `json:"url"`
 	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
 	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
@@ -574,6 +575,9 @@ func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string
 
 	switch modelType {
 	case "chat":
+		if model.URL != "" {
+			return &model.URL, nil, nil
+		}
 		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Chat)
 		return &url, nil, nil
 	case "async_chat":
@@ -581,9 +585,15 @@ func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string
 		resultUrl := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.AsyncResult)
 		return &chatUrl, &resultUrl, nil
 	case "embedding":
+		if model.URL != "" {
+			return &model.URL, nil, nil
+		}
 		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Embedding)
 		return &url, nil, nil
 	case "rerank":
+		if model.URL != "" {
+			return &model.URL, nil, nil
+		}
 		url := fmt.Sprintf("%s%s", provider.URL, provider.URLSuffix.Rerank)
 		return &url, nil, nil
 	default:

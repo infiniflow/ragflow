@@ -526,6 +526,9 @@ func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.
 		extra["thinking"] = model.Thinking.DefaultValue
 		extra["clear_thinking"] = model.Thinking.ClearThinking
 	}
+	if model.URL != "" {
+		extra["url"] = model.URL
+	}
 }
 
 type CreateInstanceModelInfo struct {
