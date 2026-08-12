@@ -232,7 +232,7 @@ const AgentLogPage: React.FC = () => {
       pagination.current === init.page &&
       pagination.pageSize === init.page_size &&
       sortConfig?.orderby === init.orderby &&
-      sortConfig.desc === init.desc;
+      sortConfig?.desc === init.desc;
 
     setSearchParams(resetParams);
     setKeywords(init.keywords);
