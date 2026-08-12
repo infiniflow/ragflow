@@ -2,8 +2,10 @@ package nlp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -303,6 +305,90 @@ func TestNavService_ListClusters_FiltersRoot(t *testing.T) {
 	}
 }
 
+// TestNavNode_JSONShape_SnakeCase locks the REST contract: the frontend
+// DatasetNavNode and Python GET /navigation both use snake_case keys. If the
+// Go field names leaked (Name/Description/DocCount...) the frontend tree would
+// read undefined fields and render empty.
+func TestNavNode_JSONShape_SnakeCase(t *testing.T) {
+	n := nav.NavNode{Name: "cluster_x", Description: "d", DocCount: 3, Type: "cluster", HasChildren: true}
+	b, err := json.Marshal(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"name", "description", "doc_count", "type", "has_children"} {
+		if _, ok := m[want]; !ok {
+			t.Errorf("NavNode JSON missing snake_case key %q; got %s", want, b)
+		}
+	}
+	for _, bad := range []string{"Name", "Description", "DocCount", "HasChildren"} {
+		if _, ok := m[bad]; ok {
+			t.Errorf("NavNode JSON leaked PascalCase key %q; got %s", bad, b)
+		}
+	}
+}
+
+// TestNavNamingHelpers_Readable verifies the nav display-name helpers produce
+// human-readable names (mirroring Python _clean_title/_fallback_title/
+// _readable_cluster_name) instead of raw ids.
+func TestNavNamingHelpers_Readable(t *testing.T) {
+	if cleanTitle("  hello   world  ") != "hello world" {
+		t.Errorf("cleanTitle = %q, want %q", cleanTitle("  hello   world  "), "hello world")
+	}
+	// fallbackTitle takes the first non-empty line and strips Markdown markers.
+	if got := fallbackTitle("a b c d e f g h"); got != "a b c d e f g h" {
+		t.Errorf("fallbackTitle = %q, want the first line", got)
+	}
+	if got := fallbackTitle("**何进诛阉与董后之废**\n\nbody text"); got != "何进诛阉与董后之废" {
+		t.Errorf("fallbackTitle = %q, want the stripped markdown title", got)
+	}
+	if got := fallbackTitle(""); got != "Cluster" {
+		t.Errorf("fallbackTitle('') = %q, want Cluster", got)
+	}
+	name := readableClusterName("何进诛阉", "seed-text")
+	if !strings.HasPrefix(name, "何进诛阉 ") {
+		t.Errorf("readableClusterName = %q, want prefix %q", name, "何进诛阉 ")
+	}
+}
+
+// TestNavNamingHelpers_RawIDDetection verifies meaningless ids are detected so
+// nodeFromRow can fall back to a readable title.
+func TestNavNamingHelpers_RawIDDetection(t *testing.T) {
+	for _, raw := range []string{"d3778ef9c0f5495fa4bdadc00a5bf15c", "cluster_abc12345", ""} {
+		if !graphIsRawID(raw) {
+			t.Errorf("graphIsRawID(%q) = false, want true", raw)
+		}
+	}
+	for _, ok := range []string{"何进诛阉", "NVIDIA financial performance 8738e200"} {
+		if graphIsRawID(ok) {
+			t.Errorf("graphIsRawID(%q) = true, want false", ok)
+		}
+	}
+}
+
+// TestNodeFromRow_ReadableName verifies nodeFromRow falls back to a readable
+// title derived from the payload description when title_kwd is a raw id.
+func TestNodeFromRow_ReadableName(t *testing.T) {
+	ns := &NavService{}
+	row := map[string]interface{}{
+		"title_kwd":           "d3778ef9c0f5495fa4bdadc00a5bf15c",
+		"doc_id":              "d3778ef9c0f5495fa4bdadc00a5bf15c",
+		"type_kwd":            "nav_doc",
+		"doc_count_int":       1,
+		"content_with_weight": `{"type":"nav_doc","description":"刘备三战黄巾军与何进诛阉之议\nsecond line"}`,
+	}
+	node := ns.nodeFromRow(row, "doc")
+	if node.Name == "" || node.Name == "d3778ef9c0f5495fa4bdadc00a5bf15c" {
+		t.Fatalf("nodeFromRow name = %q, want readable fallback", node.Name)
+	}
+	if node.DocID != "d3778ef9c0f5495fa4bdadc00a5bf15c" {
+		t.Errorf("nodeFromRow DocID = %q, want the raw doc id preserved", node.DocID)
+	}
+}
+
 // TestNavService_Search_ReturnsHit asserts acceptance #5.
 func TestNavService_Search_ReturnsHit(t *testing.T) {
 	eng := newMemNavEngine()
@@ -353,15 +439,21 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Exactly one nav_doc (for d2) sits under the cluster; d1 is the cluster.
-	if total != 1 || len(children) != 1 {
-		t.Fatalf("expected 1 child under cluster, got total=%d len=%d", total, len(children))
+	// Every doc upserted under the cluster emits a nav_doc leaf (Python
+	// upsert_dataset_nav_doc), so d1 (which created the cluster) and d2 (which
+	// merged in) both sit under it: two nav_docs total.
+	if total != 2 || len(children) != 2 {
+		t.Fatalf("expected 2 children under cluster, got total=%d len=%d", total, len(children))
 	}
-	if children[0].DocID != "d2" {
-		t.Errorf("child doc_id = %q, want d2", children[0].DocID)
+	gotIDs := map[string]bool{}
+	for _, c := range children {
+		gotIDs[c.DocID] = true
+		if c.Type != "doc" {
+			t.Errorf("child type = %q, want doc", c.Type)
+		}
 	}
-	if children[0].Type != "doc" {
-		t.Errorf("child type = %q, want doc", children[0].Type)
+	if !gotIDs["d1"] || !gotIDs["d2"] {
+		t.Errorf("expected nav_docs for both d1 and d2, got %v", gotIDs)
 	}
 }
 

@@ -568,23 +568,67 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		}
 
 	case common.VariantTree:
-		// raptor_kwd tags summary/root nodes; raptor_layer_int records tree depth.
-		if kind != "" {
-			if err := doc.SetExtraValue("raptor_kwd", kind); err != nil {
-				return err
+		switch kind {
+		case "entity", "relation", "graph":
+			// The tree is also projected onto the structure-graph shape (Python
+			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
+			// relation rows carry knowledge_graph_kwd and the compact graph blob
+			// (kind "graph") is the /structure/graph discovery row. Emit the same
+			// columns the structure variant does.
+			if kind != "" {
+				if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
+					return err
+				}
 			}
-		}
-		if v, ok := metaInt(p.Meta, "level"); ok {
-			if err := doc.SetExtraValue("raptor_layer_int", v); err != nil {
-				return err
+			if kind == "relation" {
+				if v := metaString(p.Meta, "from"); v != "" {
+					if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
+						return err
+					}
+				}
+				if v := metaString(p.Meta, "to"); v != "" {
+					if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
+						return err
+					}
+				}
 			}
-			if err := doc.SetExtraValue("depth_int", v); err != nil {
-				return err
+			if kind == "entity" {
+				if v := metaString(p.Meta, "name"); v != "" {
+					if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+						return err
+					}
+				}
+				if v := metaString(p.Meta, "entity_type"); v != "" {
+					if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+						return err
+					}
+				}
 			}
-		}
-		if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
-			if err := doc.SetExtraValue("children_kwd", v); err != nil {
-				return err
+			if v, ok := metaInt(p.Meta, "mention_count"); ok {
+				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+					return err
+				}
+			}
+		default:
+			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
+			// raptor_layer_int records tree depth.
+			if kind != "" {
+				if err := doc.SetExtraValue("raptor_kwd", kind); err != nil {
+					return err
+				}
+			}
+			if v, ok := metaInt(p.Meta, "level"); ok {
+				if err := doc.SetExtraValue("raptor_layer_int", v); err != nil {
+					return err
+				}
+				if err := doc.SetExtraValue("depth_int", v); err != nil {
+					return err
+				}
+			}
+			if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
+				if err := doc.SetExtraValue("children_kwd", v); err != nil {
+					return err
+				}
 			}
 		}
 
