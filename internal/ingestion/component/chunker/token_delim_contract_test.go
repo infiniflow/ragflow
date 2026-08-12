@@ -6,13 +6,12 @@ import (
 	"testing"
 )
 
-// TestTokenChunker_BareDelimiterIgnored locks T1: a bare (non-backtick)
-// delimiter entry is IGNORED by CompileDelimiterListPattern, so setting
-// delimiter_mode + a bare delimiter is effectively a no-op — the text is
-// merged by token_size and the bare token survives inside a chunk rather
-// than acting as a split point. Regression guard for the "bare entries are
-// ignored" contract.
-func TestTokenChunker_BareDelimiterIgnored(t *testing.T) {
+// TestTokenChunker_BareDelimiterHonored locks the #17723 fix: a bare
+// (non-backtick) delimiter entry is now honored by TokenChunker. The payload
+// is split on the delimiter into paragraphs (the delimiter is DROPPED, matching
+// Python naive_merge), and those paragraphs are then merged by token_size.
+// Regression guard for the "bare entries are active" contract.
+func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"delimiter_mode":   "delimiter",
 		"delimiters":       []string{"::"},
@@ -38,10 +37,17 @@ func TestTokenChunker_BareDelimiterIgnored(t *testing.T) {
 	for _, ck := range chunks {
 		joined.WriteString(ck["text"].(string))
 	}
-	// No content dropped and the bare "::" is preserved (just chunked by
-	// token size, not split on "::").
-	if joined.String() != text {
-		t.Errorf("bare delimiter not ignored: joined=%q want %q (chunks=%v)", joined.String(), text, chunkTexts(chunks))
+	// No content dropped, and the bare "::" is split away (not preserved inside
+	// a chunk). Python's naive_merge rebuilds each paragraph with a leading
+	// "\n", so the joined text equals the source with "::" replaced by "\n".
+	const want = "alpha\nbeta\ngamma\ndelta"
+	if joined.String() != want {
+		t.Errorf("bare delimiter not honored: joined=%q want %q (chunks=%v)", joined.String(), want, chunkTexts(chunks))
+	}
+	for _, ck := range chunks {
+		if strings.Contains(ck["text"].(string), "::") {
+			t.Errorf("bare delimiter leaked into chunk: %q", ck["text"].(string))
+		}
 	}
 }
 
