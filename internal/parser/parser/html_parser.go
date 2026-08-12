@@ -107,10 +107,6 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 // <style>, and <noscript> blocks are skipped entirely so they
 // don't pollute the downstream chunker input.
 func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
-	// tableItems collects the structured doc_type_kwd:"table" items so they
-	// can be appended after the walk (mirrors markdown_parser.go:366-367,
-	// which appends tables after all sections to match Python's ordering).
-	var tableItems []map[string]any
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.TextNode {
 			if emitsLooseHTMLText(root) {
@@ -134,21 +130,17 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 			walkHTMLBlocks(child, out)
 			continue
 		case "table":
-			// Keep the table as its full HTML markup (NOT flattened) so
-			// row/column structure survives into embedding, retrieval, and
-			// LLM rendering. This mirrors the markdown table handling
-			// (markdown_parser.go:305-328) and Python's HtmlParser, which
-			// keeps the <table>…</table> string as the section text.
+			// Emit the <table> as a SINGLE structured doc_type_kwd:"table"
+			// item, in document order. Keeping the full <table>…</table>
+			// markup (not flattened) preserves row/column structure for
+			// embedding, retrieval, and LLM rendering, and doc_type_kwd/
+			// ck_type drives downstream table handling (discrete chunk +
+			// table context). We emit ONLY this item — no duplicate
+			// doc_type_kwd:"text" copy — so the table is embedded once and
+			// its markup does not pollute neighbouring prose chunks.
 			markup := renderTableHTML(child)
 			if strings.TrimSpace(markup) != "" {
-				// Inlined copy in document order (matches Python's <table>
-				// section text and markdown's text-flow copy).
 				*out = append(*out, map[string]any{
-					"text":         markup,
-					"doc_type_kwd": "text",
-				})
-				// Structured table item, appended after the walk.
-				tableItems = append(tableItems, map[string]any{
 					"text":         markup,
 					"doc_type_kwd": "table",
 					"ck_type":      "table",
@@ -156,11 +148,9 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 			}
 			continue
 		}
-		text := htmlLeafText(child, &tableItems)
-		appendHTMLTextItem(out, text, htmlTagToCkType(tag), tag != "pre" && tag != "textarea")
-	}
-	if len(tableItems) > 0 {
-		*out = append(*out, tableItems...)
+		ckType := htmlTagToCkType(tag)
+		trim := tag != "pre" && tag != "textarea"
+		htmlLeafText(child, out, ckType, trim)
 	}
 }
 
@@ -285,21 +275,46 @@ func (w *leafWriter) hardBreak() {
 }
 
 // htmlLeafText joins the visible text of an HTML node and its
-// descendants. <script>/<style>/<noscript> subtrees are skipped. Whitespace
-// is folded per CSS rules (so "<h1>Hello   world</h1>" becomes "Hello world"
-// and "<br>" survives as a real line break), while <pre>/<textarea> keep
-// their source formatting verbatim. Any <table> encountered in the subtree is
-// rendered as its <table>…</table> markup (so row/column structure survives)
-// and registered as a structured doc_type_kwd:"table" item via tableItems —
-// see walkHTMLLeaf's "table" case.
-func htmlLeafText(n *html.Node, tableItems *[]map[string]any) string {
+// descendants and emits items directly into out. <script>/<style>/<noscript>
+// subtrees are skipped. Whitespace is folded per CSS rules (so
+// "<h1>Hello   world</h1>" becomes "Hello world" and "<br>" survives as a
+// real line break), while <pre>/<textarea> keep their source formatting
+// verbatim. ckType is the block's ck_type (from htmlTagToCkType) applied to the
+// accumulated prose item; trim controls whether trailing/leading whitespace is
+// collapsed (false for <pre>/<textarea>, which must stay verbatim). Any <table>
+// encountered in the subtree is emitted as a single structured
+// doc_type_kwd:"table" item at its document position (see walkHTMLLeaf's
+// "table" case) — the prose around it is flushed as ordinary text items, so
+// the table is never relocated to the end and never duplicated.
+func htmlLeafText(n *html.Node, out *[]map[string]any, ckType string, trim bool) {
 	var b bytes.Buffer
 	w := &leafWriter{b: &b}
-	walkHTMLLeaf(n, w, tableItems)
-	return b.String()
+	walkHTMLLeaf(n, w, out)
+	flushLeafText(w, out, ckType, trim)
 }
 
-func walkHTMLLeaf(n *html.Node, w *leafWriter, tableItems *[]map[string]any) {
+// flushLeafText emits any text accumulated in w as a doc_type_kwd:"text" item
+// (dropping empty output) and resets the writer. ckType/trim mirror
+// appendHTMLTextItem. It is called at block boundaries and at <table> elements
+// so tables are emitted in their original document position rather than being
+// relocated. Prose with no specific block tag (e.g. text accumulated just
+// before a nested table) is flushed as ck_type "text".
+func flushLeafText(w *leafWriter, out *[]map[string]any, ckType string, trim bool) {
+	text := w.b.String()
+	if trim {
+		text = strings.TrimSpace(text)
+	}
+	if text == "" {
+		return
+	}
+	appendHTMLTextItem(out, text, ckType, false)
+	w.b.Reset()
+	w.lastSpace = false
+	w.lineStart = true
+	w.endsNL = false
+}
+
+func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any) {
 	switch n.Type {
 	case html.TextNode:
 		w.writeText(n.Data)
@@ -315,24 +330,24 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, tableItems *[]map[string]any) {
 			// Verbatim: no folding, no injected block breaks.
 			w.pre = true
 			for child := n.FirstChild; child != nil; child = child.NextSibling {
-				walkHTMLLeaf(child, w, tableItems)
+				walkHTMLLeaf(child, w, out)
 			}
 			w.pre = false
 			return
 		}
 		if n.Data == "table" {
-			// Keep the table as its full HTML markup (NOT flattened) so
-			// row/column structure survives into the wrapper's text item,
-			// embedding, retrieval, and LLM rendering. This mirrors the
-			// top-level walkHTMLBlocks "table" case, and covers tables nested
-			// in div/section/article/… (which the walkHTMLBlocks case never
-			// reaches). The structured table item is collected for the
-			// downstream chunker (appended after the walk by the caller, same
-			// as the top-level path).
+			// Emit the <table> as a SINGLE structured doc_type_kwd:"table"
+			// item, in document order. flushLeafText first emits any prose
+			// accumulated before the table so the table stays in its original
+			// position rather than being relocated to the end. The full
+			// <table>…</table> markup is preserved (not flattened) so
+			// row/column structure survives; we do NOT also inline the markup
+			// into the parent's text, which would duplicate the table and
+			// pollute the prose chunk with raw tags.
 			markup := renderTableHTML(n)
 			if strings.TrimSpace(markup) != "" {
-				w.writeText(markup)
-				*tableItems = append(*tableItems, map[string]any{
+				flushLeafText(w, out, "text", true)
+				*out = append(*out, map[string]any{
 					"text":         markup,
 					"doc_type_kwd": "table",
 					"ck_type":      "table",
@@ -352,7 +367,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, tableItems *[]map[string]any) {
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLLeaf(child, w, tableItems)
+			walkHTMLLeaf(child, w, out)
 		}
 		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
 			w.hardBreak()
