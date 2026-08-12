@@ -1,6 +1,7 @@
 package messagefit
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,13 +13,30 @@ func TestFit_AllFits(t *testing.T) {
 		{Role: "system", Content: "hello"},
 		{Role: "user", Content: "world"},
 	}
-	got := Fit(msgs, 100000)
-	if got == 0 {
-		t.Errorf("Fit returned 0, want > 0")
+	kept, keptIdx, count := Fit(msgs, 100000)
+	if count == 0 {
+		t.Errorf("Fit returned count 0, want > 0")
 	}
-	// Nothing should be dropped.
-	if msgs[0].Content != "hello" || msgs[1].Content != "world" {
-		t.Errorf("messages modified when they fit: %+v", msgs)
+	if len(kept) != 2 || !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("got kept=%+v keptIdx=%v, want both messages", kept, keptIdx)
+	}
+	if kept[0].Content != "hello" || kept[1].Content != "world" {
+		t.Errorf("messages modified when they fit: %+v", kept)
+	}
+}
+
+// TestFit_DoesNotMutateInput verifies the non-mutating contract: Fit never
+// rewrites msgs, so a caller cannot accidentally send emptied entries.
+func TestFit_DoesNotMutateInput(t *testing.T) {
+	orig := []Message{
+		{Role: "system", Content: strings.Repeat("s ", 500)},
+		{Role: "user", Content: strings.Repeat("u ", 500)},
+		{Role: "user", Content: "last"},
+	}
+	msgs := slices.Clone(orig)
+	Fit(msgs, 100)
+	if !slices.Equal(msgs, orig) {
+		t.Fatalf("Fit mutated its input:\n got %+v\nwant %+v", msgs, orig)
 	}
 }
 
@@ -35,37 +53,52 @@ func TestFit_Step2_DropsMiddle(t *testing.T) {
 	}
 	budget := tokenizer.NumTokensFromString(sysContent) + tokenizer.NumTokensFromString(last)
 
-	if got := Fit(msgs, budget); got == 0 {
-		t.Fatalf("Fit returned 0, want > 0")
+	kept, keptIdx, count := Fit(msgs, budget)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	if msgs[1].Content != "" {
-		t.Errorf("middle message not cleared: %q", msgs[1].Content)
+	if !slices.Equal(keptIdx, []int{0, 2}) {
+		t.Fatalf("keptIdx = %v, want [0 2] (middle dropped)", keptIdx)
 	}
-	if msgs[0].Content != sysContent || msgs[2].Content != last {
-		t.Errorf("retained messages modified: %+v", msgs)
+	if kept[0].Content != sysContent || kept[1].Content != last {
+		t.Errorf("retained messages modified: %+v", kept)
 	}
 }
 
-// TestFit_ExactBudget verifies that a total exactly equal to the budget
-// counts as fitting: nothing is dropped or trimmed.
 func TestFit_ExactBudget(t *testing.T) {
+	// A total exactly equal to the budget counts as fitting.
 	msgs := []Message{
 		{Role: "system", Content: "abc"},
 		{Role: "user", Content: "def"},
 	}
 	budget := tokenizer.NumTokensFromString("abc") + tokenizer.NumTokensFromString("def")
 
-	if got := Fit(msgs, budget); got == 0 {
-		t.Fatalf("Fit returned 0, want > 0")
+	kept, keptIdx, _ := Fit(msgs, budget)
+	if len(kept) != 2 || !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("got kept=%+v keptIdx=%v, want both messages kept", kept, keptIdx)
 	}
-	if msgs[0].Content != "abc" || msgs[1].Content != "def" {
-		t.Errorf("messages modified at exact budget: %+v", msgs)
+	if kept[0].Content != "abc" || kept[1].Content != "def" {
+		t.Errorf("messages modified at exact budget: %+v", kept)
 	}
 }
 
-// TestFit_SystemOnlyMessages verifies that when only system messages are
-// retained (no non-system message), the whole budget is spread across every
-// retained system message and the total never exceeds it.
+// TestFit_NoSystem_KeepsOnlyLast locks the Python-parity behavior: without a
+// system message, Step 2 keeps only the last non-system message.
+func TestFit_NoSystem_KeepsOnlyLast(t *testing.T) {
+	msgs := []Message{
+		{Role: "user", Content: strings.Repeat("a ", 300)},
+		{Role: "assistant", Content: strings.Repeat("b ", 300)},
+		{Role: "user", Content: "last"},
+	}
+	kept, keptIdx, _ := Fit(msgs, 100)
+	if !slices.Equal(keptIdx, []int{2}) {
+		t.Fatalf("keptIdx = %v, want [2] (only the last user kept)", keptIdx)
+	}
+	if len(kept) != 1 || kept[0].Content != "last" {
+		t.Fatalf("kept = %+v, want the last user message", kept)
+	}
+}
+
 func TestFit_SystemOnlyMessages(t *testing.T) {
 	sys1 := strings.Repeat("s ", 800)
 	sys2 := strings.Repeat("t ", 200)
@@ -75,28 +108,29 @@ func TestFit_SystemOnlyMessages(t *testing.T) {
 	}
 	const budget = 500
 
-	if got := Fit(msgs, budget); got == 0 {
-		t.Fatalf("Fit returned 0, want > 0")
+	kept, keptIdx, count := Fit(msgs, budget)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	total := tokenizer.NumTokensFromString(msgs[0].Content) + tokenizer.NumTokensFromString(msgs[1].Content)
+	if len(kept) != 2 || !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("got kept=%+v keptIdx=%v, want both systems", kept, keptIdx)
+	}
+	total := tokenizer.NumTokensFromString(kept[0].Content) + tokenizer.NumTokensFromString(kept[1].Content)
 	if total > budget {
 		t.Errorf("fitted total %d exceeds budget %d", total, budget)
 	}
-	fitted0 := tokenizer.NumTokensFromString(msgs[0].Content)
-	fitted1 := tokenizer.NumTokensFromString(msgs[1].Content)
+	fitted0 := tokenizer.NumTokensFromString(kept[0].Content)
+	fitted1 := tokenizer.NumTokensFromString(kept[1].Content)
 	if fitted0 == 0 || fitted1 == 0 {
-		t.Errorf("a system message was emptied by fitting: %+v", msgs)
+		t.Errorf("a system message was emptied by fitting: %+v", kept)
 	}
 	if fitted0 >= tokenizer.NumTokensFromString(sys1) || fitted1 >= tokenizer.NumTokensFromString(sys2) {
-		t.Errorf("system messages not trimmed: %+v", msgs)
+		t.Errorf("system messages not trimmed: %+v", kept)
 	}
 }
 
-// TestFit_TrimsAllSystemMessages verifies that the system budget is spread
-// across every retained system message, not just the first one, so the final
-// total never exceeds the budget.
 func TestFit_TrimsAllSystemMessages(t *testing.T) {
-	sys1 := strings.Repeat("s ", 800) // dominates the token count
+	sys1 := strings.Repeat("s ", 800)
 	sys2 := strings.Repeat("t ", 200)
 	last := "last"
 	msgs := []Message{
@@ -106,60 +140,116 @@ func TestFit_TrimsAllSystemMessages(t *testing.T) {
 	}
 	const budget = 500
 
-	if got := Fit(msgs, budget); got == 0 {
-		t.Fatalf("Fit returned 0, want > 0")
+	kept, keptIdx, count := Fit(msgs, budget)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	if msgs[2].Content != last {
-		t.Errorf("last user message not preserved: %q", msgs[2].Content)
+	if !slices.Equal(keptIdx, []int{0, 1, 2}) {
+		t.Fatalf("keptIdx = %v, want [0 1 2]", keptIdx)
 	}
-	total := tokenizer.NumTokensFromString(msgs[0].Content) +
-		tokenizer.NumTokensFromString(msgs[1].Content) +
-		tokenizer.NumTokensFromString(msgs[2].Content)
+	if kept[2].Content != last {
+		t.Errorf("last user message not preserved: %q", kept[2].Content)
+	}
+	total := tokenizer.NumTokensFromString(kept[0].Content) +
+		tokenizer.NumTokensFromString(kept[1].Content) +
+		tokenizer.NumTokensFromString(kept[2].Content)
 	if total > budget {
 		t.Errorf("fitted total %d exceeds budget %d", total, budget)
 	}
-	fitted0 := tokenizer.NumTokensFromString(msgs[0].Content)
-	fitted1 := tokenizer.NumTokensFromString(msgs[1].Content)
+	fitted0 := tokenizer.NumTokensFromString(kept[0].Content)
+	fitted1 := tokenizer.NumTokensFromString(kept[1].Content)
 	if fitted0 == 0 || fitted1 == 0 {
-		t.Errorf("a system message was emptied by fitting: %+v", msgs)
+		t.Errorf("a system message was emptied by fitting: %+v", kept)
 	}
 	if fitted0 >= tokenizer.NumTokensFromString(sys1) || fitted1 >= tokenizer.NumTokensFromString(sys2) {
-		t.Errorf("system messages not trimmed: %+v", msgs)
+		t.Errorf("system messages not trimmed: %+v", kept)
 	}
 }
 
 func TestFit_Step3_SystemDominates(t *testing.T) {
 	// System takes >80% of tokens → preserve user, trim system.
-	sysContent := strings.Repeat("a ", 800)  // ~1600 tokens
-	userContent := strings.Repeat("b ", 100) // ~200 tokens
+	sysContent := strings.Repeat("a ", 800)  // dominates
+	userContent := strings.Repeat("b ", 100) // small, fits entirely
 	msgs := []Message{
 		{Role: "system", Content: sysContent},
 		{Role: "user", Content: userContent},
 	}
-	got := Fit(msgs, 500)
-	if got == 0 {
-		t.Errorf("Fit returned 0, want > 0")
+	const budget = 500
+
+	kept, keptIdx, count := Fit(msgs, budget)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	// System should have been trimmed, user preserved.
-	if len(msgs[0].Content) >= len(sysContent) {
-		t.Errorf("system not trimmed: got %d want < %d", len(msgs[0].Content), len(sysContent))
+	if count > budget {
+		t.Errorf("fitted total %d exceeds budget %d", count, budget)
+	}
+	if !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("keptIdx = %v, want [0 1]", keptIdx)
+	}
+	// User preserved verbatim; system trimmed.
+	if tokenizer.NumTokensFromString(kept[1].Content) != tokenizer.NumTokensFromString(userContent) {
+		t.Errorf("user message not preserved: %+v", kept)
+	}
+	if tokenizer.NumTokensFromString(kept[0].Content) >= tokenizer.NumTokensFromString(sysContent) {
+		t.Errorf("system not trimmed: %+v", kept)
 	}
 }
 
 func TestFit_Step3_UserDominates(t *testing.T) {
 	// User takes >20% → preserve system, trim user.
-	sysContent := strings.Repeat("a ", 200)
-	userContent := strings.Repeat("b ", 800)
+	sysContent := strings.Repeat("a ", 150)  // small, fits entirely
+	userContent := strings.Repeat("b ", 800) // dominates
 	msgs := []Message{
 		{Role: "system", Content: sysContent},
 		{Role: "user", Content: userContent},
 	}
-	got := Fit(msgs, 500)
-	if got == 0 {
-		t.Errorf("Fit returned 0, want > 0")
+	const budget = 500
+
+	kept, keptIdx, count := Fit(msgs, budget)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	if len(msgs[1].Content) >= len(userContent) {
-		t.Errorf("user not trimmed: got %d want < %d", len(msgs[1].Content), len(userContent))
+	if count > budget {
+		t.Errorf("fitted total %d exceeds budget %d", count, budget)
+	}
+	if !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("keptIdx = %v, want [0 1]", keptIdx)
+	}
+	// System preserved verbatim; user trimmed.
+	if tokenizer.NumTokensFromString(kept[0].Content) != tokenizer.NumTokensFromString(sysContent) {
+		t.Errorf("system message not preserved: %+v", kept)
+	}
+	if tokenizer.NumTokensFromString(kept[1].Content) >= tokenizer.NumTokensFromString(userContent) {
+		t.Errorf("user not trimmed: %+v", kept)
+	}
+}
+
+// TestFit_Step3_BudgetFilledByLast locks the boundary where the last message
+// alone fills the budget (preserved == budget): the system share collapses to
+// 0, so every retained system message is kept but trimmed to empty — it must
+// NOT be reported as dropped. Python's message_fit_in retains the system entry
+// with content "" in this case too.
+func TestFit_Step3_BudgetFilledByLast(t *testing.T) {
+	sysContent := strings.Repeat("a ", 3000) // dominates (>80% of tokens)
+	userContent := strings.Repeat("b ", 600) // alone exceeds the budget
+	msgs := []Message{
+		{Role: "system", Content: sysContent},
+		{Role: "user", Content: userContent},
+	}
+	const budget = 500
+
+	kept, keptIdx, count := Fit(msgs, budget)
+	if !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("keptIdx = %v, want [0 1] (both messages still kept)", keptIdx)
+	}
+	if count > budget {
+		t.Errorf("fitted total %d exceeds budget %d", count, budget)
+	}
+	if kept[0].Content != "" {
+		t.Errorf("system message not trimmed to empty when the last message fills the budget: %+v", kept)
+	}
+	if tokenizer.NumTokensFromString(kept[1].Content) > budget {
+		t.Errorf("user message exceeds budget after trim: %+v", kept)
 	}
 }
 
@@ -167,37 +257,41 @@ func TestFit_SingleMessage(t *testing.T) {
 	msgs := []Message{
 		{Role: "system", Content: strings.Repeat("x ", 1000)},
 	}
-	got := Fit(msgs, 100)
-	if got == 0 {
-		t.Errorf("Fit returned 0, want > 0")
+	kept, keptIdx, count := Fit(msgs, 100)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	if len(msgs[0].Content) >= 1000 {
-		t.Errorf("single message not trimmed: got %d", len(msgs[0].Content))
+	if !slices.Equal(keptIdx, []int{0}) {
+		t.Fatalf("keptIdx = %v, want [0]", keptIdx)
+	}
+	if tokenizer.NumTokensFromString(kept[0].Content) > 100 {
+		t.Errorf("single message not trimmed: %+v", kept)
 	}
 }
 
-func TestFit_ZeroMaxTokens(t *testing.T) {
-	// maxTokens <= 0 should use 8192 default and not panic.
+func TestFit_ZeroBudget(t *testing.T) {
+	// budget <= 0 should use 8192 default and not panic.
 	msgs := []Message{
 		{Role: "system", Content: "hello"},
 		{Role: "user", Content: "world"},
 	}
-	got := Fit(msgs, 0)
-	if got == 0 {
-		t.Errorf("Fit returned 0, want > 0")
+	kept, keptIdx, count := Fit(msgs, 0)
+	if count == 0 {
+		t.Fatalf("Fit returned count 0, want > 0")
 	}
-	if msgs[0].Content != "hello" || msgs[1].Content != "world" {
-		t.Errorf("messages modified with default budget: %+v", msgs)
+	if len(kept) != 2 || !slices.Equal(keptIdx, []int{0, 1}) {
+		t.Fatalf("got kept=%+v keptIdx=%v, want both messages", kept, keptIdx)
+	}
+	if kept[0].Content != "hello" || kept[1].Content != "world" {
+		t.Errorf("messages modified with default budget: %+v", kept)
 	}
 }
 
 func TestFit_Empty(t *testing.T) {
-	got := Fit(nil, 1000)
-	if got != 0 {
-		t.Errorf("Fit on nil = %d, want 0", got)
+	if kept, keptIdx, count := Fit(nil, 1000); kept != nil || keptIdx != nil || count != 0 {
+		t.Errorf("Fit(nil) = %v, %v, %d; want nil, nil, 0", kept, keptIdx, count)
 	}
-	got = Fit([]Message{}, 1000)
-	if got != 0 {
-		t.Errorf("Fit on empty = %d, want 0", got)
+	if kept, keptIdx, count := Fit([]Message{}, 1000); len(kept) != 0 || len(keptIdx) != 0 || count != 0 {
+		t.Errorf("Fit(empty) = %v, %v, %d; want 0, 0, 0", kept, keptIdx, count)
 	}
 }

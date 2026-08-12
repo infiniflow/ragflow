@@ -10,11 +10,13 @@
 // within a budget. It mirrors Python's rag/prompts/generator.py:message_fit_in.
 //
 // The package is shared by the agent canvas LLM component and the ingestion
-// Extractor component. Callers convert their message type to []Message,
-// call Fit, then write the results back.
+// Extractor component. Callers convert their message type to []Message, call
+// Fit, and send the returned kept messages (at keptIdx into the input).
 package messagefit
 
 import (
+	"slices"
+
 	"ragflow/internal/tokenizer"
 )
 
@@ -28,10 +30,17 @@ type Message struct {
 	Content string
 }
 
-// Fit trims msgs so its total token count fits within budget. budget is the
+// Fit trims msgs so the kept messages fit within budget. budget is the
 // caller-chosen token ceiling for the whole conversation — the agent LLM and
 // ingestion Extractor both pass the chat model's context window
 // (content_length), not the generation cap (max_output).
+//
+// It returns the kept messages in original order (trimmed when necessary),
+// their original indices into msgs, and the kept messages' total token count.
+// msgs itself is never modified, and dropped entries are simply absent from
+// kept/keptIdx — no empty-content sentinel is used. A message that is kept but
+// trimmed to empty (e.g. the system share collapses to 0 when the last message
+// alone fills the budget) is still reported as kept, mirroring Python.
 //
 // Strategy (mirrors Python's message_fit_in, with two deliberate tweaks:
 // an exact budget match counts as fitting, and the system share is spread
@@ -47,126 +56,121 @@ type Message struct {
 //     - Single message → trim to budget directly.
 //
 // budget <= 0 is treated as 8192 (Python's default).
-// Returns the token count after fitting. msgs is modified in place:
-// entries that were dropped have their Content set to "".
-func Fit(msgs []Message, budget int) int {
+func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) {
 	if budget <= 0 {
 		budget = 8192
 	}
 	if len(msgs) == 0 {
-		return 0
+		return nil, nil, 0
 	}
 
 	// Step 1: everything fits (an exact budget match counts as fitting).
 	if total := countTokens(msgs); total <= budget {
-		return total
+		kept = slices.Clone(msgs)
+		keptIdx = make([]int, len(msgs))
+		for i := range keptIdx {
+			keptIdx[i] = i
+		}
+		return kept, keptIdx, total
 	}
 
 	// Step 2: keep all system + last non-system.
-	kept := make([]int, 0, len(msgs))
+	kept = make([]Message, 0, len(msgs))
+	keptIdx = make([]int, 0, len(msgs))
 	lastNonSystem := -1
 	for i := range msgs {
 		if msgs[i].Role == "system" {
-			kept = append(kept, i)
+			kept = append(kept, msgs[i])
+			keptIdx = append(keptIdx, i)
 		} else {
 			lastNonSystem = i
 		}
 	}
 	if lastNonSystem >= 0 {
-		kept = append(kept, lastNonSystem)
+		kept = append(kept, msgs[lastNonSystem])
+		keptIdx = append(keptIdx, lastNonSystem)
 	}
 	if len(kept) == 0 {
-		return 0
+		return nil, nil, 0
 	}
-
-	keptMsgs := make([]Message, len(kept))
-	for i, idx := range kept {
-		keptMsgs[i] = msgs[idx]
-	}
-	if total := countTokens(keptMsgs); total <= budget {
-		// Zero out the dropped entries so the caller can filter them.
-		zeroDropped(msgs, kept)
-		return total
+	if total := countTokens(kept); total <= budget {
+		return kept, keptIdx, total
 	}
 
 	// Step 3: trim proportionally.
 	if len(kept) == 1 {
-		msgs[kept[0]].Content = tokenizer.TrimContentToTokenLimit(msgs[kept[0]].Content, budget)
-		zeroDropped(msgs, kept)
-		return countTokens(msgs[kept[0] : kept[0]+1])
+		kept[0].Content = tokenizer.TrimContentToTokenLimit(kept[0].Content, budget)
+		return kept, keptIdx, countTokens(kept)
 	}
 
 	// Only system messages were retained (no non-system message): spread the
 	// whole budget across every retained system message.
 	if lastNonSystem < 0 {
-		trimSystems(msgs, kept, budget)
-		zeroDropped(msgs, kept)
-		return countTokensMulti(msgs, kept)
+		trimSystems(kept, budget)
+		return kept, keptIdx, countTokens(kept)
 	}
 
 	// kept[:len(kept)-1] are the retained system messages; the last entry
 	// is the final non-system message.
-	sysIdxs := kept[:len(kept)-1]
-	lastIdx := kept[len(kept)-1]
+	sys := kept[:len(kept)-1]
+	last := &kept[len(kept)-1]
 	ll := 0
-	for _, idx := range sysIdxs {
-		ll += tokenizer.NumTokensFromString(msgs[idx].Content)
+	for i := range sys {
+		ll += tokenizer.NumTokensFromString(sys[i].Content)
 	}
-	ll2 := tokenizer.NumTokensFromString(msgs[lastIdx].Content)
+	ll2 := tokenizer.NumTokensFromString(last.Content)
 	total := ll + ll2
 	if total <= 0 {
-		zeroDropped(msgs, kept)
-		return 0
+		return kept, keptIdx, 0
 	}
 
 	if float64(ll)/float64(total) > 0.8 {
 		// System dominates: preserve the last message and give the
 		// remaining budget to the system messages.
 		preserved := min(ll2, budget)
-		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, preserved)
-		trimSystems(msgs, sysIdxs, max(0, budget-preserved))
+		last.Content = tokenizer.TrimContentToTokenLimit(last.Content, preserved)
+		trimSystems(sys, max(0, budget-preserved))
 	} else {
 		preserved := min(ll, budget)
-		trimSystems(msgs, sysIdxs, preserved)
-		msgs[lastIdx].Content = tokenizer.TrimContentToTokenLimit(msgs[lastIdx].Content, max(0, budget-preserved))
+		trimSystems(sys, preserved)
+		last.Content = tokenizer.TrimContentToTokenLimit(last.Content, max(0, budget-preserved))
 	}
-	zeroDropped(msgs, kept)
-	return countTokensMulti(msgs, kept)
+	return kept, keptIdx, countTokens(kept)
 }
 
-// trimSystems trims each retained system message so their combined token
-// count fits within budget. The budget is allocated in proportion to each
-// message's original token count, with the last message taking any remainder
-// so the total never exceeds budget.
-func trimSystems(msgs []Message, sysIdxs []int, budget int) {
-	if len(sysIdxs) == 0 {
+// trimSystems trims each system message so their combined token count fits
+// within budget. The budget is allocated in proportion to each message's
+// original token count, with the last message taking any remainder so the
+// total never exceeds budget.
+func trimSystems(sys []Message, budget int) {
+	if len(sys) == 0 {
 		return
 	}
 	if budget <= 0 {
-		for _, idx := range sysIdxs {
-			msgs[idx].Content = ""
+		for i := range sys {
+			sys[i].Content = ""
 		}
 		return
 	}
 	total := 0
-	for _, idx := range sysIdxs {
-		total += tokenizer.NumTokensFromString(msgs[idx].Content)
+	for i := range sys {
+		total += tokenizer.NumTokensFromString(sys[i].Content)
 	}
 	if total <= 0 {
 		return
 	}
 	remaining := budget
-	for i, idx := range sysIdxs {
+	for i := range sys {
 		limit := remaining
-		if i < len(sysIdxs)-1 {
-			tokens := tokenizer.NumTokensFromString(msgs[idx].Content)
+		if i < len(sys)-1 {
+			tokens := tokenizer.NumTokensFromString(sys[i].Content)
 			limit = int(float64(budget) * float64(tokens) / float64(total))
 			if limit > remaining {
 				limit = remaining
 			}
 		}
-		msgs[idx].Content = tokenizer.TrimContentToTokenLimit(msgs[idx].Content, limit)
-		remaining -= tokenizer.NumTokensFromString(msgs[idx].Content)
+		sys[i].Content = tokenizer.TrimContentToTokenLimit(sys[i].Content, limit)
+		remaining -= tokenizer.NumTokensFromString(sys[i].Content)
 	}
 }
 
@@ -176,25 +180,4 @@ func countTokens(msgs []Message) int {
 		total += tokenizer.NumTokensFromString(msgs[i].Content)
 	}
 	return total
-}
-
-func countTokensMulti(msgs []Message, indices []int) int {
-	total := 0
-	for _, i := range indices {
-		total += tokenizer.NumTokensFromString(msgs[i].Content)
-	}
-	return total
-}
-
-// zeroDropped sets Content to "" for every index in msgs that is not in kept.
-func zeroDropped(msgs []Message, kept []int) {
-	keptSet := make(map[int]struct{}, len(kept))
-	for _, i := range kept {
-		keptSet[i] = struct{}{}
-	}
-	for i := range msgs {
-		if _, ok := keptSet[i]; !ok {
-			msgs[i].Content = ""
-		}
-	}
 }
