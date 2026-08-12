@@ -15,6 +15,7 @@
 #
 
 import importlib
+import logging
 import sys
 import types
 
@@ -126,9 +127,10 @@ def test_pdf_branch_loads_concrete_parser_at_runtime(pdf_parser_stub, monkeypatc
     assert outputs["json"] == [{"text": "runtime text", "layout_type": "text", "doc_type_kwd": "text"}]
 
 
-def test_pdf_parse_method_resolves_tenant_model_services_only_for_unknown_reference(pdf_parser_stub, monkeypatch):
+def test_pdf_parse_method_resolves_tenant_model_services_only_for_unknown_reference(pdf_parser_stub, monkeypatch, caplog):
     parser_module = importlib.import_module("rag.flow.parser.parser")
     calls = []
+    caplog.set_level(logging.DEBUG, logger=parser_module.__name__)
 
     class RuntimeTenantModelService:
         @staticmethod
@@ -170,6 +172,39 @@ def test_pdf_parse_method_resolves_tenant_model_services_only_for_unknown_refere
         ("provider", "provider-1"),
         ("instance", "instance-1"),
     ]
+    assert "Resolved PDF parser tenant model to provider parser MinerU." in caplog.messages
+    assert "tenant-model-1" not in caplog.text
+
+
+def test_pdf_parse_method_logs_safe_fallback_without_model_reference(pdf_parser_stub, monkeypatch, caplog):
+    parser_module = importlib.import_module("rag.flow.parser.parser")
+    raw_model_reference = "private-tenant-model-reference"
+    caplog.set_level(logging.DEBUG, logger=parser_module.__name__)
+
+    class MissingTenantModelService:
+        @staticmethod
+        def get_by_id(_model_id):
+            return False, None
+
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.tenant_model_service",
+        _module("api.db.services.tenant_model_service", TenantModelService=MissingTenantModelService),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.tenant_model_provider_service",
+        _module("api.db.services.tenant_model_provider_service", TenantModelProviderService=object),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.tenant_model_instance_service",
+        _module("api.db.services.tenant_model_instance_service", TenantModelInstanceService=object),
+    )
+
+    assert parser_module._resolve_pdf_parse_method(raw_model_reference) == (raw_model_reference, None)
+    assert "PDF parser reference did not resolve to a tenant model; using the configured method." in caplog.messages
+    assert raw_model_reference not in caplog.text
 
 
 def test_pdf_position_tag_loads_concrete_parser_at_runtime(pdf_parser_stub, monkeypatch):

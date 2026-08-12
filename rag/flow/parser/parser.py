@@ -46,6 +46,7 @@ from rag.flow.parser.utils import (
 )
 from rag.utils.base64_image import image2id
 
+_LOGGER = logging.getLogger(__name__)
 _PDF_PROVIDER_PARSE_METHODS = {
     "@mineru": "MinerU",
     "@paddleocr": "PaddleOCR",
@@ -73,6 +74,7 @@ def _resolve_pdf_parse_method(raw_parse_method):
     lowered = raw_parse_method.lower()
     for suffix, provider_method in _PDF_PROVIDER_PARSE_METHODS.items():
         if lowered.endswith(suffix):
+            _LOGGER.debug("Using configured PDF provider parser %s without tenant-model lookup.", provider_method)
             return provider_method, raw_parse_method
 
     if not raw_parse_method or lowered in _PDF_PARSE_METHODS_WITHOUT_MODEL_LOOKUP:
@@ -84,18 +86,22 @@ def _resolve_pdf_parse_method(raw_parse_method):
 
     exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
     if not exist:
+        _LOGGER.debug("PDF parser reference did not resolve to a tenant model; using the configured method.")
         return parse_method, None
 
     provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
     instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
     if not provider_ok or not instance_ok:
+        _LOGGER.debug("PDF parser tenant model is missing provider or instance metadata; using the configured method.")
         return parse_method, None
 
     resolved_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
     lowered = resolved_method.lower()
     for suffix, provider_method in _PDF_PROVIDER_PARSE_METHODS.items():
         if lowered.endswith(suffix):
+            _LOGGER.debug("Resolved PDF parser tenant model to provider parser %s.", provider_method)
             return provider_method, resolved_method
+    _LOGGER.debug("PDF parser tenant model did not match a supported provider parser; using the configured method.")
     return resolved_method, None
 
 
