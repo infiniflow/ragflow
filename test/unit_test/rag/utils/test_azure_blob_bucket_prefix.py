@@ -133,8 +133,10 @@ class TestAzureSpnBucketPrefix:
 
     def test_get_presigned_url_uses_bucket_prefix(self, spn_module):
         spn = _make_instance(spn_module, "RAGFlowAzureSpnBlob")
-        spn.get_presigned_url("kb_a", "doc.pdf", 3600)
-        spn.conn.get_presigned_url.assert_called_once_with("GET", "kb_a/doc.pdf", 3600)
+        spn.conn.get_file_client.return_value.url = "https://example.blob.core.windows.net/c/kb_a/doc.pdf"
+        url = spn.get_presigned_url("kb_a", "doc.pdf", 3600)
+        spn.conn.get_file_client.assert_called_once_with("kb_a/doc.pdf")
+        assert url == "https://example.blob.core.windows.net/c/kb_a/doc.pdf"
 
     def test_same_filename_in_different_buckets_does_not_collide(self, spn_module):
         """Regression test for issue #14159: two datasets uploading a file
@@ -173,8 +175,10 @@ class TestAzureSasBucketPrefix:
 
     def test_get_presigned_url_uses_bucket_prefix(self, sas_module):
         sas = _make_instance(sas_module, "RAGFlowAzureSasBlob")
-        sas.get_presigned_url("kb_a", "doc.pdf", 3600)
-        sas.conn.get_presigned_url.assert_called_once_with("GET", "kb_a/doc.pdf", 3600)
+        sas.conn.get_blob_client.return_value.url = "https://example.blob.core.windows.net/c/kb_a/doc.pdf"
+        url = sas.get_presigned_url("kb_a", "doc.pdf", 3600)
+        sas.conn.get_blob_client.assert_called_once_with("kb_a/doc.pdf")
+        assert url == "https://example.blob.core.windows.net/c/kb_a/doc.pdf"
 
     def test_same_filename_in_different_buckets_does_not_collide(self, sas_module):
         sas = _make_instance(sas_module, "RAGFlowAzureSasBlob")
