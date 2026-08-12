@@ -46,13 +46,18 @@ func TestResolveModelContentLength_CompositeReferenceThreePart(t *testing.T) {
 // TestResolveModelContentLength_TooManyParts documents that a reference with
 // more than two "@" separators is not treated as a composite ref: it falls
 // through to the driver+modelName fallback, and to 0 when no fallback is
-// supplied.
+// supplied. A known catalog model with an extra separator is used for the
+// no-fallback assertion so a parser regression (accepting excessive
+// separators) fails loudly instead of resolving to 0 by coincidence.
 func TestResolveModelContentLength_TooManyParts(t *testing.T) {
 	if got := ResolveModelContentLength(t.Context(), nil, "a@b@c@d", "openai", "gpt-4o"); got != 128000 {
 		t.Fatalf("ResolveModelContentLength(a@b@c@d, openai, gpt-4o) = %d, want 128000 (driver fallback)", got)
 	}
-	if got := ResolveModelContentLength(t.Context(), nil, "a@b@c@d", "", ""); got != 0 {
-		t.Fatalf("ResolveModelContentLength(a@b@c@d) = %d, want 0", got)
+	if got := ResolveModelContentLength(t.Context(), nil, "gpt-4o@default@openai@extra", "", ""); got != 0 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@default@openai@extra) = %d, want 0", got)
+	}
+	if _, _, _, ok := splitCompositeModelRef("a@b@c@d"); ok {
+		t.Fatal("splitCompositeModelRef(a@b@c@d) accepted an excessive-separator reference")
 	}
 }
 

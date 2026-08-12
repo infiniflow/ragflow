@@ -34,10 +34,18 @@ import (
 // ingestion Extractor, and service.ModelProviderService — those packages
 // cannot import each other (import cycles), so the lookup lives here.
 func ResolveModelContentLength(ctx context.Context, db *gorm.DB, modelRef, driver, modelName string) int {
+	// 1. Composite "model@provider" / "model@instance@provider" reference:
+	//    look up the provider catalog directly. A composite reference cannot
+	//    be a tenant-model UUID, so resolve it before touching the database.
+	if pureName, _, providerName, ok := splitCompositeModelRef(modelRef); ok {
+		if mdl, err := GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContentLength != nil {
+			return *mdl.ContentLength
+		}
+	}
 	if db == nil {
 		db = DB
 	}
-	// 1. Tenant model UUID: read content_length from its provider catalog row.
+	// 2. Tenant model UUID: read content_length from its provider catalog row.
 	if db != nil && modelRef != "" {
 		if obj, err := NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && obj != nil && obj.Status == "active" {
 			if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
@@ -45,12 +53,6 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, modelRef, drive
 					return *mdl.ContentLength
 				}
 			}
-		}
-	}
-	// 2. Composite "model@provider" reference: look up the provider catalog.
-	if pureName, _, providerName, ok := splitCompositeModelRef(modelRef); ok {
-		if mdl, err := GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContentLength != nil {
-			return *mdl.ContentLength
 		}
 	}
 	// 3. Resolved driver + bare model name: fallback when modelRef is a
