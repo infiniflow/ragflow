@@ -79,3 +79,29 @@ async def test_bind_embedding_model_keeps_nonempty_tenant_model(task_context):
 
     resolve_model_config.assert_not_called()
     assert result == (embedding_model, 1)
+
+
+@pytest.mark.asyncio
+async def test_bind_embedding_model_does_not_retry_failed_stale_model_fallback(task_context):
+    task_context.raw_task["tenant_embd_id"] = "stale-instance"
+    task_context.raw_task["embd_id"] = "current-embedding@provider"
+    handler = TaskHandler(task_context)
+
+    with (
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.get_model_config_by_id",
+            return_value={"api_key": ""},
+        ),
+        patch(
+            "rag.svr.task_executor_refactor.task_handler.resolve_model_config",
+            side_effect=LookupError("model unavailable"),
+        ) as resolve_model_config,
+        pytest.raises(LookupError, match="model unavailable"),
+    ):
+        await handler._bind_embedding_model()
+
+    resolve_model_config.assert_called_once_with(
+        task_context.tenant_id,
+        "embedding",
+        "current-embedding@provider",
+    )
