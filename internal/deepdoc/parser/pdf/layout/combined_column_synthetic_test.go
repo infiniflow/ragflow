@@ -87,23 +87,74 @@ func TestSyntheticSparseSecondColumn(t *testing.T) {
 	}
 }
 
-// TODO #18079: a 2D spatial column detector should split this into 2.
+// TODO #18079: a 2D spatial column detector splits this into 2.
 //
-// The page has a full-width title block at the top that bridges the gutter,
-// and below it two side-by-side columns where the right column is sparse and
-// its x0 overlaps the left column's x0 range. The x0-based balance gate
-// therefore rejects it (minority < 30%, x0 overlap) and the page is reported
-// as single. Skipped until #18079 lands; then unskip and assert got == 2.
+// This fixture models the shape of a title-bridged double column: a CLEAN
+// vertical gutter plus a full-width title block at the very top that bridges
+// the gutter. The two body columns do NOT overlap in x0.
+//
+// The heading bridge is NOT a discriminant signal. What recovers the page is:
+// (1) dropFullWidth drops the full-width title, and (2) detectColumnCount2D
+// drops the still-wide bridging line at bridgingFrac*width, exposing the clean
+// gutter; an interior-valley scan then finds exactly one gutter -> 2 columns.
+//
+// Geometry here: title [50,450] at top (bridges gutter only at the top);
+// left body column [50,240] (30 lines); right body column [260,450] (12 lines)
+// — a clean 20-unit gutter at 240–260 with no x0 overlap.
+//
+// Right-column line count is set to 12 on purpose:
+//   - body = 30 left + 12 right = 42; 12/42 = 0.286 < 0.30 (minModeFrac) so
+//     the 1D balance gate correctly rejects it (minority too small), and
+//     crossTol=0.15 collapses the gutter in 1D projection -> reports 1 until
+//     the 2D rescue lands.
+//   - The right column carries 12/30 = 0.40 of the page peak glyph ink, i.e.
+//     above valleyFrac*peak (0.30), so it BOUNDS the gutter and the valley
+//     scan recovers it -> 2 columns. NOTE: this is the real capability of the
+//     rescue — it needs the minority column above ~30% of peak ink. A truly
+//     sparse column (e.g. 6 lines = 0.20 of peak) merges with the gutter and
+//     is NOT recovered; those fall back to the confidence-labeling track.
+//   - 12 >= 0.12*42 = 5.04, so the both-sides prune gate (minColLineFrac)
+//     accepts it. TestSyntheticSparseSecondColumn (right=3, 3 < 0.12*33) stays
+//     1, so the recover/stay-1 split is carried by right-column count.
+//
+// NOTE (historical): an earlier version of this fixture wrongly modeled the
+// right column as stackedColumn(200,440,...) with x0=200 INSIDE the left's
+// x1=240, i.e. overlapping columns and no gutter. That does not match the
+// real misses; do not design the 2D detector against that shape.
 func TestSyntheticTitleBridgedDouble(t *testing.T) {
-	t.Skip("TODO #18079: title-bridged double should be detected as 2 columns")
 	boxes := concat(
 		concat(
-			stackedColumn(50, 440, 3, 10, 10),  // full-width title (bridges the gutter)
-			stackedColumn(50, 240, 30, 40, 10), // left column
+			stackedColumn(50, 450, 3, 10, 10),  // full-width title (bridges gutter only at top)
+			stackedColumn(50, 240, 30, 40, 10), // left body column [50,240]
 		),
-		stackedColumn(200, 440, 4, 40, 20), // right column: sparse, x0 overlaps left
+		stackedColumn(260, 450, 12, 40, 20), // right body column [260,450]: 12 lines, clean gutter 240–260
 	)
 	if got := columnCount(boxes); got != 2 {
 		t.Errorf("title-bridged double: got %d, want 2", got)
+	}
+}
+
+// TestSyntheticMedianWidthDouble locks the L3 signal (PR #10475's
+// page_w/median_w): a gutter-less double whose two columns are ADJACENT in x0
+// (no whitespace gutter), so there is no clean ink dip for gap/balance/2D-
+// rescue to find, yet each line is only ~half the page wide (raw_cols =
+// page_w/median_w = 2).
+//
+// Geometry: left body column [50,250] (30 lines), right body column [250,450]
+// (12 lines) — adjacent at x=250, so the x-projection is one continuous ink
+// band with no >= gapMinFrac run -> gap=1. Balance rejects it (right is
+// 12/42 = 0.286 < minModeFrac 0.30). The 2D rescue also fails (no clean
+// interior valley). Only the median-width ratio (raw_cols=2, a line spans 200
+// >= 0.45*400=180) recovers it -> 2 columns.
+//
+// This pins the #18079 acceptance target that the x0-based detectors alone
+// cannot reach: a real double with no geometric gutter.
+func TestSyntheticMedianWidthDouble(t *testing.T) {
+	boxes := concat(
+		stackedColumn(50, 250, 30, 10, 10),  // left body column [50,250]
+		stackedColumn(250, 450, 12, 10, 20), // right body column [250,450]: adjacent, no gutter
+	)
+	if got := columnCount(boxes); got != 2 {
+		t.Errorf("median-width gutter-less double: got %d, want 2", got)
 	}
 }
