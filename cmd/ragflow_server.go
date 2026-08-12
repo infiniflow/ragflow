@@ -359,7 +359,7 @@ func main() {
 	}
 
 	// Initialize doc engine
-	if err = engine.InitDocEngine(); err != nil {
+	if err = engine.InitDocEngine(ctx); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
@@ -919,7 +919,10 @@ func startServer(ctx context.Context) {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	channels.Start(ctx)
+	_, err := channels.Start(ctx)
+	if err != nil {
+		common.Fatal("Fail to start chat-channel", zap.Error(err))
+	}
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
 

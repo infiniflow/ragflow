@@ -63,6 +63,16 @@ export function SingleChatBox({
     // in-progress answer.
     if (activeStreamsRef.current.has(conversationId)) return;
 
+    // Skip when the conversation prop is stale — its id doesn't match the
+    // URL's current conversationId. This happens during a switch (e.g.
+    // clicking "+" to create a new session): child effects fire before the
+    // parent's clear/load effect, so for one render the prop still holds the
+    // previous conversation's messages. Applying them here would leak the old
+    // conversation's content into the newly switched (or new) conversation.
+    // The cache + prologue logic in useSelectNextMessages handles restoring
+    // or seeding messages for the new conversationId.
+    if (conversation?.id && conversation.id !== conversationId) return;
+
     const messages = conversation?.messages;
     if (Array.isArray(messages)) {
       setDerivedMessages((prevMessages) => {
@@ -83,7 +93,13 @@ export function SingleChatBox({
         }));
       });
     }
-  }, [conversation?.messages, conversationId, setDerivedMessages, activeStreamsRef]);
+  }, [
+    conversation?.messages,
+    conversation?.id,
+    conversationId,
+    setDerivedMessages,
+    activeStreamsRef,
+  ]);
 
   useEffect(() => {
     // Clear the message list after deleting the conversation.

@@ -297,14 +297,16 @@ func TestValidateJWTAuth_ReservedClaimRejected(t *testing.T) {
 
 // TestValidateRateLimit_NoConfig covers the no-rate-limit branch.
 func TestValidateRateLimit_NoConfig(t *testing.T) {
-	if err := validateRateLimit("c1", map[string]any{}); err != nil {
+	ctx := t.Context()
+	if err := validateRateLimit(ctx, "c1", map[string]any{}); err != nil {
 		t.Errorf("no rate_limit: err = %v, want nil", err)
 	}
 }
 
 // TestValidateRateLimit_BadPer rejects unknown per window.
 func TestValidateRateLimit_BadPer(t *testing.T) {
-	err := validateRateLimit("c1", map[string]any{
+	ctx := t.Context()
+	err := validateRateLimit(ctx, "c1", map[string]any{
 		"rate_limit": map[string]any{"limit": 10, "per": "week"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid rate_limit.per") {
@@ -314,7 +316,8 @@ func TestValidateRateLimit_BadPer(t *testing.T) {
 
 // TestValidateRateLimit_BadLimit rejects non-positive limits.
 func TestValidateRateLimit_BadLimit(t *testing.T) {
-	err := validateRateLimit("c1", map[string]any{
+	ctx := t.Context()
+	err := validateRateLimit(ctx, "c1", map[string]any{
 		"rate_limit": map[string]any{"limit": 0, "per": "minute"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "must be > 0") {

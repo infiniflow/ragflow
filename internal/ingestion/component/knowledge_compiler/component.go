@@ -440,6 +440,14 @@ func overlayTemplateConfig(param *common.Param, cfg map[string]any) {
 	if v, ok := cfg["enable_historical_dedup"].(bool); ok {
 		param.EnableHistoricalDedup = v
 	}
+	if param.Plan == nil {
+		if v, ok := cfg["no_plan"].(bool); ok && v {
+			disabled := false
+			param.Plan = &disabled
+		} else if v, ok := cfg["plan"].(bool); ok {
+			param.Plan = &v
+		}
+	}
 	// llm_id / embedding_model are optional per-call overrides documented on
 	// Invoke. The template config supplies defaults, so only apply them when
 	// the caller has not already provided an explicit value (the caller wins).

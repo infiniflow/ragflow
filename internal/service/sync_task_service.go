@@ -92,6 +92,19 @@ func (s *SyncTaskService) ListDueTasks(ctx context.Context, now time.Time) ([]da
 	return out, nil
 }
 
+// ListStartupTasks returns scheduled tasks for NATS startup reconciliation.
+func (s *SyncTaskService) ListStartupTasks(ctx context.Context) ([]dao.SyncTask, error) {
+	tasks, err := s.taskDAO.ListStartupTasks(ctx, 128)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dao.SyncTask, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, dao.SyncTask{SyncLogs: task})
+	}
+	return out, nil
+}
+
 // Claim marks a scheduled task running if no other scanner claimed it first.
 func (s *SyncTaskService) Claim(ctx context.Context, taskID string) (bool, error) {
 	claimed, err := s.taskDAO.ClaimTask(ctx, taskID, time.Now().Local())
@@ -107,11 +120,14 @@ func (s *SyncTaskService) Claim(ctx context.Context, taskID string) (bool, error
 	return true, s.taskDAO.MarkConnectorRunning(ctx, taskContext.Connector.ID)
 }
 
-// TODO: refactor some needless func
-
 // GetContext loads a task execution context.
 func (s *SyncTaskService) GetContext(ctx context.Context, taskID string) (SyncTaskContext, error) {
 	return s.taskDAO.GetTaskContext(ctx, taskID)
+}
+
+// IsCanceled reports whether a task was canceled while a worker is running it.
+func (s *SyncTaskService) IsCanceled(ctx context.Context, taskID string) (bool, error) {
+	return s.taskDAO.IsTaskCanceled(ctx, taskID)
 }
 
 // RescheduleClaimed puts a claimed task back into schedule state.
@@ -142,6 +158,12 @@ func (s *SyncTaskService) CompletePrune(ctx context.Context, taskContext SyncTas
 // RecoverStaleRunning restores timed-out running tasks.
 func (s *SyncTaskService) RecoverStaleRunning(ctx context.Context, now time.Time) error {
 	_, err := s.taskDAO.RecoverStaleRunning(ctx, now)
+	return err
+}
+
+// RecoverRunning restores running tasks during syncer startup.
+func (s *SyncTaskService) RecoverRunning(ctx context.Context) error {
+	_, err := s.taskDAO.RecoverRunning(ctx)
 	return err
 }
 

@@ -4,10 +4,12 @@ Follows the pattern from task_executor_refactor/conftest.py.
 All imports of the target module use importlib to avoid namespace conflicts.
 """
 
+import asyncio
 import importlib.util
 import json
 import os
 import sys
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -116,10 +118,10 @@ def test_extract_raw_entities_basic():
         {
             "doc_id": "doc_1",
             "entities": [
-                {"name": "Apple Inc.", "type": "org", "aliases": ["Apple"]},
+                {"name": "Apple Inc.", "type": "org", "aliases": ["Apple"], "chunk_ids": ["E1"]},
             ],
             "concepts": [
-                {"term": "smartphone industry", "definition_excerpt": "global mobile device market"},
+                {"term": "smartphone industry", "definition_excerpt": "global mobile device market", "chunk_ids": ["E2"]},
             ],
             "claims": [
                 {
@@ -148,9 +150,11 @@ def test_extract_raw_entities_basic():
             assert entry["type"] == "org"
             assert "Apple" in entry.get("aliases", [])
             assert entry["claim_count"] == 1
+            assert set(entry["source_chunk_ids"]) == {"E1", "C1"}
         elif entry["name"] == "smartphone industry":
             assert entry["type"] == "concept"
             assert entry["claim_count"] == 1
+            assert set(entry["source_chunk_ids"]) == {"E2", "C2"}
 
     # claim_index holds the full claim text separately
     assert len(claim_index["Apple Inc."]) == 1
@@ -319,7 +323,7 @@ async def test_match_entities_exact_match():
         [
             {
                 "doc_id": "doc_2",
-                "entities": [{"name": "Apple", "type": "org"}],
+                "entities": [{"name": "Apple", "type": "org", "aliases": ["苹果公司"]}],
                 "concepts": [],
                 "claims": [{"entity_name": "Apple", "statement": "Apple makes phones", "source_chunk_id": "C1", "source_doc_id": "doc_2"}],
             }
@@ -339,6 +343,7 @@ async def test_match_entities_exact_match():
 
     assert "Apple Inc." in canonical_map, f"Keys: {list(canonical_map.keys())}"
     assert name_resolution.get("Apple") == "Apple Inc."
+    assert "苹果公司" in canonical_map["Apple Inc."]["aliases"]
 
 
 def test_match_entities_concept_no_llm():
@@ -607,6 +612,41 @@ async def test_mode_a_incremental_creates_low_claim_concept():
     # The concept page should be created despite only 1 claim
     assert mock_refine.call_count == 1, f"Expected 1 REFINE call, got {mock_refine.call_count}"
     assert result["pages_created"] == 1
+    assert mock_refine.call_args.kwargs["claims"] == concept_deltas[0]["additions"]
+
+
+@pytest.mark.asyncio
+async def test_mode_a_claimless_entity_uses_its_source_chunk():
+    delta = {
+        "entity_name": "关羽",
+        "entity_type": "person",
+        "action": "create",
+        "additions": [],
+        "retractions": [],
+        "source_chunk_ids": ["chunk_1"],
+        "retained_source_doc_ids": ["doc_1"],
+        "has_delta": True,
+    }
+
+    with (
+        patch(f"{_wiki.__name__}._wiki_refine_page", new_callable=AsyncMock, return_value={"page_id": "entity/关羽"}) as mock_refine,
+        patch(f"{_wiki.__name__}._wiki_update_doc_page_source", new_callable=AsyncMock),
+    ):
+        result = await _wiki._wiki_mode_a_run(
+            deltas=[delta],
+            existing_pages={},
+            chat_mdl=MockChatModel(),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            incremental=False,
+            doc_topics={"doc_1": ["蜀汉人物", "三国人物"]},
+        )
+
+    assert result["pages_created"] == 1
+    assert mock_refine.call_args.kwargs["source_chunks"] == [{"id": "chunk_1", "text": ""}]
+    assert mock_refine.call_args.kwargs["source_doc_ids"] == ["doc_1"]
+    assert mock_refine.call_args.kwargs["topic_candidates"] == ["蜀汉人物", "三国人物"]
 
 
 @pytest.mark.asyncio
@@ -1222,7 +1262,7 @@ async def test_wiki_finalize_renders_navigable_links():
 
 @pytest.mark.asyncio
 async def test_reduce_entity_claimless_concept_is_skipped():
-    """A new concept without claims must not create an ungrounded page."""
+    """A new concept without claims or source chunks remains ungrounded."""
     from rag.advanced_rag.knowlege_compile import wiki_incremental as _wiki
 
     result = await _wiki._wiki_reduce_entity(
@@ -1235,6 +1275,75 @@ async def test_reduce_entity_claimless_concept_is_skipped():
     assert result["action"] == "noop"
     assert result["has_delta"] is False
     assert result["entity_type"] == "concept"
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_claimless_concept_with_source_chunk_is_created():
+    result = await _wiki._wiki_reduce_entity(
+        entity_name="继承纠纷",
+        entity_type="concept",
+        existing_page=None,
+        new_claims=[],
+        deleted_doc_ids=set(),
+        source_doc_ids=["doc_1"],
+        source_chunk_ids=["chunk_1"],
+    )
+
+    assert result["action"] == "create"
+    assert result["has_delta"] is True
+    assert result["source_chunk_ids"] == ["chunk_1"]
+    assert result["retained_source_doc_ids"] == ["doc_1"]
+
+
+def test_refine_page_persists_source_doc_ids_as_array():
+    doc_store = make_doc_store()
+    commit_module = ModuleType("api.db.services.file_commit_service")
+    commit_module.FileCommitService = MagicMock()
+    tokenizer = MagicMock()
+    tokenizer.tokenize.side_effect = lambda text: text
+    tokenizer.fine_grained_tokenize.side_effect = lambda text: text
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch("rag.nlp.rag_tokenizer", tokenizer, create=True),
+        patch.dict(sys.modules, {"api.db.services.file_commit_service": commit_module}),
+        patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, return_value="SUMMARY: Apple\nTOPIC: Technology companies\nApple is a company."),
+    ):
+        page = asyncio.run(
+            _wiki._wiki_refine_page(
+                mode="generate",
+                page_id="entity/Apple",
+                page_title="Apple",
+                existing_page=None,
+                page_type_kwd="entity",
+                source_chunks=[],
+                claims=[],
+                available_pages=[],
+                chat_mdl=MockChatModel(),
+                embd_mdl=MockEmbeddingModel(),
+                tenant_id="t1",
+                kb_id="kb1",
+                page_version=0,
+                page_embedding=np.ones(8, dtype=np.float32),
+                source_doc_ids=["doc_1", "doc_2"],
+                topic_candidates=["Technology companies", "Fruit"],
+            )
+        )
+
+    assert page["source_doc_ids"] == ["doc_1", "doc_2"]
+    assert page["topic_kwd"] == "Technology companies"
+    inserted_page = doc_store.insert.call_args.args[0][0]
+    assert inserted_page["source_doc_ids"] == ["doc_1", "doc_2"]
+    assert inserted_page["topic_kwd"] == "Technology companies"
+
+
+def test_topics_for_docs_only_returns_source_scoped_candidates():
+    doc_topics = {
+        "doc_1": ["董卓被杀", "General"],
+        "doc_2": ["曹操刺董", "董卓被杀"],
+        "unrelated": ["陈宫与吕布的嫌隙"],
+    }
+
+    assert _wiki._wiki_topics_for_docs(["doc_1", "doc_2"], doc_topics) == ["董卓被杀", "曹操刺董"]
 
 
 @pytest.mark.asyncio
@@ -1252,11 +1361,12 @@ async def test_page_router_skips_knn_when_no_existing_pages():
         patch("common.settings.docStoreConn", doc_store),
         patch(
             f"{_wiki.__name__}._wiki_cluster_entities",
-            side_effect=lambda items, embeddings, threshold: [items],
+            side_effect=lambda items, embeddings, target_count=None: [items],
         ),
     ):
         assignments = await _wiki._wiki_page_router(
             affected_entities=entities,
+            chat_mdl=MockChatModel(),
             embd_mdl=embd_mdl,
             tenant_id="t1",
             kb_id="kb1",
@@ -1266,3 +1376,173 @@ async def test_page_router_skips_knn_when_no_existing_pages():
     assert assignments == {"_new_entity/apple": entities}
     assert embd_mdl.encode.call_count == 1
     doc_store.search.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_llm_page_grouping_partitions_candidate_communities_concurrently():
+    entities = [{"entity_name": f"entity-{idx}", "claims": []} for idx in range(48)]
+    vectors = np.eye(48, dtype=np.float32)
+    active = 0
+    max_active = 0
+
+    async def partition(candidate, _chat_mdl):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0)
+        active -= 1
+        return [[entity] for entity in candidate]
+
+    with patch(f"{_wiki.__name__}._wiki_llm_partition_candidate", side_effect=partition):
+        groups = await _wiki._wiki_llm_group_entities(entities, vectors, MockChatModel())
+
+    assert max_active == 2
+    grouped_names = [entity["entity_name"] for group in groups for entity in group]
+    assert len(grouped_names) == len(entities)
+    assert set(grouped_names) == {entity["entity_name"] for entity in entities}
+
+
+@pytest.mark.asyncio
+async def test_llm_page_grouping_falls_back_when_partition_is_invalid():
+    entities = [{"entity_name": f"entity-{idx}", "claims": []} for idx in range(3)]
+    vectors = np.eye(3, dtype=np.float32)
+
+    with patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, return_value="[[0, 1]]"):
+        groups = await _wiki._wiki_llm_group_entities(entities, vectors, MockChatModel())
+
+    assert {entity["entity_name"] for group in groups for entity in group} == {"entity-0", "entity-1", "entity-2"}
+
+
+@pytest.mark.asyncio
+async def test_llm_router_can_choose_existing_page_or_new():
+    route_items = [
+        (
+            {"entity_name": "Alpha", "claims": [{"statement": "Alpha belongs to topic A"}]},
+            [{"page_id": "entity/a", "title": "Topic A", "members": ["A"], "score": 0.91}],
+        ),
+        (
+            {"entity_name": "Beta", "claims": [{"statement": "Beta is unrelated"}]},
+            [{"page_id": "entity/a", "title": "Topic A", "members": ["A"], "score": 0.82}],
+        ),
+    ]
+    response = '[{"id": 0, "page": "entity/a"}, {"id": 1, "page": "NEW"}]'
+
+    with patch(f"{_wiki.__name__}._chat_mdl_ask", new_callable=AsyncMock, return_value=response):
+        decisions = await _wiki._wiki_llm_route_batches(route_items, MockChatModel())
+
+    assert decisions == {0: "entity/a", 1: "NEW"}
+
+
+def test_spherical_clustering_is_input_order_independent():
+    entities = [{"entity_name": f"entity-{idx}", "claims": [{"statement": str(idx)}]} for idx in range(12)]
+    vectors = np.asarray(
+        [[1.0, 0.05 * idx, 0.0] if idx < 4 else [0.0, 1.0, 0.05 * idx] if idx < 8 else [0.05 * idx, 0.0, 1.0] for idx in range(12)],
+        dtype=np.float32,
+    )
+
+    forward = _wiki._wiki_cluster_entities(entities, vectors, target_count=3)
+    order = [7, 2, 10, 0, 5, 11, 3, 8, 1, 9, 4, 6]
+    shuffled = _wiki._wiki_cluster_entities([entities[idx] for idx in order], vectors[order], target_count=3)
+
+    def normalize(clusters):
+        return sorted(sorted(entity["entity_name"] for entity in cluster) for cluster in clusters)
+
+    assert normalize(forward) == normalize(shuffled)
+
+
+def test_spherical_clustering_uses_stable_page_target_and_capacity():
+    rng = np.random.RandomState(7)
+    entities = [{"entity_name": f"entity-{idx:02d}", "claims": [{"statement": str(idx)}]} for idx in range(30)]
+    vectors = rng.normal(size=(30, 8)).astype(np.float32)
+
+    clusters = _wiki._wiki_cluster_entities(entities, vectors)
+
+    assert len(clusters) == 10
+    assert sum(len(cluster) for cluster in clusters) == 30
+    assert max(len(cluster) for cluster in clusters) <= _wiki.PAGE_CLUSTER_HARD_MAX_SIZE
+
+
+def test_spherical_clustering_does_not_depend_on_user_entity_types():
+    entities = [
+        {"entity_name": "Alpha", "entity_type": "custom-a", "claims": []},
+        {"entity_name": "Beta", "entity_type": "custom-b", "claims": []},
+    ]
+    vectors = np.asarray([[1.0, 0.0], [0.99, 0.01]], dtype=np.float32)
+
+    clusters = _wiki._wiki_cluster_entities(entities, vectors, target_count=1)
+
+    assert [[entity["entity_name"] for entity in cluster] for cluster in clusters] == [["Alpha", "Beta"]]
+
+
+def test_reconcile_page_moves_removes_member_and_claims_from_old_page():
+    existing_pages = {
+        "entity/old": {
+            "entity_names_kwd": ["Alpha", "Beta"],
+            "claims": [
+                {"entity_name": "Alpha", "statement": "alpha-old", "source_doc_id": "d1"},
+                {"entity_name": "Beta", "statement": "beta", "source_doc_id": "d2"},
+            ],
+        },
+        "entity/new": {"entity_names_kwd": ["Gamma"], "claims": []},
+    }
+    alpha = {
+        "entity_name": "Alpha",
+        "action": "update",
+        "claims": [{"entity_name": "Alpha", "statement": "alpha-new", "source_doc_id": "d3"}],
+        "retractions": [],
+    }
+
+    reconciled = _wiki._wiki_reconcile_page_moves({"entity/new": [alpha]}, existing_pages)
+
+    assert reconciled["entity/new"] == [alpha]
+    assert reconciled["entity/old"][0]["action"] == "delete"
+    assert reconciled["entity/old"][0]["entity_name"] == "Alpha"
+    assert [claim["statement"] for claim in reconciled["entity/old"][0]["retractions"]] == ["alpha-old"]
+
+
+def test_reconcile_page_moves_routes_deletion_only_to_current_owner():
+    existing_pages = {
+        "entity/owner": {
+            "entity_names_kwd": ["Alpha"],
+            "claims": [{"entity_name": "Alpha", "statement": "alpha", "source_doc_id": "d1"}],
+        },
+        "entity/unrelated": {"entity_names_kwd": ["Beta"], "claims": []},
+    }
+    deletion = {"entity_name": "Alpha", "action": "delete", "claims": [], "retractions": []}
+
+    reconciled = _wiki._wiki_reconcile_page_moves({"entity/unrelated": [deletion]}, existing_pages)
+
+    assert set(reconciled) == {"entity/owner"}
+    assert reconciled["entity/owner"][0]["retractions"][0]["statement"] == "alpha"
+
+
+@pytest.mark.asyncio
+async def test_local_split_preserves_all_members_and_original_slug():
+    names = [f"entity-{idx}" for idx in range(9)]
+    existing = {
+        "title_kwd": "entity-0",
+        "entity_names_kwd": names,
+        "claims": [{"entity_name": name, "statement": f"claim-{name}", "source_doc_id": name} for name in names],
+    }
+
+    class SplitEmbeddingModel:
+        def encode(self, texts):
+            vectors = []
+            for text in texts:
+                idx = int(text.split("entity-")[1].split()[0])
+                vectors.append([1.0, 0.01 * idx] if idx < 5 else [0.01 * idx, 1.0])
+            return np.asarray(vectors, dtype=np.float32), 0
+
+    assignments = {"entity/original": [{"entity_name": "entity-0", "entity_type": "custom", "claims": [], "retractions": [], "action": "update"}]}
+
+    split = await _wiki._wiki_split_unstable_page_assignments(
+        assignments=assignments,
+        existing_pages={"entity/original": existing},
+        chat_mdl=MockChatModel(),
+        embd_mdl=SplitEmbeddingModel(),
+    )
+
+    assert "entity/original" in split
+    assert any(page_id.startswith("_new_") for page_id in split)
+    assert {entity["entity_name"] for entities in split.values() for entity in entities} == set(names)
+    assert "entity-0" in {entity["entity_name"] for entity in split["entity/original"]}

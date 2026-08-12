@@ -101,20 +101,27 @@ class Graph:
 
     def load(self):
         self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
+        for cpn in self.components.values():
             cpn["obj"]["params"]["custom_header"] = self.custom_header
+
+        component_params = self.validate_component_parameters(self.dsl)
+        for k, cpn in self.components.items():
+            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
+
+        self.path = self.dsl["path"]
+
+    @staticmethod
+    def validate_component_parameters(dsl):
+        component_params = {}
+        for k, cpn in dsl["components"].items():
+            param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
             except Exception as e:
-                raise ValueError(self.get_component_name(k) + f": {e}")
-
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-
-        self.path = self.dsl["path"]
+                raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")
+            component_params[k] = param
+        return component_params
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -175,11 +182,15 @@ class Graph:
                         except Exception:
                             pass
 
-    def get_component_name(self, cid):
-        for n in self.dsl.get("graph", {}).get("nodes", []):
+    @staticmethod
+    def _get_component_name(dsl, cid):
+        for n in dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
                 return n["data"]["name"]
         return ""
+
+    def get_component_name(self, cid):
+        return self._get_component_name(self.dsl, cid)
 
     def run(self, **kwargs):
         raise NotImplementedError()

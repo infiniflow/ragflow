@@ -1,6 +1,7 @@
 package knowledge_compile
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -87,7 +88,7 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 		"related_kb_pages_kwd": []interface{}{"entity/beta"},
 		"section_level_int":    float64(2),
 	}
-	p, ok := productFromChunkMap(c, "t1")
+	p, ok := productFromChunkMap(c, "t1", kccommon.VariantWiki)
 	if !ok {
 		t.Fatalf("productFromChunkMap returned not-ok")
 	}
@@ -108,5 +109,75 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 	}
 	if p.Merged {
 		t.Errorf("per-doc row must not be marked merged")
+	}
+}
+
+// TestDeleteMergedScopesToMergedWikiRows locks the W1 contract: DeleteMerged
+// must only target dataset-level (available_int=1) wiki merged rows. The
+// structural filter (kb_id + available_int + wiki page/section compile_kwd) is
+// the source of truth, so a wrong tenant/kb can never cascade to per-document
+// rows or to rows of other variants.
+func TestDeleteMergedScopesToMergedWikiRows(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	if err := w.DeleteMerged(context.Background(), "t1", "kb1"); err != nil {
+		t.Fatalf("DeleteMerged: %v", err)
+	}
+	cond := eng.lastDeleteCond
+	if cond == nil {
+		t.Fatal("engine.DeleteChunks was not called")
+	}
+	if cond["kb_id"] != "kb1" {
+		t.Errorf("DeleteMerged kb_id = %v, want kb1", cond["kb_id"])
+	}
+	if cond["available_int"] != 1 {
+		t.Errorf("DeleteMerged must scope to available_int=1, got %v", cond["available_int"])
+	}
+	variants, ok := cond["compile_kwd"].([]string)
+	if !ok {
+		t.Fatalf("DeleteMerged must pass a compile_kwd string slice, got %T", cond["compile_kwd"])
+	}
+	if len(variants) != 2 || variants[0] != compileKwdWikiPage || variants[1] != compileKwdWikiSection {
+		t.Errorf("DeleteMerged compile_kwd = %v, want [%q %q]", variants, compileKwdWikiPage, compileKwdWikiSection)
+	}
+}
+
+// TestProductFromChunkMapRejectsDirtyKwd locks the dirty-row contract from the
+// wiki_incremental plan (Claim 4): productFromChunkMap must reverse-map the raw
+// compile_kwd via kwdToVariant and reject any row whose kwd does not map to the
+// expected variant, including unknown / malformed kinds (e.g. "artifact_page",
+// "garbage", empty). It must not silently fall back to a raw-string comparison.
+func TestProductFromChunkMapRejectsDirtyKwd(t *testing.T) {
+	base := map[string]interface{}{
+		"id":                  "wiki/1",
+		"doc_id":              "d1",
+		"content_with_weight": "# Alpha",
+	}
+	dirtyKwds := []string{"artifact_page", "garbage", ""}
+	for _, kwd := range dirtyKwds {
+		c := map[string]interface{}{}
+		for k, v := range base {
+			c[k] = v
+		}
+		c["compile_kwd"] = kwd
+		if p, ok := productFromChunkMap(c, "t1", kccommon.VariantWiki); ok {
+			t.Errorf("dirty compile_kwd %q should be rejected, got product %+v", kwd, p)
+		}
+	}
+
+	// Note: wiki_section maps to VariantWiki (page and section share the wiki
+	// variant); the page/section distinction lives in Meta.kind and is enforced
+	// by filterWikiPageCandidates, NOT by the variant dirty-row check. So a
+	// wiki_section row legitimately satisfies a VariantWiki query here — the
+	// section is dropped later by the kind filter.
+
+	// A clean wiki_page row must pass for VariantWiki.
+	good := map[string]interface{}{}
+	for k, v := range base {
+		good[k] = v
+	}
+	good["compile_kwd"] = compileKwdWikiPage
+	if _, ok := productFromChunkMap(good, "t1", kccommon.VariantWiki); !ok {
+		t.Errorf("clean wiki_page row should satisfy VariantWiki query")
 	}
 }

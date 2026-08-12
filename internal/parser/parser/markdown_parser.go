@@ -25,7 +25,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,13 +34,10 @@ import (
 	mdparser "github.com/gomarkdown/markdown/parser"
 )
 
-// mdImagePattern matches markdown inline image syntax: ![alt](url).
-var mdImagePattern = regexp.MustCompile(`!\[[^\]]*\]\(([^)\s]+)\)`)
-
 // dataURIPrefix is the MIME prefix for data URI images.
 const dataURIPrefix = "data:image/"
 
-// GoMarkdown is the lib_type identifier for the pure-Go markdown backend.
+// GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
 
 // ssrfAllowLoopback lets tests exercise the HTTP image fetch path against a
@@ -87,29 +83,27 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
-// returns a structured markdown payload that mirrors the Python
+// returns a structured Markdown payload that mirrors the Python
 // parser's `output_format == "json"` shape. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
-// block contains a markdown image reference (![alt](src)), the image
+// block contains a Markdown image reference (![alt](src)), the image
 // data is resolved and the item carries `doc_type_kwd: "image"` with
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	rawText := string(data)
-	if rendered, ok := renderMarkdownTablesInline(rawText); ok {
-		return ParseResult{
-			OutputFormat: "json",
-			File: map[string]any{
-				"name": filename,
-			},
-			JSON: []map[string]any{{"text": rendered, "doc_type_kwd": "text"}},
-		}
-	}
+	// Render any GFM/HTML table inline as an HTML block before parsing. This
+	// keeps the document as one item per top-level block (the table becomes a
+	// normal text item) instead of collapsing the whole document into a single
+	// item. The result mirrors Python's `_markdown` (separate_tables=False),
+	// which also inlines tables into the surrounding text. When no table is
+	// present renderMarkdownTablesInlineText returns the input unchanged.
+	rendered := renderMarkdownTablesInlineText(rawText)
 
-	doc := markdownNew().Parse(data)
+	doc := markdownNew().Parse([]byte(rendered))
 
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(doc, rawText, &items, p.FlattenMediaToText)
+	walkMarkdownBlocksWithImages(doc, &items, p.FlattenMediaToText)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -165,8 +159,13 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 				i++
 			}
 			tableHTML := markdownlib.ToHTML([]byte(strings.Join(lines[start:i], "")), markdownNew(), nil)
+			// Wrap the inlined <table> HTML in blank lines so gomarkdown
+			// keeps it as a single HTML block (one item) instead of
+			// re-parsing it into scattered cell text. See
+			// PARSER_ALIGNMENT_HANDOFF.md §3.1 (Markdown session A, 方案 Y).
+			ensureTrailingBlankLine(&buf)
 			buf.WriteString(strings.TrimRight(string(tableHTML), "\r\n"))
-			buf.WriteByte('\n')
+			buf.WriteString("\n\n")
 			changed = true
 			continue
 		}
@@ -174,6 +173,32 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 		i++
 	}
 	return buf.String(), changed
+}
+
+// renderMarkdownTablesInlineText renders every GFM/HTML table inline as an
+// HTML block and returns the rewritten text. When no table is present the
+// input is returned unchanged. Unlike renderMarkdownTablesInline it always
+// returns the full text (ignoring the changed flag) so callers can parse the
+// result uniformly and emit one item per top-level block.
+func renderMarkdownTablesInlineText(text string) string {
+	out, _ := renderMarkdownTablesInline(text)
+	return out
+}
+
+// ensureTrailingBlankLine makes sure b ends with a blank line (two
+// newlines) so the next block is separated from what precedes it. gomarkdown
+// only treats a <table> as a standalone HTML block (rather than re-parsing it
+// into scattered cell nodes) when it is surrounded by blank lines.
+func ensureTrailingBlankLine(b *strings.Builder) {
+	s := b.String()
+	switch {
+	case strings.HasSuffix(s, "\n\n"):
+		// already separated.
+	case strings.HasSuffix(s, "\n"):
+		b.WriteByte('\n')
+	default:
+		b.WriteString("\n\n")
+	}
 }
 
 func markdownFenceMarker(line string) (byte, int, bool) {
@@ -234,13 +259,27 @@ func markdownTableCells(line string) []string {
 
 // walkMarkdownBlocksWithImages emits one normalized item per
 // top-level block. Headings, paragraphs, lists, and code blocks are
-// emitted with their text. When a block contains a markdown image
+// emitted with their text. When a block contains a Markdown image
 // reference (![alt](src)), the image data is resolved via
-// resolveMarkdownImage and the item carries `doc_type_kwd: "image"`
-// together with the base64-encoded image payload. When flatten is
-// true, all items are forced to doc_type_kwd="text" (mirrors Python
-// parser.py:1034 flatten_media_to_text).
-func walkMarkdownBlocksWithImages(doc ast.Node, rawText string, out *[]map[string]any, flatten bool) {
+// findBlockImage (per-block AST walk) and the item carries
+// `doc_type_kwd: "image"` together with the base64-encoded image
+// payload. When flatten is true, all items are forced to
+// doc_type_kwd="text" (mirrors Python parser.py:1034
+// flatten_media_to_text).
+//
+// Tables: a GFM/HTML table is rendered inline as a single <table> HTML
+// block by renderMarkdownTablesInlineText and kept as one HTML block.
+// It is emitted as TWO items, mirroring Python's _markdown
+// (separate_tables=False): an inlined copy in the text flow
+// (doc_type_kwd:"text") and a separate structured table item
+// (doc_type_kwd:"table", ck_type:"table"). The downstream chunker
+// consumes doc_type_kwd:"table" to keep the table whole and attach
+// table context to neighbouring chunks (chunker/token.go). Non-table
+// HTML blocks (<div>, <style>, …) are emitted as ordinary text with
+// no ck_type. Table items are appended after the walk so the order
+// matches Python (_markdown appends tables after all sections).
+func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten bool) {
+	var tableItems []map[string]any
 	for _, child := range doc.GetChildren() {
 		var ckType string
 		var docTypeKwd string
@@ -263,6 +302,33 @@ func walkMarkdownBlocksWithImages(doc ast.Node, rawText string, out *[]map[strin
 			txt = leafText(n)
 			ckType = "code"
 			docTypeKwd = "text"
+		case *ast.HTMLBlock:
+			// An HTML block is either an inlined table (kept as a single
+			// HTML block thanks to the blank lines renderMarkdownTablesInline
+			// wraps around it) or a plain HTML block such as <div>/<style>.
+			// Only a table is emitted as a structured table item; everything
+			// else is treated as ordinary text (no ck_type).
+			txt = leafText(n)
+			if isTableHTML(txt) {
+				// Inlined copy kept in the text flow. This is what the
+				// alignment golden compares against (Python inlines the
+				// rendered <table> HTML into a text section).
+				*out = append(*out, map[string]any{
+					"text":         txt,
+					"doc_type_kwd": "text",
+				})
+				// Separate structured table item (mirrors Python's extra
+				// doc_type_kwd:"table" item). doc_type_kwd:"table" drives
+				// downstream table handling.
+				tableItems = append(tableItems, map[string]any{
+					"text":         txt,
+					"doc_type_kwd": "table",
+					"ck_type":      "table",
+				})
+				continue
+			}
+			// Non-table HTML block: ordinary text, no ck_type.
+			docTypeKwd = "text"
 		default:
 			txt = leafText(n)
 			if strings.TrimSpace(txt) == "" {
@@ -279,52 +345,78 @@ func walkMarkdownBlocksWithImages(doc ast.Node, rawText string, out *[]map[strin
 			item["ck_type"] = ckType
 		}
 
-		// Detect markdown image references in the raw source text
-		// that corresponds to this block. When found, resolve the
-		// image data so downstream vision enhancement can describe it.
-		// When flatten is true, keep doc_type_kwd="text" (Python
+		// Resolve Markdown images from the AST node of THIS block only, so
+		// the image payload (and doc_type_kwd:"image") is attached to the
+		// single block that actually contains the ![alt](src) reference.
+		// Scanning the whole document (the old approach) wrongly tagged
+		// every block as an image whenever any image was present. When
+		// flatten is true, keep doc_type_kwd="text" (Python
 		// parser.py:1034: flatten_media_to_text overrides image).
-		if imgData, imgFound := resolveMarkdownImage(txt, rawText); imgFound && imgData != "" {
-			item["image"] = imgData
-			if !flatten {
-				item["doc_type_kwd"] = "image"
+		if imgURL, ok := findBlockImage(child); ok {
+			if imgData, resolved := resolveImageURL(imgURL); resolved && imgData != "" {
+				item["image"] = imgData
+				if !flatten {
+					item["doc_type_kwd"] = "image"
+				}
 			}
 		}
 
 		*out = append(*out, item)
 	}
+	// Tables appended last, mirroring Python's _markdown ordering.
+	*out = append(*out, tableItems...)
 }
 
-// resolveMarkdownImage extracts the first markdown image reference
-// from the given text and returns its base64-encoded data. Supports:
+// isTableHTML reports whether block text is an outer <table> element (the
+// inlined GFM/HTML table). Only such blocks are emitted as structured table
+// items; other raw HTML (e.g. <div>, <style>) is plain text.
+func isTableHTML(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+}
+
+// findBlockImage returns the destination URL of the first image node found
+// anywhere under n. This associates an image with the specific block that
+// contains it, instead of scanning the whole document (which would wrongly
+// tag every block as an image when any image is present).
+func findBlockImage(n ast.Node) (string, bool) {
+	found := false
+	var url string
+	var walk func(c ast.Node)
+	walk = func(c ast.Node) {
+		if found || c == nil {
+			return
+		}
+		if img, ok := c.(*ast.Image); ok {
+			url = string(img.Destination)
+			found = true
+			return
+		}
+		for _, ch := range c.GetChildren() {
+			walk(ch)
+		}
+	}
+	walk(n)
+	return url, found
+}
+
+// resolveImageURL resolves a Markdown image URL to its base64-encoded data.
+// Supports:
 //   - data:image/... URIs → decoded directly
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
 //
-// Returns (base64String, true) on success, ("", false) when no image
-// is found or resolution fails.
-func resolveMarkdownImage(leafText, rawFullText string) (string, bool) {
-	// Prefer matching against the raw full text to catch images
-	// whose alt-text was split across markdown rendering.
-	searchIn := rawFullText
-	if strings.TrimSpace(searchIn) == "" {
-		searchIn = leafText
-	}
-	matches := mdImagePattern.FindStringSubmatch(searchIn)
-	if len(matches) < 2 {
-		return "", false
-	}
-	url := matches[1]
-
-	if strings.HasPrefix(url, dataURIPrefix) {
+// Local / relative paths are not fetched (security). Returns
+// (base64String, true) on success, ("", false) when resolution fails.
+func resolveImageURL(imageURL string) (string, bool) {
+	if strings.HasPrefix(imageURL, dataURIPrefix) {
 		// data:image/png;base64,xxxx
-		idx := strings.Index(url, "base64,")
+		idx := strings.Index(imageURL, "base64,")
 		if idx < 0 {
 			return "", false
 		}
-		return url[idx+len("base64,"):], true
+		return imageURL[idx+len("base64,"):], true
 	}
-	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		b64, err := fetchImageAsBase64(url)
+	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
+		b64, err := fetchImageAsBase64(imageURL)
 		if err != nil {
 			return "", false
 		}
@@ -444,7 +536,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}
 	for _, addr := range addrs {
-		ip := addr.IP
+		ip = addr.IP
 		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 			ip.IsPrivate() || ip.IsUnspecified() {
 			return nil, fmt.Errorf("markdown: rejected image URL resolving to internal address: %s (%s)", host, ip)
@@ -481,6 +573,17 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 		buf.Write(t.Literal)
 	case *ast.Code:
 		buf.Write(t.Literal)
+	case *ast.CodeBlock:
+		// finalizeCodeBlock moves the fenced body into Literal and nils
+		// Content; the indented form keeps it in Content. Emit both so the
+		// code text is never dropped.
+		buf.Write(t.Literal)
+		buf.Write(t.Content)
+	case *ast.HTMLBlock:
+		// Inlined tables are HTML blocks. The generic parser path stores the
+		// markup in Content, the markdown-block path in Literal. Emit both.
+		buf.Write(t.Literal)
+		buf.Write(t.Content)
 	default:
 		for _, c := range n.GetChildren() {
 			walkLeaf(c, buf)

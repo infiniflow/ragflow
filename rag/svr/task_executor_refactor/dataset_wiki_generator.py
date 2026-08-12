@@ -547,12 +547,52 @@ async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
     return None
 
 
-async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool) -> None:
+async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | None:
+    """Return the embedding-space identity recorded by the previous build."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["embedding_model_kwd"],
+            [],
+            {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["embedding_model_kwd"]) or {}
+        for row in fm.values():
+            value = row.get("embedding_model_kwd")
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            return str(value).strip() or None
+    except Exception:
+        logging.exception("wiki: failed to load embedding model meta for kb=%s", kb_id)
+    return None
+
+
+def _wiki_embedding_fingerprint(embedding_model) -> str:
+    config = getattr(embedding_model, "model_config", {}) or {}
+    factory = str(config.get("llm_factory") or "").strip()
+    model_id = str(config.get("id") or config.get("llm_id") or "").strip()
+    name = str(config.get("llm_name") or getattr(embedding_model, "llm_name", "")).strip()
+    return ":".join(part for part in (factory, model_id, name) if part)
+
+
+async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool, embedding_fingerprint: str = "") -> None:
     index = search.index_name(tenant_id)
     row = {
         "id": _wiki_mode_meta_id(kb_id),
         "compile_kwd": "wiki_mode_meta",
         "plan_kwd": "true" if plan else "false",
+        "embedding_model_kwd": embedding_fingerprint,
         "kb_id": kb_id,
         "create_timestamp_flt": float(__import__("time").time()),
     }
@@ -585,6 +625,7 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
         "wiki_page_graph",
         "wiki_page_topic",
         "wiki_compilation_plan",
+        "wiki_plan_group",
         "wiki_reduce_result",
         "wiki_page_draft",
         "wiki_doc_page_source",
@@ -1558,7 +1599,7 @@ async def run_wiki_incremental(
 
     Mode B (plan=True):
         PLAN groups entities → per-page REFINE.
-        Incremental: Page Router (KNN) routes entities to existing pages.
+        Incremental: embeddings retrieve page candidates; the LLM makes final routes.
 
     Args:
         ctx: Task context
@@ -1647,14 +1688,22 @@ async def run_wiki_incremental(
     # pages), so switching modes must reset all wiki-derived state and rebuild
     # from scratch instead of incrementally mixing old-mode and new-mode pages.
     prev_plan = await _wiki_load_mode_plan(ctx.tenant_id, ctx.kb_id)
-    if prev_plan is not None and bool(prev_plan) != bool(plan) and is_incremental:
-        progress(0.05, f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'}); rebuilding wiki from scratch...")
+    previous_embedding = await _wiki_load_embedding_fingerprint(ctx.tenant_id, ctx.kb_id)
+    current_embedding = _wiki_embedding_fingerprint(embedding_model)
+    mode_changed = prev_plan is not None and bool(prev_plan) != bool(plan)
+    embedding_changed = bool(previous_embedding and current_embedding and previous_embedding != current_embedding)
+    if is_incremental and (mode_changed or embedding_changed):
+        if mode_changed:
+            reason = f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'})"
+        else:
+            reason = "Embedding model changed"
+        progress(0.05, f"{reason}; rebuilding wiki from scratch...")
         await _wiki_reset_all_wiki_state(ctx.tenant_id, ctx.kb_id)
         # Everything is gone; this is now a first build.
         is_incremental = False
         existing_map_doc_ids = set()
         deleted_doc_ids = set()
-    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan))
+    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan), current_embedding)
 
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
@@ -1780,16 +1829,12 @@ async def run_wiki_incremental(
         # chunk now looks "unchanged"), fall through — ``map_results=None`` below
         # makes wiki_compile_incremental rebuild pages from the stored extracts.
         if not existing_map_doc_ids or await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
-            # No compile needed, but still (re)group existing pages under topics —
-            # cheap (embed + stamp) and it backfills pages built before topic
-            # grouping existed. Topic labels are loaded from the persisted MAP rows.
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
-                _wiki_assign_topics,
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,
             )
 
-            progress(0.9, "Wiki is up to date; recomputing cross-references + topics ...")
+            progress(0.9, "Wiki is up to date; recomputing cross-references ...")
             # FINALIZE recomputes outlinks / auto-links / dead-link cleanup from
             # the persisted pages (zero LLM cost) so a re-run backfills graph
             # edges for pages written before auto-linking existed.
@@ -1797,7 +1842,6 @@ async def run_wiki_incremental(
                 await _wiki_finalize(ctx.tenant_id, ctx.kb_id, embedding_model)
             except Exception:
                 logging.exception("wiki: up-to-date FINALIZE failed for kb=%s", ctx.kb_id)
-            await _wiki_assign_topics(embedding_model, ctx.tenant_id, ctx.kb_id, callback=lambda p, msg: progress(p, msg))
 
             # (Re)materialize the canvas graph so pages built before graph
             # persistence existed (or a graph lost to an interrupted run) still

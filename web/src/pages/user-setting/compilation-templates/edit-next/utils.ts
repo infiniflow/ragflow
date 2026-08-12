@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { isEqual } from 'lodash';
 
 import {
@@ -64,7 +80,6 @@ export const normalizeSection = (
 export const buildConfigFromBuiltin = (
   builtinTemplate: ICompilationTemplateBuiltin,
   kind: string,
-  llmId: string,
 ): TemplateSchemaType['config'] => {
   const instruction =
     typeof builtinTemplate.config?.instruction === 'string'
@@ -76,7 +91,6 @@ export const buildConfigFromBuiltin = (
       : '';
   const sections: TemplateSchemaType['config'] = {
     kind,
-    llm_id: llmId,
     global_rules:
       typeof builtinTemplate.config?.global_rules === 'string'
         ? builtinTemplate.config.global_rules
@@ -156,7 +170,6 @@ export const transformDetailToForm = (
   );
   const base: TemplateSchemaType['config'] = {
     kind: config.kind ?? '',
-    llm_id: config.llm_id ?? '',
     global_rules: config.global_rules ?? '',
     example: storedExample,
     ...(typeof config.synthesis === 'object' && config.synthesis !== null
@@ -193,7 +206,6 @@ export const transformDetailToForm = (
       id: detail.id,
       name: detail.name ?? '',
       description: detail.description ?? '',
-      llm_id: config.llm_id ?? '',
       kind: detail.kind ?? '',
       config: {
         ...base,
@@ -219,7 +231,6 @@ export const transformDetailToForm = (
     id: detail.id,
     name: detail.name ?? '',
     description: detail.description ?? '',
-    llm_id: config.llm_id ?? '',
     kind: detail.kind ?? '',
     config: base,
   };
@@ -243,11 +254,10 @@ export const transformGroupDetailToForm = (
 export const transformTemplateToPayload = (template: TemplateSchemaType) => {
   const config: ICompilationTemplateConfigRequest = {
     kind: template.kind,
-    llm_id: template.llm_id,
   };
 
   Object.entries(template.config).forEach(([key, value]) => {
-    if (key === 'kind' || key === 'llm_id') return;
+    if (key === 'kind') return;
     if (key === 'example' || key === 'instruction') return;
     if (key === 'synthesis') {
       config[key] = value as ICompilationTemplateConfigRequest[string];

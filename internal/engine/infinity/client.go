@@ -340,7 +340,7 @@ type Engine struct {
 }
 
 // NewEngine creates an Infinity engine
-func NewEngine(infinityConfig config.InfinityConfig) (*Engine, error) {
+func NewEngine(ctx context.Context, infinityConfig config.InfinityConfig) (*Engine, error) {
 
 	client, err := NewInfinityClient(infinityConfig)
 	if err != nil {
@@ -364,12 +364,12 @@ func NewEngine(infinityConfig config.InfinityConfig) (*Engine, error) {
 	}
 
 	// Wait for Infinity to be healthy
-	if err = client.WaitForHealthy(context.Background(), 120*time.Second); err != nil {
+	if err = client.WaitForHealthy(ctx, 120*time.Second); err != nil {
 		return nil, fmt.Errorf("infinity not healthy: %w", err)
 	}
 
 	// MigrateDB creates the database if it doesn't exist
-	if err = engine.MigrateDB(context.Background()); err != nil {
+	if err = engine.MigrateDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 

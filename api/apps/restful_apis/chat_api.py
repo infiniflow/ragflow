@@ -51,7 +51,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
+from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -509,6 +509,11 @@ async def list_chats():
 
     if orderby not in ("create_time", "update_time", "name"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
+
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as ex:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(ex))
 
     try:
         # Invalid or negative pagination values fall back to defaults

@@ -1,5 +1,22 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { SafeImg } from '@/components/safe-img';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
@@ -403,7 +420,7 @@ function MarkdownContent({
                 </a>
               );
             },
-            img({ src, alt, ...props }: any) {
+            img({ src, alt, title }: any) {
               if (isArtifactUrl(src)) {
                 return (
                   <ArtifactImage
@@ -413,16 +430,7 @@ function MarkdownContent({
                   />
                 );
               }
-              return (
-                <span className={styles.artifactImageWrapper}>
-                  <img
-                    src={src}
-                    alt={alt || ''}
-                    className={styles.artifactImage}
-                    {...omit(props, 'node')}
-                  />
-                </span>
-              );
+              return <SafeImg src={src} alt={alt} title={title} />;
             },
             code(props: any) {
               const { children, className, ...rest } = props;

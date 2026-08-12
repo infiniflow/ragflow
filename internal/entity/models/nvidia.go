@@ -64,6 +64,30 @@ func (n *NvidiaModel) Name() string {
 	return "nvidia"
 }
 
+// resolveEndpoint returns the endpoint URL for modelName. When the
+// model's preset config in conf/models/nvidia.json carries an explicit
+// url, that full endpoint is used as-is because it does not follow the
+// standard baseURL + suffix assembly; otherwise the usual assembly
+// applies. Every endpoint (chat, embedding, rerank, models list) goes
+// through this path so the override is honored uniformly.
+func (n *NvidiaModel) resolveEndpoint(modelName string, apiConfig *APIConfig, suffix string) (string, error) {
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if provider := pm.FindProvider("NVIDIA"); provider != nil {
+				if model := pm.FindModel(provider, modelName); model != nil && model.URL != "" {
+					return strings.TrimSuffix(model.URL, "/"), nil
+				}
+			}
+		}
+	}
+
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(suffix, "/")), nil
+}
+
 func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -73,11 +97,10 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(modelName, apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -108,11 +131,10 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(modelName, apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
@@ -152,12 +174,10 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(*modelName, apiConfig, n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
@@ -264,12 +284,10 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, query strin
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(*modelName, apiConfig, n.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -376,11 +394,10 @@ func (n *NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint("", apiConfig, n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(n.baseModel.URLSuffix.Models, "/"))
 
 	modelListCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -422,7 +439,7 @@ func (n *NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		provider = pm.FindProvider("NVIDIA")
 	}
 	models := parseNvidiaModelList(modelList, provider)
-	if n.usesHostedCatalog(resolvedBaseURL) {
+	if n.usesHostedCatalog(baseURL) {
 		catalogCtx, catalogCancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 		catalog, catalogErr := n.fetchHostedCatalog(catalogCtx)
 		catalogCancel()

@@ -703,7 +703,7 @@ type TestServerRequest struct {
 }
 
 // TestServer opens a live MCP session and returns the tools the server advertises.
-func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url", ErrMCPInvalidURL)
 	}
@@ -738,7 +738,6 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 			vars[k] = sv
 		}
 	}
-	ctx := context.Background()
 
 	mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

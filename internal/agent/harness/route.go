@@ -140,7 +140,7 @@ var (
 )
 
 // unmarshalModelJSON mirrors Python's _extract_json: strip thinking preamble and
-// markdown fences, then parse JSON.
+// Markdown fences, then parse JSON.
 func unmarshalModelJSON(text string, out interface{}) error {
 	text = reThinkTag.ReplaceAllString(text, "")
 	text = reFence.ReplaceAllString(text, "")
