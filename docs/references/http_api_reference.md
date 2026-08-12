@@ -5541,7 +5541,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
 - `keywords`: (*Filter parameter*), `string`
-  A case-insensitive substring used to filter agents by title.
+  Filters agent titles using a case-insensitive substring. When compilation template groups are included in the response, it also filters their names.
 
 #### Response
 
