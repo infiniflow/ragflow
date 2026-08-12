@@ -138,8 +138,42 @@ func TestResolveModelContentLength_CustomModelExtraComposite(t *testing.T) {
 		t.Fatalf("ResolveModelContentLength(custom+extra) = %d, want 32000", got)
 	}
 	// Without the override the custom model is unknown to the catalog → 0.
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 32000 {
-		t.Fatalf("custom model with extra = %d, want 32000", got)
+	if err := db.Model(&entity.TenantModel{}).
+		Where("id = ?", "0123456789abcdef0123456789abcdef").
+		Update("extra", "").Error; err != nil {
+		t.Fatalf("clear custom model extra: %v", err)
+	}
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 0 {
+		t.Fatalf("custom model without extra = %d, want 0", got)
+	}
+}
+
+// TestResolveModelContentLength_ExtraOverrideStringForm verifies that a
+// max_tokens override persisted as a JSON string is still honored (some
+// callers persist extra.max_tokens as a string).
+func TestResolveModelContentLength_ExtraOverrideStringForm(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	seedOpenAIChatModel(t, db, `{"max_tokens": "32000"}`)
+
+	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
+		t.Fatalf("ResolveModelContentLength(string-form extra) = %d, want 32000", got)
+	}
+}
+
+// TestResolveModelContentLength_NonNumericStringExtraFallsBackToCatalog
+// verifies that a non-numeric max_tokens string is treated as "no override".
+func TestResolveModelContentLength_NonNumericStringExtraFallsBackToCatalog(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	seedOpenAIChatModel(t, db, `{"max_tokens": "huge"}`)
+
+	if got := ResolveModelContentLength(ctx, db, "", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(non-numeric string extra) = %d, want catalog 128000", got)
 	}
 }
 

@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -124,21 +125,32 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 // modelExtraMaxTokens returns the per-model "max_tokens" override from the
 // tenant_model.extra JSON, or 0 when absent/invalid/non-positive. Mirrors
 // Python's model_extra.get("max_tokens") — the custom context-window length a
-// user configures for a model.
+// user configures for a model. Both JSON numbers and numeric strings are
+// accepted (some callers persist extra.max_tokens as a string).
 func modelExtraMaxTokens(extra string) int {
 	if strings.TrimSpace(extra) == "" {
 		return 0
 	}
 	var m struct {
-		MaxTokens *int `json:"max_tokens"`
+		MaxTokens json.RawMessage `json:"max_tokens"`
 	}
-	if err := json.Unmarshal([]byte(extra), &m); err != nil || m.MaxTokens == nil {
+	if err := json.Unmarshal([]byte(extra), &m); err != nil || len(m.MaxTokens) == 0 {
 		return 0
 	}
-	if *m.MaxTokens <= 0 {
+	var num int
+	if err := json.Unmarshal(m.MaxTokens, &num); err == nil {
+		if num > 0 {
+			return num
+		}
 		return 0
 	}
-	return *m.MaxTokens
+	var str string
+	if err := json.Unmarshal(m.MaxTokens, &str); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(str)); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 // splitCompositeModelRef splits a composite "model@provider" or

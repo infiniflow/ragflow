@@ -3595,11 +3595,11 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 }
 
 // ResolveModelContextLength returns the chat model's effective context window
-// (content_length) in tokens, or 0 when unknown. After the all_models.json
-// migration (PR #17839) content_length is the total context window and
-// max_output is the generation cap; the knowledge_compiler prompt-budget logic
-// needs the context window, not the output cap. modelRef accepts either a
-// tenant model UUID or a "model@instance@provider" composite name.
+// (content_length) in tokens, or 0 when unknown. content_length is the total
+// context window and max_output is the generation cap; the
+// knowledge_compiler prompt-budget logic needs the context window, not the
+// output cap. modelRef accepts either a tenant model UUID or a
+// "model@instance@provider" composite name.
 //
 // The resolution is delegated to dao.ResolveModelContentLength so every
 // consumer shares one path: a tenant-configured "max_tokens" override in the

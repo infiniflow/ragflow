@@ -262,14 +262,6 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 	}
 }
 
-// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
-// in the agent canvas are resolved to their real provider/model name, driver,
-// and credentials before the LLM call is dispatched.
-// TestLLM_Invoke_UUIDModel_ResolvesContentLength verifies the tenant-model
-// UUID path of content_length resolution end to end: with a real in-memory
-// DB row for gpt-4o@OpenAI, the fitting budget comes from the catalog's
-// content_length (128000) rather than the 8192 fallback, so a 40k-token
-// prompt survives.
 // TestLLM_Invoke_UUIDModel_CustomContextOverride verifies end to end that a
 // tenant-configured "max_tokens" override in tenant_model.extra wins over the
 // provider catalog's content_length: with an override of 2000 and a 40k-token
@@ -333,6 +325,11 @@ func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
 	}
 }
 
+// TestLLM_Invoke_UUIDModel_ResolvesContentLength verifies the tenant-model
+// UUID path of content_length resolution end to end: with a real in-memory
+// DB row for gpt-4o@OpenAI, the fitting budget comes from the catalog's
+// content_length (128000) rather than the 8192 fallback, so a 40k-token
+// prompt survives.
 func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 	db := setupComponentTestDB(t)
 	pushComponentDB(t, db)
@@ -389,6 +386,9 @@ func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 	}
 }
 
+// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
+// in the agent canvas are resolved to their real provider/model name, driver,
+// and credentials before the LLM call is dispatched.
 func TestLLM_ResolvesTenantModelID(t *testing.T) {
 	db := setupComponentTestDB(t)
 	pushComponentDB(t, db)
