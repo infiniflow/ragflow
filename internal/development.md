@@ -94,6 +94,11 @@ Note: admin server must be started first; otherwise, api server will encounter e
 ```
 
 ```bash
+# Start admin server and migrate database
+./bin/ragflow_server --admin --migrate
+```
+
+```bash
 # Start RAGFlow server
 ./bin/ragflow_server --api
 ```

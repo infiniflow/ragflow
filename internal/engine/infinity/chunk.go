@@ -353,6 +353,10 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	insertChunks := make([]map[string]interface{}, len(chunks))
 	for i, chunk := range chunks {
 		insertChunks[i] = transformChunkFields(chunk, embeddingCols)
+		// kb_id is owned by the engine at the write boundary (mirrors ES
+		// chunk.go InsertChunks). The ingestion producer no longer stamps it,
+		// so the producer value (if any) is intentionally overridden here.
+		insertChunks[i]["kb_id"] = datasetID
 	}
 
 	// Delete existing rows with matching IDs
@@ -548,9 +552,6 @@ func (e *Engine) AdjustChunkPagerank(ctx context.Context, baseName, chunkID, dat
 	}
 	if chunkID == "" {
 		return fmt.Errorf("chunk id cannot be empty")
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	if e.client == nil || e.client.pool == nil {
 		return fmt.Errorf("infinity client not initialized")

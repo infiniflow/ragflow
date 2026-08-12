@@ -881,6 +881,7 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-old", "canvas-1", "user-1", 1000)
 	createAgentSessionTestConversation(t, "session-new", "canvas-1", "user-1", 3000)
+	createAgentSessionTestConversation(t, "session-team", "canvas-1", "team-user", 2000)
 	createAgentSessionTestConversation(t, "session-other-agent", "canvas-other", "user-1", 9999)
 
 	ctx := t.Context()
@@ -897,11 +898,11 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
 	}
-	if resp.Total != 2 {
-		t.Fatalf("expected total 2, got %d", resp.Total)
+	if resp.Total != 3 {
+		t.Fatalf("expected total 3, got %d", resp.Total)
 	}
-	if len(resp.Data) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(resp.Data))
+	if len(resp.Data) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(resp.Data))
 	}
 	if resp.Data[0]["id"] != "session-new" {
 		t.Fatalf("expected newest session first, got %v", resp.Data[0]["id"])
@@ -1277,7 +1278,8 @@ func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
 }
 
 func TestTestDBConnectionMissingFields(t *testing.T) {
-	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{DBType: "mysql"})
+	ctx := t.Context()
+	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{DBType: "mysql"})
 	if err == nil {
 		t.Fatal("expected missing field error")
 	}
@@ -1291,7 +1293,8 @@ func TestTestDBConnectionMissingFields(t *testing.T) {
 }
 
 func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
-	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{
+	ctx := t.Context()
+	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{
 		DBType:   "postgres",
 		Database: "rag_flow",
 		Username: "root",

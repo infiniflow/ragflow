@@ -283,13 +283,13 @@ type BatchUpdateMetadatasResponse struct {
 // block the caller forever. It always uses the parent request's storage impl,
 // but deliberately NOT the request context, because a cancelled request must
 // not leak the blob it already wrote (or orphan a blob whose row was deleted).
-func removeObjectBestEffort(storageImpl storage.Storage, bucket, object string) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 30*time.Second)
+func removeObjectBestEffort(ctx context.Context, storageImpl storage.Storage, bucket, object string) error {
+	newCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		if err := storageImpl.Remove(ctx, bucket, object); err != nil {
+		if err := storageImpl.Remove(newCtx, bucket, object); err != nil {
 			lastErr = err
 			// Treat cancellation of the *new* cleanup ctx as terminal.
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

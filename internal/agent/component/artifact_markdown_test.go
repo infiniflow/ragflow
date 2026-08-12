@@ -31,7 +31,7 @@ func TestFormatArtifactMarkdown_Empty(t *testing.T) {
 	}
 }
 
-// TestFormatArtifactMarkdown_ImageLink: image URL → markdown image syntax.
+// TestFormatArtifactMarkdown_ImageLink: image URL → Markdown image syntax.
 func TestFormatArtifactMarkdown_ImageLink(t *testing.T) {
 	arts := []artifactEntry{
 		{Name: "chart", URL: "https://example.com/chart.png"},

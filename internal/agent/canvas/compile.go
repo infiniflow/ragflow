@@ -2,7 +2,7 @@
 //
 // Compile turns a Canvas (DSL) into a CompiledCanvas: a compiled
 // compose.Runnable plus the CheckPointID used at this compile. The
-// compile-time wiring (state pre/post handlers, checkpoint store,
+// compile-time wiring (state pre- / post-handlers, checkpoint store,
 // serializer) is configured here; the actual run path lives in
 // runner.go and the HTTP handler / SSE / RunTracker are wired in
 // internal/service and internal/handler.
@@ -88,12 +88,12 @@ type CompileOptions struct {
 // CompileOption mutates a CompileOptions before the compile runs.
 type CompileOption func(*CompileOptions)
 
-// WithCheckPointStore attaches a CheckPointStore to the compile.
+// WithCheckPointStore attaches a CheckPointStore to compile.
 func WithCheckPointStore(s CheckPointStore) CompileOption {
 	return func(o *CompileOptions) { o.Store = s }
 }
 
-// WithStateSerializer attaches a StateSerializer to the compile.
+// WithStateSerializer attaches a StateSerializer to compile.
 func WithStateSerializer(s StateSerializer) CompileOption {
 	return func(o *CompileOptions) { o.Serializer = s }
 }
@@ -130,7 +130,7 @@ func WithInterruptAfterNonTerminalCpn() CompileOption {
 }
 
 // WithOverrideParams attaches a run-level override map (keyed by
-// cpnID) to the compile. Each component's params are merged with
+// cpnID) to compile. Each component's params are merged with
 // its own entry at compile time (run-level wins on key collision, see
 // node_body.go applyOverrideParams). Passing nil is a no-op.
 func WithOverrideParams(m map[string]any) CompileOption {
@@ -138,7 +138,7 @@ func WithOverrideParams(m map[string]any) CompileOption {
 }
 
 // Compile builds the eino Workflow from the Canvas and returns the
-// compiled Runnable. State pre/post handlers are wired inside BuildWorkflow
+// compiled Runnable. State pre- / post-handlers are wired inside BuildWorkflow
 // (see scheduler.go). Checkpoint store + serializer are wired here as
 // compile-time options (compose.GraphCompileOption).
 //
@@ -314,9 +314,8 @@ func dedupeStrings(in []string) []string {
 }
 
 // checkPointAdapter drops the Delete method that compose.CheckPointStore
-// does not declare. The RedisCheckPointStore in this package has
-// Delete; eino
-// doesn't, so the adapter is a thin passthrough.
+// does not declare. The RedisCheckPointStore in this package has deleted;
+// the adapter is a thin passthrough.
 type checkPointAdapter struct{ inner CheckPointStore }
 
 func (a checkPointAdapter) Get(ctx context.Context, id string) ([]byte, bool, error) {

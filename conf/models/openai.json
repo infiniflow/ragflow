@@ -15,7 +15,8 @@
   "models": [
     {
       "name": "gpt-5.5",
-      "max_tokens": 400000,
+      "content_length": 1050000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -26,7 +27,8 @@
     },
     {
       "name": "gpt-5.4",
-      "max_tokens": 400000,
+      "content_length": 1050000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -37,7 +39,8 @@
     },
     {
       "name": "gpt-5.4-mini",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -48,7 +51,8 @@
     },
     {
       "name": "gpt-5.4-nano",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -59,7 +63,8 @@
     },
     {
       "name": "gpt-5.2-pro",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -70,7 +75,8 @@
     },
     {
       "name": "gpt-5.2",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -81,7 +87,8 @@
     },
     {
       "name": "gpt-5.1",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -92,7 +99,8 @@
     },
     {
       "name": "gpt-5.1-chat-latest",
-      "max_tokens": 400000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -103,7 +111,8 @@
     },
     {
       "name": "gpt-5",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -114,7 +123,8 @@
     },
     {
       "name": "gpt-5-mini",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -125,7 +135,8 @@
     },
     {
       "name": "gpt-5-nano",
-      "max_tokens": 400000,
+      "content_length": 400000,
+      "max_output": 128000,
       "model_types": [
         "chat",
         "vision"
@@ -136,7 +147,8 @@
     },
     {
       "name": "gpt-5-chat-latest",
-      "max_tokens": 400000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -147,7 +159,8 @@
     },
     {
       "name": "gpt-4.1",
-      "max_tokens": 1047576,
+      "content_length": 1047576,
+      "max_output": 32768,
       "model_types": [
         "chat",
         "vision"
@@ -158,7 +171,8 @@
     },
     {
       "name": "gpt-4.1-mini",
-      "max_tokens": 1047576,
+      "content_length": 1047576,
+      "max_output": 32768,
       "model_types": [
         "chat",
         "vision"
@@ -169,7 +183,8 @@
     },
     {
       "name": "gpt-4.1-nano",
-      "max_tokens": 1047576,
+      "content_length": 1047576,
+      "max_output": 32768,
       "model_types": [
         "chat",
         "vision"
@@ -180,7 +195,8 @@
     },
     {
       "name": "gpt-4.5-preview",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat"
       ],
@@ -190,7 +206,8 @@
     },
     {
       "name": "gpt-4o-mini",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -201,7 +218,8 @@
     },
     {
       "name": "gpt-4o",
-      "max_tokens": 128000,
+      "content_length": 128000,
+      "max_output": 16384,
       "model_types": [
         "chat",
         "vision"
@@ -212,7 +230,8 @@
     },
     {
       "name": "gpt-3.5-turbo",
-      "max_tokens": 4096,
+      "content_length": 16385,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -222,7 +241,8 @@
     },
     {
       "name": "gpt-3.5-turbo-16k-0613",
-      "max_tokens": 16385,
+      "content_length": 16385,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -235,21 +255,24 @@
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-3-small",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-3-large",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     },
     {
       "name": "whisper-1",
@@ -260,7 +283,8 @@
     },
     {
       "name": "gpt-4",
-      "max_tokens": 8191,
+      "content_length": 8192,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -270,7 +294,8 @@
     },
     {
       "name": "gpt-4-turbo",
-      "max_tokens": 8191,
+      "content_length": 128000,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -280,7 +305,8 @@
     },
     {
       "name": "gpt-4-32k",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],

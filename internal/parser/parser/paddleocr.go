@@ -358,7 +358,7 @@ func (c *PaddleOCRClient) extractImageText(resultLines []map[string]any) string 
 						}
 						content, _ := blockMap["block_content"].(string)
 						content = strings.TrimSpace(content)
-						// Remove markdown image blocks
+						// Remove Markdown image blocks
 						content = removeMarkdownImages(content)
 						if content != "" {
 							texts = append(texts, content)

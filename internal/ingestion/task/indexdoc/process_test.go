@@ -43,9 +43,9 @@ func TestRenameTextToContentWithWeight_NoTextKey(t *testing.T) {
 // ProcessChunksForPipeline - Python: processChunks()
 // =============================================================================
 
-func TestProcessChunksForPipeline_SetsDocIDAndKBID(t *testing.T) {
+func TestProcessChunksForPipeline_SetsDocID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello world"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -53,18 +53,16 @@ func TestProcessChunksForPipeline_SetsDocIDAndKBID(t *testing.T) {
 	if chunks[0]["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %q, want \"doc-1\"", chunks[0]["doc_id"])
 	}
-	if kbIDs, ok := chunks[0]["kb_id"].([]string); ok {
-		if len(kbIDs) != 1 || kbIDs[0] != "kb-1" {
-			t.Errorf("kb_id = %v, want [\"kb-1\"]", chunks[0]["kb_id"])
-		}
-	} else {
-		t.Errorf("kb_id should be []string, got %T", chunks[0]["kb_id"])
+	// kb_id is intentionally NOT set here: it is owned by the search engine at
+	// the write boundary (ES/Infinity InsertChunks), not by ingestion. See #17371.
+	if _, exists := chunks[0]["kb_id"]; exists {
+		t.Errorf("kb_id should not be set by ProcessChunksForPipeline, got %v", chunks[0]["kb_id"])
 	}
 }
 
 func TestProcessChunksForPipeline_SetsDocNameKwd(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -76,7 +74,7 @@ func TestProcessChunksForPipeline_SetsDocNameKwd(t *testing.T) {
 func TestProcessChunksForPipeline_SetsTimeFields(t *testing.T) {
 	now := time.Now()
 	chunks := []map[string]any{{"text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", now)
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", now)
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -100,7 +98,7 @@ func TestProcessChunksForPipeline_SetsTimeFields(t *testing.T) {
 
 func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -116,7 +114,7 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 // component.ChunkID computes a valid id from empty text, rather than erroring.
 func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -138,7 +136,7 @@ func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
 	}}
 
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -149,7 +147,7 @@ func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 
 func TestProcessChunksForPipeline_PreservesExistingID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "id": "existing-id"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -160,7 +158,7 @@ func TestProcessChunksForPipeline_PreservesExistingID(t *testing.T) {
 
 func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "questions": "Q1\nQ2\nQ3"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -182,7 +180,7 @@ func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 
 func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "keywords": "kw1,kw2;kw3"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -201,7 +199,7 @@ func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 
 func TestProcessChunksForPipeline_SummaryProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "summary": "This is a summary."}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -235,7 +233,7 @@ func TestProcessChunksForPipeline_PreservesTokenizerProducedFields(t *testing.T)
 		"content_ltks":    "tokenizer-output-ltks",
 		"content_sm_ltks": "tokenizer-output-smltks",
 	}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -270,7 +268,7 @@ func TestProcessChunksForPipeline_PreservesTokenizerProducedFields(t *testing.T)
 
 func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello world"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -285,7 +283,7 @@ func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 
 func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
 	chunks := []map[string]any{{"content_with_weight": "already set", "text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -345,5 +343,69 @@ func TestProcessChunkPositions_NoPositions(t *testing.T) {
 	}
 	if _, exists := chunk["_pdf_positions"]; exists {
 		t.Error("_pdf_positions must be pruned even when positions is missing")
+	}
+}
+
+// TestCleanupConsumedChunkFields_ImportantKwdMultiDelimiter pins the executor
+// fallback's important_kwd materialization. When the Tokenizer component did
+// NOT pre-produce important_kwd, the executor falls back to
+// utility.SplitKeywords, which splits on the full delimiter set
+// (ASCII + CJK comma/semicolon/ideographic-comma/newline) and DROPS empty
+// parts. This is intentionally different from the Tokenizer component path
+// (internal/ingestion/component/tokenizer.go:690), which splits on the ENGLISH
+// COMMA ONLY and PRESERVES empty elements to match the DSL
+// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`).
+//
+// The two layers deliberately diverge: the component aligns to the DSL keyword
+// contract ("delimited by ENGLISH COMMA"); the executor fallback mirrors
+// Python task_executor.run_dataflow:879 and tolerates mixed delimiters from
+// older upstream producers. Neither side should be "unified" to the other —
+// changing one without the other silently breaks the documented parity
+// boundary. The component-side half of this contract is locked by
+// TestTokenizerComponent_ImportantKwd_CommaOnly in the component package.
+func TestCleanupConsumedChunkFields_ImportantKwdMultiDelimiter(t *testing.T) {
+	ck := map[string]any{"text": "hello", "keywords": "kw1,kw2;kw3，kw4"}
+
+	cleanupConsumedChunkFields(ck)
+
+	kwd, ok := ck["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", ck["important_kwd"])
+	}
+	// Executor fallback splits on comma/semicolon/CJK-comma and drops empties:
+	// "kw1,kw2;kw3，kw4" -> ["kw1","kw2","kw3","kw4"], NOT the component's
+	// ["kw1","kw2;kw3，kw4"].
+	want := []string{"kw1", "kw2", "kw3", "kw4"}
+	if len(kwd) != len(want) {
+		t.Fatalf("executor important_kwd = %v, want %v (multi-delimiter, empties dropped)", kwd, want)
+	}
+	for i := range want {
+		if kwd[i] != want[i] {
+			t.Errorf("executor important_kwd[%d] = %q, want %q", i, kwd[i], want[i])
+		}
+	}
+	if _, exists := ck["keywords"]; exists {
+		t.Error("keywords source field should be consumed/removed")
+	}
+}
+
+// TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts documents that the
+// executor fallback drops empty parts (e.g. the middle empty token in
+// "a,,b"), diverging from the component path which PRESERVES it as ["a","","b"].
+// Together with the component CommaOnly test this locks the intentional
+// divergence: same input, different important_kwd arrays per layer.
+func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
+	ck := map[string]any{"text": "hello", "keywords": "a,,b"}
+
+	cleanupConsumedChunkFields(ck)
+
+	kwd, ok := ck["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", ck["important_kwd"])
+	}
+	// Executor drops the empty middle part: ["a","b"], NOT ["a","","b"].
+	want := []string{"a", "b"}
+	if len(kwd) != len(want) || kwd[0] != "a" || kwd[1] != "b" {
+		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
 	}
 }

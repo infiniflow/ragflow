@@ -80,8 +80,8 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err := s.docEngine.UpdateChunks(
-				context.Background(),
+			err = s.docEngine.UpdateChunks(
+				ctx,
 				map[string]interface{}{"doc_id": docID},
 				map[string]interface{}{"available_int": statusInt},
 				fmt.Sprintf("ragflow_%s", kb.TenantID),
@@ -166,6 +166,13 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+			if tenantErr == nil && tenant != nil {
+				cleaned = service.ApplyComponentScopedParserConfig(
+					cleaned,
+					tenant.LLMID,
+				)
+			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {
@@ -390,7 +397,7 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	return s.docEngine.UpdateChunks(
-		context.Background(),
+		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
 		map[string]interface{}{
 			"docnm_kwd":    newName,

@@ -473,8 +473,8 @@ func sectionsToMarkdown(sections []deepdoctype.Section) string {
 }
 
 // cropMarkdownFigures crops inline images for figure sections so the
-// markdown output can embed them. It mirrors the figure branch of the
-// former Parse.fillSectionImages, but runs only for the markdown path
+// Markdown output can embed them. It mirrors the figure branch of the
+// former Parse.fillSectionImages, but runs only for the Markdown path
 // (the JSON path defers cropping to the chunker). The engine is read
 // from result.Engine; callers must Close the result afterwards.
 func cropMarkdownFigures(result *deepdoctype.ParseResult) {

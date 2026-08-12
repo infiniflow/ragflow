@@ -269,6 +269,49 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	return next
 }
 
+func parserConfigJSONMap(value interface{}) entity.JSONMap {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case entity.JSONMap:
+		return typed
+	case map[string]interface{}:
+		return entity.JSONMap(typed)
+	default:
+		return nil
+	}
+}
+
+func cloneJSONMap(source entity.JSONMap) entity.JSONMap {
+	if source == nil {
+		return nil
+	}
+	cloned := make(entity.JSONMap, len(source))
+	for key, value := range source {
+		cloned[key] = cloneJSONValue(value)
+	}
+	return cloned
+}
+
+func cloneJSONValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		nested := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			nested[key] = cloneJSONValue(item)
+		}
+		return nested
+	case []interface{}:
+		nested := make([]interface{}, len(typed))
+		for idx, item := range typed {
+			nested[idx] = cloneJSONValue(item)
+		}
+		return nested
+	default:
+		return typed
+	}
+}
+
 func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {
 	if ext == nil {
 		return nil

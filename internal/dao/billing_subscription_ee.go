@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type BillingSubscriptionDAO struct{}
+
+func NewBillingSubscriptionDAO() *BillingSubscriptionDAO {
+	return &BillingSubscriptionDAO{}
+}

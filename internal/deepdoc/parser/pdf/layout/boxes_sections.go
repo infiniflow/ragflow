@@ -101,13 +101,13 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 	}
 }
 
-// SectionsToMarkdown converts Sections to a markdown string.
+// SectionsToMarkdown converts Sections to a Markdown string.
 //
 // Title sections get a "## " prefix.
 // Figure sections produce an "![Image](data:image/png;base64,...)" tag.
 // Text and all other sections are appended verbatim.
 //
-// This mirrors the Python parser.py:665-671 markdown output path.
+// This mirrors the Python parser.py:665-671 Markdown output path.
 func SectionsToMarkdown(sections []pdf.Section) string {
 	var b strings.Builder
 	for _, s := range sections {

@@ -97,7 +97,6 @@ export enum ContextGeneratorFieldName {
   Keywords = 'keywords',
   Questions = 'questions',
   Metadata = 'metadata',
-  TableOfContents = 'toc',
 }
 
 export const FileId = 'File'; // BeginId
@@ -263,7 +262,7 @@ export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
-  delimiter_mode: 'token_size',
+  delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
@@ -363,6 +362,8 @@ export const initialExtractorValues = {
 
 export const initialCompilationValues = {
   compilation_template_group_id: '',
+  llm_id: '',
+  plan: false,
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },

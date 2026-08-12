@@ -261,6 +261,11 @@ class ComponentParamBase(ABC):
             raise ValueError(description + " does not support empty value.")
 
     @staticmethod
+    def check_nonnegative_integer(param, description):
+        if type(param).__name__ not in ["int", "long"] or param < 0:
+            raise ValueError(description + " {} not supported, should be 0 or positive integer".format(param))
+
+    @staticmethod
     def check_positive_integer(param, description):
         if type(param).__name__ not in ["int", "long"] or param <= 0:
             raise ValueError(description + " {} not supported, should be positive integer".format(param))

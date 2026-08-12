@@ -893,6 +893,7 @@ async def run_tree_templates(
     templates: list[tuple[str, dict]],
     chat_mdl_by_tid: dict[str, "LLMBundle"],
     embedding_model,
+    doc_name: str,
 ) -> None:
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
@@ -984,6 +985,7 @@ async def run_tree_templates(
                 ctx.tenant_id,
                 ctx.kb_id,
                 doc_id,
+                doc_name,
                 compile_kwd="tree",
                 compilation_template_id=template_id,
             )
@@ -1035,6 +1037,8 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
 
     ctx = handler._task_context
+    found, document = DocumentService.get_by_id(ctx.doc_id)
+    doc_name = document.name if found and document else ""
     template_ids = _parser_config_compilation_template_ids(ctx.parser_config, ctx.tenant_id)
     if not template_ids:
         return
@@ -1088,6 +1092,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
             tree_templates,
             chat_mdl_by_tid,
             embedding_model,
+            doc_name,
         )
 
     if not non_tree_templates:
@@ -1109,6 +1114,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         tenant_id=ctx.tenant_id,
         kb_id=ctx.kb_id,
         doc_id=ctx.doc_id,
+        doc_name=doc_name,
         language=ctx.language,
         chunk_batches=_stream_doc_batches(),
         progress_cb=ctx.progress_cb,

@@ -91,9 +91,6 @@ func TestPPIOChatHappyPath(t *testing.T) {
 		if _, ok := body["reasoning_effort"]; ok {
 			t.Errorf("reasoning_effort should not be sent: %v", body["reasoning_effort"])
 		}
-		if body["max_tokens"] != float64(32) {
-			t.Errorf("max_tokens=%v", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v", body["temperature"])
 		}

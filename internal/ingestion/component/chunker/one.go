@@ -112,7 +112,12 @@ func emitOne(text, docType string) map[string]any {
 		return emptyOutputs()
 	}
 	return chunkOutputs([]schema.ChunkDoc{{
-		Text:    text,
+		// Strip parser coordinate tags so they never reach embedding/index,
+		// matching the Python flow chunker's tag-free "one" output
+		// (rag/flow/chunker/token_chunker.py delimiter_mode one). The legacy
+		// rag/app/one.py predates tag stripping and is intentionally out of
+		// scope here.
+		Text:    removeTag(text),
 		DocType: docType,
 		CKType:  docType,
 	}})
@@ -141,7 +146,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
-			Text:         text,
+			// Strip parser coordinate tags (see emitOne).
+			Text:         removeTag(text),
 			DocType:      docType,
 			CKType:       docType,
 			Image:        it.Image,
@@ -155,7 +161,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	var img string
 	for _, it := range src {
 		if t := itemTextOrFallback(it); t != "" {
-			parts = append(parts, t)
+			// Strip parser coordinate tags before joining (see emitOne).
+			parts = append(parts, removeTag(t))
 		}
 		if img == "" && it.Image != "" {
 			img = it.Image

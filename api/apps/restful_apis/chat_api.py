@@ -51,7 +51,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
+from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -159,6 +159,24 @@ def _validate_name(name, *, required=True):
     if len(name.encode("utf-8")) > 255:
         return None, f"chat name length is {len(name.encode('utf-8'))} which is larger than 255"
     return name, None
+
+
+def _validate_prompt_parameters(prompt_config):
+    parameters = prompt_config.get("parameters")
+    if not isinstance(parameters, list):
+        return None
+
+    keys = []
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            continue
+        key = parameter.get("key")
+        if key is None:
+            continue
+        if key in keys:
+            return f"`parameters` contains duplicate key: {key}"
+        keys.append(key)
+    return None
 
 
 def _build_session_response(conv: dict) -> dict:
@@ -428,6 +446,9 @@ async def create():
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
@@ -488,6 +509,11 @@ async def list_chats():
 
     if orderby not in ("create_time", "update_time", "name"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
+
+    try:
+        validate_rest_api_ids(owner_ids, "owner_ids")
+    except ValueError as ex:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(ex))
 
     try:
         # Invalid or negative pagination values fall back to defaults
@@ -602,6 +628,9 @@ async def update_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
             #     return get_data_error_result(message=err)
@@ -687,6 +716,9 @@ async def patch_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_prompt_parameters(req["prompt_config"])
+            if err:
+                return get_data_error_result(message=err)
             prompt_config = deepcopy(current_chat.get("prompt_config", {}))
             prompt_config.update(req["prompt_config"])
             req["prompt_config"] = prompt_config

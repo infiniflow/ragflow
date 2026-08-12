@@ -86,8 +86,12 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
     extra: { is_tools: hasToolFeature(m.features), ...(m.extra ?? {}) },
   }));
 
-/** Resolved credentials for catalog / verify / batch calls. */
-export type ResolvedCreds = { apiKey: string; baseUrl: string };
+/** Resolved credentials for catalog / verify / batch calls.
+ *  `baseUrl` is `undefined` when the provider's form has no `base_url`
+ *  field (e.g. VolcEngine, Google Cloud) so the auto-fetch gate can
+ *  distinguish "no base_url field" from "base_url field exists but is
+ *  empty". */
+export type ResolvedCreds = { apiKey: string; baseUrl: string | undefined };
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
@@ -104,7 +108,7 @@ export function useResolveCreds(
     const fv = getFormValues?.() ?? {};
     return {
       apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
-      baseUrl: (fv.base_url as string) ?? instance?.base_url ?? '',
+      baseUrl: (fv.base_url as string) ?? instance?.base_url,
     };
   }, [getFormValues, instance]);
 
@@ -121,13 +125,12 @@ interface UseModelsCatalogArgs {
   hideActions: boolean;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
-  /**
-   * Current api_key value (read from the host form / instance). Used to
-   * gate the auto-fetch for providers that require an api_key to list
-   * models (currently only VolcEngine). For other providers the value
-   * is ignored and the catalog is fetched on mount regardless.
-   */
+
   apiKeyValue: string;
+
+  baseUrlValue: string | undefined;
+
+  instanceDetailsLoaded?: boolean;
 }
 
 export function useModelsCatalog({
@@ -137,6 +140,8 @@ export function useModelsCatalog({
   resolveCreds,
   instanceModels,
   apiKeyValue,
+  baseUrlValue,
+  instanceDetailsLoaded,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -206,7 +211,7 @@ export function useModelsCatalog({
     try {
       const ret = await listProviderModels({
         provider_name: providerName,
-        api_key: apiKey,
+        api_key: apiKey as any,
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
@@ -225,24 +230,44 @@ export function useModelsCatalog({
   // Auto-fetch the provider's available-models catalog when this section
   // mounts (effectively "when the card is expanded"). For VolcEngine we
   // wait until an api_key is available (typed in the draft form or loaded
-  // from instance details); for every other provider we fetch on mount
-  // regardless of draft / saved state - the catalog endpoint does not
-  // require credentials and the user expects to see the model list as
-  // soon as they open the "Add instance" page.
+  // from instance details). For providers whose form includes a
+  // `base_url` field (e.g. Ollama, Xinference, LocalAI) we defer until a
+  // non-empty URL is entered - their list-models endpoint needs the URL
+  // to know which server to query. For every other provider we fetch on
+  // mount regardless.
+  //
+  // The credential check is performed INSIDE the effect (not in the deps)
+  // because for saved cards the form is reset by
+  // `useFormResetOnDetailsLoad` in a parent effect that runs BEFORE this
+  // one. Reading `resolveCreds()` at effect time picks up the freshly
+  // reset `base_url` / `api_key` values, whereas reading them during
+  // render would see the stale (pre-reset) values and defer forever.
 
   const requiresApiKey = providerName === LLMFactory.VolcEngine;
-  const credsReady = !requiresApiKey || !!apiKeyValue;
 
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
-    if (!credsReady) return;
+
+    const creds = resolveCreds();
+    const hasBaseUrlField = creds.baseUrl !== undefined;
+    const ready =
+      (!requiresApiKey || !!creds.apiKey) &&
+      (!hasBaseUrlField || !!creds.baseUrl);
+    if (!ready) return;
     hasAutoFetchedRef.current = true;
     handleListModels();
     // oxlint-disable-next-line react/exhaustive-deps
-  }, [providerName, instanceName, hideActions, credsReady]);
+  }, [
+    providerName,
+    instanceName,
+    hideActions,
+    apiKeyValue,
+    baseUrlValue,
+    instanceDetailsLoaded,
+  ]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
   // it returned an empty array — so `hideIfEmpty` can safely take effect.

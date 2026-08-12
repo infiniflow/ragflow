@@ -279,6 +279,12 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
+		uploadLimit := file.DeploymentUploadMaxBytes()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
+		if cl := c.Request.ContentLength; cl > uploadLimit {
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "request body exceeds deployment upload limit")
+			return
+		}
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Failed to parse multipart form: "+err.Error())
 			return
@@ -313,7 +319,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 
 		ctx := c.Request.Context()
-		result, err := h.fileService.UploadFile(ctx, userID, parentID, files)
+		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -551,17 +557,19 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 
 	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
-	// empty, which the validate_request-style check below reports as missing
+	// nil, which the validate_request-style check below reports as missing
 	// arguments — matching Python's @validate_request behaviour and code.
 	_ = c.ShouldBindJSON(&req)
 
-	// Mirror Python @validate_request("file_ids", "kb_ids"): missing arguments
-	// return ARGUMENT_ERROR (101) with data=null and the aggregated message.
+	// Mirror Python @validate_request("file_ids", "kb_ids"): a key absent from
+	// the body returns ARGUMENT_ERROR (101) with data=null and the aggregated
+	// message. Python's check is key-presence based, so an explicit empty list
+	// is valid — e.g. kb_ids: [] in replace mode unlinks all datasets.
 	var missing []string
-	if len(req.FileIDs) == 0 {
+	if req.FileIDs == nil {
 		missing = append(missing, "file_ids")
 	}
-	if len(req.KbIDs) == 0 {
+	if req.KbIDs == nil {
 		missing = append(missing, "kb_ids")
 	}
 	if len(missing) > 0 {

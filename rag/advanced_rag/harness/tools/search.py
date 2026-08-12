@@ -114,7 +114,7 @@ def _highlight_keywords(text: str, kwds: list[str]) -> str:
     if not terms:
         return text
     pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE)
-    return pattern.sub(lambda m: f"<em>{m.group(0)}</em>", text)
+    return pattern.sub(lambda m: f"*{m.group(0)}*", text)
 
 
 def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
@@ -149,6 +149,26 @@ def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
             ck.pop("highlight", None)
             out.append(ck)
     return out
+
+
+def _narrow_or_keep(chunks: list[dict], keywords: str, label: str) -> list[dict]:
+    """Narrow chunks to keyword sentences, but keep the originals when
+    narrowing would drop everything.
+
+    No keyword overlap does not mean irrelevant — the retriever already ranked
+    these chunks, and a sub-question's wording need not contain the parent
+    question's keywords. Dropping them all produced empty results, unverified
+    claims and pointless retry cycles.
+    """
+    if not keywords or not chunks:
+        return chunks
+    length = len(chunks)
+    narrowed = _narrow_by_keywords(chunks, keywords)
+    if narrowed:
+        _LOG.info(f"[{label}] Kept {len(narrowed)} of {length} passage(s) that actually mention the keywords.")
+        return narrowed
+    _LOG.info(f"[{label}] Keyword narrowing matched nothing — keeping all {length} retrieved passage(s).")
+    return chunks
 
 
 def _search_cache_key(effective_query: str, target_ids, top_n: int, doc_scope) -> tuple:
@@ -217,12 +237,10 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=True,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    if keywords:
-        length = len(kbinfos["chunks"])
-        kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Hybrid search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Hybrid search")
     if use_compiled and kbinfos.get("chunks"):
         _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
         await _expand_with_compiled(tools, query, keywords, kbinfos, doc_scope)
@@ -253,12 +271,10 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=False,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    if keywords:
-        length = len(kbinfos["chunks"])
-        kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Vector search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Vector search")
     return kbinfos
 
 
@@ -280,12 +296,10 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         aggs=False,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    if keywords:
-        length = len(kbinfos["chunks"])
-        kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[BM25 search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "BM25 search")
     return kbinfos
 
 
@@ -765,8 +779,8 @@ async def web_search(tools, query: str, keywords: str = "") -> dict:
         from common.misc_utils import thread_pool_exec
 
         effective_query = f"{query} {keywords}".strip() if keywords else query
-        tav_res = await thread_pool_exec(tools.tav.retrieve_chunks, effective_query)
-        return {"chunks": tav_res.get("chunks", []), "doc_aggs": tav_res.get("doc_aggs", [])}
+        web_res = await thread_pool_exec(tools.web_search.retrieve_chunks, effective_query)
+        return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
     except Exception:
         _LOG.exception("web_search failed")
         return {"chunks": [], "doc_aggs": []}

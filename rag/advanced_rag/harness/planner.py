@@ -39,7 +39,7 @@ async def planner_node(state: dict, tools) -> dict:
         _LOG.warning("planner: no route found, using defaults")
         return _default_plan(state.get("question", ""))
 
-    _LOG.info("[Planner] Working out how to research this %s question: \"%s\"", route.question_type, _snip(route.question))
+    _LOG.info('[Planner] Working out how to research this %s question: "%s"', route.question_type, _snip(route.question))
     if not route.requires_decomposition:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
@@ -69,6 +69,16 @@ async def planner_node(state: dict, tools) -> dict:
         system, user = prompt.split("Output format", 1)
         system = system.strip()
         user = "Output format" + user
+        # Replanning: the orchestrator sets ``feedback`` from the sufficiency
+        # verdict — the new plan must close those gaps instead of repeating
+        # the previous one.
+        feedback = (state.get("feedback") or "").strip()
+        if feedback:
+            system += (
+                "\n\nA previous research round already ran and left gaps. "
+                "Feedback from the sufficiency check — the new plan MUST address "
+                "these points with different, more targeted claims:\n" + feedback
+            )
         msg = await tools._fit_messages(system, user)
         ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.2})
         if isinstance(ans, tuple):

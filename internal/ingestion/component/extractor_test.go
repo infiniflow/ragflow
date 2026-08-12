@@ -286,10 +286,12 @@ func TestExtractorComponent_Invoke_UnknownProvider(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_Invoke_ParsesJSON verifies a JSON object
-// response from the LLM is parsed into the chunk's field_name
-// value (matching the python set_output contract).
-func TestExtractorComponent_Invoke_ParsesJSON(t *testing.T) {
+// TestExtractorComponent_Invoke_KeepsJSONAsString verifies a JSON object
+// response from the LLM is written to the chunk's field_name value as a
+// plain string — matching Python's _generate_async, which returns the raw
+// string with no JSON parsing. (The Extractor does NOT parse field-extraction
+// results; only the metadata path, via callStructured, parses explicitly.)
+func TestExtractorComponent_Invoke_KeepsJSONAsString(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: `{"answer": 42, "tags": ["a", "b"]}`},
 	)
@@ -305,24 +307,20 @@ func TestExtractorComponent_Invoke_ParsesJSON(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := out["chunks"].([]map[string]any)
-	got, ok := chunks[0]["extraction"].(map[string]any)
+	got, ok := chunks[0]["extraction"].(string)
 	if !ok {
-		t.Fatalf("extraction should be parsed JSON object, got %T", chunks[0]["extraction"])
+		t.Fatalf("extraction should be a string (no JSON parse on field extraction), got %T", chunks[0]["extraction"])
 	}
-	if got["answer"].(float64) != 42 {
-		t.Errorf("answer = %v, want 42", got["answer"])
-	}
-	tags, _ := got["tags"].([]any)
-	if len(tags) != 2 {
-		t.Errorf("tags len = %d, want 2", len(tags))
+	if got != `{"answer": 42, "tags": ["a", "b"]}` {
+		t.Errorf("extraction = %q, want the raw JSON string", got)
 	}
 }
 
-// TestExtractorComponent_Invoke_ParsesJSONInFence verifies the
-// common LLM response shape — JSON wrapped in a markdown code
-// fence — parses cleanly. Mirrors the behaviour the agent
-// canvas applies (e.g. llm_retry_test.go matchOutputStructure).
-func TestExtractorComponent_Invoke_ParsesJSONInFence(t *testing.T) {
+// TestExtractorComponent_Invoke_KeepsJSONStringInFence verifies a JSON
+// response wrapped in a Markdown code fence is stored as the raw string —
+// the code fence is not stripped on the field-extraction path (Python's
+// _generate_async returns the raw text untouched).
+func TestExtractorComponent_Invoke_KeepsJSONStringInFence(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: "```json\n{\"summary\": \"hello\"}\n```"},
 	)
@@ -336,12 +334,12 @@ func TestExtractorComponent_Invoke_ParsesJSONInFence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["chunks"].([]map[string]any)[0]["out"].(map[string]any)
+	got, ok := out["chunks"].([]map[string]any)[0]["out"].(string)
 	if !ok {
-		t.Fatalf("out should be parsed JSON object, got %T", out["chunks"].([]map[string]any)[0]["out"])
+		t.Fatalf("out should be a string, got %T", out["chunks"].([]map[string]any)[0]["out"])
 	}
-	if got["summary"] != "hello" {
-		t.Errorf("summary = %v, want hello", got["summary"])
+	if got != "```json\n{\"summary\": \"hello\"}\n```" {
+		t.Errorf("out = %q, want the raw fenced JSON string", got)
 	}
 }
 
@@ -1266,6 +1264,91 @@ func TestCleanExtractionResult_LastThinkTag(t *testing.T) {
 	}
 }
 
+// TestCleanLLMText verifies the two-step LLM-layer cleanup that Python
+// applies in LLMBundle.async_chat (llm_service.py:459-461): reasoning
+// content is stripped only when a leading <think> has a matching closing
+// </think> after it, and <tool_call>...</tool_call> blocks are removed.
+func TestCleanLLMText(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "think block stripped",
+			in:   "<think>reasoning</think>the answer",
+			want: "the answer",
+		},
+		{
+			name: "close without open kept",
+			in:   "abc</think>def",
+			want: "abc</think>def", // no leading <think> → unchanged
+		},
+		{
+			name: "prefix before think kept",
+			in:   "prefix<think>reason</think>answer",
+			want: "prefix<think>reason</think>answer", // <think> not at start → content preserved
+		},
+		{
+			name: "open without close kept",
+			in:   "<think>unclosed",
+			want: "<think>unclosed", // no </think> → unchanged
+		},
+		{
+			name: "tool_call block removed",
+			in:   "before<tool_call>{\"name\":\"x\"}</tool_call>after",
+			want: "beforeafter",
+		},
+		{
+			name: "consecutive tool_call blocks",
+			in:   "a<tool_call>1</tool_call>b<tool_call>2</tool_call>c",
+			want: "abc",
+		},
+		{
+			name: "think then tool_call",
+			in:   "<think>r</think>out<tool_call>t</tool_call>end",
+			want: "outend",
+		},
+		{
+			name: "plain text",
+			in:   "  plain answer  ",
+			want: "plain answer",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanLLMText(tt.in); got != tt.want {
+				t.Errorf("cleanLLMText(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExtractorComponent_callStructured verifies the metadata path parses a
+// JSON object response into a map, and returns (nil, nil) for a non-JSON or
+// empty response (nothing extracted, not an error).
+func TestExtractorComponent_callStructured(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
+	c := &ExtractorComponent{}
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	if err != nil {
+		t.Fatalf("callStructured: %v", err)
+	}
+	if got["a"].(float64) != 1 {
+		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+
+	// Non-JSON response → (nil, nil), not an error.
+	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	if err != nil {
+		t.Fatalf("callStructured on non-JSON: %v", err)
+	}
+	if got != nil {
+		t.Errorf("non-JSON response should yield nil map, got %v", got)
+	}
+}
+
 // TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions verifies
 // that when both auto_keywords and auto_questions are enabled, both
 // LLM calls are dispatched per chunk and results land on the chunk
@@ -1334,6 +1417,126 @@ func TestResolveExtractorChatTarget_EmptyLLMID(t *testing.T) {
 		t.Logf("resolved empty llmID: driver=%q model=%q (tenant default might be available)", driver, modelName)
 	}
 	// Contract: no panic, no error for empty llmID.
+}
+
+// TestExtractorComponent_Invoke_ContentWithWeightPlaceholder verifies that
+// a prompt referencing {content_with_weight} (a chunk field that is NOT in
+// the {text}/{chunks} suppression set of the old code) substitutes the
+// field without also appending the chunk text a second time. Regression
+// guard for the duplicate-injection bug fixed in
+// fix/extractor-chunk-text-injection.
+func TestExtractorComponent_Invoke_ContentWithWeightPlaceholder(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Weighted: {content_with_weight}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	if strings.Contains(userContent, "{content_with_weight}") {
+		t.Errorf("prompt still contains literal {content_with_weight}: %q", userContent)
+	}
+	if n := strings.Count(userContent, "weighted doc"); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText verifies
+// that a non-content placeholder like {title} being substituted does NOT
+// suppress the chunk-text append — otherwise the document body would
+// silently disappear from the LLM call. Regression guard for the
+// "compare substituted vs original" approach, which incorrectly suppressed
+// on any replacement.
+func TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Title: {title}\nExtract:",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{
+			"text":  "DOC BODY",
+			"title": "My Title",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	// {title} must be replaced, and chunk body must still be present.
+	if strings.Contains(userContent, "{title}") {
+		t.Errorf("prompt still contains literal {title}: %q", userContent)
+	}
+	if !strings.Contains(userContent, "DOC BODY") {
+		t.Errorf("chunk body missing from LLM call — append was wrongly suppressed: %q", userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText verifies
+// that a {text} placeholder that cannot be resolved against the chunk (the
+// chunk has content_with_weight but no text field) does NOT suppress the
+// chunk-text append. Otherwise the LLM receives a literal {text} and no content.
+func TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Content: {text}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{
+			"content_with_weight": "weighted doc",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	// {text} was not resolved (chunk has no text field), so the append must
+	// still deliver the chunk body.
+	if !strings.Contains(userContent, "weighted doc") {
+		t.Errorf("chunk body missing — append was wrongly suppressed on unresolved {text}: %q", userContent)
+	}
 }
 
 // TestExtractorComponent_Invoke_SubstitutesPlaceholders verifies that
@@ -1449,5 +1652,143 @@ func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.
 	}
 	if n := strings.Count(userContent, "the document content"); n != 1 {
 		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_ResumeTemplateChunksPath verifies the resume
+// template path: a prompt referencing {@chunks} (e.g. {TitleChunker:FlatMiceFix@chunks})
+// must still deliver the chunk body to the LLM. {@chunks} is resolved by
+// substitutePromptPlaceholders in buildExtractorMessages, NOT by the simple
+// placeholder loop — so contentPlaceholders does not see it, suppression must
+// not trigger, and the chunk text arrives via the automatic append. Regression
+// guard: if someone adds {@chunks} to contentPlaceholders or the suppression
+// logic starts matching regex-style placeholders, the resume path silently
+// breaks (chunk body vanishes from the LLM call).
+func TestExtractorComponent_Invoke_ResumeTemplateChunksPath(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Resume: {TitleChunker:FlatMiceFix@chunks}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "resume chunk body"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	// {@chunks} must be resolved by substitutePromptPlaceholders.
+	if strings.Contains(userContent, "{TitleChunker:FlatMiceFix@chunks}") {
+		t.Errorf("prompt still contains literal @chunks placeholder: %q", userContent)
+	}
+	// Chunk body must arrive in the final message (via the append path,
+	// since {@chunks} does not suppress the automatic chunk-text append).
+	if !strings.Contains(userContent, "resume chunk body") {
+		t.Errorf("chunk body missing from LLM call — resume path broken: %q", userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend
+// verifies that a content-bearing placeholder in systemPrompt (not just
+// prompt) also suppresses the automatic chunk-text append. The chunk body
+// is delivered via systemPrompt substitution; since the append is also
+// suppressed, it must NOT appear a second time in the user message.
+func TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName:    "out",
+		Prompt:       "Extract:",
+		SystemPrompt: "Context: {text}",
+		LLMID:        "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "system prompt body"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var sysContent, userContent string
+	for _, msg := range stub.lastReq.Messages {
+		switch msg.Role {
+		case eschema.System:
+			sysContent = msg.Content
+		case eschema.User:
+			userContent = msg.Content
+		}
+	}
+	// {text} in systemPrompt must be resolved to the chunk body.
+	if !strings.Contains(sysContent, "system prompt body") {
+		t.Errorf("system message missing chunk body: %q", sysContent)
+	}
+	// The append must be suppressed: the user message should NOT also
+	// contain the chunk body (otherwise it is duplicated).
+	if strings.Contains(userContent, "system prompt body") {
+		t.Errorf("chunk body duplicated into user message (append not suppressed): %q", userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring
+// verifies that a chunk field whose value happens to contain a content
+// placeholder substring (e.g. title = "{text}") does not fool the
+// suppression check. {text} in prompt is resolved to "body"; {title}
+// is resolved to "{text}" literally — the substitution function knows
+// {text} was actually replaced (title's replacement is a different
+// placeholder), so suppression triggers correctly.
+func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Body: {text}\nLabel: {title}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{
+			"text":  "the document body",
+			"title": "{text}",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	// {text} resolved to body → append suppressed. The body should appear
+	// exactly once (from {text} substitution), not twice.
+	if n := strings.Count(userContent, "the document body"); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
+	}
+	// {title} was substituted to the literal "{text}" — this is the tricky
+	// case: the substituted prompt now contains "{text}" as a value, but
+	// the suppression must still have triggered because {text} was resolved.
+	if !strings.Contains(userContent, "Label: {text}") {
+		t.Errorf("expected title substitution to produce literal '{text}' label: %q", userContent)
 	}
 }

@@ -131,31 +131,9 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return HandleStreamingResponse(resp.Body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type openaiEmbeddingResponse struct {
@@ -750,48 +728,4 @@ func (o *OpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 
 func (o *OpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
-}
-
-// extractUsageFromMap reads the "usage" key from an OpenAI-style API
-// response and returns (prompt_tokens, completion_tokens, total_tokens).
-// All return values are zero when the response carries no usage block.
-func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
-	if raw == nil {
-		return 0, 0, 0
-	}
-	ru, ok := raw["usage"]
-	if !ok {
-		return 0, 0, 0
-	}
-	usage, ok := ru.(map[string]interface{})
-	if !ok {
-		return 0, 0, 0
-	}
-	get := func(keys ...string) int {
-		for _, k := range keys {
-			v, ok := usage[k]
-			if !ok {
-				continue
-			}
-			switch val := v.(type) {
-			case float64:
-				return int(val)
-			case int:
-				return val
-			case json.Number:
-				n, err := val.Int64()
-				if err == nil {
-					return int(n)
-				}
-			}
-		}
-		return 0
-	}
-	pt := get("prompt_tokens", "input_tokens")
-	ct := get("completion_tokens", "output_tokens")
-	tt := get("total_tokens")
-	if tt == 0 {
-		tt = pt + ct
-	}
-	return pt, ct, tt
 }

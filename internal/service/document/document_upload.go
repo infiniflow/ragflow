@@ -96,7 +96,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
-			rmErr := removeObjectBestEffort(storageImpl, kb.ID, location)
+			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 			if rmErr != nil {
 				common.Warn(fmt.Sprintf("upload rollback: failed to remove orphaned blob %s/%s: %v", kb.ID, location, rmErr))
 			}
@@ -107,7 +107,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
 			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
-			rmErr := removeObjectBestEffort(storageImpl, kb.ID, location)
+			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 			if rmErr != nil {
 				common.Warn(fmt.Sprintf("UploadLocalDocuments: failed to remove blob %s/%s: %v", kb.ID, location, rmErr))
 			}
@@ -285,7 +285,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 
 	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
 	if err = s.InsertDocument(doc); err != nil {
-		rmErr := removeObjectBestEffort(storageImpl, kb.ID, location)
+		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 		if rmErr != nil {
 			common.Warn(fmt.Sprintf("UploadWebDocument: failed to insert document, remove blob %s/%s: %v", kb.ID, location, rmErr))
 		}
@@ -293,7 +293,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	}
 	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
 		err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
-		rmErr := removeObjectBestEffort(storageImpl, kb.ID, location)
+		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 		if rmErr != nil {
 			common.Warn(fmt.Sprintf("UploadWebDocument: failed to add file from knowledge base, remove blob %s/%s: %v", kb.ID, location, rmErr))
 		}

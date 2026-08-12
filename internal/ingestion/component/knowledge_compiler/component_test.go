@@ -12,8 +12,12 @@ import (
 	"sync"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
+
+	"gorm.io/gorm"
 )
 
 // mockChat answers the structure variant's three LLM call shapes under the
@@ -171,7 +175,7 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 	installMockDeps(t)
 	installVariantTemplateResolver(t, "structure")
 
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
@@ -230,7 +234,7 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 }
 
 func TestKnowledgeCompiler_UnknownVariant(t *testing.T) {
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{"compilation_template_id": "nope"})
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{"compilation_template_id": "nope"})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
 	}
@@ -376,7 +380,7 @@ func TestKnowledgeCompiler_Alias_Mindmap(t *testing.T) {
 	installMockDeps(t)
 	// "mind_map" is the deprecated alias for "mindmap"; both resolve to the
 	// implemented mindmap variant and must run (not ErrUnknownVariant / stub).
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "mind_map", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
@@ -406,7 +410,7 @@ func runVariant(t *testing.T, variant string, extra map[string]any) []map[string
 	for k, v := range extra {
 		params[k] = v
 	}
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", params)
+	c, err := NewKnowledgeCompilerComponent("Compiler", params)
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent(%s): %v", variant, err)
 	}
@@ -529,7 +533,7 @@ func TestKnowledgeCompiler_EmitsChunks(t *testing.T) {
 	installMockDeps(t)
 	installVariantTemplateResolver(t, "structure")
 
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
@@ -586,7 +590,7 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 	installMockDeps(t)
 	installVariantTemplateResolver(t, "structure")
 
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-structure",
 		"llm_id":                  "llm1",
 		"embedding_model":         "emb1",
@@ -670,7 +674,7 @@ func (m constEmbedder) Encode(_ context.Context, texts []string) ([][]float32, e
 func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 	installProseDeps(t)
 	installVariantTemplateResolver(t, "tree")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-tree", "llm_id": "llm1", "embedding_model": "emb1",
 		"extra": map[string]any{"tree_order": 4},
 	})
@@ -725,8 +729,8 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
 	installVariantTemplateResolver(t, "wiki")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1", "plan": true,
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -784,8 +788,8 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
 	installVariantTemplateResolver(t, "wiki")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1", "plan": true,
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -811,7 +815,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if cm["compile_kwd"] == "artifact_page" && cm["kc_kind"] == "page" && cm["slug_kwd"] == "entity/alpha" {
+		if cm["compile_kwd"] == "wiki_page" && cm["kc_kind"] == "page" && cm["slug_kwd"] == "entity/alpha" {
 			page = cm
 			break
 		}
@@ -865,7 +869,7 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
 	installVariantTemplateResolver(t, "wiki")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
 		"enable_historical_dedup": true,
 	})
@@ -980,7 +984,7 @@ func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
 	installVariantTemplateResolver(t, "structure")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
@@ -1020,7 +1024,7 @@ func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
 	installVariantTemplateResolver(t, "structure")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
@@ -1046,7 +1050,7 @@ func TestKnowledgeCompiler_PassThroughEnvelope(t *testing.T) {
 	installMockDeps(t)
 	installVariantTemplateResolver(t, "structure")
 
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
@@ -1082,7 +1086,7 @@ func TestKnowledgeCompiler_PassThroughEnvelope(t *testing.T) {
 
 // groupResolverStub maps every requested group id to a fixed pair of template
 // ids, standing in for the production DB-backed group service.
-func groupResolverStub(_ context.Context, _ string, groupIDs []string) ([]string, error) {
+func groupResolverStub(_ context.Context, _ *gorm.DB, _ string, groupIDs []string) ([]string, error) {
 	var out []string
 	for _, g := range groupIDs {
 		out = append(out, "tpl-"+g+"-a", "tpl-"+g+"-b")
@@ -1099,8 +1103,8 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 	installMockDeps(t)
 	// The group resolves to two concrete template ids; each is compiled as its
 	// own spec, so the TemplateResolver must return a valid kind for them.
-	// Override the package stub and restore it afterwards.
-	common.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+	// Override the package stub and restore it afterward.
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
 		kind := templateID
 		if strings.HasPrefix(templateID, "tpl-grp1") {
 			kind = "structure"
@@ -1114,7 +1118,7 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 
 	// compilation_template_group_id (not the obsolete plural list) selects the
 	// group; compilation_template_id is absent so the group path is taken.
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_group_id": "grp1",
 		"llm_id":                        "llm1",
 		"embedding_model":               "emb1",
@@ -1175,7 +1179,7 @@ func TestKnowledgeCompiler_GroupIDsWithoutResolverFailsLoud(t *testing.T) {
 	installMockDeps(t)
 	common.SetGroupResolver(nil) // ensure no resolver is installed
 
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
 		"compilation_template_group_id": "grp1",
 		"llm_id":                        "llm1",
 		"embedding_model":               "emb1",
@@ -1204,7 +1208,7 @@ func TestKnowledgeCompiler_GroupIDsWithoutResolverFailsLoud(t *testing.T) {
 // register a synthetic "tpl-<variant>" id that maps to the desired kind.
 // Production wiring installs the real DB-backed resolvers (see
 // internal/ingestion/task/knowledge_compiler_wiring.go).
-var testTemplateResolver common.TemplateResolver = func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+var testTemplateResolver common.TemplateResolver = func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
 	return common.TemplateInfo{ID: templateID, Kind: templateID, Config: map[string]any{}}, nil
 }
 
@@ -1217,17 +1221,206 @@ var testTemplateResolver common.TemplateResolver = func(ctx context.Context, ten
 func installVariantTemplateResolver(t *testing.T, variant string) {
 	t.Helper()
 	prev := testTemplateResolver
-	common.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
 		if templateID == "tpl-"+variant {
 			return common.TemplateInfo{ID: templateID, Kind: variant, Config: map[string]any{}}, nil
 		}
-		return prev(ctx, tenantID, templateID)
+		return prev(ctx, db, tenantID, templateID)
 	})
 	t.Cleanup(func() { common.SetTemplateResolver(testTemplateResolver) })
 }
 
-var testGroupResolver common.GroupResolver = func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
+var testGroupResolver common.GroupResolver = func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
 	return groupIDs, nil
+}
+
+// TestKnowledgeCompiler_RegistryResolvesUnifiedName locks the unified-name
+// contract: the knowledge-compilation node is registered under "Compiler"
+// (matching the Python side rag/flow/compiler/compiler.py component_name), so
+// both a Python-saved canvas and Go's built-in ingestion templates resolve to
+// the same KnowledgeCompilerComponent through runtime.DefaultRegistry.
+func TestKnowledgeCompiler_RegistryResolvesUnifiedName(t *testing.T) {
+	factory, category, _, ok := runtime.DefaultRegistry.Lookup("Compiler")
+	if !ok {
+		t.Fatal("runtime registry has no component \"Compiler\"; the Python canvas and Go templates both use this name")
+	}
+	if category != runtime.CategoryIngestion {
+		t.Fatalf("component \"Compiler\" category = %q, want %q", category, runtime.CategoryIngestion)
+	}
+	c, err := factory("Compiler", map[string]any{"compilation_template_id": "tree", "llm_id": "llm1", "embedding_model": "emb1"})
+	if err != nil {
+		t.Fatalf("factory(\"Compiler\"): %v", err)
+	}
+	if _, ok := c.(*KnowledgeCompilerComponent); !ok {
+		t.Fatalf("factory(\"Compiler\") produced %T, want *KnowledgeCompilerComponent", c)
+	}
+}
+
+// TestKnowledgeCompiler_TenantFromGlobals locks the tenant-resolution contract:
+// in the production canvas run the run-level tenant_id lives in the shared
+// CanvasState.Globals bag (seeded by the pipeline at run start), not necessarily
+// in the KnowledgeCompiler's own input map. The component must resolve it through
+// globals.GlobalOrInput; otherwise the template/group lookup gets an empty tenant
+// and fails with "compilation_template_group ... not found for tenant".
+func TestKnowledgeCompiler_TenantFromGlobals(t *testing.T) {
+	// Attach a CanvasState to the context and seed the run-level tenant id into
+	// the global bag, as the pipeline does at run start.
+	ctx := runtime.WithState(context.Background(), runtime.NewCanvasState("run-id", "sess-id"))
+	globals.SeedIngestionGlobals(ctx, map[string]any{"tenant_id": "tenant-from-globals"})
+
+	// Install a template resolver that records the tenant id it is called with.
+	var gotTenant string
+	prev := testTemplateResolver
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
+		gotTenant = tenantID
+		return common.TemplateInfo{ID: templateID, Kind: "structure", Config: map[string]any{}}, nil
+	})
+	t.Cleanup(func() { common.SetTemplateResolver(prev) })
+
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{"compilation_template_id": "tpl-x"})
+	if err != nil {
+		t.Fatalf("construct: %v", err)
+	}
+
+	// Invoke without tenant_id in the input map; the tenant must come from the
+	// global bag. The template resolution (and thus gotTenant) happens early in
+	// Invoke, before the variant's LLM/embedding deps are exercised — which is
+	// all this test needs to assert.
+	_, _ = c.Invoke(ctx, nil, map[string]any{
+		"llm_id":          "llm1",
+		"chunks":          []any{map[string]any{"id": "c1", "content_with_weight": "alpha beta", "text": "alpha beta"}},
+		"embedding_model": "emb1",
+	})
+	if gotTenant != "tenant-from-globals" {
+		t.Fatalf("template resolver saw tenant %q, want %q (tenant_id must be read from CanvasState.Globals)", gotTenant, "tenant-from-globals")
+	}
+}
+
+func TestOverlayTemplateConfigPlanPrecedence(t *testing.T) {
+	boolPtr := func(value bool) *bool { return &value }
+
+	cases := []struct {
+		name    string
+		initial *bool
+		cfg     map[string]any
+		want    bool
+	}{
+		{
+			name: "unset_uses_template_plan",
+			cfg:  map[string]any{"plan": true},
+			want: true,
+		},
+		{
+			name: "no_plan_disables_plan",
+			cfg:  map[string]any{"no_plan": true, "plan": true},
+			want: false,
+		},
+		{
+			name:    "explicit_dsl_false_overrides_template",
+			initial: boolPtr(false),
+			cfg:     map[string]any{"plan": true},
+			want:    false,
+		},
+		{
+			name:    "explicit_dsl_true_overrides_no_plan",
+			initial: boolPtr(true),
+			cfg:     map[string]any{"no_plan": true},
+			want:    true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			param := common.Param{Plan: tc.initial}
+			overlayTemplateConfig(&param, tc.cfg)
+			if param.Plan == nil {
+				t.Fatal("Plan = nil after template config")
+			}
+			if *param.Plan != tc.want {
+				t.Errorf("Plan = %t, want %t", *param.Plan, tc.want)
+			}
+		})
+	}
+}
+
+// TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks locks the chunk-carrier
+// contract: the upstream chunker hands chunks over as []map[string]any (see the
+// chunk map shape {"id","text","ck_type","doc_type_kwd","tk_nums"} observed from
+// the running pipeline), not as []any of map. buildInputs must accept both
+// shapes; a strict []any assertion alone would silently drop every chunk and
+// leave the knowledge compiler with empty input (compiling nothing yet still
+// reporting success).
+func TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks(t *testing.T) {
+	in, err := buildInputs(map[string]any{
+		"chunks": []map[string]any{
+			{"id": "c1", "text": "《三国演义》", "ck_type": "text"},
+			{"id": "c2", "text": "滚滚长江东逝水", "ck_type": "text"},
+		},
+	}, common.Param{})
+	if err != nil {
+		t.Fatalf("buildInputs: %v", err)
+	}
+	if len(in.Chunks) != 2 {
+		t.Fatalf("buildInputs produced %d chunks, want 2 (upstream sends []map[string]any)", len(in.Chunks))
+	}
+	if in.Chunks[0].ID != "c1" || in.Chunks[0].Text != "《三国演义》" {
+		t.Fatalf("chunk[0] = %+v, want id=c1 text=《三国演义》", in.Chunks[0])
+	}
+
+	// The legacy []any-of-map shape must still work.
+	in2, err := buildInputs(map[string]any{
+		"chunks": []any{map[string]any{"id": "x", "text": "t"}},
+	}, common.Param{})
+	if err != nil {
+		t.Fatalf("buildInputs ([]any): %v", err)
+	}
+	if len(in2.Chunks) != 1 || in2.Chunks[0].ID != "x" {
+		t.Fatalf("buildInputs ([]any) produced %+v, want 1 chunk id=x", in2.Chunks)
+	}
+}
+
+// TestProductsToChunkDocs_PageVsSectionCompileKWD locks the page/section
+// discriminator: a wiki page product is stamped compile_kwd="wiki_page" and a
+// wiki section product compile_kwd="wiki_section", so a page search on
+// compile_kwd="wiki_page" (engine_service / kcWikiPageStore) returns pages only.
+func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
+	page := common.Product{
+		ID: "page-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
+		Content: "# Alpha\n\nBody", ParentID: "",
+		Meta: map[string]any{"kind": "page", "slug": "entity/alpha", "title": "Alpha", "page_type": "entity", "source_chunk_ids": []string{"c1"}},
+	}
+	section := common.Product{
+		ID: "section-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
+		Content: "Section body", ParentID: "page-id",
+		Meta: map[string]any{"kind": "section", "slug": "overview", "page_slug": "entity/alpha", "section_level": 1, "source_chunk_ids": []string{"c1"}},
+	}
+	docs, err := productsToChunkDocs([]common.Product{page, section})
+	if err != nil {
+		t.Fatalf("productsToChunkDocs: %v", err)
+	}
+	var pageKWD, sectionKWD string
+	var sectionParent string
+	for _, d := range docs {
+		// Product.Meta is preserved under the kc_* round-trip keys; the page/
+		// section kind lives at "kc_kind".
+		kind, _ := d.GetExtraString("kc_kind")
+		if kind == "page" {
+			pageKWD, _ = d.GetExtraString("compile_kwd")
+		}
+		if kind == "section" {
+			sectionKWD, _ = d.GetExtraString("compile_kwd")
+			sectionParent, _ = d.GetExtraString("parent_kwd")
+		}
+	}
+	if pageKWD != "wiki_page" {
+		t.Errorf("page compile_kwd = %q, want wiki_page", pageKWD)
+	}
+	if sectionKWD != "wiki_section" {
+		t.Errorf("section compile_kwd = %q, want wiki_section (schema-backed page/section discriminator)", sectionKWD)
+	}
+	if sectionParent != "page-id" {
+		t.Errorf("section parent_kwd = %q, want page-id", sectionParent)
+	}
 }
 
 // TestMain installs the stub resolvers for the variant unit tests.

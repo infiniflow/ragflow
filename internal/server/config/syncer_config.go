@@ -25,7 +25,7 @@ type SyncerConfig struct {
 
 func (c *Config) ParseSyncerConfig(v *viper.Viper) error {
 	// Default Syncer config
-	c.syncer.MaxConcurrentSyncs = 1
+	c.syncer.MaxConcurrentSyncs = 5
 	c.syncer.SyncInterval = 3
 
 	if !v.IsSet("file_syncer") {

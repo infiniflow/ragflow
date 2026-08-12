@@ -39,6 +39,7 @@ type ListAgentSessionsParams struct {
 	Desc       bool
 	SessionID  string
 	UserID     string
+	TenantID   string
 	IncludeDSL bool
 	Keywords   string
 	FromDate   *time.Time
@@ -109,7 +110,7 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 
 // ListByChatID lists chat sessions by chat ID
 func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
-	var convs []*entity.ChatSession
+	var chatSessions []*entity.ChatSession
 	query := db.WithContext(ctx).Where("dialog_id = ?", chatID)
 	if sessionID != "" {
 		query = query.Where("id = ?", sessionID)
@@ -131,8 +132,8 @@ func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 		}
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}
-	err := query.Find(&convs).Error
-	return convs, err
+	err := query.Find(&chatSessions).Error
+	return chatSessions, err
 }
 
 // CheckDialogExists checks if a dialog exists with given tenant_id and dialog_id

@@ -316,6 +316,15 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
 	}
+	if serverNameProvided && serverName != server.Name {
+		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, serverName, tenantID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if exists {
+			return nil, common.CodeDataError, errors.New("duplicated MCP server name")
+		}
+	}
 
 	serverURL := server.URL
 	serverURLProvided := false
@@ -627,7 +636,7 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 			}
 		}
 
-		mcpCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 		tools, fetchErr := utility.FetchTools(mcpCtx, utility.FetchOptions{
 			URL:        url,
 			ServerType: stype,
@@ -694,7 +703,7 @@ type TestServerRequest struct {
 }
 
 // TestServer opens a live MCP session and returns the tools the server advertises.
-func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url", ErrMCPInvalidURL)
 	}
@@ -730,7 +739,7 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 		}
 	}
 
-	mcpCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	tools, err := utility.FetchTools(mcpCtx, utility.FetchOptions{
 		URL:        req.URL,

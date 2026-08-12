@@ -116,7 +116,7 @@ type ParserOutputs struct {
 	// JSON holds the list of structured sections when output_format == "json".
 	JSON []map[string]any `json:"json,omitempty"`
 
-	// Markdown holds the rendered markdown when output_format == "markdown".
+	// Markdown holds the rendered Markdown when output_format == "markdown".
 	Markdown string `json:"markdown,omitempty"`
 
 	// Text holds the rendered plain text when output_format == "text".

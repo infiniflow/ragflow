@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
@@ -6,7 +22,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import DOMPurify from 'dompurify';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
@@ -21,11 +37,13 @@ import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
   currentReg,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import classNames from 'classnames';
 import { omit } from 'lodash';
@@ -39,6 +57,8 @@ import {
   HoverCardTrigger,
 } from '../ui/hover-card';
 import styles from './index.module.less';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import { SafeImg } from '@/components/safe-img';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
 
@@ -65,7 +85,11 @@ const MarkdownContent = ({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
@@ -78,11 +102,13 @@ const MarkdownContent = ({
     const thinkSummary = loading
       ? `${t('chat.thinking')}...`
       : t('chat.thought');
-    return pipe(
-      (value: string) => replaceThinkToSection(value, thinkSummary),
-      replaceRetrievingToSection,
-      preprocessLaTeX,
-    )(nextText);
+    return unescapeAngleBrackets(
+      pipe(
+        (value: string) => replaceThinkToSection(value, thinkSummary),
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+      )(nextText),
+    );
   }, [content, loading, t]);
 
   useEffect(() => {
@@ -94,15 +120,16 @@ const MarkdownContent = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
+        if (fileExtension !== 'pdf') {
           if (!documentUrl) {
             return;
           }
-          window.open(documentUrl, '_blank');
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else {
           clickDocumentButton?.(documentId, chunk);
         }
@@ -186,7 +213,7 @@ const MarkdownContent = ({
           <div className={'space-y-2 max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+                __html: sanitizeHtmlWithImagesAsText(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText)}
               dir="auto"
@@ -226,7 +253,7 @@ const MarkdownContent = ({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                 >
@@ -278,6 +305,7 @@ const MarkdownContent = ({
             p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
+            img: SafeImg,
             code(props: any) {
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');

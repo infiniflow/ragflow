@@ -54,13 +54,13 @@ function InnerToolNode({
       />
 
       <NodeCollapsible items={[tools, mcpList]}>
-        {(x) => {
+        {(x, idx) => {
           if (Reflect.has(x, 'mcp_id')) {
             const mcp = x as unknown as IAgentForm['mcp'][number];
 
             return (
               <ToolCard
-                key={mcp.mcp_id}
+                key={mcp.mcp_id || `mcp-${idx}`}
                 onClick={(e) => {
                   if (mcp.mcp_id === Operator.Code) {
                     e.preventDefault();
@@ -79,7 +79,7 @@ function InnerToolNode({
 
           return (
             <ToolCard
-              key={tool.id}
+              key={tool.id || `tool-${idx}`}
               onClick={(e) => {
                 if (tool.component_name === Operator.Code) {
                   e.preventDefault();
