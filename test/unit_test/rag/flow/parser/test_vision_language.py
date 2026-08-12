@@ -113,6 +113,25 @@ def test_media_enhancement_forwards_language_to_model_and_parser(monkeypatch, la
 
 
 @pytest.mark.p1
+def test_text_only_sections_skip_vision_dependencies(monkeypatch):
+    utils = _load_flow_utils(monkeypatch)
+    sections = [
+        {"text": "body", "doc_type_kwd": "text"},
+        {"text": "table without an image", "doc_type_kwd": "table", "image": None},
+    ]
+
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", None)
+    monkeypatch.setitem(sys.modules, "api.db.services.llm_service", None)
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.figure_parser", None)
+
+    assert utils.enhance_media_sections_with_vision(sections, "tenant-id") is sections
+    assert utils.get_tenant_default_model_by_type is None
+    assert utils.resolve_model_config is None
+    assert utils.LLMBundle is None
+    assert utils.VisionFigureParser is None
+
+
+@pytest.mark.p1
 def test_all_flow_media_enhancement_callers_forward_language():
     tree = ast.parse((REPO_ROOT / "rag/flow/parser/parser.py").read_text())
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "enhance_media_sections_with_vision"]

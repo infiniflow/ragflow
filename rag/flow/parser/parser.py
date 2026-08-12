@@ -46,6 +46,58 @@ from rag.flow.parser.utils import (
 )
 from rag.utils.base64_image import image2id
 
+_PDF_PROVIDER_PARSE_METHODS = {
+    "@mineru": "MinerU",
+    "@paddleocr": "PaddleOCR",
+    "@somark": "SoMark",
+    "@mistral ocr": "Mistral OCR",
+}
+_PDF_PARSE_METHODS_WITHOUT_MODEL_LOOKUP = {
+    "deepdoc",
+    "plain_text",
+    "mineru",
+    "docling",
+    "opendataloader",
+    "somark",
+    "mistral ocr",
+    "tcadp parser",
+    "paddleocr",
+}
+
+
+def _resolve_pdf_parse_method(raw_parse_method):
+    parse_method = raw_parse_method or ""
+    if not isinstance(raw_parse_method, str):
+        return parse_method, None
+
+    lowered = raw_parse_method.lower()
+    for suffix, provider_method in _PDF_PROVIDER_PARSE_METHODS.items():
+        if lowered.endswith(suffix):
+            return provider_method, raw_parse_method
+
+    if not raw_parse_method or lowered in _PDF_PARSE_METHODS_WITHOUT_MODEL_LOOKUP:
+        return parse_method, None
+
+    from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+    from api.db.services.tenant_model_provider_service import TenantModelProviderService
+    from api.db.services.tenant_model_service import TenantModelService
+
+    exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
+    if not exist:
+        return parse_method, None
+
+    provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not provider_ok or not instance_ok:
+        return parse_method, None
+
+    resolved_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+    lowered = resolved_method.lower()
+    for suffix, provider_method in _PDF_PROVIDER_PARSE_METHODS.items():
+        if lowered.endswith(suffix):
+            return provider_method, resolved_method
+    return resolved_method, None
+
 
 def _fetch_source_blob(from_upstream, canvas):
     if canvas._doc_id:
@@ -324,50 +376,13 @@ class Parser(ProcessBase):
 
     def _pdf(self, name, blob, **kwargs):
         """Parse PDF files into structured boxes or markdown/json output."""
-        from api.db.services.tenant_model_instance_service import TenantModelInstanceService
-        from api.db.services.tenant_model_provider_service import TenantModelProviderService
-        from api.db.services.tenant_model_service import TenantModelService
-
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a PDF.")
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
         flatten_media_to_text = conf.get("flatten_media_to_text")
         pdf_parser = None
 
-        # Normalize parser selection and optional provider-specific model name.
-        raw_parse_method = conf.get("parse_method", "")
-        # If raw_parse_method is a tenant_model ID, resolve it to
-        # model_name@instance_name@provider_name so the provider-specific
-        # branches below can match the per-provider suffix.
-        if isinstance(raw_parse_method, str) and raw_parse_method:
-            exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
-            if exist:
-                provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
-                instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
-                if provider_ok and instance_ok:
-                    raw_parse_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
-
-        parser_model_name = None
-        parse_method = raw_parse_method
-        parse_method = parse_method or ""
-        if isinstance(raw_parse_method, str):
-            lowered = raw_parse_method.lower()
-            if lowered.endswith("@mineru"):
-                parser_model_name = raw_parse_method
-                parse_method = "MinerU"
-            elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method
-                parse_method = "PaddleOCR"
-            elif lowered.endswith("@somark"):
-                # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
-                # form produced by the new Tenant LLM Provider UI (#14595);
-                # ``resolve_model_config`` -> ``split_model_name``
-                # downstream requires all three segments.
-                parser_model_name = raw_parse_method
-                parse_method = "SoMark"
-            elif lowered.endswith("@mistral ocr"):
-                parser_model_name = raw_parse_method
-                parse_method = "Mistral OCR"
+        parse_method, parser_model_name = _resolve_pdf_parse_method(conf.get("parse_method", ""))
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":

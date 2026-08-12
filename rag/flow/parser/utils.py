@@ -169,6 +169,9 @@ def enhance_media_sections_with_vision(
     if not sections or not tenant_id:
         return sections
 
+    if not any(item.get("doc_type_kwd") in {"image", "table"} and item.get("image") is not None for item in sections):
+        return sections
+
     global LLMBundle, VisionFigureParser, get_tenant_default_model_by_type, resolve_model_config
 
     if get_tenant_default_model_by_type is None or resolve_model_config is None:

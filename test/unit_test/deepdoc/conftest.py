@@ -49,8 +49,8 @@ def _production_parser_package():
     previous = _parser_modules()
     _clear_parser_modules()
     importlib.invalidate_caches()
-    importlib.import_module(_PARSER_PACKAGE)
     try:
+        importlib.import_module(_PARSER_PACKAGE)
         yield
     finally:
         _clear_parser_modules()

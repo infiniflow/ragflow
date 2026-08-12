@@ -94,31 +94,14 @@ def test_pdf_branch_loads_concrete_parser_at_runtime(pdf_parser_stub, monkeypatc
             parsed_blobs.append(blob)
             return [{"text": "runtime text", "layout_type": "text"}]
 
-    class RuntimeTenantModelService:
-        @staticmethod
-        def get_by_id(model_id):
-            return False, None
-
     deepdoc_parser = _module("deepdoc.parser")
     deepdoc_parser.__path__ = []
     monkeypatch.setitem(sys.modules, "deepdoc.parser", deepdoc_parser)
     monkeypatch.setattr(pdf_parser_stub, "RAGFlowPdfParser", RuntimePdfParser)
     monkeypatch.setitem(sys.modules, "deepdoc.parser.pdf_parser", pdf_parser_stub)
-    monkeypatch.setitem(
-        sys.modules,
-        "api.db.services.tenant_model_service",
-        _module("api.db.services.tenant_model_service", TenantModelService=RuntimeTenantModelService),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "api.db.services.tenant_model_provider_service",
-        _module("api.db.services.tenant_model_provider_service", TenantModelProviderService=object),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "api.db.services.tenant_model_instance_service",
-        _module("api.db.services.tenant_model_instance_service", TenantModelInstanceService=object),
-    )
+    monkeypatch.setitem(sys.modules, "api.db.services.tenant_model_service", None)
+    monkeypatch.setitem(sys.modules, "api.db.services.tenant_model_provider_service", None)
+    monkeypatch.setitem(sys.modules, "api.db.services.tenant_model_instance_service", None)
 
     parser = types.SimpleNamespace(
         _param=types.SimpleNamespace(
@@ -141,6 +124,52 @@ def test_pdf_branch_loads_concrete_parser_at_runtime(pdf_parser_stub, monkeypatc
 
     assert parsed_blobs == [b"pdf-data"]
     assert outputs["json"] == [{"text": "runtime text", "layout_type": "text", "doc_type_kwd": "text"}]
+
+
+def test_pdf_parse_method_resolves_tenant_model_services_only_for_unknown_reference(pdf_parser_stub, monkeypatch):
+    parser_module = importlib.import_module("rag.flow.parser.parser")
+    calls = []
+
+    class RuntimeTenantModelService:
+        @staticmethod
+        def get_by_id(model_id):
+            calls.append(("model", model_id))
+            return True, types.SimpleNamespace(model_name="ocr-model", provider_id="provider-1", instance_id="instance-1")
+
+    class RuntimeTenantModelProviderService:
+        @staticmethod
+        def get_by_id(provider_id):
+            calls.append(("provider", provider_id))
+            return True, types.SimpleNamespace(provider_name="MinerU")
+
+    class RuntimeTenantModelInstanceService:
+        @staticmethod
+        def get_by_id(instance_id):
+            calls.append(("instance", instance_id))
+            return True, types.SimpleNamespace(instance_name="runtime")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.tenant_model_service",
+        _module("api.db.services.tenant_model_service", TenantModelService=RuntimeTenantModelService),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.tenant_model_provider_service",
+        _module("api.db.services.tenant_model_provider_service", TenantModelProviderService=RuntimeTenantModelProviderService),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.tenant_model_instance_service",
+        _module("api.db.services.tenant_model_instance_service", TenantModelInstanceService=RuntimeTenantModelInstanceService),
+    )
+
+    assert parser_module._resolve_pdf_parse_method("tenant-model-1") == ("MinerU", "ocr-model@runtime@MinerU")
+    assert calls == [
+        ("model", "tenant-model-1"),
+        ("provider", "provider-1"),
+        ("instance", "instance-1"),
+    ]
 
 
 def test_pdf_position_tag_loads_concrete_parser_at_runtime(pdf_parser_stub, monkeypatch):
