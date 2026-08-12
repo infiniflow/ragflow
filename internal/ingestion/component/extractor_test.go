@@ -901,6 +901,27 @@ func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_runEnableMetadata_MidTextThink verifies the full
+// metadata path — LLM call, second-layer <think> strip, JSON parse, merge —
+// tolerates a mid-text reasoning block preceded by a preamble, matching
+// Python gen_metadata. This is the end-to-end guard for callStructured's
+// stripTrailingThink: without it the metadata extraction silently drops.
+func TestExtractorComponent_runEnableMetadata_MidTextThink(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata = %v, want category=finance", meta)
+	}
+}
+
 // TestExtractorComponent_runEnableMetadata_DegradesGracefully verifies that an
 // empty / **ERROR** / unparseable / think-only LLM response does NOT block
 // ingestion: the chunk metadata is left untouched and no error is returned
@@ -1350,6 +1371,48 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("non-JSON response should yield nil map, got %v", got)
+	}
+}
+
+// TestExtractorComponent_callStructured_MidTextThink verifies the metadata
+// path's second cleanup layer (stripTrailingThink) strips a mid-text
+// reasoning block preceded by a preamble, matching Python's gen_metadata
+// double cleanup (async_chat + re.sub r"^.*</think>"). Without it the JSON
+// would survive the leading-only cleanLLMText, fail to parse, and silently
+// drop the metadata extraction.
+func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
+	c := &ExtractorComponent{}
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	if err != nil {
+		t.Fatalf("callStructured: %v", err)
+	}
+	if got == nil || got["a"].(float64) != 1 {
+		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+}
+
+// TestStripTrailingThink verifies the helper mirrors Python's
+// re.sub(r"^.*</think>", "", s, re.DOTALL): it cuts through the LAST
+// </think> and never inspects for **ERROR**.
+func TestStripTrailingThink(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "mid-text think", in: `prefix<think>r</think>{"a":1}`, want: `{"a":1}`},
+		{name: "no think", in: "plain", want: "plain"},
+		{name: "multiple closes", in: "<think>a</think>mid<think>b</think>tail", want: "tail"},
+		{name: "close without open", in: "abc</think>def", want: "def"},
+		{name: "open without close", in: "<think>unclosed", want: "<think>unclosed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripTrailingThink(tt.in); got != tt.want {
+				t.Errorf("stripTrailingThink(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 
