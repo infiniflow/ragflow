@@ -29,7 +29,7 @@ _pkg_name = __name__
 
 def _should_skip_module(mod_name: str) -> bool:
     leaf = mod_name.rsplit(".", 1)[-1]
-    return leaf in {"__init__"} or leaf.startswith("__") or leaf.startswith("_") or leaf.startswith("base")
+    return "tests" in mod_name.split(".") or leaf.startswith(("_", "base"))
 
 
 def _import_submodules() -> None:

@@ -18,14 +18,14 @@ from io import BytesIO
 
 from bs4 import BeautifulSoup
 from docx import Document
-from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import (
-    get_tenant_default_model_by_type,
-    resolve_model_config,
-)
+
 from common.constants import LLMType
-from deepdoc.parser.figure_parser import VisionFigureParser
 from rag.nlp import is_english, random_choices, remove_contents_table
+
+LLMBundle = None
+VisionFigureParser = None
+get_tenant_default_model_by_type = None
+resolve_model_config = None
 
 
 def remove_toc(items):
@@ -168,6 +168,24 @@ def enhance_media_sections_with_vision(
 ):
     if not sections or not tenant_id:
         return sections
+
+    global LLMBundle, VisionFigureParser, get_tenant_default_model_by_type, resolve_model_config
+
+    if get_tenant_default_model_by_type is None or resolve_model_config is None:
+        from api.db.joint_services import tenant_model_service
+
+        if get_tenant_default_model_by_type is None:
+            get_tenant_default_model_by_type = tenant_model_service.get_tenant_default_model_by_type
+        if resolve_model_config is None:
+            resolve_model_config = tenant_model_service.resolve_model_config
+    if LLMBundle is None:
+        from api.db.services.llm_service import LLMBundle as runtime_llm_bundle
+
+        LLMBundle = runtime_llm_bundle
+    if VisionFigureParser is None:
+        from deepdoc.parser.figure_parser import VisionFigureParser as runtime_vision_figure_parser
+
+        VisionFigureParser = runtime_vision_figure_parser
 
     lang = lang or "English"
 
