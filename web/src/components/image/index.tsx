@@ -213,11 +213,15 @@ export const AuthenticatedImg = ({
   );
 };
 
-const Image = ({ id, t, label, className, ...props }: IImage) => {
+const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
+  { id, t, label, className, ...props },
+  ref,
+) {
   const src = useDocumentImageUrl(id, t);
   const imageElement = (
     <img
       {...props}
+      ref={ref}
       src={src || undefined}
       className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
@@ -235,7 +239,7 @@ const Image = ({ id, t, label, className, ...props }: IImage) => {
       </div>
     </div>
   );
-};
+});
 
 export default Image;
 
