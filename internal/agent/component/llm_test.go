@@ -262,9 +262,130 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 	}
 }
 
-// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
-// in the agent canvas are resolved to their real provider/model name, driver,
-// and credentials before the LLM call is dispatched.
+// TestLLM_Invoke_CompositeModel_CustomContextOverride verifies the composite
+// reference path of the tenant-configured override: a 2000-token extra
+// max_tokens on the tenant's gpt-4o row drives trimming even though the
+// catalog reports 128k.
+func TestLLM_Invoke_CompositeModel_CustomContextOverride(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-comp-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-comp-1",
+		ProviderID:   "provider-comp-1",
+		InstanceName: "default",
+		APIKey:       "test-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-comp-1",
+		InstanceID: "instance-comp-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 2000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@OpenAI"})
+	if _, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got > 2000 || got < 1000 {
+		t.Fatalf("user message = %d tokens; want trimmed to the custom 2000-token context window (~1940)", got)
+	}
+}
+
+// TestLLM_Invoke_UUIDModel_CustomContextOverride verifies end to end that a
+// tenant-configured "max_tokens" override in tenant_model.extra wins over the
+// provider catalog's content_length: with an override of 2000 and a 40k-token
+// prompt, the user message must be trimmed to roughly the override budget, not
+// preserved under gpt-4o's 128k catalog window.
+func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-uuid-2",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-uuid-2",
+		ProviderID:   "provider-uuid-2",
+		InstanceName: "default",
+		APIKey:       "test-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-uuid-2",
+		InstanceID: "instance-uuid-2",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 2000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "0123456789abcdef0123456789abcdef"})
+	if _, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	// 97% of the 2000-token override budget; the catalog's 128k must not apply.
+	if got := tokenizer.NumTokensFromString(userContent); got > 2000 || got < 1000 {
+		t.Fatalf("user message = %d tokens; want trimmed to the custom 2000-token context window (~1940)", got)
+	}
+}
+
 // TestLLM_Invoke_UUIDModel_ResolvesContentLength verifies the tenant-model
 // UUID path of content_length resolution end to end: with a real in-memory
 // DB row for gpt-4o@OpenAI, the fitting budget comes from the catalog's
@@ -326,6 +447,9 @@ func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 	}
 }
 
+// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
+// in the agent canvas are resolved to their real provider/model name, driver,
+// and credentials before the LLM call is dispatched.
 func TestLLM_ResolvesTenantModelID(t *testing.T) {
 	db := setupComponentTestDB(t)
 	pushComponentDB(t, db)

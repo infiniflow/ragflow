@@ -1901,6 +1901,59 @@ func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_CallRaw_CustomContextOverride verifies the extractor
+// wiring honors the tenant-configured override end to end: with a 2000-token
+// extra max_tokens on the gpt-4o row, the invoker receives messages fitted to
+// ~1940 tokens instead of the catalog's 128k.
+func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	// Add the instance row the composite resolution path needs, then pin the
+	// tenant-configured context override on the model.
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-openai",
+		InstanceName: "default",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Model(&entity.TenantModel{}).
+		Where("id = ?", "0123456789abcdef0123456789abcdef").
+		Update("extra", `{"max_tokens": 2000}`).Error; err != nil {
+		t.Fatalf("set model extra: %v", err)
+	}
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
+	c := &ExtractorComponent{}
+	_, err := c.callText(ctx, db, extractorInputs{
+		systemPrompt: "extract fields",
+		prompt:       "summarize",
+		llmID:        "gpt-4o@OpenAI",
+	}, strings.Repeat("chunk text with lots of tokens. ", 500))
+	if err != nil {
+		t.Fatalf("callText: %v", err)
+	}
+
+	stub.mu.Lock()
+	req := stub.lastReq
+	stub.mu.Unlock()
+	if len(req.Messages) == 0 {
+		t.Fatal("invoker was not called")
+	}
+	if req.Messages[0].Role != eschema.System || strings.TrimSpace(req.Messages[0].Content) == "" {
+		t.Fatalf("system prompt lost or emptied: %+v", req.Messages[0])
+	}
+	total := 0
+	for _, m := range req.Messages {
+		total += tokenizer.NumTokensFromString(m.Content)
+	}
+	if total > 2000 {
+		t.Fatalf("sent messages total %d exceed the custom 2000-token context window", total)
+	}
+}
+
 // openExtractorContextTestDB returns an in-memory DB with the tenant and
 // tenant-model tables migrated. Tests pass the returned handle explicitly to
 // extractorContextLength, defaultChatModelRef, and dao.ResolveModelContentLength,
@@ -1911,7 +1964,7 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
