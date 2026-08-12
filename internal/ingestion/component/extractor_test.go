@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
@@ -1857,6 +1858,46 @@ func TestFitExtractorMessages_NoSystemPromptKeepsUserTurn(t *testing.T) {
 	}
 	if strings.TrimSpace(fitted[0].Content) == "" {
 		t.Fatal("user turn was emptied")
+	}
+}
+
+// TestExtractorComponent_CallRaw_FitsBeforeInvoke verifies the production
+// wiring end to end: callRaw resolves the model's context length, trims the
+// messages to the budget, and hands the fitted messages to the invoker.
+func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 200 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
+	c := &ExtractorComponent{}
+
+	_, err := c.callText(t.Context(), nil, extractorInputs{
+		systemPrompt: "extract fields",
+		prompt:       "summarize",
+		llmID:        "test@test",
+	}, strings.Repeat("chunk text with lots of tokens. ", 500))
+	if err != nil {
+		t.Fatalf("callText: %v", err)
+	}
+
+	stub.mu.Lock()
+	req := stub.lastReq
+	stub.mu.Unlock()
+	if len(req.Messages) == 0 {
+		t.Fatal("invoker was not called")
+	}
+	if req.Messages[0].Role != eschema.System || strings.TrimSpace(req.Messages[0].Content) == "" {
+		t.Fatalf("system prompt lost or emptied before invoke: %+v", req.Messages[0])
+	}
+	total := 0
+	for _, m := range req.Messages {
+		total += tokenizer.NumTokensFromString(m.Content)
+	}
+	if total > extractorContextFitBudget(200) {
+		t.Fatalf("sent messages total %d exceed the fitting budget %d", total, extractorContextFitBudget(200))
+	}
+	if !strings.Contains(req.Messages[len(req.Messages)-1].Content, "chunk text") {
+		t.Fatal("chunk text lost from the user turn")
 	}
 }
 
