@@ -27,14 +27,16 @@ import (
 	"sync"
 )
 
-// NavNode mirrors Python's _nav_item (dataset_api_service.py).
+// NavNode mirrors Python's _nav_item (dataset_api_service.py). The JSON field
+// names are snake_case to match the frontend DatasetNavNode contract and the
+// Python GET /navigation payload exactly.
 type NavNode struct {
-	Name        string // name
-	Description string // content_with_weight payload description
-	DocCount    int    // doc_count_int (cluster) or 1 (leaf)
-	Type        string // "cluster" | "doc"
-	DocID       string // leaf doc_id; empty for cluster
-	HasChildren bool   // is_cluster
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	DocCount    int    `json:"doc_count"`
+	Type        string `json:"type"`
+	DocID       string `json:"doc_id,omitempty"`
+	HasChildren bool   `json:"has_children"`
 }
 
 // NavHit is one KNN hit on a nav row.

@@ -53,6 +53,18 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
+	// Project the RAPTOR tree onto the {entities, relations} structure-graph
+	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
+	// plus a compact graph blob (knowledge_graph_kwd="graph"), so the
+	// document-structure /structure/graph endpoint can serve the tree. A failure
+	// here must not abort the whole tree compile — the summary nodes are already
+	// valid on their own — so it is best-effort and surfaced as a log.
+	if graphProds, err := buildTreeGraph(ctx, deps, docID, products); err != nil {
+		log.Printf("tree: graph projection failed (best-effort, continuing): %v", err)
+	} else {
+		products = append(products, graphProds...)
+	}
+
 	out := common.Outputs{
 		Products: products,
 	}
