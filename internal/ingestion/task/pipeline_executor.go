@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
 	"gorm.io/gorm"
 )
@@ -198,13 +199,13 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 // performs no DB/index writes — the embedding vectors already computed by the
 // pipeline run are left on the chunks. This keeps debug runs side-effect free.
 func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
-	chunks := NormalizeChunks(pipelineOutput)
+	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Chunks:           chunks,
 		ChunkCount:       countDistinctChunkIDs(chunks),
-		TokenConsumption: GetEmbeddingTokenConsumption(pipelineOutput),
+		TokenConsumption: indexdoc.GetEmbeddingTokenConsumption(pipelineOutput),
 		Duration:         time.Since(start).Seconds(),
 	}, nil
 }
@@ -217,16 +218,15 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	chunks := NormalizeChunks(pipelineOutput)
+	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	if len(chunks) == 0 {
 		return nil, nil
 	}
 
-	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
-	metadata, err := ProcessChunksForPipeline(
+	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
-		s.taskCtx.Doc.KbID,
 		*s.taskCtx.Doc.Name,
 		time.Now(),
 	)
@@ -234,7 +234,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	tableMeta := AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {
 		if metadata == nil {
 			metadata = make(map[string]any)
@@ -263,7 +263,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// (available_int=1). The notification is sent only after a successful persist
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, 0); err != nil {
+	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 	}
 
@@ -374,7 +374,22 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 	if len(parserConfig) == 0 {
 		return
 	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams([]byte(dsl))
+	// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
+	// production, so it must be unwrapped before ExtractAllComponentParams
+	// runs (that helper expects the inner DSL). The previous direct call
+	// passed the enveloped DSL, whose "components" key is nested under "dsl",
+	// so it silently returned an error and made this guard a no-op.
+	inner, err := pipelinepkg.UnwrapCanvasDSL([]byte(dsl))
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
+		return
+	}
+	innerJSON, err := json.Marshal(inner)
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot re-encode DSL: %v", err))
+		return
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams(innerJSON)
 	if err != nil {
 		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
 		return
@@ -403,14 +418,6 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
-	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
-	// When the dataset enables auto-metadata, ensure the Extractor node(s)
-	// carry the enable_metadata mode + field schema so the LLM extraction fires
-	// (mirrors Python task_executor.py:519 enabling gen_metadata_task). The
-	// dataset flag is authoritative: a node that already has enable_metadata
-	// turned on keeps its own config, but a shipped DSL defaulting it to 0 is
-	// still overridden so auto-metadata can activate.
-	common.InjectExtractorEnableMetadata(parserConfig)
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;
@@ -472,9 +479,12 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// and the document's filetype family. It is NOT passed through pipeline
 	// inputs: the parser selects pages from ParserConfig[cpnID][family]
 	// ["pages"] (a list of 1-indexed inclusive ranges), exactly mirroring
-	// NormalizeParserConfigPages / pdf_pages_test.go. See injectDebugPageCap.
+	// NormalizeParserConfigPages / pdf_pages_test.go. The DSL/parser-family
+	// knowledge now lives in pipeline.BuildParserPageCapOverride.
 	if debug {
-		injectDebugPageCap(dsl, parserConfig, s.taskCtx.Doc.Type)
+		parserConfig = pipelinepkg.BuildParserPageCapOverride(
+			parserConfig, []byte(dsl), s.taskCtx.Doc.Type,
+			debugPageCapPages, component.ComponentNameParser, component.ParserFileFamily)
 	}
 
 	// Component params from Doc.ParserConfig — including the tenant LLM id
@@ -494,7 +504,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// contract is unchanged, keeping the coupling one-directional.
 	if rs, ok := s.progressSink.(ResultSink); ok {
 		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL)
+			rs.SetResult(resultDSL, output)
 		}
 	}
 
@@ -511,79 +521,3 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
-
-// injectDebugPageCap wires the canvas-debug page cap into parserConfig using
-// the SAME channel the production ParserConfig travels through: Run's
-// override_params (the 3rd argument), keyed by the Parser component's cpnID
-// and the document's filetype family. It must NOT be passed as a pipeline
-// input — the parser selects pages from ParserConfig[cpnID][family]["pages"],
-// which the deepdoc/pdf parser consumes as a list of page ranges.
-//
-// dsl is the raw pipeline DSL (used only to discover the Parser component's
-// cpnID); docType is the uploaded file's extension (e.g. "pdf"). When no
-// Parser component can be found, or the docType yields no known family, the
-// call is a no-op (the run parses everything, which is safe).
-//
-// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
-// production (loadDSLFromCanvas marshals canvas.DSL), so it is unwrapped the
-// same way NewPipelineFromDSL does before ExtractAllComponentParams runs.
-// An explicit page cap already present in parserConfig (keyed by cpnID +
-// family) is respected and left untouched — the debug default is only a
-// fallback, so a debug run can honour a narrower or wider caller-supplied cap.
-func injectDebugPageCap(dsl string, parserConfig map[string]any, docType string) {
-	// Unwrap the canvas envelope to the inner components map.
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(dsl), &raw); err != nil {
-		return
-	}
-	if env, ok := raw["dsl"].(map[string]any); ok && len(env) > 0 {
-		raw = env
-	}
-	inner, err := json.Marshal(raw)
-	if err != nil {
-		return
-	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams(inner)
-	if err != nil {
-		return
-	}
-	var parserCpnID string
-	for _, s := range schemas {
-		if s.ComponentName == component.ComponentNameParser {
-			parserCpnID = s.CpnID
-			break
-		}
-	}
-	if parserCpnID == "" {
-		return
-	}
-	family := component.ParserFileFamily(docType)
-	if family == "" {
-		return
-	}
-	// Respect an explicit page cap already present under cpnID + family.
-	if cpnEntry, ok := parserConfig[parserCpnID].(map[string]any); ok {
-		if famEntry, ok := cpnEntry[family].(map[string]any); ok {
-			if _, has := famEntry["pages"]; has {
-				return
-			}
-		}
-	}
-	cpnEntry, ok := parserConfig[parserCpnID].(map[string]any)
-	if !ok {
-		cpnEntry = map[string]any{}
-		parserConfig[parserCpnID] = cpnEntry
-	}
-	famEntry, ok := cpnEntry[family].(map[string]any)
-	if !ok {
-		famEntry = map[string]any{}
-		cpnEntry[family] = famEntry
-	}
-	// pages is delivered as a JSON-decoded map — the very shape a ParserConfig
-	// arrives in from the API/storage JSON round-trip: a []any of [from,to]
-	// pairs. The deepdoc/pdf parser's NormalizePDFPages requires this
-	// []any-of-[]any form (not a Go [][]int), so it is built explicitly here.
-	// The shallow override_params merge in applyOverrideParams preserves this
-	// shape all the way to ConfigureFromSetup, so the cap is honoured.
-	famEntry["pages"] = []any{[]any{1, debugPageCapPages}}
-}

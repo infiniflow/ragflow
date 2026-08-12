@@ -25,12 +25,13 @@ SEARCH_PHASES = {
         "tools_priority": [
             "hybrid_search",
             "bm25_search",
+            "web_search",
             "graph_explore",
             "inspector_open_context",
             "inspector_request_adjacent",
         ],
         "max_returned": 4,
-        "tool_hint": "Prefer retrieval tools to gather detailed information within the located region.",
+        "tool_hint": "Prefer retrieval tools to gather detailed information within the located region; use web_search when the knowledge base lacks the answer or the question needs current/external facts.",
     },
     "verify": {
         "goal": "Verify consistency across multiple sources.",
@@ -38,11 +39,11 @@ SEARCH_PHASES = {
             "inspector_open_context",
             "inspector_compare",
             "inspector_grep_within",
-            "hybrid_search",
             "web_search",
+            "hybrid_search",
         ],
         "max_returned": 4,
-        "tool_hint": "Prefer inspector tools to compare existing evidence before searching for new content.",
+        "tool_hint": "Prefer inspector tools to compare existing evidence; use web_search to corroborate against external sources.",
     },
     "cross_domain": {
         "goal": "Explore cross-domain relationships for discovered entities.",
@@ -89,15 +90,19 @@ def get_gated_tools(
     compilation_map: dict[str, set[str]],
     context: OrchestratorContext,
     has_routed_scope: bool = False,
+    web_enabled: bool = True,
 ) -> list[dict]:
     """Filter, sort, and gate tools by phase priority and context."""
     phase_config = SEARCH_PHASES.get(phase)
     if not phase_config:
-        return _default_defs(available_tools)
+        return _default_defs(available_tools, web_enabled)
 
     sorted_tools = []
     for tool_name in phase_config["tools_priority"]:
         if tool_name not in available_tools:
+            continue
+        if tool_name == "web_search" and not web_enabled:
+            # No web provider configured — don't bind a tool that no-ops.
             continue
         if not compilation_available(tool_name, compilation_map):
             continue
@@ -106,15 +111,18 @@ def get_gated_tools(
         sorted_tools.append(tool_name)
 
     selected = sorted_tools[: phase_config["max_returned"]]
-    defs = [TOOL_REGISTRY[n]["function_schema"] for n in selected if n in TOOL_REGISTRY]
-    for d in defs:
-        d["x_phase"] = phase
-        d["x_phase_hint"] = phase_config["tool_hint"]
+    # Copy the registry schemas before annotating — the registry dicts are
+    # shared process-wide, mutating them would leak phase hints across
+    # concurrent requests.
+    defs = []
+    for n in selected:
+        if n in TOOL_REGISTRY:
+            defs.append({**TOOL_REGISTRY[n]["function_schema"], "x_phase": phase, "x_phase_hint": phase_config["tool_hint"]})
     return defs
 
 
-def _default_defs(tool_names: list[str]) -> list[dict]:
-    return [TOOL_REGISTRY[n]["function_schema"] for n in tool_names if n in TOOL_REGISTRY]
+def _default_defs(tool_names: list[str], web_enabled: bool = True) -> list[dict]:
+    return [TOOL_REGISTRY[n]["function_schema"] for n in tool_names if n in TOOL_REGISTRY and (web_enabled or n != "web_search")]
 
 
 def determine_current_phase(context: OrchestratorContext) -> str:

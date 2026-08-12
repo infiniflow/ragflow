@@ -6,7 +6,7 @@ import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import { TagTabs } from './tag-tabs';
-import { ImageMap } from './utils';
+import { DescriptionKeyMap, ImageMap } from './utils';
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -15,9 +15,10 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const item = useMemo(() => {
     const item = parserList.find((x) => x.value === chunkMethod);
     if (item) {
+      const descriptionKey = DescriptionKeyMap[item.value] ?? item.value;
       return {
         title: item.label,
-        description: t(camelCase(item.value)),
+        description: t(camelCase(descriptionKey)),
       };
     }
     return { title: '', description: '' };

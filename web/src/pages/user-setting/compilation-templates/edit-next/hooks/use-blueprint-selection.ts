@@ -1,5 +1,25 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { SelectWithSearchFlagOptionType } from '@/components/originui/select-with-search';
-import { IWikiPreset } from '@/interfaces/database/compilation-template';
+import {
+  ICompilationTemplateBuiltin,
+  IWikiPreset,
+} from '@/interfaces/database/compilation-template';
+import { capitalize, lowerCase } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -12,50 +32,57 @@ type UseBlueprintSelectionParams = {
   form: UseFormReturn<FormSchemaType>;
   selectedTemplateIndex: number;
   presets: IWikiPreset[];
+  builtins: ICompilationTemplateBuiltin[];
 };
 
 const isSameBlueprintContent = (
   preset: IWikiPreset,
   instruction: string,
-  pageExample: string,
+  example: string,
 ) =>
   preset.instruction.trim() === instruction.trim() &&
-  preset.page_example.trim() === pageExample.trim();
+  preset.example.trim() === example.trim();
 
 export function useBlueprintSelection({
   form,
   selectedTemplateIndex,
   presets,
+  builtins,
 }: UseBlueprintSelectionParams) {
   const { t } = useTranslation();
   const [explicitValue, setExplicitValue] = useState<string>();
 
+  const kindPath = `templates.${selectedTemplateIndex}.kind` as const;
   const instructionPath =
     `templates.${selectedTemplateIndex}.config.instruction` as const;
-  const pageExamplePath =
-    `templates.${selectedTemplateIndex}.config.page_example` as const;
+  const examplePath =
+    `templates.${selectedTemplateIndex}.config.example` as const;
   const useBlueprintPath =
     `templates.${selectedTemplateIndex}.config.use_blueprint` as const;
 
+  const kind = useWatch({
+    control: form.control,
+    name: kindPath,
+  });
   const instruction = useWatch({
     control: form.control,
     name: instructionPath,
   });
-  const pageExample = useWatch({
+  const example = useWatch({
     control: form.control,
-    name: pageExamplePath,
+    name: examplePath,
   });
 
   const matchedPresetId = useMemo(() => {
     const currentInstruction = String(instruction ?? '');
-    const currentPageExample = String(pageExample ?? '');
-    if (!currentInstruction.trim() && !currentPageExample.trim()) {
+    const currentExample = String(example ?? '');
+    if (!currentInstruction.trim() && !currentExample.trim()) {
       return undefined;
     }
     return presets.find((preset) =>
-      isSameBlueprintContent(preset, currentInstruction, currentPageExample),
+      isSameBlueprintContent(preset, currentInstruction, currentExample),
     )?.id;
-  }, [instruction, pageExample, presets]);
+  }, [instruction, example, presets]);
 
   const selectedValue =
     explicitValue ?? matchedPresetId ?? CustomBlueprintValue;
@@ -63,7 +90,7 @@ export function useBlueprintSelection({
   const options = useMemo<SelectWithSearchFlagOptionType[]>(
     () => [
       ...presets.map((preset) => ({
-        label: preset.id,
+        label: capitalize(lowerCase(preset.id)),
         value: preset.id,
       })),
       { label: t('setting.custom'), value: CustomBlueprintValue },
@@ -77,26 +104,30 @@ export function useBlueprintSelection({
       setExplicitValue(value);
 
       if (value === CustomBlueprintValue) {
-        const defaultConfig =
-          form.formState.defaultValues?.templates?.[selectedTemplateIndex]
-            ?.config;
-        form.setValue(
-          instructionPath,
-          String(defaultConfig?.instruction ?? ''),
-          { shouldValidate: false },
+        const builtinTemplate = builtins.find(
+          (template) => template.kind === kind,
         );
-        form.setValue(
-          pageExamplePath,
-          String(defaultConfig?.page_example ?? ''),
-          { shouldValidate: false },
-        );
+        const defaultInstruction =
+          typeof builtinTemplate?.config?.instruction === 'string'
+            ? builtinTemplate.config.instruction
+            : '';
+        const defaultPageExample =
+          typeof builtinTemplate?.config?.example === 'string'
+            ? builtinTemplate.config.example
+            : '';
+        form.setValue(instructionPath, defaultInstruction, {
+          shouldValidate: false,
+        });
+        form.setValue(examplePath, defaultPageExample, {
+          shouldValidate: false,
+        });
       } else {
         const preset = presets.find((item) => item.id === value);
         if (!preset) return;
         form.setValue(instructionPath, preset.instruction, {
           shouldValidate: false,
         });
-        form.setValue(pageExamplePath, preset.page_example, {
+        form.setValue(examplePath, preset.example, {
           shouldValidate: false,
         });
       }
@@ -104,21 +135,15 @@ export function useBlueprintSelection({
       form.setValue(useBlueprintPath, true, { shouldValidate: false });
     },
     [
+      builtins,
       form,
       instructionPath,
-      pageExamplePath,
+      kind,
+      examplePath,
       presets,
-      selectedTemplateIndex,
       selectedValue,
       useBlueprintPath,
     ],
-  );
-
-  const handlePageExampleChange = useCallback(
-    (value: string) => {
-      form.setValue(pageExamplePath, value, { shouldValidate: false });
-    },
-    [form, pageExamplePath],
   );
 
   return {
@@ -126,7 +151,6 @@ export function useBlueprintSelection({
     options,
     handleSelect,
     instructionPath,
-    pageExample,
-    handlePageExampleChange,
+    examplePath,
   };
 }

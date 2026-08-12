@@ -92,6 +92,7 @@ func TestTokenPonyFactory(t *testing.T) {
 }
 
 func TestTokenPonyChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-32b" {
@@ -99,9 +100,6 @@ func TestTokenPonyChatHappyPath(t *testing.T) {
 		}
 		if body["stream"] != false {
 			t.Errorf("stream=%v, want false", body["stream"])
-		}
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v, want 64", body["max_tokens"])
 		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
@@ -140,6 +138,7 @@ func TestTokenPonyChatHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyChatNoReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -168,6 +167,7 @@ func TestTokenPonyChatNoReasoning(t *testing.T) {
 }
 
 func TestTokenPonyChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newTokenPonyForTest("http://unused").ChatWithMessages(
 		ctx,
@@ -180,6 +180,7 @@ func TestTokenPonyChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestTokenPonyChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newTokenPonyForTest("http://unused").ChatWithMessages(
@@ -190,6 +191,7 @@ func TestTokenPonyChatRequiresMessages(t *testing.T) {
 }
 
 func TestTokenPonyChatPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -209,6 +211,7 @@ func TestTokenPonyChatPropagatesHTTPError(t *testing.T) {
 }
 
 func TestTokenPonyStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -249,6 +252,7 @@ func TestTokenPonyStreamHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyStreamSplitsReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -290,6 +294,7 @@ func TestTokenPonyStreamSplitsReasoning(t *testing.T) {
 }
 
 func TestTokenPonyStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
@@ -307,6 +312,7 @@ func TestTokenPonyStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestTokenPonyStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newTokenPonyForTest("http://unused").ChatStreamlyWithSender(
@@ -320,6 +326,7 @@ func TestTokenPonyStreamRequiresSender(t *testing.T) {
 }
 
 func TestTokenPonyStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
@@ -339,6 +346,7 @@ func TestTokenPonyStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestTokenPonyStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
@@ -359,6 +367,7 @@ func TestTokenPonyStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestTokenPonyStreamSurfacesUpstreamError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newTokenPonySSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"rate limit","type":"rate_limit_error"}}`+"\n",
@@ -382,6 +391,7 @@ func TestTokenPonyStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestTokenPonyListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -406,6 +416,7 @@ func TestTokenPonyListModelsHappyPath(t *testing.T) {
 }
 
 func TestTokenPonyListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newTokenPonyForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -414,6 +425,7 @@ func TestTokenPonyListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestTokenPonyCheckConnectionDelegatesToListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -429,6 +441,7 @@ func TestTokenPonyCheckConnectionDelegatesToListModels(t *testing.T) {
 }
 
 func TestTokenPonyCheckConnectionPropagatesError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenPonyServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -444,6 +457,7 @@ func TestTokenPonyCheckConnectionPropagatesError(t *testing.T) {
 }
 
 func TestTokenPonyBaseURLForRegionUnknown(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newTokenPonyForTest("http://unused")
 	apiKey := "test-key"
@@ -455,6 +469,7 @@ func TestTokenPonyBaseURLForRegionUnknown(t *testing.T) {
 }
 
 func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "x"
 	_, err := newTokenPonyForTest("http://unused").Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
@@ -464,6 +479,7 @@ func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestTokenPonyAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newTokenPonyForTest("http://unused")
 	model := "x"

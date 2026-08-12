@@ -4,7 +4,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
-import { GenerateStatus, GenerateType } from '@/constants/knowledge';
+import { GenerateType } from '@/constants/knowledge';
 import {
   useGenerateStatus,
   useTraceRunData,
@@ -16,12 +16,13 @@ import {
   useFetchKnowledgeBaseConfiguration,
 } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams } from 'react-router';
 
 import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
+import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
@@ -44,17 +45,15 @@ export function LlmWikiView() {
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
   const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
-  useEffect(() => {
-    if (artifactStatus === GenerateStatus.Completed) {
-      setUpdateSheetOpen(false);
-      queryClient.invalidateQueries({
-        queryKey: ArtifactKeys.listByDataset(id!),
-      });
-      queryClient.invalidateQueries({
-        queryKey: ArtifactTopicKeys.listByDataset(id!),
-      });
-    }
-  }, [artifactStatus, queryClient, id]);
+  const handleRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ArtifactKeys.listByDataset(id!),
+    });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactTopicKeys.listByDataset(id!),
+    });
+  }, [queryClient, id]);
+  useRunEndEffect(artifactStatus, handleRunEnd);
 
   const handleLeftTabChange = useCallback((value: string) => {
     setLeftTab(value as LeftPanelTab);

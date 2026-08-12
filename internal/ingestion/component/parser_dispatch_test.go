@@ -61,7 +61,7 @@ func (c *captureSetupConfigurer) ConfigureFromSetup(setup map[string]any) {
 func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
-	// Defaults already include markdown → {text, json}.
+	// Defaults already include Markdown → {text, json}.
 	c := &ParserComponent{Param: param, Setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -100,14 +100,14 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 
 // TestDispatch_OutputFormatValidation_Rejection pins the
 // whitelist enforcement: a request for output_format=html on the
-// markdown family is rejected because markdown's allowed list is
+// Markdown family is rejected because Markdown's allowed list is
 // {text, json}. The component must surface this as a hard error
 // before any fallback so a misconfigured template cannot silently
 // degrade.
 func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
-	// Override the markdown setup to ask for an unsupported format.
+	// Override the Markdown setup to ask for an unsupported format.
 	// The key is "markdown" (the python-side family identifier),
 	// NOT "md" — utility.FileTypeMarkdown happens to be the string
 	// "md" but the setup key is the family name. resolveOutputFormat
@@ -347,7 +347,7 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 	if !ok || md == "" {
 		t.Fatalf("markdown payload missing or empty: %T", out["markdown"])
 	}
-	if _, ok := out["json"]; ok {
+	if _, ok = out["json"]; ok {
 		t.Fatalf("json payload must be absent for markdown output: %+v", out["json"])
 	}
 }
@@ -544,6 +544,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 }
 
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
 			buf := new(bytes.Buffer)
@@ -644,6 +645,7 @@ func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfi
 }
 
 func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
 			http.NotFound(w, r)
@@ -684,6 +686,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
 }
 
 func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
@@ -736,6 +739,7 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 }
 
 func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
 			http.NotFound(w, r)
@@ -768,6 +772,7 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 }
 
 func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/parse/async":
@@ -802,6 +807,7 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 }
 
 func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	zipPayload := tcadpZipFixtureForComponent(t)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

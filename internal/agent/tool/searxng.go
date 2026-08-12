@@ -186,19 +186,19 @@ func (s *SearXNGTool) fetch(ctx context.Context, endpoint, host string, pinnedIP
 
 	resp, err := s.helper.DoPinned(requestCtx, http.MethodGet, endpoint, "", "", nil, host, pinnedIP)
 	if err != nil {
-		return nil, fmt.Errorf("Network error: %w", err)
+		return nil, fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("Network error: SearXNG returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("network error: SearXNG returned %d", resp.StatusCode)
 	}
 
 	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("Invalid response from SearXNG: %w", err)
+	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("invalid response from SearXNG: %w", err)
 	}
 	if data == nil {
-		return nil, fmt.Errorf("Invalid response from SearXNG")
+		return nil, fmt.Errorf("invalid response from SearXNG")
 	}
 	rawResults, ok := data["results"]
 	if !ok {
@@ -206,11 +206,11 @@ func (s *SearXNGTool) fetch(ctx context.Context, endpoint, host string, pinnedIP
 	}
 	results, ok := rawResults.([]any)
 	if !ok {
-		return nil, fmt.Errorf("Invalid results format from SearXNG")
+		return nil, fmt.Errorf("invalid results format from SearXNG")
 	}
 	for _, result := range results {
 		if _, ok := result.(map[string]any); !ok {
-			return nil, fmt.Errorf("Invalid results format from SearXNG")
+			return nil, fmt.Errorf("invalid results format from SearXNG")
 		}
 	}
 	return results, nil

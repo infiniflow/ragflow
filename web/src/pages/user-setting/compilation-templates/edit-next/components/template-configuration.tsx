@@ -1,4 +1,19 @@
-import { ModelTreeSelectFormField } from '@/components/model-tree-select';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -90,7 +105,7 @@ export function TemplateConfiguration({
     builtins,
   });
 
-  const { activeFieldsPath, builtinSection, editingField } =
+  const { activeFieldsPath, builtinSection, existingFields, editingField } =
     useTemplateSectionData(
       form,
       selectedTemplateIndex,
@@ -160,12 +175,6 @@ export function TemplateConfiguration({
             />
           </RAGFlowFormItem>
 
-          <ModelTreeSelectFormField
-            name={`templates.${selectedTemplateIndex}.llm_id`}
-            label={t('setting.llmForExtraction')}
-            required
-          />
-
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.kind`}
             label={t('knowledgeCompilation.builtinTemplates')}
@@ -192,6 +201,14 @@ export function TemplateConfiguration({
               resize="vertical"
             />
           </RAGFlowFormItem>
+
+          {kind === CompilationTemplateKind.Artifacts && (
+            <SwitchFormField
+              name={`templates.${selectedTemplateIndex}.config.plan`}
+              label={t('setting.plan')}
+              vertical={false}
+            />
+          )}
 
           {kind === CompilationTemplateKind.Tree ? (
             <TreeTemplateFields index={selectedTemplateIndex} />
@@ -263,6 +280,7 @@ export function TemplateConfiguration({
         onOpenChange={handleModalOpenChange}
         sectionName={activeSectionTab}
         builtinSection={builtinSection}
+        existingFields={existingFields}
         initialField={editingField}
         onAdd={handleAddField}
       />

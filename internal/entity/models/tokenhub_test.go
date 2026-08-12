@@ -98,6 +98,7 @@ func TestTokenHubFactory(t *testing.T) {
 }
 
 func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenHubServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != false {
@@ -136,6 +137,7 @@ func TestTokenHubChatWithMessagesForcesNonStreaming(t *testing.T) {
 }
 
 func TestTokenHubChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newTokenHubForTest("http://unused").ChatWithMessages(ctx, "gpt-4o-mini", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -144,6 +146,7 @@ func TestTokenHubChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestTokenHubChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newTokenHubForTest("http://unused").ChatWithMessages(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -153,6 +156,7 @@ func TestTokenHubChatRequiresModelName(t *testing.T) {
 }
 
 func TestTokenHubStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenHubSSEServer(t, "/chat/completions", strings.Join([]string{
 		`data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}`,
@@ -194,6 +198,7 @@ func TestTokenHubStreamHappyPath(t *testing.T) {
 }
 
 func TestTokenHubStreamRejectsFalseStreamConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
@@ -212,6 +217,7 @@ func TestTokenHubStreamRejectsFalseStreamConfig(t *testing.T) {
 }
 
 func TestTokenHubStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newTokenHubForTest("http://unused").ChatStreamlyWithSender(
@@ -229,6 +235,7 @@ func TestTokenHubStreamRequiresSender(t *testing.T) {
 }
 
 func TestTokenHubStreamRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	err := newTokenHubForTest("http://unused").ChatStreamlyWithSender(
 		ctx,
@@ -245,6 +252,7 @@ func TestTokenHubStreamRequiresAPIKey(t *testing.T) {
 }
 
 func TestTokenHubStreamRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newTokenHubForTest("http://unused").ChatStreamlyWithSender(
@@ -262,6 +270,7 @@ func TestTokenHubStreamRequiresModelName(t *testing.T) {
 }
 
 func TestTokenHubEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenHubServer(t, http.MethodPost, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "text-embedding-3-small" {
@@ -294,6 +303,7 @@ func TestTokenHubEmbedHappyPath(t *testing.T) {
 }
 
 func TestTokenHubEmbedValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	if embeddings, err := newTokenHubForTest("http://unused").Embed(ctx, nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
@@ -309,6 +319,7 @@ func TestTokenHubEmbedValidatesInputs(t *testing.T) {
 }
 
 func TestTokenHubListModelsHappyPathSkipsMalformedItems(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTokenHubServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -334,6 +345,7 @@ func TestTokenHubListModelsHappyPathSkipsMalformedItems(t *testing.T) {
 }
 
 func TestTokenHubListModelsValidatesResponseAndAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	if _, err := newTokenHubForTest("http://unused").ListModels(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)

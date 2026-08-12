@@ -52,6 +52,7 @@ func newNvidiaModelForTest(baseURL string) *NvidiaModel {
 }
 
 func TestNvidiaRerankHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "nvidia/nv-rerankqa-mistral-4b-v3" {
@@ -110,6 +111,7 @@ func TestNvidiaRerankHappyPath(t *testing.T) {
 }
 
 func TestNvidiaRerankTopNClamp(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_n"] != float64(2) {
@@ -135,6 +137,7 @@ func TestNvidiaRerankTopNClamp(t *testing.T) {
 }
 
 func TestNvidiaRerankEmptyDocuments(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newNvidiaModelForTest("http://unused")
 	apiKey := "test-key"
@@ -149,6 +152,7 @@ func TestNvidiaRerankEmptyDocuments(t *testing.T) {
 }
 
 func TestNvidiaRerankRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newNvidiaModelForTest("http://unused")
 	modelName := "nvidia/nv-rerankqa-mistral-4b-v3"
@@ -159,6 +163,7 @@ func TestNvidiaRerankRequiresAPIKey(t *testing.T) {
 }
 
 func TestNvidiaRerankRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newNvidiaModelForTest("http://unused")
 	apiKey := "test-key"
@@ -169,6 +174,7 @@ func TestNvidiaRerankRequiresModelName(t *testing.T) {
 }
 
 func TestNvidiaRerankRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -186,6 +192,7 @@ func TestNvidiaRerankRejectsHTTPError(t *testing.T) {
 }
 
 func TestNvidiaRerankRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNvidiaRerankServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{

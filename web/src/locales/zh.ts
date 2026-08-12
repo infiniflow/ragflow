@@ -412,6 +412,9 @@ export default {
       generateToSkills:
         '从该数据集构建分层技能树，并存储生成的技能页面以供搜索和复用。',
       noWikiPages: '暂无 Wiki 页面',
+      compiling: '编译中…',
+      compilingCounts: '处理中 {{inflight}} / 待处理 {{backlog}}',
+      autoCompiled: '文档解析时自动编译。',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
         '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
@@ -841,9 +844,14 @@ export default {
         'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
-      promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
-      {cluster_content}
-以上就是你需要总结的内容。`,
+      promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
+请用与原文相同的语言严格输出两部分：
+1. 第一行：仅输出简洁标题。
+2. 后续行：输出内容的简洁摘要。
+不要输出标签、Markdown 标题、项目符号或其他说明。
+
+段落：
+{cluster_content}`,
       maxToken: '最大token数',
       maxTokenMessage: '最大token数是必填项',
       threshold: '阈值',
@@ -912,7 +920,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       createChunk: '创建解析块',
       editChunk: '编辑解析块',
       bulk: '批量',
-      selectAll: '选择所有',
+      selectAll: '选择当前页',
       enabledSelected: '启用选定的',
       disabledSelected: '禁用选定的',
       deleteSelected: '删除选定的',
@@ -975,7 +983,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       language: '语言',
       emptyResponse: '空回复',
       emptyResponsePlaceholder: '在知识库中未找到您要寻找的答案！',
-      emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
+      emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。仅在思考模式是简单模式时候生效。`,
       emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
@@ -1008,6 +1016,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '关键字',
+      variableKeyMessage: '请输入变量 key',
       optional: '可选的',
       operation: '操作',
       model: '模型',
@@ -1125,6 +1134,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      webSearchProvider: '网络搜索服务',
+      webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
+      webSearchProviderPlaceholder: '请选择网络搜索服务',
+      queritApiKeyTip:
+        '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
+      queritApiKeyMessage: '请输入你的 Querit API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
@@ -1144,7 +1159,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       cancel: '取消',
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
-      locale: '地区',
+      locale: '语言',
       tocEnhance: 'PageIndex',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
@@ -1562,6 +1577,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       templateDescription: '描述',
       llmForExtraction: '默认提取模型',
       llmForExtractionRequired: '请选择 LLM 模型',
+      llmForExtractionUnavailable: '之前选择的模型已被删除，请重新选择',
       templateKind: '类型',
       templateKindRequired: '请选择类型',
       entitySpecification: 'Entity specification',
@@ -1578,16 +1594,24 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       description: '描述',
       descriptionPlaceholder: '请输入描述',
       addField: '添加字段',
-      example: '页面结构示例',
+      example: '示例',
       examplePlaceholder: '请输入示例',
       instruction: 'Instruction',
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
+      plan: 'Plan',
+      planTip: '关闭：每个实体或概念对应一个 wiki 页面。开启：让 LLM 决定将某些实体/概念组合到单个 wiki 页面。',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
       maxToken: '最大 token 数',
       maxTokenRequired: '请输入最大 token 数',
       threshold: '阈值',
+      clusteringThreshold: '聚类阈值',
+      clusteringThresholdTip:
+        '按相邻数据块相似度分布的百分位决定聚类边界。数值越高，产生的聚类边界越多。',
+      clusteringRatio: '聚类比例',
+      clusteringRatioTip:
+        '设置聚类数量相对于输入数据块数量的最大比例。数值越低，聚类数量越少。',
       rechunkByTreeLeaves: '按树叶重新分块',
       rechunkByTreeLeavesTip:
         '将每个叶簇的源数据块合并为单个替换数据块。原始数据块保留但标记为不可检索。每个分组最多只能有一个树模板启用此功能。',
@@ -1610,6 +1634,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addFieldModalTitle: '添加字段',
       editFieldModalTitle: '编辑字段',
       selectFieldType: '选择字段类型',
+      fieldTypeExists: '该字段类型已存在',
       blueprintsPlaceholder: '蓝图占位',
       blueprintsPlaceholderDescription:
         '从左侧的 Blueprint 库中选择或自定义特定结构，以定义您的 Wiki 内容框架和视觉呈现。',
@@ -2021,6 +2046,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       loading: '加载中...',
       selectNode: '选择子节点以查看详情',
       noDescription: '暂无描述',
+      description: '描述',
+      keywords: '关键词',
+      entities: '实体',
+      graphContent: '完整图谱内容',
       docCount: '{{count}} 个文档',
       deleteAllTitle: '删除目录树',
       deleteAllDescription: '确定要删除整个目录树吗？此操作无法撤销。',
@@ -2035,8 +2064,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
+      compileAutoGenerated: '知识编译会在文档解析时自动进行，无需手动触发。',
+      compileNotSupported:
+        '此处不支持手动编译，知识编译会在文档解析时自动进行。',
       updated: '更新成功',
       uploaded: '上传成功',
       200: '服务器成功返回请求的数据。',
@@ -2088,6 +2121,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      exportCurrentPage: '导出当页',
       preprocess: {
         preprocess: '预处理',
         mainContent: '主内容',
@@ -2919,7 +2953,6 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
-      toc: 'PageIndex',
       fieldName: '结果目的地',
       prompts: {
         system: {

@@ -125,12 +125,12 @@ type AsyncChatResult struct {
 //	│                                                       │
 //	│  reasoning=true?                                      │
 //	│   YES → DeepResearcher (recursive, maxDepth=3)        │
-//	│         each layer: KB → Web(Tavily) → KG(use_kg)     │
+//	│         each layer: KB → Web search → KG(use_kg)      │
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
 //	│         TOC enhance → child chunk retrieval →         │
-//	│         Tavily web search → KG retrieval (prepend)    │
+//	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
 //	│    kbPrompt (build knowledge blocks)                  │
@@ -184,7 +184,7 @@ func (s *ChatPipelineService) AsyncChat(
 	if useWebSearch {
 		common.Debug("web_search",
 			zap.Bool("kb", hasKBs),
-			zap.Bool("tavily", chat.PromptConfig != nil && chat.PromptConfig["tavily_api_key"] != "" && chat.PromptConfig["tavily_api_key"] != nil),
+			zap.Bool("configured", resolveWebSearchProvider(chat.PromptConfig) != nil),
 			zap.Any("internet", kwargs["internet"]),
 			zap.Bool("enabled", useWebSearch))
 	}
@@ -403,7 +403,7 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 					}
 					kbinfos := map[string]interface{}{"chunks": chunks}
-					s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
 				out <- AsyncChatResult{
@@ -612,7 +612,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//   b) Otherwise: standard retrieval, then:
 		//      - TOC enhancement (if toc_enhance is enabled).
 		//      - Child chunk retrieval.
-		//      - Tavily web search (if internet is enabled).
+		//      - Web search provider (if internet is enabled).
 		//      - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
 		// When false, the entire block is skipped.
@@ -772,21 +772,21 @@ func (s *ChatPipelineService) AsyncChat(
 					kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
 				}
 
-				// Web search via Tavily
+				// Web search
 				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-					tavResult, tavErr := s.tavilyRetrieve(ctx, tavilyKey, searchQuestion)
-					if tavErr != nil {
-						common.Warn("Tavily web search failed", zap.Error(tavErr))
+					provider := resolveWebSearchProvider(chat.PromptConfig)
+					webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
+					if webErr != nil {
+						common.Warn("Web search failed", zap.Error(webErr))
 					} else {
 						// Extend chunks and doc_aggs with web search results.
 						if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-							if newChunks, ok := tavResult["chunks"].([]map[string]interface{}); ok {
+							if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
 								kbinfos["chunks"] = append(existingChunks, newChunks...)
 							}
 						}
 						if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-							if newAggs, ok := tavResult["doc_aggs"].([]interface{}); ok {
+							if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
 								kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
 							}
 						}
@@ -826,7 +826,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Enrich chunks with document metadata AFTER all retrieval adds.
 		// Request values (kwargs) take precedence over config values.
 		if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta {
-			s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
 
@@ -1755,7 +1755,7 @@ func normalizeInternetFlag(v interface{}) *bool {
 
 // shouldUseWebSearch returns true if web search should be enabled.
 // Mirrors Python's _should_use_web_search (dialog_service.py:122-126):
-// Tavily key must be present on chat.PromptConfig AND the internet
+// A web search provider must be configured on chat.PromptConfig AND the internet
 // flag must normalize to explicit true.
 //
 // The second parameter takes the raw internet value (typically
@@ -1765,8 +1765,7 @@ func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet int
 	if chat.PromptConfig == nil {
 		return false
 	}
-	tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-	if tavilyKey == "" {
+	if resolveWebSearchProvider(chat.PromptConfig) == nil {
 		return false
 	}
 	normalized := normalizeInternetFlag(internet)
@@ -2359,7 +2358,7 @@ func (s *ChatPipelineService) resolveReferenceMetadata(promptConfig map[string]i
 // enrichChunksWithMetadata enriches chunk records in kbinfos with document-level
 // metadata. Mirrors Python's enrich_chunks_with_document_metadata() in
 // api/utils/reference_metadata_utils.py.
-func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interface{}, tenantID string, fields []string) {
+func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbinfos map[string]interface{}, tenantID string, fields []string) {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 	if !ok || len(chunksRaw) == 0 {
 		return
@@ -2371,7 +2370,7 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interf
 		return
 	}
 
-	s.MetadataSvc.EnrichChunksWithDocMetadata(chunks, tenantID, fields)
+	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks.
@@ -2896,10 +2895,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2967,8 +2966,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3426,7 +3425,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase":
+	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
 		bullets := strings.Builder{}
 		for _, n := range names {
@@ -3534,7 +3533,7 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // OpenSearch share the direct-column template. expectedCol is
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3563,7 +3562,7 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // buildExecutionErrorRepairPrompt returns the engine-specific user
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {

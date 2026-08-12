@@ -86,8 +86,12 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
     extra: { is_tools: hasToolFeature(m.features), ...(m.extra ?? {}) },
   }));
 
-/** Resolved credentials for catalog / verify / batch calls. */
-export type ResolvedCreds = { apiKey: string; baseUrl: string };
+/** Resolved credentials for catalog / verify / batch calls.
+ *  `baseUrl` is `undefined` when the provider's form has no `base_url`
+ *  field (e.g. VolcEngine, Google Cloud) so the auto-fetch gate can
+ *  distinguish "no base_url field" from "base_url field exists but is
+ *  empty". */
+export type ResolvedCreds = { apiKey: string; baseUrl: string | undefined };
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
@@ -104,7 +108,7 @@ export function useResolveCreds(
     const fv = getFormValues?.() ?? {};
     return {
       apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
-      baseUrl: (fv.base_url as string) ?? instance?.base_url ?? '',
+      baseUrl: (fv.base_url as string) ?? instance?.base_url,
     };
   }, [getFormValues, instance]);
 
@@ -121,13 +125,12 @@ interface UseModelsCatalogArgs {
   hideActions: boolean;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
-  /**
-   * Current api_key value (read from the host form / instance). Used to
-   * gate the auto-fetch for providers that require an api_key to list
-   * models (currently only VolcEngine). For other providers the value
-   * is ignored and the catalog is fetched on mount regardless.
-   */
+
   apiKeyValue: string;
+
+  baseUrlValue: string | undefined;
+
+  instanceDetailsLoaded?: boolean;
 }
 
 export function useModelsCatalog({
@@ -137,11 +140,63 @@ export function useModelsCatalog({
   resolveCreds,
   instanceModels,
   apiKeyValue,
+  baseUrlValue,
+  instanceDetailsLoaded,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
+  const [catalogOverrides, setCatalogOverrides] = useState<
+    Record<string, IProviderModelItem>
+  >({});
+  const catalogOverridesRef = useRef(catalogOverrides);
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+
+  const applyCatalogOverrides = useCallback((items: IProviderModelItem[]) => {
+    const overrides = catalogOverridesRef.current;
+    const names = new Set<string>();
+    const merged = items.map((item) => {
+      names.add(item.name);
+      const override = overrides[item.name];
+      return override ? { ...item, ...override, name: item.name } : item;
+    });
+    Object.entries(overrides).forEach(([name, override]) => {
+      if (!names.has(name)) {
+        merged.push(override);
+      }
+    });
+    return merged;
+  }, []);
+
+  const updateCatalogModel = useCallback(
+    (name: string, item: IProviderModelItem) => {
+      setCatalogOverrides((prev) => {
+        const next = {
+          ...prev,
+          [name]: { ...(prev[name] ?? {}), ...item, name },
+        };
+        catalogOverridesRef.current = next;
+        return next;
+      });
+      setCatalog((prev) => {
+        if (!prev.some((m) => m.name === name)) {
+          return [...prev, { ...item, name }];
+        }
+        return prev.map((m) => (m.name === name ? { ...m, ...item, name } : m));
+      });
+    },
+    [],
+  );
+
+  const clearCatalogOverride = useCallback((name: string) => {
+    setCatalogOverrides((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      catalogOverridesRef.current = next;
+      return next;
+    });
+  }, []);
 
   // Manual "List models" handler — hits the upstream catalog endpoint.
   // The result is merged into `catalog`; the displayed list then becomes
@@ -156,11 +211,13 @@ export function useModelsCatalog({
     try {
       const ret = await listProviderModels({
         provider_name: providerName,
-        api_key: apiKey,
+        api_key: apiKey as any,
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
-        setCatalog((ret.data as IProviderModelItem[]) ?? []);
+        setCatalog(
+          applyCatalogOverrides((ret.data as IProviderModelItem[]) ?? []),
+        );
       }
       setHasFetched(true);
     } catch {
@@ -173,24 +230,44 @@ export function useModelsCatalog({
   // Auto-fetch the provider's available-models catalog when this section
   // mounts (effectively "when the card is expanded"). For VolcEngine we
   // wait until an api_key is available (typed in the draft form or loaded
-  // from instance details); for every other provider we fetch on mount
-  // regardless of draft / saved state - the catalog endpoint does not
-  // require credentials and the user expects to see the model list as
-  // soon as they open the "Add instance" page.
+  // from instance details). For providers whose form includes a
+  // `base_url` field (e.g. Ollama, Xinference, LocalAI) we defer until a
+  // non-empty URL is entered - their list-models endpoint needs the URL
+  // to know which server to query. For every other provider we fetch on
+  // mount regardless.
+  //
+  // The credential check is performed INSIDE the effect (not in the deps)
+  // because for saved cards the form is reset by
+  // `useFormResetOnDetailsLoad` in a parent effect that runs BEFORE this
+  // one. Reading `resolveCreds()` at effect time picks up the freshly
+  // reset `base_url` / `api_key` values, whereas reading them during
+  // render would see the stale (pre-reset) values and defer forever.
 
   const requiresApiKey = providerName === LLMFactory.VolcEngine;
-  const credsReady = !requiresApiKey || !!apiKeyValue;
 
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
-    if (!credsReady) return;
+
+    const creds = resolveCreds();
+    const hasBaseUrlField = creds.baseUrl !== undefined;
+    const ready =
+      (!requiresApiKey || !!creds.apiKey) &&
+      (!hasBaseUrlField || !!creds.baseUrl);
+    if (!ready) return;
     hasAutoFetchedRef.current = true;
     handleListModels();
     // oxlint-disable-next-line react/exhaustive-deps
-  }, [providerName, instanceName, hideActions, credsReady]);
+  }, [
+    providerName,
+    instanceName,
+    hideActions,
+    apiKeyValue,
+    baseUrlValue,
+    instanceDetailsLoaded,
+  ]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
   // it returned an empty array — so `hideIfEmpty` can safely take effect.
@@ -203,6 +280,8 @@ export function useModelsCatalog({
   return {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -599,6 +678,7 @@ interface UseModelMutationsArgs {
   filteredModels: IProviderModelItem[];
   addedSet: Set<string>;
   setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
+  clearCatalogOverride: (name: string) => void;
   /**
    * Local mutators for the draft instance's model list. Required when
    * `isDraftInstance` is true so per-model add / remove / batch updates
@@ -621,6 +701,7 @@ export function useModelMutations({
   filteredModels,
   addedSet,
   setCatalog,
+  clearCatalogOverride,
   addDraftModel,
   removeDraftModel,
   setDraftModelsList,
@@ -644,6 +725,7 @@ export function useModelMutations({
     // rides along with the instance save (model_info in the add body).
     if (isDraftInstance) {
       addDraftModel?.(model);
+      clearCatalogOverride(model.name);
       return;
     }
     await addInstanceModel({
@@ -652,8 +734,12 @@ export function useModelMutations({
       model_name: model.name,
       model_type: model.model_types ?? [],
       max_tokens: model.max_tokens ?? 0,
-      extra: { is_tools: hasToolFeature(model.features), ...(model.extra ?? {}) },
+      extra: {
+        is_tools: hasToolFeature(model.features),
+        ...(model.extra ?? {}),
+      },
     });
+    clearCatalogOverride(model.name);
   };
 
   const handleRemoveModel = async (model: IProviderModelItem) => {
@@ -683,6 +769,7 @@ export function useModelMutations({
       // dropped on save.
       if (isDraftInstance) {
         addDraftModel?.(item);
+        clearCatalogOverride(item.name);
       }
       return;
     }
@@ -694,6 +781,7 @@ export function useModelMutations({
       max_tokens: item.max_tokens ?? 0,
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    clearCatalogOverride(item.name);
   };
 
   // Batch attach/detach the currently visible (filtered) models.
@@ -718,6 +806,11 @@ export function useModelMutations({
 
     if (isDraftInstance) {
       setDraftModelsList?.(nextModels);
+      filteredModels.forEach((m) => {
+        if (!addedSet.has(m.name)) {
+          clearCatalogOverride(m.name);
+        }
+      });
       return;
     }
 
@@ -730,6 +823,11 @@ export function useModelMutations({
       base_url: baseUrl,
       region: instance?.region ?? 'default',
       model_info: buildModelInfo(nextModels),
+    });
+    filteredModels.forEach((m) => {
+      if (!addedSet.has(m.name)) {
+        clearCatalogOverride(m.name);
+      }
     });
   };
 
@@ -750,14 +848,20 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
+  addedSet: Set<string>;
   isDraftInstance?: boolean;
+  updateCatalogModel: (name: string, item: IProviderModelItem) => void;
+  clearCatalogOverride: (name: string) => void;
   updateDraftModel?: (item: IProviderModelItem) => void;
 }
 
 export function useModelEdit({
   providerName,
   instanceName,
+  addedSet,
   isDraftInstance,
+  updateCatalogModel,
+  clearCatalogOverride,
   updateDraftModel,
 }: UseModelEditArgs) {
   const queryClient = useQueryClient();
@@ -807,10 +911,7 @@ export function useModelEdit({
     // Build the features array from `extra` booleans whose keys match
     // the standard feature (`is_tools`) or the provider-specific
     // whitelist. Only `true` values become selected switch-group entries.
-    const featureKeySet = new Set<string>([
-      'is_tools',
-      ...providerFeatureKeys,
-    ]);
+    const featureKeySet = new Set<string>(['is_tools', ...providerFeatureKeys]);
     const features: string[] = [];
     const featureBooleans = new Set<string>();
     for (const [key, value] of Object.entries(extra)) {
@@ -823,9 +924,7 @@ export function useModelEdit({
     }
     // Remaining extra fields (non-feature: element-format selects, etc.).
     const remainingExtra = Object.fromEntries(
-      Object.entries(extra).filter(
-        ([k]) => !featureBooleans.has(k),
-      ),
+      Object.entries(extra).filter(([k]) => !featureBooleans.has(k)),
     );
     return {
       name: editingModel.name,
@@ -845,8 +944,14 @@ export function useModelEdit({
     if (!editingModel) return;
     const targetName = editingModel.name;
 
-    if (isDraftInstance && updateDraftModel) {
+    if (isDraftInstance && updateDraftModel && addedSet.has(targetName)) {
       updateDraftModel(item);
+      setEditingModel(null);
+      return;
+    }
+
+    if (!addedSet.has(targetName)) {
+      updateCatalogModel(targetName, item);
       setEditingModel(null);
       return;
     }
@@ -864,7 +969,10 @@ export function useModelEdit({
           max_tokens: item.max_tokens ?? 0,
           model_type: item.model_types ?? [],
           is_tools: hasToolFeature(item.features),
-          extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
+          extra: {
+            is_tools: hasToolFeature(item.features),
+            ...(item.extra ?? {}),
+          },
         };
         return next;
       },
@@ -878,6 +986,7 @@ export function useModelEdit({
       model_type: item.model_types ?? [],
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    clearCatalogOverride(targetName);
     setEditingModel(null);
   };
 

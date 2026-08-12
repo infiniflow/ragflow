@@ -96,6 +96,7 @@ func TestGPUStackFactory(t *testing.T) {
 }
 
 func TestGPUStackChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-8b" {
 			t.Errorf("model=%v", body["model"])
@@ -131,6 +132,7 @@ func TestGPUStackChatHappyPath(t *testing.T) {
 }
 
 func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -164,8 +166,9 @@ func TestGPUStackChatExtractsReasoningContent(t *testing.T) {
 }
 
 func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		for _, k := range []string{"model", "messages", "stream", "max_tokens", "temperature", "top_p", "stop"} {
+		for _, k := range []string{"model", "messages", "stream", "temperature", "top_p", "stop"} {
 			if _, present := body[k]; !present {
 				t.Errorf("documented field %q missing from request body", k)
 			}
@@ -198,6 +201,7 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 }
 
 func TestGPUStackChatAllowsEmptyAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
 		ctx,
@@ -211,6 +215,7 @@ func TestGPUStackChatAllowsEmptyAPIKey(t *testing.T) {
 }
 
 func TestGPUStackChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
@@ -225,6 +230,7 @@ func TestGPUStackChatRequiresModelName(t *testing.T) {
 }
 
 func TestGPUStackChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
@@ -237,6 +243,7 @@ func TestGPUStackChatRequiresMessages(t *testing.T) {
 }
 
 func TestGPUStackChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -257,6 +264,7 @@ func TestGPUStackChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestGPUStackChatRequiresBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	model := NewGPUStackModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	apiKey := "test-key"
 	ctx := t.Context()
@@ -272,6 +280,7 @@ func TestGPUStackChatRequiresBaseURL(t *testing.T) {
 }
 
 func TestGPUStackStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
@@ -313,6 +322,7 @@ func TestGPUStackStreamHappyPath(t *testing.T) {
 }
 
 func TestGPUStackStreamExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"think "}}]}`+"\n"+
@@ -351,6 +361,7 @@ func TestGPUStackStreamExtractsReasoningContent(t *testing.T) {
 }
 
 func TestGPUStackStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	stream := false
 	ctx := t.Context()
@@ -369,6 +380,7 @@ func TestGPUStackStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestGPUStackStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	ctx := t.Context()
 	err := newGPUStackForTest("http://unused").ChatStreamlyWithSender(
@@ -383,6 +395,7 @@ func TestGPUStackStreamRequiresSender(t *testing.T) {
 }
 
 func TestGPUStackStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
@@ -403,6 +416,7 @@ func TestGPUStackStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestGPUStackStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {this is not valid json}`+"\n",
@@ -424,6 +438,7 @@ func TestGPUStackStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestGPUStackStreamSurfacesUpstreamError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"oom","type":"runtime_error"}}`+"\n",
@@ -445,6 +460,7 @@ func TestGPUStackStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestGPUStackListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -480,6 +496,7 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 }
 
 func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newGPUStackForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || strings.Contains(err.Error(), "api key is required") {
@@ -489,6 +506,7 @@ func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
 
 // TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1-openai/embeddings.
 func TestGPUStackEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "bge-m3" {
 			t.Errorf("model=%v", body["model"])
@@ -527,6 +545,7 @@ func TestGPUStackEmbedHappyPath(t *testing.T) {
 
 // TestGPUStackEmbedReordersByIndex verifies out-of-order response indices are mapped correctly.
 func TestGPUStackEmbedReordersByIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -555,6 +574,7 @@ func TestGPUStackEmbedReordersByIndex(t *testing.T) {
 
 // TestGPUStackEmbedEmptyInputShortCircuits avoids HTTP when texts is empty.
 func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("Embed([]) made an unexpected HTTP call")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -576,6 +596,7 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 
 // TestGPUStackEmbedRequiresAPIKey rejects requests without an API key.
 func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "bge-m3"
 	_, err := newGPUStackForTest("http://unused").Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
@@ -586,6 +607,7 @@ func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
 
 // TestGPUStackEmbedRejectsDuplicateIndex errors on duplicate response indices.
 func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -607,6 +629,7 @@ func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
 
 // TestGPUStackEmbedRejectsOutOfRangeIndex errors when index exceeds input length.
 func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -627,6 +650,7 @@ func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 // TestGPUStackEmbedRejectsMissingIndex errors when index is omitted from response.
 func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -647,6 +671,7 @@ func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
 
 // TestGPUStackEmbedRejectsEmptyVector errors when the API returns a zero-length vector.
 func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -667,6 +692,7 @@ func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
 
 // TestGPUStackEmbedRejectsMissingSlot errors when a response index is never returned.
 func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -686,6 +712,7 @@ func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
 }
 
 func TestGPUStackUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newGPUStackForTest("http://unused")
 	model := "x"

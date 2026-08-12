@@ -33,7 +33,76 @@ import (
 	"time"
 )
 
-// MistralModel implements ModelDriver for Mistral AI.
+// normalizeMistralStructuredContent rewrites a Mistral magistral response
+// whose message.content is a structured array ([{type:text},{type:thinking,
+// thinking:[{type:text}]}]) into the flat string shape the shared handler
+// expects: content becomes the concatenated text parts and a top-level
+// reasoning_content carries the thinking parts. The rewrite is in-place and
+// only applied when content is actually an array.
+func normalizeMistralStructuredContent(body []byte) []byte {
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		return body
+	}
+	choices, ok := result["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return body
+	}
+	firstChoice, ok := choices[0].(map[string]any)
+	if !ok {
+		return body
+	}
+	messageMap, ok := firstChoice["message"].(map[string]any)
+	if !ok {
+		return body
+	}
+	parts, ok := messageMap["content"].([]any)
+	if !ok {
+		return body
+	}
+
+	var answer, reasoning strings.Builder
+	for _, p := range parts {
+		part, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch part["type"] {
+		case "text":
+			if t, ok := part["text"].(string); ok {
+				answer.WriteString(t)
+			}
+		case "thinking":
+			if thinking, ok := part["thinking"].([]any); ok {
+				for _, tp := range thinking {
+					if tpm, ok := tp.(map[string]any); ok {
+						if t, ok := tpm["text"].(string); ok {
+							reasoning.WriteString(t)
+						}
+					}
+				}
+			}
+		}
+	}
+	// Only rewrite if we actually extracted something; otherwise leave
+	// the body untouched so the shared handler surfaces its normal error.
+	if answer.Len() == 0 && reasoning.Len() == 0 {
+		return body
+	}
+
+	messageMap["content"] = answer.String()
+	if existing, ok := messageMap["reasoning_content"].(string); ok && existing != "" {
+		reasoning.WriteString(existing)
+	}
+	if reasoning.Len() > 0 {
+		messageMap["reasoning_content"] = reasoning.String()
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		return body
+	}
+	return out
+}
 
 type MistralModel struct {
 	baseModel BaseModel
@@ -45,7 +114,7 @@ func NewMistralModel(baseURL map[string]string, urlSuffix URLSuffix) *MistralMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -56,33 +125,6 @@ func (m *MistralModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (m *MistralModel) Name() string {
 	return "mistral"
-}
-
-type MistralChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index   int `json:"index"`
-		Message struct {
-			Role             string           `json:"role"`
-			Content          interface{}      `json:"content"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-			ReasoningContent *string          `json:"reasoning_content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		CompletionTokens   int `json:"completion_tokens"`
-		NumCachedTokens    int `json:"num_cached_tokens"`
-		PromptAudioSeconds int `json:"prompt_audio_seconds"`
-		PromptTokenDetails struct {
-			CachedTokens int `json:"cached_tokens"`
-		}
-		PromptTokens int `json:"prompt_tokens"`
-		TotalTokens  int `json:"total_tokens"`
-	} `json:"usage"`
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
@@ -99,122 +141,19 @@ func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, m
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
+	// Mistral magistral returns content as a structured array. Normalize it
+	// to the flat string shape the shared handler understands.
+	body = normalizeMistralStructuredContent(body)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
-		var result MistralChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := &result.Choices[0]
-		content, reasonContent, err := extractMistralContent(choice.Message.Content)
-		if err != nil {
-			return chatResponseParts{}, err
-		}
-		if reasonContent == "" && choice.Message.ReasoningContent != nil {
-			reasonContent = *choice.Message.ReasoningContent
-		}
-
-		totalTokens := result.Usage.TotalTokens
-		if totalTokens == 0 {
-			totalTokens = result.Usage.PromptTokens + result.Usage.CompletionTokens
-		}
-		var usage *TokenUsage
-		if totalTokens > 0 {
-			usage = &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      totalTokens,
-			}
-		}
-
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage:         usage,
-		}, nil
-	})
-}
-
-func extractMistralContent(raw interface{}) (string, string, error) {
-	switch v := raw.(type) {
-	case string:
-		return v, "", nil
-	case []interface{}:
-		var answer, reasoning strings.Builder
-		for _, part := range v {
-			pm, ok := part.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			switch pm["type"] {
-			case "text":
-				if t, ok := pm["text"].(string); ok {
-					answer.WriteString(t)
-				}
-			case "thinking":
-				// thinking is an array of inner text parts; concatenate
-				// any inner element with a non-empty text field.
-				inner, ok := pm["thinking"].([]interface{})
-				if !ok {
-					continue
-				}
-				for _, sub := range inner {
-					sm, ok := sub.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if t, ok := sm["text"].(string); ok {
-						reasoning.WriteString(t)
-					}
-				}
-			}
-		}
-		return answer.String(), reasoning.String(), nil
-	case nil:
-		return "", "", nil
-	default:
-		return "", "", fmt.Errorf("mistral: unsupported content type %T", raw)
-	}
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
@@ -238,89 +177,15 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-	if !done && !sawTerminal {
-		return fmt.Errorf("mistral: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 type mistralEmbeddingData struct {

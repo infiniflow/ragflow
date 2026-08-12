@@ -9,6 +9,7 @@ import (
 )
 
 func TestProviderChatUsage(t *testing.T) {
+	withSSRFBypass(t)
 	type providerCase struct {
 		name string
 		new  func(string) ModelDriver

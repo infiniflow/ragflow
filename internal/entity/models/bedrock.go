@@ -105,7 +105,7 @@ func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -376,7 +376,6 @@ type bedrockConverseRequest struct {
 }
 
 // bedrockConverseResponse is the relevant subset of a Converse response.
-// Bedrock returns much more (usage, metrics) which we currently ignore.
 type bedrockConverseResponse struct {
 	Output struct {
 		Message struct {
@@ -384,7 +383,73 @@ type bedrockConverseResponse struct {
 			Content []bedrockContentBlock `json:"content"`
 		} `json:"message"`
 	} `json:"output"`
-	StopReason string `json:"stopReason"`
+	StopReason string        `json:"stopReason"`
+	Usage      *bedrockUsage `json:"usage,omitempty"`
+}
+
+// bedrockUsage mirrors Bedrock's Converse / Converse-Stream usage
+// shape. JSON keys are camelCase because that's the wire format. The
+// fields are plain ints because the AWS service always emits numbers
+// (not strings) for token counts; distinguishing absent from zero
+// happens at the JSON layer (omitempty on the parent) rather than via
+// pointer fields.
+type bedrockUsage struct {
+	InputTokens  int `json:"inputTokens"`
+	OutputTokens int `json:"outputTokens"`
+	TotalTokens  int `json:"totalTokens"`
+}
+
+// bedrockUsageFromMap converts a JSON-decoded Bedrock usage payload
+// into the package's TokenUsage. Returns nil when no token counts are
+// present so callers can pass the result directly to
+// recordResponseUsage without a separate presence check.
+func bedrockUsageFromMap(raw map[string]any) *TokenUsage {
+	if len(raw) == 0 {
+		return nil
+	}
+	get := func(key string) int {
+		v, ok := raw[key]
+		if !ok {
+			return 0
+		}
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case int64:
+			return int(n)
+		}
+		return 0
+	}
+	in, out := get("inputTokens"), get("outputTokens")
+	total := get("totalTokens")
+	if in == 0 && out == 0 && total == 0 {
+		return nil
+	}
+	if total == 0 {
+		total = in + out
+	}
+	return &TokenUsage{
+		PromptTokens:     in,
+		CompletionTokens: out,
+		TotalTokens:      total,
+	}
+}
+
+// bedrockUsageToMap is the inverse of bedrockUsageFromMap, used by the
+// non-streaming path that has a typed *bedrockUsage from JSON
+// unmarshaling. When the source is nil the result is the empty map,
+// which the helper treats as "no usage".
+func bedrockUsageToMap(u *bedrockUsage) map[string]any {
+	if u == nil {
+		return nil
+	}
+	return map[string]any{
+		"inputTokens":  u.InputTokens,
+		"outputTokens": u.OutputTokens,
+		"totalTokens":  u.TotalTokens,
+	}
 }
 
 // buildConverseRequest translates the driver's neutral Messages slice
@@ -434,10 +499,6 @@ func mapChatConfigToInference(cfg *ChatConfig) *bedrockInferenceConfig {
 	}
 	inf := &bedrockInferenceConfig{}
 	hasField := false
-	if cfg.MaxTokens != nil {
-		inf.MaxTokens = cfg.MaxTokens
-		hasField = true
-	}
 	if cfg.Temperature != nil {
 		inf.Temperature = cfg.Temperature
 		hasField = true
@@ -574,6 +635,9 @@ func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, m
 	}
 	answer := extractAnswer(&parsed)
 	reason := ""
+	if usage := bedrockUsageFromMap(bedrockUsageToMap(parsed.Usage)); usage != nil {
+		recordResponseUsage(modelUsage, "", usage, "chat")
+	}
 	return &ChatResponse{
 		Answer:        &answer,
 		ReasonContent: &reason,
@@ -656,19 +720,42 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("bedrock: API request failed with status %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	if err := decodeBedrockEventStream(resp.Body, sender); err != nil {
+	// Bedrock sends final token usage inside a "metadata" event frame
+	// at end-of-stream. We capture the last seen usage via this closure
+	// and route it through applyStreamUsage so chatConfig.UsageResult
+	// and the clickhouse collection path are both populated, matching
+	// the unified streaming behaviour used by other drivers.
+	var streamUsage *TokenUsage
+	onMetadata := func(meta map[string]any) error {
+		if u, ok := meta["usage"].(map[string]any); ok {
+			streamUsage = bedrockUsageFromMap(u)
+		}
+		return nil
+	}
+	if err := decodeBedrockEventStream(resp.Body, sender, onMetadata); err != nil {
 		return err
 	}
+	applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	done := "[DONE]"
 	return sender(&done, nil)
 }
 
 // decodeBedrockEventStream reads vnd.amazon.eventstream frames off the
 // supplied reader and dispatches each to the supplied sender. The
-// loop exits cleanly on a messageStop event or on EOF; an exception
-// frame is surfaced as a Go error so partial streams cannot be
-// mistaken for successful ones.
-func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error) error {
+// loop exits cleanly on EOF after a messageStop has been seen; an
+// exception frame is surfaced as a Go error so partial streams
+// cannot be mistaken for successful ones.
+//
+// messageStop is recorded as the terminal marker but does NOT return
+// from the loop, because the AWS Bedrock Converse-Stream protocol
+// sends a final "metadata" frame carrying token usage AFTER
+// messageStop. Returning early would drop that metadata and the
+// caller would never see the usage block.
+//
+// onMetadata is invoked with the JSON-decoded payload of each
+// "metadata" lifecycle frame. Bedrock sends final token usage inside
+// such a frame; pass nil when the caller does not need that data.
+func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error, onMetadata func(map[string]any) error) error {
 	dec := eventstream.NewDecoder()
 	payload := make([]byte, 0, 8*1024)
 	sawTerminal := false
@@ -701,9 +788,22 @@ func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error) 
 				return err
 			}
 		case "messageStop":
+			// Mark the stream terminal but keep decoding so the
+			// post-messageStop "metadata" frame (which carries
+			// final token usage) still reaches onMetadata.
 			sawTerminal = true
-			return nil
-		case "messageStart", "contentBlockStart", "contentBlockStop", "metadata":
+		case "metadata":
+			if onMetadata == nil {
+				continue
+			}
+			var meta map[string]any
+			if err := json.Unmarshal(msg.Payload, &meta); err != nil {
+				return fmt.Errorf("bedrock: invalid metadata payload: %w", err)
+			}
+			if err := onMetadata(meta); err != nil {
+				return err
+			}
+		case "messageStart", "contentBlockStart", "contentBlockStop":
 			// Lifecycle events with no caller-visible payload.
 		default:
 			// Ignore unknown events rather than hard-failing so new

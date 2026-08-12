@@ -39,7 +39,7 @@ func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -50,158 +50,6 @@ func (n *NovitaModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (n *NovitaModel) Name() string {
 	return "NovitaAI"
-}
-
-type NovitaChatResponse struct {
-	ID      string `json:"id"`
-	Choices []struct {
-		FinishReason string `json:"finish_reason"`
-		Index        int    `json:"index"`
-		Message      struct {
-			Content          string           `json:"content"`
-			ReasoningContent string           `json:"reasoning_content"`
-			Role             string           `json:"role"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-		} `json:"message"`
-		Logprobs interface{} `json:"logprobs"`
-	} `json:"choices"`
-	Created int    `json:"created"`
-	Model   string `json:"model"`
-	Object  string `json:"object"`
-	Usage   struct {
-		CompletionTokens int `json:"completion_tokens"`
-		PromptTokens     int `json:"prompt_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-}
-
-const (
-	novitaThinkOpen  = "<think>"
-	novitaThinkClose = "</think>"
-)
-
-// splitNovitaThink walks a complete content string and returns the
-// visible portion + the concatenated chain-of-thought from inside
-// any <think>...</think> blocks. Multiple think blocks are
-// concatenated; tags themselves are stripped. Used by the
-// non-streaming path where the whole content is available at once.
-func splitNovitaThink(raw string) (visible, reasoning string) {
-	var v, r strings.Builder
-	inside := false
-	for {
-		var marker string
-		if inside {
-			marker = novitaThinkClose
-		} else {
-			marker = novitaThinkOpen
-		}
-		idx := strings.Index(raw, marker)
-		if idx < 0 {
-			if inside {
-				r.WriteString(raw)
-			} else {
-				v.WriteString(raw)
-			}
-			break
-		}
-		if inside {
-			r.WriteString(raw[:idx])
-		} else {
-			v.WriteString(raw[:idx])
-		}
-		raw = raw[idx+len(marker):]
-		inside = !inside
-	}
-	return v.String(), r.String()
-}
-
-// novitaThinkExtractor maintains state across streaming chunks so
-// that a <think>...</think> block spanning multiple SSE events still
-// gets split correctly between content and reasoning. The buffer
-// preserves up to (len(closingMarker)-1) trailing bytes of each
-// chunk in case the next chunk completes a partial tag.
-type novitaThinkExtractor struct {
-	buf    strings.Builder
-	inside bool
-}
-
-// novitaThinkSegment is one routing decision: emit `content` via the
-// sender's first arg, or emit `reasoning` via the sender's second arg.
-// Exactly one of the two fields is non-empty.
-type novitaThinkSegment struct {
-	content   string
-	reasoning string
-}
-
-// Feed appends an incoming chunk and returns any segments that are
-// now safe to emit. Trailing bytes that could be the start of a tag
-// are held back in the buffer until the next call.
-func (e *novitaThinkExtractor) Feed(chunk string) []novitaThinkSegment {
-	e.buf.WriteString(chunk)
-	s := e.buf.String()
-	var out []novitaThinkSegment
-	for {
-		var marker, otherMarker string
-		if e.inside {
-			marker = novitaThinkClose
-			otherMarker = novitaThinkOpen
-		} else {
-			marker = novitaThinkOpen
-			otherMarker = novitaThinkClose
-		}
-		idx := strings.Index(s, marker)
-		if idx < 0 {
-			// No closing/opening marker yet. Emit everything except a
-			// possible partial-tag suffix at the very end. Reserve
-			// (max marker length - 1) trailing bytes so we don't
-			// emit "<thin" as content when the next chunk completes
-			// it to "<think>".
-			reserve := max(len(otherMarker)-1, len(marker)-1)
-			safe := max(len(s)-reserve, 0)
-			// Don't reserve if the trailing bytes can't possibly be
-			// the start of a tag (no '<' suffix).
-			if safe < len(s) && !strings.Contains(s[safe:], "<") {
-				safe = len(s)
-			}
-			if safe > 0 {
-				if e.inside {
-					out = append(out, novitaThinkSegment{reasoning: s[:safe]})
-				} else {
-					out = append(out, novitaThinkSegment{content: s[:safe]})
-				}
-				s = s[safe:]
-			}
-			break
-		}
-		if idx > 0 {
-			if e.inside {
-				out = append(out, novitaThinkSegment{reasoning: s[:idx]})
-			} else {
-				out = append(out, novitaThinkSegment{content: s[:idx]})
-			}
-		}
-		s = s[idx+len(marker):]
-		e.inside = !e.inside
-	}
-	e.buf.Reset()
-	e.buf.WriteString(s)
-	return out
-}
-
-// Flush returns the buffered tail when the stream ends. A stream that
-// ends mid-tag would not normally happen with a well-behaved upstream,
-// but if it does the partial bytes are emitted according to the
-// current mode so nothing is silently lost.
-func (e *novitaThinkExtractor) Flush() *novitaThinkSegment {
-	s := e.buf.String()
-	e.buf.Reset()
-	if s == "" {
-		return nil
-	}
-	if e.inside {
-		return &novitaThinkSegment{reasoning: s}
-	}
-	return &novitaThinkSegment{content: s}
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
@@ -227,91 +75,20 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := n.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := n.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
-		var result NovitaChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := &result.Choices[0]
-		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
-			return chatResponseParts{}, fmt.Errorf("invalid content format")
-		}
-
-		// Novita emits chain-of-thought in two different shapes depending
-		// on the model and on enable_thinking:
-		//   - qwen3-* and other inline-style models: chain-of-thought is
-		//     embedded inside content as <think>...</think> tags.
-		//   - deepseek-v3.1 / glm-4.5 (and any model with separate
-		//     reasoning enabled): chain-of-thought arrives in a separate
-		//     `reasoning_content` field, with `content` already cleaned.
-		// Handle both so the visible Answer is always tag-free and any
-		// reasoning the upstream supplied is preserved.
-		visible, reasoning := splitNovitaThink(choice.Message.Content)
-		if choice.Message.ReasoningContent != "" {
-			if reasoning != "" {
-				reasoning += "\n" + choice.Message.ReasoningContent
-			} else {
-				reasoning = choice.Message.ReasoningContent
-			}
-		}
-
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &visible,
-			ReasonContent: &reasoning,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage: &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      result.Usage.TotalTokens,
-			},
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via
 // the sender. Handles both reasoning shapes Novita can emit:
 //   - delta.reasoning_content (deepseek-v3.1 / glm-4.5 / any model
 //     with separate reasoning): forwarded as-is to the second arg.
-//   - delta.content containing <think>...</think> (qwen3-* and other
-//     inline-style models): a stateful extractor splits tag bytes
-//     across SSE chunk boundaries, then routes content/reasoning to
-//     the first/second sender arg respectively.
+//   - delta.content (qwen3-* and other inline-style models): forwarded
+//     to the first arg.
 func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
@@ -341,117 +118,186 @@ func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	return n.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		// Novita qwen3 embeds <think>...</think> inline in
+		// delta.content (tags can span multiple SSE deltas). Split
+		// those blocks so reasoning routes to the sender's second arg.
+		return novitaHandleStream(body, modelUsage, chatModelConfig, sender)
+	})
+}
 
-	resp, err := n.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
+// novitaThinkSegment is one routing decision: emit `content` via the
+// sender's first arg, or emit `reasoning` via the second. Exactly one of
+// the two fields is non-empty.
+type novitaThinkSegment struct {
+	content   string
+	reasoning string
+}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
+// novitaThinkSplitter holds state across streaming content chunks so a
+// <think>...</think> block that spans multiple SSE deltas is still split
+// correctly. Trailing bytes that could be the start of a tag are held
+// back until the next chunk.
+type novitaThinkSplitter struct {
+	buf    strings.Builder
+	inside bool
+}
 
-	extractor := &novitaThinkExtractor{}
-	sawTerminal := false
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
+const (
+	novitaThinkOpen  = "<think>"
+	novitaThinkClose = "</think>"
+)
+
+func (s *novitaThinkSplitter) feed(chunk string) []novitaThinkSegment {
+	s.buf.WriteString(chunk)
+	str := s.buf.String()
+	var out []novitaThinkSegment
+	for {
+		var marker string
+		if s.inside {
+			marker = novitaThinkClose
+		} else {
+			marker = novitaThinkOpen
 		}
+		idx := strings.Index(str, marker)
+		if idx < 0 {
+			// No marker yet. Emit everything except a possible
+			// partial-tag suffix at the very end.
+			reserve := max(len(novitaThinkOpen)-1, len(novitaThinkClose)-1)
+			safe := max(len(str)-reserve, 0)
+			if safe < len(str) && !strings.Contains(str[safe:], "<") {
+				safe = len(str)
+			}
+			if safe > 0 {
+				if s.inside {
+					out = append(out, novitaThinkSegment{reasoning: str[:safe]})
+				} else {
+					out = append(out, novitaThinkSegment{content: str[:safe]})
+				}
+				str = str[safe:]
+			}
+			s.buf.Reset()
+			s.buf.WriteString(str)
+			return out
+		}
+		if s.inside {
+			out = append(out, novitaThinkSegment{reasoning: str[:idx]})
+		} else {
+			out = append(out, novitaThinkSegment{content: str[:idx]})
+		}
+		str = str[idx+len(marker):]
+		s.inside = !s.inside
+	}
+}
+
+func (s *novitaThinkSplitter) flush() *novitaThinkSegment {
+	if s.buf.Len() == 0 {
+		return nil
+	}
+	remaining := s.buf.String()
+	s.buf.Reset()
+	if s.inside {
+		return &novitaThinkSegment{reasoning: remaining}
+	}
+	return &novitaThinkSegment{content: remaining}
+}
+
+// novitaHandleStream processes a Novita streaming chat response, splitting
+// inline <think>...</think> blocks in delta.content across SSE deltas.
+func novitaHandleStream(
+	body io.Reader,
+	modelUsage *common.ModelUsage,
+	chatConfig *ChatConfig,
+	sender func(*string, *string) error,
+) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
+	var sawTerminal bool
+	thinkSplitter := &novitaThinkSplitter{}
+
+	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
+		tokenUsage, found := extractOpenAIStreamUsage(event)
 		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+			applyStreamUsage(chatConfig, modelUsage, tokenUsage)
 		}
 
-		choices, ok := event["choices"].([]interface{})
+		if apiErr, ok := event["error"]; ok && apiErr != nil {
+			return fmt.Errorf("upstream stream error: %v", apiErr)
+		}
+
+		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
 		}
-		firstChoice, ok := choices[0].(map[string]interface{})
+
+		firstChoice, ok := choices[0].(map[string]any)
 		if !ok {
 			return nil
 		}
-		delta, ok := firstChoice["delta"].(map[string]interface{})
+
+		delta, ok := firstChoice["delta"].(map[string]any)
 		if !ok {
 			return nil
 		}
-		// deepseek-v3.1 / glm-4.5 (and other models that emit reasoning
-		// separately) put chain-of-thought in delta.reasoning_content
-		// rather than inside content as <think>...</think>. Surface it
-		// before any content from the same chunk so callers piping to
-		// a UI render reasoning before the visible answer for that
-		// token, matching the wire ordering Novita emits.
-		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
-			rr := r
-			if err := sender(nil, &rr); err != nil {
+
+		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
-		if c, ok := delta["content"].(string); ok && c != "" {
-			for _, seg := range extractor.Feed(c) {
+
+		if content, ok := delta["content"].(string); ok && content != "" {
+			for _, seg := range thinkSplitter.feed(content) {
+				if seg.content != "" {
+					c := seg.content
+					if err := sender(&c, nil); err != nil {
+						return err
+					}
+				}
 				if seg.reasoning != "" {
 					r := seg.reasoning
 					if err := sender(nil, &r); err != nil {
 						return err
 					}
 				}
-				if seg.content != "" {
-					cc := seg.content
-					if err := sender(&cc, nil); err != nil {
-						return err
-					}
-				}
 			}
 		}
-		if finish, ok := firstChoice["finish_reason"].(string); ok && finish != "" {
+
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
 		}
+
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
-	// Flush any buffered tail (rare, but covers the case where the
-	// stream ends right after the last chunk without us seeing the
-	// closing tag).
-	if seg := extractor.Flush(); seg != nil {
+	if !done && !sawTerminal {
+		return fmt.Errorf("stream ended before [DONE] or finish_reason")
+	}
+
+	if seg := thinkSplitter.flush(); seg != nil {
+		if seg.content != "" {
+			c := seg.content
+			if err := sender(&c, nil); err != nil {
+				return err
+			}
+		}
 		if seg.reasoning != "" {
 			r := seg.reasoning
 			if err := sender(nil, &r); err != nil {
 				return err
 			}
 		}
-		if seg.content != "" {
-			cc := seg.content
-			if err := sender(&cc, nil); err != nil {
-				return err
-			}
-		}
-	}
-
-	if !done && !sawTerminal {
-		return fmt.Errorf("novita: stream ended before [DONE] or finish_reason")
 	}
 
 	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return sender(&endOfStream, nil)
 }
 
 // ListModels returns the list of model ids visible to the API key.

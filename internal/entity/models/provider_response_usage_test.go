@@ -20,10 +20,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"testing"
 )
 
 func TestProviderLocalChatResponsesExposeUsage(t *testing.T) {
+	withSSRFBypass(t)
 	type providerCase struct {
 		name string
 		path string
@@ -105,4 +107,57 @@ func TestProviderLocalChatResponsesExposeUsage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestApplyStreamUsageAlignsWithRecordResponseUsage verifies that
+// applyStreamUsage mirrors recordResponseUsage's nil-modelUsage handling:
+// a nil *ModelUsage (the common case from the model_chat / generator service
+// layer) must not silently drop the usage, and a populated one must get
+// Type="chat" and the token counts written through to analytics. Before the
+// alignment the function returned early on a nil modelUsage, so streaming
+// callers (anthropic, cohere, google, bedrock, novita) never reached the
+// stats driver while the shared HandleStreamingResponse path did.
+func TestApplyStreamUsageAlignsWithRecordResponseUsage(t *testing.T) {
+	t.Run("populated modelUsage", func(t *testing.T) {
+		usage := &TokenUsage{PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8}
+		chatConfig := &ChatConfig{}
+		modelUsage := &common.ModelUsage{}
+
+		applyStreamUsage(chatConfig, modelUsage, usage)
+
+		if chatConfig.UsageResult != usage {
+			t.Fatalf("chatConfig.UsageResult=%#v, want the applied usage", chatConfig.UsageResult)
+		}
+		if modelUsage.Type != "chat" {
+			t.Fatalf("modelUsage.Type=%q, want chat", modelUsage.Type)
+		}
+		if modelUsage.InputTokens != 3 || modelUsage.OutputTokens != 5 || modelUsage.TotalTokens != 8 {
+			t.Fatalf("modelUsage tokens=(%d,%d,%d), want (3,5,8)", modelUsage.InputTokens, modelUsage.OutputTokens, modelUsage.TotalTokens)
+		}
+	})
+
+	t.Run("nil modelUsage still surfaces usage", func(t *testing.T) {
+		usage := &TokenUsage{PromptTokens: 1, CompletionTokens: 2, TotalTokens: 3}
+		chatConfig := &ChatConfig{}
+
+		// Must not panic and must still expose the usage to the caller via
+		// chatConfig, matching recordResponseUsage's synthetic path.
+		applyStreamUsage(chatConfig, nil, usage)
+
+		if chatConfig.UsageResult != usage {
+			t.Fatalf("chatConfig.UsageResult=%#v, want the applied usage", chatConfig.UsageResult)
+		}
+	})
+
+	t.Run("nil usage is a no-op", func(t *testing.T) {
+		chatConfig := &ChatConfig{}
+		modelUsage := &common.ModelUsage{}
+		applyStreamUsage(chatConfig, modelUsage, nil)
+		if chatConfig.UsageResult != nil {
+			t.Fatalf("chatConfig.UsageResult=%#v, want nil", chatConfig.UsageResult)
+		}
+		if modelUsage.Type != "" || modelUsage.InputTokens != 0 {
+			t.Fatalf("modelUsage mutated by nil usage: %#v", modelUsage)
+		}
+	})
 }

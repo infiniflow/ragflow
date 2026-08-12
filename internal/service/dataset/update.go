@@ -287,6 +287,23 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				updates["parser_config"] = preserveDatasetParserConfigMetadata(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
+
+		effectiveParserConfig := parserConfigJSONMap(updates["parser_config"])
+		if effectiveParserConfig == nil && embdIDProvided {
+			effectiveParserConfig = cloneJSONMap(lockedKB.ParserConfig)
+		}
+		if effectiveParserConfig != nil {
+			llmID := ""
+			if ownerTenant, tenantErr := d.tenantDAO.GetByID(ctx, tx, lockedKB.TenantID); tenantErr == nil && ownerTenant != nil {
+				llmID = ownerTenant.LLMID
+			}
+			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
+				effectiveParserConfig,
+				llmID,
+			)
+			updates["parser_config"] = effectiveParserConfig
+		}
+
 		if len(updates) > 0 {
 			if err = tx.Model(&entity.Knowledgebase{}).Where("id = ?", lockedKB.ID).Updates(updates).Error; err != nil {
 				if dao.IsDuplicateKeyErr(err) {
@@ -335,7 +352,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if pagerankUpdate != nil {
-		if err = d.updateDatasetPagerankChunks(*pagerankUpdate); err != nil {
+		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
 			return nil, common.CodeServerError, err
 		}
 	}
@@ -345,14 +362,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	return data, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) updateDatasetPagerankChunks(update datasetPagerankUpdate) error {
-	ctx, cancel := context.WithTimeout(context.Background(), datasetPagerankUpdateTimeout)
+func (d *DatasetService) updateDatasetPagerankChunks(ctx context.Context, update datasetPagerankUpdate) error {
+	newCtx, cancel := context.WithTimeout(ctx, datasetPagerankUpdateTimeout)
 	defer cancel()
 	var err error
 	if update.value > 0 {
-		err = d.docEngine.UpdateChunks(ctx, map[string]interface{}{"kb_id": update.datasetID}, map[string]interface{}{common.PAGERANK_FLD: update.value}, update.index, update.datasetID)
+		err = d.docEngine.UpdateChunks(newCtx, map[string]interface{}{"kb_id": update.datasetID}, map[string]interface{}{common.PAGERANK_FLD: update.value}, update.index, update.datasetID)
 	} else {
-		err = d.docEngine.UpdateChunks(ctx, map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, update.index, update.datasetID)
+		err = d.docEngine.UpdateChunks(newCtx, map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, update.index, update.datasetID)
 	}
 	if errors.Is(err, types.ErrIndexNotFound) {
 		// Python's docStoreConn.update logs and returns False on a missing

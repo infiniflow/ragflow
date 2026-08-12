@@ -39,7 +39,7 @@ type BotHandler struct {
 // is interface-typed so the test suite can inject a stub.
 type botService interface {
 	ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
-		title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error)
+		title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error)
 	AgentbotInputs(ctx context.Context, tenantID, agentID string) (
 		title, avatar, prologue, mode string, inputs map[string]any,
 		ec common.ErrorCode, err error)
@@ -58,7 +58,7 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 // ChatbotInfo GET /api/v1/chatbots/<dialog_id>/info
 //
 // Mirrors python bot_api.py:126-154. Returns the public metadata of
-// a chatbot dialog (title, avatar, prologue, tavily key flag, llm_id).
+// a chatbot dialog (title, avatar, prologue, web search flag, llm_id).
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -70,18 +70,19 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
 		return
 	}
-	title, avatar, prologue, llmID, hasTavily, ec, err := h.botService.ChatbotInfo(
+	title, avatar, prologue, llmID, hasWebSearch, ec, err := h.botService.ChatbotInfo(
 		c.Request.Context(), user.ID, dialogID)
 	if err != nil {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, gin.H{
-		"title":          title,
-		"avatar":         avatar,
-		"prologue":       prologue,
-		"has_tavily_key": hasTavily,
-		"llm_id":         llmID,
+		"title":                   title,
+		"avatar":                  avatar,
+		"prologue":                prologue,
+		"has_tavily_key":          hasWebSearch,
+		"has_web_search_provider": hasWebSearch,
+		"llm_id":                  llmID,
 	}, "success")
 }
 

@@ -38,7 +38,7 @@ func NewHunyuanModel(baseURL map[string]string, urlSuffix URLSuffix) *HunyuanMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -49,32 +49,6 @@ func (h *HunyuanModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (h *HunyuanModel) Name() string {
 	return "Tencent Hunyuan"
-}
-
-// HunyuanChatResponse mirrors Tencent Hunyuan's OpenAI-compatible chat response.
-type HunyuanChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		FinishReason string `json:"finish_reason"`
-		Index        int    `json:"index"`
-		Logprobs     any    `json:"logprobs"`
-		Message      struct {
-			Content          string           `json:"content"`
-			Reasoning        string           `json:"reasoning"`
-			ReasoningContent string           `json:"reasoning_content"`
-			Role             string           `json:"role"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-		} `json:"message"`
-	} `json:"choices"`
-	SystemFingerprint string `json:"system_fingerprint"`
-	Usage             struct {
-		CompletionTokens int `json:"completion_tokens"`
-		PromptTokens     int `json:"prompt_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
 }
 
 // HunyuanEmbeddingResponse mirrors Tencent Hunyuan's embeddings response.
@@ -110,64 +84,12 @@ func (h *HunyuanModel) ChatWithMessages(ctx context.Context, modelName string, m
 	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := h.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := h.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
-		var result HunyuanChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := result.Choices[0]
-		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
-			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
-		}
-		reasonContent := choice.Message.ReasoningContent
-		if reasonContent == "" {
-			reasonContent = choice.Message.Reasoning
-		}
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &choice.Message.Content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage: &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      result.Usage.TotalTokens,
-			},
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender opens the SSE chat-completions
@@ -199,94 +121,9 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := h.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		if apiErr, ok := event["error"]; ok {
-			return fmt.Errorf("hunyuan: upstream stream error: %v", apiErr)
-		}
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
-		}
-		choices, ok := event["choices"].([]any)
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		choice, ok := choices[0].(map[string]any)
-		if !ok {
-			return nil
-		}
-		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-		delta, ok := choice["delta"].(map[string]any)
-		if !ok {
-			return nil
-		}
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		}
-		if reasoning, ok := delta["reasoning"].(string); ok && reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		}
-		if content, ok := delta["content"].(string); ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-		return nil
+	return h.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-	if !done && !sawTerminal {
-		return fmt.Errorf("hunyuan: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (h *HunyuanModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {

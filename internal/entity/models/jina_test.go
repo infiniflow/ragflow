@@ -51,6 +51,7 @@ func newJinaForTest(baseURL string) *JinaModel {
 }
 
 func TestJinaChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "jina-vlm" {
@@ -91,6 +92,7 @@ func TestJinaChatHappyPath(t *testing.T) {
 }
 
 func TestJinaChatPreservesReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id": "jina-chat",
@@ -129,11 +131,9 @@ func TestJinaChatSupportsToolCalls(t *testing.T) {
 }
 
 func TestJinaChatPropagatesConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(128) {
-			t.Errorf("max_tokens=%v want 128", body["max_tokens"])
-		}
 		if body["temperature"] != 0.2 {
 			t.Errorf("temperature=%v want 0.2", body["temperature"])
 		}
@@ -167,6 +167,7 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 }
 
 func TestJinaChatValidation(t *testing.T) {
+	withSSRFBypass(t)
 	j := newJinaForTest("http://unused")
 	apiKey := "test-key"
 	emptyKey := ""
@@ -223,23 +224,8 @@ func TestJinaChatValidation(t *testing.T) {
 	}
 }
 
-func TestJinaChatStreamIsNotSupported(t *testing.T) {
-	apiKey := "test-key"
-	err := newJinaForTest("http://unused").ChatStreamlyWithSender(
-		t.Context(),
-		"jina-vlm",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey},
-		nil,
-		nil,
-		func(*string, *string) error { return nil },
-	)
-	if err == nil || !strings.Contains(err.Error(), "ChatStreamlyWithSender") {
-		t.Fatalf("expected unsupported streaming error, got %v", err)
-	}
-}
-
 func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJinaServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{{
@@ -269,6 +255,7 @@ func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
 }
 
 func TestJinaChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -285,6 +272,7 @@ func TestJinaChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestJinaChatRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
@@ -300,6 +288,7 @@ func TestJinaChatRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestJinaChatRejectsUnknownRegion(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	j := newJinaForTest("http://unused")
 	apiKey := "test-key"
@@ -313,6 +302,7 @@ func TestJinaChatRejectsUnknownRegion(t *testing.T) {
 }
 
 func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -333,6 +323,7 @@ func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 }
 
 func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJinaServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_n"] != float64(2) {
 			t.Errorf("top_n=%v, want 2", body["top_n"])

@@ -3,6 +3,7 @@ import { getEntityDisplayName } from '@/components/structure-graph/adapters';
 import { type ClickableNode } from '@/components/structure-graph/representation-renderer';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { useFetchDocumentStructureGraph } from '@/hooks/use-document-request';
+import { useDebounce } from 'ahooks';
 import { useCallback, useMemo, useState } from 'react';
 import { useSelectedTemplate } from './use-selected-template';
 
@@ -10,9 +11,16 @@ export function useGraphEntitySearch(
   onNodeClick?: (node: ClickableNode) => void,
 ) {
   const [graphKeywords, setGraphKeywords] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState(''); // ExpandableSearchInput value
   const [selectedNodeId, setSelectedNodeId] = useState(''); // entity name
 
-  const { data, loading } = useFetchDocumentStructureGraph(graphKeywords);
+  // Non-graph kinds search server-side with the same ?keywords= query the
+  // graph-kind Enter search uses; the two inputs never show at once, and the
+  // handlers below keep at most one of the two keyword sources non-empty.
+  const debouncedSearchKeyword = useDebounce(searchKeyword, { wait: 500 });
+  const { data, loading } = useFetchDocumentStructureGraph(
+    debouncedSearchKeyword || graphKeywords,
+  );
   const templates = useMemo(() => data?.templates ?? [], [data?.templates]);
   const {
     selectedTemplateId,
@@ -49,6 +57,7 @@ export function useGraphEntitySearch(
     (name: string) => {
       if (!name) {
         setGraphKeywords('');
+        setSearchKeyword('');
         setSelectedNodeId('');
         return;
       }
@@ -69,7 +78,12 @@ export function useGraphEntitySearch(
 
   const handleNoMatchEnter = useCallback((keywords: string) => {
     setGraphKeywords(keywords);
+    setSearchKeyword('');
     setSelectedNodeId('');
+  }, []);
+
+  const handleSearchKeywordChange = useCallback((value: string) => {
+    setSearchKeyword(value);
   }, []);
 
   // Two-way binding: clicking a graph node selects it in the dropdown,
@@ -89,6 +103,7 @@ export function useGraphEntitySearch(
     (templateId: string) => {
       setSelectedTemplateId(templateId);
       setGraphKeywords('');
+      setSearchKeyword('');
       setSelectedNodeId('');
     },
     [setSelectedTemplateId],
@@ -102,10 +117,12 @@ export function useGraphEntitySearch(
     selectedTemplate,
     isGraphKind,
     entityOptions,
+    searchKeyword,
     graphSelectValue: selectedEntityName || graphKeywords,
     highlightNodeId: selectedEntityName || null,
     handleSelectEntity,
     handleNoMatchEnter,
+    handleSearchKeywordChange,
     handleTemplateChange,
     handleNodeClick,
   };

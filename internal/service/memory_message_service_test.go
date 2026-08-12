@@ -150,8 +150,9 @@ func TestTaskFromRow_InitializesProgressMessage(t *testing.T) {
 // values. (Wall-clock based today; the Redis-backed counter will
 // be added when the project's Redis client lands.)
 func TestGenerateRawMessageID_Unique(t *testing.T) {
-	a := generateRawMessageID()
-	b := generateRawMessageID()
+	ctx := t.Context()
+	a := generateRawMessageID(ctx)
+	b := generateRawMessageID(ctx)
 	if a == b {
 		// Allow a 1-second tie when the clock hasn't ticked.
 		// GenerateRawMessageID uses Unix seconds; two calls

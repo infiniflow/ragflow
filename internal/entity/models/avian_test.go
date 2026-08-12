@@ -79,6 +79,7 @@ func TestAvianFactory(t *testing.T) {
 }
 
 func TestAvianChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -89,9 +90,6 @@ func TestAvianChatHappyPath(t *testing.T) {
 		}
 		if body["stream"] != false {
 			t.Errorf("stream=%v, want false", body["stream"])
-		}
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v, want 64", body["max_tokens"])
 		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
@@ -138,6 +136,7 @@ func TestAvianChatHappyPath(t *testing.T) {
 }
 
 func TestAvianChatFallsBackToReasoningField(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -169,6 +168,7 @@ func TestAvianChatFallsBackToReasoningField(t *testing.T) {
 }
 
 func TestAvianChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newAvianForTest("http://unused").ChatWithMessages(
 		ctx,
@@ -184,6 +184,7 @@ func TestAvianChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestAvianChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newAvianForTest("http://unused").ChatWithMessages(
@@ -200,6 +201,7 @@ func TestAvianChatRequiresMessages(t *testing.T) {
 }
 
 func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -222,6 +224,7 @@ func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
 }
 
 func TestAvianStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -277,6 +280,7 @@ func TestAvianStreamHappyPath(t *testing.T) {
 }
 
 func TestAvianStreamRejectsFalseStreamConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
@@ -295,6 +299,7 @@ func TestAvianStreamRejectsFalseStreamConfig(t *testing.T) {
 }
 
 func TestAvianStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newAvianForTest("http://unused").ChatStreamlyWithSender(
@@ -312,6 +317,7 @@ func TestAvianStreamRequiresSender(t *testing.T) {
 }
 
 func TestAvianListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/models" {
@@ -336,6 +342,7 @@ func TestAvianListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestAvianMissingBaseURLFailsClearly(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	a := NewAvianModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	apiKey := "test-key"
@@ -353,6 +360,7 @@ func TestAvianMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestAvianUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	a := newAvianForTest("http://unused")
 	model := "deepseek/deepseek-v3.2"

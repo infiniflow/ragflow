@@ -8,6 +8,7 @@ import (
 )
 
 func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
+	withSSRFBypass(t)
 	type providerCase struct {
 		name           string
 		newModel       func(string) ModelDriver

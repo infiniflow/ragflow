@@ -46,10 +46,9 @@ from common.connection_utils import timeout
 from common.metadata_utils import turn2jsonschema, update_metadata_to
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import (
+    RAPTOR_TREE_BUILDER,
     collect_raptor_chunk_ids,
     collect_raptor_methods,
-    get_raptor_clustering_method,
-    get_raptor_tree_builder,
     get_skip_reason,
     make_raptor_summary_chunk_id,
     should_skip_raptor,
@@ -84,9 +83,7 @@ from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
-from rag.advanced_rag.knowlege_compile.raptor import (
-    RAPTOR_TREE_BUILDER,
-)
+
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.graphrag.utils import chat_limiter
@@ -934,8 +931,12 @@ async def run_dataflow(task: dict):
 
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
+    try:
+        ret = DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+    except Exception:
+        logging.exception("increment_chunk_num failed for doc %s", doc_id)
+        ret = None
     set_progress(task_id, prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
-    ret = DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
     get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
     logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
     get_recording_context().record("dataflow_chunks", chunks)
@@ -1058,15 +1059,14 @@ async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_met
 
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
+    tree_builder = "raptor"
+    clustering_method = "watershed"
     """Generate RAPTOR summaries for selected documents in a knowledge base."""
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
     rag_tokenizer.tokenizer.set_language(row.get("language", "English"))
 
     raptor_config = kb_parser_config.get("raptor", {})
-    raptor_ext_config = raptor_config.get("ext") or {}
-    tree_builder = get_raptor_tree_builder(raptor_config)
-    clustering_method = get_raptor_clustering_method(raptor_config)
     vctr_nm = "q_%d_vec" % vector_size
 
     res = []
@@ -1117,12 +1117,9 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             embd_mdl,
             raptor_config["prompt"],
             raptor_config["max_token"],
-            raptor_config["threshold"],
             max_errors=max_errors,
-            tree_builder=tree_builder,
-            clustering_method=clustering_method,
-            psi_exact_max_leaves=raptor_ext_config.get("psi_exact_max_leaves", 4096),
-            psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
+            clustering_threshold=float(raptor_config.get("clustering_threshold", 0.3)),
+            clustering_ratio=float(raptor_config.get("clustering_ratio", 0.5)),
         )
         original_length = len(chunks)
         chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
@@ -1478,14 +1475,13 @@ async def do_handle_task(task):
                 {
                     "raptor": {
                         "use_raptor": True,
-                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                        "max_token": 256,
-                        "threshold": 0.1,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
                         "max_cluster": 64,
                         "random_seed": 0,
                         "scope": "file",
-                        "clustering_method": "gmm",
-                        "tree_builder": "raptor",
                     },
                 }
             )

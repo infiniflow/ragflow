@@ -73,7 +73,7 @@ var validOutputFormats = map[string]bool{
 	"txt":      true,
 	"markdown": true,
 	"html":     true,
-	"md":       true, // alias for markdown
+	"md":       true, // alias for Markdown
 }
 
 // docsGeneratorParam is the static DSL param surface.
@@ -141,7 +141,7 @@ func (p *docsGeneratorParam) Update(conf map[string]any) error {
 }
 
 // Check validates the param. FontSize must be ≥ 12; output_format must
-// be one of pdf / docx / txt / markdown / html.
+// be one of pdf / docx / txt / Markdown / html.
 func (p *docsGeneratorParam) Check() error {
 	if !validOutputFormats[strings.ToLower(strings.TrimSpace(p.OutputFormat))] {
 		return &ParamError{
@@ -388,7 +388,7 @@ func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bo
 		return false, fmt.Errorf("storage not initialized")
 	}
 	bucket := fmt.Sprintf("%s-downloads", tenantID)
-	if err := storageImpl.Put(bucket, docID, payload); err != nil {
+	if err = storageImpl.Put(ctx, bucket, docID, payload); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -510,7 +510,7 @@ func sanitizeFilename(raw, ext string) string {
 }
 
 // renderTXT / renderMarkdown / renderHTML live in
-// internal/agent/component/io/{txt,markdown,html}_writer.go so
+// internal/agent/component/io/{txt,Markdown,html}_writer.go so
 // every per-format writer lives in its own file under io/,
 // matching the pdf_writer.go / docx_writer.go packaging.
 

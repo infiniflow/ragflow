@@ -43,6 +43,7 @@ const (
 	CodeLicenseTimeRollback     ErrorCode = 324
 	CodeLicenseNotFound         ErrorCode = 325
 	CodeLicenseUnexpectedError  ErrorCode = 326
+	CodeLicenseNotValidYet      ErrorCode = 327
 	CodeBadRequest              ErrorCode = 400
 	CodeUnauthorized            ErrorCode = 401
 	CodeForbidden               ErrorCode = 403

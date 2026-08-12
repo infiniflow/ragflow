@@ -30,7 +30,8 @@ import (
 
 // ListRoles handle list roles
 func (h *Handler) ListRoles(c *gin.Context) {
-	roles, err := h.service.ListRoles()
+	ctx := c.Request.Context()
+	roles, err := h.service.ListRoles(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -57,7 +58,8 @@ func (h *Handler) CreateRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.CreateRole(req.RoleName, req.Description)
+	ctx := c.Request.Context()
+	role, err := h.service.CreateRole(ctx, req.RoleName, req.Description)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -74,7 +76,8 @@ func (h *Handler) ShowRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.ShowRole(roleName)
+	ctx := c.Request.Context()
+	role, err := h.service.ShowRole(ctx, roleName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -102,7 +105,8 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.UpdateRole(roleName, req.Description)
+	ctx := c.Request.Context()
+	role, err := h.service.UpdateRole(ctx, roleName, req.Description)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -119,7 +123,8 @@ func (h *Handler) DropRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.DropRole(roleName)
+	ctx := c.Request.Context()
+	role, err := h.service.DropRole(ctx, roleName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeNotFound, "Role not found")
 		return
@@ -136,7 +141,8 @@ func (h *Handler) ShowRolePermission(c *gin.Context) {
 		return
 	}
 
-	permissions, err := h.service.ShowRolePermission(roleName)
+	ctx := c.Request.Context()
+	permissions, err := h.service.ShowRolePermission(ctx, roleName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -165,7 +171,8 @@ func (h *Handler) GrantRolePermission(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.GrantRolePermission(roleName, req.Actions, req.Resource)
+	ctx := c.Request.Context()
+	result, err := h.service.GrantRolePermission(ctx, roleName, req.Actions, req.Resource)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -194,7 +201,8 @@ func (h *Handler) RevokeRolePermission(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.RevokeRolePermission(roleName, req.Actions, req.Resource)
+	ctx := c.Request.Context()
+	result, err := h.service.RevokeRolePermission(ctx, roleName, req.Actions, req.Resource)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -205,7 +213,8 @@ func (h *Handler) RevokeRolePermission(c *gin.Context) {
 
 // ListResources handle list role resources
 func (h *Handler) ListResources(c *gin.Context) {
-	resources, err := h.service.ListResources()
+	ctx := c.Request.Context()
+	resources, err := h.service.ListResources(ctx)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "Role not found")
@@ -220,7 +229,8 @@ func (h *Handler) ListResources(c *gin.Context) {
 
 // ListRolesWithPermission handle list roles with permission
 func (h *Handler) ListRolesWithPermission(c *gin.Context) {
-	roles, err := h.service.ListRolesWithPermission()
+	ctx := c.Request.Context()
+	roles, err := h.service.ListRolesWithPermission(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -236,7 +246,8 @@ func (h *Handler) ShowRoleDefaultModels(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ShowRoleDefaultModels(roleName)
+	ctx := c.Request.Context()
+	result, err := h.service.ShowRoleDefaultModels(ctx, roleName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -261,7 +272,8 @@ func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 	}
 
-	result, err := h.service.SetRoleDefaultModel(roleName, request.ModelID, request.ModelType)
+	ctx := c.Request.Context()
+	result, err := h.service.SetRoleDefaultModel(ctx, roleName, request.ModelID, request.ModelType)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -286,7 +298,8 @@ func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ResetRoleDefaultModel(roleName, request.ModelType)
+	ctx := c.Request.Context()
+	result, err := h.service.ResetRoleDefaultModel(ctx, roleName, request.ModelType)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -304,7 +317,8 @@ func (h *Handler) ListModelProviders(c *gin.Context) {
 	// convert keywords to small case
 	keywords = strings.ToLower(keywords)
 
-	result, err := h.service.ListModelProviders()
+	ctx := c.Request.Context()
+	result, err := h.service.ListModelProviders(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -325,8 +339,8 @@ func (h *Handler) AddModelProvider(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.AddModelProvider(req.ProviderName, userID)
+	ctx := c.Request.Context()
+	result, err := h.service.AddModelProvider(ctx, req.ProviderName, userID)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -362,8 +376,8 @@ func (h *Handler) DeleteModelProvider(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.DeleteModelProviders(userID, req.ProviderNames)
+	ctx := c.Request.Context()
+	result, err := h.service.DeleteModelProviders(ctx, userID, req.ProviderNames)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -414,8 +428,8 @@ func (h *Handler) ListModelInstances(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.ListModelInstances(userID, providerName)
+	ctx := c.Request.Context()
+	result, err := h.service.ListModelInstances(ctx, userID, providerName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -436,8 +450,8 @@ func (h *Handler) ShowProviderInstance(c *gin.Context) {
 		return
 	}
 	userID := c.GetString("user_id")
-
-	result, err := h.service.ShowProviderInstance(userID, providerName, instanceName)
+	ctx := c.Request.Context()
+	result, err := h.service.ShowProviderInstance(ctx, userID, providerName, instanceName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -458,8 +472,8 @@ func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
 		return
 	}
 	userID := c.GetString("user_id")
-
-	result, err := h.service.ShowProviderInstanceBalance(userID, providerName, instanceName)
+	ctx := c.Request.Context()
+	result, err := h.service.ShowProviderInstanceBalance(ctx, userID, providerName, instanceName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -480,8 +494,8 @@ func (h *Handler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 	userID := c.GetString("user_id")
-
-	result, err := h.service.CheckInstanceConnection(userID, providerName, instanceName)
+	ctx := c.Request.Context()
+	result, err := h.service.CheckInstanceConnection(ctx, userID, providerName, instanceName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -510,8 +524,8 @@ func (h *Handler) CheckProviderConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.CheckProviderConnection(userID, providerName, req.Region, req.APIKey, req.BaseURL)
+	ctx := c.Request.Context()
+	result, err := h.service.CheckProviderConnection(ctx, userID, providerName, req.Region, req.APIKey, req.BaseURL)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -549,8 +563,8 @@ func (h *Handler) AlterProviderInstance(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeUnauthorized, "Unauthorized")
 		return
 	}
-
-	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.InstanceName, req.APIKey)
+	ctx := c.Request.Context()
+	result, err := h.service.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, req.APIKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -577,8 +591,8 @@ func (h *Handler) AddModelInstance(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.AddModelInstance(userID, providerName, req.InstanceName)
+	ctx := c.Request.Context()
+	result, err := h.service.AddModelInstance(ctx, userID, providerName, req.InstanceName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -605,8 +619,8 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.DeleteModelInstances(userID, providerName, req.InstanceNames)
+	ctx := c.Request.Context()
+	result, err := h.service.DeleteModelInstances(ctx, userID, providerName, req.InstanceNames)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -629,8 +643,8 @@ func (h *Handler) ListInstanceModels(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.ListInstanceModels(userID, providerName, instanceName)
+	ctx := c.Request.Context()
+	result, err := h.service.ListInstanceModels(ctx, userID, providerName, instanceName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -673,8 +687,8 @@ func (h *Handler) EnableOrDisableModel(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, req.Status)
+	ctx := c.Request.Context()
+	result, err := h.service.EnableOrDisableModel(ctx, userID, providerName, instanceName, modelName, modelID, req.Status)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -707,8 +721,8 @@ func (h *Handler) AddModels(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.AddModels(userID, providerName, instanceName, req.ModelNames)
+	ctx := c.Request.Context()
+	result, err := h.service.AddModels(ctx, userID, providerName, instanceName, req.ModelNames)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -741,8 +755,8 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	result, err := h.service.DeleteModels(userID, providerName, instanceName, req.ModelNames)
+	ctx := c.Request.Context()
+	result, err := h.service.DeleteModels(ctx, userID, providerName, instanceName, req.ModelNames)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -753,7 +767,8 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 
 // GetSystemFingerprint handle get system fingerprint
 func (h *Handler) GetSystemFingerprint(c *gin.Context) {
-	fingerprint, err := h.service.GetSystemFingerprint()
+	ctx := c.Request.Context()
+	fingerprint, err := h.service.GetSystemFingerprint(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -774,8 +789,9 @@ func (h *Handler) SetSystemLicense(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
+	ctx := c.Request.Context()
 
-	err := h.service.SetSystemLicense(req.License)
+	err := h.service.SetSystemLicense(ctx, req.License)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -794,7 +810,9 @@ func (h *Handler) ShowSystemLicense(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	systemLicense, err := h.service.ShowSystemLicense(checkFlag)
+	ctx := c.Request.Context()
+
+	systemLicense, err := h.service.ShowSystemLicense(ctx, checkFlag)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -815,12 +833,59 @@ func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	result, err := h.service.UpdateSystemLicenseConfig(req.TimeRecordSaveInterval, req.TimeRecordTaskDuration)
+	ctx := c.Request.Context()
+	result, err := h.service.UpdateSystemLicenseConfig(ctx, req.TimeRecordSaveInterval, req.TimeRecordTaskDuration)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 	common.SuccessWithData(c, result, "System license config updated successfully")
+}
+
+type SetSoftFingerprintRequest struct {
+	SoftFingerprint string `json:"fingerprint" binding:"required"`
+}
+
+func (h *Handler) SetSoftFingerprint(c *gin.Context) {
+	var req SetSoftFingerprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	ctx := c.Request.Context()
+
+	err := h.service.SetSoftFingerprint(ctx, req.SoftFingerprint)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
+}
+
+func (h *Handler) ShowSoftFingerprint(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	softFingerprint, err := h.service.GetSoftFingerprint(ctx)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, softFingerprint, "")
+}
+
+func (h *Handler) DeleteSoftFingerprint(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	err := h.service.DeleteSoftFingerprint(ctx)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
 }
 
 type ShowUserActivityRequest struct {
@@ -836,7 +901,9 @@ func (h *Handler) ShowUserActivity(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	userActivity, err := h.service.ShowUserActivity(req.Email, req.Days)
+	ctx := c.Request.Context()
+
+	userActivity, err := h.service.ShowUserActivity(ctx, req.Email, req.Days)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -866,8 +933,9 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	userDatasetSummary, err := h.service.ShowUserDatasetSummary(username, req.Dataset)
+	userDatasetSummary, err := h.service.ShowUserDatasetSummary(ctx, username, req.Dataset)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -909,7 +977,9 @@ func (h *Handler) ShowUserStorage(c *gin.Context) {
 		return
 	}
 
-	userStorage, err := h.service.ShowUserStorage(username)
+	ctx := c.Request.Context()
+
+	userStorage, err := h.service.ShowUserStorage(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -951,7 +1021,9 @@ func (h *Handler) ShowUserIndex(c *gin.Context) {
 		return
 	}
 
-	userIndex, err := h.service.ShowUserIndex(username)
+	ctx := c.Request.Context()
+
+	userIndex, err := h.service.ShowUserIndex(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -981,8 +1053,9 @@ func (h *Handler) UpdateUserRole(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Role name is required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, err := h.service.UpdateUserRole(username, req.RoleName)
+	result, err := h.service.UpdateUserRole(ctx, username, req.RoleName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -998,7 +1071,9 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 		return
 	}
 
-	permissions, err := h.service.ShowUserPermission(username)
+	ctx := c.Request.Context()
+
+	permissions, err := h.service.ShowUserPermission(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1013,8 +1088,9 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	datasets, err := h.service.ListUserDatasets(username)
+	datasets, err := h.service.ListUserDatasets(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1029,8 +1105,9 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	agents, err := h.service.ListUserAgents(username)
+	agents, err := h.service.ListUserAgents(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1045,8 +1122,9 @@ func (h *Handler) ListUserChats(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	chats, err := h.service.ListUserChats(username)
+	chats, err := h.service.ListUserChats(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1061,8 +1139,9 @@ func (h *Handler) ListUserSearches(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	searches, err := h.service.ListUserSearches(username)
+	searches, err := h.service.ListUserSearches(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1077,8 +1156,9 @@ func (h *Handler) ListUserModels(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	models, err := h.service.ListUserModels(username)
+	models, err := h.service.ListUserModels(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1093,8 +1173,9 @@ func (h *Handler) ListUserFiles(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	files, err := h.service.ListUserFiles(username)
+	files, err := h.service.ListUserFiles(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1109,8 +1190,9 @@ func (h *Handler) ListUserProviders(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	ctx := c.Request.Context()
 
-	providers, err := h.service.ListUserProviders(username)
+	providers, err := h.service.ListUserProviders(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1137,8 +1219,9 @@ func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Provider name is required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	instances, err := h.service.ListUserProviderInstances(userName, providerName)
+	instances, err := h.service.ListUserProviderInstances(ctx, userName, providerName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1171,8 +1254,9 @@ func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Instance name is required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	models, err := h.service.ListUserProviderInstanceModels(userName, providerName, instanceName)
+	models, err := h.service.ListUserProviderInstanceModels(ctx, userName, providerName, instanceName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1193,8 +1277,9 @@ func (h *Handler) ListUserDefaultModels(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	models, err := h.service.ListUserDefaultModels(userName)
+	models, err := h.service.ListUserDefaultModels(ctx, userName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1205,7 +1290,9 @@ func (h *Handler) ListUserDefaultModels(c *gin.Context) {
 
 // ShowUsersSummary handle show users summary
 func (h *Handler) ShowUsersSummary(c *gin.Context) {
-	usersSummary, err := h.service.ShowUsersSummary()
+	ctx := c.Request.Context()
+
+	usersSummary, err := h.service.ShowUsersSummary(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1227,7 +1314,9 @@ func (h *Handler) ShowUsersActivity(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Window)
+	ctx := c.Request.Context()
+
+	usersActivity, err := h.service.ShowUsersActivity(ctx, req.Days, req.Window)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1270,8 +1359,9 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 			return
 		}
 	}
+	ctx := c.Request.Context()
 
-	usersReports, err := h.service.ListUsersReports(pageIndex, pageSize, req.Status, req.Plan, req.Days)
+	usersReports, err := h.service.ListUsersReports(ctx, pageIndex, pageSize, req.Status, req.Plan, req.Days)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1310,8 +1400,9 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
 		}
 	}
+	ctx := c.Request.Context()
 
-	usersStorage, err := h.service.ListUsersStorage(pageIndex, pageSize, top)
+	usersStorage, err := h.service.ListUsersStorage(ctx, pageIndex, pageSize, top)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1350,8 +1441,9 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
 		}
 	}
+	ctx := c.Request.Context()
 
-	usersDocuments, err := h.service.ListUsersDocuments(pageIndex, pageSize, top)
+	usersDocuments, err := h.service.ListUsersDocuments(ctx, pageIndex, pageSize, top)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1390,8 +1482,9 @@ func (h *Handler) ListUsersIndex(c *gin.Context) {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
 		}
 	}
+	ctx := c.Request.Context()
 
-	usersIndex, err := h.service.ListUsersIndex(pageIndex, pageSize, top)
+	usersIndex, err := h.service.ListUsersIndex(ctx, pageIndex, pageSize, top)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1442,8 +1535,9 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
 		}
 	}
+	ctx := c.Request.Context()
 
-	usersQuota, err := h.service.ListUsersQuota(pageIndex, pageSize, top, request.QuotaThreshold, request.Plan, request.Days)
+	usersQuota, err := h.service.ListUsersQuota(ctx, pageIndex, pageSize, top, request.QuotaThreshold, request.Plan, request.Days)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1454,7 +1548,8 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 
 // ShowUsersPlanSummary handle show users plan summary
 func (h *Handler) ShowUsersPlanSummary(c *gin.Context) {
-	usersPlanSummary, err := h.service.ShowUsersPlanSummary()
+	ctx := c.Request.Context()
+	usersPlanSummary, err := h.service.ShowUsersPlanSummary(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1475,7 +1570,8 @@ func (h *Handler) ShowUsersPlan(c *gin.Context) {
 			return
 		}
 	}
-	usersPlanQuota, err := h.service.ShowUsersPlanQuota(quota)
+	ctx := c.Request.Context()
+	usersPlanQuota, err := h.service.ShowUsersPlanQuota(ctx, quota)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1486,7 +1582,8 @@ func (h *Handler) ShowUsersPlan(c *gin.Context) {
 
 // ShowUsersQuotaSummary handle show users quota summary
 func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
-	usersQuotaSummary, err := h.service.ShowUsersQuotaSummary()
+	ctx := c.Request.Context()
+	usersQuotaSummary, err := h.service.ShowUsersQuotaSummary(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1497,7 +1594,8 @@ func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 
 // ShowIngestionTasksSummary handle show ingestion tasks summary
 func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
-	ingestionTasksSummary, err := h.service.ShowIngestionTasksSummary()
+	ctx := c.Request.Context()
+	ingestionTasksSummary, err := h.service.ShowIngestionTasksSummary(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1508,7 +1606,8 @@ func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 
 // ShowDataSummary handle show data summary
 func (h *Handler) ShowDataSummary(c *gin.Context) {
-	dataSummary, err := h.service.ShowDataSummary()
+	ctx := c.Request.Context()
+	dataSummary, err := h.service.ShowDataSummary(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1519,7 +1618,8 @@ func (h *Handler) ShowDataSummary(c *gin.Context) {
 
 // ShowDataOrphan handle show data orphan
 func (h *Handler) ShowDataOrphan(c *gin.Context) {
-	dataOrphan, err := h.service.ShowDataOrphan()
+	ctx := c.Request.Context()
+	dataOrphan, err := h.service.ShowDataOrphan(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1530,7 +1630,8 @@ func (h *Handler) ShowDataOrphan(c *gin.Context) {
 
 // ShowDataStorage handle show data storage
 func (h *Handler) ShowDataStorage(c *gin.Context) {
-	dataStorage, err := h.service.ShowDataStorage()
+	ctx := c.Request.Context()
+	dataStorage, err := h.service.ShowDataStorage(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1541,7 +1642,8 @@ func (h *Handler) ShowDataStorage(c *gin.Context) {
 
 // ShowDataIndex handle show data index
 func (h *Handler) ShowDataIndex(c *gin.Context) {
-	dataIndex, err := h.service.ShowDataIndex()
+	ctx := c.Request.Context()
+	dataIndex, err := h.service.ShowDataIndex(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1562,7 +1664,8 @@ func (h *Handler) PurgeOrphanData(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	result, err := h.service.PurgeOrphanData(request.Preview)
+	ctx := c.Request.Context()
+	result, err := h.service.PurgeOrphanData(ctx, request.Preview)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1587,8 +1690,8 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 	if err != nil {
 		return
 	}
-
-	result, err := h.service.PurgeUserData(username, request.Preview)
+	ctx := c.Request.Context()
+	result, err := h.service.PurgeUserData(ctx, username, request.Preview)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -1616,8 +1719,8 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-
-	result, err := h.service.PurgeUsersData(request.Preview, request.Days, request.Plan, request.UserStatus)
+	ctx := c.Request.Context()
+	result, err := h.service.PurgeUsersData(ctx, request.Preview, request.Days, request.Plan, request.UserStatus)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -1695,7 +1798,8 @@ func (h *Handler) ListUserAPIKeys(c *gin.Context) {
 
 // DownloadSensitiveWords handle download sensitive words
 func (h *Handler) DownloadSensitiveWords(c *gin.Context) {
-	result, err := h.service.DownloadSensitiveWords()
+	ctx := c.Request.Context()
+	result, err := h.service.DownloadSensitiveWords(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1723,7 +1827,8 @@ func (h *Handler) UploadSensitiveWords(c *gin.Context) {
 		return
 	}
 	file := files[0]
-	result, err := h.service.UploadSensitiveWords(file)
+	ctx := c.Request.Context()
+	result, err := h.service.UploadSensitiveWords(ctx, file)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1754,8 +1859,9 @@ func (h *Handler) BindVerificationEmail(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Email, host, username, and password are required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, err := h.service.BindVerificationEmail(request.Email, request.Host, request.Port, request.Username, request.Password, request.UseTLS, request.UseSSL)
+	result, err := h.service.BindVerificationEmail(ctx, request.Email, request.Host, request.Port, request.Username, request.Password, request.UseTLS, request.UseSSL)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1766,7 +1872,8 @@ func (h *Handler) BindVerificationEmail(c *gin.Context) {
 
 // ShowVerificationEmail handle show verification email
 func (h *Handler) ShowVerificationEmail(c *gin.Context) {
-	result, err := h.service.ShowVerificationEmail()
+	ctx := c.Request.Context()
+	result, err := h.service.ShowVerificationEmail(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1777,7 +1884,8 @@ func (h *Handler) ShowVerificationEmail(c *gin.Context) {
 
 // ShowWhiteList handle show white list
 func (h *Handler) ShowWhiteList(c *gin.Context) {
-	result, err := h.service.ShowWhiteList()
+	ctx := c.Request.Context()
+	result, err := h.service.ShowWhiteList(ctx)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1801,8 +1909,9 @@ func (h *Handler) AddWhiteList(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Email is required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, err := h.service.AddWhiteList(request.Email)
+	result, err := h.service.AddWhiteList(ctx, request.Email)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1829,8 +1938,9 @@ func (h *Handler) BatchAddWhiteList(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Only one file is allowed")
 		return
 	}
+	ctx := c.Request.Context()
 	file := files[0]
-	result, err := h.service.BatchAddWhiteList(file)
+	result, err := h.service.BatchAddWhiteList(ctx, file)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1852,8 +1962,9 @@ func (h *Handler) UpdateWhiteList(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Email is required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, err := h.service.UpdateWhiteList(id, request.Email)
+	result, err := h.service.UpdateWhiteList(ctx, id, request.Email)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1870,8 +1981,9 @@ func (h *Handler) DeleteWhiteList(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid id")
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, err := h.service.DeleteWhiteList(id)
+	result, err := h.service.DeleteWhiteList(ctx, id)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1895,8 +2007,9 @@ func (h *Handler) BatchDeleteWhiteList(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Ids are required")
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, err := h.service.BatchDeleteWhiteList(request.Ids)
+	result, err := h.service.BatchDeleteWhiteList(ctx, request.Ids)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1953,8 +2066,9 @@ func (h *Handler) GetTokenUsersStats(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid top")
 		return
 	}
+	ctx := c.Request.Context()
 
-	stats, err := h.service.GetTokenUsersStats(fromDate, toDate, top)
+	stats, err := h.service.GetTokenUsersStats(ctx, fromDate, toDate, top)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -1971,8 +2085,9 @@ func (h *Handler) GetTokenStatsSummary(c *gin.Context) {
 	if len(toDate) == 10 {
 		toDate += " 23:59:59"
 	}
+	ctx := c.Request.Context()
 
-	stats, err := h.service.GetTokenStatsSummary(fromDate, toDate)
+	stats, err := h.service.GetTokenStatsSummary(ctx, fromDate, toDate)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return

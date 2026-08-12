@@ -2,10 +2,7 @@ import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
-import {
-  ITraceInfo,
-  useGenerateStatus,
-} from '@/hooks/use-dataset-generate';
+import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { Trash2 } from 'lucide-react';
 import { useCallback } from 'react';

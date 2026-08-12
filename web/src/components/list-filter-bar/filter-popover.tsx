@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   Popover,
   PopoverContent,
@@ -44,31 +60,23 @@ const filterNestedList = (
 
   const term = searchTerm.toLowerCase();
 
-  return list
-    .filter((item) => {
-      if (
-        item.label.toString().toLowerCase().includes(term) ||
-        item.id.toLowerCase().includes(term)
-      ) {
-        return true;
-      }
+  return list.reduce<FilterType[]>((acc, item) => {
+    const selfMatch =
+      item.label.toString().toLowerCase().includes(term) ||
+      item.id.toLowerCase().includes(term);
 
-      if (item.list && item.list.length > 0) {
-        const filteredSubList = filterNestedList(item.list, searchTerm);
-        return filteredSubList.length > 0;
+    if (selfMatch) {
+      // Parent matches itself - keep all original children
+      acc.push(item);
+    } else if (item.list && item.list.length > 0) {
+      // Parent doesn't match - keep only matching children
+      const filteredSubList = filterNestedList(item.list, searchTerm);
+      if (filteredSubList.length > 0) {
+        acc.push({ ...item, list: filteredSubList });
       }
-
-      return false;
-    })
-    .map((item) => {
-      // if (item.list && item.list.length > 0) {
-      //   return {
-      //     ...item,
-      //     list: filterNestedList(item.list, searchTerm),
-      //   };
-      // }
-      return item;
-    });
+    }
+    return acc;
+  }, []);
 };
 
 function CheckboxFormMultiple({

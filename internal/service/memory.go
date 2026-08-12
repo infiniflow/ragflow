@@ -482,6 +482,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if err != nil {
 		return nil, fmt.Errorf("memory '%s' not found", memoryID)
 	}
+	ownerTenantID := currentMemory.TenantID
 
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
@@ -492,7 +493,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 			memoryName, err = common.DuplicateName(func(name string, tid string) bool {
 				existing, _ := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
 				return len(existing) > 0
-			}, memoryName, tenantID)
+			}, memoryName, ownerTenantID)
 			if err != nil {
 				return nil, err
 			}
@@ -501,7 +502,10 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	}
 
 	if req.Permissions != nil {
-		perm := TenantPermission(strings.ToLower(*req.Permissions))
+		perm := TenantPermission(strings.ToLower(strings.TrimSpace(*req.Permissions)))
+		if currentMemory.TenantID != tenantID && strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
+			return nil, fmt.Errorf("tenant '%s' is not allowed to modify the memory's permission", tenantID)
+		}
 		if !validPermissions[perm] {
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
 		}
@@ -518,9 +522,9 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeChat, *req.LLMID)
+			resolved, err := modelProvider.ResolveModelID(ctx, ownerTenantID, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", *req.LLMID, "err", err)
+				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", ownerTenantID, "llm_id", *req.LLMID, "err", err)
 			} else if resolved != "" {
 				updateDict["tenant_llm_id"] = resolved
 			}
@@ -530,9 +534,9 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
+			resolved, err := modelProvider.ResolveModelID(ctx, ownerTenantID, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", *req.EmbdID, "err", err)
+				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", ownerTenantID, "embd_id", *req.EmbdID, "err", err)
 			} else if resolved != "" {
 				updateDict["tenant_embd_id"] = resolved
 			}
@@ -810,16 +814,17 @@ func sameStringSet(a, b []string) bool {
 //	err := service.DeleteMemory(ctx, "user123", "memory456")
 func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID string) error {
 	// Verify the caller has access to this memory
-	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
 		return err
 	}
 
 	// TODO: Delete associated message index - Implementation pending MessageService
-	// messageService := NewMessageService()
-	// hasIndex, _ := messageService.HasIndex(memory.TenantID, memoryID)
-	// if hasIndex {
-	//     messageService.DeleteMessage(nil, memory.TenantID, memoryID)
-	// }
+	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
+			return fmt.Errorf("delete memory messages: %w", err)
+		}
+	}
 
 	// Delete memory record
 	if err := s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
@@ -846,8 +851,12 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{
-		"forget_at":     forgetTime,
-		"forget_at_flt": now.UnixMilli(),
+		"forget_at": forgetTime,
+	}
+	// OceanBase/SeekDB memory tables contain forget_at but no forget_at_flt.
+	// Keep the existing companion-field update for other engines.
+	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{
 		"id": messageDocID,
@@ -1038,8 +1047,28 @@ func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filter
 	if len(memories) == 0 {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
+	if err := validateMemorySearchModels(memories); err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 
 	return s.queryMessage(ctx, memories, filterDict, params)
+}
+
+func validateMemorySearchModels(memories []*entity.Memory) error {
+	if len(memories) == 0 {
+		return nil
+	}
+	firstKey := memorySearchEmbeddingKey(memories[0])
+	for _, memory := range memories[1:] {
+		if memorySearchEmbeddingKey(memory) != firstKey {
+			return fmt.Errorf("memories use different embedding models")
+		}
+	}
+	return nil
+}
+
+func memorySearchEmbeddingKey(memory *entity.Memory) string {
+	return "embedding:" + strings.TrimSpace(memory.EmbdID)
 }
 
 func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {

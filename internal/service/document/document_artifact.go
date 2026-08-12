@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -25,7 +26,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	return storageImpl.Get(parts[0], parts[1])
+	return storageImpl.Get(ctx, parts[0], parts[1])
 }
 
 // GetDocumentArtifact retrieves a sandbox artifact from object storage.
@@ -61,11 +62,11 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 	}
 
 	bucket := sandboxArtifactBucket()
-	if !storageImpl.ObjExist(bucket, basename) {
+	if !storageImpl.ObjExist(ctx, bucket, basename) {
 		return nil, ErrArtifactNotFound
 	}
 
-	data, err := storageImpl.Get(bucket, basename)
+	data, err := storageImpl.Get(ctx, bucket, basename)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +210,7 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	data, err := storageImpl.Get(bucket, name)
+	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
 	}
@@ -225,9 +226,28 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 	ext := utility.GetFileExtension(fileName)
 	contentType := utility.GetContentType(ext, doc.Type)
 
+	// Legacy .doc (OLE2) documents cannot be rendered by the
+	// .docx-only web previewer; serve extracted plain text instead.
+	if ext == "doc" {
+		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
+			data = []byte(text)
+			contentType = "text/plain; charset=utf-8"
+		}
+	}
+
 	return &DocumentPreview{
 		Data:        data,
 		ContentType: contentType,
 		FileName:    fileName,
 	}, nil
+}
+
+// extractDOCPreviewText extracts plain text from a legacy .doc
+// document via the office_oxide-backed DOCParser.
+func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
+	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
+	if res.Err != nil {
+		return "", res.Err
+	}
+	return res.Text, nil
 }

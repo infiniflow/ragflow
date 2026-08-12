@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   forwardRef,
@@ -101,6 +117,7 @@ export interface FormFieldConfig {
    * fields like api_key / instance_name / base_url / group_id.
    */
   autoComplete?: string;
+  fieldConfig?: Record<string, any>;
 }
 
 // Component props interface
@@ -115,6 +132,24 @@ interface DynamicFormProps<T extends FieldValues> {
   //   updatedField: Partial<FormFieldConfig>,
   // ) => void;
   labelClassName?: string;
+  /**
+   * Options forwarded to `form.reset()` when `defaultValues` change.
+   * Pass `{ keepDirtyValues: true }` to preserve user edits during
+   * background refetches / lazy detail loads. Defaults to `{}`
+   * (hard reset) to preserve the original behavior for existing
+   * consumers.
+   */
+  resetOptions?: {
+    keepValues?: boolean;
+    keepDefaultValues?: boolean;
+    keepErrors?: boolean;
+    keepDirty?: boolean;
+    keepDirtyValues?: boolean;
+    keepIsSubmitted?: boolean;
+    keepTouched?: boolean;
+    keepIsValid?: boolean;
+    keepSubmitCount?: boolean;
+  };
 }
 
 // Form ref interface
@@ -431,9 +466,11 @@ export const RenderField = ({
               : fieldProps;
             return (
               <Textarea
+                {...field.fieldConfig}
                 {...finalFieldProps}
                 placeholder={field.placeholder}
                 disabled={field.disabled}
+                // resize="vertical"
                 // className="resize-none"
               />
             );
@@ -452,7 +489,6 @@ export const RenderField = ({
               ? {
                   ...fieldProps,
                   onChange: (value: string) => {
-                    console.log('select value', value);
                     if (fieldProps.onChange) {
                       fieldProps.onChange(value);
                     }
@@ -643,6 +679,7 @@ const DynamicForm = {
         defaultValues: formDefaultValues = {} as DefaultValues<T>,
         // onFieldUpdate,
         labelClassName,
+        resetOptions,
       }: DynamicFormProps<T>,
       ref: React.Ref<any>,
     ) => {
@@ -876,12 +913,15 @@ const DynamicForm = {
       (form as any).filterActiveValues = filterActiveValues;
       useEffect(() => {
         if (formDefaultValues && Object.keys(formDefaultValues).length > 0) {
-          form.reset({
-            ...generateDefaultValues(fields),
-            ...formDefaultValues,
-          });
+          form.reset(
+            {
+              ...generateDefaultValues(fields),
+              ...formDefaultValues,
+            },
+            resetOptions,
+          );
         }
-      }, [form, formDefaultValues, fields]);
+      }, [form, formDefaultValues, fields, resetOptions]);
 
       // Submit handler
       //   const handleSubmit = form.handleSubmit(onSubmit);

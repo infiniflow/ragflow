@@ -11,6 +11,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var called atomic.Bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +83,7 @@ func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_PaddleOCRJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
 			http.NotFound(w, r)

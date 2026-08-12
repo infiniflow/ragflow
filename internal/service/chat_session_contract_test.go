@@ -118,7 +118,7 @@ func TestCreateSession_NotOwner(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": "x"})
-	if err == nil || err.Error() != "No authorization." {
+	if err == nil || err.Error() != "no authorization" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeAuthenticationError {
@@ -208,7 +208,7 @@ func TestDeleteSessions_NotOwner(t *testing.T) {
 
 	ctx := t.Context()
 	_, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
-	if err == nil || err.Error() != "No authorization." {
+	if err == nil || err.Error() != "no authorization" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeAuthenticationError {

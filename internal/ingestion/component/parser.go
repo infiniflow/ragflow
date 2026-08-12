@@ -42,7 +42,7 @@
 //   - WHAT IS NOT YET PORTED:
 //
 //   - The Python component dispatches to 13 file-format branches
-//     (pdf, markdown, text&code, html, spreadsheet, slides, doc,
+//     (pdf, Markdown, text&code, html, spreadsheet, slides, doc,
 //     docx, image, audio, video, email, epub) — see parser.py
 //     function_map at line ~1273. The Go counterparts in
 //     internal/parser/parser/ are SKELETONS that print to
@@ -171,7 +171,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	}
 	pc := &ParserComponent{Setups: s, Param: p}
 	if err := pc.Check(); err != nil {
-		return nil, fmt.Errorf("Parser: %w", err)
+		return nil, fmt.Errorf("parser: %w", err)
 	}
 	return pc, nil
 }
@@ -195,7 +195,7 @@ func (c *ParserComponent) Check() error {
 	if pdf, ok := c.Setups["pdf"]; ok {
 		pm, _ := pdf["parse_method"].(string)
 		if pm == "" {
-			return errors.New("Parse method abnormal. does not support empty value.")
+			return errors.New("parse method abnormal. does not support empty value")
 		}
 		pmLower := strings.ToLower(pm)
 		pdfWhitelist := []string{
@@ -206,7 +206,7 @@ func (c *ParserComponent) Check() error {
 			// Non-whitelist parse_method is treated as a VLM method,
 			// which requires lang (Python parser.py:257-258).
 			if lang, _ := pdf["lang"].(string); lang == "" {
-				return errors.New("PDF VLM language does not support empty value.")
+				return errors.New("PDF VLM language does not support empty value")
 			}
 		}
 	}
@@ -216,7 +216,7 @@ func (c *ParserComponent) Check() error {
 		// OCR mode does not need a VLM language; any other value does.
 		if pm != "ocr" {
 			if lang, _ := img["lang"].(string); lang == "" {
-				return errors.New("Image VLM language does not support empty value.")
+				return errors.New("image VLM language does not support empty value")
 			}
 		}
 	}
@@ -427,7 +427,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     off the python family identifiers in schema.ParserParam.
 	//
 	// For most families the two forms coincide; the divergence
-	// exists for markdown ("md" vs "markdown") and slides
+	// exists for Markdown ("md" vs "markdown") and slides
 	// ("ppt"/"pptx" vs "slides") and is intentional — the python
 	// ParserParam collapses the slide family into a single key.
 	fileTypeExt := fileTypeFromInputs(inputs)

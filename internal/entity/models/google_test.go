@@ -28,6 +28,7 @@ func withGoogleListModelsStub(t *testing.T, fn func(context.Context, *genai.Clie
 }
 
 func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	cases := []struct {
@@ -83,6 +84,7 @@ func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -106,6 +108,7 @@ func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	customBaseURL := "https://check-connection.example.test/google"
 	model := NewGoogleModel(map[string]string{"default": customBaseURL}, URLSuffix{})
@@ -132,6 +135,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	calls := 0
@@ -184,6 +188,7 @@ func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -200,6 +205,7 @@ func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
 }
 
 func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	messages := []Message{{Role: "user", Content: "hello"}}
@@ -230,6 +236,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -313,6 +320,7 @@ func TestGoogleModelNewInstancePreservesCustomBaseURL(t *testing.T) {
 }
 
 func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-api-key"
 	cases := []struct {
 		name            string
@@ -384,7 +392,10 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash@Google"}, {Name: "Gemini 2.5 Pro@Google"}}
+	expectedModels := []ListModelResponse{
+		{Name: "Gemini 2.5 Flash", ModelTypes: []string{"chat"}},
+		{Name: "Gemini 2.5 Pro", ModelTypes: []string{"chat"}},
+	}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
 	}
@@ -419,6 +430,57 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	})
 	if !errors.Is(err, pageErr) {
 		t.Fatalf("expected page error %v, got %v", pageErr, err)
+	}
+}
+
+func TestFinalizeGoogleModelListFiltersUnknownModelTypes(t *testing.T) {
+	list := []ListModelResponse{
+		{Name: "gemini-2.5-pro"},                                    // not in catalog: inferred
+		{Name: "gemini-embedding-001"},                              // not in catalog: inferred
+		{Name: "custom", ModelTypes: []string{"chat", "image-gen"}}, // unsupported value stripped
+		{Name: "broken", ModelTypes: []string{"image-gen"}},         // no supported type: dropped
+	}
+
+	got := finalizeGoogleModelList(list)
+
+	expected := []ListModelResponse{
+		{Name: "gemini-2.5-pro", ModelTypes: []string{"chat"}},
+		{Name: "gemini-embedding-001", ModelTypes: []string{"embedding"}},
+		{Name: "custom", ModelTypes: []string{"chat"}},
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected models %v, got %v", expected, got)
+	}
+}
+
+func TestFinalizeGoogleModelListPreservesNil(t *testing.T) {
+	if got := finalizeGoogleModelList(nil); got != nil {
+		t.Fatalf("expected nil, got %v", got)
+	}
+}
+
+func TestGoogleSupportsUsableAction(t *testing.T) {
+	usable := [][]string{
+		{"generateContent", "countTokens"},
+		{"embedContent"},
+		{"batchEmbedContents"},
+	}
+	for _, actions := range usable {
+		if !googleSupportsUsableAction(actions) {
+			t.Fatalf("expected actions %v to be usable", actions)
+		}
+	}
+	unusable := [][]string{
+		nil,
+		{"predict"},             // imagen-style image generation
+		{"predictLongRunning"},  // veo-style video generation
+		{"generateAnswer"},      // aqa-style question answering
+		{"createCachedContent"}, // cache-only entry
+	}
+	for _, actions := range unusable {
+		if googleSupportsUsableAction(actions) {
+			t.Fatalf("expected actions %v to be filtered out", actions)
+		}
 	}
 }
 
@@ -472,7 +534,7 @@ func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
 		t.Fatalf("cfg = %#v, want nil on error", cfg)
 	}
 
-	maxInt32 := int(math.MaxInt32)
+	maxInt32 := math.MaxInt32
 	cfg, err = googleGenerateContentConfig(&ChatConfig{MaxTokens: &maxInt32}, nil)
 	if err != nil {
 		t.Fatalf("googleGenerateContentConfig error = %v", err)
@@ -617,6 +679,45 @@ func TestGoogleToolCallsConvertsFunctionCalls(t *testing.T) {
 	}
 	if args["query"] != "marigold" {
 		t.Fatalf("arguments = %#v", args)
+	}
+}
+
+// TestGoogleUsageFromMetadataIncludesToolUsePromptTokens verifies that
+// ToolUsePromptTokenCount from the genai SDK is folded into
+// PromptTokens, that it is treated as non-zero by the presence check
+// (so the helper does not return nil), and that TotalTokenCount is
+// used as the authoritative total when it is present.
+func TestGoogleUsageFromMetadataIncludesToolUsePromptTokens(t *testing.T) {
+	m := &genai.GenerateContentResponseUsageMetadata{
+		PromptTokenCount:        10,
+		CandidatesTokenCount:    4,
+		ToolUsePromptTokenCount: 5,
+		ThoughtsTokenCount:      1,
+		TotalTokenCount:         20,
+	}
+	got := googleUsageFromMetadata(m)
+	if got == nil {
+		t.Fatal("googleUsageFromMetadata returned nil, want populated TokenUsage")
+	}
+	if got.PromptTokens != 15 {
+		t.Errorf("PromptTokens=%d, want 15 (10 prompt + 5 tool-use prompt)", got.PromptTokens)
+	}
+	if got.CompletionTokens != 5 {
+		t.Errorf("CompletionTokens=%d, want 5 (4 candidates + 1 thoughts)", got.CompletionTokens)
+	}
+	if got.TotalTokens != 20 {
+		t.Errorf("TotalTokens=%d, want 20 (SDK authoritative total)", got.TotalTokens)
+	}
+
+	// When TotalTokenCount is absent, the helper must fall back to
+	// prompt + completion so callers still get a consistent total.
+	m.TotalTokenCount = 0
+	got = googleUsageFromMetadata(m)
+	if got == nil {
+		t.Fatal("googleUsageFromMetadata returned nil for non-zero counts")
+	}
+	if got.TotalTokens != 20 {
+		t.Errorf("TotalTokens=%d, want 20 (15 prompt + 5 completion)", got.TotalTokens)
 	}
 }
 

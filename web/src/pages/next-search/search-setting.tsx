@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 // src/pages/next-search/search-setting.tsx
 
 import AvatarNameDescription from '@/components/avatar-name-description';
@@ -160,10 +176,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               : undefined,
         },
       },
-      temperatureEnabled: llm_setting?.temperature !== undefined,
-      topPEnabled: llm_setting?.top_p !== undefined,
-      presencePenaltyEnabled: llm_setting?.presence_penalty !== undefined,
-      frequencyPenaltyEnabled: llm_setting?.frequency_penalty !== undefined,
+      temperatureEnabled: llm_setting?.temperature_enabled ?? true,
+      topPEnabled: llm_setting?.top_p_enabled ?? true,
+      presencePenaltyEnabled: llm_setting?.presence_penalty_enabled ?? true,
+      frequencyPenaltyEnabled: llm_setting?.frequency_penalty_enabled ?? true,
     });
   }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
 
@@ -273,10 +289,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         frequencyPenaltyEnabled?: boolean;
         maxTokensEnabled?: boolean;
       };
-      void _temperatureEnabled;
-      void _topPEnabled;
-      void _presencePenaltyEnabled;
-      void _frequencyPenaltyEnabled;
       void _maxTokensEnabled;
       const {
         llm_setting,
@@ -292,6 +304,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         top_p: llm_setting.top_p,
         frequency_penalty: llm_setting.frequency_penalty,
         presence_penalty: llm_setting.presence_penalty,
+        temperature_enabled: _temperatureEnabled,
+        top_p_enabled: _topPEnabled,
+        frequency_penalty_enabled: _frequencyPenaltyEnabled,
+        presence_penalty_enabled: _presencePenaltyEnabled,
       } as IllmSettingProps;
       const referenceMetadata = other_config.reference_metadata;
       const normalizedReferenceMetadata = referenceMetadata

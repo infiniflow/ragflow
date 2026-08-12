@@ -6,8 +6,6 @@ import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { SwitchFormField } from '@/components/switch-fom-field';
-import { TavilyFormField } from '@/components/tavily-form-field';
-
 import { TopNFormField } from '@/components/top-n-item';
 import {
   FormControl,
@@ -19,7 +17,7 @@ import {
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-
+import { WebSearchFormField } from '@/components/web-search-form-field';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -127,9 +125,7 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
           label={t('chat.tts')}
           tooltip={t('chat.ttsTip')}
         ></SwitchFormField>
-        <TavilyFormField
-          name={prefixName(prefix, 'prompt_config.tavily_api_key')}
-        ></TavilyFormField>
+        <WebSearchFormField prefix={prefix} />
         <MetadataFilter></MetadataFilter>
         <FormField
           control={form.control}

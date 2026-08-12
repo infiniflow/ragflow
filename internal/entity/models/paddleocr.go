@@ -40,12 +40,12 @@ func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOC
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(false),
 		},
 	}
 }
 
-func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (p *PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewPaddleOCRModel(baseURL, p.baseModel.URLSuffix)
 }
 

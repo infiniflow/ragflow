@@ -476,6 +476,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       log: 'Log',
       noSkills: 'No skills yet',
       generate: 'Generate',
+      compiling: 'Compiling…',
+      compilingCounts: '{{inflight}} processing / {{backlog}} queued',
+      autoCompiled: 'Compiled automatically when documents are parsed.',
+
       raptor: 'RAPTOR',
       artifact: 'Artifact',
       toSkills: 'To skills',
@@ -932,9 +936,14 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
-      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
-      {cluster_content}
-The above is the content you need to summarize.`,
+      promptText: `Summarize the paragraphs below without inventing facts or changing numbers.
+Output exactly two parts in the same language as the source:
+1. First line: a concise title only.
+2. Following lines: a concise summary of the content.
+Do not output labels, Markdown headings, bullet points, or any other commentary.
+
+Paragraphs:
+{cluster_content}`,
       maxToken: 'Max token',
       maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
       maxTokenMessage: 'Max token is required',
@@ -1013,7 +1022,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       createChunk: 'Create chunk',
       editChunk: 'Edit chunk',
       bulk: 'Bulk',
-      selectAll: 'Select all',
+      selectAll: 'Select page',
       enabledSelected: 'Enable selected',
       disabledSelected: 'Disable selected',
       deleteSelected: 'Delete selected',
@@ -1078,7 +1087,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       assistantAvatar: 'Assistant avatar',
       language: 'Language',
       emptyResponse: 'Empty response',
-      emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found. This setting only takes effect when Thinking Mode is set to Naive.`,
       emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from datasets. You must clear the 'Empty response' field if no dataset is selected.`,
       emptyResponsePlaceholder:
         'The answer you are looking for is not found in the dataset!',
@@ -1114,6 +1123,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
       add: 'Add',
       key: 'Key',
+      variableKeyMessage: 'Please input the variable key',
       optional: 'Optional',
       operation: 'Operation',
       model: 'Model',
@@ -1231,13 +1241,20 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       languageTip:
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',
-      locale: 'Locale',
+      locale: 'Language',
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
         'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
+      webSearchProvider: 'Web search provider',
+      webSearchProviderTip:
+        'Select the service used when Internet search is enabled.',
+      webSearchProviderPlaceholder: 'Select a web search provider',
+      queritApiKeyTip:
+        'When Querit is selected, its web search results supplement dataset retrieval.',
+      queritApiKeyMessage: 'Please enter your Querit API Key',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
@@ -1872,6 +1889,8 @@ Example: Virtual Hosted Style`,
       templateDescription: 'Description',
       llmForExtraction: 'Default Model for extraction',
       llmForExtractionRequired: 'Please select an LLM model',
+      llmForExtractionUnavailable:
+        'The previously selected model has been deleted, please select another one',
       templateKind: 'Kind',
       templateKindRequired: 'Please select a kind',
       entitySpecification: 'Entity specification',
@@ -1888,16 +1907,25 @@ Example: Virtual Hosted Style`,
       description: 'Description',
       descriptionPlaceholder: 'Enter description',
       addField: 'Add field',
-      example: 'Page-structure example',
+      example: 'Example',
       examplePlaceholder: 'Input example',
       instruction: 'Instruction',
       globalRules: 'Global rules',
       globalRulesPlaceholder: 'Input global compilation rules',
+      plan: 'Plan',
+      planTip:
+        'Off: one wiki page per entity/concept. On: let the LLM decide to combine some entities/concepts into a single wiki page.',
       raptorTreeSettings: 'RAPTOR tree settings',
       summarizationPrompt: 'Summarization prompt',
       maxToken: 'Max token',
       maxTokenRequired: 'Please input max token',
       threshold: 'Threshold',
+      clusteringThreshold: 'Clustering threshold',
+      clusteringThresholdTip:
+        'Sets the percentile used to split clusters by adjacent chunk similarity. Higher values create more cluster boundaries.',
+      clusteringRatio: 'Clustering ratio',
+      clusteringRatioTip:
+        'Sets the maximum number of clusters as a fraction of the input chunks. Lower values produce fewer clusters.',
       rechunkByTreeLeaves: 'Re-chunk by tree leaves',
       rechunkByTreeLeavesTip:
         "Merge each leaf cluster's source chunks into a single replacement chunk. Originals are kept but marked unavailable for retrieval. Only one tree template per group may enable this.",
@@ -1921,6 +1949,7 @@ Example: Virtual Hosted Style`,
       addFieldModalTitle: 'Add field',
       editFieldModalTitle: 'Edit field',
       selectFieldType: 'Select field type',
+      fieldTypeExists: 'This field type already exists',
       blueprintsPlaceholder: 'Blueprints placeholder',
       blueprintsPlaceholderDescription:
         "Select or customize a specific structure from the Blueprint library on the left to define your Wiki's content framework and visual presentation.",
@@ -2127,6 +2156,13 @@ Example: Virtual Hosted Style`,
       modelTypeMessage: 'Please input your model type!',
       addLlmBaseUrl: 'Base URL',
       baseUrlNameMessage: 'Please input your Base URL',
+      mwsApiUrl: 'API URL',
+      mwsApiUrlMessage: 'Please enter the MWS project API URL',
+      mwsApiUrlPlaceholder:
+        'https://gpt.mwsapis.ru/projects/<project>',
+      mwsToken: 'Token',
+      mwsTokenMessage: 'Please enter the MWS Token',
+      mwsTokenPlaceholder: 'MWS service account API key',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder:
@@ -2372,6 +2408,10 @@ Example: Virtual Hosted Style`,
       loading: 'Loading...',
       selectNode: 'Select a child node to view details',
       noDescription: 'No description',
+      description: 'Description',
+      keywords: 'Keywords',
+      entities: 'Entities',
+      graphContent: 'Full Graph Content',
       docCount: '{{count}} documents',
       deleteAllTitle: 'Delete navigation tree',
       deleteAllDescription:
@@ -2389,8 +2429,13 @@ Example: Virtual Hosted Style`,
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
+      noLangfuseConfigToDelete: 'No Langfuse configuration to delete',
       renamed: 'Renamed',
       operated: 'Operated',
+      compileAutoGenerated:
+        'Compilation runs automatically when documents are parsed; no manual trigger is needed.',
+      compileNotSupported:
+        'Manual compilation is not supported here; it runs automatically when documents are parsed.',
       updated: 'Updated',
       uploaded: 'Uploaded',
       200: 'The server successfully returns the requested data.',
@@ -2444,6 +2489,7 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      exportCurrentPage: 'Export current page',
       preprocess: {
         preprocess: 'Preprocess',
         mainContent: 'Main content',
@@ -3094,7 +3140,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
-      tocDataSource: 'Data source',
       tagFile: 'Tag file',
       addCategory: 'Add category',
       categoryName: 'Category name',
@@ -3331,7 +3376,6 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      toc: 'PageIndex',
       fieldName: 'Result destination',
       prompts: {
         system: {
@@ -3369,7 +3413,6 @@ Key Instructions:
           metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
 
 Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
-          toc: '',
         },
         user: {
           keywords: `Text Content
@@ -3379,7 +3422,6 @@ Important structured information may include: names, dates, locations, events, k
           summary: `Text to Summarize:
 [Insert text here]`,
           metadata: `Content: [INSERT CONTENT HERE]`,
-          toc: '[Insert text here]',
         },
       },
       cancel: 'Cancel',

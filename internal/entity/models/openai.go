@@ -44,7 +44,7 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -85,99 +85,12 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	var content string
-	if c, ok := messageMap["content"].(string); ok {
-		content = c
-	}
-
-	// OpenAI reasoning models (o-series and similar) return reasoning text in
-	// the reasoning_content field. Pass it through when present.
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = rc
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	var toolCalls []map[string]interface{}
-	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
-		for _, tc := range tcs {
-			if tcMap, ok := tc.(map[string]interface{}); ok {
-				toolCalls = append(toolCalls, tcMap)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	// Extract usage split (prompt/completion/total) from the raw API
-	// response for accurate per-call token accounting. Non-OpenAI
-	// providers that implement the OpenAI-compat API surface (DeepSeek,
-	// Moonshot, etc.) also return a "usage" key with the same shape.
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{
-			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
-		}
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
@@ -218,126 +131,9 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := o.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]interface{})
-	// Capture the authoritative usage block from the final streaming
-	// chunk (when provider honours stream_options.include_usage=true).
-	// The last chunk in the stream carries the "usage" key alongside
-	// empty choices; we overwrite on every chunk so the final frame
-	// wins, matching Python's chat_model.py usage_from_response loop.
-	var streamUsage *TokenUsage
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of the stream
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
-		// Extract usage from this chunk. When stream_options.include_usage
-		// is true, the final chunk carries the full usage breakdown at the
-		// top level of the event alongside (possibly empty) choices.
-		if pt, ct, tt := extractUsageFromMap(event); tt > 0 {
-			streamUsage = &TokenUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !sawTerminal {
-		return fmt.Errorf("openai: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-
-	// Populate UsageResult with the authoritative usage from the stream.
-	if streamUsage != nil && chatModelConfig != nil {
-		chatModelConfig.UsageResult = streamUsage
-	}
-
-	// Send the [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type openaiEmbeddingResponse struct {
@@ -932,48 +728,4 @@ func (o *OpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 
 func (o *OpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
-}
-
-// extractUsageFromMap reads the "usage" key from an OpenAI-style API
-// response and returns (prompt_tokens, completion_tokens, total_tokens).
-// All return values are zero when the response carries no usage block.
-func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
-	if raw == nil {
-		return 0, 0, 0
-	}
-	ru, ok := raw["usage"]
-	if !ok {
-		return 0, 0, 0
-	}
-	usage, ok := ru.(map[string]interface{})
-	if !ok {
-		return 0, 0, 0
-	}
-	get := func(keys ...string) int {
-		for _, k := range keys {
-			v, ok := usage[k]
-			if !ok {
-				continue
-			}
-			switch val := v.(type) {
-			case float64:
-				return int(val)
-			case int:
-				return val
-			case json.Number:
-				n, err := val.Int64()
-				if err == nil {
-					return int(n)
-				}
-			}
-		}
-		return 0
-	}
-	pt := get("prompt_tokens", "input_tokens")
-	ct := get("completion_tokens", "output_tokens")
-	tt := get("total_tokens")
-	if tt == 0 {
-		tt = pt + ct
-	}
-	return pt, ct, tt
 }

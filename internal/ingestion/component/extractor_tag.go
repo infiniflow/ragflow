@@ -191,7 +191,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 					case <-ctx.Done():
 						return
 					}
-					llmTagChunk(ctx, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN)
+					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN)
 				}(i)
 			}
 			wg.Wait()
@@ -245,7 +245,7 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTa
 		return nil, false
 	}
 	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
-	data, err := stg.Get(f.ParentID, *f.Location, tenantID)
+	data, err := stg.Get(ctx, f.ParentID, *f.Location, tenantID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: load tag source %q/%q: %v", f.ParentID, *f.Location, err))
 		return nil, false
@@ -652,6 +652,7 @@ func roundInt(f float64) int {
 
 func llmTagChunk(
 	ctx context.Context,
+	db *gorm.DB,
 	inv extractorChatInvoker,
 	chunk map[string]any,
 	allTags map[string]float64,
@@ -664,7 +665,7 @@ func llmTagChunk(
 		return
 	}
 
-	if cached := getTaggerLLMCache(llmID, text, allTags, topN); cached != nil {
+	if cached := getTaggerLLMCache(ctx, llmID, text, allTags, topN); cached != nil {
 		chunk[common.TAG_FLD] = cached
 		return
 	}
@@ -687,6 +688,17 @@ func llmTagChunk(
 		{Role: eschema.System, Content: prompt},
 		{Role: eschema.User, Content: "Output:"},
 	}
+	// Trim the prompt to the model's context window before sending. The
+	// system prompt embeds the full chunk text, the entire tag set and up
+	// to two full examples, so oversized chunks or tag files would
+	// otherwise be rejected by the provider (context length exceeded).
+	// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
+	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
+	if fitErr != nil {
+		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))
+		return
+	}
+	msgs = fitted
 
 	temperature := 0.5
 	var result map[string]int
@@ -713,7 +725,7 @@ func llmTagChunk(
 
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
-		setTaggerLLMCache(llmID, text, allTags, topN, result)
+		setTaggerLLMCache(ctx, llmID, text, allTags, topN, result)
 	}
 }
 
@@ -803,13 +815,13 @@ func taggerCacheKey(llmID, text string, allTags map[string]float64, topN int) st
 	return fmt.Sprintf("tagger:%x", hasher.Sum64())
 }
 
-func getTaggerLLMCache(llmID, text string, allTags map[string]float64, topN int) map[string]int {
+func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, topN int) map[string]int {
 	client := redis.Get()
 	if client == nil {
 		return nil
 	}
 	key := taggerCacheKey(llmID, text, allTags, topN)
-	data, err := client.Get(key)
+	data, err := client.Get(ctx, key)
 	if err != nil || data == "" {
 		return nil
 	}
@@ -820,7 +832,7 @@ func getTaggerLLMCache(llmID, text string, allTags map[string]float64, topN int)
 	return result
 }
 
-func setTaggerLLMCache(llmID, text string, allTags map[string]float64, topN int, result map[string]int) {
+func setTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, topN int, result map[string]int) {
 	if result == nil {
 		return
 	}
@@ -833,7 +845,7 @@ func setTaggerLLMCache(llmID, text string, allTags map[string]float64, topN int,
 	if err != nil {
 		return
 	}
-	client.Set(key, string(data), 24*time.Hour)
+	client.Set(ctx, key, string(data), 24*time.Hour)
 }
 
 func sortedTagNames(allTags map[string]float64) []string {

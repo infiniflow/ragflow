@@ -22,9 +22,9 @@ import (
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
 
-	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -46,7 +46,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		t.Fatalf("auto-migrate real mysql tables: %v", err)
 	}
 
-	realStorage, err := storage.NewMinioStorage(cfg.StorageEngine.Minio)
+	realStorage, err := storage.NewMinioStorage(cfg.GetMinioConfig())
 	if err != nil {
 		t.Fatalf("connect real minio: %v", err)
 	}
@@ -181,15 +181,17 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	}
 }
 
-func mustLoadRealIntegrationConfig(t *testing.T) *server.Config {
+func mustLoadRealIntegrationConfig(t *testing.T) *config.Config {
 	t.Helper()
-	server.SetLogger(zap.NewNop())
+	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
 	configPath := filepath.Join(repoRootFromPipelineTest(t), "conf", "service_conf.yaml")
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config from %s: %v", configPath, err)
 	}
 	cfg := server.GetConfig()
-	if cfg == nil || cfg.Database.Host == "" || cfg.StorageEngine.Minio == nil || cfg.StorageEngine.Minio.Host == "" {
+	if cfg == nil || cfg.GetMySQLConfig().Host == "" || cfg.GetMinioConfig().Host == "" {
 		t.Fatal("real integration config is incomplete")
 	}
 	return cfg
@@ -300,15 +302,16 @@ func mustPrepareTokenizerOpenCC(t *testing.T, root string) {
 	mustSymlink(t, systemOpenCC, filepath.Join(root, "opencc"))
 }
 
-func mustOpenRealMySQL(t *testing.T, cfg *server.Config) *gorm.DB {
+func mustOpenRealMySQL(t *testing.T, cfg *config.Config) *gorm.DB {
 	t.Helper()
+	mc := cfg.GetMySQLConfig()
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		cfg.Database.Username,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.Database,
-		cfg.Database.Charset,
+		mc.User,
+		mc.Password,
+		mc.Host,
+		mc.Port,
+		mc.DatabaseName,
+		mc.Charset,
 	)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -386,7 +389,7 @@ func mustSeedRealPipelineDocument(
 	}).Error; err != nil {
 		t.Fatalf("create kb: %v", err)
 	}
-	if err := stg.Put(bucket, objectPath, []byte(content)); err != nil {
+	if err := stg.Put(context.Background(), bucket, objectPath, []byte(content)); err != nil {
 		t.Fatalf("put real minio object: %v", err)
 	}
 	if err := db.Create(&entity.File{
@@ -431,7 +434,7 @@ func cleanupRealPipelineDocument(db *gorm.DB, stg storage.Storage, tenantID, kbI
 	_ = db.Where("id = ?", fileID).Delete(&entity.File{}).Error
 	_ = db.Where("id = ?", kbID).Delete(&entity.Knowledgebase{}).Error
 	_ = db.Where("id = ?", tenantID).Delete(&entity.Tenant{}).Error
-	_ = stg.Remove(bucket, objectPath)
+	_ = stg.Remove(context.Background(), bucket, objectPath)
 }
 
 func strPtr(s string) *string {

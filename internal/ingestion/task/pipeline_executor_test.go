@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
 
 // =============================================================================
@@ -31,7 +32,7 @@ func TestMarkCompiledProductsHidden(t *testing.T) {
 	chunks := []map[string]any{
 		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
 		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A"},
-		{"id": "wiki-1", "compile_kwd": "artifact_page", "content_with_weight": "page X"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page", "content_with_weight": "page X"},
 		{"id": "src-2", "content_with_weight": "another source chunk"},
 	}
 	markCompiledProductsHidden(chunks)
@@ -201,7 +202,7 @@ func TestKB_Doc_Tenant_Accessors(t *testing.T) {
 func TestPipelineExecutor_ProcessChunks_WrapsProcessChunksForPipeline(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
 	chunks := []map[string]any{{"text": "hello world"}}
-	meta, err := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
+	meta, err := indexdoc.ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, *svc.taskCtx.Doc.Name, time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}

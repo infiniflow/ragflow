@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   Dialog,
   DialogContent,
@@ -100,12 +116,7 @@ export function ChunkMethodDialog({
   const FormSchema = z
     .object({
       parseType: z.nativeEnum(ParseType),
-      parser_id: z
-        .string()
-        .min(1, {
-          message: t('common.pleaseSelect'),
-        })
-        .trim(),
+      parser_id: z.string().trim().optional(),
       pipeline_id: z.string().optional(),
       parser_config: z.object({
         task_page_size: z.coerce.number().optional(),
@@ -170,6 +181,13 @@ export function ChunkMethodDialog({
       }),
     })
     .superRefine((data, ctx) => {
+      if (data.parseType === ParseType.BuiltIn && !data.parser_id) {
+        ctx.addIssue({
+          path: ['parser_id'],
+          message: t('common.pleaseSelect'),
+          code: 'custom',
+        });
+      }
       if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
         ctx.addIssue({
           path: ['pipeline_id'],
@@ -235,6 +253,7 @@ export function ChunkMethodDialog({
     );
     const nextData = {
       ...data,
+      parser_id: data.parser_id || '',
       parser_config: {
         ...parserConfig,
         image_table_context_window: imageTableContextWindow,

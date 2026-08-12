@@ -1,5 +1,5 @@
 general:
-  heartbeat_interval: 3
+  heartbeat_interval: 3s
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
@@ -41,6 +41,12 @@ infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
   db_name: 'default_db'
+serenedb:
+  host: '${SERENEDB_HOST:-serenedb}'
+  port: 7890
+  user: '${SERENEDB_USER:-postgres}'
+  password: '${SERENEDB_PASSWORD:-infini_rag_flow}'
+  db_name: '${SERENEDB_DBNAME:-postgres}'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
   config:
@@ -81,8 +87,9 @@ otel:
 ingestor:
   mq_type: 'nats'
   max_concurrent_workers: 1
+  compiler_pool_size: 0
 file_syncer:
-  max_concurrent_syncs: 1
+  max_concurrent_syncs: 5
   sync_interval: 3
 user_default_llm:
   default_models:

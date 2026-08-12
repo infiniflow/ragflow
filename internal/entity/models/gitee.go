@@ -40,7 +40,7 @@ func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -51,34 +51,6 @@ func (g *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (g *GiteeModel) Name() string {
 	return "GiteeAI"
-}
-
-// GiteeChatResponse mirrors GiteeAI's OpenAI-compatible chat response.
-type GiteeChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		FinishReason string `json:"finish_reason"`
-		Index        int    `json:"index"`
-		Logprobs     any    `json:"logprobs"`
-		Message      struct {
-			Content          string           `json:"content"`
-			ReasoningContent string           `json:"reasoning_content"`
-			Role             string           `json:"role"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-		} `json:"message"`
-	} `json:"choices"`
-	SystemFingerprint string `json:"system_fingerprint"`
-	Usage             struct {
-		CompletionTokens    int `json:"completion_tokens"`
-		PromptTokens        int `json:"prompt_tokens"`
-		TotalTokens         int `json:"total_tokens"`
-		PromptTokensDetails struct {
-			CachedTokens int `json:"cached_tokens"`
-		} `json:"prompt_tokens_details"`
-	} `json:"usage"`
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -112,81 +84,12 @@ func (g *GiteeModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := g.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	common.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
-
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := g.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
-		var result GiteeChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := result.Choices[0]
-		content := choice.Message.Content
-		if content == "" && len(choice.Message.ToolCalls) == 0 {
-			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
-		}
-
-		reasonContent := ""
-		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
-			reasonContent = choice.Message.ReasoningContent
-			if reasonContent == "" {
-				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
-				if reasoning != nil {
-					reasonContent = *reasoning
-					content = *answer
-				}
-			}
-			if strings.HasPrefix(reasonContent, "\n") {
-				reasonContent = reasonContent[1:]
-			}
-		}
-
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage: &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      result.Usage.TotalTokens,
-			},
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -226,128 +129,9 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := g.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	reserveText := ""
-	thinkingPhase := false
-	answerPhase := false
-	sawTerminal := false
-
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
-		}
-		choices, ok := event["choices"].([]any)
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-		choice, ok := choices[0].(map[string]any)
-		if !ok {
-			return nil
-		}
-		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-		delta, ok := choice["delta"].(map[string]any)
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			common.Info(content)
-			if content == "<think>" {
-				thinkingPhase = true
-				return nil
-
-			} else if content == "</think>" {
-				thinkingPhase = false
-				answerPhase = true
-				return nil
-			}
-
-			if thinkingPhase {
-				if err = sender(nil, &content); err != nil {
-					return err
-				}
-				reserveText = ""
-			} else if answerPhase {
-				if err = sender(&content, nil); err != nil {
-					return err
-				}
-				reserveText = ""
-			} else {
-				content = strings.Trim(content, "\n")
-				content = strings.Trim(content, " ")
-				if content != "" {
-					reserveText += content
-				}
-			}
-		}
-
-		return nil
+	return g.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("gitee: stream ended before [DONE] or finish_reason")
-	}
-
-	if reserveText != "" {
-		if err = sender(&reserveText, nil); err != nil {
-			return err
-		}
-	}
-
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // GiteeEmbeddingResponse mirrors GiteeAI's embeddings response.
@@ -610,12 +394,12 @@ func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []b
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if imageURL != nil {
-		if err := writer.WriteField("image", *imageURL); err != nil {
+		if err = writer.WriteField("image", *imageURL); err != nil {
 			return nil, fmt.Errorf("failed to write image URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
@@ -707,12 +491,12 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if documentURL != nil {
-		if err := writer.WriteField("file", *documentURL); err != nil {
+		if err = writer.WriteField("file", *documentURL); err != nil {
 			return nil, fmt.Errorf("failed to write file URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
@@ -1069,7 +853,7 @@ func (g *GiteeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	taskListResp := []ListTaskStatus{}
+	var taskListResp []ListTaskStatus
 	for _, item := range giteeTaskList.Items {
 		taskListResp = append(taskListResp, ListTaskStatus{
 			TaskID: item.TaskID,

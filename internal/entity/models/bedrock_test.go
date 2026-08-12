@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -206,8 +207,8 @@ func TestMapChatConfigToInferenceForwardsAllFields(t *testing.T) {
 	if inf == nil {
 		t.Fatal("expected non-nil inferenceConfig")
 	}
-	if inf.MaxTokens == nil || *inf.MaxTokens != 4096 {
-		t.Errorf("maxTokens=%v", inf.MaxTokens)
+	if inf.MaxTokens != nil {
+		t.Errorf("maxTokens should be omitted, got %v", inf.MaxTokens)
 	}
 	if inf.Temperature == nil || *inf.Temperature != 0.5 {
 		t.Errorf("temperature=%v", inf.Temperature)
@@ -327,6 +328,7 @@ func newBedrockServer(t *testing.T, wantMethod, wantPath string, handler http.Ha
 }
 
 func TestBedrockChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/anthropic.claude-3-haiku-20240307-v1:0/converse",
@@ -369,6 +371,7 @@ func TestBedrockChatHappyPath(t *testing.T) {
 }
 
 func TestBedrockChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	_, err := m.ChatWithMessages(ctx, "m", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
@@ -378,6 +381,7 @@ func TestBedrockChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestBedrockChatRequiresModelID(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
@@ -389,6 +393,7 @@ func TestBedrockChatRequiresModelID(t *testing.T) {
 }
 
 func TestBedrockChatPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/m/converse",
@@ -412,6 +417,7 @@ func TestBedrockChatPropagatesHTTPError(t *testing.T) {
 }
 
 func TestBedrockListModelsParsesCatalog(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodGet,
 		"/foundation-models",
@@ -450,6 +456,7 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 }
 
 func TestBedrockCheckConnectionDelegates(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodGet,
 		"/foundation-models",
@@ -503,6 +510,7 @@ func encodeBedrockEventFrames(t *testing.T, events []struct {
 }
 
 func TestBedrockStreamDecodesContentDeltas(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	frames := encodeBedrockEventFrames(t, []struct {
 		eventType   string
@@ -553,6 +561,7 @@ func TestBedrockStreamDecodesContentDeltas(t *testing.T) {
 }
 
 func TestBedrockStreamSurfacesException(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	frames := encodeBedrockEventFrames(t, []struct {
 		eventType   string
@@ -586,6 +595,7 @@ func TestBedrockStreamSurfacesException(t *testing.T) {
 }
 
 func TestBedrockStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// Connection closed cleanly after a delta but before messageStop.
 	// This used to be silently treated as success, masking truncated
@@ -617,7 +627,58 @@ func TestBedrockStreamFailsWithoutTerminal(t *testing.T) {
 	}
 }
 
+func TestBedrockStreamRecordsUsageFromPostMessageStopMetadata(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	// The AWS Bedrock Converse-Stream protocol sends a final
+	// "metadata" frame AFTER messageStop carrying token usage. The
+	// driver must not exit the decoder on messageStop, otherwise this
+	// metadata (and therefore the captured usage) is silently dropped.
+	frames := encodeBedrockEventFrames(t, []struct {
+		eventType   string
+		messageType string
+		payload     []byte
+	}{
+		{eventType: "messageStart", payload: []byte(`{"role":"assistant"}`)},
+		{eventType: "contentBlockDelta", payload: []byte(`{"delta":{"text":"hi"},"contentBlockIndex":0}`)},
+		{eventType: "messageStop", payload: []byte(`{"stopReason":"end_turn"}`)},
+		{
+			eventType: "metadata",
+			payload:   []byte(`{"usage":{"inputTokens":7,"outputTokens":3,"totalTokens":10},"metrics":{"latencyMs":42}}`),
+		},
+	})
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/m/converse-stream",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+			_, _ = w.Write(frames)
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	usage := &common.ModelUsage{}
+	cfg := &ChatConfig{}
+	err := m.ChatStreamlyWithSender(ctx, "m",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &key}, cfg, usage,
+		func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if usage.InputTokens != 7 || usage.OutputTokens != 3 || usage.TotalTokens != 10 {
+		t.Errorf("modelUsage=(%d,%d,%d), want (7,3,10)", usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
+	}
+	if cfg.UsageResult == nil {
+		t.Fatal("UsageResult is nil, want populated from post-messageStop metadata")
+	}
+	if cfg.UsageResult.PromptTokens != 7 || cfg.UsageResult.CompletionTokens != 3 || cfg.UsageResult.TotalTokens != 10 {
+		t.Errorf("UsageResult=(%d,%d,%d), want (7,3,10)", cfg.UsageResult.PromptTokens, cfg.UsageResult.CompletionTokens, cfg.UsageResult.TotalTokens)
+	}
+}
+
 func TestBedrockStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
@@ -634,6 +695,7 @@ func TestBedrockStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestBedrockStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
@@ -659,6 +721,7 @@ func TestLookupBedrockEventHeader(t *testing.T) {
 }
 
 func TestBedrockTitanEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var seenInputs []string
 	srv := newBedrockServer(t, http.MethodPost,
@@ -702,6 +765,7 @@ func TestBedrockTitanEmbedHappyPath(t *testing.T) {
 }
 
 func TestBedrockTitanV1OmitsDimension(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/amazon.titan-embed-text-v1/invoke",
@@ -723,6 +787,7 @@ func TestBedrockTitanV1OmitsDimension(t *testing.T) {
 }
 
 func TestBedrockCohereEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/cohere.embed-english-v3/invoke",
@@ -760,6 +825,7 @@ func TestBedrockCohereEmbedHappyPath(t *testing.T) {
 }
 
 func TestBedrockCohereV4ForwardsDimensionAndParsesTypedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/cohere.embed-v4:0/invoke",
@@ -790,6 +856,7 @@ func TestBedrockCohereV4ForwardsDimensionAndParsesTypedResponse(t *testing.T) {
 }
 
 func TestBedrockEmbedShortCircuitsEmptyInput(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	got, err := m.Embed(ctx, nil, nil, nil, nil, nil)
@@ -802,6 +869,7 @@ func TestBedrockEmbedShortCircuitsEmptyInput(t *testing.T) {
 }
 
 func TestBedrockEmbedRequiresAPIKeyAndModel(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	model := "x"
@@ -816,6 +884,7 @@ func TestBedrockEmbedRequiresAPIKeyAndModel(t *testing.T) {
 }
 
 func TestBedrockEmbedRejectsUnsupportedModel(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	key := validBedrockKey()
@@ -826,6 +895,7 @@ func TestBedrockEmbedRejectsUnsupportedModel(t *testing.T) {
 }
 
 func TestBedrockEmbedPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newBedrockServer(t, http.MethodPost,
 		"/model/amazon.titan-embed-text-v2:0/invoke",
@@ -844,6 +914,7 @@ func TestBedrockEmbedPropagatesHTTPError(t *testing.T) {
 }
 
 func TestBedrockRerankReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	model := "x"
@@ -853,6 +924,7 @@ func TestBedrockRerankReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestBedrockBalanceReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
@@ -861,6 +933,7 @@ func TestBedrockBalanceReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestBedrockAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newBedrockForTest("http://unused")
 	model := "x"

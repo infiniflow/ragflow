@@ -35,7 +35,7 @@ func NewMinerUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerUModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

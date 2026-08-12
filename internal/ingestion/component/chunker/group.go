@@ -14,6 +14,7 @@
 //  limitations under the License.
 //
 
+// Package chunker implements the GroupTitleChunker variant: aggregates adjacent
 // SCOPE (honest) for group.go:
 //
 //   - Implements the GroupTitleChunker variant: aggregates adjacent
@@ -377,7 +378,7 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 // python BaseTitleChunker.extract_line_records uses:
 //
 //  1. If upstream emitted chunks (output_format == "chunks") OR
-//     upstream emitted JSON, normalise from the list payload.
+//     upstream emitted JSON, normalize from the list payload.
 //  2. Otherwise, treat text/markdown/html as a "one record per line"
 //     stream (preserving indentation for non-text formats, strip-only
 //     for the text format).
