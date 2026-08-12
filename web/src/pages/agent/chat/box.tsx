@@ -107,7 +107,8 @@ function AgentChatBox() {
                   loading={
                     message.role === MessageType.Assistant &&
                     sendLoading &&
-                    derivedMessages.length - 1 === i
+                    derivedMessages.length - 1 === i &&
+                    !message.content
                   }
                   key={buildMessageUuidWithRole(message)}
                   nickname={userInfo.nickname}
@@ -118,7 +119,7 @@ function AgentChatBox() {
                   clickDocumentButton={clickDocumentButton}
                   index={i}
                   showLikeButton={false}
-                  sendLoading={sendLoading}
+                  sendLoading={sendLoading && derivedMessages.length - 1 === i}
                 >
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 === i && (

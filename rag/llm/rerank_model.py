@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import math
 import time
 from abc import ABC
 from urllib.parse import urljoin
@@ -27,6 +28,7 @@ from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 
 
 class Base(ABC):
@@ -200,6 +202,7 @@ class NvidiaRerank(Base):
     def __init__(self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/"):
         if not base_url:
             base_url = "https://ai.api.nvidia.com/v1/retrieval/nvidia/"
+        base_url = base_url.rstrip("/") + "/"
         self.model_name = model_name
 
         # Default to NVIDIA's generic reranking endpoint. base_url used to be
@@ -210,10 +213,18 @@ class NvidiaRerank(Base):
 
         if self.model_name == "nvidia/nv-rerankqa-mistral-4b-v3":
             self.base_url = urljoin(base_url, "nv-rerankqa-mistral-4b-v3/reranking")
-
-        if self.model_name == "nvidia/rerank-qa-mistral-4b":
+        elif self.model_name == "nvidia/rerank-qa-mistral-4b":
             self.base_url = urljoin(base_url, "reranking")
             self.model_name = "nv-rerank-qa-mistral-4b:1"
+        else:
+            logging.info(
+                "nvidia_rerank_fallback_endpoint_assigned",
+                extra={
+                    "provider": self._FACTORY_NAME,
+                    "model": self.model_name,
+                    "endpoint": self.base_url,
+                },
+            )
 
         self.headers = {
             "accept": "application/json",
@@ -284,6 +295,97 @@ class OpenAI_APIRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
+        return rank, token_count
+
+
+class MWSRerank(OpenAI_APIRerank):
+    """MWS reranker using its Cohere-compatible v2 endpoint."""
+
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, key, model_name, base_url):
+        """Initialize reranking access for an MWS project and deployment."""
+        token = require_mws_token(key)
+        super().__init__(token, model_name, mws_api_url(base_url, "cohere/v2/rerank"))
+
+    def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
+        """Score candidate texts and restore scores to document input order."""
+        documents = [truncate(text, 500) for text in texts]
+        log_context = {
+            "provider": self._FACTORY_NAME,
+            "operation": "rerank",
+            "endpoint": self.base_url,
+            "model": self.model_name,
+            "document_count": len(documents),
+        }
+        logging.info("mws_rerank_request", extra=log_context)
+
+        try:
+            response = requests.post(
+                self.base_url,
+                headers=self.headers,
+                json={
+                    "model": self.model_name,
+                    "query": query,
+                    "documents": documents,
+                    "top_n": len(documents),
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+        except Exception as error:
+            logging.warning(
+                "mws_rerank_failed",
+                extra={
+                    **log_context,
+                    "failure_stage": "http_request",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        try:
+            payload = response.json()
+        except Exception as error:
+            logging.warning(
+                "mws_rerank_failed",
+                extra={
+                    **log_context,
+                    "failure_stage": "json_parsing",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        try:
+            results = payload.get("results") if isinstance(payload, dict) else None
+            if not isinstance(results, list) or len(results) != len(documents):
+                count = len(results) if isinstance(results, list) else 0
+                raise ValueError(f"MWS returned {count} rerank results for {len(documents)} documents")
+
+            rank = np.zeros(len(documents), dtype=float)
+            seen = set()
+            for item in results:
+                index = item.get("index") if isinstance(item, dict) else None
+                if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(documents) or index in seen:
+                    raise ValueError(f"unexpected MWS rerank index: {index}")
+                relevance_score = item.get("relevance_score")
+                if isinstance(relevance_score, bool) or not isinstance(relevance_score, (int, float)) or not math.isfinite(relevance_score):
+                    raise ValueError(f"unexpected MWS rerank relevance_score at index {index}: {relevance_score!r}")
+                seen.add(index)
+                rank[index] = relevance_score
+        except Exception as error:
+            logging.warning(
+                "mws_rerank_failed",
+                extra={
+                    **log_context,
+                    "failure_stage": "response_validation",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(document) for document in documents)
         return rank, token_count
 
 

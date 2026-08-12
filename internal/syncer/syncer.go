@@ -19,11 +19,13 @@ package syncer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	documentservice "ragflow/internal/service/document"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -32,13 +34,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// Syncer owns the scheduler, task queue, and bounded worker pool.
+// Syncer owns NATS/DB scheduling, task workers, and the shared batch job executor.
 type Syncer struct {
 	id          string
 	config      Config
 	queue       chan TaskEnvelope
 	scheduler   *Scheduler
 	worker      *TaskWorker
+	executor    *SyncJobExecutor
 	cancel      context.CancelFunc
 	workerGroup sync.WaitGroup
 	stopOnce    sync.Once
@@ -46,10 +49,10 @@ type Syncer struct {
 }
 
 // NewSyncer creates a server-compatible syncer with default dependencies.
-func NewSyncer(maxConcurrency int, pollInterval time.Duration) *Syncer {
+func NewSyncer(taskWorkerCount int, pollInterval time.Duration) *Syncer {
 	// init the config
 	config := DefaultConfig()
-	config.TaskConcurrency = maxConcurrency
+	config.TaskWorkerCount = taskWorkerCount
 	config.PollInterval = pollInterval
 
 	taskDAO := dao.NewSyncTaskDAO(nil)
@@ -69,22 +72,30 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 	queue := make(chan TaskEnvelope, config.TaskQueueSize)
 	locker := NewConnectorLock()
 
-	globalItems := make(chan struct{}, config.GlobalItemConcurrency)
+	executor := NewSyncJobExecutor(SyncJobExecutorConfig{
+		WorkerCount:  config.JobWorkerCount,
+		JobQueueSize: config.JobQueueSize,
+	})
 	taskService := service.NewSyncTaskService(taskDAO)
 	idResolver := service.NewDocumentIDResolver(service.NewGormDocumentStore())
 
 	coordinator := NewTaskCoordinator(TaskCoordinatorConfig{
-		PerTaskItemConcurrency: config.PerTaskItemConcurrency,
-		ItemRetryCount:         config.ItemRetryCount,
-		ItemRetryBaseDelay:     config.ItemRetryBaseDelay,
-	}, taskService, registry, sink, pruneService, idResolver, globalItems)
+		ItemRetryCount:     config.ItemRetryCount,
+		ItemRetryBaseDelay: config.ItemRetryBaseDelay,
+	}, taskService, registry, sink, pruneService, idResolver, executor)
+
+	scheduler := NewScheduler(config.PollInterval, queue, taskService)
+	if broker, ok := engine.GetMessageQueueEngine().(SyncTaskBroker); ok {
+		scheduler = NewNATSScheduler(config.PollInterval, queue, taskService, broker)
+	}
 
 	return &Syncer{
 		id:         utility.GenerateUUID(),
 		config:     config,
 		queue:      queue,
-		scheduler:  NewScheduler(config.PollInterval, queue, taskService),
+		scheduler:  scheduler,
 		worker:     NewTaskWorker(queue, taskService, coordinator, locker),
+		executor:   executor,
 		ShutdownCh: make(chan struct{}),
 	}
 }
@@ -112,13 +123,18 @@ func (s *Syncer) StartContext(ctx context.Context) error {
 	s.cancel = cancel
 	s.workerGroup.Add(2)
 
+	// run scheduler
 	go func() {
 		defer s.workerGroup.Done()
-		_ = s.scheduler.Run(runCtx)
+		if err := s.scheduler.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+			common.Error("syncer scheduler stopped", err)
+		}
 	}()
+
+	// run worker poll
 	go func() {
 		defer s.workerGroup.Done()
-		s.worker.Run(runCtx, s.config.TaskConcurrency)
+		s.worker.Run(runCtx, s.config.TaskWorkerCount)
 	}()
 	return nil
 }
@@ -133,18 +149,18 @@ func (s *Syncer) Stop() {
 			s.cancel()
 		}
 		s.workerGroup.Wait()
+		s.executor.Close()
 		close(s.ShutdownCh)
 	})
 }
 
-// logTemporarySyncTaskDuration records sync task wall time while concurrency tuning is in progress.
-func logTemporarySyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Time) {
+// logSyncTaskDuration test run time, delete it soon
+func logSyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Time) {
 	if taskContext.Task.TaskType != service.TaskTypeSync {
 		return
 	}
 	common.Info(
 		"sync task duration",
-		zap.String("temporary_code", "remove_after_sync_concurrency_optimization"),
 		zap.String("task_id", taskContext.Task.ID),
 		zap.String("connector_id", taskContext.Connector.ID),
 		zap.String("kb_id", taskContext.Knowledgebase.ID),
@@ -155,25 +171,19 @@ func logTemporarySyncTaskDuration(taskContext service.SyncTaskContext, startedAt
 
 // registerBuiltInConnectors registers datasource connectors available in the server binary.
 func registerBuiltInConnectors(registry *syncerconnector.Registry) {
-	registry.Register("rss", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
+	registerDAOConnector(registry, "rss", syncerconnector.NewRSSConnector)
+	registerDAOConnector(registry, "github", syncerconnector.NewGitHubConnector)
+	registerDAOConnector(registry, "gmail", syncerconnector.NewGmailConnector)
+	registerDAOConnector(registry, "google-drive", syncerconnector.NewGoogleDriveConnector)
+	registerDAOConnector(registry, "google_drive", syncerconnector.NewGoogleDriveConnector)
+}
+
+func registerDAOConnector[T syncerconnector.Connector](registry *syncerconnector.Registry, source string, factory func(map[string]any) (T, error)) {
+	registry.Register(source, func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
 		row, ok := taskContext.(dao.SyncTaskContext)
 		if !ok {
-			return nil, errors.New("rss connector received an invalid task context")
+			return nil, fmt.Errorf("%s connector received an invalid task context", source)
 		}
-		return syncerconnector.NewRSSConnector(map[string]any(row.Connector.Config))
-	})
-	registry.Register("github", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, errors.New("github connector received an invalid task context")
-		}
-		return syncerconnector.NewGitHubConnector(map[string]any(row.Connector.Config))
-	})
-	registry.Register("gmail", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, errors.New("gmail connector received an invalid task context")
-		}
-		return syncerconnector.NewGmailConnector(map[string]any(row.Connector.Config))
+		return factory(map[string]any(row.Connector.Config))
 	})
 }

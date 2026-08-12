@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-// custom_delim_test pins the backtick-wrapped newline delimiter behaviour of
+// custom_delim_test pins the backtick-wrapped newline delimiter behavior of
 // TokenChunker against Python's rag/flow/chunker/token_chunker.py.
 //
-// All delimiter paths (primary and children, text/markdown/html and json)
+// All delimiter paths (primary and children, text/markdown/html and JSON)
 // must DROP the captured delimiter from each chunk's text, matching Python's
 // _split_text_by_pattern (token_chunker.py:79-90, used by both _build_json_chunks
 // and _split_chunk_docs_by_children). Go's splitDroppingDelim reproduces this.
 //
-// The json primary path is the one most prone to regress: Python's
+// The JSON primary path is the one most prone to regress: Python's
 // _build_json_chunks (token_chunker.py:121) splits each item through
 // _split_text_by_pattern, which keeps only the even-index (text) parts and
 // DISCARDS the captured delimiter. So a "first segment line one\n" item yields
@@ -119,7 +119,7 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		"markdown": "# Title\n\nParagraph one.\n\nParagraph two.",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	// The upstream decode normalizes markdown block boundaries into the
+	// The upstream decode normalizes Markdown block boundaries into the
 	// backtick-newline delimiter, so the text path must split into exactly
 	// three trimmed chunks with the delimiter dropped (no trailing newline).
 	want := []string{"# Title", "Paragraph one.", "Paragraph two."}

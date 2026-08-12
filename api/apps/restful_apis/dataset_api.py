@@ -16,11 +16,12 @@
 import logging
 
 from peewee import OperationalError
-from quart import request, make_response
-from common.constants import RetCode
-from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from quart import make_response, request
+
+from api.apps import current_user, login_required
+from api.apps.services import dataset_api_service
+from api.utils.api_utils import add_tenant_id_to_kwargs, get_error_argument_result, get_error_data_result, get_json_result, get_result
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -31,7 +32,7 @@ from api.utils.validation_utils import (
     validate_and_parse_json_request,
     validate_and_parse_request_args,
 )
-from api.apps.services import dataset_api_service
+from common.constants import RetCode
 
 
 @manager.route("/datasets/tags/aggregation", methods=["GET"])  # noqa: F821
@@ -44,6 +45,7 @@ def aggregate_tags(tenant_id):
         return get_error_data_result(message="Lack of dataset_ids in query parameters")
 
     try:
+        validate_rest_api_ids(dataset_ids, "dataset_ids")
         success, result = dataset_api_service.aggregate_tags(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
@@ -66,6 +68,7 @@ def get_flattened_metadata(tenant_id):
         return get_error_data_result(message="Lack of dataset_ids in query parameters")
 
     try:
+        validate_rest_api_ids(dataset_ids, "dataset_ids")
         success, result = dataset_api_service.get_flattened_metadata(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
@@ -602,7 +605,7 @@ async def has_any_wiki(tenant_id, dataset_id):
 async def list_wiki_pages(tenant_id, dataset_id):
     """List artifact pages for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity&topic=topic&keywords=query
+    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=100&page_type=entity&topic=topic&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
     """
     try:
@@ -638,7 +641,7 @@ async def list_wiki_pages(tenant_id, dataset_id):
 async def list_wiki_topics(tenant_id, dataset_id):
     """List wiki topics for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=200&keywords=query
+    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=100&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
     """
     try:
@@ -978,6 +981,51 @@ async def list_dataset_nav(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/navigation/search", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def search_dataset_nav(tenant_id, dataset_id):
+    """Unified navigation search across different knowledge layers.
+
+    GET /api/v1/datasets/<dataset_id>/navigation/search?q=<query>&mode=<mode>&top_k=20
+
+    Modes:
+      - nav_doc:         navigation tree document leaves (default)
+      - nav_cluster:     navigation tree cluster nodes
+      - navigation_tree: tree-structured BFS beam descent
+      - chunk:           raw document chunks (deduplicated by doc_id)
+      - all:             union of all modes above
+
+    Success: {"code": 0, "data": {"mode": <mode>, "total": <n>,
+        "items": [{"doc_id": str, "score": float}, ...]}}
+    """
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return get_result(data={"mode": request.args.get("mode", "nav_doc"), "total": 0, "items": []})
+    mode = (request.args.get("mode") or "nav_doc").strip()
+    top_k_raw = request.args.get("top_k")
+    top_k = None
+    if top_k_raw:
+        try:
+            top_k = max(1, int(top_k_raw))
+        except (ValueError, TypeError):
+            return get_error_data_result(message="top_k must be a positive integer")
+    try:
+        success, result = await dataset_api_service.search_dataset_layers(
+            dataset_id,
+            tenant_id,
+            q,
+            mode,
+            top_k=top_k,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/navigation/<path:name>/children", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1037,6 +1085,38 @@ async def delete_dataset_nav_node(tenant_id, dataset_id, name):
             dataset_id,
             tenant_id,
             name,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/navigation", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def generate_dataset_nav(tenant_id, dataset_id):
+    """Create the entire navigation tree from all dataset documents.
+
+    Deletes any existing navigation tree first, then rebuilds it from
+    scratch. When ``documents`` is provided, only those docs are used;
+    otherwise all docs in the dataset are auto-discovered.
+
+    POST /api/v1/datasets/<dataset_id>/navigation
+    Body (optional): {"documents": [{"doc_id": "...", "summary": "...",
+           "doc_title": "... (optional)", "source_type": "... (optional)"}, ...]}
+    Success: {"code": 0, "data": {"deleted": <n>, "upserted": <n>}}
+    """
+    try:
+        req = await request.json or {}
+        documents = req.get("documents")
+
+        success, result = await dataset_api_service.generate_nav(
+            dataset_id,
+            tenant_id,
+            documents,
         )
         if success:
             return get_result(data=result)

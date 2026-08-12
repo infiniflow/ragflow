@@ -53,6 +53,9 @@ export default function Chat() {
         if (!isEmpty(conversation)) {
           setCurrentConversation(conversation);
         }
+      } else {
+        // New session: clear previous session's messages so they don't leak in.
+        setCurrentConversation({} as IClientConversation);
       }
     },
     [fetchSessionManually],

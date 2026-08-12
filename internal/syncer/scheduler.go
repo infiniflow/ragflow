@@ -26,14 +26,25 @@ import (
 
 // TaskEnvelope is the only payload sent through the task queue.
 type TaskEnvelope struct {
-	TaskID string
+	TaskID        string
+	Handle        common.TaskHandle
+	stopHeartbeat func()
 }
 
-// Scheduler scans due work and enqueues claimed task IDs.
+// SyncTaskBroker publishes and pulls syncer task wake-up messages.
+type SyncTaskBroker interface {
+	InitSyncerStream() error
+	InitSyncerConsumer() error
+	PublishSyncerTask(taskID string) error
+	FetchSyncerTasks(batchSize int) ([]common.TaskHandle, error)
+}
+
+// Scheduler discovers due work and enqueues task IDs for workers.
 type Scheduler struct {
 	pollInterval time.Duration
 	queue        chan<- TaskEnvelope
 	taskService  *service.SyncTaskService
+	broker       SyncTaskBroker
 }
 
 // NewScheduler creates a global scheduler for datasource sync tasks.
@@ -41,50 +52,152 @@ func NewScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskSer
 	return &Scheduler{pollInterval: pollInterval, queue: queue, taskService: taskService}
 }
 
-// Run starts recovery and periodic task discovery.
-func (s *Scheduler) Run(ctx context.Context) error {
-	if err := s.scan(ctx); err != nil && ctx.Err() == nil {
-		common.Error("syncer scheduler scan failed", err)
+// NewNATSScheduler creates a JetStream-driven scheduler with DB reconciliation.
+func NewNATSScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskService *service.SyncTaskService, broker SyncTaskBroker) *Scheduler {
+	return &Scheduler{
+		pollInterval: pollInterval,
+		queue:        queue,
+		taskService:  taskService,
+		broker:       broker,
 	}
+}
+
+// Run starts the NATS listener.
+func (s *Scheduler) Run(ctx context.Context) error {
+	if s.broker != nil {
+		return s.runNATS(ctx)
+	}
+	return errors.New("syncer scheduler requires a NATS broker")
+}
+
+func (s *Scheduler) runNATS(ctx context.Context) error {
+	if err := s.broker.InitSyncerStream(); err != nil {
+		return err
+	}
+	if err := s.broker.InitSyncerConsumer(); err != nil {
+		return err
+	}
+
+	// scan DB for first time run
+	if err := s.publishStartupTasks(ctx); err != nil && ctx.Err() == nil {
+		common.Error("syncer scheduler startup publish failed", err)
+	}
+
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-			if err := s.scan(ctx); err != nil && ctx.Err() == nil {
-				common.Error("syncer scheduler scan failed", err)
+		case <-ticker.C: // Run `publishDueTasks` periodically
+			if err := s.publishDueTasks(ctx); err != nil && ctx.Err() == nil {
+				common.Error("syncer scheduler due publish failed", err)
 			}
+			continue
+		default:
+		}
+
+		// check `scheduler`'s task queue's slot
+		available := s.queueAvailable()
+		if available <= 0 {
+			if err := waitNATSFetchCapacity(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// pull `available` tasks from nats
+		handles, err := s.broker.FetchSyncerTasks(available)
+		if err != nil {
+			common.Error("syncer scheduler fetch failed", err)
+			if waitErr := waitNATSFetchCapacity(ctx); waitErr != nil {
+				return waitErr
+			}
+		} else if len(handles) == 0 {
+			if waitErr := waitNATSFetchCapacity(ctx); waitErr != nil {
+				return waitErr
+			}
+		} else if err = s.enqueueHandles(ctx, handles); err != nil { // put tasks to task queue
+			return err
 		}
 	}
 }
 
-// scan claims due tasks and places their IDs on the bounded queue.
-func (s *Scheduler) scan(ctx context.Context) error {
-	now := time.Now()
-	if err := s.taskService.RecoverStaleRunning(ctx, now); err != nil {
+func waitNATSFetchCapacity(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(100 * time.Millisecond):
+		return nil
+	}
+}
+
+// enqueueHandles put task to `scheduler`'s task queue
+func (s *Scheduler) enqueueHandles(ctx context.Context, handles []common.TaskHandle) error {
+	for index, handle := range handles {
+		message := handle.GetMessage()
+		if message.TaskID == "" {
+			_ = handle.Ack()
+			continue
+		}
+
+		stopHeartbeat := startHandleHeartbeat(ctx, handle)
+		select {
+		case <-ctx.Done():
+			stopHeartbeat()
+			for _, pending := range handles[index:] {
+				_ = pending.Nack()
+			}
+			return ctx.Err()
+		case s.queue <- TaskEnvelope{TaskID: message.TaskID, Handle: handle, stopHeartbeat: stopHeartbeat}:
+		}
+	}
+	return nil
+}
+
+func (s *Scheduler) queueAvailable() int {
+	return cap(s.queue) - len(s.queue)
+}
+
+// publishStartupTasks scan DB for first time run
+func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
+	// TODO restores running tasks during syncer startup.
+	if err := s.taskService.RecoverRunning(ctx); err != nil {
 		return err
 	}
+
+	tasks, err := s.taskService.ListStartupTasks(ctx)
+	if err != nil {
+		return err
+	}
+
+	// publish task to nats
+	var publishErr error
+	for _, task := range tasks {
+		if err = s.broker.PublishSyncerTask(task.ID); err != nil {
+			publishErr = errors.Join(publishErr, err)
+		}
+	}
+	return publishErr
+}
+
+// publishDueTasks publishes due scheduled DB tasks to nats
+func (s *Scheduler) publishDueTasks(ctx context.Context) error {
+	now := time.Now()
 	tasks, err := s.taskService.ListDueTasks(ctx, now)
 	if err != nil {
 		return err
 	}
-	var claimErr error
+
+	var publishErr error
 	for _, task := range tasks {
-		claimed, err := s.taskService.Claim(ctx, task.ID)
-		if err != nil {
-			claimErr = errors.Join(claimErr, err)
-			continue
-		}
-		if !claimed {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case s.queue <- TaskEnvelope{TaskID: task.ID}:
+		if err = s.broker.PublishSyncerTask(task.ID); err != nil {
+			publishErr = errors.Join(publishErr, err)
 		}
 	}
-	return claimErr
+	return publishErr
 }

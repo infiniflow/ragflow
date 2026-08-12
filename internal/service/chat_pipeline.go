@@ -2895,10 +2895,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2966,8 +2966,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:

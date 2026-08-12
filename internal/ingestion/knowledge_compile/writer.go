@@ -60,6 +60,14 @@ type Writer interface {
 	ProjectWikiGraph(ctx context.Context, tenant, kb string) error
 	// DropWikiGraph deletes every wiki_entity / wiki_relation row for the dataset.
 	DropWikiGraph(ctx context.Context, tenant, kb string) error
+	// DeleteMerged removes the dataset-level merged rows for a KB so an
+	// incremental build can start from a clean slate. The structural filter
+	// deletes only rows produced by the dataset-level merge — kb_id == kb AND
+	// available_int == 1 AND compile_kwd is a wiki variant (wiki_page/
+	// wiki_section). Per-document rows (doc_id == doc, available_int == 0) and
+	// rows for other tenants / variants are untouched. The match_kwd guard is the
+	// in-memory safety net; the structural filter is the source of truth.
+	DeleteMerged(ctx context.Context, tenant, kb string) error
 }
 
 // engineWriter persists dataset-level merged products through the global
@@ -107,6 +115,25 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	now := time.Now()
 	runID := utility.GenerateUUID()
 	inputHash := mergedInputHash(products)
+	// Diagnostics: before building merged rows, confirm the incoming products
+	// actually carry an embedding. mergedChunkMap only writes q_<dim>_vec when
+	// len(p.Vector)>0; if this reports 0 vectors while LoadDocProducts/dedup
+	// audits reported vectors, the vector is being dropped somewhere between
+	// dedup and WriteMerged.
+	{
+		vecCount, dims := 0, map[int]int{}
+		for _, p := range products {
+			if dim := len(p.Vector); dim > 0 {
+				vecCount++
+				dims[dim]++
+			}
+		}
+		common.Info("knowledge_compile: WriteMerged vector audit",
+			zap.String("kb_id", kb),
+			zap.Int("products", len(products)),
+			zap.Int("with_vector", vecCount),
+			zap.Any("vector_dims", dims))
+	}
 	// Shard the rows and drive the inserts through the shared global pool
 	// (docengine-bounded) instead of one monolithic InsertChunks call.
 	jobs := make([]CompilerJob, 0, (len(products)+writeMergedBatchSize-1)/writeMergedBatchSize)
@@ -168,6 +195,26 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		"input_hash_kwd":       inputHash,
 		"create_time":          now.Format("2006-01-02 15:04:05"),
 		"create_timestamp_flt": float64(now.Unix()),
+	}
+	// wiki_incremental port: persist the product kind so the Reader can round-trip
+	// page vs section without re-deriving it from compile_kwd. The merged writer
+	// carries the authoritative kc_kind; legacy rows without it are derived in
+	// productFromChunkMap (compile_kwd wiki_page -> "page", wiki_section ->
+	// "section"). Without this, the dataset-level merge could not distinguish a
+	// wiki page from a section and the processBatch "Meta.kind==page" filter would
+	// be unreliable.
+	if kind := metaString(p.Meta, "kind"); kind != "" {
+		m["kc_kind"] = kind
+	}
+	// wiki_incremental port: preserve the original creation timestamp across a
+	// replace-only merge. If the incoming merged product already carries
+	// created_at_unix (restored by the Reader from create_timestamp_flt), reuse
+	// it; otherwise stamp a fresh now() (first creation). This is what stops every
+	// rebuild from re-stamping the creation time.
+	if v, ok := metaFloat(p.Meta, "created_at_unix"); ok {
+		m["create_timestamp_flt"] = v
+		// Rebuild the human-readable form from the preserved unix time.
+		m["create_time"] = time.Unix(int64(v), 0).Format("2006-01-02 15:04:05")
 	}
 	// Carry the wiki page metadata onto the merged row so the dataset-level
 	// products keep the fields the artifact API (ListArtifacts/ListWikiTopics)
@@ -435,6 +482,42 @@ func metaInt(m map[string]any, key string) (int64, bool) {
 	return 0, false
 }
 
+// metaFloat extracts a float64 from a map value that may be boxed as float64,
+// int64, int, or string — the engine/JSON round-trip does not guarantee a
+// single numeric type. Used to recover create_timestamp_flt so the reader can
+// preserve the original creation time across a replace-only merge.
+func metaFloat(m map[string]any, key string) (float64, bool) {
+	switch v := m[key].(type) {
+	case float64:
+		return v, true
+	case int64:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case string:
+		var f float64
+		if _, err := fmt.Sscanf(v, "%f", &f); err == nil {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+// kwdToVariant is the inverse of compileKwdForVariant: it maps a stored
+// compile_kwd back to its compiler Variant. Both wiki_page and wiki_section
+// map to VariantWiki (same product family); the page/section distinction is
+// carried by the kc_kind field, not the variant. Returns an error for an
+// unknown kwd so callers can reject dirty/foreign rows.
+func kwdToVariant(kwd string) (kccommon.Variant, error) {
+	switch kwd {
+	case compileKwdWikiPage, compileKwdWikiSection, compileKwdWikiEntity, compileKwdWikiRelation:
+		return kccommon.VariantWiki, nil
+	case string(kccommon.VariantStructure), string(kccommon.VariantTree), string(kccommon.VariantMindmap):
+		return kccommon.Variant(kwd), nil
+	}
+	return "", fmt.Errorf("unknown compile_kwd %q", kwd)
+}
+
 // --- Wiki page graph materialization (wiki_entity / wiki_relation) ---
 
 // compile_kwd values for the dataset-level products this package writes. The
@@ -444,6 +527,7 @@ func metaInt(m map[string]any, key string) (int64, bool) {
 // dedicated wiki_entity / wiki_relation buckets.
 const (
 	compileKwdWikiPage      = "wiki_page"
+	compileKwdWikiSection   = "wiki_section"
 	compileKwdWikiEntity    = "wiki_entity"
 	compileKwdWikiRelation  = "wiki_relation"
 	compileKwdWikiPageGraph = "wiki_page_graph" // legacy Python blob, swept on drop
@@ -550,6 +634,34 @@ func (w engineWriter) DropWikiGraph(ctx context.Context, tenant, kb string) erro
 	return w.dropWikiGraph(ctx, tenant, kb)
 }
 
+// DeleteMerged removes the dataset-level (available_int=1) wiki merged rows for
+// a KB so an incremental build can start from a clean slate. The structural
+// filter (kb_id + available_int=1 + wiki page/section compile_kwd variants) is
+// the source of truth; it never targets per-document rows (available_int=0) nor
+// rows of other tenants / variants, so a wrong tenantID / kb cannot cascade.
+func (w engineWriter) DeleteMerged(ctx context.Context, tenant, kb string) error {
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return nil
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
+		"kb_id":         kb,
+		"available_int": 1,
+		"compile_kwd": []string{
+			compileKwdWikiPage,
+			compileKwdWikiSection,
+		},
+	}, baseName, kb)
+	if err != nil {
+		return fmt.Errorf("delete merged: %w", err)
+	}
+	return nil
+}
+
 // dropWikiGraph is the shared delete path for both ProjectWikiGraph (when the
 // page set is empty, or before re-inserting) and DropWikiGraph. It deletes by
 // kb_id + compile_kwd IN (the graph buckets), also sweeping any legacy
@@ -606,6 +718,10 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 				"slug_kwd", "page_type_kwd", "title_kwd",
 				"entity_names_kwd", "summary_with_weight", "outlinks_kwd",
 				"source_doc_ids", "source_chunk_ids",
+				// compile_kwd is selected purely so the query-result telemetry
+				// below can confirm the Search filter is honoured (without it the
+				// "compile_kwd_seen" audit would always read as {"":n}).
+				"compile_kwd",
 			},
 			Limit:  batchSize,
 			Offset: offset,
@@ -750,9 +866,6 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 		// bare slug (the latter is what the LLM emits in wikitext links); resolve
 		// both so a bare outlink still produces an edge.
 		for _, tgt := range p.Outlinks {
-			if tgt == p.Slug {
-				continue // self-loop: Python skips src == tgt
-			}
 			tp, ok := bySlug[tgt]
 			if !ok {
 				// Bare-slug outlink: normalize (strip prefix, "_"->"-") and look
@@ -769,6 +882,9 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 			}
 			if !ok {
 				continue // dangling edge: target page not in this projection
+			}
+			if tgt == p.Slug {
+				continue // self-loop: Python skips src == tgt (full or bare slug)
 			}
 			relID := wikiGraphXXHash("wiki_relation", kb, p.Slug+":"+tgt)
 			if seen[relID] {

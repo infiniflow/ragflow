@@ -42,7 +42,7 @@
 //   - WHAT IS NOT YET PORTED:
 //
 //   - The Python component dispatches to 13 file-format branches
-//     (pdf, markdown, text&code, html, spreadsheet, slides, doc,
+//     (pdf, Markdown, text&code, html, spreadsheet, slides, doc,
 //     docx, image, audio, video, email, epub) — see parser.py
 //     function_map at line ~1273. The Go counterparts in
 //     internal/parser/parser/ are SKELETONS that print to
@@ -427,7 +427,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     off the python family identifiers in schema.ParserParam.
 	//
 	// For most families the two forms coincide; the divergence
-	// exists for markdown ("md" vs "markdown") and slides
+	// exists for Markdown ("md" vs "markdown") and slides
 	// ("ppt"/"pptx" vs "slides") and is intentional — the python
 	// ParserParam collapses the slide family into a single key.
 	fileTypeExt := fileTypeFromInputs(inputs)

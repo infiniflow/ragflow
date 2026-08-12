@@ -397,7 +397,13 @@ async def _ask_nav_select(tools, query: str, items: list[dict], noun: str, max_i
         name = str(it.get("name") or "").strip() or f"item-{i}"
         desc = str(it.get("description") or "").strip().replace("\n", " ")
         extra = f" [{it['doc_count']} docs]" if it.get("doc_count") else ""
-        lines.append(f"[{i}] {name}{extra}: {desc[:300]}")
+        kwds = it.get("keywords") or []
+        tags = ", ".join(str(k) for k in kwds[:6]).strip()
+        head = f" [tags: {tags}]" if tags else ""
+        entities = it.get("entities") or []
+        ents = ", ".join(str(e) for e in entities[:6]).strip()
+        head += f" [entities: {ents}]" if ents else ""
+        lines.append(f"[{i}] {name}{extra}{head}: {desc[:300]}")
 
     system = _NAV_SELECT_SYSTEM.format(noun=noun)
     user = f"Question:\n{query}\n\n{noun.capitalize()} (numbered):\n" + "\n".join(lines) + "\n\nOutput JSON:"

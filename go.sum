@@ -39,8 +39,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.57.0/go.mod h1:dzcEjy1WJ0Q4u9twNR3LcLhNoYMRCrMCMafpxa0TjPQ=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 h1:RoO5+d7uCmDqovLrHCr2/BuViUXvdcrNxyNM1pN9dDQ=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0/go.mod h1:YqwkQPrWSC7+byyc1VlKbWLBF5JsW5IoL6xUkemYSXk=
-github.com/LuxorLabs/tenki-sdk-go/sandbox v0.5.2 h1:HN2UwfNhHYCT7qmJJ5KKf+erRoH5RTfGb7N8dEbE9FQ=
-github.com/LuxorLabs/tenki-sdk-go/sandbox v0.5.2/go.mod h1:rBypesed6hSrj+OgpJwyMVBF76PaQ1iOqc2RGUL4RmI=
+github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0 h1:PBQ+ad8fZiLH/1ij1hoynR9aAPVmI3EzT7DiLNmUdBM=
+github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0/go.mod h1:rBypesed6hSrj+OgpJwyMVBF76PaQ1iOqc2RGUL4RmI=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/airbrake/gobrake v3.6.1+incompatible/go.mod h1:wM4gu3Cn0W0K7GUuVWnlXZU11AGBXMILnrdOU8Kn00o=
 github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4 h1:hiAsm9pz6aICOPLI1FC54vga10xwd/XxfNj06ow5jVM=
@@ -309,8 +309,8 @@ github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/ad
 github.com/hashicorp/hcl v1.0.0 h1:0Anlzjpi4vEasTeNFn2mLJgTSwt0+6sfsiTG8qcWGx4=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
-github.com/infiniflow/infinity/go v0.0.0-20260723093510-ceb4bc518010 h1:TKHL99MrpO2d+q6zRUSPRWsxTXo+pojFr3teiK8HLWw=
-github.com/infiniflow/infinity/go v0.0.0-20260723093510-ceb4bc518010/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
+github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9 h1:mqPwCOTktwl0V1f3tkfCRFonGQ3XrQ43gvH+TOWec6o=
+github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=

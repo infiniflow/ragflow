@@ -49,7 +49,7 @@ var (
 // rest of the response invisible to the caller.
 var thinkBlockRE = regexp.MustCompile(`^[\s\S]*</think>`)
 
-// jsonFenceRE matches markdown code fences around JSON responses.
+// jsonFenceRE matches Markdown code fences around JSON responses.
 // Mirrors Python's re.sub(r"(`{3}json\n|`{3}\n*$)", ..., flags=re.DOTALL).
 // Note: `\n*` is intentionally narrower than Go's `\s*` — Python only
 // matches newlines, not other whitespace, so a closing fence followed
