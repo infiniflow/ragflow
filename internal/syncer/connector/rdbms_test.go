@@ -31,18 +31,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-func newFixtureRDBMSConnector(t *testing.T, config map[string]any, expect func(mock sqlmock.Sqlmock)) *RDBMSConnector {
-	t.Helper()
-	return newFixtureRDBMSConnectorFor(t, NewRDBMSConnector, config, expect)
-}
-
-// newFixturePostgresConnector builds a PostgreSQL connector backed by sqlmock.
-func newFixturePostgresConnector(t *testing.T, config map[string]any, expect func(mock sqlmock.Sqlmock)) *RDBMSConnector {
-	t.Helper()
-	return newFixtureRDBMSConnectorFor(t, NewPostgreSQLConnector, config, expect)
-}
-
-func newFixtureRDBMSConnectorFor(t *testing.T, constructor func(map[string]any) (*RDBMSConnector, error), config map[string]any, expect func(mock sqlmock.Sqlmock)) *RDBMSConnector {
+func newFixtureMySQLConnector(t *testing.T, config map[string]any, expect func(mock sqlmock.Sqlmock)) *MySQLConnector {
 	t.Helper()
 	if config == nil {
 		config = map[string]any{
@@ -55,9 +44,9 @@ func newFixtureRDBMSConnectorFor(t *testing.T, constructor func(map[string]any) 
 			},
 		}
 	}
-	connector, err := constructor(config)
+	connector, err := NewMySQLConnector(config)
 	if err != nil {
-		t.Fatalf("connector constructor failed: %v", err)
+		t.Fatalf("NewMySQLConnector failed: %v", err)
 	}
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -78,11 +67,48 @@ func newFixtureRDBMSConnectorFor(t *testing.T, constructor func(map[string]any) 
 	return connector
 }
 
-// TestRDBMSConnectorOpenSyncCustomQuery verifies a custom query produces documents.
-func TestRDBMSConnectorOpenSyncCustomQuery(t *testing.T) {
+// newFixturePostgresConnector builds a PostgreSQL connector backed by sqlmock.
+func newFixturePostgresConnector(t *testing.T, config map[string]any, expect func(mock sqlmock.Sqlmock)) *PostgreSQLConnector {
+	t.Helper()
+	if config == nil {
+		config = map[string]any{
+			"host":     "127.0.0.1",
+			"port":     "5432",
+			"database": "mydb",
+			"credentials": map[string]any{
+				"username": "postgres",
+				"password": "secret",
+			},
+		}
+	}
+	connector, err := NewPostgreSQLConnector(config)
+	if err != nil {
+		t.Fatalf("NewPostgreSQLConnector failed: %v", err)
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New failed: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet sqlmock expectations: %v", err)
+		}
+	})
+	connector.openDB = func(dsn string) (*sql.DB, error) {
+		return db, nil
+	}
+	if expect != nil {
+		expect(mock)
+	}
+	return connector
+}
+
+// TestMySQLConnectorOpenSyncCustomQuery verifies a custom query produces documents.
+func TestMySQLConnectorOpenSyncCustomQuery(t *testing.T) {
 	query := "SELECT * FROM products WHERE status = 'active'"
 	updatedAt := mustTime(t, "2026-01-02T03:04:05Z")
-	connector := newFixtureRDBMSConnector(t, map[string]any{
+	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":             "127.0.0.1",
 		"port":             "3306",
 		"database":         "mydb",
@@ -144,9 +170,9 @@ func TestRDBMSConnectorOpenSyncCustomQuery(t *testing.T) {
 	}
 }
 
-// TestRDBMSConnectorOpenSyncIncrementalWindow verifies the timestamp filter SQL.
-func TestRDBMSConnectorOpenSyncIncrementalWindow(t *testing.T) {
-	connector := newFixtureRDBMSConnector(t, map[string]any{
+// TestMySQLConnectorOpenSyncIncrementalWindow verifies the timestamp filter SQL.
+func TestMySQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
+	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":             "127.0.0.1",
 		"port":             3306,
 		"database":         "mydb",
@@ -179,9 +205,9 @@ func TestRDBMSConnectorOpenSyncIncrementalWindow(t *testing.T) {
 	}
 }
 
-// TestRDBMSConnectorOpenSyncAllTables verifies SHOW TABLES expands to per-table queries.
-func TestRDBMSConnectorOpenSyncAllTables(t *testing.T) {
-	connector := newFixtureRDBMSConnector(t, map[string]any{
+// TestMySQLConnectorOpenSyncAllTables verifies SHOW TABLES expands to per-table queries.
+func TestMySQLConnectorOpenSyncAllTables(t *testing.T) {
+	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":      "127.0.0.1",
 		"port":      3306,
 		"database":  "mydb",
@@ -224,9 +250,9 @@ func TestRDBMSConnectorOpenSyncAllTables(t *testing.T) {
 	}
 }
 
-// TestRDBMSConnectorOpenPrune verifies the slim query and Python-compatible IDs.
-func TestRDBMSConnectorOpenPrune(t *testing.T) {
-	connector := newFixtureRDBMSConnector(t, map[string]any{
+// TestMySQLConnectorOpenPrune verifies the slim query and Python-compatible IDs.
+func TestMySQLConnectorOpenPrune(t *testing.T) {
+	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":            "127.0.0.1",
 		"port":            3306,
 		"database":        "mydb",
@@ -262,9 +288,9 @@ func TestRDBMSConnectorOpenPrune(t *testing.T) {
 	}
 }
 
-// TestRDBMSConnectorMD5FallbackID verifies the content-hash document id.
-func TestRDBMSConnectorMD5FallbackID(t *testing.T) {
-	connector := newFixtureRDBMSConnector(t, map[string]any{
+// TestMySQLConnectorMD5FallbackID verifies the content-hash document id.
+func TestMySQLConnectorMD5FallbackID(t *testing.T) {
+	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":            "127.0.0.1",
 		"port":            3306,
 		"database":        "mydb",
@@ -299,9 +325,9 @@ func TestRDBMSConnectorMD5FallbackID(t *testing.T) {
 	}
 }
 
-// TestRDBMSConnectorValidate verifies the SELECT 1 probe and failure paths.
-func TestRDBMSConnectorValidate(t *testing.T) {
-	connector := newFixtureRDBMSConnector(t, nil, func(mock sqlmock.Sqlmock) {
+// TestMySQLConnectorValidate verifies the SELECT 1 probe and failure paths.
+func TestMySQLConnectorValidate(t *testing.T) {
+	connector := newFixtureMySQLConnector(t, nil, func(mock sqlmock.Sqlmock) {
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT 1")).WillReturnRows(
 			sqlmock.NewRows([]string{"1"}).AddRow(1),
 		)
@@ -310,7 +336,7 @@ func TestRDBMSConnectorValidate(t *testing.T) {
 		t.Fatalf("Validate failed: %v", err)
 	}
 
-	missing := newFixtureRDBMSConnector(t, map[string]any{
+	missing := newFixtureMySQLConnector(t, map[string]any{
 		"host":     "127.0.0.1",
 		"port":     3306,
 		"database": "mydb",
@@ -524,8 +550,9 @@ func TestPostgreSQLConnectorValidate(t *testing.T) {
 	}
 }
 
-// TestSanitizeRDBMSQuery verifies markdown fence tolerance.
-func TestSanitizeRDBMSQuery(t *testing.T) {
+// TestMySQLConnectorSanitizeQuery verifies markdown fence tolerance.
+func TestMySQLConnectorSanitizeQuery(t *testing.T) {
+	connector := &MySQLConnector{}
 	cases := []struct {
 		in   string
 		want string
@@ -536,14 +563,15 @@ func TestSanitizeRDBMSQuery(t *testing.T) {
 		{in: "   ", want: ""},
 	}
 	for _, tc := range cases {
-		if got := sanitizeRDBMSQuery(tc.in); got != tc.want {
-			t.Fatalf("sanitizeRDBMSQuery(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := connector.sanitizeQuery(tc.in); got != tc.want {
+			t.Fatalf("sanitizeQuery(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
 
-// TestStripRDBMSOrderBy verifies trailing top-level ORDER BY removal.
-func TestStripRDBMSOrderBy(t *testing.T) {
+// TestMySQLConnectorStripOrderBy verifies trailing top-level ORDER BY removal.
+func TestMySQLConnectorStripOrderBy(t *testing.T) {
+	connector := &MySQLConnector{}
 	cases := []struct {
 		in   string
 		want string
@@ -553,8 +581,8 @@ func TestStripRDBMSOrderBy(t *testing.T) {
 		{in: "SELECT * FROM t", want: "SELECT * FROM t"},
 	}
 	for _, tc := range cases {
-		if got := stripRDBMSOrderBy(tc.in); got != tc.want {
-			t.Fatalf("stripRDBMSOrderBy(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := connector.stripOrderBy(tc.in); got != tc.want {
+			t.Fatalf("stripOrderBy(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

@@ -29,32 +29,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const (
-	defaultRDBMSBatchSize = 32
-	defaultMySQLPort      = 3306
-	defaultPostgresPort   = 5432
+const defaultPostgresBatchSize = 32
 
-	rdbmsTypeMySQL      = "mysql"
-	rdbmsTypePostgreSQL = "postgresql"
-)
-
-var (
-	rdbmsOrderByPattern = regexp.MustCompile(`(?i)\border\s+by\b`)
-	rdbmsFenceLanguages = map[string]bool{"sql": true, "tsql": true, "t-sql": true, "mssql": true, "mysql": true, "postgresql": true, "psql": true}
-)
-
-// RDBMSConnector imports MySQL rows as documents.
+// PostgreSQLConnector imports PostgreSQL rows as documents.
 //
-// It mirrors the Python RDBMSConnector: a custom SQL query runs verbatim,
-// otherwise every table is loaded. Rows become documents whose content is
-// built from the configured content columns (or every column), the id column
-// (or an MD5 of the content) forms the stable document id, and the timestamp
-// column drives incremental sync and the document update time.
-type RDBMSConnector struct {
+// It mirrors the Python RDBMSConnector's PostgreSQL dialect: a custom SQL
+// query runs verbatim, otherwise every table in the public schema is loaded.
+// Rows become documents whose content is built from the configured content
+// columns (or every column), the id column (or an MD5 of the content) forms
+// the stable document id, and the timestamp column drives incremental sync
+// and the document update time.
+type PostgreSQLConnector struct {
 	host            string
 	port            int
 	database        string
@@ -66,53 +54,39 @@ type RDBMSConnector struct {
 	batchSize       int
 	username        string
 	password        string
-	dbType          string
 
 	openDB func(dsn string) (*sql.DB, error)
 }
 
-// NewRDBMSConnector creates a MySQL connector from Python-compatible config.
-func NewRDBMSConnector(config map[string]any) (*RDBMSConnector, error) {
-	return newRDBMSConnector(config, rdbmsTypeMySQL, defaultMySQLPort)
-}
-
 // NewPostgreSQLConnector creates a PostgreSQL connector from Python-compatible config.
-func NewPostgreSQLConnector(config map[string]any) (*RDBMSConnector, error) {
-	return newRDBMSConnector(config, rdbmsTypePostgreSQL, defaultPostgresPort)
-}
-
-func newRDBMSConnector(config map[string]any, dbType string, defaultPort int) (*RDBMSConnector, error) {
+func NewPostgreSQLConnector(config map[string]any) (*PostgreSQLConnector, error) {
 	credentials, _ := config["credentials"].(map[string]any)
-	driverName := "mysql"
-	if dbType == rdbmsTypePostgreSQL {
-		driverName = "pgx"
-	}
-	return &RDBMSConnector{
+	connector := &PostgreSQLConnector{
 		host:            strings.TrimSpace(stringConfig(config["host"])),
-		port:            configInt(config["port"], defaultPort),
+		port:            configInt(config["port"], 5432),
 		database:        strings.TrimSpace(stringConfig(config["database"])),
-		query:           sanitizeRDBMSQuery(stringConfig(config["query"])),
-		contentColumns:  splitRDBMSColumns(config["content_columns"]),
-		metadataColumns: splitRDBMSColumns(config["metadata_columns"]),
 		idColumn:        strings.TrimSpace(stringConfig(config["id_column"])),
 		timestampColumn: strings.TrimSpace(stringConfig(config["timestamp_column"])),
-		batchSize:       configInt(config["batch_size"], defaultRDBMSBatchSize),
+		batchSize:       configInt(config["batch_size"], defaultPostgresBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
-		dbType:          dbType,
 		openDB: func(dsn string) (*sql.DB, error) {
-			return sql.Open(driverName, dsn)
+			return sql.Open("pgx", dsn)
 		},
-	}, nil
+	}
+	connector.query = connector.sanitizeQuery(stringConfig(config["query"]))
+	connector.contentColumns = connector.splitColumns(config["content_columns"])
+	connector.metadataColumns = connector.splitColumns(config["metadata_columns"])
+	return connector, nil
 }
 
-// Validate validates RDBMS connector settings and credentials.
-func (c *RDBMSConnector) Validate(ctx context.Context) error {
+// Validate validates PostgreSQL connector settings and credentials.
+func (c *PostgreSQLConnector) Validate(ctx context.Context) error {
 	if c == nil {
-		return fmt.Errorf("rdbms connector is nil")
+		return fmt.Errorf("postgresql connector is nil")
 	}
 	if c.username == "" {
-		return fmt.Errorf("RDBMS (%s): missing username", c.dbType)
+		return fmt.Errorf("RDBMS (postgresql): missing username")
 	}
 	if c.host == "" {
 		return fmt.Errorf("Database host is required")
@@ -125,26 +99,18 @@ func (c *RDBMSConnector) Validate(ctx context.Context) error {
 	}
 	db, err := c.open()
 	if err != nil {
-		return fmt.Errorf("Failed to connect to %s: %w", c.dbDisplayName(), err)
+		return fmt.Errorf("Failed to connect to PostgreSQL: %w", err)
 	}
 	defer db.Close()
 	var one int
 	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
-		return fmt.Errorf("Failed to connect to %s: %w", c.dbDisplayName(), err)
+		return fmt.Errorf("Failed to connect to PostgreSQL: %w", err)
 	}
 	return nil
 }
 
-// dbDisplayName returns the human-readable database name for error messages.
-func (c *RDBMSConnector) dbDisplayName() string {
-	if c.dbType == rdbmsTypePostgreSQL {
-		return "PostgreSQL"
-	}
-	return "MySQL"
-}
-
-// OpenSync opens one RDBMS sync session.
-func (c *RDBMSConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
+// OpenSync opens one PostgreSQL sync session.
+func (c *PostgreSQLConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	db, err := c.open()
 	if err != nil {
 		return nil, err
@@ -155,11 +121,11 @@ func (c *RDBMSConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 		return nil, err
 	}
 	queries := c.buildSyncQueries(bases, request)
-	return &rdbmsSyncSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
+	return &postgresSyncSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
 
-// OpenPrune opens one complete RDBMS prune snapshot session.
-func (c *RDBMSConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
+// OpenPrune opens one complete PostgreSQL prune snapshot session.
+func (c *PostgreSQLConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
 	db, err := c.open()
 	if err != nil {
 		return nil, err
@@ -173,42 +139,26 @@ func (c *RDBMSConnector) OpenPrune(ctx context.Context, request PruneRequest) (P
 	for _, base := range bases {
 		queries = append(queries, c.buildSlimQuery(base))
 	}
-	return &rdbmsPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
+	return &postgresPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
 
-// open builds a database connection with Python-compatible settings.
-func (c *RDBMSConnector) open() (*sql.DB, error) {
-	if c.dbType == rdbmsTypePostgreSQL {
-		dsn := url.URL{
-			Scheme: "postgres",
-			User:   url.UserPassword(c.username, c.password),
-			Host:   fmt.Sprintf("%s:%d", c.host, c.port),
-			Path:   "/" + url.PathEscape(c.database),
-		}
-		return c.openDB(dsn.String())
+// open builds a PostgreSQL connection from the connector settings.
+func (c *PostgreSQLConnector) open() (*sql.DB, error) {
+	dsn := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.username, c.password),
+		Host:   fmt.Sprintf("%s:%d", c.host, c.port),
+		Path:   "/" + url.PathEscape(c.database),
 	}
-	cfg := mysql.NewConfig()
-	cfg.User = c.username
-	cfg.Passwd = c.password
-	cfg.Net = "tcp"
-	cfg.Addr = fmt.Sprintf("%s:%d", c.host, c.port)
-	cfg.DBName = c.database
-	cfg.Params = map[string]string{"charset": "utf8mb4"}
-	cfg.ParseTime = true
-	cfg.Loc = time.UTC
-	return c.openDB(cfg.FormatDSN())
+	return c.openDB(dsn.String())
 }
 
 // baseQueries returns the configured query or a SELECT per table.
-func (c *RDBMSConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string, error) {
+func (c *PostgreSQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string, error) {
 	if c.query != "" {
 		return []string{c.query}, nil
 	}
-	tablesQuery := "SHOW TABLES"
-	if c.dbType == rdbmsTypePostgreSQL {
-		tablesQuery = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
-	}
-	rows, err := db.QueryContext(ctx, tablesQuery)
+	rows, err := db.QueryContext(ctx, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +182,7 @@ func (c *RDBMSConnector) baseQueries(ctx context.Context, db *sql.DB) ([]string,
 }
 
 // buildSyncQueries applies the incremental window when a timestamp column exists.
-func (c *RDBMSConnector) buildSyncQueries(bases []string, request SyncRequest) []string {
+func (c *PostgreSQLConnector) buildSyncQueries(bases []string, request SyncRequest) []string {
 	var start, end *time.Time
 	if !request.FromBeginning {
 		start = request.WindowStart
@@ -249,13 +199,13 @@ func (c *RDBMSConnector) buildSyncQueries(bases []string, request SyncRequest) [
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
-func (c *RDBMSConnector) buildTimeFilteredQuery(base string, start, end *time.Time) string {
+func (c *PostgreSQLConnector) buildTimeFilteredQuery(base string, start, end *time.Time) string {
 	conditions := []string{}
 	if start != nil {
-		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s >= %s", c.timestampColumn, formatRDBMSDatetime(c.dbType, *start)))
+		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s >= %s", c.timestampColumn, c.formatDatetime(*start)))
 	}
 	if end != nil {
-		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, formatRDBMSDatetime(c.dbType, *end)))
+		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
 	query := c.wrapQuery(base)
 	if len(conditions) > 0 {
@@ -265,7 +215,7 @@ func (c *RDBMSConnector) buildTimeFilteredQuery(base string, start, end *time.Ti
 }
 
 // buildSlimQuery selects only the columns needed to identify documents.
-func (c *RDBMSConnector) buildSlimQuery(base string) string {
+func (c *PostgreSQLConnector) buildSlimQuery(base string) string {
 	columns := []string{}
 	if c.idColumn != "" {
 		columns = []string{c.idColumn}
@@ -279,18 +229,19 @@ func (c *RDBMSConnector) buildSlimQuery(base string) string {
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", strings.Join(selects, ", "), stripRDBMSOrderBy(base))
+	return fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", strings.Join(selects, ", "), c.stripOrderBy(base))
 }
 
 // wrapQuery wraps the base query as a derived table named ragflow_src.
-func (c *RDBMSConnector) wrapQuery(base string) string {
-	return fmt.Sprintf("SELECT * FROM (%s) AS ragflow_src", stripRDBMSOrderBy(base))
+func (c *PostgreSQLConnector) wrapQuery(base string) string {
+	return fmt.Sprintf("SELECT * FROM (%s) AS ragflow_src", c.stripOrderBy(base))
 }
 
-// stripRDBMSOrderBy removes a trailing top-level ORDER BY clause.
-func stripRDBMSOrderBy(query string) string {
+// stripOrderBy removes a trailing top-level ORDER BY clause.
+func (c *PostgreSQLConnector) stripOrderBy(query string) string {
+	pattern := regexp.MustCompile(`(?i)\border\s+by\b`)
 	cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	matches := rdbmsOrderByPattern.FindAllStringIndex(cleaned, -1)
+	matches := pattern.FindAllStringIndex(cleaned, -1)
 	for i := len(matches) - 1; i >= 0; i-- {
 		prefix := cleaned[:matches[i][0]]
 		if strings.Count(prefix, "(") == strings.Count(prefix, ")") {
@@ -300,17 +251,13 @@ func stripRDBMSOrderBy(query string) string {
 	return cleaned
 }
 
-// formatRDBMSDatetime renders a UTC time as a SQL datetime literal, using the
-// MySQL "YYYY-MM-DD HH:MM:SS" form or the ISO-8601 form PostgreSQL accepts.
-func formatRDBMSDatetime(dbType string, value time.Time) string {
-	if dbType == rdbmsTypePostgreSQL {
-		return "'" + value.UTC().Format(time.RFC3339Nano) + "'"
-	}
-	return "'" + value.UTC().Format("2006-01-02 15:04:05") + "'"
+// formatDatetime renders a UTC time as an ISO-8601 PostgreSQL literal.
+func (c *PostgreSQLConnector) formatDatetime(value time.Time) string {
+	return "'" + value.UTC().Format(time.RFC3339Nano) + "'"
 }
 
 // scanRow scans the current row into an ordered column map.
-func (c *RDBMSConnector) scanRow(rows *sql.Rows) (map[string]any, []string, error) {
+func (c *PostgreSQLConnector) scanRow(rows *sql.Rows) (map[string]any, []string, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, nil, err
@@ -325,16 +272,16 @@ func (c *RDBMSConnector) scanRow(rows *sql.Rows) (map[string]any, []string, erro
 	}
 	row := make(map[string]any, len(columns))
 	for i, column := range columns {
-		row[column] = normalizeRDBMSValue(values[i])
+		row[column] = c.normalizeValue(values[i])
 	}
 	return row, columns, nil
 }
 
-// normalizeRDBMSValue converts driver-specific values into plain strings so
-// content and metadata rendering stay dialect-agnostic. Byte slices (MySQL
-// text, PostgreSQL jsonb) and driver value types (PostgreSQL numeric) become
-// their text form; time.Time passes through untouched.
-func normalizeRDBMSValue(value any) any {
+// normalizeValue converts driver-specific values into plain strings so
+// content and metadata rendering stay dialect-agnostic. Byte slices (jsonb)
+// and driver value types (numeric) become their text form; time.Time passes
+// through untouched.
+func (c *PostgreSQLConnector) normalizeValue(value any) any {
 	if bytes, ok := value.([]byte); ok {
 		return string(bytes)
 	}
@@ -343,7 +290,7 @@ func normalizeRDBMSValue(value any) any {
 	}
 	if valuer, ok := value.(driver.Valuer); ok {
 		if converted, err := valuer.Value(); err == nil {
-			return normalizeRDBMSValue(converted)
+			return c.normalizeValue(converted)
 		}
 	}
 	return value
@@ -351,7 +298,7 @@ func normalizeRDBMSValue(value any) any {
 
 // contentColumnsForRow resolves the content columns for a row, excluding the
 // structural id and timestamp columns when no content columns are configured.
-func (c *RDBMSConnector) contentColumnsForRow(row map[string]any, orderedColumns []string) []string {
+func (c *PostgreSQLConnector) contentColumnsForRow(row map[string]any, orderedColumns []string) []string {
 	if len(c.contentColumns) > 0 {
 		return c.contentColumns
 	}
@@ -372,33 +319,33 @@ func (c *RDBMSConnector) contentColumnsForRow(row map[string]any, orderedColumns
 }
 
 // buildContent renders the document content from the resolved content columns.
-func (c *RDBMSConnector) buildContent(row map[string]any, columns []string) string {
+func (c *PostgreSQLConnector) buildContent(row map[string]any, columns []string) string {
 	parts := []string{}
 	for _, column := range columns {
 		value, ok := row[column]
 		if !ok || value == nil {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("【%s】:\n%s", column, renderRDBMSValue(value)))
+		parts = append(parts, fmt.Sprintf("【%s】:\n%s", column, c.renderValue(value)))
 	}
 	return strings.Join(parts, "\n\n")
 }
 
 // buildDocumentID derives the stable document id, matching the Python format
-// "<db_type>:<database>:<id value>" with an MD5 content fallback.
-func (c *RDBMSConnector) buildDocumentID(row map[string]any, orderedColumns []string) string {
+// "postgresql:<database>:<id value>" with an MD5 content fallback.
+func (c *PostgreSQLConnector) buildDocumentID(row map[string]any, orderedColumns []string) string {
 	if c.idColumn != "" {
 		if value, ok := row[c.idColumn]; ok && value != nil {
-			return fmt.Sprintf("%s:%s:%s", c.dbType, c.database, fmt.Sprint(value))
+			return fmt.Sprintf("postgresql:%s:%s", c.database, fmt.Sprint(value))
 		}
 	}
 	content := c.buildContent(row, c.contentColumnsForRow(row, orderedColumns))
 	sum := md5.Sum([]byte(content))
-	return fmt.Sprintf("%s:%s:%s", c.dbType, c.database, hex.EncodeToString(sum[:]))
+	return fmt.Sprintf("postgresql:%s:%s", c.database, hex.EncodeToString(sum[:]))
 }
 
 // rowToSourceDocument converts a database row into the syncer model.
-func (c *RDBMSConnector) rowToSourceDocument(row map[string]any, orderedColumns []string) (SourceDocument, bool) {
+func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedColumns []string) (SourceDocument, bool) {
 	contentColumns := c.contentColumnsForRow(row, orderedColumns)
 	content := c.buildContent(row, contentColumns)
 
@@ -408,7 +355,7 @@ func (c *RDBMSConnector) rowToSourceDocument(row map[string]any, orderedColumns 
 		if !ok || value == nil {
 			continue
 		}
-		metadata[column] = formatRDBMSMetadataValue(value)
+		metadata[column] = c.formatMetadataValue(value)
 	}
 
 	updatedAt := time.Now().UTC()
@@ -448,25 +395,26 @@ func (c *RDBMSConnector) rowToSourceDocument(row map[string]any, orderedColumns 
 	}, true
 }
 
-// renderRDBMSValue formats a row value for document content.
-func renderRDBMSValue(value any) string {
+// renderValue formats a row value for document content.
+func (c *PostgreSQLConnector) renderValue(value any) string {
 	if typed, ok := value.(time.Time); ok {
 		return typed.Format("2006-01-02 15:04:05")
 	}
 	return fmt.Sprint(value)
 }
 
-// formatRDBMSMetadataValue formats a row value for metadata, mirroring Python's
+// formatMetadataValue formats a row value for metadata, mirroring Python's
 // isoformat for datetimes and string rendering otherwise.
-func formatRDBMSMetadataValue(value any) string {
+func (c *PostgreSQLConnector) formatMetadataValue(value any) string {
 	if typed, ok := value.(time.Time); ok {
 		return typed.Format(time.RFC3339)
 	}
 	return fmt.Sprint(value)
 }
 
-// sanitizeRDBMSQuery tolerates queries pasted from a markdown code fence.
-func sanitizeRDBMSQuery(raw string) string {
+// sanitizeQuery tolerates queries pasted from a markdown code fence.
+func (c *PostgreSQLConnector) sanitizeQuery(raw string) string {
+	fenceLanguages := map[string]bool{"sql": true, "tsql": true, "t-sql": true, "mssql": true, "mysql": true, "postgresql": true, "psql": true}
 	query := strings.TrimSpace(raw)
 	if query == "" {
 		return ""
@@ -479,15 +427,15 @@ func sanitizeRDBMSQuery(raw string) string {
 		query = strings.TrimSpace(query)
 	}
 	if head, tail, found := strings.Cut(query, "\n"); found {
-		if rdbmsFenceLanguages[strings.ToLower(strings.TrimSpace(head))] {
+		if fenceLanguages[strings.ToLower(strings.TrimSpace(head))] {
 			query = strings.TrimSpace(tail)
 		}
 	}
 	return query
 }
 
-// splitRDBMSColumns parses a comma-separated string or list column config.
-func splitRDBMSColumns(value any) []string {
+// splitColumns parses a comma-separated string or list column config.
+func (c *PostgreSQLConnector) splitColumns(value any) []string {
 	switch typed := value.(type) {
 	case string:
 		parts := strings.Split(typed, ",")
@@ -510,8 +458,8 @@ func splitRDBMSColumns(value any) []string {
 	return nil
 }
 
-type rdbmsSyncSession struct {
-	connector  *RDBMSConnector
+type postgresSyncSession struct {
+	connector  *PostgreSQLConnector
 	db         *sql.DB
 	queries    []string
 	queryIndex int
@@ -519,8 +467,8 @@ type rdbmsSyncSession struct {
 	batchSize  int
 }
 
-// NextBatch returns the next RDBMS document batch.
-func (s *rdbmsSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
+// NextBatch returns the next PostgreSQL document batch.
+func (s *postgresSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	documents := make([]SourceDocument, 0, s.batchSize)
 	for len(documents) < s.batchSize {
 		if s.rows == nil {
@@ -554,34 +502,34 @@ func (s *rdbmsSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	return SyncBatch{Documents: documents}, nil
 }
 
-// Close closes the RDBMS sync session.
-func (s *rdbmsSyncSession) Close() error {
+// Close closes the PostgreSQL sync session.
+func (s *postgresSyncSession) Close() error {
 	s.closeRows()
 	return s.db.Close()
 }
 
 // openNextQuery runs the next base query.
-func (s *rdbmsSyncSession) openNextQuery(ctx context.Context) error {
+func (s *postgresSyncSession) openNextQuery(ctx context.Context) error {
 	query := s.queries[s.queryIndex]
 	s.queryIndex++
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("RDBMS query failed: %w", err)
+		return fmt.Errorf("PostgreSQL query failed: %w", err)
 	}
 	s.rows = rows
 	return nil
 }
 
 // closeRows releases the current result set.
-func (s *rdbmsSyncSession) closeRows() {
+func (s *postgresSyncSession) closeRows() {
 	if s.rows != nil {
 		s.rows.Close()
 		s.rows = nil
 	}
 }
 
-type rdbmsPruneSession struct {
-	connector  *RDBMSConnector
+type postgresPruneSession struct {
+	connector  *PostgreSQLConnector
 	db         *sql.DB
 	queries    []string
 	queryIndex int
@@ -589,8 +537,8 @@ type rdbmsPruneSession struct {
 	batchSize  int
 }
 
-// NextBatch returns the next RDBMS prune snapshot batch.
-func (s *rdbmsPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
+// NextBatch returns the next PostgreSQL prune snapshot batch.
+func (s *postgresPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 	documents := make([]SlimDocument, 0, s.batchSize)
 	for len(documents) < s.batchSize {
 		if s.rows == nil {
@@ -621,26 +569,26 @@ func (s *rdbmsPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 	return PruneBatch{Documents: documents}, nil
 }
 
-// Close closes the RDBMS prune session.
-func (s *rdbmsPruneSession) Close() error {
+// Close closes the PostgreSQL prune session.
+func (s *postgresPruneSession) Close() error {
 	s.closeRows()
 	return s.db.Close()
 }
 
 // openNextQuery runs the next slim query.
-func (s *rdbmsPruneSession) openNextQuery(ctx context.Context) error {
+func (s *postgresPruneSession) openNextQuery(ctx context.Context) error {
 	query := s.queries[s.queryIndex]
 	s.queryIndex++
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("RDBMS query failed: %w", err)
+		return fmt.Errorf("PostgreSQL query failed: %w", err)
 	}
 	s.rows = rows
 	return nil
 }
 
 // closeRows releases the current result set.
-func (s *rdbmsPruneSession) closeRows() {
+func (s *postgresPruneSession) closeRows() {
 	if s.rows != nil {
 		s.rows.Close()
 		s.rows = nil
