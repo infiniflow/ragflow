@@ -82,7 +82,9 @@ type AgentParam struct {
 	SystemPrompt             string
 	UserPrompt               string
 	Thinking                 string
+	MaxTokens                *int
 	TopP                     *float64
+	Temperature              *float64
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
@@ -1048,8 +1050,12 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	// would be dead weight. When AgentParam grows Temperature/
 	// MaxTokens, switch to always-build.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" {
-		chatCfg = &models.ChatConfig{TopP: p.TopP}
+	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
+		chatCfg = &models.ChatConfig{
+			TopP:        p.TopP,
+			MaxTokens:   p.MaxTokens,
+			Temperature: p.Temperature,
+		}
 		switch p.Thinking {
 		case "enabled":
 			t := true
