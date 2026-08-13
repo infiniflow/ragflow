@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -97,6 +98,9 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
+					// Log so a genuine bug (e.g. a nil deref in parseMSG)
+					// is not silently masked as a "decode panicked" error.
+					log.Printf("email: .msg decode panicked for %q; skipping: %v", filename, r)
 					err = fmt.Errorf("email: .msg decode panicked: %v", r)
 				}
 			}()
