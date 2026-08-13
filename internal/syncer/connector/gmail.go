@@ -101,13 +101,10 @@ func (c *GmailConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 		query = gmailTimeRangeQuery(request.WindowStart, request.WindowEnd)
 	}
 	session := &gmailSyncSession{
-		connector:    c,
-		users:        users,
-		batchSize:    c.batchSize,
-		query:        query,
-		kbID:         request.KBID,
-		connectorID:  request.ConnectorID,
-		fingerprints: request.Fingerprints,
+		connector: c,
+		users:     users,
+		batchSize: c.batchSize,
+		query:     query,
 	}
 	session.applyResume(request.Resume)
 	return session, nil
@@ -305,14 +302,9 @@ type gmailSyncSession struct {
 	batchSize       int
 	query           string
 	buffer          []gmailBufferedDocument
-	kbID            string
-	connectorID     string
-	fingerprints    map[string]string
 	resumePageToken string
 	resumeOffset    int
-	resumeSourceID  string
-	resumeFallback  bool
-	resumeRestart   bool
+	resumeFilename  string
 }
 
 // NextBatch returns the next Gmail document batch.
@@ -389,15 +381,11 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]gmailBuffere
 				document:   doc,
 				checkpoint: gmailSyncCheckpoint(userEmail, requestPageToken, pageOffset, doc),
 				offset:     pageOffset,
+				filename:   syncSourceDocumentFilenameFromDocument(doc),
 			})
 		}
 	}
 	documents := s.filterResumedDocuments(requestPageToken, candidates)
-	if s.resumeRestart {
-		s.resumeRestart = false
-		s.pageToken = ""
-		return nil, nil
-	}
 	if page.NextPageToken == "" {
 		s.advanceUser()
 	} else {
@@ -426,7 +414,7 @@ func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.userIndex = index
 		s.pageToken = cursor.PageToken
 		s.resumePageToken = cursor.PageToken
-		s.resumeSourceID = checkpoint.SourceID
+		s.resumeFilename = cursor.Filename
 		if cursor.Offset > 0 {
 			s.resumeOffset = cursor.Offset
 		}
@@ -434,11 +422,8 @@ func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	}
 }
 
-// filterResumedDocuments applies checkpoint offset when it still points to the same source.
+// filterResumedDocuments applies checkpoint offset using the filename at that offset.
 func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates []gmailBufferedDocument) []gmailBufferedDocument {
-	if s.resumeFallback {
-		return s.filterSubmittedUnchanged(candidates)
-	}
 	if s.resumeOffset <= 0 {
 		return candidates
 	}
@@ -446,7 +431,7 @@ func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates [
 		s.clearResumeOffset()
 		return candidates
 	}
-	if s.resumeOffset <= len(candidates) && candidates[s.resumeOffset-1].document.SourceID == s.resumeSourceID {
+	if s.resumeOffset <= len(candidates) && candidates[s.resumeOffset-1].filename == s.resumeFilename {
 		filtered := candidates[:0]
 		for _, candidate := range candidates {
 			if candidate.offset > s.resumeOffset {
@@ -457,32 +442,20 @@ func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates [
 		return filtered
 	}
 
-	s.resumeFallback = true
-	s.resumeRestart = true
-	return nil
-}
-
-func (s *gmailSyncSession) filterSubmittedUnchanged(candidates []gmailBufferedDocument) []gmailBufferedDocument {
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
-		if candidate.document.SourceID == s.resumeSourceID {
-			s.clearResumeOffset()
-			continue
+		if candidate.offset >= s.resumeOffset {
+			filtered = append(filtered, candidate)
 		}
-		if isSubmittedUnchanged(s.fingerprints, s.kbID, s.connectorID, candidate.document) {
-			continue
-		}
-		filtered = append(filtered, candidate)
 	}
+	s.clearResumeOffset()
 	return filtered
 }
 
 func (s *gmailSyncSession) clearResumeOffset() {
 	s.resumeOffset = 0
 	s.resumePageToken = ""
-	s.resumeSourceID = ""
-	s.resumeFallback = false
-	s.resumeRestart = false
+	s.resumeFilename = ""
 }
 
 // advanceUser moves a Gmail session to the next mailbox.
@@ -496,16 +469,19 @@ type gmailBufferedDocument struct {
 	document   SourceDocument
 	checkpoint *SyncCheckpoint
 	offset     int
+	filename   string
 }
 
 type gmailSyncCursor struct {
 	UserEmail string `json:"user_email"`
 	PageToken string `json:"page_token,omitempty"`
 	Offset    int    `json:"offset"`
+	Filename  string `json:"filename"`
 }
 
 func gmailSyncCheckpoint(userEmail, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
-	cursor, err := json.Marshal(gmailSyncCursor{UserEmail: userEmail, PageToken: pageToken, Offset: offset})
+	filename := syncSourceDocumentFilenameFromDocument(doc)
+	cursor, err := json.Marshal(gmailSyncCursor{UserEmail: userEmail, PageToken: pageToken, Offset: offset, Filename: filename})
 	if err != nil {
 		return nil
 	}

@@ -20,9 +20,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/zeebo/xxh3"
 )
+
+var syncFilenameUnsafeRE = regexp.MustCompile(`[\\/:*?"<>|]+`)
 
 func stableFingerprint(value any) string {
 	data, err := json.Marshal(value)
@@ -37,24 +42,33 @@ func contentFingerprint(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func syncDocumentID(value string) string {
-	sum := xxh3.Hash128([]byte(value)).Bytes()
-	return hex.EncodeToString(sum[:])
-}
-
-func syncDocumentStoredFingerprint(fingerprints map[string]string, kbID, connectorID, sourceID string) string {
-	if len(fingerprints) == 0 || connectorID == "" || sourceID == "" {
-		return ""
+func syncSourceDocumentFilenameFromDocument(doc SourceDocument) string {
+	name := strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(doc.SemanticIdentifier, "_"))
+	if name == "" {
+		name = strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(doc.SourceID, "_"))
 	}
-	legacyID := syncDocumentID(connectorID + ":" + sourceID)
-	newID := syncDocumentID(kbID + ":" + connectorID + ":" + sourceID)
-	if stored := fingerprints[legacyID]; stored != "" {
-		return stored
+	if name == "" {
+		name = "document"
 	}
-	return fingerprints[newID]
-}
 
-func isSubmittedUnchanged(fingerprints map[string]string, kbID, connectorID string, doc SourceDocument) bool {
-	stored := syncDocumentStoredFingerprint(fingerprints, kbID, connectorID, doc.SourceID)
-	return stored != "" && stored == doc.Fingerprint
+	extension := strings.TrimSpace(doc.Extension)
+	if extension == "" {
+		extension = ".txt"
+	}
+	if !strings.HasPrefix(extension, ".") {
+		extension = "." + extension
+	}
+	if !strings.HasSuffix(strings.ToLower(name), strings.ToLower(extension)) {
+		name += extension
+	}
+	if len(name) <= 255 {
+		return name
+	}
+
+	ext := filepath.Ext(name)
+	baseLimit := 255 - len(ext)
+	if baseLimit < 1 {
+		return name[:255]
+	}
+	return name[:baseLimit] + ext
 }

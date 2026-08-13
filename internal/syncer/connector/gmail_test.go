@@ -103,8 +103,8 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged verifies page deletions do not skip a new document at the old offset.
-func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
+// TestGmailConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
+func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	connector := newFixtureGmailConnector()
 	connector.GmailConnector.batchSize = 2
 	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
@@ -113,9 +113,9 @@ func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
 		}{{ID: "thread-1"}, {ID: "thread-2"}, {ID: "thread-3"}}}, nil
 	}
 	connector.GmailConnector.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
-		return gmailTestThread(threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
+		return gmailTestThreadWithSubject(threadID, threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
 	}
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1"})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -126,30 +126,18 @@ func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
 	if first.Checkpoint == nil || first.Checkpoint.SourceID != "thread-2" {
 		t.Fatalf("first checkpoint = %+v, want thread-2", first.Checkpoint)
 	}
-	fingerprints := map[string]string{}
-	for _, doc := range first.Documents {
-		fingerprints[syncDocumentID("kb-1:conn-1:"+doc.SourceID)] = doc.Fingerprint
-	}
 
 	resumeListCalls := 0
 	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
 		resumeListCalls++
-		if resumeListCalls == 1 && pageToken != "" {
-			return gmailThreadListPage{Threads: []struct {
-				ID string `json:"id"`
-			}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
-		}
 		if pageToken != "" {
-			t.Fatalf("resume fallback did not restart from list head, pageToken=%q", pageToken)
-		}
-		if resumeListCalls > 2 {
-			return gmailThreadListPage{}, nil
+			t.Fatalf("resume used unexpected pageToken=%q", pageToken)
 		}
 		return gmailThreadListPage{Threads: []struct {
 			ID string `json:"id"`
 		}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
 	}
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1", Fingerprints: fingerprints, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -160,8 +148,8 @@ func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
 	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
 		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
 	}
-	if resumeListCalls != 2 {
-		t.Fatalf("resume list calls = %d, want checkpoint page then list head", resumeListCalls)
+	if resumeListCalls != 1 {
+		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
 	}
 }
 
@@ -306,6 +294,10 @@ func newFixtureGmailConnector() *fixtureGmailConnector {
 }
 
 func gmailTestThread(threadID, date string) (gmailThread, error) {
+	return gmailTestThreadWithSubject(threadID, "Hello/World", date)
+}
+
+func gmailTestThreadWithSubject(threadID, subject, date string) (gmailThread, error) {
 	return gmailThread{
 		ID: threadID,
 		Messages: []gmailMessage{{
@@ -314,7 +306,7 @@ func gmailTestThread(threadID, date string) (gmailThread, error) {
 				Headers: []gmailHeader{
 					{Name: "From", Value: "Alice Example <alice@example.com>"},
 					{Name: "To", Value: "Bob <bob@example.com>"},
-					{Name: "Subject", Value: "Hello/World"},
+					{Name: "Subject", Value: subject},
 					{Name: "Date", Value: date},
 				},
 				Parts: []gmailPart{{

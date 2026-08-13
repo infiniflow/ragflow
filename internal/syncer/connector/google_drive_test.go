@@ -150,8 +150,8 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged verifies page deletions do not skip a new document at the old offset.
-func TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
+// TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
+func TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	connector, err := NewGoogleDriveConnector(map[string]any{
 		"my_drive_emails": "admin@example.com",
 		"batch_size":      2,
@@ -171,7 +171,7 @@ func TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T
 	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
 		return googleDriveFilePage{Files: files}, nil
 	}
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1"})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -182,10 +182,6 @@ func TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T
 	if first.Checkpoint == nil || first.Checkpoint.SourceID != "https://drive.google.com/file/d/file-2" {
 		t.Fatalf("first checkpoint = %+v, want file-2", first.Checkpoint)
 	}
-	fingerprints := map[string]string{}
-	for _, doc := range first.Documents {
-		fingerprints[syncDocumentID("kb-1:conn-1:"+doc.SourceID)] = doc.Fingerprint
-	}
 
 	files = []googleDriveFile{
 		googleDriveTestFile("file-1", "One.txt", "2026-01-01T00:00:00Z"),
@@ -194,18 +190,12 @@ func TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T
 	resumeListCalls := 0
 	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
 		resumeListCalls++
-		if resumeListCalls == 1 && request.PageToken != "" {
-			return googleDriveFilePage{Files: files}, nil
-		}
 		if request.PageToken != "" {
-			t.Fatalf("resume fallback did not restart from list head, pageToken=%q", request.PageToken)
-		}
-		if resumeListCalls > 2 {
-			return googleDriveFilePage{}, nil
+			t.Fatalf("resume used unexpected pageToken=%q", request.PageToken)
 		}
 		return googleDriveFilePage{Files: files}, nil
 	}
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1", Fingerprints: fingerprints, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -216,8 +206,8 @@ func TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T
 	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://drive.google.com/file/d/file-3" {
 		t.Fatalf("resume documents = %+v, want file-3", second.Documents)
 	}
-	if resumeListCalls != 2 {
-		t.Fatalf("resume list calls = %d, want checkpoint page then list head", resumeListCalls)
+	if resumeListCalls != 1 {
+		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
 	}
 }
 

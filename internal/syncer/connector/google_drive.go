@@ -145,15 +145,12 @@ func (c *GoogleDriveConnector) OpenSync(ctx context.Context, request SyncRequest
 		return nil, err
 	}
 	session := &googleDriveSyncSession{
-		connector:    c,
-		scopes:       scopes,
-		scopeIndex:   0,
-		batchSize:    c.batchSize,
-		windowStart:  request.WindowStart,
-		windowEnd:    request.WindowEnd,
-		kbID:         request.KBID,
-		connectorID:  request.ConnectorID,
-		fingerprints: request.Fingerprints,
+		connector:   c,
+		scopes:      scopes,
+		scopeIndex:  0,
+		batchSize:   c.batchSize,
+		windowStart: request.WindowStart,
+		windowEnd:   request.WindowEnd,
 	}
 	return session.applyResume(request.Resume), nil
 }
@@ -554,14 +551,9 @@ type googleDriveSyncSession struct {
 	buffer           []googleDriveBufferedDocument
 	seen             map[string]struct{}
 	folderSeen       map[string]struct{}
-	kbID             string
-	connectorID      string
-	fingerprints     map[string]string
 	resumePageToken  string
 	resumePageOffset int
-	resumeSourceID   string
-	resumeFallback   bool
-	resumeRestart    bool
+	resumeFilename   string
 }
 
 // NextBatch returns the next Google Drive document batch.
@@ -633,14 +625,10 @@ func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]google
 			document:   doc,
 			checkpoint: s.syncCheckpoint(scope, requestPageToken, pageOffset, doc),
 			offset:     pageOffset,
+			filename:   syncSourceDocumentFilenameFromDocument(doc),
 		})
 	}
 	docs := s.filterSeenDocuments(s.filterResumedDocuments(requestPageToken, candidates))
-	if s.resumeRestart {
-		s.resumeRestart = false
-		s.pageToken = ""
-		return nil, nil
-	}
 	if page.NextPageToken == "" {
 		if err = s.finishScope(ctx, scope); err != nil {
 			return nil, err
@@ -726,7 +714,7 @@ func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) *google
 	}
 	s.pageToken = cursor.PageToken
 	s.resumePageToken = cursor.PageToken
-	s.resumeSourceID = checkpoint.SourceID
+	s.resumeFilename = cursor.Filename
 	if cursor.Offset > 0 {
 		s.resumePageOffset = cursor.Offset
 	}
@@ -734,9 +722,6 @@ func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) *google
 }
 
 func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
-	if s.resumeFallback {
-		return s.filterSubmittedUnchanged(candidates)
-	}
 	if s.resumePageOffset <= 0 {
 		return candidates
 	}
@@ -744,7 +729,7 @@ func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candid
 		s.clearResumeOffset()
 		return candidates
 	}
-	if s.resumePageOffset <= len(candidates) && candidates[s.resumePageOffset-1].document.SourceID == s.resumeSourceID {
+	if s.resumePageOffset <= len(candidates) && candidates[s.resumePageOffset-1].filename == s.resumeFilename {
 		filtered := candidates[:0]
 		for _, candidate := range candidates {
 			if candidate.offset > s.resumePageOffset {
@@ -755,32 +740,20 @@ func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candid
 		return filtered
 	}
 
-	s.resumeFallback = true
-	s.resumeRestart = true
-	return nil
-}
-
-func (s *googleDriveSyncSession) filterSubmittedUnchanged(candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
-		if candidate.document.SourceID == s.resumeSourceID {
-			s.clearResumeOffset()
-			continue
+		if candidate.offset >= s.resumePageOffset {
+			filtered = append(filtered, candidate)
 		}
-		if isSubmittedUnchanged(s.fingerprints, s.kbID, s.connectorID, candidate.document) {
-			continue
-		}
-		filtered = append(filtered, candidate)
 	}
+	s.clearResumeOffset()
 	return filtered
 }
 
 func (s *googleDriveSyncSession) clearResumeOffset() {
 	s.resumePageOffset = 0
 	s.resumePageToken = ""
-	s.resumeSourceID = ""
-	s.resumeFallback = false
-	s.resumeRestart = false
+	s.resumeFilename = ""
 }
 
 func (s *googleDriveSyncSession) syncCheckpoint(scope googleDriveScope, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
@@ -794,6 +767,7 @@ func (s *googleDriveSyncSession) syncCheckpoint(scope googleDriveScope, pageToke
 		ScopeIndex: s.scopeIndex,
 		PageToken:  pageToken,
 		Offset:     offset,
+		Filename:   syncSourceDocumentFilenameFromDocument(doc),
 	})
 	if err != nil {
 		return nil
@@ -821,6 +795,7 @@ type googleDriveBufferedDocument struct {
 	document   SourceDocument
 	checkpoint *SyncCheckpoint
 	offset     int
+	filename   string
 }
 
 type googleDriveSyncCursor struct {
@@ -829,6 +804,7 @@ type googleDriveSyncCursor struct {
 	ScopeIndex int                      `json:"scope_index"`
 	PageToken  string                   `json:"page_token,omitempty"`
 	Offset     int                      `json:"offset"`
+	Filename   string                   `json:"filename"`
 }
 
 type googleDriveScopeCursor struct {
