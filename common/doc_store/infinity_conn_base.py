@@ -86,10 +86,13 @@ _META_RETRY_BASE_DELAY_MS = _int_env("INFINITY_META_RETRY_BASE_DELAY_MS", 50)
 
 # Health-check retry budget for the connection-pool initializers
 # (InfinityConnectionBase.__init__ and InfinityConnectionPool.__init__).
-# The startup wait budget stays roughly bounded: 8 attempts with
-# base 5s, capped at HEALTH_CHECK_MAX_DELAY_SECONDS per sleep, gives a
-# worst case well within the original 120s ceiling while still absorbing
-# the brief blips that used to crash the worker at module import.
+# The startup wait budget: 8 attempts with base 5s, capped at
+# HEALTH_CHECK_MAX_DELAY_SECONDS per sleep, gives a worst case of
+# ~255s (5+10+20+40+60+60+60 for attempts 0-6, since the last attempt
+# never sleeps) -- well beyond the original 120s ceiling, but still
+# absorbing the brief blips that used to crash the worker at module
+# import. Keep this in mind when sizing startup timeouts and liveness
+# probes that wait on the initial connection.
 MAX_RETRIES = 8
 HEALTH_CHECK_BASE_DELAY_SECONDS = 5
 HEALTH_CHECK_MAX_DELAY_SECONDS = 60
