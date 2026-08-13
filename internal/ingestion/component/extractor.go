@@ -986,7 +986,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 // LLM cache on. A bare llm_id ("") means "tenant default chat model" — the
 // live call resolves it through resolveExtractorChatDefaultConfig — but the
 // raw empty string must not be hashed into the key: Python keys on the
-// resolved chat_mdl.llm_name (task_executor.py:540/547), so an empty model
+// resolved chat_mdl.llm_name (task_executor.py:543/550), so an empty model
 // segment would collide across tenants and go stale for 24h after the tenant
 // default model changes (D25). Non-empty llm_id passes through unchanged,
 // preserving the exact cache behavior of the ingestion path.
