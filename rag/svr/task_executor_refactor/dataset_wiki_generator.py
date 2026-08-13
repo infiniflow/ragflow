@@ -536,16 +536,16 @@ async def _wiki_delete_deleted_doc_state(
     )
 
 
-# ----- mode (plan) persistence & full reset ----------------------------------
+# ----- mode persistence & full reset ----------------------------------------
 
 
 def _wiki_mode_meta_id(kb_id: str) -> str:
-    """Stable row id for the KB-level mode (plan) meta record."""
+    """Stable row id for the KB-level mode meta record."""
     return f"wiki_mode_meta_{kb_id}"
 
 
-async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
-    """Return the plan (Mode B) value recorded by the previous build, or None
+async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
+    """Return the mode value recorded by the previous build, or None
     if this KB has never recorded a mode (e.g. first ever build)."""
     from common.doc_store.doc_store_base import OrderByExpr
 
@@ -555,7 +555,7 @@ async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            ["plan_kwd"],
+            ["mode_kwd"],
             [],
             {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
             [],
@@ -565,16 +565,14 @@ async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
             index,
             [kb_id],
         )
-        fm = settings.docStoreConn.get_fields(res, ["plan_kwd"]) or {}
+        fm = settings.docStoreConn.get_fields(res, ["mode_kwd"]) or {}
         for row in fm.values():
-            val = row.get("plan_kwd")
+            val = row.get("mode_kwd")
             if isinstance(val, list):
                 val = val[0] if val else ""
             val = str(val or "").strip()
-            if val in ("true", "1", "yes"):
-                return True
-            if val in ("false", "0", "no"):
-                return False
+            if val in ("entity", "topic"):
+                return val
     except Exception:
         logging.exception("wiki: failed to load mode meta for kb=%s", kb_id)
     return None
@@ -619,12 +617,14 @@ def _wiki_embedding_fingerprint(embedding_model) -> str:
     return ":".join(part for part in (factory, model_id, name) if part)
 
 
-async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool, embedding_fingerprint: str = "") -> None:
+async def _wiki_save_mode(tenant_id: str, kb_id: str, mode: str, embedding_fingerprint: str = "") -> None:
+    if mode not in ("entity", "topic"):
+        raise ValueError(f"Unsupported wiki mode: {mode}")
     index = search.index_name(tenant_id)
     row = {
         "id": _wiki_mode_meta_id(kb_id),
         "compile_kwd": "wiki_mode_meta",
-        "plan_kwd": "true" if plan else "false",
+        "mode_kwd": mode,
         "embedding_model_kwd": embedding_fingerprint,
         "kb_id": kb_id,
         "create_timestamp_flt": float(__import__("time").time()),
@@ -1621,17 +1621,17 @@ async def run_wiki_incremental(
     ctx: TaskContext,
     embedding_model,
     load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
-    plan: bool = False,
+    mode: str | None = None,
     _map_rebuild_retry: bool = False,
 ) -> None:
     """Dual-mode wiki compilation with incremental support.
 
-    Mode A (plan=False, default):
+    Entity mode:
         1 concept = 1 page (WeKnora style).
         MAP → REDUCE → per-concept REFINE → FINALIZE.
         Incremental: per-concept modify based on doc_change tracking.
 
-    Mode B (plan=True):
+    Topic mode:
         PLAN groups entities → per-page REFINE.
         Incremental: embeddings retrieve page candidates; the LLM makes final routes.
 
@@ -1639,7 +1639,7 @@ async def run_wiki_incremental(
         ctx: Task context
         embedding_model: Embedding model
         load_chunks_for_doc: Chunk loader
-        plan: True=Mode B, False=Mode A (default)
+        mode: ``entity`` or ``topic``
     """
     from api.db.services.document_service import DocumentService
     from api.db.services.compilation_template_service import CompilationTemplateService
@@ -1654,7 +1654,7 @@ async def run_wiki_incremental(
     from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 
     progress = ctx.progress_cb
-    progress(0.0, f"Loading documents for wiki {'PLAN' if plan else 'no-plan'} compilation...")
+    progress(0.0, "Loading documents for wiki compilation...")
 
     # 1. Check if this is incremental (existing MAP rows present)
     existing_map_doc_ids = await _wiki_existing_map_doc_ids(ctx.tenant_id, ctx.kb_id)
@@ -1700,35 +1700,38 @@ async def run_wiki_incremental(
         progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
 
-    # Re-resolve plan (Mode B) from the ELIGIBLE docs' templates. Each eligible
+    # Resolve mode from the eligible documents' templates. Each eligible
     # doc resolves to a wiki template either via its own parser_config or via
     # its ingestion pipeline (doc.pipeline_id → pipeline dsl → compiler →
-    # template). The task handler's `plan` param only looks at the KB-level
-    # parser_config and therefore misses the pipeline path; re-derive it here so
-    # a pipeline-bound template with plan=yes actually enables Mode B.
-    if not plan:
+    # template). This also covers pipeline-bound templates.
+    if mode is None:
         try:
             for _doc, tid in eligible:
                 tpl = CompilationTemplateService.get_saved(tid, ctx.tenant_id)
                 cfg = (tpl.get("config") or {}) if tpl else {}
-                if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
-                    plan = True
-                    break
+                candidate_mode = cfg.get("mode") if isinstance(cfg, dict) else None
+                if candidate_mode in ("entity", "topic"):
+                    mode = candidate_mode
         except Exception:
-            pass  # keep the handler-provided plan as fallback
+            pass
 
-    # Mode-change detection. plan toggling (A↔B) is a config change: the page
+    if mode is None:
+        mode = await _wiki_load_mode(ctx.tenant_id, ctx.kb_id)
+    if mode not in ("entity", "topic"):
+        raise ValueError("Wiki template mode must be either 'entity' or 'topic'")
+
+    # Mode-change detection. Switching entity/topic is a config change: the page
     # structures differ fundamentally (single-entity pages vs PLAN-grouped
     # pages), so switching modes must reset all wiki-derived state and rebuild
     # from scratch instead of incrementally mixing old-mode and new-mode pages.
-    prev_plan = await _wiki_load_mode_plan(ctx.tenant_id, ctx.kb_id)
+    previous_mode = await _wiki_load_mode(ctx.tenant_id, ctx.kb_id)
     previous_embedding = await _wiki_load_embedding_fingerprint(ctx.tenant_id, ctx.kb_id)
     current_embedding = _wiki_embedding_fingerprint(embedding_model)
-    mode_changed = prev_plan is not None and bool(prev_plan) != bool(plan)
+    mode_changed = is_incremental and previous_mode is not None and previous_mode != mode
     embedding_changed = bool(previous_embedding and current_embedding and previous_embedding != current_embedding)
     if is_incremental and (mode_changed or embedding_changed):
         if mode_changed:
-            reason = f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'})"
+            reason = f"Mode switched ({previous_mode} -> {mode})"
         else:
             reason = "Embedding model changed"
         progress(0.05, f"{reason}; rebuilding wiki from scratch...")
@@ -1737,7 +1740,7 @@ async def run_wiki_incremental(
         is_incremental = False
         existing_map_doc_ids = set()
         deleted_doc_ids = set()
-    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan), current_embedding)
+    await _wiki_save_mode(ctx.tenant_id, ctx.kb_id, mode, current_embedding)
 
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
@@ -1913,7 +1916,7 @@ async def run_wiki_incremental(
                 ctx=ctx,
                 embedding_model=embedding_model,
                 load_chunks_for_doc=load_chunks_for_doc,
-                plan=plan,
+                mode=mode,
                 _map_rebuild_retry=True,
             )
             return
@@ -1922,18 +1925,18 @@ async def run_wiki_incremental(
     # 5. Run incremental wiki compilation (Mode A or Mode B)
     kb_chat_mdl = _bundle_for(kb_chat_llm_id) if kb_chat_llm_id else _bundle_for(None)
 
-    progress(0.65, f"Wiki {'PLAN' if plan else 'no-plan'} incremental compilation ...")
+    progress(0.65, f"Wiki {mode} incremental compilation ...")
     summary = await wiki_compile_incremental(
         chat_mdl=map_llm_pool.wrap(
             kb_chat_mdl,
             priority=20,
-            label=f"wiki-{'plan' if plan else 'noplan'}-refine",
+            label=f"wiki-{mode}-refine",
             context=f"{ctx.kb_id}:refine",
         ),
         embd_mdl=embedding_model,
         tenant_id=ctx.tenant_id,
         kb_id=ctx.kb_id,
-        plan=plan,
+        mode=mode,
         incremental=is_incremental,
         map_results=all_map_results or None,
         deleted_doc_ids=deleted_doc_ids or None,

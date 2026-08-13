@@ -2,7 +2,7 @@ kind: wiki
 display_name: Wiki — Graph-based wiki
 config:
   kind: wiki
-  plan: yes
+  mode: entity
   instruction: |
       - Each page must be a proper encyclopedic article, NOT a flat bullet list:
       - 1. Opening paragraph (2-4 sentences defining what this is). No heading.

@@ -1,6 +1,7 @@
 import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { LargeModelFormField } from '@/components/large-model-form-field';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,7 +21,7 @@ import { Output } from '../components/output';
 export const FormSchema = z.object({
   compilation_template_group_id: z.string().optional(),
   llm_id: z.string().optional(),
-  plan: z.boolean(),
+  mode: z.enum(['entity', 'topic']),
 });
 
 export type CompilationFormSchemaType = z.infer<typeof FormSchema>;
@@ -53,11 +54,22 @@ const CompilationForm = ({
           name="llm_id"
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
-        <SwitchFormField
-          name="plan"
-          label={t('plan')}
-          tooltip={t('planTip')}
-        ></SwitchFormField>
+        <RAGFlowFormItem
+          name="mode"
+          label={t('wikiMode')}
+          tooltip={t('wikiModeTip')}
+        >
+          {(field) => (
+            <SelectWithSearch
+              value={field.value}
+              onChange={field.onChange}
+              options={[
+                { label: t('entityMode'), value: 'entity' },
+                { label: t('topicMode'), value: 'topic' },
+              ]}
+            />
+          )}
+        </RAGFlowFormItem>
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

@@ -35,7 +35,7 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     example: '',
     instruction: '',
     use_blueprint: false,
-    plan: true,
+    mode: 'entity',
     rechunk: false,
     rechunk_rules: '',
   },
