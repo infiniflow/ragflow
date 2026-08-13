@@ -241,7 +241,7 @@ def apply_numbered_headings_to_markdown(markdown, headings):
             and re.match(r"(?:[-+*]|\d+[.)])\s+", candidate) is None
             and "|" not in candidate
             and index + 1 < len(lines)
-            and re.fullmatch(r"\s*[=-]+\s*", lines[index + 1]) is not None
+            and re.fullmatch(r"\s*(?:=+|-+)\s*", lines[index + 1]) is not None
         )
         if match is None and not is_setext_heading:
             continue

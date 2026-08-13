@@ -143,6 +143,9 @@ func TestResolveDOCXNumberingLevelRejectsInvalidLevels(t *testing.T) {
 		Abstracts: map[int]map[int]docxNumberingLevel{7: {9: {Text: "%1", Format: "decimal"}}},
 		Instances: map[int]docxNumberingInstance{42: {AbstractID: 7}},
 	}
+	if _, ok := definitions.resolveLevel(42, -1); ok {
+		t.Fatal("resolveLevel accepted list level -1")
+	}
 	if _, ok := definitions.resolveLevel(42, 9); ok {
 		t.Fatal("resolveLevel accepted list level 9")
 	}

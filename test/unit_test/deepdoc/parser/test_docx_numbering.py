@@ -139,6 +139,13 @@ def test_setext_detection_ignores_empty_list_and_table_candidates():
         assert apply_numbered_headings_to_markdown(markdown, headings) == markdown
 
 
+def test_setext_detection_rejects_mixed_underline_markers():
+    markdown = "Title\n=-"
+    headings = [NumberedHeading(text="Title", numbered_text="1 Title", level=1)]
+
+    assert apply_numbered_headings_to_markdown(markdown, headings) == markdown
+
+
 def test_apply_numbered_headings_to_setext_markdown():
     headings = extract_numbered_headings(_numbered_document())
 
