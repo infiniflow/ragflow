@@ -388,21 +388,27 @@ func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 
 func TestKnowledgeCompiler_Mindmap_EndToEnd(t *testing.T) {
 	installProseDeps(t)
-	// The proseChat reply is flat text; parseOutline still yields a root + the
-	// reply as a child node, so chunks are non-empty and parent-linked.
+	// The proseChat reply is flat text; ShapeTree yields a bare root (no parsed
+	// children). Mindmap now emits entity/relation rows (plan §1.2): every node
+	// is an entity, every parent→child edge a relation. With a flat reply there
+	// is at least one entity (the root) and it must carry name_kwd +
+	// knowledge_graph_kwd="entity" (the structure-graph storage contract).
 	chunks := runVariant(t, "mindmap", nil)
-	// Root chunk must have empty parent_kwd and kind "root".
-	var root map[string]any
+	entityCount := 0
 	for _, c := range chunks {
-		if kind, _ := c["kc_kind"].(string); kind == "root" {
-			root = c
+		kind, _ := c["kc_kind"].(string)
+		if kind == "entity" {
+			entityCount++
+			if _, ok := c["name_kwd"]; !ok {
+				t.Fatalf("mindmap entity chunk missing name_kwd: %+v", c)
+			}
+			if kg, _ := c["knowledge_graph_kwd"].(string); kg != "entity" {
+				t.Fatalf("mindmap entity chunk knowledge_graph_kwd = %q, want entity", kg)
+			}
 		}
 	}
-	if root == nil {
-		t.Fatalf("mindmap: no root chunk")
-	}
-	if pid, _ := root["parent_kwd"].(string); pid != "" {
-		t.Fatalf("mindmap: root parent_kwd = %q, want empty", pid)
+	if entityCount == 0 {
+		t.Fatalf("mindmap: no entity chunks; got %d chunks", len(chunks))
 	}
 }
 

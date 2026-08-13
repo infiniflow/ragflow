@@ -39,16 +39,6 @@ const (
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
 	CompileKwdRaptorGraph  = "raptor_graph"
-
-	CompileKwdStructure          = "structure"
-	CompileKwdStructureIndex     = "structureIndex"
-	CompileKwdStructureEntity    = "structureEntity"
-	CompileKwdStructureRelation  = "structureRelation"
-	CompileKwdStructureCommunity = "structureCommunity"
-
-	FieldStructureIndexType = "structure_index_type"
-	FieldStructureKind      = "structure_kind"
-	FieldPageID             = "page_id"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -548,75 +538,6 @@ func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datase
 		deleted[kwd] = len(ids)
 	}
 	return deleted, nil
-}
-
-// StructureItem is a single compiled structure entry for a dataset.
-type StructureItem struct {
-	PageID             string `json:"page_id"`
-	StructureKind      string `json:"structure_kind"`
-	StructureIndexType string `json:"structure_index_type"`
-	Data               string `json:"data"`
-}
-
-// ListStructures returns the compiled structures of a dataset, filtered by
-// optional structure_kind and structure_index_type.
-func (s *DatasetArtifactService) ListStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) ([]StructureItem, int64, error) {
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{FieldPageID, FieldStructureKind, FieldStructureIndexType, "content_with_weight"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]StructureItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, StructureItem{
-			PageID:             firstStringValue(c[FieldPageID]),
-			StructureKind:      firstStringValue(c[FieldStructureKind]),
-			StructureIndexType: firstStringValue(c[FieldStructureIndexType]),
-			Data:               firstStringValue(c["content_with_weight"]),
-		})
-	}
-	return items, total, nil
-}
-
-// DeleteStructures deletes the compiled structures of a dataset, optionally
-// scoped by structure_kind and structure_index_type.
-func (s *DatasetArtifactService) DeleteStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
 }
 
 // DeleteDocumentGraph deletes the structure graph of a single document.
