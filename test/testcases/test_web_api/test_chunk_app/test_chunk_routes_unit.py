@@ -795,6 +795,12 @@ def test_add_chunk_executor_settings_fall_back_for_invalid_values(monkeypatch):
     monkeypatch.setenv("TEST_ADD_CHUNK_SETTING", "invalid")
     assert module._positive_env("TEST_ADD_CHUNK_SETTING", "1", int) == 1
 
+    monkeypatch.setenv("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("RAGFLOW_ADD_CHUNK_WORKERS", "3")
+    module = _load_chunk_api_module(monkeypatch)
+    assert module._ADD_CHUNK_OPERATION_TIMEOUT_SECONDS == 2.5
+    assert module._ADD_CHUNK_WORKERS == 3
+
 
 @pytest.mark.p2
 def test_restful_add_chunk_embedding_timeout_keeps_event_loop_responsive(monkeypatch):
