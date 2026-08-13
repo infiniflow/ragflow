@@ -304,6 +304,42 @@ class StorageFactory:
         return cls.storage_mapping[storage]()
 
 
+def _init_crypto_storage(storage_impl, *, crypto_enabled, algorithm, crypto_key):
+    """Wrap ``storage_impl`` in ``EncryptedStorageWrapper`` when requested.
+
+    When ``crypto_enabled=True`` the operator explicitly asked for encryption
+    at rest. A failure to initialize (missing key, unsupported algorithm,
+    broken wrapper) MUST fail hard: this function re-raises the underlying
+    exception after logging at CRITICAL level. Silently falling back to
+    the plaintext wrapper would write every document to object storage in
+    the clear while the operator's logs only show a single ``logging.error``
+    line — there is no health check, no metric, no startup banner that
+    distinguishes "encrypting" from "silently not encrypting".
+
+    When ``crypto_enabled=False`` the plaintext ``storage_impl`` is returned
+    unchanged.
+    """
+    if not crypto_enabled:
+        return storage_impl
+    from rag.utils.encrypted_storage import create_encrypted_storage
+
+    try:
+        return create_encrypted_storage(
+            storage_impl,
+            algorithm=algorithm,
+            key=crypto_key,
+            encryption_enabled=crypto_enabled,
+        )
+    except Exception as e:
+        logging.critical(
+            f"RAGFLOW_CRYPTO_ENABLED=true but encrypted storage init failed: {e}. "
+            f"Refusing to fall back to plaintext — every document would land on disk unencrypted. "
+            f"Check RAGFLOW_CRYPTO_KEY (must be set, non-empty) and RAGFLOW_CRYPTO_ALGORITHM "
+            f"(must be one of: aes-128-cbc, aes-256-cbc, sm4-cbc) and restart."
+        )
+        raise
+
+
 def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
@@ -457,20 +493,21 @@ def init_settings():
     # Define crypto settings
     crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
 
-    # Check if encryption is enabled
-    if crypto_enabled:
-        try:
-            from rag.utils.encrypted_storage import create_encrypted_storage
-
-            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
-            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
-
-            STORAGE_IMPL = create_encrypted_storage(storage_impl, algorithm=algorithm, key=crypto_key, encryption_enabled=crypto_enabled)
-        except Exception as e:
-            logging.error(f"Failed to initialize encrypted storage: {e}")
-            STORAGE_IMPL = storage_impl
-    else:
-        STORAGE_IMPL = storage_impl
+    # Check if encryption is enabled.
+    #
+    # When RAGFLOW_CRYPTO_ENABLED=true the operator explicitly asked for
+    # encryption at rest. A failure to initialize (missing key, unsupported
+    # algorithm, broken wrapper) MUST fail hard: the server refuses to
+    # start, and the operator sees the failure on the console. Silently
+    # falling back to the plaintext wrapper would write every document to
+    # object storage in the clear while the operator's logs only show
+    # ``Failed to initialize encrypted storage: ...``. There is no health
+    # check, no metric and no startup banner that distinguishes "encrypting"
+    # from "silently not encrypting", so a silent fallback can persist
+    # undetected for the lifetime of the deployment.
+    algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+    crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+    STORAGE_IMPL = _init_crypto_storage(storage_impl, crypto_enabled=crypto_enabled, algorithm=algorithm, crypto_key=crypto_key)
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)
