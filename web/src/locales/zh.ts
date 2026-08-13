@@ -874,6 +874,7 @@ export default {
       maxClusterTip: '最多可创建的聚类数。',
       entityTypes: 'Entity 类型',
       compilationTemplate: '算子',
+      compilationTemplateRequired: '请选择算子',
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',

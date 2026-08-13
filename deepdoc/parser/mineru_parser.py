@@ -876,7 +876,7 @@ class MinerUParser(RAGFlowPdfParser):
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
         return []
 
-    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
+    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None, language: str = "English"):
         """Generate semantic descriptions for image blocks via the tenant's
         VISION model, mirroring deepdoc's VisionFigureParser. Each
         IMAGE block with a readable img_path gets a ``vlm_description``
@@ -894,7 +894,7 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.78, f"[MinerU] Generating VLM descriptions for {len(image_jobs)} images...")
 
-        prompt = vision_llm_figure_describe_prompt()
+        prompt = vision_llm_figure_describe_prompt(language=language or "English")
 
         def worker(idx, item):
             try:
@@ -935,7 +935,7 @@ class MinerUParser(RAGFlowPdfParser):
         created_tmp_dir = False
 
         parser_cfg = kwargs.get("parser_config", {})
-        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang", "English")
+        lang = parser_cfg.get("mineru_lang") or kwargs.get("lang") or "English"
         mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, "ch")  # Defaults to Chinese if not matched
         mineru_method_raw_str = parser_cfg.get("mineru_parse_method", "auto")
         enable_formula = parser_cfg.get("mineru_formula_enable", True)
@@ -998,7 +998,7 @@ class MinerUParser(RAGFlowPdfParser):
             vision_model = kwargs.get("vision_model")
             if vision_model is not None:
                 try:
-                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback)
+                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback, language=lang)
                 except Exception as e:
                     self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 

@@ -80,7 +80,7 @@ func (s *stubProvider) SupportedLanguages() []string                            
 func TestProviderManager_BuildProvider_KnownTypes(t *testing.T) {
 	t.Parallel()
 
-	for _, ptype := range []ProviderType{ProviderSelfManaged, ProviderAliyun, ProviderE2B, ProviderLocal, ProviderSSH} {
+	for _, ptype := range []ProviderType{ProviderSelfManaged, ProviderAliyun, ProviderE2B, ProviderLocal, ProviderSSH, ProviderUCloudAgentSandbox} {
 		t.Run(string(ptype), func(t *testing.T) {
 			p, err := buildProvider(ptype)
 			if err != nil {
