@@ -44,6 +44,7 @@ const CompilationForm = ({
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
+  const { t } = useTranslation();
   const FormSchema = useFormSchema();
 
   const form = useForm<CompilationFormSchemaType>({
