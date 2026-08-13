@@ -8,6 +8,7 @@ import { useFetchDocumentStructureGraphById } from '@/hooks/use-document-request
 import { useKnowledgeBaseId } from '@/hooks/use-knowledge-request';
 import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useDebounce } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
 
 export interface SelectedNavNode {
@@ -23,7 +24,10 @@ export interface SelectedNavNode {
 
 export function useCompilationNav() {
   const kbId = useKnowledgeBaseId();
-  const { data: navList, loading: navLoading } = useFetchDatasetNav();
+  const [keywords, setKeywords] = useState('');
+  const debouncedKeywords = useDebounce(keywords, { wait: 500 });
+  const { data: navList, loading: navLoading } =
+    useFetchDatasetNav(debouncedKeywords);
   const { deleteNav, loading: deleteNavLoading } = useDeleteDatasetNav();
   const { deleteNavNode, loading: deleteNodeLoading } =
     useDeleteDatasetNavNode();
@@ -125,8 +129,13 @@ export function useCompilationNav() {
     setLoadingDocId(null);
   }, []);
 
-  // Row click selects the node and shows its description on the right,
-  // same as a leaf; expansion is handled separately via handleNodeExpand.
+  const handleKeywordsChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setKeywords(e.target.value);
+    },
+    [],
+  );
+
   const handleNodeClick = useCallback(
     (node: DatasetNavNode, parentName: string | null) => {
       setSelectedNode({
@@ -214,11 +223,13 @@ export function useCompilationNav() {
   return {
     navList,
     navLoading,
+    keywords,
     childrenMap,
     structureMap,
     selectedNode,
     deleteNavLoading,
     deleteNodeLoading,
+    handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,
     handleEntityClick,

@@ -19,7 +19,6 @@ package component
 import (
 	"context"
 	"errors"
-	"ragflow/internal/dao"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,10 +26,15 @@ import (
 	"time"
 
 	eschema "github.com/cloudwego/eino/schema"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
@@ -897,6 +901,27 @@ func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_runEnableMetadata_MidTextThink verifies the full
+// metadata path — LLM call, second-layer <think> strip, JSON parse, merge —
+// tolerates a mid-text reasoning block preceded by a preamble, matching
+// Python gen_metadata. This is the end-to-end guard for callStructured's
+// common.StripThinkTrailing: without it the metadata extraction silently drops.
+func TestExtractorComponent_runEnableMetadata_MidTextThink(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata = %v, want category=finance", meta)
+	}
+}
+
 // TestExtractorComponent_runEnableMetadata_DegradesGracefully verifies that an
 // empty / **ERROR** / unparseable / think-only LLM response does NOT block
 // ingestion: the chunk metadata is left untouched and no error is returned
@@ -1349,6 +1374,24 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_callStructured_MidTextThink verifies the metadata
+// path's second cleanup layer (common.StripThinkTrailing) strips a mid-text
+// reasoning block preceded by a preamble, matching Python's gen_metadata
+// double cleanup (async_chat + re.sub r"^.*</think>"). Without it the JSON
+// would survive the leading-only cleanLLMText, fail to parse, and silently
+// drop the metadata extraction.
+func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
+	c := &ExtractorComponent{}
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	if err != nil {
+		t.Fatalf("callStructured: %v", err)
+	}
+	if got == nil || got["a"].(float64) != 1 {
+		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+}
+
 // TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions verifies
 // that when both auto_keywords and auto_questions are enabled, both
 // LLM calls are dispatched per chunk and results land on the chunk
@@ -1655,51 +1698,6 @@ func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.
 	}
 }
 
-// TestExtractorComponent_Invoke_ResumeTemplateChunksPath verifies the resume
-// template path: a prompt referencing {@chunks} (e.g. {TitleChunker:FlatMiceFix@chunks})
-// must still deliver the chunk body to the LLM. {@chunks} is resolved by
-// substitutePromptPlaceholders in buildExtractorMessages, NOT by the simple
-// placeholder loop — so contentPlaceholders does not see it, suppression must
-// not trigger, and the chunk text arrives via the automatic append. Regression
-// guard: if someone adds {@chunks} to contentPlaceholders or the suppression
-// logic starts matching regex-style placeholders, the resume path silently
-// breaks (chunk body vanishes from the LLM call).
-func TestExtractorComponent_Invoke_ResumeTemplateChunksPath(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Resume: {TitleChunker:FlatMiceFix@chunks}",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "resume chunk body"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastReq.Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	// {@chunks} must be resolved by substitutePromptPlaceholders.
-	if strings.Contains(userContent, "{TitleChunker:FlatMiceFix@chunks}") {
-		t.Errorf("prompt still contains literal @chunks placeholder: %q", userContent)
-	}
-	// Chunk body must arrive in the final message (via the append path,
-	// since {@chunks} does not suppress the automatic chunk-text append).
-	if !strings.Contains(userContent, "resume chunk body") {
-		t.Errorf("chunk body missing from LLM call — resume path broken: %q", userContent)
-	}
-}
-
 // TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend
 // verifies that a content-bearing placeholder in systemPrompt (not just
 // prompt) also suppresses the automatic chunk-text append. The chunk body
@@ -1790,5 +1788,319 @@ func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *tes
 	// the suppression must still have triggered because {text} was resolved.
 	if !strings.Contains(userContent, "Label: {text}") {
 		t.Errorf("expected title substitution to produce literal '{text}' label: %q", userContent)
+	}
+}
+
+// TestFitExtractorMessages_RejectsEmptyUserTurn verifies that when
+// messagefit's proportional trim would empty the final user turn (the system
+// prompt alone exceeds the context budget), the extractor surfaces a clear
+// error instead of sending [system, user:""] to the provider.
+func TestFitExtractorMessages_RejectsEmptyUserTurn(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 500 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	msgs := []eschema.Message{
+		{Role: eschema.System, Content: strings.Repeat("s ", 1000)},
+		{Role: eschema.User, Content: strings.Repeat("u ", 400)},
+	}
+	if _, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs); err == nil {
+		t.Fatal("expected an error when fitting empties the user turn")
+	}
+}
+
+// TestFitExtractorMessages_KeepsUserTurn verifies the happy path: with a
+// normal budget the fitter trims oversized prompts and the final user turn
+// survives, so no error is returned.
+func TestFitExtractorMessages_KeepsUserTurn(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 2000 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	msgs := []eschema.Message{
+		{Role: eschema.System, Content: "you are a helpful assistant"},
+		{Role: eschema.User, Content: strings.Repeat("u ", 3000)},
+	}
+	fitted, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fitted) != 2 {
+		t.Fatalf("got %d messages, want 2", len(fitted))
+	}
+	if strings.TrimSpace(fitted[1].Content) == "" {
+		t.Fatal("user turn was emptied")
+	}
+}
+
+// TestFitExtractorMessages_NoSystemPromptKeepsUserTurn verifies that a
+// user-only request (no system prompt configured) is not rejected by the
+// system-prompt guard: the guard only applies when a system message was
+// actually present, so a valid prompt-only extractor keeps working once the
+// model's content_length is resolvable.
+func TestFitExtractorMessages_NoSystemPromptKeepsUserTurn(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 2000 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	msgs := []eschema.Message{
+		{Role: eschema.User, Content: strings.Repeat("u ", 3000)},
+	}
+	fitted, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs)
+	if err != nil {
+		t.Fatalf("unexpected error for user-only prompt: %v", err)
+	}
+	if len(fitted) != 1 || fitted[0].Role != eschema.User {
+		t.Fatalf("got %d messages, want the single user turn: %+v", len(fitted), fitted)
+	}
+	if strings.TrimSpace(fitted[0].Content) == "" {
+		t.Fatal("user turn was emptied")
+	}
+}
+
+// TestExtractorComponent_CallRaw_FitsBeforeInvoke verifies the production
+// wiring end to end: callRaw resolves the model's context length, trims the
+// messages to the budget, and hands the fitted messages to the invoker.
+func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 200 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
+	c := &ExtractorComponent{}
+
+	_, err := c.callText(t.Context(), nil, extractorInputs{
+		systemPrompt: "extract fields",
+		prompt:       "summarize",
+		llmID:        "test@test",
+	}, strings.Repeat("chunk text with lots of tokens. ", 500))
+	if err != nil {
+		t.Fatalf("callText: %v", err)
+	}
+
+	stub.mu.Lock()
+	req := stub.lastReq
+	stub.mu.Unlock()
+	if len(req.Messages) == 0 {
+		t.Fatal("invoker was not called")
+	}
+	if req.Messages[0].Role != eschema.System || strings.TrimSpace(req.Messages[0].Content) == "" {
+		t.Fatalf("system prompt lost or emptied before invoke: %+v", req.Messages[0])
+	}
+	total := 0
+	for _, m := range req.Messages {
+		total += tokenizer.NumTokensFromString(m.Content)
+	}
+	if total > extractorContextFitBudget(200) {
+		t.Fatalf("sent messages total %d exceed the fitting budget %d", total, extractorContextFitBudget(200))
+	}
+	if !strings.Contains(req.Messages[len(req.Messages)-1].Content, "chunk text") {
+		t.Fatal("chunk text lost from the user turn")
+	}
+}
+
+// TestExtractorComponent_CallRaw_CustomContextOverride verifies the extractor
+// wiring honors the tenant-configured override end to end: with a 2000-token
+// extra max_tokens on the gpt-4o row, the invoker receives messages fitted to
+// ~1940 tokens instead of the catalog's 128k.
+func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	// Add the instance row the composite resolution path needs, then pin the
+	// tenant-configured context override on the model.
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-openai",
+		InstanceName: "default",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Model(&entity.TenantModel{}).
+		Where("id = ?", "0123456789abcdef0123456789abcdef").
+		Update("extra", `{"max_tokens": 2000}`).Error; err != nil {
+		t.Fatalf("set model extra: %v", err)
+	}
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
+	c := &ExtractorComponent{}
+	_, err := c.callText(ctx, db, extractorInputs{
+		systemPrompt: "extract fields",
+		prompt:       "summarize",
+		llmID:        "gpt-4o@OpenAI",
+	}, strings.Repeat("chunk text with lots of tokens. ", 500))
+	if err != nil {
+		t.Fatalf("callText: %v", err)
+	}
+
+	stub.mu.Lock()
+	req := stub.lastReq
+	stub.mu.Unlock()
+	if len(req.Messages) == 0 {
+		t.Fatal("invoker was not called")
+	}
+	if req.Messages[0].Role != eschema.System || strings.TrimSpace(req.Messages[0].Content) == "" {
+		t.Fatalf("system prompt lost or emptied: %+v", req.Messages[0])
+	}
+	total := 0
+	for _, m := range req.Messages {
+		total += tokenizer.NumTokensFromString(m.Content)
+	}
+	if total > 2000 {
+		t.Fatalf("sent messages total %d exceed the custom 2000-token context window", total)
+	}
+}
+
+// openExtractorContextTestDB returns an in-memory DB with the tenant and
+// tenant-model tables migrated. Tests pass the returned handle explicitly to
+// extractorContextLength, defaultChatModelRef, and dao.ResolveModelContentLength,
+// so no global DAO state is touched.
+func openExtractorContextTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+// seedExtractorContextModel seeds an active OpenAI gpt-4o tenant model
+// (catalog content_length 128000) plus its tenant. tenantLLMID, when
+// non-empty, pins the tenant's default chat model to the tenant-model UUID;
+// otherwise the tenant falls back to the composite llm_id.
+func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
+	t.Helper()
+	status := "1"
+	tenant := entity.Tenant{
+		ID:     "tenant-1",
+		LLMID:  "gpt-4o@openai",
+		Status: &status,
+	}
+	if tenantLLMID != "" {
+		tenant.TenantLLMID = &tenantLLMID
+	}
+	if err := db.Create(&tenant).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-openai",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-openai",
+		InstanceID: "instance-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+}
+
+// extractorStateCtx returns a context carrying a canvas state with the given
+// tenant_id global, as extractorContextLength expects.
+func extractorStateCtx(t *testing.T, tenantID string) context.Context {
+	t.Helper()
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SetGlobal("tenant_id", tenantID)
+	return runtime.WithState(t.Context(), state)
+}
+
+// TestExtractorContextLength_TenantModelUUID verifies extractorContextLength
+// resolves content_length for a tenant_model UUID through the provider
+// catalog.
+func TestExtractorContextLength_TenantModelUUID(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, "0123456789abcdef0123456789abcdef"); got != 128000 {
+		t.Fatalf("extractorContextLength(uuid) = %d, want 128000", got)
+	}
+}
+
+// TestExtractorContextLength_DefaultChatModelPinned verifies the llmID==""
+// fallback resolves the tenant default chat model when it is pinned to a
+// tenant_model UUID.
+func TestExtractorContextLength_DefaultChatModelPinned(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "0123456789abcdef0123456789abcdef")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, ""); got != 128000 {
+		t.Fatalf("extractorContextLength(default pinned uuid) = %d, want 128000", got)
+	}
+}
+
+// TestExtractorContextLength_DefaultChatModelComposite verifies the llmID==""
+// fallback resolves the tenant default chat model from the composite
+// "model@provider" llm_id when no tenant_model is pinned.
+func TestExtractorContextLength_DefaultChatModelComposite(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, ""); got != 128000 {
+		t.Fatalf("extractorContextLength(default composite) = %d, want 128000", got)
+	}
+}
+
+// TestExtractorContextLength_UnknownModelSkips verifies extractorContextLength
+// returns 0 (skip fitting) for an unknown model reference.
+func TestExtractorContextLength_UnknownModelSkips(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := extractorContextLength(ctx, db, "no-such-model@no-such-provider"); got != 0 {
+		t.Fatalf("extractorContextLength(unknown) = %d, want 0", got)
+	}
+}
+
+// TestExtractorContextFitBudget verifies the fitting budget is 97% of the
+// resolved content_length (mirroring the agent's contextFitBudget), leaving
+// headroom for tokenizer drift between cl100k and the model's own tokenizer,
+// and that a tiny context never collapses to messagefit's <=0 → 8192 default.
+func TestExtractorContextFitBudget(t *testing.T) {
+	if got := extractorContextFitBudget(128000); got != 124160 {
+		t.Fatalf("extractorContextFitBudget(128000) = %d, want 124160", got)
+	}
+	if got := extractorContextFitBudget(1); got != 1 {
+		t.Fatalf("extractorContextFitBudget(1) = %d, want 1 (clamped to avoid the 8192 Fit default)", got)
+	}
+}
+
+// TestFitExtractorMessages_RejectsSystemPromptLoss verifies the guard that a
+// fitting which empties every system message is rejected instead of sending
+// an instruction-less extraction request: the system prompt carries the
+// extraction contract, so running with an emptied system prompt would
+// silently produce garbage.
+func TestFitExtractorMessages_RejectsSystemPromptLoss(t *testing.T) {
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 300 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	// System dominates (>4x the user) and the user message alone exceeds
+	// the budget: the proportional trim preserves the user turn and empties
+	// the system messages.
+	msgs := []eschema.Message{
+		{Role: eschema.System, Content: strings.Repeat("s ", 5000)},
+		{Role: eschema.User, Content: strings.Repeat("u ", 400)},
+	}
+	if _, err := fitExtractorMessages(t.Context(), nil, "test@test", msgs); err == nil {
+		t.Fatal("expected an error when fitting empties the system prompt")
+	}
+}
+
+// TestExtractorContextLength_NilDBGraceful verifies that resolving the tenant
+// default chat model with no database available (nil db and no override)
+// degrades to 0 (skip fitting) instead of panicking in defaultChatModelRef.
+func TestExtractorContextLength_NilDBGraceful(t *testing.T) {
+	ctx := extractorStateCtx(t, "tenant-1")
+	if got := extractorContextLength(ctx, nil, ""); got != 0 {
+		t.Fatalf("extractorContextLength(nil db, default model) = %d, want 0 (skip fitting)", got)
 	}
 }

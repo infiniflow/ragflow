@@ -42,6 +42,12 @@ import { useHandleMenuClick } from './hooks';
 
 const menuItems = (t: TFunction) => [
   {
+    icon: <LucideBox className="size-[1em]" />,
+    label: t('setting.model'),
+    key: Routes.Model,
+    'data-testid': 'settings-nav-model-providers',
+  },
+  {
     icon: <LucideServer className="size-[1em]" />,
     label: t('setting.dataSources'),
     key: Routes.DataSource,
@@ -50,12 +56,6 @@ const menuItems = (t: TFunction) => [
     icon: <LucideMessagesSquare className="size-[1em]" />,
     label: t('setting.chatChannels'),
     key: Routes.ChatChannel,
-  },
-  {
-    icon: <LucideBox className="size-[1em]" />,
-    label: t('setting.model'),
-    key: Routes.Model,
-    'data-testid': 'settings-nav-model-providers',
   },
   {
     icon: <IconFontFill name="mcp" className="size-[1em]" />,

@@ -78,7 +78,7 @@ export default function ExpandableContent({
       resizeObserver.disconnect();
       mutationObserver.disconnect();
     };
-  }, [maxHeight, children]);
+  }, [maxHeight]);
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);

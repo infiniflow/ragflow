@@ -39,17 +39,6 @@ const (
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
 	CompileKwdRaptorGraph  = "raptor_graph"
-
-	CompileKwdStructure          = "structure"
-	CompileKwdStructureIndex     = "structureIndex"
-	CompileKwdStructureEntity    = "structureEntity"
-	CompileKwdStructureRelation  = "structureRelation"
-	CompileKwdStructureCommunity = "structureCommunity"
-
-	FieldStructureIndexType = "structure_index_type"
-	FieldStructureKind      = "structure_kind"
-	FieldPageID             = "page_id"
-	FieldGraphType          = "graph_type"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -551,107 +540,6 @@ func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datase
 	return deleted, nil
 }
 
-// StructureItem is a single compiled structure entry for a dataset.
-type StructureItem struct {
-	PageID             string `json:"page_id"`
-	StructureKind      string `json:"structure_kind"`
-	StructureIndexType string `json:"structure_index_type"`
-	Data               string `json:"data"`
-}
-
-// ListStructures returns the compiled structures of a dataset, filtered by
-// optional structure_kind and structure_index_type.
-func (s *DatasetArtifactService) ListStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) ([]StructureItem, int64, error) {
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{FieldPageID, FieldStructureKind, FieldStructureIndexType, "content_with_weight"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]StructureItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, StructureItem{
-			PageID:             firstStringValue(c[FieldPageID]),
-			StructureKind:      firstStringValue(c[FieldStructureKind]),
-			StructureIndexType: firstStringValue(c[FieldStructureIndexType]),
-			Data:               firstStringValue(c["content_with_weight"]),
-		})
-	}
-	return items, total, nil
-}
-
-// DeleteStructures deletes the compiled structures of a dataset, optionally
-// scoped by structure_kind and structure_index_type.
-func (s *DatasetArtifactService) DeleteStructures(ctx context.Context, tenantID, datasetID, structureKind, structureIndexType string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdStructure}}
-	if structureKind != "" {
-		filter[FieldStructureKind] = []string{structureKind}
-	}
-	if structureIndexType != "" {
-		filter[FieldStructureIndexType] = []string{structureIndexType}
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// DocGraphItem is a single node/edge entry in a document's structure graph.
-type DocGraphItem struct {
-	ID       string `json:"id"`
-	Content  string `json:"content"`
-	SourceID string `json:"source_id"`
-}
-
-// GetDocumentGraph returns the structure graph of a single document.
-func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, tenantID, datasetID, documentID, graphType string) ([]DocGraphItem, int64, error) {
-	filter := map[string]interface{}{
-		"doc_id":             []string{documentID},
-		"compiled_graph_kwd": []string{"graph"},
-	}
-	if graphType != "" {
-		filter[FieldGraphType] = []string{graphType}
-	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"id", "content_with_weight", "source_id"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]DocGraphItem, 0, len(chunks))
-	for _, c := range chunks {
-		items = append(items, DocGraphItem{
-			ID:       firstStringValue(c["id"]),
-			Content:  firstStringValue(c["content_with_weight"]),
-			SourceID: firstStringValue(c["source_id"]),
-		})
-	}
-	return items, total, nil
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -682,28 +570,12 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	return len(ids), nil
 }
 
-// NavigationItem is a single navigation cluster (REST response shape, kept
-// stable for frontend compatibility).
-type NavigationItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// NavChildItem is a single child entry under a navigation cluster (REST
-// response shape, kept stable for frontend compatibility).
-type NavChildItem struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Count int    `json:"count"`
-}
-
-// ListNavClusters returns the navigation clusters of a dataset. It is DEPRECATED
-// and now delegates to the ES-backed NavService (internal/service datasetnav):
-// the previous implementation queried nav_cluster_kwd/count_int fields that
-// Python never writes, so it could never read the real nav tree. Do not add
-// field-level patches here — route everything through NavService.
-func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]NavigationItem, int64, error) {
+// ListNavClusters returns the navigation clusters of a dataset. It delegates to
+// the ES-backed NavService and returns the frontend DatasetNavNode shape
+// (snake_case NavNode JSON), matching Python GET /navigation exactly. The old
+// NavigationItem{name,title,count} shape did not match the frontend interface
+// and has been removed.
+func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
@@ -712,16 +584,12 @@ func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavigationItem, 0, len(nodes))
-	for _, n := range nodes {
-		items = append(items, NavigationItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
-// ListNavChildren returns the children of a navigation cluster. DEPRECATED —
-// delegates to NavService.ListChildren.
-func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]NavChildItem, int64, error) {
+// ListNavChildren returns the children of a navigation cluster in the frontend
+// DatasetNavNode shape.
+func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
@@ -730,11 +598,7 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavChildItem, 0, len(nodes))
-	for _, n := range nodes {
-		items = append(items, NavChildItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
-	}
-	return items, total, nil
+	return nodes, total, nil
 }
 
 // DeleteNav removes the direct nav_doc children of every root cluster of a

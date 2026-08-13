@@ -78,7 +78,6 @@ GO_ONLY_SKIPS = {
         "test_documents_update_name_contract",
         "test_documents_update_meta_fields_contract",
         "test_documents_metadata_batch_update_contract",
-        "test_documents_metadata_update_path",
         "test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dataset",
         "test_chat_list_concurrent_and_dataset_delete_contract",
         "test_chat_create_dataset_ids_contract",

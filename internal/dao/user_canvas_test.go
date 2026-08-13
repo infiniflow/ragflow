@@ -192,3 +192,75 @@ func TestUserCanvasDAOListTagsIncludesPipelineWhenCategoryIsEmpty(t *testing.T) 
 		t.Fatalf("agent-tag count with agent_canvas filter = %d, want 1", counts["agent-tag"])
 	}
 }
+
+func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("failed to migrate user: %v", err)
+	}
+	pushDB(t, db)
+	ctx := t.Context()
+	d := NewUserCanvasDAO()
+
+	users := []entity.User{
+		{ID: "user-1", Nickname: "Alice", Email: "alice@example.com"},
+		{ID: "user-2", Nickname: "Bob", Email: "bob@example.com"},
+	}
+	for i := range users {
+		if err := db.WithContext(ctx).Create(&users[i]).Error; err != nil {
+			t.Fatalf("failed to create user: %v", err)
+		}
+	}
+
+	canvases := []entity.UserCanvas{
+		{ID: "c1", UserID: "user-1", Permission: "me", CanvasCategory: "agent_canvas"},
+		{ID: "c2", UserID: "user-1", Permission: "me", CanvasCategory: "dataflow_canvas"},
+		{ID: "c3", UserID: "user-2", Permission: "team", CanvasCategory: "agent_canvas"},
+		{ID: "c4", UserID: "user-2", Permission: "me", CanvasCategory: "agent_canvas"},
+	}
+	for i := range canvases {
+		if err := db.WithContext(ctx).Create(&canvases[i]).Error; err != nil {
+			t.Fatalf("failed to create canvas: %v", err)
+		}
+	}
+
+	ownerIDs := []string{"user-1", "user-2"}
+
+	owners, err := d.GetOwnerFilter(ctx, db, ownerIDs, "user-1")
+	if err != nil {
+		t.Fatalf("GetOwnerFilter failed: %v", err)
+	}
+	if len(owners) != 2 {
+		t.Fatalf("owner filter rows = %d, want 2", len(owners))
+	}
+	byID := make(map[string]*OwnerFilterItem, len(owners))
+	for _, o := range owners {
+		byID[o.ID] = o
+	}
+	// user-1 sees both of their own canvases; user-2 only the team one (c4 is "me").
+	if byID["user-1"].Count != 2 {
+		t.Fatalf("user-1 count = %d, want 2", byID["user-1"].Count)
+	}
+	if byID["user-2"].Count != 1 {
+		t.Fatalf("user-2 count = %d, want 1", byID["user-2"].Count)
+	}
+	if byID["user-1"].Label == nil || *byID["user-1"].Label != "Alice" {
+		t.Fatalf("user-1 label = %v, want Alice", byID["user-1"].Label)
+	}
+
+	categories, err := d.GetCategoryFilter(ctx, db, ownerIDs, "user-1")
+	if err != nil {
+		t.Fatalf("GetCategoryFilter failed: %v", err)
+	}
+	catByID := make(map[string]int64, len(categories))
+	for _, c := range categories {
+		catByID[c.ID] = c.Count
+	}
+	// agent_canvas: c1 (own) + c3 (team); c4 hidden. dataflow_canvas: c2.
+	if catByID["agent_canvas"] != 2 {
+		t.Fatalf("agent_canvas count = %d, want 2", catByID["agent_canvas"])
+	}
+	if catByID["dataflow_canvas"] != 1 {
+		t.Fatalf("dataflow_canvas count = %d, want 1", catByID["dataflow_canvas"])
+	}
+}

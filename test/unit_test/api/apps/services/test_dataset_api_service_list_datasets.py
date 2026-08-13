@@ -32,7 +32,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 pytestmark = pytest.mark.p2
 
 
@@ -97,6 +96,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
         PipelineTaskType=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
@@ -175,6 +175,8 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         thread_pool_exec=MagicMock(),
         thread_pool_exec_long_time=MagicMock(),
     )
+    _stub(monkeypatch, "rag.advanced_rag", __path__=[])
+    _stub(monkeypatch, "rag.advanced_rag.knowlege_compile", __path__=[])
     _stub(
         monkeypatch,
         "rag.advanced_rag.knowlege_compile.wiki",
@@ -381,3 +383,39 @@ def test_string_list_decodes_legacy_json_and_native_arrays(monkeypatch):
     assert module._string_list('["doc_1", "doc_2"]') == ["doc_1", "doc_2"]
     assert module._string_list(["doc_1", "doc_2", "doc_1"]) == ["doc_1", "doc_2"]
     assert module._string_list("doc_1###doc_2") == ["doc_1", "doc_2"]
+
+
+def test_wiki_alteration_treats_wiki_template_as_eligible(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+    _stub(
+        monkeypatch,
+        "api.db.services.compilation_template_service",
+        CompilationTemplateService=SimpleNamespace(
+            get_saved=lambda template_id, tenant_id: {
+                "id": template_id,
+                "kind": "wiki",
+                "config": {"kind": "wiki"},
+            }
+        ),
+    )
+    _stub(monkeypatch, "rag.svr", __path__=[])
+    _stub(monkeypatch, "rag.svr.task_executor_refactor", __path__=[])
+    _stub(
+        monkeypatch,
+        "rag.svr.task_executor_refactor.chunk_post_processor",
+        _parser_config_compilation_template_ids=lambda parser_config, tenant_id: parser_config.get("compilation_template_ids", []),
+    )
+
+    docs = [
+        {
+            "id": "doc-wiki",
+            "status": "1",
+            "parser_config": {"compilation_template_ids": ["template-wiki"]},
+        }
+    ]
+
+    assert module._eligible_doc_ids_for_kind(docs, "tenant-1", "wiki") == {"doc-wiki"}

@@ -25,8 +25,11 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 // Normalizer transforms a single item's text before comparison. Normalizers
@@ -293,6 +296,132 @@ func FilterOutDocTypes(items []map[string]any, drop []string) []map[string]any {
 		}
 	}
 	return out
+}
+
+// filterTableDivergence applies the "table" accepted divergence on BOTH sides
+// of the alignment comparison. Go emits a table as a single
+// doc_type_kwd:"table" item (already dropped by FilterOutDocTypes), while
+// Python keeps the <table> markup inlined as a doc_type_kwd:"text" item. The
+// table content is dropped from the prose comparison so the test focuses on
+// non-table prose, but the table is NOT silently removed from a combined prose
+// item: only items that are ENTIRELY a <table> block are dropped (see
+// isStandaloneTable). A prose item that merely *contains* a table (e.g.
+// "intro <table>…</table> outro") is kept whole, so structural differences in
+// surrounding prose are never masked. Table *equivalence* (column/cell content
+// matching between Go and Python) is checked separately by tableSignatures in
+// the golden tests.
+func filterTableDivergence(items []map[string]any, drop []string) []map[string]any {
+	items = FilterOutDocTypes(items, drop)
+	if !slices.Contains(drop, "table") {
+		return items
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		if text, _ := it["text"].(string); isStandaloneTable(text) {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
+}
+
+// isStandaloneTable reports whether text is exactly a <table> element with no
+// surrounding prose (ignoring surrounding whitespace) — i.e. the whole item IS
+// the table. This recognizes Python's HTML golden inline table text item
+// (doc_type_kwd:"text", text == "<table>…</table>") without accidentally
+// treating a prose item that merely contains a table as droppable. A combined
+// item such as "intro <table>…</table> outro" returns false and is kept in the
+// prose comparison.
+func isStandaloneTable(text string) bool {
+	t := strings.TrimSpace(text)
+	if !strings.HasPrefix(strings.ToLower(t), "<table") {
+		return false
+	}
+	close := strings.ToLower(t)
+	idx := strings.LastIndex(close, "</table>")
+	return idx >= 0 && strings.TrimSpace(t[idx+len("</table>"):]) == ""
+}
+
+// tableCellSignature returns a normalized, order-preserving signature of a
+// <table>'s cell text (th/td inner text, whitespace-collapsed, cells joined by
+// "\n"). It is intentionally tolerant of serialization differences (attribute
+// order, <tbody> insertion, self-closing vs paired tags) because only the
+// visible cell text is used — which is exactly what guards against a table
+// being collapsed or a column/cell being dropped. Returns "" if text is not a
+// parseable table.
+func tableCellSignature(text string) string {
+	doc, err := html.Parse(strings.NewReader(text))
+	if err != nil {
+		return ""
+	}
+	var cells []string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && (n.Data == "th" || n.Data == "td") {
+			var b strings.Builder
+			var collect func(*html.Node)
+			collect = func(c *html.Node) {
+				if c.Type == html.TextNode {
+					b.WriteString(c.Data)
+				}
+				for ch := c.FirstChild; ch != nil; ch = ch.NextSibling {
+					collect(ch)
+				}
+			}
+			collect(n)
+			cells = append(cells, strings.Join(strings.Fields(b.String()), " "))
+		}
+		for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
+			walk(ch)
+		}
+	}
+	walk(doc)
+	return strings.Join(cells, "\n")
+}
+
+// tableSignatures extracts the distinct per-table cell signatures from items.
+// A table item is either doc_type_kwd:"table", or a text item that is entirely
+// a <table> block (Python's HTML golden keeps the table markup inline as a
+// standalone text item). Duplicate signatures are collapsed to a set, because
+// Python's Markdown golden keeps BOTH an inline copy and a structured
+// doc_type_kwd:"table" item for the same table — we compare DISTINCT tables,
+// not raw item counts. The returned set is the unit of Go↔Python table
+// equivalence compared by the alignment golden tests.
+func tableSignatures(items []map[string]any) map[string]bool {
+	sigs := map[string]bool{}
+	for _, it := range items {
+		kd, _ := it["doc_type_kwd"].(string)
+		text, _ := it["text"].(string)
+		if kd != "table" && !isStandaloneTable(text) {
+			continue
+		}
+		if sig := tableCellSignature(text); sig != "" {
+			sigs[sig] = true
+		}
+	}
+	return sigs
+}
+
+// assertTablesEquivalent fails the test if the set of tables (by cell-content
+// signature) differs between the Go output and the Python golden. This restores
+// the Go↔Python table-equivalence guard that filterTableDivergence intentionally
+// removes from the prose comparison: it catches a table being collapsed or a
+// column/cell dropped on either side, while tolerating serialization
+// differences (attribute order, <tbody> insertion).
+func assertTablesEquivalent(t *testing.T, goItems, pyItems []map[string]any) {
+	t.Helper()
+	goSigs := tableSignatures(goItems)
+	pySigs := tableSignatures(pyItems)
+	for sig := range goSigs {
+		if !pySigs[sig] {
+			t.Errorf("Go table not present in Python golden (possible collapse / dropped column):\n%s", sig)
+		}
+	}
+	for sig := range pySigs {
+		if !goSigs[sig] {
+			t.Errorf("Python golden table not present in Go output (possible collapse / dropped column):\n%s", sig)
+		}
+	}
 }
 
 // MarkdownAlignOptions returns the normalizer preset for Markdown. The order

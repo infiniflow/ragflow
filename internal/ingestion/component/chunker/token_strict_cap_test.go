@@ -132,7 +132,7 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	tc := comp.(*TokenChunkerComponent)
-	out := tc.mergeByTokenSize(b.String(), nil)
+	out := tc.mergeByTokenSize(b.String(), nil, nil)
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) < 2 {
 		t.Fatalf("want multiple chunks, got %d", len(chunks))
@@ -165,7 +165,7 @@ func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil)
+	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil, nil)
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) != 1 {
 		t.Fatalf("over-budget unit must stay whole, got %d chunk(s)", len(chunks))
@@ -203,7 +203,7 @@ func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewTokenChunker: %v", err)
 		}
-		out := comp.(*TokenChunkerComponent).mergeByTokenSize(b.String(), nil)
+		out := comp.(*TokenChunkerComponent).mergeByTokenSize(b.String(), nil, nil)
 		chunks, _ := out["chunks"].([]map[string]any)
 		return chunks
 	}

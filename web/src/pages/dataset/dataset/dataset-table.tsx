@@ -84,13 +84,6 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  // const {
-  //   hideSetMetaModal,
-  //   setMetaVisible,
-  //   setMetaLoading,
-  //   onSetMetaModalOk,
-  //   metaRecord,
-  // } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
 
   const columns = useDatasetTableColumns({
@@ -98,6 +91,7 @@ export function DatasetTable({
     showRenameModal,
     showManageMetadataModal,
     showLog,
+    setRowSelection,
   });
 
   const currentPagination = useMemo(() => {
@@ -231,14 +225,6 @@ export function DatasetTable({
         ></RenameDialog>
       )}
 
-      {/* {setMetaVisible && (
-        <SetMetaDialog
-          hideModal={hideSetMetaModal}
-          loading={setMetaLoading}
-          onOk={onSetMetaModalOk}
-          initialMetaData={metaRecord.meta_fields}
-        ></SetMetaDialog>
-      )} */}
       {logVisible && (
         <ProcessLogModal
           title={t('knowledgeDetails.fileLogs')}

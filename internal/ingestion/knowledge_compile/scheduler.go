@@ -57,9 +57,17 @@ const (
 // can re-apply the same tombstone handling as the broker-based design without
 // re-reading the queue. The backlog is an ordered log; the last event for a
 // given doc (by append order) wins, so no sequence number is needed.
+//
+// Variants records the compile types (tree/structure/wiki/mindmap) produced by
+// the doc-level compile for this doc, so the consumer can group a claimed batch
+// into per-variant sub-batches and dispatch each to its own dataset-level
+// compile path. It is empty (nil) for deleted events and for events published
+// before this field existed; the consumer treats a nil/empty Variants as
+// "unknown/legacy" and falls back to the legacy unified path.
 type BacklogEntry struct {
-	DocID     string `json:"doc_id"`
-	EventType string `json:"event_type"`
+	DocID     string   `json:"doc_id"`
+	EventType string   `json:"event_type"`
+	Variants  []string `json:"variants,omitempty"`
 }
 
 // ClaimResult is returned by Scheduler.Claim: the KB's tenant plus the closed
@@ -83,7 +91,9 @@ type Publisher interface {
 	// Publish records one doc event in the dataset's durable backlog and wakes
 	// idle workers. It is transactional so concurrent publishers do not clobber
 	// each other's backlog, and it always pairs the append with a notify.
-	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error
+	// variants carries the doc-level compile types (tree/structure/wiki/mindmap)
+	// for completed events; it is nil for deleted events.
+	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error
 }
 
 // Claimer is the consumer-side role (Option E §11.5). A cluster of competing
@@ -203,8 +213,8 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 // workers. The append is transactional (concurrent publishers do not clobber
 // each other's backlog), and the notify is always paired with the append so a
 // producer never needs a separate Notify call.
-func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error {
-	return s.publish(ctx, tenantID, datasetID, docID, eventType)
+func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
+	return s.publish(ctx, tenantID, datasetID, docID, eventType, variants)
 }
 
 // loadRow fetches the dataset scheduling row (no lock). Returns nil (no error)
@@ -220,11 +230,11 @@ func (s *mysqlScheduler) loadRow(ctx context.Context, datasetID string) (*entity
 	return &row, nil
 }
 
-func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error {
+func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
 	if s.db == nil {
 		return nil
 	}
-	entry := BacklogEntry{DocID: docID, EventType: eventType}
+	entry := BacklogEntry{DocID: docID, EventType: eventType, Variants: variants}
 	// KnowledgeCompileDataset.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
 	// UPDATE below also takes an InnoDB gap lock for a not-yet-existing dataset;
 	// concurrent publishers for the same dataset serialize on that lock and the
@@ -642,17 +652,23 @@ func (s *mysqlScheduler) SubscribeNotify(ctx context.Context) (<-chan string, er
 // doc_id + event_type). The batch is the exact set the worker claimed, so
 // this is a precise removal, not a "clear all" — any inflight added by a
 // concurrent claim is preserved.
+//
+// The key is doc_id+"\x00"+event_type: BacklogEntry now carries a Variants
+// slice which is not comparable, so it cannot be used as a Go map key. Variants
+// deliberately does not participate in the removal match — Ack still removes by
+// doc_id + event_type so an entry whose Variants differ from the inflight copy
+// is still removed exactly once.
 func removeEntries(inflight, batch []BacklogEntry) []BacklogEntry {
 	if len(batch) == 0 {
 		return inflight
 	}
-	drop := make(map[BacklogEntry]bool, len(batch))
+	drop := make(map[string]bool, len(batch))
 	for _, e := range batch {
-		drop[e] = true
+		drop[e.DocID+"\x00"+e.EventType] = true
 	}
 	out := make([]BacklogEntry, 0, len(inflight))
 	for _, e := range inflight {
-		if drop[e] {
+		if drop[e.DocID+"\x00"+e.EventType] {
 			continue
 		}
 		out = append(out, e)
@@ -699,11 +715,11 @@ func NewFakeScheduler() *FakeScheduler {
 func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
 // Publish appends one doc event and pushes a notify (same contract as MySQL).
-func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string) error {
-	return f.publish(tenantID, datasetID, docID, eventType)
+func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
+	return f.publish(tenantID, datasetID, docID, eventType, variants)
 }
 
-func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string) error {
+func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string, variants []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.rows[datasetID]
@@ -714,7 +730,7 @@ func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string) er
 	if r.tenant == "" {
 		r.tenant = tenantID
 	}
-	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType})
+	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
 	// Mirror the MySQL scheduler: surface pending unless a worker is running.
 	if r.state != DatasetStateRunning {
 		r.state = DatasetStatePending

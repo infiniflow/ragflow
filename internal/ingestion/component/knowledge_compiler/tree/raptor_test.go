@@ -49,6 +49,30 @@ func TestSummarizeTextsStripsThinkPreamble(t *testing.T) {
 	}
 }
 
+func TestSummarizeTextsStripsVendorThinkCloseFallback(t *testing.T) {
+	// The </think:6124c78e> fallback only runs when no standard </think>
+	// is present (else-if semantics). Both forms strip the preamble.
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"vendor_close", "<think:6124c78e>reasoning</think:6124c78e>Vendor summary"},
+		{"standard_close", "<think>reasoning</think>Standard summary"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &fakeChat{responses: []*common.ChatResponse{{Content: tt.content}}}
+			got, err := summarizeTexts(context.Background(), depsWithChat(f), "llm", "sys", "user", 512)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if strings.Contains(got, "</think") {
+				t.Fatalf("think close tag not stripped: %q", got)
+			}
+		})
+	}
+}
+
 func TestSummarizeTextsStripsTruncationMarker(t *testing.T) {
 	marker := strings.Repeat("·", 6) + "\n由于长度的原因，回答被截断了，要继续吗？"
 	f := &fakeChat{responses: []*common.ChatResponse{{Content: "title\nbody " + marker}}}

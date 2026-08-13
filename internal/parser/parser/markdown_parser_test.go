@@ -98,32 +98,42 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	// 方案 Y: a document containing a table must NOT collapse into a single
-	// item. Each top-level block is its own item, and the table is emitted as
-	// both an inlined text copy (doc_type_kwd:"text") and a separate
-	// structured table item (doc_type_kwd:"table"), so the item count is > 1.
-	if len(res.JSON) < 2 {
-		t.Fatalf("len(JSON) = %d, want >= 2 (table must not collapse the doc)", len(res.JSON))
+	// The document has three top-level blocks: the leading paragraph, the
+	// table, and the trailing note. The table is emitted as exactly ONE
+	// structured doc_type_kwd:"table" item (not flattened, not duplicated as
+	// a doc_type_kwd:"text" copy).
+	if len(res.JSON) != 3 {
+		t.Fatalf("len(JSON) = %d, want 3 (leading paragraph, table, note)", len(res.JSON))
 	}
-	var all strings.Builder
+	tableCount, inlineTableCount := 0, 0
 	for _, item := range res.JSON {
 		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "text" && kd != "table" {
+		text, _ := item["text"].(string)
+		switch kd {
+		case "table":
+			tableCount++
+			if ck, _ := item["ck_type"].(string); ck != "table" {
+				t.Errorf("table item ck_type = %q, want \"table\"", ck)
+			}
+			if !strings.Contains(text, "<table") {
+				t.Errorf("table item text is not raw <table> HTML: %q", text)
+			}
+		case "text":
+			if strings.Contains(text, "<table") {
+				inlineTableCount++
+			}
+		default:
 			t.Fatalf("unexpected doc_type_kwd %q; want text or table", kd)
 		}
-		text, _ := item["text"].(string)
-		all.WriteString(text)
-		all.WriteString("\n")
 		if strings.Contains(text, "| Check item |") {
 			t.Fatalf("raw markdown table leaked into text: %q", text)
 		}
 	}
-	// The table is kept as raw <table>…</table> HTML (one HTML block), so the
-	// cell text survives as text inside the tags — possibly duplicated across
-	// the inlined copy and the table item. Check the concatenated text.
-	concat := all.String()
-	if !strings.Contains(concat, "Check item") || !strings.Contains(concat, "Blood routine") {
-		t.Fatalf("table cell content (Check item / Blood routine) not present: %q", concat)
+	if tableCount != 1 {
+		t.Fatalf("table items = %d, want 1", tableCount)
+	}
+	if inlineTableCount != 0 {
+		t.Fatalf("found %d doc_type_kwd:\"text\" item(s) with <table> markup; table must not be duplicated as text", inlineTableCount)
 	}
 }
 
@@ -297,12 +307,12 @@ func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
 }
 
 // TestMarkdownParser_TableNotCollapsed is the core regression guard for the
-// Markdown table fix (方案 Y): a document containing a GFM table must keep one
-// item per top-level block instead of collapsing into one giant item, AND the
-// table must be emitted as a single raw <table>…</table> HTML block (not
-// scattered cell text), appearing both as an inlined text copy and as a
-// separate doc_type_kwd:"table" item. A heading, the table, and the trailing
-// paragraph must each be present.
+// Markdown table fix: a document containing a GFM table must keep one item per
+// top-level block instead of collapsing into one giant item, AND the table must
+// be emitted as a SINGLE raw <table>…</table> HTML block (not scattered cell
+// text) carrying doc_type_kwd:"table" in its original document position. There
+// must be NO redundant inlined doc_type_kwd:"text" copy of the table. A heading,
+// the table, and the trailing paragraph must each be present and in order.
 func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -311,12 +321,13 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	// Title, Intro, inlined table copy, separate table item, Trailing = 5.
-	if len(res.JSON) < 5 {
-		t.Fatalf("len(JSON) = %d, want >= 5 (one per top-level block + table item)", len(res.JSON))
+	// Title, Intro, table item, Trailing = 4.
+	if len(res.JSON) != 4 {
+		t.Fatalf("len(JSON) = %d, want 4 (one per top-level block, table as one item)", len(res.JSON))
 	}
 	var all strings.Builder
-	sawTitle, sawTrailing, sawTableItem, sawRawTableHTML := false, false, false, false
+	sawTitle, sawTrailing, sawTableItem, sawInlineTable := false, false, false, false
+	tableCount := 0
 	for _, item := range res.JSON {
 		text, _ := item["text"].(string)
 		all.WriteString(text)
@@ -326,12 +337,13 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 		}
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
-			// inlined copy carries the raw <table> HTML with cell text.
+			// A doc_type_kwd:"text" copy must NOT carry the raw <table> HTML.
 			if strings.Contains(text, "<table") && strings.Contains(text, "A") && strings.Contains(text, "B") {
-				sawRawTableHTML = true
+				sawInlineTable = true
 			}
 		case "table":
 			sawTableItem = true
+			tableCount++
 			if !strings.Contains(text, "<table") {
 				t.Fatalf("table item text is not raw <table> HTML: %q", text)
 			}
@@ -347,14 +359,88 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	if !sawTitle {
 		t.Fatal("heading item not emitted")
 	}
-	if !sawRawTableHTML {
-		t.Fatal("inlined table not emitted as raw <table> HTML with cell text")
+	if sawInlineTable {
+		t.Fatal("table wrongly emitted as redundant inlined doc_type_kwd:\"text\" copy")
 	}
 	if !sawTableItem {
 		t.Fatal("separate doc_type_kwd:\"table\" item not emitted")
 	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
+	}
 	if !sawTrailing {
 		t.Fatal("trailing paragraph content not present in concatenated items")
+	}
+}
+
+// TestMarkdownParser_TableWithSurroundingText is the Markdown counterpart of
+// TestHTMLParser_NestedTableWithSurroundingText: a GFM table with prose both
+// before and after it must emit the table as ONE structured
+// doc_type_kwd:"table" item, with the surrounding paragraphs split into
+// SEPARATE clean text items bracketing the table in document order — NOT
+// merged into a single blob, and NOT duplicated as an inlined
+// doc_type_kwd:"text" copy. This locks in the single-item-in-document-order
+// contract for the common "intro / table / outro" shape.
+func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	md := "Before the table.\n\n| Name | Age |\n| --- | --- |\n| Alice | 30 |\n\nAfter the table.\n"
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	var tableText string
+	tableIdx, beforeIdx, afterIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
+	for i, item := range res.JSON {
+		text, _ := item["text"].(string)
+		switch kd, _ := item["doc_type_kwd"].(string); kd {
+		case "text":
+			if strings.Contains(text, "<table") {
+				inlineTableCount++
+			}
+			if text == "Before the table." {
+				beforeIdx = i
+			}
+			if text == "After the table." {
+				afterIdx = i
+			}
+		case "table":
+			tableText = text
+			tableIdx = i
+			tableCount++
+			if !strings.Contains(text, "<table") {
+				t.Fatalf("table item text is not raw <table> HTML: %q", text)
+			}
+			if ck, _ := item["ck_type"].(string); ck != "table" {
+				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
+			}
+		}
+	}
+
+	if tableIdx < 0 {
+		t.Fatalf("no structured doc_type_kwd:\"table\" item emitted; got items: %#v", res.JSON)
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
+	}
+	if !strings.Contains(tableText, "Name") || !strings.Contains(tableText, "Alice") {
+		t.Errorf("structured table item missing cell text: %q", tableText)
+	}
+	// No duplicate inline text copy of the table markup.
+	if inlineTableCount != 0 {
+		t.Errorf("found %d doc_type_kwd:\"text\" item(s) containing <table> markup; table must not be duplicated as inline text", inlineTableCount)
+	}
+	// The surrounding prose is split into clean text items bracketing the
+	// table in document order — NOT collapsed into one blob.
+	if beforeIdx < 0 {
+		t.Fatalf("'Before the table.' text item missing")
+	}
+	if afterIdx < 0 {
+		t.Fatalf("'After the table.' text item missing")
+	}
+	if !(beforeIdx < tableIdx && tableIdx < afterIdx) {
+		t.Errorf("document order wrong: before=%d table=%d after=%d (prose must bracket table, not merge into one blob)", beforeIdx, tableIdx, afterIdx)
 	}
 }
 
@@ -421,8 +507,8 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 // TestMarkdownParser_RawHTMLTableHandled covers a user-written raw <table> HTML
 // block (not a GFM pipe table). renderMarkdownTablesInline only rewrites GFM
 // pipe tables, so the raw <table> passes through and is caught by isTableHTML
-// as an HTMLBlock, producing the same inlined copy + separate doc_type_kwd:"table"
-// item shape as a GFM table.
+// as an HTMLBlock, producing a single doc_type_kwd:"table" item in document
+// order. There must be NO redundant inlined doc_type_kwd:"text" copy.
 func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -432,6 +518,7 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	sawInlined, sawTableItem := false, false
+	tableCount := 0
 	for _, item := range res.JSON {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
@@ -441,6 +528,7 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 			}
 		case "table":
 			sawTableItem = true
+			tableCount++
 			if !strings.Contains(text, "<table") {
 				t.Fatalf("raw table item text is not raw <table> HTML: %q", text)
 			}
@@ -449,19 +537,22 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 			}
 		}
 	}
-	if !sawInlined {
-		t.Fatal("raw <table> HTML block not emitted as inlined copy in text flow")
+	if sawInlined {
+		t.Fatal("raw <table> HTML block wrongly emitted as redundant inlined copy in text flow")
 	}
 	if !sawTableItem {
-		t.Fatal("raw <table> HTML block not emitted as separate doc_type_kwd:\"table\" item")
+		t.Fatal("raw <table> HTML block not emitted as single doc_type_kwd:\"table\" item")
+	}
+	if tableCount != 1 {
+		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
 }
 
 // TestMarkdownParser_MultipleTablesOrdering guards the ordering contract: each
-// GFM table emits an inlined copy in its original document position (among the
-// surrounding text blocks) and a separate doc_type_kwd:"table" item appended at
-// the end of the stream (mirroring Python's _markdown, which appends tables
-// after all sections). Both tables' cell text must be present and in source order.
+// GFM table is emitted as a single doc_type_kwd:"table" item in its original
+// document position (among the surrounding text blocks). Both tables' cell text
+// must be present and in source order, bracketing "Middle." — NOT appended at
+// the end of the stream.
 func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -471,7 +562,6 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	var inlinedTableIdx []int
 	var tableItemIdx []int
 	var titleIdx, middleIdx, endIdx = -1, -1, -1
 	for i, item := range res.JSON {
@@ -486,9 +576,6 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 			case "End.":
 				endIdx = i
 			}
-			if strings.Contains(text, "<table") {
-				inlinedTableIdx = append(inlinedTableIdx, i)
-			}
 		case "table":
 			tableItemIdx = append(tableItemIdx, i)
 		}
@@ -497,21 +584,13 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 	if titleIdx < 0 || middleIdx < 0 || endIdx < 0 {
 		t.Fatalf("missing anchor text item (title=%d middle=%d end=%d)", titleIdx, middleIdx, endIdx)
 	}
-	if len(inlinedTableIdx) != 2 {
-		t.Fatalf("inlined table copies = %d, want 2", len(inlinedTableIdx))
-	}
 	if len(tableItemIdx) != 2 {
-		t.Fatalf("separate table items = %d, want 2", len(tableItemIdx))
+		t.Fatalf("table items = %d, want 2", len(tableItemIdx))
 	}
-	// Inlined copies appear in document order, bracketing "Middle.":
+	// Table items appear in document order, bracketing "Middle.":
 	// table1 before Middle, table2 between Middle and End.
-	if !(inlinedTableIdx[0] < middleIdx && middleIdx < inlinedTableIdx[1] && inlinedTableIdx[1] < endIdx) {
-		t.Fatalf("inlined table order wrong: tables=%v middle=%d end=%d", inlinedTableIdx, middleIdx, endIdx)
-	}
-	// Separate table items are appended after all text items, in source order:
-	// table1 (x,y) then table2 (p,q), each strictly after the previous.
-	if !(tableItemIdx[0] > endIdx && tableItemIdx[0] < tableItemIdx[1]) {
-		t.Fatalf("table items not appended after text items in source order: %v end=%d", tableItemIdx, endIdx)
+	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
+		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
 	t1, _ := res.JSON[tableItemIdx[0]]["text"].(string)
 	t2, _ := res.JSON[tableItemIdx[1]]["text"].(string)
@@ -568,9 +647,17 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 
 			// Exclude the doc types the golden declares as accepted divergences
 			// (meta.accepted_divergences) on both sides — no hardcoded list in the test.
+			// filterTableDivergence additionally drops the inlined <table> markup that
+			// Python keeps as a "text" item, so only non-table prose is compared.
 			ignore := AcceptedDivergences(gd.Meta)
-			goText := FilterOutDocTypes(res.JSON, ignore)
-			pyText := FilterOutDocTypes(gd.Items, ignore)
+			goText := filterTableDivergence(res.JSON, ignore)
+			pyText := filterTableDivergence(gd.Items, ignore)
+
+			// filterTableDivergence drops the table from the prose comparison;
+			// the table-equivalence guard below (assertTablesEquivalent) checks
+			// the table cell content still matches Python, so a collapse or
+			// dropped column on either side is caught independently.
+			assertTablesEquivalent(t, res.JSON, gd.Items)
 
 			if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
 				t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
