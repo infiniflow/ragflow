@@ -32,14 +32,15 @@ import (
 // so they compile and test without native libraries. The !cgo build
 // provides a stub DOCXParser in office_parsers_no_cgo.go.
 type DOCXParser struct {
-	libType            string
-	outputFormat       string // from DSL config; "json" or "markdown"
-	RemoveTOC          bool
-	RemoveHeaderFooter bool
+	libType                   string
+	outputFormat              string // from DSL config; "json" or "markdown"
+	extractAutomaticNumbering bool
+	RemoveTOC                 bool
+	RemoveHeaderFooter        bool
 }
 
 func NewDOCXParser() *DOCXParser {
-	return &DOCXParser{}
+	return &DOCXParser{extractAutomaticNumbering: true}
 }
 
 // ConfigureFromSetup implements parserSetupConfigurer, receiving the
@@ -57,6 +58,9 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["remove_header_footer"].(bool); ok {
 		p.RemoveHeaderFooter = v
+	}
+	if v, ok := setup["extract_automatic_numbering"].(bool); ok {
+		p.extractAutomaticNumbering = v
 	}
 }
 
@@ -82,7 +86,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// Extract IR JSON for section building (JSON path) and
 	// embedded-image extraction (both paths).
 	irJSON, irErr := doc.ToIRJSON()
-	numberedHeadings := extractDOCXNumberedHeadings(data)
+	numberedHeadings := extractDOCXNumberedHeadingsIfEnabled(data, p.extractAutomaticNumbering)
 	var figures []DOCXFigure
 	if irErr == nil {
 		figures = extractDOCXFiguresFromIR(irJSON)

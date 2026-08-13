@@ -262,11 +262,12 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"output_format":        "json",
 		},
 		"docx": {
-			"flatten_media_to_text": false,
-			"remove_toc":            false,
-			"remove_header_footer":  false,
-			"suffix":                []string{"docx"},
-			"output_format":         "json",
+			"flatten_media_to_text":       false,
+			"extract_automatic_numbering": true,
+			"remove_toc":                  false,
+			"remove_header_footer":        false,
+			"suffix":                      []string{"docx"},
+			"output_format":               "json",
 		},
 		"markdown": {
 			"flatten_media_to_text": false,

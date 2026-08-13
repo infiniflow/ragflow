@@ -158,9 +158,9 @@ class RAGFlowDocxParser:
             return lines
         return ["\n".join(lines)]
 
-    def __call__(self, fnm, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+    def __call__(self, fnm, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, extract_automatic_numbering=True):
         self.doc = Document(fnm) if isinstance(fnm, str) else Document(BytesIO(fnm))
-        numbering = DOCXNumberingResolver(self.doc)
+        numbering = DOCXNumberingResolver(self.doc, enabled=extract_automatic_numbering)
         pn = 0  # parsed page
         secs = []  # parsed contents
         for p in self.doc.paragraphs:

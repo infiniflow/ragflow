@@ -153,6 +153,7 @@ class ParserParam(ProcessParamBase):
             },
             "docx": {
                 "flatten_media_to_text": False,
+                "extract_automatic_numbering": True,
                 "remove_toc": False,
                 "remove_header_footer": False,
                 "suffix": [
@@ -943,14 +944,15 @@ class Parser(ProcessBase):
             return
 
         docx_parser = Docx()
+        extract_automatic_numbering = conf.get("extract_automatic_numbering", True)
 
         # Extract heading-based outlines for metadata and TOC removal.
-        outlines = extract_word_outlines(name, blob)
+        outlines = extract_word_outlines(name, blob, extract_automatic_numbering=extract_automatic_numbering)
         self.set_output("file", {**kwargs.get("file", {}), "outlines": outlines})
 
         # JSON output keeps text/image blocks and appends table HTML as table items.
         if conf.get("output_format") == "json":
-            main_sections = docx_parser(name, binary=blob)
+            main_sections = docx_parser(name, binary=blob, extract_automatic_numbering=extract_automatic_numbering)
             if conf.get("remove_header_footer"):
                 header_footer_texts = extract_docx_header_footer_texts(binary=blob)
                 main_sections = remove_header_footer_docx_sections(main_sections, header_footer_texts)
@@ -985,7 +987,7 @@ class Parser(ProcessBase):
 
         # Markdown output removes TOC on plain markdown lines before writing back.
         elif conf.get("output_format") == "markdown":
-            markdown_text = docx_parser.to_markdown(name, binary=blob)
+            markdown_text = docx_parser.to_markdown(name, binary=blob, extract_automatic_numbering=extract_automatic_numbering)
             if conf.get("remove_header_footer"):
                 header_footer_texts = extract_docx_header_footer_texts(binary=blob)
                 markdown_lines = remove_header_footer_docx_sections(markdown_text.split("\n"), header_footer_texts)

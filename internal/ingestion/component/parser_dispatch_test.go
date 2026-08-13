@@ -303,6 +303,10 @@ func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
 	if got != "json" {
 		t.Errorf("docx.output_format = %q, want %q", got, "json")
 	}
+	extractNumbering, ok := docx["extract_automatic_numbering"].(bool)
+	if !ok || !extractNumbering {
+		t.Errorf("docx.extract_automatic_numbering = %v, want true", docx["extract_automatic_numbering"])
+	}
 }
 
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {

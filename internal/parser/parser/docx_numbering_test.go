@@ -64,6 +64,13 @@ func TestExtractDOCXNumberedHeadings(t *testing.T) {
 	}
 }
 
+func TestExtractDOCXNumberedHeadingsDisabled(t *testing.T) {
+	got := extractDOCXNumberedHeadingsIfEnabled(numberedHeadingsDOCX(t), false)
+	if got != nil {
+		t.Fatalf("disabled extraction returned %#v, want nil", got)
+	}
+}
+
 func TestApplyDOCXNumberedHeadingsToSections(t *testing.T) {
 	headings := extractDOCXNumberedHeadings(numberedHeadingsDOCX(t))
 	items := []map[string]any{

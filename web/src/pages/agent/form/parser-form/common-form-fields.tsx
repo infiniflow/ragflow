@@ -165,6 +165,29 @@ export function RemoveHeaderFooterFormField({ prefix }: CommonProps) {
   );
 }
 
+export function ExtractAutomaticNumberingFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`extract_automatic_numbering`, prefix)}
+      label={t('flow.extractAutomaticNumbering')}
+      tooltip={t('flow.extractAutomaticNumberingTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={field.value ?? true}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
 export function LanguageFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const crossLanguageOptions = useCrossLanguageOptions();

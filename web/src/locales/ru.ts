@@ -1566,6 +1566,9 @@ export default {
       flowNum: 'N',
       test: 'Тест',
       extractDepth: 'Глубина извлечения',
+      extractAutomaticNumbering: 'Извлекать автоматическую нумерацию',
+      extractAutomaticNumberingTip:
+        'Добавлять к заголовкам DOCX номера, автоматически созданные в Word.',
       format: 'Формат',
       basic: 'базовый',
       advanced: 'продвинутый',

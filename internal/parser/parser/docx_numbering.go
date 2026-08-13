@@ -122,6 +122,15 @@ type docxResolvedStyle struct {
 	OutlineLevel      *int
 }
 
+// extractDOCXNumberedHeadingsIfEnabled avoids parsing numbering definitions
+// when automatic numbering extraction is disabled in the DOCX setup.
+func extractDOCXNumberedHeadingsIfEnabled(data []byte, enabled bool) []docxNumberedHeading {
+	if !enabled {
+		return nil
+	}
+	return extractDOCXNumberedHeadings(data)
+}
+
 // extractDOCXNumberedHeadings materializes Word's display-only heading
 // numbers. Word stores paragraph text in document.xml and the visible marker
 // separately in numbering.xml, so office_oxide's text runs cannot contain it.

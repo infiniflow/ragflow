@@ -558,9 +558,9 @@ class Docx(DocxParser):
 
         return ""
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, extract_automatic_numbering=True):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
-        numbering = DOCXNumberingResolver(self.doc)
+        numbering = DOCXNumberingResolver(self.doc, enabled=extract_automatic_numbering)
         pn = 0
         lines = []
         last_image = None
@@ -675,7 +675,7 @@ class Docx(DocxParser):
 
         return new_line
 
-    def to_markdown(self, filename=None, binary=None, inline_images: bool = True):
+    def to_markdown(self, filename=None, binary=None, inline_images: bool = True, extract_automatic_numbering=True):
         """
         This function uses mammoth, licensed under the BSD 2-Clause License.
         """
@@ -687,7 +687,7 @@ class Docx(DocxParser):
         from markdownify import markdownify
 
         document = Document(filename) if binary is None else Document(BytesIO(binary))
-        numbered_headings = extract_numbered_headings(document)
+        numbered_headings = extract_numbered_headings(document, enabled=extract_automatic_numbering)
         docx_file = BytesIO(binary) if binary else open(filename, "rb")
 
         def _convert_image_to_base64(image):

@@ -75,9 +75,9 @@ def remove_header_footer_html_blob(blob):
     return str(soup).encode("utf-8")
 
 
-def extract_word_outlines(filename, binary=None):
+def extract_word_outlines(filename, binary=None, extract_automatic_numbering=True):
     doc = Document(filename) if binary is None else Document(BytesIO(binary))
-    numbering = DOCXNumberingResolver(doc)
+    numbering = DOCXNumberingResolver(doc, enabled=extract_automatic_numbering)
     outlines = []
     for paragraph in doc.paragraphs:
         numbered_heading = numbering.numbered_heading(paragraph)

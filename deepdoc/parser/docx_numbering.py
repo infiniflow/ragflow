@@ -44,15 +44,19 @@ class _NumberingInstance:
 class DOCXNumberingResolver:
     """Materialize display-only Word numbering while paragraphs are visited."""
 
-    def __init__(self, document):
+    def __init__(self, document, enabled=True):
+        self._enabled = enabled
         self._abstracts: dict[int, dict[int, _NumberingLevel]] = {}
         self._instances: dict[int, _NumberingInstance] = {}
         self._instance_order: list[int] = []
         self._counters: dict[int, list[int]] = {}
-        self._parse_numbering(document)
+        if enabled:
+            self._parse_numbering(document)
 
     def numbered_heading(self, paragraph) -> NumberedHeading | None:
         """Advance numbering state and return a materialized heading, if any."""
+        if not self._enabled:
+            return None
         reference = self._paragraph_numbering_reference(paragraph)
         if reference is None:
             return None
@@ -206,8 +210,8 @@ class DOCXNumberingResolver:
         return marker
 
 
-def extract_numbered_headings(document):
-    resolver = DOCXNumberingResolver(document)
+def extract_numbered_headings(document, enabled=True):
+    resolver = DOCXNumberingResolver(document, enabled=enabled)
     headings = []
     for paragraph in document.paragraphs:
         heading = resolver.numbered_heading(paragraph)

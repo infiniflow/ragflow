@@ -86,6 +86,7 @@ export const FormSchema = z.object({
       enable_multi_column: z.boolean().optional(),
       remove_toc: z.boolean().optional(),
       remove_header_footer: z.boolean().optional(),
+      extract_automatic_numbering: z.boolean().optional(),
       pages: z
         .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
         .optional(),
@@ -216,6 +217,7 @@ const ParserForm = ({
       table_result_type: '',
       markdown_image_response_type: '',
       remove_header_footer: false,
+      extract_automatic_numbering: true,
       // preprocess: [],
     });
   }, [append]);

@@ -109,6 +109,12 @@ def test_explicit_numbering_disable_wins_over_numbered_style():
     assert not any(heading.text in {"Аннотация", "Введение"} for heading in headings)
 
 
+def test_numbering_extraction_can_be_disabled():
+    headings = extract_numbered_headings(_numbered_document(), enabled=False)
+
+    assert headings == []
+
+
 def test_apply_numbered_headings_to_markdown():
     headings = extract_numbered_headings(_numbered_document())
 
