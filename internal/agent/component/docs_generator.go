@@ -350,7 +350,9 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 		}
 	}
 	if !strings.Contains(content, "{{") {
-		// Trim even when no think block is present — matches Python's
+		// The think cut itself is the greedy re.sub(r"^.*</think>", "", s,
+		// re.DOTALL) pattern (as in generator.py). The unconditional trim —
+		// applied even when no think block is present — mirrors Python's
 		// _strip_thinking, which always .strip()s the exported content.
 		return strings.TrimSpace(common.StripThinkTrailing(content)), nil
 	}

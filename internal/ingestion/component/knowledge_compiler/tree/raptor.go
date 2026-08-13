@@ -370,9 +370,13 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 		}
 		content := resp.Content
 		// Strip reasoning preamble up to the final thinking close tag
-		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)).
-		content = rfcommon.StripThinkTrailing(content)
-		if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
+		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)). The
+		// else-if keeps the vendor-specific </think:6124c78e> fallback
+		// active only when no standard </think> is present, preserving
+		// the original control flow.
+		if strings.Contains(content, "</think>") {
+			content = rfcommon.StripThinkTrailing(content)
+		} else if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
 			content = content[i+len("</think:6124c78e>"):]
 		}
 		// Python raises on the "**ERROR**" marker; treat it as a retryable error.
