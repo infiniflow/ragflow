@@ -254,28 +254,21 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 
 	page := 1
 	pageSize := 15
-	rawPage := strings.TrimSpace(c.Query("page"))
-	rawPageSize := strings.TrimSpace(c.Query("page_size"))
-	if rawPage == "" && rawPageSize == "" {
-		// No pagination requested: pageSize == 0 means list everything.
-		pageSize = 0
-	} else {
-		if rawPage != "" {
-			parsedPage, err := strconv.Atoi(rawPage)
-			if err != nil {
-				common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
-				return
-			}
-			page = parsedPage
+	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
+		parsedPage, err := strconv.Atoi(rawPage)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
+			return
 		}
-		if rawPageSize != "" {
-			parsedPageSize, err := strconv.Atoi(rawPageSize)
-			if err != nil {
-				common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
-				return
-			}
-			pageSize = parsedPageSize
+		page = parsedPage
+	}
+	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
+		parsedPageSize, err := strconv.Atoi(rawPageSize)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
+			return
 		}
+		pageSize = parsedPageSize
 	}
 
 	datasetID := strings.TrimSpace(c.Query("dataset_id"))

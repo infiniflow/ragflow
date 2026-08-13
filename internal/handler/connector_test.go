@@ -474,11 +474,11 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 		wantPageSize int
 	}{
 		{
-			name:         "no pagination params lists all",
+			name:         "no pagination params uses defaults",
 			query:        "",
 			wantCode:     common.CodeSuccess,
 			wantPage:     1,
-			wantPageSize: 0,
+			wantPageSize: 15,
 		},
 		{
 			name:         "page only defaults page_size",

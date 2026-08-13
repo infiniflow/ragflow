@@ -3497,11 +3497,19 @@ func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
 	if datasetID != "" {
 		query.Set("dataset_id", datasetID)
 	}
-	if page, ok := cmd.Params["page"].(int); ok {
+	page, hasPage := cmd.Params["page"].(int)
+	pageSize, hasPageSize := cmd.Params["page_size"].(int)
+	switch {
+	case hasPage && hasPageSize:
 		query.Set("page", fmt.Sprintf("%d", page))
-	}
-	if pageSize, ok := cmd.Params["page_size"].(int); ok {
 		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	case hasPage:
+		query.Set("page", fmt.Sprintf("%d", page))
+	case hasPageSize:
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	default:
+		// No pagination requested: ask the API for every matching row.
+		query.Set("page_size", "0")
 	}
 	if encoded := query.Encode(); encoded != "" {
 		url += "?" + encoded
