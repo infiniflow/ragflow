@@ -62,14 +62,14 @@ def _resolve_azure_credentials(key):
     elif isinstance(key, str):
         try:
             payload = json.loads(key)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
             logging.warning(
                 "Azure-OpenAI key is not valid JSON; expected a JSON object with 'api_key' (and optionally 'api_version') (see conf/models/azure.json).",
             )
             raise ModelException(
                 'Azure-OpenAI requires a JSON key with at least \'api_key\'. Example: {"api_key": "...", "api_version": "2024-02-01"}. See conf/models/azure.json for the model class.',
                 retryable=False,
-            )
+            ) from exc
     else:
         logging.warning(
             "Azure-OpenAI key is not a string or dict (got %s); expected a JSON object with 'api_key' (and optionally 'api_version').",
