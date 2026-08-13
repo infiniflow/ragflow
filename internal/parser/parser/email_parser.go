@@ -33,6 +33,8 @@ import (
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
+
+	"ragflow/internal/utility"
 )
 
 // EmailParser parses .eml (RFC 5322 email) and .msg (Outlook OLE2) files
@@ -91,12 +93,21 @@ func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data
 		outputFormat = "text"
 	}
 
+	// Re-chunk attachments so their content becomes retrievable within the
+	// same document (user-oriented; mirrors Python legacy rag/app/email.py
+	// naive_chunk). Each attachment is re-parsed by its file extension via
+	// the shared parser registry; a single unparseable/skipped attachment
+	// never breaks the whole email.
+	extraItems, attachmentText := rechunkEmailAttachments(ctx, content)
+
 	if outputFormat == "json" {
 		content["doc_type_kwd"] = "text"
+		items := []map[string]any{content}
+		items = append(items, extraItems...)
 		return ParseResult{
 			OutputFormat: "json",
 			File:         map[string]any{"name": filename},
-			JSON:         []map[string]any{content},
+			JSON:         items,
 		}
 	}
 
@@ -121,18 +132,16 @@ func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data
 				}
 			}
 			sb.WriteString("}\n")
-		case []map[string]any:
-			for _, att := range val {
-				fn, _ := att["filename"].(string)
-				pl, _ := att["payload"].(string)
-				sb.WriteString(fn)
-				sb.WriteString(":")
-				sb.WriteString(pl)
-				sb.WriteString("\n")
-			}
 		case []string:
 			sb.WriteString(strings.Join(val, "\n"))
 		}
+	}
+	// Attachment text (re-parsed by extension) replaces the old crude
+	// "filename:payload" flatten, so binary attachments no longer leak
+	// mojibake into the searchable text.
+	if attachmentText != "" {
+		sb.WriteString(attachmentText)
+		sb.WriteString("\n")
 	}
 	return ParseResult{
 		OutputFormat: "text",
@@ -543,4 +552,84 @@ func orNil(s string) any {
 		return nil
 	}
 	return s
+}
+
+// rechunkEmailAttachments re-parses each email attachment by its file
+// extension and folds the extracted text back into the same document so
+// attachment content becomes retrievable. This mirrors the user-oriented
+// behaviour of Python's legacy rag/app/email.py, which re-chunks every
+// attachment via naive_chunk and merges the resulting chunks into the same
+// document.
+//
+// Attachments whose extension has no text-oriented parser (images, audio,
+// video) are skipped: they carry no plain text in this pipeline and would
+// require vision/speech models that are out of scope here. A single
+// unparseable, empty, or unsupported attachment is skipped without failing
+// the whole email (mirrors email.py's per-attachment try/except).
+//
+// The function returns both forms the caller needs:
+//   - extraItems: structured JSON items (one per non-empty text segment),
+//     tagged with source_attachment, for the JSON output path.
+//   - text:       the concatenated attachment text, for the text output path.
+func rechunkEmailAttachments(ctx context.Context, content map[string]any) ([]map[string]any, string) {
+	raw, ok := content["attachments"].([]map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil, ""
+	}
+
+	var extra []map[string]any
+	var sb strings.Builder
+	for _, att := range raw {
+		fn, _ := att["filename"].(string)
+		payload, _ := att["payload"].(string)
+		if fn == "" || payload == "" {
+			// Empty payload (e.g. a nested .msg, where gomsg exposes no
+			// raw bytes) or a missing filename — nothing to re-parse.
+			continue
+		}
+		ft := utility.GetFileType(fn)
+		switch ft {
+		case utility.FileTypeOTHER, utility.FileTypeVISUAL,
+			utility.FileTypeAURAL, utility.FileTypeVIDEO, utility.FileTypeFOLDER:
+			// No plain-text parser in this pipeline; skip rather than call
+			// a vision/speech model that is out of scope.
+			continue
+		}
+		p, err := GetParser(ft)
+		if err != nil {
+			continue
+		}
+		res := p.ParseWithResult(ctx, fn, []byte(payload))
+		if res.Err != nil {
+			continue
+		}
+
+		var texts []string
+		if res.OutputFormat == "json" && len(res.JSON) > 0 {
+			for _, it := range res.JSON {
+				if t, ok := it["text"].(string); ok {
+					if t = strings.TrimSpace(t); t != "" {
+						texts = append(texts, t)
+					}
+				}
+			}
+		} else if res.Text != "" {
+			if t := strings.TrimSpace(res.Text); t != "" {
+				texts = append(texts, t)
+			}
+		}
+
+		for _, t := range texts {
+			extra = append(extra, map[string]any{
+				"text":              t,
+				"doc_type_kwd":      "text",
+				"source_attachment": fn,
+			})
+			if sb.Len() > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(t)
+		}
+	}
+	return extra, sb.String()
 }

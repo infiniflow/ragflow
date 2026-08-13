@@ -500,6 +500,223 @@ func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
 // empty list because attachment extraction was coupled to the body branch
 // (the "else if needAttachments" fallback set an empty slice instead of
 // walking the message).
+// TestEmailParser_AttachmentSearchableJSON verifies the user-oriented
+// behaviour: an email attachment is re-parsed by its file extension and its
+// content becomes a retrievable chunk in the SAME document (mirrors Python
+// legacy rag/app/email.py naive_chunk). The attachment text must appear as a
+// separate JSON item tagged with source_attachment, while the email body
+// stays on the main item.
+func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
+	ctx := t.Context()
+	attachmentContent := "QUOTE: the quick brown fox jumps over the lazy dog."
+	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	boundary := "attachboundary"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Attachment Test",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Email body text.",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"Content-Disposition: attachment; filename=\"note.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		encoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body", "attachments"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+
+	// Body must remain on the main item.
+	if v, ok := result.JSON[0]["text"].(string); !ok || !strings.Contains(v, "Email body text") {
+		t.Errorf("body missing on main item: %v", result.JSON[0]["text"])
+	}
+
+	// Attachment text must appear as a separate retrievable JSON item.
+	found := false
+	for _, it := range result.JSON {
+		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "quick brown fox") {
+			found = true
+			if src, _ := it["source_attachment"].(string); src != "note.txt" {
+				t.Errorf("source_attachment = %q, want note.txt", src)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("attachment text not found in JSON output:\n%#v", result.JSON)
+	}
+}
+
+// TestEmailParser_AttachmentSearchableText is the text-output equivalent:
+// the re-parsed attachment text must be present in result.Text.
+func TestEmailParser_AttachmentSearchableText(t *testing.T) {
+	ctx := t.Context()
+	attachmentContent := "QUOTE: the quick brown fox jumps over the lazy dog."
+	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
+	boundary := "attachboundary"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Attachment Test",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Email body text.",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"Content-Disposition: attachment; filename=\"note.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		encoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "text",
+		"fields":        []string{"from", "body", "attachments"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if !strings.Contains(result.Text, "quick brown fox") {
+		t.Errorf("attachment text missing from text output: %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "Email body text") {
+		t.Errorf("email body missing from text output: %q", result.Text)
+	}
+}
+
+// TestEmailParser_AttachmentEmptyPayloadSkipped verifies error isolation:
+// an attachment with an empty payload (the legacy .msg nested-attachment
+// case, where gomsg exposes no raw bytes) is skipped without breaking the
+// email, and a valid sibling attachment is still re-chunked.
+func TestEmailParser_AttachmentEmptyPayloadSkipped(t *testing.T) {
+	ctx := t.Context()
+	validContent := "VALID attachment payload"
+	validEncoded := base64.StdEncoding.EncodeToString([]byte(validContent))
+	boundary := "mixedbound"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Empty Payload",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Hello body.",
+		"--" + boundary,
+		"Content-Type: application/octet-stream; name=\"empty.bin\"",
+		"Content-Disposition: attachment; filename=\"empty.bin\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"Content-Disposition: attachment; filename=\"valid.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		validEncoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body", "attachments"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("email must not fail on empty-payload attachment: %v", result.Err)
+	}
+
+	found := false
+	for _, it := range result.JSON {
+		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "VALID attachment payload") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("valid attachment text not found despite empty-payload sibling: %#v", result.JSON)
+	}
+}
+
+// TestEmailParser_AttachmentUnknownExtSkipped verifies that an attachment
+// with an unrecognized extension is skipped (no parser available) while a
+// valid sibling attachment is still re-chunked. Mirrors the legacy email.py
+// behaviour, which only re-chunks known file types.
+func TestEmailParser_AttachmentUnknownExtSkipped(t *testing.T) {
+	ctx := t.Context()
+	validContent := "KNOWN attachment payload"
+	validEncoded := base64.StdEncoding.EncodeToString([]byte(validContent))
+	boundary := "mixedbound"
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: Unknown Ext",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Hello body.",
+		"--" + boundary,
+		"Content-Type: application/octet-stream; name=\"data.xyz\"",
+		"Content-Disposition: attachment; filename=\"data.xyz\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte("opaque bytes")),
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"Content-Disposition: attachment; filename=\"known.txt\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		validEncoded,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "body", "attachments"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("email must not fail on unknown-extension attachment: %v", result.Err)
+	}
+
+	found := false
+	for _, it := range result.JSON {
+		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "KNOWN attachment payload") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("known attachment text not found despite unknown-ext sibling: %#v", result.JSON)
+	}
+}
+
 func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 	ctx := t.Context()
 	attachmentContent := "SECRET attachment payload"
