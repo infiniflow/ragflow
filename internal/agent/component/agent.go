@@ -277,6 +277,57 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 // canvas service appends it to state before invoking the workflow.
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
 	current := schema.Message{Role: schema.User, Content: p.UserPrompt}
+	// Attach sys.files (agent file uploads) to the current user message,
+	// mirroring Python's LLM._prepare_prompt_variables path that the
+	// Python Agent inherits (agent_with_tools.py). Without this the Agent
+	// component sent text-only messages, so vision models never received
+	// uploaded images and answered "未上传图片".
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		sysFileTexts, sysFileImgs := collectSysFiles(state)
+		if len(sysFileImgs) > 0 {
+			parts := make([]schema.MessageInputPart, 0, 1+len(sysFileImgs))
+			if current.Content != "" {
+				parts = append(parts, schema.MessageInputPart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: current.Content,
+				})
+			}
+			for _, uri := range dedupStrings(sysFileImgs) {
+				u := uri
+				parts = append(parts, schema.MessageInputPart{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{URL: &u},
+					},
+				})
+			}
+			current.UserInputMultiContent = parts
+			current.Content = ""
+		}
+		if len(sysFileTexts) > 0 {
+			joined := strings.Join(sysFileTexts, "\n\n")
+			attached := false
+			for i := range current.UserInputMultiContent {
+				part := &current.UserInputMultiContent[i]
+				if part.Type == schema.ChatMessagePartTypeText {
+					if part.Text != "" {
+						part.Text += "\n\n" + joined
+					} else {
+						part.Text = joined
+					}
+					attached = true
+					break
+				}
+			}
+			if !attached {
+				if current.Content != "" {
+					current.Content += "\n\n" + joined
+				} else {
+					current.Content = joined
+				}
+			}
+		}
+	}
 	messages := []schema.Message{}
 	if p.MessageHistoryWindowSize > 0 {
 		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
