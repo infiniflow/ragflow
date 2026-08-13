@@ -174,9 +174,21 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 	if _, ok := meta["in_reply_to"]; !ok {
 		t.Error("metadata in_reply_to key must be present")
 	}
-	atts, ok := item["attachments"].([]map[string]any)
+	// attachments are extracted by the .msg branch but deliberately dropped
+	// from the final ParseResult (consumed by rechunkEmailAttachments;
+	// buildPagesFromBytes keeps only text+doc_type_kwd). Verify the
+	// high-level result no longer carries the heavy payload...
+	if _, ok := item["attachments"]; ok {
+		t.Error("attachments must be dropped from the final ParseResult")
+	}
+	// ...and verify the .msg branch still extracts them at the parse level.
+	msgContent, err := parseMSG(data, []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"})
+	if err != nil {
+		t.Fatalf("parseMSG: %v", err)
+	}
+	atts, ok := msgContent["attachments"].([]map[string]any)
 	if !ok {
-		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+		t.Fatalf("parseMSG attachments missing or wrong type: %T", msgContent["attachments"])
 	}
 	if len(atts) != 1 {
 		t.Fatalf("expected 1 attachment, got %d", len(atts))
@@ -263,9 +275,16 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	}
 	item := result.JSON[0]
 
-	atts, ok := item["attachments"].([]map[string]any)
+	// attachments are dropped from the final ParseResult (consumed by
+	// rechunk, then deleted); verify the high-level result is clean...
+	if _, ok := item["attachments"]; ok {
+		t.Error("attachments must be dropped from the final ParseResult")
+	}
+	// ...and verify the .eml branch still decodes the base64 attachment.
+	eml := parseEML(bytes.NewReader([]byte(raw)), []string{"from", "body", "attachments"})
+	atts, ok := eml["attachments"].([]map[string]any)
 	if !ok {
-		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+		t.Fatalf("attachments missing or wrong type: %T", eml["attachments"])
 	}
 	if len(atts) != 1 {
 		t.Fatalf("expected 1 attachment, got %d", len(atts))
@@ -342,8 +361,14 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 		t.Errorf("text_html: got %q, want to contain 'HTML body'", v)
 	}
 
-	// Verify attachment is decoded from base64
-	atts, ok := item["attachments"].([]map[string]any)
+	// attachments are dropped from the final ParseResult; verify the
+	// high-level result is clean...
+	if _, ok := item["attachments"]; ok {
+		t.Error("attachments must be dropped from the final ParseResult")
+	}
+	// ...and verify the .eml branch still decodes the base64 attachment.
+	eml := parseEML(bytes.NewReader([]byte(raw)), []string{"from", "body", "attachments"})
+	atts, ok := eml["attachments"].([]map[string]any)
 	if !ok || len(atts) != 1 {
 		t.Fatalf("expected 1 attachment, got %d", len(atts))
 	}
@@ -508,8 +533,7 @@ func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
 // behaviour: an email attachment is re-parsed by its file extension and its
 // content becomes a retrievable chunk in the SAME document (mirrors Python
 // legacy rag/app/email.py naive_chunk). The attachment text must appear as a
-// separate JSON item tagged with source_attachment, while the email body
-// stays on the main item.
+// separate JSON item, while the email body stays on the main item.
 func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 	ctx := t.Context()
 	attachmentContent := "QUOTE: the quick brown fox jumps over the lazy dog."
@@ -555,9 +579,6 @@ func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 	for _, it := range result.JSON {
 		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "quick brown fox") {
 			found = true
-			if src, _ := it["source_attachment"].(string); src != "note.txt" {
-				t.Errorf("source_attachment = %q, want note.txt", src)
-			}
 		}
 	}
 	if !found {
@@ -766,10 +787,16 @@ func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 		t.Error("text_html should be absent when body not in fields")
 	}
 
-	// attachments must be extracted even without body.
-	atts, ok := item["attachments"].([]map[string]any)
+	// attachments are dropped from the final ParseResult (consumed by
+	// rechunk, then deleted); verify the high-level result is clean...
+	if _, ok := item["attachments"]; ok {
+		t.Error("attachments must be dropped from the final ParseResult")
+	}
+	// ...and verify the .eml branch still extracts them even without body.
+	eml := parseEML(bytes.NewReader([]byte(raw)), []string{"from", "attachments"})
+	atts, ok := eml["attachments"].([]map[string]any)
 	if !ok {
-		t.Fatalf("attachments missing or wrong type: %T", item["attachments"])
+		t.Fatalf("attachments missing or wrong type: %T", eml["attachments"])
 	}
 	if len(atts) != 1 {
 		t.Fatalf("expected 1 attachment without body, got %d (bug: attachments silently dropped)", len(atts))
@@ -856,16 +883,13 @@ func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
 		}
 
 		if format == "json" {
-			// The nested email must be a distinct, clean item: tagged with
-			// source_attachment and carrying no metadata key (the old bug
-			// leaked a "metadata:{...}" string as its text).
+			// The nested email must be a distinct, clean item, carrying no
+			// metadata key (the old bug leaked a "metadata:{...}" string as
+			// its text).
 			found := false
 			for _, it := range result.JSON {
 				if txt, ok := it["text"].(string); ok && strings.Contains(txt, "INNER BODY SECRET") {
 					found = true
-					if src, _ := it["source_attachment"].(string); src != "inner.eml" {
-						t.Errorf("[json] source_attachment = %q, want inner.eml", src)
-					}
 					if _, hasMeta := it["metadata"]; hasMeta {
 						t.Errorf("[json] nested item must not carry metadata key: %#v", it)
 					}
@@ -907,9 +931,6 @@ func TestEmailParser_RechunkAttachmentTextPath(t *testing.T) {
 	}
 	if v, _ := extra[0]["text"].(string); v != "hello from attachment" {
 		t.Errorf("text = %q, want hello from attachment", v)
-	}
-	if v, _ := extra[0]["source_attachment"].(string); v != "note.txt" {
-		t.Errorf("source_attachment = %q, want note.txt", v)
 	}
 	if !strings.Contains(text, "hello from attachment") {
 		t.Errorf("indexed text missing attachment: %q", text)

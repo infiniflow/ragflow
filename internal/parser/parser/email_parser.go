@@ -126,6 +126,15 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// never breaks the whole email.
 	extraItems, attachmentText := p.rechunkEmailAttachments(ctx, content, depth)
 
+	// attachments has been consumed by rechunkEmailAttachments (which
+	// re-parses each attachment by extension to make its content
+	// retrievable). It is otherwise dead weight: jsonItemsToPages copies
+	// every key into a schema.Page, but buildPagesFromBytes keeps only
+	// text+doc_type_kwd, so carrying the full attachment payloads through to
+	// the chunker would only bloat the intermediate pages before being
+	// discarded. Drop it from the result content.
+	delete(content, "attachments")
+
 	if outputFormat == "json" {
 		content["doc_type_kwd"] = "text"
 		items := []map[string]any{content}
@@ -164,9 +173,10 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	}
 	// Attachment text (re-parsed by extension) replaces the old crude
 	// "filename:payload" flatten, so binary attachments no longer leak
-	// mojibake into the searchable (indexed) text. Note this only affects
-	// the flattened text output: the raw attachment payload is still carried
-	// verbatim in content["attachments"] for the JSON output path.
+	// mojibake into the searchable (indexed) text. The raw attachment
+	// payloads themselves are dropped after rechunk (see parseEmail), so the
+	// JSON output path carries only the re-parsed attachment text, never the
+	// original payload bytes.
 	if attachmentText != "" {
 		sb.WriteString(attachmentText)
 		sb.WriteString("\n")
@@ -640,7 +650,7 @@ func formatMsgDate(t time.Time) any {
 //
 // The function returns both forms the caller needs:
 //   - extraItems: structured JSON items (one per non-empty text segment),
-//     tagged with source_attachment, for the JSON output path.
+//     each carrying only "text" and "doc_type_kwd", for the JSON output path.
 //   - text:       the concatenated attachment text, for the text output path.
 //
 // Re-chunking stops at one level of nesting: a nested email is parsed (so its
@@ -730,9 +740,8 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 
 		for _, t := range texts {
 			extra = append(extra, map[string]any{
-				"text":              t,
-				"doc_type_kwd":      "text",
-				"source_attachment": fn,
+				"text":         t,
+				"doc_type_kwd": "text",
 			})
 			if sb.Len() > 0 {
 				sb.WriteString("\n")
