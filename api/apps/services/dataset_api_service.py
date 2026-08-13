@@ -2167,7 +2167,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 
 # Non-folded template kinds that make a doc eligible for each API kind.
 _ALTERATION_ELIGIBLE_TEMPLATE_KINDS = {
-    "wiki": {"artifacts"},
+    "wiki": {"wiki"},
     "graph": {"knowledge_graph"},
     "mindmap": {"mind_map"},
     "timeline": {"timeline"},
@@ -3992,7 +3992,7 @@ async def update_wiki_page(
 # :meth:`FileCommitService.get_page_commit_detail`.
 
 
-# All seven row types the artifact pipeline writes. Listed in dependency
+# All row types the artifact pipeline writes. Listed in dependency
 # order so partial failures of earlier deletes don't leave behind state
 # that downstream phases would silently reuse. ``wiki_page_graph``
 # is the materialized canvas graph derived from the refined pages —
@@ -4004,8 +4004,13 @@ _WIKI_COMPILE_KWDS = (
     "wiki_page_draft",
     "wiki_page",
     "wiki_page_topic",
+    "wiki_canonical_entity",
+    "wiki_plan_group",
+    "wiki_doc_page_source",
+    "wiki_mode_meta",
     "wiki_entity",
     "wiki_relation",
+    "wiki_page_graph",
 )
 
 # Tunables for the incremental graph loader. See ``get_wiki_graph``.
@@ -4528,6 +4533,56 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
     if pack is None:
         return True, {"deleted": {}}
     index_nm, _ = pack
+
+    # Repair rows damaged by the former doc-page-source upsert before deleting
+    # that bucket. It updated by ``doc_id`` and could stamp ordinary source
+    # chunks as ``wiki_doc_page_source``. Those rows retain chunk content;
+    # genuine tracking rows do not. Removing only the bad marker preserves the
+    # source chunks while allowing the real tracking rows to be cleared below.
+    try:
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        fields = ["id", "content_with_weight"]
+        offset = 0
+        page_size = 1000
+        damaged_row_ids: list[str] = []
+        while True:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                fields,
+                [],
+                {"compile_kwd": ["wiki_doc_page_source"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index_nm,
+                [dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, fields) or {}
+            for row_id, row in rows.items():
+                if row.get("content_with_weight"):
+                    damaged_row_ids.append(row_id)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        for row_id in damaged_row_ids:
+            await thread_pool_exec(
+                settings.docStoreConn.update,
+                {"id": row_id},
+                {"remove": "compile_kwd"},
+                index_nm,
+                dataset_id,
+            )
+        if damaged_row_ids:
+            logging.warning(
+                "clear_wiki: repaired %d source chunk(s) mislabeled as wiki_doc_page_source kb=%s",
+                len(damaged_row_ids),
+                dataset_id,
+            )
+    except Exception:
+        logging.exception("clear_wiki: failed to repair mislabeled source chunks kb=%s", dataset_id)
+        return False, "Failed to repair legacy Wiki state before clearing"
 
     deleted: dict[str, object] = {}
     for kwd in _WIKI_COMPILE_KWDS:

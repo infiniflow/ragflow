@@ -49,7 +49,6 @@ const (
 	ParserTypeLaws         ParserType = "laws"
 	ParserTypeManual       ParserType = "manual"
 	ParserTypePaper        ParserType = "paper"
-	ParserTypeResume       ParserType = "resume"
 	ParserTypeBook         ParserType = "book"
 	ParserTypeQA           ParserType = "qa"
 	ParserTypeTable        ParserType = "table"

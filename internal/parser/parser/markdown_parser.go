@@ -269,17 +269,13 @@ func markdownTableCells(line string) []string {
 //
 // Tables: a GFM/HTML table is rendered inline as a single <table> HTML
 // block by renderMarkdownTablesInlineText and kept as one HTML block.
-// It is emitted as TWO items, mirroring Python's _markdown
-// (separate_tables=False): an inlined copy in the text flow
-// (doc_type_kwd:"text") and a separate structured table item
-// (doc_type_kwd:"table", ck_type:"table"). The downstream chunker
-// consumes doc_type_kwd:"table" to keep the table whole and attach
-// table context to neighbouring chunks (chunker/token.go). Non-table
-// HTML blocks (<div>, <style>, …) are emitted as ordinary text with
-// no ck_type. Table items are appended after the walk so the order
-// matches Python (_markdown appends tables after all sections).
+// It is emitted as ONE structured item (doc_type_kwd:"table",
+// ck_type:"table") in its original document position — there is no
+// duplicate doc_type_kwd:"text" copy. The downstream chunker consumes
+// doc_type_kwd:"table" to keep the table whole and attach table context
+// to neighbouring chunks (chunker/token.go). Non-table HTML blocks
+// (<div>, <style>, …) are emitted as ordinary text with no ck_type.
 func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten bool) {
-	var tableItems []map[string]any
 	for _, child := range doc.GetChildren() {
 		var ckType string
 		var docTypeKwd string
@@ -307,20 +303,13 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten b
 			// HTML block thanks to the blank lines renderMarkdownTablesInline
 			// wraps around it) or a plain HTML block such as <div>/<style>.
 			// Only a table is emitted as a structured table item; everything
-			// else is treated as ordinary text (no ck_type).
+			// else is treated as ordinary text (no ck_type). We emit exactly
+			// ONE item (doc_type_kwd:"table"/ck_type:"table") in document
+			// order — no duplicate doc_type_kwd:"text" copy — so the table is
+			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
 			if isTableHTML(txt) {
-				// Inlined copy kept in the text flow. This is what the
-				// alignment golden compares against (Python inlines the
-				// rendered <table> HTML into a text section).
 				*out = append(*out, map[string]any{
-					"text":         txt,
-					"doc_type_kwd": "text",
-				})
-				// Separate structured table item (mirrors Python's extra
-				// doc_type_kwd:"table" item). doc_type_kwd:"table" drives
-				// downstream table handling.
-				tableItems = append(tableItems, map[string]any{
 					"text":         txt,
 					"doc_type_kwd": "table",
 					"ck_type":      "table",
@@ -363,8 +352,6 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten b
 
 		*out = append(*out, item)
 	}
-	// Tables appended last, mirroring Python's _markdown ordering.
-	*out = append(*out, tableItems...)
 }
 
 // isTableHTML reports whether block text is an outer <table> element (the

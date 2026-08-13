@@ -107,8 +107,7 @@ function AgentChatBox() {
                   loading={
                     message.role === MessageType.Assistant &&
                     sendLoading &&
-                    derivedMessages.length - 1 === i &&
-                    !message.content
+                    derivedMessages.length - 1 === i
                   }
                   key={buildMessageUuidWithRole(message)}
                   nickname={userInfo.nickname}

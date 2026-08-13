@@ -102,7 +102,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	// Check if all kbs have the same embedding model
-	if err := service.ValidateDatasetEmbeddingModels(kbRecords); err != nil {
+	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
 		return nil, err
 	}
 

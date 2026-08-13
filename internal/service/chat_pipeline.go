@@ -1971,7 +1971,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 		if kbs[0].EmbdID != "" {

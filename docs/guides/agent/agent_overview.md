@@ -1,14 +1,26 @@
 ---
 sidebar_position: 2
-title: "Relationship Between Agent and Knowledge Base Q&A"
-sidebar_label: "Relationship Between Agent and Knowledge Base Q&A"
-slug: /relationship_between_agent_and_knowledge_base_qa
+title: Agent Overview
+sidebar_label: Agent Overview
+slug: /agent_overview
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Relationship Between Agent and Knowledge Base Q&A
+# Agent Overview
+
+## Purpose of Agent
+Agent is the business workflow orchestration capability in RAGFlow. Users can add components on a no-code canvas and define execution order via connections. Components can be executed sequentially, or enter different paths according to conditional branches, classification results or loop logic.
+
+Agents are commonly used in the following scenarios:
+- Answering user questions based on knowledge bases.
+- Identifying user intents and routing to different processing flows.
+- Calling HTTP interfaces, databases, MCP tools or custom code.
+- Splitting and batch processing long texts.
+- Saving session memory or exporting processing results.
+
+## Relationship Between Agent and Knowledge Base Q&A
 - **Chat**: Suitable for applications mainly based on knowledge base Q&A and multi-turn dialogue.
 - **Agent**: Suitable for business workflows requiring conditional branching, tool calling, data processing or multi-step orchestration.
 

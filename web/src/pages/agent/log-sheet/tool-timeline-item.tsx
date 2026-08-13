@@ -29,6 +29,7 @@ type IToolIcon =
   | Operator.BGPT
   | Operator.TavilyExtract
   | Operator.TavilySearch
+  | Operator.QueritContents
   | Operator.QueritSearch
   | Operator.KeenableSearch
   | Operator.Wikipedia

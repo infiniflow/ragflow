@@ -798,6 +798,66 @@ class TaskHandler:
                 logging.exception("load_chunks_for_doc: failed to load chunks for doc=%s", doc_id)
                 return
             if not field_map:
+                # Recover rows damaged by the old doc-page-source upsert, which
+                # updated every row sharing ``doc_id`` and stamped source chunks
+                # with ``compile_kwd=wiki_doc_page_source``. Genuine tracking
+                # rows have no chunk body; MAP rows are unavailable. Source
+                # rows remain available and retain their content, so they can
+                # be identified without guessing from ids.
+                try:
+                    recovery_fields = [*select_fields, "available_int"]
+                    recovered_batch: List[Dict] = []
+                    recovery_offset = 0
+                    recovery_page_size = 1000
+                    while True:
+                        recovery_res = await thread_pool_exec(
+                            settings.docStoreConn.search,
+                            recovery_fields,
+                            [],
+                            {"doc_id": [doc_id], "available_int": 1},
+                            [],
+                            order_by,
+                            recovery_offset,
+                            recovery_page_size,
+                            index_nm,
+                            [kb_id],
+                        )
+                        recovery_rows = settings.docStoreConn.get_fields(recovery_res, recovery_fields) or {}
+                        for row_id, recovery_row in recovery_rows.items():
+                            marker = recovery_row.get("compile_kwd")
+                            if isinstance(marker, (list, tuple)):
+                                marker = marker[0] if marker else ""
+                            content = recovery_row.get("content_with_weight") or ""
+                            if marker != "wiki_doc_page_source" or not content:
+                                continue
+                            await thread_pool_exec(
+                                settings.docStoreConn.update,
+                                {"id": row_id},
+                                {"remove": "compile_kwd"},
+                                index_nm,
+                                kb_id,
+                            )
+                            recovered_batch.append(
+                                {
+                                    "id": row_id,
+                                    "doc_id": recovery_row.get("doc_id") or doc_id,
+                                    "content_with_weight": content,
+                                    "page_num_int": recovery_row.get("page_num_int", 0),
+                                    "top_int": recovery_row.get("top_int", 0),
+                                }
+                            )
+                        if len(recovery_rows) < recovery_page_size:
+                            break
+                        recovery_offset += recovery_page_size
+                    if recovered_batch:
+                        logging.warning(
+                            "load_chunks_for_doc: recovered %d source chunk(s) mislabeled as wiki_doc_page_source doc=%s",
+                            len(recovered_batch),
+                            doc_id,
+                        )
+                        yield recovered_batch
+                except Exception:
+                    logging.exception("load_chunks_for_doc: recovery query failed for doc=%s", doc_id)
                 return
 
             batch: List[Dict] = []

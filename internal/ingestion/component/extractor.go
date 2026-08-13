@@ -1043,12 +1043,21 @@ func cleanLLMText(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
-// matching Python's keyword_extraction and question_proposal post-processing.
-func cleanExtractionResult(s string) string {
+// stripTrailingThink mirrors Python's re.sub(r"^.*</think>", "", s, re.DOTALL)
+// in generator.py's post-processing (e.g. gen_metadata:960): cut everything
+// through the LAST `</think>` so a mid-text reasoning block preceded by a
+// preamble is stripped on top of cleanLLMText's leading-only cleanup.
+func stripTrailingThink(s string) string {
 	if i := strings.LastIndex(s, "</think>"); i >= 0 {
 		s = s[i+len("</think>"):]
 	}
+	return s
+}
+
+// cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
+// matching Python's keyword_extraction and question_proposal post-processing.
+func cleanExtractionResult(s string) string {
+	s = stripTrailingThink(s)
 	s = strings.TrimSpace(s)
 	if strings.Contains(s, "**ERROR**") {
 		return ""
@@ -1199,6 +1208,13 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	if s == "" {
 		return nil, nil
 	}
+	// Second cleanup layer, mirroring Python gen_metadata's
+	// re.sub(r"^.*</think>", "", ans, re.DOTALL): cleanLLMText only strips a
+	// leading <think>, so a mid-text reasoning block preceded by a preamble
+	// would otherwise survive into JSON parsing and silently drop the whole
+	// metadata extraction that Python would have kept. No **ERROR** check here
+	// — Python's gen_metadata has none either.
+	s = stripTrailingThink(s)
 	parsed, ok := tryParseJSONObject(s)
 	if !ok {
 		return nil, nil
@@ -1416,7 +1432,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if llmID == "" {
 		return 0
 	}
-	return dao.ResolveModelContentLength(ctx, db, llmID, "", "")
+	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —
