@@ -221,7 +221,7 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 
 	// Clean up response
 	responseStr := strings.TrimSpace(*response.Answer)
-	responseStr = thinkBlockRE.ReplaceAllString(responseStr, "")
+	responseStr = common.StripThinkTrailing(responseStr)
 	responseStr = jsonFenceRE.ReplaceAllString(responseStr, "")
 	responseStr = strings.TrimSpace(responseStr)
 
