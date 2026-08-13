@@ -59,6 +59,100 @@ func TestGmailConnectorOpenSync(t *testing.T) {
 	}
 }
 
+// TestGmailConnectorOpenSyncResumesWithinPage verifies Gmail checkpoint resumes inside a list page.
+func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
+	connector := newFixtureGmailConnector()
+	connector.GmailConnector.batchSize = 2
+	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
+		return gmailThreadListPage{Threads: []struct {
+			ID string `json:"id"`
+		}{{ID: "thread-1"}, {ID: "thread-2"}, {ID: "thread-3"}}}, nil
+	}
+	connector.GmailConnector.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
+		return gmailTestThread(threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if len(first.Documents) != 2 {
+		t.Fatalf("first documents len = %d, want 2", len(first.Documents))
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "thread-2" {
+		t.Fatalf("first checkpoint = %+v, want thread-2", first.Checkpoint)
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
+		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
+	}
+	if second.Checkpoint == nil || second.Checkpoint.SourceID != "thread-3" {
+		t.Fatalf("resume checkpoint = %+v, want thread-3", second.Checkpoint)
+	}
+}
+
+// TestGmailConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
+func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
+	connector := newFixtureGmailConnector()
+	connector.GmailConnector.batchSize = 2
+	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
+		return gmailThreadListPage{Threads: []struct {
+			ID string `json:"id"`
+		}{{ID: "thread-1"}, {ID: "thread-2"}, {ID: "thread-3"}}}, nil
+	}
+	connector.GmailConnector.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
+		return gmailTestThreadWithSubject(threadID, threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "thread-2" {
+		t.Fatalf("first checkpoint = %+v, want thread-2", first.Checkpoint)
+	}
+
+	resumeListCalls := 0
+	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
+		resumeListCalls++
+		if pageToken != "" {
+			t.Fatalf("resume used unexpected pageToken=%q", pageToken)
+		}
+		return gmailThreadListPage{Threads: []struct {
+			ID string `json:"id"`
+		}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
+	}
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
+		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
+	}
+	if resumeListCalls != 1 {
+		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
+	}
+}
+
 // TestGmailFingerprintStable verifies Gmail fingerprints are stable and content-sensitive.
 func TestGmailFingerprintStable(t *testing.T) {
 	thread := gmailThread{
@@ -90,6 +184,9 @@ func TestGmailFingerprintStable(t *testing.T) {
 	}
 	if doc1.Fingerprint == "" || doc1.Fingerprint != doc2.Fingerprint {
 		t.Fatalf("fingerprint unstable: %q %q", doc1.Fingerprint, doc2.Fingerprint)
+	}
+	if doc1.Fingerprint != contentFingerprint(doc1.Blob) {
+		t.Fatalf("fingerprint = %q, want content fingerprint", doc1.Fingerprint)
 	}
 
 	changed := thread
@@ -191,26 +288,34 @@ func newFixtureGmailConnector() *fixtureGmailConnector {
 		}{{ID: "thread-1"}}}, nil
 	}
 	base.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
-		return gmailThread{
-			ID: threadID,
-			Messages: []gmailMessage{{
-				ID: "msg-1",
-				Payload: gmailPayload{
-					Headers: []gmailHeader{
-						{Name: "From", Value: "Alice Example <alice@example.com>"},
-						{Name: "To", Value: "Bob <bob@example.com>"},
-						{Name: "Subject", Value: "Hello/World"},
-						{Name: "Date", Value: "Fri, 02 Jan 2026 03:04:05 +0000"},
-					},
-					Parts: []gmailPart{{
-						MimeType: "text/plain",
-						Body:     gmailBody{Data: base64.RawURLEncoding.EncodeToString([]byte("Body text"))},
-					}},
-				},
-			}},
-		}, nil
+		return gmailTestThread(threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
 	}
 	return connector
+}
+
+func gmailTestThread(threadID, date string) (gmailThread, error) {
+	return gmailTestThreadWithSubject(threadID, "Hello/World", date)
+}
+
+func gmailTestThreadWithSubject(threadID, subject, date string) (gmailThread, error) {
+	return gmailThread{
+		ID: threadID,
+		Messages: []gmailMessage{{
+			ID: "msg-1",
+			Payload: gmailPayload{
+				Headers: []gmailHeader{
+					{Name: "From", Value: "Alice Example <alice@example.com>"},
+					{Name: "To", Value: "Bob <bob@example.com>"},
+					{Name: "Subject", Value: subject},
+					{Name: "Date", Value: date},
+				},
+				Parts: []gmailPart{{
+					MimeType: "text/plain",
+					Body:     gmailBody{Data: base64.RawURLEncoding.EncodeToString([]byte("Body text"))},
+				}},
+			},
+		}},
+	}, nil
 }
 
 // TestGmailTimeRangeQuery verifies Python-compatible after and before seconds.

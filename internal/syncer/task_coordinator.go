@@ -47,10 +47,16 @@ type TaskCoordinator struct {
 	pruneService *service.SyncPruneService
 	idResolver   *service.DocumentIDResolver
 	executor     *SyncJobExecutor
+	checkpoints  SyncCheckpointStore
+}
+
+// TaskOutcome describes post-run scheduling work for a completed task.
+type TaskOutcome struct {
+	NextTaskID string
 }
 
 // NewTaskCoordinator creates a coordinator for one claimed task at a time.
-func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncTaskService, registry ConnectorRegistry, sink service.DocumentSink, pruneService *service.SyncPruneService, idResolver *service.DocumentIDResolver, executor *SyncJobExecutor) *TaskCoordinator {
+func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncTaskService, registry ConnectorRegistry, sink service.DocumentSink, pruneService *service.SyncPruneService, idResolver *service.DocumentIDResolver, executor *SyncJobExecutor, checkpoints SyncCheckpointStore) *TaskCoordinator {
 	if config.ItemRetryCount <= 0 {
 		config.ItemRetryCount = 1
 	}
@@ -61,39 +67,44 @@ func NewTaskCoordinator(config TaskCoordinatorConfig, taskService *service.SyncT
 	if executor == nil {
 		panic("task coordinator executor must not be nil")
 	}
+	if checkpoints == nil {
+		checkpoints = newMemorySyncCheckpointStore()
+	}
 
-	return &TaskCoordinator{config: config, taskService: taskService, registry: registry, sink: sink, pruneService: pruneService, idResolver: idResolver, executor: executor}
+	return &TaskCoordinator{config: config, taskService: taskService, registry: registry, sink: sink, pruneService: pruneService, idResolver: idResolver, executor: executor, checkpoints: checkpoints}
 }
 
 // Execute dispatches a sync_logs task by task type.
-func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext, lease ConnectorLockLease) error {
+func (c *TaskCoordinator) Execute(ctx context.Context, taskContext service.SyncTaskContext, lease ConnectorLockLease) (TaskOutcome, error) {
 	runCtx, cancel := context.WithDeadline(ctx, taskExecutionDeadline(time.Now(), taskContext, lease))
 	defer cancel()
 	ctx = runCtx
 
 	connector, err := c.registry.Open(ctx, taskContext)
 	if err != nil {
-		return err
+		return TaskOutcome{}, err
 	}
 	if err = connector.Validate(ctx); err != nil {
-		return err
+		return TaskOutcome{}, err
 	}
 
 	switch taskContext.Task.TaskType {
 	case service.TaskTypeSync:
 		queue, err := c.executor.RegisterTask(ctx, taskContext.Task.ID)
 		if err != nil {
-			return err
+			return TaskOutcome{}, err
 		}
 		defer queue.Close()
 
-		runner := NewSyncRunner(c.config, c.taskService, c.sink, c.idResolver, queue)
-		return runner.Run(ctx, taskContext, connector)
+		runner := NewSyncRunner(c.config, c.taskService, c.sink, c.idResolver, queue, c.checkpoints)
+		nextTaskID, err := runner.Run(ctx, taskContext, connector)
+		return TaskOutcome{NextTaskID: nextTaskID}, err
 	case service.TaskTypePrune:
 		runner := NewPruneRunner(c.taskService, c.pruneService)
-		return runner.Run(ctx, taskContext, connector)
+		nextTaskID, err := runner.Run(ctx, taskContext, connector)
+		return TaskOutcome{NextTaskID: nextTaskID}, err
 	default:
-		return fmt.Errorf("unsupported sync task type %q", taskContext.Task.TaskType)
+		return TaskOutcome{}, fmt.Errorf("unsupported sync task type %q", taskContext.Task.TaskType)
 	}
 }
 

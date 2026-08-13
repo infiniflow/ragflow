@@ -22,7 +22,6 @@ import (
 
 // Config contains runtime limits for the datasource syncer.
 type Config struct {
-	PollInterval       time.Duration
 	TaskWorkerCount    int
 	TaskQueueSize      int
 	JobWorkerCount     int
@@ -34,7 +33,6 @@ type Config struct {
 // DefaultConfig returns the first-version syncer defaults.
 func DefaultConfig() Config {
 	return Config{
-		PollInterval:       3 * time.Second,
 		TaskWorkerCount:    5,
 		TaskQueueSize:      10,
 		JobWorkerCount:     400,
@@ -47,10 +45,6 @@ func DefaultConfig() Config {
 // Normalize fills unset or invalid config values with defaults.
 func (c Config) Normalize() Config {
 	def := DefaultConfig()
-	if c.PollInterval <= 0 {
-		c.PollInterval = def.PollInterval
-	}
-
 	if c.TaskWorkerCount <= 0 {
 		c.TaskWorkerCount = def.TaskWorkerCount
 	}

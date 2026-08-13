@@ -157,11 +157,31 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
 
+		// Per-spec Inputs copy: each spec must get its own VariantSpecific map,
+		// otherwise specIn.VariantSpecific below would mutate the shared map and
+		// let a later template inherit the previous template's parser_config
+		// (a template with an empty config would then run with the wrong parser
+		// behavior). Copy the map (and preserve an empty map when nil).
 		specIn := in
-		if specIn.VariantSpecific == nil {
-			specIn.VariantSpecific = map[string]any{}
+		specIn.VariantSpecific = make(map[string]any, len(in.VariantSpecific)+1)
+		for k, v := range in.VariantSpecific {
+			specIn.VariantSpecific[k] = v
 		}
-		specIn.VariantSpecific["config"] = spec.Config
+		// The template config (flat: kind/entity/relation/plan/…) is delivered to
+		// the structure and wiki variants under the "parser_config" key — the SAME
+		// key those variants read (structure.Run / wikiPipeline.mapBatch do
+		// VariantSpecific["parser_config"]). Storing it as "config" left the
+		// variants with a nil config, so InferType saw no "kind" and fell back to
+		// "list" (breaking timeline: its compile_kwd became "list" instead of
+		// "timeline", so dropIsolatedTimelineEntities never ran and the timeline
+		// rendered every entity isolated).
+		//
+		// Only overwrite when the template actually carries a config: an empty
+		// template config (e.g. a resolver stub) must not clobber a parser_config
+		// the caller already supplied on the inputs.
+		if len(spec.Config) > 0 {
+			specIn.VariantSpecific["parser_config"] = spec.Config
+		}
 
 		var o common.Outputs
 		switch variant {
@@ -564,23 +584,14 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		}
 
 	case common.VariantMindmap:
-		// Tree nodes: depth_int records the outline level.
-		if v, ok := metaInt(p.Meta, "level"); ok {
-			if err := doc.SetExtraValue("depth_int", v); err != nil {
-				return err
-			}
-		}
-		if v := metaString(p.Meta, "name"); v != "" {
-			if err := doc.SetExtraValue("title_kwd", v); err != nil {
-				return err
-			}
-			setTitleTokens(doc, v)
-		}
-		if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
-			if err := doc.SetExtraValue("children_kwd", v); err != nil {
-				return err
-			}
-		}
+		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
+		// dataset-level merge exactly like graph/timeline: each node is an entity,
+		// each parent→child edge is a relation. Reuse the shared structure-graph
+		// column contract (knowledge_graph_kwd + from/to_entity_kwd + name_kwd +
+		// entity_type_kwd + mention_count_int). The relation type lives in the
+		// content_with_weight payload ({"from","to","type"}), matching Python —
+		// NOT a dedicated relation_type_kwd column.
+		return applyStructureGraphColumns(doc, p, kind)
 	}
 
 	return nil
