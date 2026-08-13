@@ -133,6 +133,24 @@ class TestResolveVolcengineCredentials:
         out = _resolve_volcengine_credentials(json.dumps({"ark_api_key": "abc123", "endpoint_id": -250115}))
         assert out == {"ark_api_key": "abc123", "model_name": "-250115"}
 
+    def test_json_dict_with_null_ep_id_returns_null_model_name(self):
+        """Explicit JSON ``null`` for ``ep_id`` (or ``endpoint_id``) must
+        not raise TypeError and must collapse to a ``None`` model_name,
+        because the coercion branch short-circuits to ``""`` for ``None``
+        values, and the empty concat then becomes ``None`` via the
+        ``or None`` fallback at the end of the helper.
+        """
+        out = _resolve_volcengine_credentials(json.dumps({"ark_api_key": "abc123", "ep_id": None}))
+        assert out == {"ark_api_key": "abc123", "model_name": None}
+
+    def test_json_dict_with_null_endpoint_id_falls_back_to_ep_id(self):
+        """When ``ep_id`` is a real string but ``endpoint_id`` is JSON
+        ``null``, the derived model_name must be just the ``ep_id``
+        value (the null endpoint_id is coerced to ``""`` and dropped).
+        """
+        out = _resolve_volcengine_credentials(json.dumps({"ark_api_key": "abc123", "ep_id": "ep-abc", "endpoint_id": None}))
+        assert out == {"ark_api_key": "abc123", "model_name": "ep-abc"}
+
     def test_json_array_raises_model_exception(self):
         """A valid JSON array is the bug case: pre-fix, ``.get(...)`` on
         the parsed list raised ``AttributeError: 'list' object has no
