@@ -36,6 +36,7 @@ type connectorServiceIface interface {
 	CreateConnector(ctx context.Context, userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
 	ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
+	ListLogs(ctx context.Context, userID, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error)
 	RebuildConnector(ctx context.Context, connectorID, userID, kbID string) (bool, common.ErrorCode, error)
 	TestConnector(ctx context.Context, connectorID, userID string) error
@@ -223,6 +224,59 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	logs, total, code, err := h.connectorService.ListLog(ctx, c.Param("connector_id"), user.ID, page, pageSize)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+
+	common.SuccessWithData(c, gin.H{"total": total, "logs": logs}, "success")
+}
+
+// ListSyncLogs handles GET /api/v1/sync_logs.
+// Lists sync logs for the current user; when dataset_id is provided, only
+// the logs of that dataset are returned.
+// @Summary list sync logs
+// @Description list sync logs for the current user, optionally filtered by dataset_id
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/sync_logs [get]
+func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	page := 1
+	if rawPage := strings.TrimSpace(c.DefaultQuery("page", "1")); rawPage != "" {
+		parsedPage, err := strconv.Atoi(rawPage)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
+			return
+		}
+		page = parsedPage
+	}
+
+	pageSize := 15
+	if rawPageSize := strings.TrimSpace(c.DefaultQuery("page_size", "15")); rawPageSize != "" {
+		parsedPageSize, err := strconv.Atoi(rawPageSize)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
+			return
+		}
+		pageSize = parsedPageSize
+	}
+
+	datasetID := strings.TrimSpace(c.Query("dataset_id"))
+
+	ctx := c.Request.Context()
+
+	logs, total, code, err := h.connectorService.ListLogs(ctx, user.ID, datasetID, page, pageSize)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

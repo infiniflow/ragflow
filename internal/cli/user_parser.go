@@ -151,6 +151,8 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListAllModels()
 	case TokenIngestion:
 		return p.parseAPIListIngestionTasks()
+	case TokenSync:
+		return p.parseAPIListSyncLogs()
 	case TokenDefault:
 		return p.parseAPIListDefaultModels()
 	case TokenAvailable:
@@ -194,6 +196,8 @@ func (p *Parser) parseAPIListDatasetCommands() (*Command, error) {
 		return p.parseAPIListDatasetFiles(datasetID)
 	case TokenIngestion:
 		return p.parseAPIListDatasetIngestionTasks(datasetID)
+	case TokenSync:
+		return p.parseAPIListDatasetSyncLogs(datasetID)
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -238,6 +242,53 @@ func (p *Parser) parseAPIListDatasetIngestionTasks(datasetName string) (*Command
 	}
 
 	cmd := NewCommand("api_list_ingestion_tasks")
+	cmd.Params["dataset_name"] = datasetName
+	return cmd, nil
+}
+
+// LIST SYNC LOGS;
+// LIST SYNC LOGS FROM 'dataset_id'
+func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
+	p.nextToken() // consume SYNC
+
+	if p.curToken.Type != TokenLogs {
+		return nil, fmt.Errorf("expected LOGS")
+	}
+
+	p.nextToken() // consume LOGS
+
+	cmd := NewCommand("api_list_sync_logs")
+
+	if p.curToken.Type == TokenFrom {
+		p.nextToken()
+		datasetID, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["dataset_id"] = datasetID
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// LIST DATASET 'dataset_name' SYNC LOGS;
+func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, error) {
+	p.nextToken() // consume SYNC
+
+	if p.curToken.Type != TokenLogs {
+		return nil, fmt.Errorf("expected LOGS")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_list_sync_logs")
 	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
 }

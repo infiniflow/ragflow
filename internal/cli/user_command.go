@@ -3467,6 +3467,50 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "list ingestion tasks")
 }
 
+// APIListSyncLogsCommand lists sync logs (user mode).
+// LIST SYNC LOGS; lists the sync logs of all datasets, and
+// LIST DATASET 'dataset_name' SYNC LOGS; follows the ingestion-tasks pattern.
+func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(*string)
+	if !ok {
+		datasetID = nil
+	}
+
+	url := "/sync_logs"
+	if datasetID != nil && *datasetID != "" {
+		url = fmt.Sprintf("/sync_logs?dataset_id=%s", *datasetID)
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sync logs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list sync logs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSyncLogsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list sync logs failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 // APIShowLogLevelCommand sets the log level for the system.
 func (c *CLI) APIShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {

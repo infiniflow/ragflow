@@ -638,6 +638,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
+			// Sync logs for the current user, optionally filtered by dataset.
+			v1.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
+
 			// MCP server routes.
 			mcp := v1.Group("/mcp")
 			{

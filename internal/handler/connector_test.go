@@ -105,6 +105,13 @@ func (s fakeConnectorService) ListLog(context.Context, string, string, int, int)
 	return s.logs, s.total, common.CodeSuccess, nil
 }
 
+func (s fakeConnectorService) ListLogs(context.Context, string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, 0, s.code, s.err
+	}
+	return s.logs, s.total, common.CodeSuccess, nil
+}
+
 func (s fakeConnectorService) DeleteConnector(context.Context, string, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
