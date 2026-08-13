@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/tokenizer"
 )
 
 func TestHierarchyTitleChunker_Registered(t *testing.T) {
@@ -530,5 +531,81 @@ func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 	}
 	if !(iA < iB && iB < iBody) {
 		t.Errorf("non-text order wrong: imgA=%d imgB=%d body=%d, want imgA<imgB<body", iA, iB, iBody)
+	}
+}
+
+// TestHierarchyTitleChunker_NoHeadingsTokenFallback pins the
+// heading-less fallback: when no line matches a heading pattern
+// (resolve_target_level → None), the run must be packed into
+// token-bounded chunks instead of collapsing into a single chunk
+// (classic rag/app/book.py naive_merge fallback).
+func TestHierarchyTitleChunker_NoHeadingsTokenFallback(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy":               5,
+		"levels":                  [][]string{{`^# `}},
+		"include_heading_content": true,
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	// Plain-prose book with 第N回-style markers that no configured
+	// heading family matches — mirrors the reported 红楼梦 txt case.
+	line := "第一回 " + strings.Repeat("红尘滚滚正文段落", 10)
+	var b strings.Builder
+	for i := 0; i < 120; i++ {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name": "hlm.txt",
+		"text": b.String(),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) < 2 {
+		t.Fatalf("heading-less book collapsed into %d chunk(s), want >= 2", len(chunks))
+	}
+	lineTokens := tokenizer.NumTokensFromString(line)
+	var all strings.Builder
+	for i, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if text == "" {
+			t.Errorf("chunk[%d] text is empty", i)
+		}
+		if got := tokenizer.NumTokensFromString(text); got > maxGroupTokens+lineTokens {
+			t.Errorf("chunk[%d] tokens = %d, want <= %d (budget + one-line overshoot)", i, got, maxGroupTokens+lineTokens)
+		}
+		all.WriteString(text)
+	}
+	if !strings.Contains(all.String(), "第一回") {
+		t.Error("merged chunk text lost content")
+	}
+}
+
+// TestHierarchyTitleChunker_NoHeadingsSmallDoc pins that a short
+// heading-less document still yields exactly one chunk.
+func TestHierarchyTitleChunker_NoHeadingsSmallDoc(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy": 5,
+		"levels":    [][]string{{`^# `}},
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name": "note.txt",
+		"text": "只是几行普通正文\n没有任何标题结构\n内容很短",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1 for a short heading-less doc", len(chunks))
+	}
+	if text, _ := chunks[0]["text"].(string); !strings.Contains(text, "没有任何标题结构") {
+		t.Errorf("chunk text = %q, want it to contain the body", text)
 	}
 }

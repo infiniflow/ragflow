@@ -34,6 +34,12 @@
 //     `include_heading_content` and the python leaf-only rule: when
 //     include_heading_content is false, only leaf nodes emit.
 //
+//   - Deliberate divergence from the python pipeline: when a text run
+//     has no detectable heading levels (resolve_target_level → None),
+//     the run is packed into token-bounded groups (group variant
+//     budget) instead of one giant chunk, matching the classic
+//     rag/app/book.py naive_merge fallback.
+//
 //   - No PDF-position / deepdoc awareness; structured chunk inputs
 //     use the same dfs over text records.
 package chunker
@@ -195,12 +201,17 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		}
 		targetLevel := resolveTargetLevel(textLevels, h)
 		if targetLevel == 0 {
-			// resolve_target_level returned None (no heading levels in
-			// the run): emit the whole run as a single group, exactly
-			// like python's `record_groups.append(text_records.copy())`.
-			runCopy := make([]lineRecord, len(textRun))
-			copy(runCopy, textRun)
-			recordGroups = append(recordGroups, runCopy)
+			// resolve_target_level returned None: no line in the run
+			// matched a heading pattern. Emitting the whole run as one
+			// group (python pipeline's `record_groups.append(
+			// text_records.copy())`) collapses a heading-less book —
+			// e.g. a plain-prose txt or a PDF without bookmarks — into
+			// a single chunk and breaks retrieval. The classic python
+			// book chunker (rag/app/book.py) falls back to token-bounded
+			// naive_merge in exactly this case, so mirror that fallback
+			// here by packing the run with the same token budget the
+			// group variant uses (minGroupTokens/maxGroupTokens).
+			recordGroups = append(recordGroups, groupRecords(textRun, make([]int, len(textRun)), p)...)
 		} else {
 			indexed := make([]indexedLine, len(textRun))
 			for j := range textRun {
