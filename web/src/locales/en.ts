@@ -963,6 +963,7 @@ Paragraphs:
       randomSeedMessage: 'Random seed is required',
       entityTypes: 'Entity types',
       compilationTemplate: 'Operator',
+      compilationTemplateRequired: 'Please select an operator',
       createTemplate: 'Create template',
       scopeFile: 'File',
       vietnamese: 'Vietnamese',

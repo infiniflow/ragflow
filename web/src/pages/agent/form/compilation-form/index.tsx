@@ -6,6 +6,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialCompilationValues } from '../../constant/pipeline';
 import { useOwnerTenantId } from '../../context';
@@ -17,13 +18,23 @@ import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
-export const FormSchema = z.object({
-  compilation_template_group_id: z.string().optional(),
-  llm_id: z.string().optional(),
-  plan: z.boolean(),
-});
+function useFormSchema() {
+  const { t } = useTranslation();
 
-export type CompilationFormSchemaType = z.infer<typeof FormSchema>;
+  const FormSchema = z.object({
+    compilation_template_group_id: z
+      .string()
+      .min(1, t('knowledgeConfiguration.compilationTemplateRequired')),
+    llm_id: z.string().optional(),
+    plan: z.boolean(),
+  });
+
+  return FormSchema;
+}
+
+export type CompilationFormSchemaType = z.infer<
+  ReturnType<typeof useFormSchema>
+>;
 
 const outputList = buildOutputList(initialCompilationValues.outputs);
 
@@ -35,6 +46,7 @@ const CompilationForm = ({
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
   const { t } = useTranslate('setting');
+  const FormSchema = useFormSchema();
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
