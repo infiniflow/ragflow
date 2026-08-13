@@ -106,6 +106,18 @@ ragflow:
   deployment:
     strategy:
     resources:
+
+  # Port nginx listens on inside the container. A non-root container cannot bind
+  # a privileged port, so set this to 8080 on platforms that run the pod under an
+  # arbitrary UID (OpenShift restricted-v2). The Service keeps exposing port 80.
+  http:
+    port: 80
+
+  # Pod-level and container-level securityContext. Both are empty by default so
+  # the platform's own defaults apply; see README.md for an OpenShift example.
+  podSecurityContext: {}
+  securityContext: {}
+
   service:
     # Use LoadBalancer to expose the web interface externally
     type: ClusterIP
@@ -133,6 +145,13 @@ infinity:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext:
+    capabilities:
+      add:
+        - "NET_BIND_SERVICE"
+    seccompProfile:
+      type: RuntimeDefault
   service:
     type: ClusterIP
 
@@ -143,6 +162,15 @@ elasticsearch:
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
+    # Both init containers need privileges that a restricted PodSecurity policy
+    # such as OpenShift's restricted-v2 denies: `fixPermissions` chowns the data
+    # volume as root, `sysctl` needs a privileged container. Disable them there
+    # and instead let the storage class apply the fsGroup and set
+    # vm.max_map_count on the nodes (e.g. with a Machine Config / Tuned profile).
+    fixPermissions:
+      enabled: true
+    sysctl:
+      enabled: true
     alpine:
       repository: alpine
       tag: latest
@@ -154,12 +182,27 @@ elasticsearch:
   storage:
     className:
     capacity: 20Gi
+  # Extra elasticsearch.yml settings, merged over the chart defaults. Useful
+  # when the sysctl init container is disabled:
+  #   config:
+  #     node.store.allow_mmap: "false"
+  config: {}
   deployment:
     strategy:
     resources:
       requests:
         cpu: "4"
         memory: "16Gi"
+  podSecurityContext: {}
+  # IPC_LOCK and a fixed runAsUser are rejected by restricted policies; set this
+  # to {} there. The Elasticsearch image itself runs fine under an arbitrary UID
+  # as long as it belongs to group 0.
+  securityContext:
+    capabilities:
+      add:
+        - "IPC_LOCK"
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
   service:
     type: ClusterIP
 
@@ -170,6 +213,11 @@ opensearch:
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
+    # See the elasticsearch.initContainers comment above.
+    fixPermissions:
+      enabled: true
+    sysctl:
+      enabled: true
     alpine:
       repository: alpine
       tag: latest
@@ -181,12 +229,21 @@ opensearch:
   storage:
     className:
     capacity: 20Gi
+  # Extra opensearch.yml settings, merged over the chart defaults.
+  config: {}
   deployment:
     strategy:
     resources:
       requests:
         cpu: "4"
         memory: "16Gi"
+  podSecurityContext: {}
+  securityContext:
+    capabilities:
+      add:
+        - "IPC_LOCK"
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
   service:
     type: ClusterIP
 
@@ -203,6 +260,8 @@ minio:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext: {}
   service:
     type: ClusterIP
 
@@ -219,6 +278,8 @@ mysql:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext: {}
   service:
     type: ClusterIP
 
@@ -242,6 +303,8 @@ redis:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext: {}
   service:
     type: ClusterIP
 

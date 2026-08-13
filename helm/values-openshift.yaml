@@ -1,0 +1,66 @@
+# Overlay for OpenShift's restricted-v2 SCC, and for any cluster that enforces
+# the "restricted" Pod Security Standard.
+#
+#   helm upgrade --install ragflow ./helm -n ragflow \
+#     -f ./helm/values-openshift.yaml
+#
+# Such a cluster gives every pod a random UID from the namespace range plus
+# GID 0, refuses privileged and root containers, and drops all capabilities.
+#
+# Read helm/README.md before using this: MySQL still needs an image that
+# tolerates an arbitrary UID, and Elasticsearch needs either a node-level
+# vm.max_map_count or mmap turned off (done below).
+
+ragflow:
+  http:
+    # Port 80 is privileged and cannot be bound without NET_BIND_SERVICE.
+    port: 8080
+  # `null` removes the key that values.yaml sets, since Helm merges the two maps
+  # instead of replacing them. The platform picks the UID itself.
+  securityContext: &restricted
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: null
+    capabilities:
+      add: null
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+infinity:
+  securityContext: *restricted
+
+elasticsearch:
+  initContainers:
+    # Both need privileges the SCC denies.
+    fixPermissions:
+      enabled: false
+    sysctl:
+      enabled: false
+  config:
+    # Replaces the vm.max_map_count sysctl the init container used to set.
+    node.store.allow_mmap: "false"
+  securityContext: *restricted
+
+opensearch:
+  initContainers:
+    fixPermissions:
+      enabled: false
+    sysctl:
+      enabled: false
+  config:
+    node.store.allow_mmap: "false"
+  securityContext: *restricted
+
+minio:
+  securityContext: *restricted
+
+redis:
+  securityContext: *restricted
+
+# The upstream `mysql` image assumes UID 999 and cannot start under an arbitrary
+# UID. Either point the chart at an external database, or swap in an image that
+# supports it, for example registry.redhat.io/rhel9/mysql-84.
+mysql:
+  securityContext: *restricted

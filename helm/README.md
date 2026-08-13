@@ -119,6 +119,63 @@ ingress:
           pathType: Prefix
 ```
 
+## OpenShift and restricted Pod Security
+
+On OpenShift the default `restricted-v2` SCC runs every pod under a random UID
+taken from the namespace range, with GID 0 as the only supplementary group. Root
+containers, privileged containers and added capabilities are rejected. The same
+applies to any cluster that enforces the `restricted` Pod Security Standard.
+
+Install with the overlay:
+
+```bash
+helm upgrade --install ragflow ./helm -n ragflow \
+  -f ./helm/values-openshift.yaml
+```
+
+What the overlay changes:
+
+- `ragflow.http.port: 8080`, because a non-root process cannot bind port 80. The
+  Service still listens on 80, so Routes and Ingress are unaffected.
+- Drops the privileged `sysctl` init container of Elasticsearch and OpenSearch
+  and sets `node.store.allow_mmap: "false"` instead. If you prefer mmap, raise
+  `vm.max_map_count` on the nodes with a Machine Config or Tuned profile and
+  leave the setting out.
+- Drops the `chown` init container that fixed the data volume ownership. The
+  namespace `fsGroup` handles that on OpenShift.
+- Removes the hardcoded `runAsUser` and the `IPC_LOCK` capability, and sets
+  `runAsNonRoot`, `seccompProfile: RuntimeDefault` and `drop: [ALL]` everywhere.
+
+The RAGFlow image itself keeps its home directory, nginx pid, temp and log
+paths, and its writable state under `/ragflow`, owned by group 0. No `fsGroup`
+or SCC exception is needed for it.
+
+One limitation: `USE_DOCLING=true` installs Docling into the virtualenv on every
+start. The virtualenv stays read-only so the image does not carry a second copy
+of it, so that option needs an image with Docling already baked in.
+
+### MySQL
+
+The upstream `mysql` image assumes UID 999 and does not start under an arbitrary
+UID. Either use an external database:
+
+```yaml
+mysql:
+  enabled: false
+env:
+  MYSQL_HOST: mydb.example.com
+  MYSQL_PASSWORD: "<your-mysql-password>"
+```
+
+or point the chart at an image that supports it, for example:
+
+```yaml
+mysql:
+  image:
+    repository: registry.redhat.io/rhel9/mysql-84
+    tag: latest
+```
+
 ## Validate the Chart
 
 ```bash

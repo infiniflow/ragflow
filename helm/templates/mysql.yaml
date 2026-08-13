@@ -54,11 +54,19 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- end }}
+      {{- with (include "ragflow.compactYaml" .Values.mysql.podSecurityContext) }}
+      securityContext:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
       - name: mysql
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.mysql.image.repository) }}:{{ .Values.mysql.image.tag }}
         {{- with .Values.mysql.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with (include "ragflow.compactYaml" .Values.mysql.securityContext) }}
+        securityContext:
+          {{- . | nindent 10 }}
         {{- end }}
         envFrom:
           - secretRef:

@@ -68,6 +68,32 @@ Usage: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.foo.image.re
 {{- end }}
 
 {{/*
+Render a map as YAML, dropping keys whose value is null.
+
+Helm merges an override file into values.yaml instead of replacing it, so
+setting a key to null is the only way to remove a default. Without this the
+null survives into the manifest as an explicit `key: null`.
+
+Usage: {{ include "ragflow.compactYaml" .Values.foo.securityContext }}
+*/}}
+{{- define "ragflow.compactYaml" -}}
+{{- $out := dict -}}
+{{- range $key, $value := . -}}
+  {{- if kindIs "map" $value -}}
+    {{- $nested := include "ragflow.compactYaml" $value | fromYaml -}}
+    {{- if $nested -}}
+      {{- $_ := set $out $key $nested -}}
+    {{- end -}}
+  {{- else if not (kindIs "invalid" $value) -}}
+    {{- $_ := set $out $key $value -}}
+  {{- end -}}
+{{- end -}}
+{{- if $out -}}
+{{- toYaml $out -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Selector labels
 */}}
 {{- define "ragflow.selectorLabels" -}}

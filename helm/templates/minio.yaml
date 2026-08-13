@@ -53,11 +53,19 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- end }}
+      {{- with (include "ragflow.compactYaml" .Values.minio.podSecurityContext) }}
+      securityContext:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
       - name: minio
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.minio.image.repository) }}:{{ .Values.minio.image.tag }}
         {{- with .Values.minio.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with (include "ragflow.compactYaml" .Values.minio.securityContext) }}
+        securityContext:
+          {{- . | nindent 10 }}
         {{- end }}
         envFrom:
           - secretRef:

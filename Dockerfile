@@ -84,7 +84,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 # Copy nginx configuration for frontend serving
 # OpenResty installs to /usr/local/openresty/nginx/; create /etc/nginx/ symlink tree
-RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
+RUN mkdir -p /etc/nginx/conf.d /var/log/nginx /ragflow/nginx/conf.d /ragflow/nginx/tmp
 
 COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
 COPY docker/nginx/ragflow.conf.golang \
@@ -115,5 +115,33 @@ COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 
 # Set environment variables
 ENV HF_ENDPOINT=https://hf-mirror.com
+
+# Support an arbitrary, unknown UID at runtime (OpenShift's restricted-v2 SCC
+# and equivalent policies pick a random UID from the namespace range and put it
+# in group 0 only). Such a UID gets no passwd entry and cannot read /root, so
+# the home directory moves into /ragflow and group 0 gets the same rights as
+# the owner on everything written at runtime.
+ENV HOME=/ragflow \
+    NLTK_DATA=/ragflow/nltk_data \
+    XDG_CACHE_HOME=/ragflow/.cache \
+    XDG_CONFIG_HOME=/ragflow/.config
+
+RUN set -eux; \
+    writable="/ragflow/conf /ragflow/logs /ragflow/nginx /ragflow/nltk_data /ragflow/.cache /ragflow/.config /var/log/nginx"; \
+    for relpath in nltk_data .cache/stagehand .config/pip; do \
+        if [ -e "/root/${relpath}" ]; then \
+            mkdir -p "/ragflow/$(dirname "${relpath}")"; \
+            mv "/root/${relpath}" "/ragflow/${relpath}"; \
+        fi; \
+    done; \
+    mkdir -p ${writable}; \
+    # entrypoint.sh appends the runtime UID here so getpwuid() lookups resolve.
+    chmod g=u /etc/passwd; \
+    # /ragflow itself only needs to accept new entries; recursing into it would
+    # copy the whole virtualenv into this layer for no benefit, since everything
+    # copied in is world-readable already.
+    chgrp 0 /ragflow && chmod g=u /ragflow; \
+    chgrp -R 0 ${writable}; \
+    chmod -R g=u ${writable}
 
 ENTRYPOINT ["./entrypoint.sh"]
