@@ -1460,7 +1460,7 @@ export default {
         chat: 'Чат',
         embedding: 'Эмбеддинг',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',

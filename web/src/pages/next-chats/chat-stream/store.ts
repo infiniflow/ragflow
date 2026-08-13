@@ -44,7 +44,6 @@ export type ChatStreamState = {
   failStream(conversationId: string, pendingInput: string): void;
   consumePendingInput(conversationId: string): void;
   removeMessageById(conversationId: string, messageId: string): void;
-  truncateAfterMessage(conversationId: string, messageId: string): void;
   endStream(conversationId: string): void;
   stopStream(conversationId: string): void;
   removeSessions(conversationIds: string[]): void;
@@ -321,44 +320,6 @@ export const useChatStreamStore = create<ChatStreamState>()(
           },
           false,
           'removeMessageById',
-        );
-      },
-
-      truncateAfterMessage: (conversationId, messageId) => {
-        if (!conversationId) return;
-        set(
-          (state) => {
-            const previous = state.sessions[conversationId];
-            if (!previous) return state;
-
-            const index = previous.messages.findIndex(
-              (x) => x.id === messageId,
-            );
-            if (index === -1) return state;
-
-            const kept = previous.messages.slice(0, index + 2);
-            const latest = kept.at(-1);
-            const messages = latest
-              ? [
-                  ...kept.slice(0, -1),
-                  {
-                    ...latest,
-                    content: '',
-                    reference: undefined,
-                    prompt: undefined,
-                  },
-                ]
-              : kept;
-
-            return {
-              sessions: {
-                ...state.sessions,
-                [conversationId]: { ...previous, messages },
-              },
-            };
-          },
-          false,
-          'truncateAfterMessage',
         );
       },
 

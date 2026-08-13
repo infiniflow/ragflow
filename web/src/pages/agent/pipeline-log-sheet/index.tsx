@@ -75,6 +75,12 @@ export function PipelineLogSheet({
                     uploadedFileData?.created_by,
                   [PipelineResultSearchParams.DocumentExtension]:
                     uploadedFileData?.extension,
+                  [PipelineResultSearchParams.DocumentName]:
+                    uploadedFileData?.name,
+                  [PipelineResultSearchParams.DocumentSize]:
+                    uploadedFileData?.size,
+                  [PipelineResultSearchParams.DocumentCreatedAt]:
+                    uploadedFileData?.created_at,
                 })}
               >
                 {t('flow.viewResult')} <ArrowUpRight />
