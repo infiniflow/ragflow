@@ -320,6 +320,7 @@ def _init_crypto_storage(storage_impl, *, crypto_enabled, algorithm, crypto_key)
     unchanged.
     """
     if not crypto_enabled:
+        logging.info("Encrypted storage is disabled; using plaintext storage")
         return storage_impl
     from rag.utils.encrypted_storage import create_encrypted_storage
 

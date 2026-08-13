@@ -458,7 +458,7 @@ class TestPastedKeyBeatsEnvVar:
         mdl = SoMarkOcrModel(key="sk-somark-pasted-wins", model_name="SoMark-model")
         assert mdl.api_key == "sk-somark-pasted-wins"
 
-    def test_somark_falls_back_to_env_var_when_no_pasted_key(self, monkeypatch):
+    def test_somark_config_key_wins_over_env_var(self, monkeypatch):
         # When the user pastes a JSON config (not a raw secret), the
         # env var should still be honored if SOMARK_API_KEY is set.
         monkeypatch.setenv("SOMARK_API_KEY", "sk-env-var-fallback")
@@ -469,6 +469,18 @@ class TestPastedKeyBeatsEnvVar:
         # Config-provided key wins over env var (config precedence is
         # above env-var precedence in _resolve).
         assert mdl.api_key == "sk-from-config"
+
+    def test_somark_falls_back_to_env_var_when_no_explicit_key(self, monkeypatch):
+        # When the user pastes an empty config and no raw secret, the
+        # env var is the only source of credentials. Pre-fix, the
+        # precedence was env > config-default, so this was the
+        # "happy" fallback path. Post-fix, the env var still wins
+        # when the config has no explicit key (the fix only changes
+        # the case where a raw secret or explicit config key is
+        # present).
+        monkeypatch.setenv("SOMARK_API_KEY", "sk-env-var-fallback")
+        mdl = SoMarkOcrModel(key=json.dumps({}), model_name="SoMark-model")
+        assert mdl.api_key == "sk-env-var-fallback"
 
     def test_mistral_pasted_key_wins_over_env_var(self, monkeypatch):
         monkeypatch.setenv("MISTRAL_OCR_API_KEY", "sk-mistral-env-should-lose")
