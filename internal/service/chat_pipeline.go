@@ -2658,7 +2658,7 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, texts, e.embModel.APIConfig, config, nil)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
