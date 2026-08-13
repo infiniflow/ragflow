@@ -3468,8 +3468,8 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 }
 
 // APIListSyncLogsCommand lists sync logs (user mode).
-// LIST SYNC LOGS; lists the sync logs of all datasets.
-// LIST SYNC LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC LOGS;
+// LIST SYNC_LOGS; lists the sync logs of all datasets.
+// LIST SYNC_LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC_LOGS;
 // restrict the listing to one dataset.
 func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {

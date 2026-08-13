@@ -179,16 +179,16 @@ func TestParseListSyncLogs(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:  "LIST SYNC LOGS",
-			input: "LIST SYNC LOGS;",
+			name:  "LIST SYNC_LOGS",
+			input: "LIST SYNC_LOGS;",
 			expected: &Command{
 				Type:   "api_list_sync_logs",
 				Params: map[string]interface{}{},
 			},
 		},
 		{
-			name:  "LIST SYNC LOGS FROM dataset_id",
-			input: "LIST SYNC LOGS FROM 'kb-1';",
+			name:  "LIST SYNC_LOGS FROM dataset_id",
+			input: "LIST SYNC_LOGS FROM 'kb-1';",
 			expected: &Command{
 				Type: "api_list_sync_logs",
 				Params: map[string]interface{}{
@@ -197,8 +197,8 @@ func TestParseListSyncLogs(t *testing.T) {
 			},
 		},
 		{
-			name:  "LIST DATASET name SYNC LOGS",
-			input: "LIST DATASET 'my dataset' SYNC LOGS;",
+			name:  "LIST DATASET name SYNC_LOGS",
+			input: "LIST DATASET 'my dataset' SYNC_LOGS;",
 			expected: &Command{
 				Type: "api_list_sync_logs",
 				Params: map[string]interface{}{
@@ -207,8 +207,8 @@ func TestParseListSyncLogs(t *testing.T) {
 			},
 		},
 		{
-			name:  "LIST SYNC LOGS WITH page and page_size",
-			input: "LIST SYNC LOGS WITH PAGE 2 PAGE_SIZE 50;",
+			name:  "LIST SYNC_LOGS WITH page and page_size",
+			input: "LIST SYNC_LOGS WITH PAGE 2 PAGE_SIZE 50;",
 			expected: &Command{
 				Type: "api_list_sync_logs",
 				Params: map[string]interface{}{
@@ -218,8 +218,8 @@ func TestParseListSyncLogs(t *testing.T) {
 			},
 		},
 		{
-			name:  "LIST SYNC LOGS FROM dataset_id WITH page",
-			input: "LIST SYNC LOGS FROM 'kb-1' WITH PAGE 3;",
+			name:  "LIST SYNC_LOGS FROM dataset_id WITH page",
+			input: "LIST SYNC_LOGS FROM 'kb-1' WITH PAGE 3;",
 			expected: &Command{
 				Type: "api_list_sync_logs",
 				Params: map[string]interface{}{
@@ -229,8 +229,8 @@ func TestParseListSyncLogs(t *testing.T) {
 			},
 		},
 		{
-			name:  "LIST DATASET name SYNC LOGS WITH page_size",
-			input: "LIST DATASET 'my dataset' SYNC LOGS WITH PAGE_SIZE 20;",
+			name:  "LIST DATASET name SYNC_LOGS WITH page_size",
+			input: "LIST DATASET 'my dataset' SYNC_LOGS WITH PAGE_SIZE 20;",
 			expected: &Command{
 				Type: "api_list_sync_logs",
 				Params: map[string]interface{}{
@@ -241,17 +241,17 @@ func TestParseListSyncLogs(t *testing.T) {
 		},
 		{
 			name:    "unknown WITH option",
-			input:   "LIST SYNC LOGS WITH FOO 1;",
+			input:   "LIST SYNC_LOGS WITH FOO 1;",
 			wantErr: true,
 		},
 		{
 			name:    "non-integer WITH option",
-			input:   "LIST SYNC LOGS WITH PAGE 'x';",
+			input:   "LIST SYNC_LOGS WITH PAGE 'x';",
 			wantErr: true,
 		},
 		{
 			name:    "comma-separated WITH options",
-			input:   "LIST SYNC LOGS WITH PAGE 2, PAGE_SIZE 50;",
+			input:   "LIST SYNC_LOGS WITH PAGE 2, PAGE_SIZE 50;",
 			wantErr: true,
 		},
 	}

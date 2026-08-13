@@ -150,8 +150,8 @@ LIST DATASETS;
 DROP DATASET 'my_dataset';
 
 -- Data sync logs
-LIST SYNC LOGS;
-LIST DATASET 'my_dataset' SYNC LOGS;
+LIST SYNC_LOGS;
+LIST DATASET 'my_dataset' SYNC_LOGS;
 
 -- Model configuration
 SET DEFAULT LLM 'gpt-4';

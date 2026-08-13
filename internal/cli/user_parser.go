@@ -151,7 +151,7 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListAllModels()
 	case TokenIngestion:
 		return p.parseAPIListIngestionTasks()
-	case TokenSync:
+	case TokenSyncLogs:
 		return p.parseAPIListSyncLogs()
 	case TokenDefault:
 		return p.parseAPIListDefaultModels()
@@ -196,7 +196,7 @@ func (p *Parser) parseAPIListDatasetCommands() (*Command, error) {
 		return p.parseAPIListDatasetFiles(datasetID)
 	case TokenIngestion:
 		return p.parseAPIListDatasetIngestionTasks(datasetID)
-	case TokenSync:
+	case TokenSyncLogs:
 		return p.parseAPIListDatasetSyncLogs(datasetID)
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
@@ -246,17 +246,11 @@ func (p *Parser) parseAPIListDatasetIngestionTasks(datasetName string) (*Command
 	return cmd, nil
 }
 
-// LIST SYNC LOGS;
-// LIST SYNC LOGS FROM 'dataset_id'
-// LIST SYNC LOGS [FROM 'dataset_id'] WITH PAGE 2 PAGE_SIZE 50
+// LIST SYNC_LOGS;
+// LIST SYNC_LOGS FROM 'dataset_id'
+// LIST SYNC_LOGS [FROM 'dataset_id'] WITH PAGE 2 PAGE_SIZE 50
 func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
-	p.nextToken() // consume SYNC
-
-	if p.curToken.Type != TokenLogs {
-		return nil, fmt.Errorf("expected LOGS")
-	}
-
-	p.nextToken() // consume LOGS
+	p.nextToken() // consume SYNC_LOGS
 
 	cmd := NewCommand("api_list_sync_logs")
 
@@ -281,15 +275,9 @@ func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
 	return cmd, nil
 }
 
-// LIST DATASET 'dataset_name' SYNC LOGS [WITH PAGE 2 PAGE_SIZE 50];
+// LIST DATASET 'dataset_name' SYNC_LOGS [WITH PAGE 2 PAGE_SIZE 50];
 func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, error) {
-	p.nextToken() // consume SYNC
-
-	if p.curToken.Type != TokenLogs {
-		return nil, fmt.Errorf("expected LOGS")
-	}
-
-	p.nextToken() // consume LOGS
+	p.nextToken() // consume SYNC_LOGS
 
 	cmd := NewCommand("api_list_sync_logs")
 	cmd.Params["dataset_name"] = datasetName
