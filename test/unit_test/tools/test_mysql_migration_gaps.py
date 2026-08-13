@@ -33,6 +33,17 @@ _build_instance_extra = TenantModelInstanceStage._build_instance_extra
 _assign_instance_names = TenantModelInstanceStage._assign_instance_names
 
 
+def _dedup(records):
+    """Wrap the bound ``_dedup_api_key_records`` instance method so the
+    static-style tests can call it without a full instance (no DB).
+    """
+    instance = TenantModelInstanceStage.__new__(TenantModelInstanceStage)
+    # _dedup_api_key_records only touches self._strip_is_tools_from_api_key.
+    # Bind the underlying function (not the bound method, which double-passes self).
+    instance._strip_is_tools_from_api_key = TenantModelInstanceStage._strip_is_tools_from_api_key
+    return instance._dedup_api_key_records(records)
+
+
 # ---------------------------------------------------------------------------
 # _build_instance_extra
 # ---------------------------------------------------------------------------
@@ -272,6 +283,57 @@ class TestInsertRowShape:
         assert names[1] != "default"
         assert json.loads(extras[0]) == {"base_url": "https://a.test"}
         assert json.loads(extras[1]) == {"base_url": "https://b.test"}
+
+
+# ---------------------------------------------------------------------------
+# _dedup_api_key_records
+# ---------------------------------------------------------------------------
+
+
+class TestDedupApiKeyRecords:
+    """The migration SELECT returns 6 columns
+    (tenant_id, llm_factory, api_key, status, provider_id, api_base) but the
+    original dedup unpacked only 5 — raising ``ValueError: too many values to
+    unpack`` on every call. These tests pin the 6-tuple shape.
+    """
+
+    def test_six_tuple_does_not_raise(self):
+        records = [
+            _rec("t1", "OpenAI", "sk-aaa", api_base="https://a.test"),
+        ]
+        # Should not raise ValueError
+        result = _dedup(records)
+        assert result == records
+
+    def test_keeps_all_rows_when_no_dupes(self):
+        records = [
+            _rec("t1", "OpenAI", "sk-aaa", api_base="https://a.test"),
+            _rec("t1", "OpenAI", "sk-bbb", api_base="https://b.test"),
+            _rec("t1", "Anthropic", "sk-ccc", api_base=None),
+        ]
+        result = _dedup(records)
+        assert len(result) == 3
+
+    def test_merges_is_tools_only_differences(self):
+        # Two rows that differ only in the ``is_tools`` wrapper around the
+        # same logical api_key should collapse to one.
+        records = [
+            _rec("t1", "OpenAI", '{"api_key": "sk-aaa"}', api_base="https://a.test"),
+            _rec("t1", "OpenAI", '{"api_key": "sk-aaa", "is_tools": true}', api_base="https://a.test"),
+        ]
+        result = _dedup(records)
+        assert len(result) == 1
+        assert result[0][2] == '{"api_key": "sk-aaa"}'
+
+    def test_preserves_api_base(self):
+        records = [
+            _rec("t1", "OpenAI", "sk-aaa", api_base="https://a.test"),
+            _rec("t1", "OpenAI", "sk-bbb", api_base="https://b.test"),
+        ]
+        result = _dedup(records)
+        # All rows kept (different api_keys), api_base preserved
+        assert result[0][5] == "https://a.test"
+        assert result[1][5] == "https://b.test"
 
 
 if __name__ == "__main__":
