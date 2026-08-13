@@ -3,20 +3,21 @@
 import asyncio
 import logging
 
-from rag.advanced_rag.harness.types import (
-    ClaimTarget,
-    AgentResult,
-    OrchestratorContext,
-)
-from rag.advanced_rag.harness.config import get_mode
-from rag.advanced_rag.harness.pipeline import Pipeline
 from rag.advanced_rag.harness.agent import research_agent_loop
+from rag.advanced_rag.harness.config import get_mode
+from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
+from rag.advanced_rag.harness.pipeline import Pipeline
+from rag.advanced_rag.harness.stats import in_phase, record_round, record_round_claims
 from rag.advanced_rag.harness.sufficiency import (
-    cross_check_claim,
     compute_fusion_score,
+    cross_check_claim,
     route_sufficiency_verdict,
 )
-from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
+from rag.advanced_rag.harness.types import (
+    AgentResult,
+    ClaimTarget,
+    OrchestratorContext,
+)
 
 _LOG = logging.getLogger(__name__)
 CLAIM_RESEARCH_TIMEOUT_SECONDS = 180
@@ -51,6 +52,7 @@ def _discovered_entity(tools) -> str | None:
     return None
 
 
+@in_phase("orchestrator")
 async def agentic_research(state: dict, tools) -> dict:
     """Two-level loop for high/ultra modes."""
     question = state.get("question", "")
@@ -76,12 +78,16 @@ async def agentic_research(state: dict, tools) -> dict:
     _STAGNATION_CYCLES = 2  # rounds with no meaningful gain before giving up
     _STAGNATION_GAIN = 0.05  # minimum fusion-score improvement to count
 
+    rounds_run = 0
     for cycle in range(mode.max_orchestrator_cycles):
+        rounds_run = cycle + 1
         ctx.iteration = cycle
+        record_round("orchestrator")
         _LOG.info("[Agentic research] Research round %d of %d — %d step(s) still unanswered.", cycle + 1, mode.max_orchestrator_cycles, sum(1 for c in ctx.claims if not c.is_verified))
 
         # ── Step A: Research unverified claims (parallel if mode allows) ──
         unverified = [c for c in ctx.claims if not c.is_verified]
+        record_round_claims("claim_research", len(unverified))
 
         if unverified:
             # Consume Phase-2 follow-up queries (missing-pieces feedback) ONCE for
@@ -206,6 +212,32 @@ async def agentic_research(state: dict, tools) -> dict:
         if boost:
             _LOG.info("[Agentic research] Round %d: AutoRater is_sufficient=%s confidence=%.2f", cycle + 1, boost.get("is_sufficient"), boost.get("confidence", 1.0))
 
+        # LLM groundedness review (Google "draft review" thought): check whether each
+        # claim's report is semantically supported by the cited evidence. Ungrounded
+        # claims (hallucinated / over-claimed drafts) are merged into hard_violations
+        # so the decision ladder forces a caveated answer — this catches relation/over-
+        # claim errors that the lexical code-level grounded check (cross_check_claim)
+        # cannot see.
+        from rag.advanced_rag.harness.orchestrator.grounded_llm import llm_grounded_verify
+
+        grounded = await llm_grounded_verify(
+            tools,
+            ctx.question,
+            [(r.claim_id, r.report or "") for r in agent_results_list if r.report],
+            cited_ids,
+        )
+        # Treat a claim as violating when it is explicitly grounded=False OR has
+        # non-empty ungrounded assertions (covers the degenerate grounded=False /
+        # empty-ungrounded case too). Only accept IDs present in the original
+        # claims collection — the LLM may echo a bogus claim_id that must not leak
+        # into hard_violations.
+        valid_claim_ids = {r.claim_id for r in agent_results_list}
+        ungrounded_ids = [cid for cid, g in grounded.items() if cid in valid_claim_ids and (g.get("grounded") is False or g.get("ungrounded"))]
+        if ungrounded_ids:
+            existing = set(verdict.hard_violations or [])
+            verdict.hard_violations = list(existing | set(ungrounded_ids))
+            _LOG.info("[Agentic research] Round %d: %d claim(s) have ungrounded (draft-review) assertions: %s", cycle + 1, len(ungrounded_ids), ungrounded_ids)
+
         action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
@@ -236,12 +268,12 @@ async def agentic_research(state: dict, tools) -> dict:
         _LOG.info("[Agentic research] Round %d: evidence looks %s (confidence %.0f%%) — next: %s", cycle + 1, verdict.status, verdict.score * 100, action)
 
         if action == "ANSWER":
-            return _finalize(ctx, tools, partial=False)
+            return _finalize(ctx, tools, partial=False, loop=rounds_run)
         if action == "ANSWER_PARTIAL":
-            return _finalize(ctx, tools, partial=True)
+            return _finalize(ctx, tools, partial=True, loop=rounds_run)
         if action == "ABSTAIN":
             tools.kbinfos["chunks"] = []
-            return {"verdict": verdict.__dict__, "abstain": True}
+            return {"verdict": verdict.__dict__, "abstain": True, "loop": rounds_run}
         if action == "REPLAN":
             # Ultra: re-plan on low score. Ground the new plan on the evidence
             # gathered so far, and carry still-valid verified claims over so a
@@ -263,10 +295,10 @@ async def agentic_research(state: dict, tools) -> dict:
             seen = {c.description for c in verified}
             ctx.claims = verified + [c for c in new_by_desc.values() if c.description not in seen]
         if action == "FALLBACK_LLM":
-            return _finalize(ctx, tools, partial=True, fallback=True)
+            return _finalize(ctx, tools, partial=True, fallback=True, loop=rounds_run)
 
     # Max cycles reached
-    return _finalize(ctx, tools, partial=True)
+    return _finalize(ctx, tools, partial=True, loop=rounds_run)
 
 
 async def _run_claim_research(
@@ -286,7 +318,7 @@ async def _run_claim_research(
         )
     except asyncio.CancelledError:
         raise
-    except asyncio.TimeoutError:
+    except TimeoutError:
         _LOG.warning(
             '[Agentic research] Gave up on "%s" — it took longer than %ss.',
             _snip(claim.description),
@@ -322,12 +354,13 @@ async def _run_claim_research(
     return result
 
 
-def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False) -> dict:
+def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False, loop: int = 0) -> dict:
     """Merge agent results into kbinfos and return."""
     _merge_agent_results(ctx, tools)
     return {
         "verdict": ctx.verdict.__dict__ if ctx.verdict else None,
         "partial_answer": partial or fallback,
+        "loop": loop,
         "kbinfos": tools.kbinfos,
     }
 
@@ -426,8 +459,8 @@ async def _add_template_group_compilations(comps: set[str], parser_config: dict,
     if not tenant_id:
         return
     try:
-        from common.misc_utils import thread_pool_exec
         from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+        from common.misc_utils import thread_pool_exec
         from rag.svr.task_executor_refactor.chunk_post_processor import (
             _parser_config_compilation_template_group_ids,
         )

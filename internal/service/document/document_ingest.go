@@ -136,13 +136,14 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
-				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+				var exists bool
+				exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 				if err != nil {
 					common.Error(fmt.Sprintf("go side, doc %s, ChunkStoreExists failed", doc.ID), err)
 					return common.CodeExceptionError, err
 				}
 				if exists {
-					if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+					if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
 						common.Error(fmt.Sprintf("go side, doc %s, DeleteChunks failed", doc.ID), err)
 						return common.CodeExceptionError, err
 					}

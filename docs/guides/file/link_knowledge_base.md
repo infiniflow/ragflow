@@ -14,7 +14,6 @@ The file management page allows you to add files directly to a knowledge base. A
 
 ![Parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
 
-![File chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
 
 ## Link a Single File
 

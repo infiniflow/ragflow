@@ -7,6 +7,7 @@
         "params": {
           "compilation_template_group_id": "",
           "llm_id": "",
+          "plan": false,
           "outputs": {
             "chunks": {
               "type": "Array<Object>",
@@ -411,6 +412,7 @@
           "form": {
             "compilation_template_group_id": "",
             "llm_id": "",
+            "plan": false,
             "outputs": {
               "chunks": {
                 "type": "Array<Object>",

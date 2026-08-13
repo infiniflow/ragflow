@@ -81,6 +81,7 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 
 func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 	tenantEmbdID := "42"
+	staleTenantEmbdID := "stale-id"
 
 	tests := []struct {
 		name     string
@@ -89,12 +90,20 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "uses tenant embedding id before embd id",
+			name: "resolves tenant embedding id to base model name",
 			kb: &entity.Knowledgebase{
 				EmbdID:       "shared-model",
 				TenantEmbdID: &tenantEmbdID,
 			},
-			want: "tenant:42",
+			want: "embd:BAAI/bge-m3",
+		},
+		{
+			name: "stale tenant embedding id falls back to composite base name",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "BAAI/bge-m3@1@SILICONFLOW",
+				TenantEmbdID: &staleTenantEmbdID,
+			},
+			want: "embd:BAAI/bge-m3",
 		},
 		{
 			name: "uses embd id without tenant embedding id",
@@ -117,11 +126,29 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 			},
 			want: "embd:shared-model",
 		},
+		{
+			name: "legacy composite reduces to base model name",
+			kb: &entity.Knowledgebase{
+				EmbdID: "BAAI/bge-m3@2@SILICONFLOW",
+			},
+			want: "embd:BAAI/bge-m3",
+		},
+	}
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModel{}); err != nil {
+		t.Fatalf("failed to migrate test schema: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{ID: "42", ModelName: "BAAI/bge-m3"}).Error; err != nil {
+		t.Fatalf("failed to seed tenant_model: %v", err)
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := knowledgebaseEmbeddingKey(tt.kb, tt.tenantID); got != tt.want {
+			if got := knowledgebaseEmbeddingKey(t.Context(), db, tt.kb, tt.tenantID, map[string]string{}); got != tt.want {
 				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
 			}
 		})
@@ -1248,10 +1275,10 @@ func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models
 func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(context.Context, *string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, models.EmbedRequest, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(context.Context, *string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, models.RerankRequest, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
 func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {

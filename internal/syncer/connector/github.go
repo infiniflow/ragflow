@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -308,6 +309,7 @@ func (s *githubSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		documents = append(documents, s.buffer[:n]...)
 		s.buffer = s.buffer[n:]
 	}
+
 	for len(documents) < s.batchSize {
 		if s.repoIndex >= len(s.repos) {
 			if len(documents) == 0 {
@@ -516,6 +518,9 @@ type githubPullRequest struct {
 // toSourceDocument converts a pull request into the syncer model.
 func (p githubPullRequest) toSourceDocument(repo string) SourceDocument {
 	body := []byte(p.Body)
+	labels := githubLabelNames(p.Labels)
+	user := p.User.metadata()
+	assignees := githubUsersMetadata(p.Assignees)
 	return SourceDocument{
 		SourceID:           p.HTMLURL,
 		SemanticIdentifier: fmt.Sprintf("%d:%s", p.Number, sanitizeGitHubName(p.Title, "md")),
@@ -529,10 +534,22 @@ func (p githubPullRequest) toSourceDocument(repo string) SourceDocument {
 			"state":       p.State,
 			"repo":        repo,
 			"merged":      strconv.FormatBool(p.MergedAt != nil),
-			"labels":      githubLabelNames(p.Labels),
-			"user":        p.User.metadata(),
-			"assignees":   githubUsersMetadata(p.Assignees),
+			"labels":      labels,
+			"user":        user,
+			"assignees":   assignees,
 		},
+		Fingerprint: stableFingerprint(map[string]any{
+			"type":       "PullRequest",
+			"url":        p.HTMLURL,
+			"title":      p.Title,
+			"body":       p.Body,
+			"state":      p.State,
+			"updated_at": p.UpdatedAt.UTC(),
+			"merged_at":  p.MergedAt,
+			"labels":     labels,
+			"user":       user,
+			"assignees":  assignees,
+		}),
 	}
 }
 
@@ -554,6 +571,9 @@ type githubIssue struct {
 // toSourceDocument converts an issue into the syncer model.
 func (i githubIssue) toSourceDocument(repo string) SourceDocument {
 	body := []byte(i.Body)
+	labels := githubLabelNames(i.Labels)
+	user := i.User.metadata()
+	assignees := githubUsersMetadata(i.Assignees)
 	return SourceDocument{
 		SourceID:           i.HTMLURL,
 		SemanticIdentifier: fmt.Sprintf("%d:%s", i.Number, sanitizeGitHubName(i.Title, "md")),
@@ -566,10 +586,22 @@ func (i githubIssue) toSourceDocument(repo string) SourceDocument {
 			"id":          strconv.Itoa(i.Number),
 			"state":       i.State,
 			"repo":        repo,
-			"labels":      githubLabelNames(i.Labels),
-			"user":        i.User.metadata(),
-			"assignees":   githubUsersMetadata(i.Assignees),
+			"labels":      labels,
+			"user":        user,
+			"assignees":   assignees,
 		},
+		Fingerprint: stableFingerprint(map[string]any{
+			"type":       "Issue",
+			"url":        i.HTMLURL,
+			"title":      i.Title,
+			"body":       i.Body,
+			"state":      i.State,
+			"updated_at": i.UpdatedAt.UTC(),
+			"closed_at":  i.ClosedAt,
+			"labels":     labels,
+			"user":       user,
+			"assignees":  assignees,
+		}),
 	}
 }
 
@@ -609,16 +641,31 @@ func githubLabelNames(labels []githubLabel) []string {
 			out = append(out, label.Name)
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 
 // githubUsersMetadata returns metadata for users.
 func githubUsersMetadata(users []githubUser) []map[string]string {
+	users = append([]githubUser(nil), users...)
+	sort.Slice(users, func(i, j int) bool {
+		return githubUserSortKey(users[i]) < githubUserSortKey(users[j])
+	})
 	out := make([]map[string]string, 0, len(users))
 	for i := range users {
 		out = append(out, (&users[i]).metadata())
 	}
 	return out
+}
+
+func githubUserSortKey(user githubUser) string {
+	if user.Login != "" {
+		return user.Login
+	}
+	if user.Email != "" {
+		return user.Email
+	}
+	return user.Name
 }
 
 // hasNextPage reports whether a GitHub Link header has rel next.
@@ -676,7 +723,7 @@ func configBoolDefault(value any, fallback bool) bool {
 	return fallback
 }
 
-// sanitizeGitHubName mirrors Python's sanitized markdown filename intent.
+// sanitizeGitHubName mirrors Python's sanitized Markdown filename intent.
 func sanitizeGitHubName(name, extension string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {

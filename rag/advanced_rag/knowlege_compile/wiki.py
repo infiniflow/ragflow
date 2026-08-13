@@ -2611,7 +2611,7 @@ WIKI_TEMPLATE_EXAMPLE = (
     "   Put every heading on its own line and separate every paragraph with a blank line.\n"
     "3. Bold key terms on first use; link them with [[ ]] wikilinks.\n"
     "4. Examples or implications where the source provides them.\n"
-    "5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n\n"
+    '5. End with a "## See also" section listing wikilinks to highly related pages (less than 12).\n\n'
     "Page structure could be as following:\n(Not provided)"
 )
 
@@ -2995,7 +2995,6 @@ async def _wiki_build_source_context(
 
     chunk_map = await _wiki_load_chunks_by_id(chunk_ids, tenant_id, kb_id)
     if not chunk_map:
-        print("chunk_map::::::::::::::", chunk_ids, tenant_id, kb_id, flush=True)
         return "(source chunks could not be loaded)"
 
     parts: list[str] = []

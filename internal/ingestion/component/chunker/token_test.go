@@ -607,7 +607,7 @@ func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
 		c := &TokenChunkerComponent{}
 		c.param.ChunkTokenSize = 128
 		c.param.OverlappedPercent = 0
-		out := c.mergeByTokenSize(text, nil)
+		out := c.mergeByTokenSize(text, nil, nil)
 		raw, ok := out["chunks"].([]map[string]any)
 		if !ok {
 			t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -652,7 +652,7 @@ func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
 	c := &TokenChunkerComponent{}
 	c.param.ChunkTokenSize = 128
 	c.param.OverlappedPercent = 0
-	out := c.mergeByTokenSize("A\n\n\nB", nil)
+	out := c.mergeByTokenSize("A\n\n\nB", nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -681,7 +681,7 @@ func TestMergeByTokenSize_OversizeDropsDelimiters(t *testing.T) {
 	c.param.ChunkTokenSize = 5
 	c.param.OverlappedPercent = 0
 	text := "第一句。第二句。第三句。第四句。第五句。"
-	out := c.mergeByTokenSize(text, nil)
+	out := c.mergeByTokenSize(text, nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -712,7 +712,7 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	// dropped, mirroring Python, so the blank line must not survive.
 	block := strings.Repeat("知识库检索增强生成技术", 7) // 70 chars
 	text := block + "\n\n" + block
-	out := c.mergeByTokenSize(text, nil)
+	out := c.mergeByTokenSize(text, nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)

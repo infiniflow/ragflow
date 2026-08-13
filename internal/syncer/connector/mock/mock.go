@@ -32,6 +32,7 @@ type Connector struct {
 	FetchBlobs   map[string][]byte
 	OnSyncBatch  func(index int)
 	OnPruneBatch func(index int)
+	SyncRequests []syncerconnector.SyncRequest
 }
 
 // Validate returns the configured validation error.
@@ -41,6 +42,7 @@ func (c *Connector) Validate(ctx context.Context) error {
 
 // OpenSync opens a mock sync session.
 func (c *Connector) OpenSync(ctx context.Context, request syncerconnector.SyncRequest) (syncerconnector.SyncSession, error) {
+	c.SyncRequests = append(c.SyncRequests, request)
 	return &SyncSession{connector: c}, nil
 }
 

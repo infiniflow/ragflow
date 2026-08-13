@@ -57,9 +57,17 @@ const (
 // can re-apply the same tombstone handling as the broker-based design without
 // re-reading the queue. The backlog is an ordered log; the last event for a
 // given doc (by append order) wins, so no sequence number is needed.
+//
+// Variants records the compile types (tree/structure/wiki/mindmap) produced by
+// the doc-level compile for this doc, so the consumer can group a claimed batch
+// into per-variant sub-batches and dispatch each to its own dataset-level
+// compile path. It is empty (nil) for deleted events and for events published
+// before this field existed; the consumer treats a nil/empty Variants as
+// "unknown/legacy" and falls back to the legacy unified path.
 type BacklogEntry struct {
-	DocID     string `json:"doc_id"`
-	EventType string `json:"event_type"`
+	DocID     string   `json:"doc_id"`
+	EventType string   `json:"event_type"`
+	Variants  []string `json:"variants,omitempty"`
 }
 
 // ClaimResult is returned by Scheduler.Claim: the KB's tenant plus the closed
@@ -83,7 +91,9 @@ type Publisher interface {
 	// Publish records one doc event in the dataset's durable backlog and wakes
 	// idle workers. It is transactional so concurrent publishers do not clobber
 	// each other's backlog, and it always pairs the append with a notify.
-	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error
+	// variants carries the doc-level compile types (tree/structure/wiki/mindmap)
+	// for completed events; it is nil for deleted events.
+	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error
 }
 
 // Claimer is the consumer-side role (Option E §11.5). A cluster of competing
@@ -113,6 +123,26 @@ type Claimer interface {
 	// live, so a stale worker whose lease was reclaimed cannot overwrite the
 	// status of the worker that took over.
 	SetError(ctx context.Context, datasetID, token, errMsg string) error
+
+	// CancelInflight drops the live claim for a dataset back into the backlog so
+	// a rewrite can start from a clean index. The token is intentionally NOT
+	// checked: this is the rewrite's authoritative cancel. Workers verify their
+	// claim token inside the dataset write lock before every destructive write, so
+	// a cancelled worker cannot write after the rebuild clears storage. It is a safe no-op when
+	// there is no live lease (the dataset is idle or already drained). The dropped
+	// batch is re-marked pending (not deleted) so it is reclaimed and re-checked
+	CancelInflight(ctx context.Context, datasetID, token string) error
+
+	// WithDatasetLock executes fn while holding an exclusive per-dataset lock
+	// that serializes against both writer side effects and dataset rebuilds
+	// (RebuildDataset). It is the synchronization that closes the TOCTOU gap
+	// between a worker's claim validation and its destructive write: the caller
+	// must compare its claim token and perform the write inside fn. fn
+	// runs inside a transaction that holds the dataset row lock for its whole
+	// duration (MySQL) or a per-row mutex (Fake), so rebuild and writes are
+	// mutually exclusive. claimToken is read under the lock; the caller must not
+	// re-read it on a separate connection.
+	WithDatasetLock(ctx context.Context, datasetID string, fn func(claimToken string) error) error
 
 	// SubscribeNotify returns a channel of dataset ids pushed by Publish, or nil
 	// when the implementation has no push wake-up (callers fall back to polling).
@@ -183,11 +213,28 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 // workers. The append is transactional (concurrent publishers do not clobber
 // each other's backlog), and the notify is always paired with the append so a
 // producer never needs a separate Notify call.
-func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string) error {
+func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
+	return s.publish(ctx, tenantID, datasetID, docID, eventType, variants)
+}
+
+// loadRow fetches the dataset scheduling row (no lock). Returns nil (no error)
+// when the row does not exist yet.
+func (s *mysqlScheduler) loadRow(ctx context.Context, datasetID string) (*entity.KnowledgeCompileDataset, error) {
+	var row entity.KnowledgeCompileDataset
+	if err := s.db.WithContext(ctx).Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
 	if s.db == nil {
 		return nil
 	}
-	entry := BacklogEntry{DocID: docID, EventType: eventType}
+	entry := BacklogEntry{DocID: docID, EventType: eventType, Variants: variants}
 	// KnowledgeCompileDataset.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
 	// UPDATE below also takes an InnoDB gap lock for a not-yet-existing dataset;
 	// concurrent publishers for the same dataset serialize on that lock and the
@@ -233,6 +280,39 @@ func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID
 		zap.String("doc_id", docID),
 		zap.String("event_type", eventType))
 	return s.notify(ctx, datasetID)
+}
+
+// WithDatasetLock executes fn under an exclusive per-dataset row lock. It locks
+// the dataset row (SELECT ... FOR UPDATE) and runs fn inside the same
+// transaction, so the row lock is held for the entire duration of fn and any
+// concurrent WithDatasetLock on the same dataset blocks until fn returns. This
+// is what makes a worker's claim-token check + destructive write atomic against
+// a concurrent RebuildDataset.
+//
+// The claim token passed to fn is read within this transaction, so the check in
+// fn does not need (and must not attempt) a separate DB read that would deadlock
+// against the held row lock. fn runs inside the transaction; if it returns an
+// error the transaction is rolled back
+// and the error is propagated unchanged (any DB write performed inside fn is
+// rolled back, so no partial side effect persists on an aborted write).
+func (s *mysqlScheduler) WithDatasetLock(ctx context.Context, datasetID string, fn func(claimToken string) error) error {
+	if s.db == nil {
+		// No DB (test/no-op scheduler): nothing to serialize against.
+		return fn("")
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row := entity.KnowledgeCompileDataset{
+			DatasetID:      datasetID,
+			BacklogDocIDs:  "[]",
+			InflightDocIDs: "[]",
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("dataset_id = ?", datasetID).
+			FirstOrCreate(&row).Error; err != nil {
+			return err
+		}
+		return fn(row.ClaimToken)
+	})
 }
 
 // claimRow atomically claims the closed batch from the row identified by
@@ -377,6 +457,46 @@ func (s *mysqlScheduler) SetError(ctx context.Context, datasetID, token, errMsg 
 	if res.RowsAffected == 0 {
 		common.Warn("knowledge_compile: set_error ignored (claim token mismatch / lease reclaimed)",
 			zap.String("dataset_id", datasetID))
+	}
+	return nil
+}
+
+// CancelInflight drops the live claim for a dataset back into the backlog so a
+// rewrite can start from a clean index. It is a no-op when there is no live
+// lease. The dropped batch is re-marked pending and is reprocessed after the
+// rebuild republishes the dataset documents.
+func (s *mysqlScheduler) CancelInflight(ctx context.Context, datasetID, token string) error {
+	if s.db == nil {
+		return nil
+	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row entity.KnowledgeCompileDataset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		// No live lease (idle or already drained) → nothing to cancel.
+		now := time.Now()
+		liveLease := row.ClaimOwner != "" && row.ClaimExpiresAt != nil && row.ClaimExpiresAt.After(now)
+		if !liveLease {
+			return nil
+		}
+		inflight := parseEntries(row.InflightDocIDs)
+		backlog := parseEntries(row.BacklogDocIDs)
+		backlog = append(backlog, inflight...)
+		row.InflightDocIDs = "[]"
+		row.ClaimOwner = ""
+		row.ClaimToken = ""
+		row.ClaimExpiresAt = nil
+		row.BacklogDocIDs = marshalEntries(backlog)
+		row.State = DatasetStatePending
+		return tx.Save(&row).Error
+	})
+	if err != nil {
+		return fmt.Errorf("knowledge_compile: cancel inflight %s: %w", datasetID, err)
 	}
 	return nil
 }
@@ -532,17 +652,23 @@ func (s *mysqlScheduler) SubscribeNotify(ctx context.Context) (<-chan string, er
 // doc_id + event_type). The batch is the exact set the worker claimed, so
 // this is a precise removal, not a "clear all" — any inflight added by a
 // concurrent claim is preserved.
+//
+// The key is doc_id+"\x00"+event_type: BacklogEntry now carries a Variants
+// slice which is not comparable, so it cannot be used as a Go map key. Variants
+// deliberately does not participate in the removal match — Ack still removes by
+// doc_id + event_type so an entry whose Variants differ from the inflight copy
+// is still removed exactly once.
 func removeEntries(inflight, batch []BacklogEntry) []BacklogEntry {
 	if len(batch) == 0 {
 		return inflight
 	}
-	drop := make(map[BacklogEntry]bool, len(batch))
+	drop := make(map[string]bool, len(batch))
 	for _, e := range batch {
-		drop[e] = true
+		drop[e.DocID+"\x00"+e.EventType] = true
 	}
 	out := make([]BacklogEntry, 0, len(inflight))
 	for _, e := range inflight {
-		if drop[e] {
+		if drop[e.DocID+"\x00"+e.EventType] {
 			continue
 		}
 		out = append(out, e)
@@ -561,6 +687,9 @@ type fakeRow struct {
 	expires  *time.Time
 	state    string
 	errorMsg string
+	// writeMu serializes per-dataset writer side effects and rebuilds, mirroring
+	// the MySQL scheduler's WithDatasetLock row lock.
+	writeMu sync.Mutex
 }
 
 // FakeScheduler is an in-memory Publisher + Claimer used by tests. It mirrors
@@ -585,8 +714,12 @@ func NewFakeScheduler() *FakeScheduler {
 
 func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
-// Publish appends one doc event and pushes a notify (same as the MySQL path).
-func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string) error {
+// Publish appends one doc event and pushes a notify (same contract as MySQL).
+func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
+	return f.publish(tenantID, datasetID, docID, eventType, variants)
+}
+
+func (f *FakeScheduler) publish(tenantID, datasetID, docID, eventType string, variants []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.rows[datasetID]
@@ -597,7 +730,7 @@ func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, e
 	if r.tenant == "" {
 		r.tenant = tenantID
 	}
-	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType})
+	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
 	// Mirror the MySQL scheduler: surface pending unless a worker is running.
 	if r.state != DatasetStateRunning {
 		r.state = DatasetStatePending
@@ -680,6 +813,47 @@ func (f *FakeScheduler) SetError(_ context.Context, datasetID, token, errMsg str
 		return nil
 	}
 	r.errorMsg = errMsg
+	return nil
+}
+
+// WithDatasetLock executes fn under the per-row write mutex, mirroring the MySQL
+// scheduler's row-lock semantics: a rebuild and a writer's destructive side
+// effect on the same dataset are mutually exclusive. claimToken is read under
+// the lock.
+func (f *FakeScheduler) WithDatasetLock(_ context.Context, datasetID string, fn func(claimToken string) error) error {
+	f.mu.Lock()
+	r, ok := f.rows[datasetID]
+	if !ok {
+		r = &fakeRow{}
+		f.rows[datasetID] = r
+	}
+	f.mu.Unlock()
+
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	f.mu.Lock()
+	claimToken := r.token
+	f.mu.Unlock()
+	return fn(claimToken)
+}
+
+// CancelInflight drops the live claim back into the backlog (mirrors MySQL).
+func (f *FakeScheduler) CancelInflight(_ context.Context, datasetID, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.rows[datasetID]
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	live := r.owner != "" && r.expires != nil && r.expires.After(now)
+	if !live {
+		return nil
+	}
+	r.backlog = append(r.backlog, r.inflight...)
+	r.inflight = nil
+	r.owner, r.token, r.expires = "", "", nil
+	r.state = DatasetStatePending
 	return nil
 }
 

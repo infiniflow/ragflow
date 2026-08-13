@@ -241,7 +241,7 @@ func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
 	embeddings, err := newJinaForTest(srv.URL).Embed(
 		t.Context(),
 		&modelName,
-		[]string{"text"},
+		EmbedRequest{Texts: []string{"text"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
 		nil,
@@ -337,8 +337,7 @@ func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
 	_, err := newJinaForTest(srv.URL).Rerank(
 		t.Context(),
 		&modelName,
-		"weather",
-		[]string{"sunny", "rainy"},
+		RerankRequest{Query: "weather", Documents: []string{"sunny", "rainy"}},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{},
 		nil,

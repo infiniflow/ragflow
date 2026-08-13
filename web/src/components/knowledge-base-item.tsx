@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { DocumentParserType } from '@/constants/knowledge';
 import {
   useFetchDatasetsByIds,
@@ -5,6 +21,7 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { IDataset } from '@/interfaces/database/dataset';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { getEmbeddingBaseName } from '@/utils/llm-util';
 import { useDebounce } from 'ahooks';
 import { toLower } from 'lodash';
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
@@ -78,9 +95,12 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     );
   }, [datasetListOrigin, selectedDatasetIds, missingDatasets]);
 
-  const selectedEmbedId = useMemo(() => {
+  // Datasets are mutually selectable when their embedding models resolve to
+  // the same base model name, even if they use different provider instances
+  // (e.g. "BAAI/bge-m3@renew@SILICONFLOW" vs "BAAI/bge-m3@COPY@SILICONFLOW").
+  const selectedEmbedBaseName = useMemo(() => {
     const data = datasetList?.find((item) => item.id === datasetId?.[0]);
-    return data?.embedding_model ?? '';
+    return getEmbeddingBaseName(data?.embedding_model);
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
@@ -110,12 +130,13 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
         disabled:
           item.chunk_count <= 0 ||
           item.chunk_method === DocumentParserType.Tag ||
-          (item.embedding_model !== selectedEmbedId && selectedEmbedId !== ''),
+          (selectedEmbedBaseName !== '' &&
+            getEmbeddingBaseName(item.embedding_model) !== selectedEmbedBaseName),
       };
     });
 
     return datasetListMap;
-  }, [datasetList, selectedEmbedId]);
+  }, [datasetList, selectedEmbedBaseName]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchString(value);

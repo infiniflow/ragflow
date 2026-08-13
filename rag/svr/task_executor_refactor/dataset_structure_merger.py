@@ -31,8 +31,11 @@ Key design:
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import logging
+from functools import lru_cache
 from typing import Optional
 
 import xxhash
@@ -57,9 +60,21 @@ _PAGE_SIZE = 1000
 _SCOPE_KWD_DOC = "doc"
 _SCOPE_KWD_DATASET = "dataset"
 _DELETION_META_KWD = "doc_deleted"
+_EMBED_BATCH_SIZE = 32
+_EMBED_MAX_IN_FLIGHT = 4
+_BUCKET_MERGE_MAX_IN_FLIGHT = 4
 
 # Row id seeds for metadata
 _META_ROW_KWD = "kg_build_meta"
+
+
+@lru_cache(maxsize=None)
+def _supports_bulk_refresh(connection_type: type) -> bool:
+    try:
+        return "refresh" in inspect.signature(connection_type.insert).parameters
+    except (TypeError, ValueError):
+        return False
+
 
 STRUCTURE_MERGE_TASK_TYPES = frozenset(
     {
@@ -152,9 +167,49 @@ async def _index_insert(tenant_id: str, kb_id: str, rows: list[dict]) -> None:
         return
     index = _index_name(tenant_id)
     try:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+        insert = settings.docStoreConn.insert
+        if _supports_bulk_refresh(type(settings.docStoreConn)):
+            await thread_pool_exec(insert, rows, index, kb_id, refresh=False)
+        else:
+            await thread_pool_exec(insert, rows, index, kb_id)
     except Exception:
         logging.exception("structure_merge: insert failed for kb=%s", kb_id)
+
+
+async def _refresh_index(tenant_id: str, kb_id: str) -> None:
+    """Refresh search visibility once after a merge, instead of per bulk write."""
+    refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
+    if not callable(refresh_idx):
+        return
+    try:
+        await thread_pool_exec(refresh_idx, _index_name(tenant_id))
+    except Exception:
+        logging.exception("structure_merge: final index refresh failed for kb=%s", kb_id)
+
+
+async def _embed_rows(embd_mdl, rows: list[dict], texts: list[str]) -> None:
+    """Embed rows in bounded concurrent batches and attach vectors in order."""
+    if not embd_mdl or not rows:
+        return
+
+    semaphore = asyncio.Semaphore(_EMBED_MAX_IN_FLIGHT)
+
+    async def _embed_batch(start: int):
+        async with semaphore:
+            return start, await _encode(embd_mdl, texts[start : start + _EMBED_BATCH_SIZE])
+
+    tasks = [_embed_batch(start) for start in range(0, len(rows), _EMBED_BATCH_SIZE)]
+    results = await asyncio.gather(*tasks)
+    for start, vectors in results:
+        for offset, vector in enumerate(vectors):
+            if vector is not None and len(vector) > 0:
+                rows[start + offset][f"q_{len(vector)}_vec"] = list(vector)
+
+
+async def _disabled_doc_ids(kb_id: str) -> set[str]:
+    from api.db.services.document_service import DocumentService
+
+    return await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +323,7 @@ async def _merge_bucket(
         groups.setdefault(key, []).append(row)
 
     rows_out: list[dict] = []
+    embedding_texts: list[str] = []
     for (name_lower, typ), rows in groups.items():
         # Collect all source_chunk_ids, doc_ids, and original-cased names
         all_chunks: list[str] = []
@@ -319,13 +375,10 @@ async def _merge_bucket(
             row["compilation_template_ids"] = [template_id]
         if structure_kind:
             row["compilation_template_kind_kwd"] = str(structure_kind)
-        # Re-embed
-        if embd_mdl:
-            vecs = await _encode(embd_mdl, [best_desc])
-            if vecs and len(vecs[0]) > 0:
-                dim = len(vecs[0])
-                row[f"q_{dim}_vec"] = list(vecs[0])
         rows_out.append(row)
+        embedding_texts.append(best_desc)
+
+    await _embed_rows(embd_mdl, rows_out, embedding_texts)
 
     return rows_out
 
@@ -356,6 +409,7 @@ async def _merge_relations(
         groups.setdefault(key, []).append(row)
 
     rows_out: list[dict] = []
+    embedding_texts: list[str] = []
     for (src, rel_type, tgt), rows in groups.items():
         all_chunks: list[str] = []
         all_docs: list[str] = []
@@ -397,13 +451,10 @@ async def _merge_relations(
             row["compilation_template_ids"] = [template_id]
         if structure_kind:
             row["compilation_template_kind_kwd"] = str(structure_kind)
-        # Re-embed (matching _merge_bucket)
-        if embd_mdl:
-            vecs = await _encode(embd_mdl, [best_desc])
-            if vecs and len(vecs[0]) > 0:
-                dim = len(vecs[0])
-                row[f"q_{dim}_vec"] = list(vecs[0])
         rows_out.append(row)
+        embedding_texts.append(best_desc)
+
+    await _embed_rows(embd_mdl, rows_out, embedding_texts)
 
     return rows_out
 
@@ -614,6 +665,7 @@ async def _do_build(
     structure_kind: str | None,
     embd_mdl,
     incremental: bool = True,
+    disabled_doc_ids: set[str] | None = None,
 ) -> bool:
     """Core build logic — read doc_graph rows, bucket, merge, write dataset rows.
 
@@ -629,6 +681,7 @@ async def _do_build(
     markers existed), ``False`` if a store error prevented cleanup.
     """
     cleanup_ok = True
+    disabled_doc_ids = disabled_doc_ids or set()
 
     index = _index_name(tenant_id)
 
@@ -646,24 +699,10 @@ async def _do_build(
         }
         if template_id:
             del_cond["compilation_template_ids"] = [template_id]
-        offset = 0
-        while True:
-            existing = await _index_search(
-                tenant_id,
-                kb_id,
-                del_cond,
-                ["id"],
-                limit=1000,
-                offset=offset,
-            )
-            if not existing:
-                break
-            ids = [r["id"] for r in existing if r.get("id")]
-            if ids:
-                await _index_delete(tenant_id, kb_id, {"id": ids})
-            if len(existing) < 1000:
-                break
-            offset += 1000
+        # Delete by condition in one operation. Paging through matches while
+        # deleting them shifts subsequent offsets and leaves every later page
+        # behind, which is especially visible on large timeline graphs.
+        await _index_delete(tenant_id, kb_id, del_cond)
         # Also delete the meta rows
         meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
         try:
@@ -675,9 +714,7 @@ async def _do_build(
     if incremental and last_build_time is not None:
         cleanup_ok = await _cleanup_deleted_docs(tenant_id, kb_id, compile_kwd, template_id)
 
-    # ── Scan doc_graph rows ──────────────────────────────────────────
-    # Backward compat: existing doc_graph rows don't have scope_kwd.
-    # Search for (scope_kwd="doc" OR (not exists scope_kwd)) AND compile_kwd.
+    # ── Scan document-level graph rows ───────────────────────────────
     base_cond = {
         "compile_kwd": [compile_kwd],
         "knowledge_graph_kwd": ["entity", "relation"],
@@ -685,8 +722,10 @@ async def _do_build(
     if template_id:
         base_cond["compilation_template_ids"] = [template_id]
     scan_all = not incremental or last_build_time is None
-    if not scan_all:
-        base_cond["scope_kwd"] = [_SCOPE_KWD_DOC]
+    # A full rebuild must only scan document-level rows.  Dataset-level rows
+    # are the output of this task and must never become input on the next run.
+    # This also makes disabled-document filtering effective after a rebuild.
+    base_cond["scope_kwd"] = [_SCOPE_KWD_DOC]
 
     # Build timestamp filter for incremental mode
     ts_cond = None
@@ -722,6 +761,8 @@ async def _do_build(
         if not rows:
             break
         for row in rows:
+            if str(row.get("doc_id") or "") in disabled_doc_ids:
+                continue
             # Time filter (incremental mode)
             if ts_cond:
                 ts = row.get("create_timestamp_flt", 0)
@@ -749,37 +790,25 @@ async def _do_build(
         else:
             offset += limit
 
-    # Merge entity buckets into dataset rows
-    for bi in range(_BUCKET_COUNT):
-        if buckets[bi]:
-            out = await _merge_bucket(
-                tenant_id,
-                kb_id,
-                compile_kwd,
-                template_id,
-                buckets[bi],
-                embd_mdl,
-                structure_kind,
-            )
-            if out:
-                for start in range(0, len(out), _BUCKET_FLUSH_THRESHOLD):
-                    await _index_insert(tenant_id, kb_id, out[start : start + _BUCKET_FLUSH_THRESHOLD])
+    async def _merge_buckets(bucket_rows, merge_fn):
+        non_empty = [rows for rows in bucket_rows if rows]
+        for start in range(0, len(non_empty), _BUCKET_MERGE_MAX_IN_FLIGHT):
+            merged = await asyncio.gather(*(merge_fn(rows) for rows in non_empty[start : start + _BUCKET_MERGE_MAX_IN_FLIGHT]))
+            for rows in merged:
+                for batch_start in range(0, len(rows), _BUCKET_FLUSH_THRESHOLD):
+                    await _index_insert(tenant_id, kb_id, rows[batch_start : batch_start + _BUCKET_FLUSH_THRESHOLD])
 
-    # Merge relation buckets into dataset rows
-    for bi in range(_BUCKET_COUNT):
-        if rel_buckets[bi]:
-            rel_out = await _merge_relations(
-                tenant_id,
-                kb_id,
-                compile_kwd,
-                template_id,
-                rel_buckets[bi],
-                embd_mdl,
-                structure_kind,
-            )
-            if rel_out:
-                for start in range(0, len(rel_out), _BUCKET_FLUSH_THRESHOLD):
-                    await _index_insert(tenant_id, kb_id, rel_out[start : start + _BUCKET_FLUSH_THRESHOLD])
+    # Merge entity and relation buckets concurrently in bounded groups. Each
+    # bucket embeds its rows in batches, so neither the bucket loop nor the
+    # individual row loop is a serial embedding bottleneck.
+    await _merge_buckets(
+        buckets,
+        lambda rows: _merge_bucket(tenant_id, kb_id, compile_kwd, template_id, rows, embd_mdl, structure_kind),
+    )
+    await _merge_buckets(
+        rel_buckets,
+        lambda rows: _merge_relations(tenant_id, kb_id, compile_kwd, template_id, rows, embd_mdl, structure_kind),
+    )
 
     # ── Save build timestamp ─────────────────────────────────────────
     import datetime
@@ -860,6 +889,11 @@ async def run_structure_merge(ctx: TaskContext) -> None:
         progress(1.0, f"No eligible templates for {kind_label}.")
         return
 
+    disabled_doc_ids = await _disabled_doc_ids(ctx.kb_id)
+    # A disabled document does not trigger an immediate rebuild. On the next
+    # explicit merge, rebuild from all active source rows so shared entities
+    # and relations are recalculated without the disabled document's data.
+    rebuild_all = bool(disabled_doc_ids)
     total = len(eligible)
     rebuilt = 0
     all_cleanup_ok = True
@@ -869,13 +903,26 @@ async def run_structure_merge(ctx: TaskContext) -> None:
             return
         progress(0.05 + 0.9 * (i / total), f"Building dataset graph {i + 1}/{total} ...")
         try:
-            cleanup_ok = await _do_build(ctx.tenant_id, ctx.kb_id, compile_kwd, template_id, structure_kind, embd_mdl)
+            cleanup_ok = await _do_build(
+                ctx.tenant_id,
+                ctx.kb_id,
+                compile_kwd,
+                template_id,
+                structure_kind,
+                embd_mdl,
+                incremental=not rebuild_all,
+                disabled_doc_ids=disabled_doc_ids,
+            )
             if not cleanup_ok:
                 all_cleanup_ok = False
             rebuilt += 1
         except Exception:
             all_cleanup_ok = False
             logging.exception("structure_merge: build failed for kb=%s compile_kwd=%s", ctx.kb_id, compile_kwd)
+
+    # Bulk inserts use refresh=False; make the complete merge visible once all
+    # templates have been written instead of waiting on every bulk request.
+    await _refresh_index(ctx.tenant_id, ctx.kb_id)
 
     # Delete pending deletion markers only after every pair has been
     # processed successfully.  If any pair had a store error the markers

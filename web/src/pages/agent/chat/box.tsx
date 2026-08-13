@@ -118,7 +118,7 @@ function AgentChatBox() {
                   clickDocumentButton={clickDocumentButton}
                   index={i}
                   showLikeButton={false}
-                  sendLoading={sendLoading}
+                  sendLoading={sendLoading && derivedMessages.length - 1 === i}
                 >
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 === i && (

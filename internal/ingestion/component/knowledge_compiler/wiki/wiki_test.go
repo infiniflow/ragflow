@@ -144,6 +144,71 @@ func TestNormalizeWikiPlanPages_FallbacksToEntitiesAndConcepts(t *testing.T) {
 	}
 }
 
+func TestNormalizeWikiPlanPages_DedupSameTypeSameTitle(t *testing.T) {
+	// Scheme A: two entity pages with the same title but different slug
+	// transliterations (lu-bu vs lv-bu) collapse to one, and their RelatedKB
+	// is folded into the survivor. A same-title page of another type (topic)
+	// stays distinct.
+	pages := []wikiPlanPage{
+		{
+			Slug:        "entity/lu-bu",
+			Title:       "吕布",
+			PageType:    "entity",
+			Topic:       "吕布",
+			EntityNames: []string{"吕布", "李肃"},
+			RelatedKB:   []string{"entity/dong-zhuo"},
+			Priority:    1,
+		},
+		{
+			Slug:        "entity/lv-bu",
+			Title:       "吕布",
+			PageType:    "entity",
+			Topic:       "吕布",
+			EntityNames: []string{"吕布", "丁原"},
+			RelatedKB:   []string{"entity/ding-yuan", "entity/dong-zhuo"},
+			Priority:    2,
+		},
+		{
+			Slug:     "topic/lu-bu-legend",
+			Title:    "吕布",
+			PageType: "topic",
+			Topic:    "吕布生平",
+			Priority: 3,
+		},
+	}
+	got := normalizeWikiPlanPages(pages, wikiExtract{})
+	if len(got) != 2 {
+		t.Fatalf("normalizeWikiPlanPages = %d pages, want 2 (entity merged + topic)", len(got))
+	}
+	// Survivor keeps the first-emitted slug and accumulates RelatedKB.
+	var entitySlug string
+	for _, p := range got {
+		if p.PageType == "entity" {
+			entitySlug = p.Slug
+			want := []string{"entity/dong-zhuo", "entity/ding-yuan"}
+			if len(p.RelatedKB) != 2 {
+				t.Fatalf("entity RelatedKB = %v, want %v (deduped union)", p.RelatedKB, want)
+			}
+		}
+	}
+	if entitySlug != "entity/lu-bu" {
+		t.Fatalf("surviving entity slug = %q, want entity/lu-bu (first emitted)", entitySlug)
+	}
+}
+
+func TestNormalizeWikiPlanPages_DoesNotMergeAcrossTypes(t *testing.T) {
+	// Same title, different page_type: concept vs entity must stay distinct
+	// (page identity is page_type/slug).
+	pages := []wikiPlanPage{
+		{Slug: "concept/lu-bu", Title: "吕布", PageType: "concept", Priority: 1},
+		{Slug: "entity/lu-bu", Title: "吕布", PageType: "entity", Priority: 2},
+	}
+	got := normalizeWikiPlanPages(pages, wikiExtract{})
+	if len(got) != 2 {
+		t.Fatalf("normalizeWikiPlanPages = %d pages, want 2 (concept + entity)", len(got))
+	}
+}
+
 func TestMergePlanCandidates_DeduplicatesWithoutLLMMerge(t *testing.T) {
 	p := &wikiPipeline{
 		docID: "doc-1",

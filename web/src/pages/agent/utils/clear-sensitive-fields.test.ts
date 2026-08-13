@@ -5,6 +5,7 @@ jest.mock('@/constants/agent', () => ({
     Google: 'Google',
     KeenableSearch: 'KeenableSearch',
     BGPT: 'Bing',
+    QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
   },
 }));
@@ -44,28 +45,31 @@ describe('clearSensitiveFields', () => {
     expect(dsl.tools[0].params.api_key).toBe('querit-secret');
   });
 
-  it.each(['querit', 'querit_search', 'queritsearch'])(
-    'clears a Querit API key for the %s registry alias',
-    (componentName) => {
-      const dsl = {
-        tools: [
-          {
-            component_name: componentName,
-            params: {
-              api_key: 'querit-secret',
-              count: 5,
-            },
+  it.each([
+    'querit',
+    'querit_contents',
+    'queritcontents',
+    'querit_search',
+    'queritsearch',
+  ])('clears a Querit API key for the %s registry alias', (componentName) => {
+    const dsl = {
+      tools: [
+        {
+          component_name: componentName,
+          params: {
+            api_key: 'querit-secret',
+            count: 5,
           },
-        ],
-      };
+        },
+      ],
+    };
 
-      const sanitized = clearSensitiveFields(dsl);
+    const sanitized = clearSensitiveFields(dsl);
 
-      expect(sanitized.tools[0].params.api_key).toBe('');
-      expect(sanitized.tools[0].params.count).toBe(5);
-      expect(dsl.tools[0].params.api_key).toBe('querit-secret');
-    },
-  );
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.count).toBe(5);
+    expect(dsl.tools[0].params.api_key).toBe('querit-secret');
+  });
 
   it('clears a standalone Querit Canvas key from graph and components', () => {
     const dsl = {

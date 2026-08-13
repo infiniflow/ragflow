@@ -403,7 +403,7 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 					}
 					kbinfos := map[string]interface{}{"chunks": chunks}
-					s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
 				out <- AsyncChatResult{
@@ -826,7 +826,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Enrich chunks with document metadata AFTER all retrieval adds.
 		// Request values (kwargs) take precedence over config values.
 		if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta {
-			s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
 
@@ -1971,7 +1971,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 		if kbs[0].EmbdID != "" {
@@ -2358,7 +2358,7 @@ func (s *ChatPipelineService) resolveReferenceMetadata(promptConfig map[string]i
 // enrichChunksWithMetadata enriches chunk records in kbinfos with document-level
 // metadata. Mirrors Python's enrich_chunks_with_document_metadata() in
 // api/utils/reference_metadata_utils.py.
-func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interface{}, tenantID string, fields []string) {
+func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbinfos map[string]interface{}, tenantID string, fields []string) {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 	if !ok || len(chunksRaw) == 0 {
 		return
@@ -2370,7 +2370,7 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interf
 		return
 	}
 
-	s.MetadataSvc.EnrichChunksWithDocMetadata(chunks, tenantID, fields)
+	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks.
@@ -2658,7 +2658,7 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, texts, e.embModel.APIConfig, config, nil)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2895,10 +2895,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2966,8 +2966,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3425,7 +3425,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase":
+	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
 		bullets := strings.Builder{}
 		for _, n := range names {
@@ -3533,7 +3533,7 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // OpenSearch share the direct-column template. expectedCol is
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3562,7 +3562,7 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // buildExecutionErrorRepairPrompt returns the engine-specific user
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {

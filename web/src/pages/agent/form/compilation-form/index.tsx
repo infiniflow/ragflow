@@ -1,9 +1,12 @@
 import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { LargeModelFormField } from '@/components/large-model-form-field';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialCompilationValues } from '../../constant/pipeline';
 import { useOwnerTenantId } from '../../context';
@@ -15,12 +18,22 @@ import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
-export const FormSchema = z.object({
-  compilation_template_group_id: z.string().optional(),
-  llm_id: z.string().optional(),
-});
+function useFormSchema() {
+  const { t } = useTranslation();
+  const FormSchema = z.object({
+    compilation_template_group_id: z
+      .string()
+      .min(1, t('knowledgeConfiguration.compilationTemplateRequired')),
+    llm_id: z.string().optional(),
+    mode: z.enum(['entity', 'topic']),
+  });
 
-export type CompilationFormSchemaType = z.infer<typeof FormSchema>;
+  return FormSchema;
+}
+
+export type CompilationFormSchemaType = z.infer<
+  ReturnType<typeof useFormSchema>
+>;
 
 const outputList = buildOutputList(initialCompilationValues.outputs);
 
@@ -31,6 +44,8 @@ const CompilationForm = ({
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
+  const { t } = useTranslation();
+  const FormSchema = useFormSchema();
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
@@ -49,6 +64,22 @@ const CompilationForm = ({
           name="llm_id"
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
+        <RAGFlowFormItem
+          name="mode"
+          label={t('setting.wikiMode')}
+          tooltip={t('setting.wikiModeTip')}
+        >
+          {(field) => (
+            <SelectWithSearch
+              value={field.value}
+              onChange={field.onChange}
+              options={[
+                { label: t('setting.entityMode'), value: 'entity' },
+                { label: t('setting.topicMode'), value: 'topic' },
+              ]}
+            />
+          )}
+        </RAGFlowFormItem>
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

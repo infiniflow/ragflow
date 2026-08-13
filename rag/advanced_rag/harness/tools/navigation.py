@@ -397,7 +397,13 @@ async def _ask_nav_select(tools, query: str, items: list[dict], noun: str, max_i
         name = str(it.get("name") or "").strip() or f"item-{i}"
         desc = str(it.get("description") or "").strip().replace("\n", " ")
         extra = f" [{it['doc_count']} docs]" if it.get("doc_count") else ""
-        lines.append(f"[{i}] {name}{extra}: {desc[:300]}")
+        kwds = it.get("keywords") or []
+        tags = ", ".join(str(k) for k in kwds[:6]).strip()
+        head = f" [tags: {tags}]" if tags else ""
+        entities = it.get("entities") or []
+        ents = ", ".join(str(e) for e in entities[:6]).strip()
+        head += f" [entities: {ents}]" if ents else ""
+        lines.append(f"[{i}] {name}{extra}{head}: {desc[:300]}")
 
     system = _NAV_SELECT_SYSTEM.format(noun=noun)
     user = f"Question:\n{query}\n\n{noun.capitalize()} (numbered):\n" + "\n".join(lines) + "\n\nOutput JSON:"
@@ -621,6 +627,72 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
                 len(routed) - len(added[:_NAV_RECALL_MAX_DOCS]),
             )
     return routed[:_NAV_MAX_DOCS]
+
+
+# ── Dataset document search (hybrid, no LLM) ────────────────────────────────
+
+_NAV_SEARCH_MAX_DOCS = 12  # documents the hybrid search routes to
+_NAV_MIN_DOC_SCORE = 0.2  # drop docs below this score
+
+
+async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
+    """Return the ``doc_id``s most relevant to the question / keywords by
+    searching the dataset's navigation-tree document leaves (``nav_doc`` layer).
+
+    Runs ``search_dataset_layers`` with ``mode="nav_doc"``: a direct hybrid
+    search over the nav-tree doc leaves, so it only sees documents that have a
+    compiled nav-tree node.  Faster, no LLM cost, but less precise for ambiguous
+    queries.
+
+    Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
+    ``[]`` when no question/keywords are given or the search returns nothing.
+    This function only routes — it does not retrieve.
+    """
+    query = " ".join(part for part in ((topic or "").strip(), (keywords or "").strip()) if part).strip()
+    if not query:
+        return []
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
+
+    _LOG.info('[Dataset navigation search] Nav-tree doc search for "%s"', query)
+
+    from api.apps.services import dataset_api_service
+
+    kbs = getattr(tools, "kbs", []) or []
+    allowed_docs = set(doc_scope or [])
+
+    candidates: dict[str, float] = {}
+    for kb in kbs:
+        # ``doc_scope`` is forwarded query-time (search_dataset_layers applies
+        # it as a store filter on every mode), so the top_k truncation never
+        # drops scoped docs — no enlarged pool is needed.
+        try:
+            ok, result = await dataset_api_service.search_dataset_layers(
+                kb.id,
+                kb.tenant_id,
+                query,
+                "nav_doc",
+                top_k=_NAV_SEARCH_MAX_DOCS,
+                doc_scope=list(allowed_docs) or None,
+            )
+        except Exception:
+            _LOG.exception("[Dataset navigation search] search_dataset_layers failed for kb=%s", kb.id)
+            continue
+        if not ok or not isinstance(result, dict):
+            continue
+        for item in result.get("items", []):
+            score = float(item.get("score", 0.0))
+            if score < _NAV_MIN_DOC_SCORE:
+                continue
+            did = str(item.get("doc_id") or "").strip()
+            if not did:
+                continue
+            candidates[did] = max(candidates.get(did, float("-inf")), score)
+
+    routed = [did for did, _ in sorted(candidates.items(), key=lambda pair: pair[1], reverse=True)[:_NAV_SEARCH_MAX_DOCS]]
+
+    _LOG.info("[Dataset navigation search] Routed to %d document(s) (min_score=%.1f).", len(routed), _NAV_MIN_DOC_SCORE)
+    return routed[:_NAV_SEARCH_MAX_DOCS]
 
 
 # ── Knowledge-graph exploration ─────────────────────────────────────────────

@@ -330,19 +330,58 @@ func (p *wikiPipeline) run() error {
 		zap.String("doc_id", p.runKey()),
 		zap.Int("batches", len(p.mapExtracts)),
 		zap.Int("raw_entities", countExtractEntities(p.mapExtracts)))
-	p.reduced = reduceExtracts(p.mapExtracts)
+	appcommon.Debug("wiki: MAP intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("batches", len(p.mapExtracts)),
+		zap.Strings("entities", extractEntitiesDebug(p.mapExtracts)),
+		zap.Strings("concepts", extractConceptDebug(p.mapExtracts)),
+		zap.Strings("claims", extractClaimDebug(p.mapExtracts)),
+		zap.Strings("relations", extractRelationDebug(p.mapExtracts)))
+	reduced := reduceExtracts(p.mapExtracts)
+	p.reduced = reduced
+	appcommon.Debug("wiki: REDUCE exact done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Strings("entities", entitiesDebug(reduced.Entities)),
+		zap.Strings("concepts", conceptsDebug(reduced.Concepts)),
+		zap.Int("claims", len(reduced.Claims)),
+		zap.Strings("relations", relationsDebug(reduced.Relations)))
 	// Layer embedding + LLM disambiguation onto the exact-merged entities
 	// (REDUCE enhancement; concepts keep exact dedup). Degrades to a no-op when
 	// the embedder/chat seams are unavailable.
-	p.reduced.Entities = p.dedupeEntities(p.reduced.Entities)
+	preDedup := reduced.Entities
+	p.reduced.Entities = p.dedupeEntities(preDedup)
+	appcommon.Debug("wiki: REDUCE embedding+LLM dedup done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("pre_dedup_entities", len(preDedup)),
+		zap.Int("post_dedup_entities", len(p.reduced.Entities)),
+		zap.Strings("pre_dedup_names", entityNamesDebug(preDedup)),
+		zap.Strings("post_dedup_names", entityNamesDebug(p.reduced.Entities)),
+		zap.Strings("post_dedup_entities", entitiesDebug(p.reduced.Entities)))
 	appcommon.Info("wiki: REDUCE done",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
 		zap.Int("entities", len(p.reduced.Entities)),
 		zap.Int("claims", len(p.reduced.Claims)))
-	plan, err := p.runPlan()
-	if err != nil {
-		return err
+	// PLAN (B-mode only): LLM-based page plan + reconcile against existing pages.
+	// Mode A (param.PlanEnabled() == false, the default) skips the planner entirely — every
+	// extracted entity/concept becomes its own flat page (1 identity = 1 page), so
+	// the wiki is a flat encyclopedia without PLAN-grouped pages. See buildModeAPlan.
+	var plan wikiPlan
+	var err error
+	if p.param.PlanEnabled() {
+		plan, err = p.runPlan()
+		if err != nil {
+			return err
+		}
+		appcommon.Info("wiki: PLAN (B-mode) done", zap.String("dataset_id", p.datasetID), zap.String("doc_id", p.runKey()), zap.Int("plan_pages", len(plan.Pages)))
+	} else {
+		// wiki_incremental port (T1 + M1 Mode A): deterministic flat plan from the
+		// reduced graph. No LLM, no reconcile.
+		plan = p.buildModeAPlan()
+		appcommon.Info("wiki: PLAN (A-mode flat) done", zap.String("dataset_id", p.datasetID), zap.String("doc_id", p.runKey()), zap.Int("plan_pages", len(plan.Pages)))
 	}
 	p.plan = plan
 	appcommon.Info("wiki: PLAN done",
@@ -350,6 +389,14 @@ func (p *wikiPipeline) run() error {
 		zap.String("doc_id", p.runKey()),
 		zap.Int("plan_pages", len(plan.Pages)),
 		zap.Int("capacity_excluded", p.planCapacityExcluded))
+	appcommon.Debug("wiki: PLAN intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.String("plan_title", plan.Title),
+		zap.String("plan_slug", plan.Slug),
+		zap.Int("plan_pages", len(plan.Pages)),
+		zap.Int("capacity_excluded", p.planCapacityExcluded),
+		zap.Strings("pages", planPagesDebug(plan.Pages)))
 	pages, err := p.runRefine()
 	if err != nil {
 		return err
@@ -359,6 +406,11 @@ func (p *wikiPipeline) run() error {
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
 		zap.Int("refined_pages", len(pages)))
+	appcommon.Debug("wiki: REFINE intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("refined_pages", len(pages)),
+		zap.Strings("pages", pageResultsDebug(pages)))
 	return nil
 }
 
@@ -369,6 +421,120 @@ func countExtractEntities(extracts []wikiExtract) int {
 		n += len(e.Entities)
 	}
 	return n
+}
+
+// --- Debug helpers: compact per-item descriptors for the stage-intermediate
+// logs in run(). They deliberately record only identity-level fields (name /
+// slug / type / aliases / endpoints), never full content or embedding vectors,
+// so a batch with many entities stays readable and does not blow the log line.
+
+func entityDebug(e wikiEntity) string {
+	if len(e.Aliases) == 0 {
+		return fmt.Sprintf("%s(%s)", e.Name, e.Type)
+	}
+	return fmt.Sprintf("%s(%s){aliases:%s}", e.Name, e.Type, strings.Join(e.Aliases, ","))
+}
+
+func conceptDebug(c wikiConcept) string {
+	return c.Term
+}
+
+func claimDebug(c wikiClaim) string {
+	return c.Subject + ": " + c.Statement
+}
+
+func relationDebug(r wikiRelation) string {
+	return fmt.Sprintf("%s-[%s]->%s", r.From, r.Type, r.To)
+}
+
+func extractEntitiesDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, e := range ex.Entities {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, entityDebug(e)))
+		}
+	}
+	return out
+}
+
+func extractConceptDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, c := range ex.Concepts {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, conceptDebug(c)))
+		}
+	}
+	return out
+}
+
+func extractClaimDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, c := range ex.Claims {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, claimDebug(c)))
+		}
+	}
+	return out
+}
+
+func extractRelationDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, r := range ex.Relations {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, relationDebug(r)))
+		}
+	}
+	return out
+}
+
+func entitiesDebug(es []wikiEntity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, entityDebug(e))
+	}
+	return out
+}
+
+func entityNamesDebug(es []wikiEntity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+func conceptsDebug(cs []wikiConcept) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, conceptDebug(c))
+	}
+	return out
+}
+
+func relationsDebug(rs []wikiRelation) []string {
+	out := make([]string, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, relationDebug(r))
+	}
+	return out
+}
+
+func planPagesDebug(pages []wikiPlanPage) []string {
+	out := make([]string, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, fmt.Sprintf("%s:%s(%s) prio=%d related=%s",
+			p.Slug, p.Title, p.PageType, p.Priority, strings.Join(p.RelatedKB, ",")))
+	}
+	return out
+}
+
+func pageResultsDebug(pages []wikiPageResult) []string {
+	out := make([]string, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, fmt.Sprintf("%s:%s(%s) outlinks=%s",
+			p.Slug, p.Title, p.PageType, strings.Join(p.Outlinks, ",")))
+	}
+	return out
 }
 
 func (p *wikiPipeline) runMap() error {
@@ -610,6 +776,7 @@ func (p *wikiPipeline) runRefinePage(
 		"title":            firstNonEmpty(planItem.Title, planItem.Slug),
 		"page_type":        firstNonEmpty(planItem.PageType, "concept"),
 		"all_plan_slugs":   strings.Join(available, "\n"),
+		"related_kb_pages": formatWikiRelatedKB(planItem.RelatedKB, pageTitles),
 		"existing_section": existingSection,
 		"source_context":   sourceContext,
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
@@ -642,6 +809,14 @@ func (p *wikiPipeline) runRefinePage(
 		}
 	}
 	contentRendered, outlinks := transformWikiLinks(contentRaw, firstNonEmpty(p.datasetID, p.docID), pageTitles, slugToPageType)
+	// wiki_incremental port (O2): deterministically guarantee a "See also"
+	// cross-link section from RelatedKB. transformWikiLinks/resolveSlug drop
+	// links whose target cannot be resolved to a known slug, so an LLM-authored
+	// page could silently lose every RelatedKB edge. We append the related pages
+	// AFTER transformWikiLinks and do NOT re-run the resolver, so dead links are
+	// bypassed and the missing target does not drop the edge — each RelatedKB
+	// full-slug is linked once, only if not already present in Outlinks.
+	contentRendered, outlinks = appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
 	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
 	summary := firstParagraph(contentRendered)
 	if summary == "" {
@@ -1246,17 +1421,34 @@ func normalizeWikiPlan(plan wikiPlan, docID string, reduced wikiExtract) wikiPla
 }
 
 func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPlanPage {
-	existing := map[string]wikiPlanPage{}
+	// existing maps a plan slug to its index in out (exact-slug dedup); byTitle
+	// additionally collapses pages that share the same page_type + normalized
+	// title, so a single batch never yields two "吕布" pages whose slugs only
+	// differ in transliteration (lu-bu vs lv-bu). Scheme A (§5 of the duplicates
+	// research): page identity is page_type/slug, so the key is page-type-scoped
+	// (a same-title concept and topic may legitimately coexist) and the first
+	// page seen (LLM emission order) is kept, folding the duplicate's RelatedKB
+	// into the survivor so its outlinks are not silently dropped.
+	existing := map[string]int{}
+	byTitle := map[string]int{}
 	out := make([]wikiPlanPage, 0, len(pages))
 	for _, page := range pages {
 		page = normalizeWikiPlanPage(page)
 		if page.Slug == "" {
 			continue
 		}
-		if _, ok := existing[page.Slug]; ok {
+		if idx, ok := existing[page.Slug]; ok {
+			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
 		}
-		existing[page.Slug] = page
+		key := wikiTitleKey(page.PageType, page.Title)
+		if idx, ok := byTitle[key]; ok {
+			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
+			continue
+		}
+		idx := len(out)
+		byTitle[key] = idx
+		existing[page.Slug] = idx
 		out = append(out, page)
 	}
 	fallback := buildWikiFallbackPages(reduced)
@@ -1265,7 +1457,10 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			if page.Slug == "" {
 				continue
 			}
-			existing[page.Slug] = page
+			page = normalizeWikiPlanPage(page)
+			idx := len(out)
+			byTitle[wikiTitleKey(page.PageType, page.Title)] = idx
+			existing[page.Slug] = idx
 			out = append(out, page)
 		}
 	}
@@ -1363,6 +1558,89 @@ func normalizeWikiPlanSections(sections []wikiPlanSection) []wikiPlanSection {
 		return []wikiPlanSection{{Heading: "Overview", Points: nil}}
 	}
 	return out
+}
+
+// wikiTitleKey returns the Scheme-A dedup key for a planned page: page_type
+// scoped to the normalized title. Two pages collapse only when both their type
+// and their (case/whitespace-normalized) title match — a same-title concept and
+// topic stay distinct because page identity is page_type/slug.
+func wikiTitleKey(pageType, title string) string {
+	return strings.TrimSpace(pageType) + "\x00" + normKey(title)
+}
+
+// buildModeAPlan synthesizes a FLAT wiki plan (Mode A) directly from the reduced
+// extract graph — no LLM planner, no reconcile. Every extracted entity and
+// concept becomes its own canonical page (1 identity = 1 page), slugged as
+// "entity/<slug>" / "concept/<slug>". Cross-links (RelatedKB) are derived purely
+// from the reduced relations: each relation end is mapped to its full-slug page
+// and the counterpart is added to the page's RelatedKB. This is the deterministic
+// counterpart of Python's no_plan wiki mode.
+func (p *wikiPipeline) buildModeAPlan() wikiPlan {
+	reduced := p.reduced
+	// Build the full-slug index for every entity/concept so relation endpoints
+	// (which are bare names) resolve to canonical pages.
+	fullSlugFor := func(name, pageType string) string {
+		return pageType + "/" + normalizeWikiSlugHyphens(slugify(name))
+	}
+	slugToIndex := map[string]int{}
+	var pages []wikiPlanPage
+	addPage := func(slug, title, pageType string, entityNames []string) {
+		if _, ok := slugToIndex[slug]; ok {
+			return
+		}
+		page := wikiPlanPage{
+			Action:      "CREATE",
+			Slug:        slug,
+			Title:       title,
+			PageType:    pageType,
+			Topic:       title,
+			EntityNames: entityNames,
+			Priority:    len(pages) + 1,
+		}
+		slugToIndex[slug] = len(pages)
+		pages = append(pages, page)
+	}
+	for _, e := range reduced.Entities {
+		name := strings.TrimSpace(e.Name)
+		if name == "" {
+			continue
+		}
+		slug := fullSlugFor(name, "entity")
+		addPage(slug, name, "entity", []string{name})
+	}
+	for _, c := range reduced.Concepts {
+		term := strings.TrimSpace(c.Term)
+		if term == "" {
+			continue
+		}
+		slug := fullSlugFor(term, "concept")
+		addPage(slug, term, "concept", []string{term})
+	}
+	// Resolve relations into RelatedKB (full-slug cross-links) on both endpoints.
+	for _, rel := range reduced.Relations {
+		from := strings.TrimSpace(rel.From)
+		to := strings.TrimSpace(rel.To)
+		if from == "" || to == "" {
+			continue
+		}
+		fromSlug := fullSlugFor(from, "entity")
+		toSlug := fullSlugFor(to, "entity")
+		if fromSlug == toSlug {
+			continue
+		}
+		if i, ok := slugToIndex[fromSlug]; ok {
+			pages[i].RelatedKB = append(pages[i].RelatedKB, toSlug)
+		}
+		if i, ok := slugToIndex[toSlug]; ok {
+			pages[i].RelatedKB = append(pages[i].RelatedKB, fromSlug)
+		}
+	}
+	for i := range pages {
+		pages[i].RelatedKB = uniqueStrings(pages[i].RelatedKB)
+	}
+	plan := wikiPlan{Pages: pages}
+	plan.Pages = normalizeWikiPlanPages(plan.Pages, reduced)
+	return plan
 }
 
 func buildWikiFallbackPages(reduced wikiExtract) []wikiPlanPage {
@@ -1979,47 +2257,64 @@ func pageTypeOf(slug string, slugToPageType map[string]string) string {
 	return "page"
 }
 
-func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
-	kbID = strings.TrimSpace(kbID)
-	// Resolve a wikitext slug (which may be a bare "name" or a full
-	// "<page_type>/<slug>") to the canonical full slug used as the page
-	// identifier (slug_kwd). This mirrors Python's _wiki_resolve_dead_slug:
-	// plain names / titles are reverse-mapped to the full pid, and slugs that
-	// cannot be resolved are dropped (dead links). Without this, bare slugs
-	// written by the LLM never match the full-slug page index, so wiki
-	// relations (edges) are silently lost.
-	bareToSlug := map[string]string{}
-	titleToSlug := map[string]string{}
-	// Plan slugs are canonicalized to the hyphen style upstream
-	// (normalizeWikiPlanPage -> normalizeWikiSlugHyphens), so slugToPageType /
-	// pageTitles keys are already hyphen full-slugs. LLM-authored wikitext
-	// links may still carry underscores (e.g. "dong_zhuo"); normalize both
-	// sides to hyphens so the reverse lookup matches, and always emit the
-	// resolved outlink in the canonical hyphen full-slug form.
+// wikiSlugResolver resolves a wikitext slug (a bare "name" or a full
+// "<page_type>/<slug>") to the canonical hyphen full-slug used as the page
+// identifier (slug_kwd), mirroring Python's _wiki_resolve_dead_slug: plain
+// names / titles are reverse-mapped to the full pid. An empty result means the
+// target is not a known page and must not be emitted as a link or graph edge.
+type wikiSlugResolver struct {
+	slugToPageType map[string]string
+	bareToSlug     map[string]string
+	titleToSlug    map[string]string
+}
+
+// newWikiSlugResolver builds the reverse lookup maps from the available-page
+// index. Plan slugs are canonicalized to the hyphen style upstream
+// (normalizeWikiPlanPage -> normalizeWikiSlugHyphens), so slugToPageType /
+// pageTitles keys are already hyphen full-slugs. LLM-authored wikitext links may
+// still carry underscores (e.g. "dong_zhuo"); normalize both sides to hyphens so
+// the reverse lookup matches.
+func newWikiSlugResolver(pageTitles, slugToPageType map[string]string) *wikiSlugResolver {
+	r := &wikiSlugResolver{
+		slugToPageType: slugToPageType,
+		bareToSlug:     map[string]string{},
+		titleToSlug:    map[string]string{},
+	}
 	for fullSlug := range slugToPageType {
-		bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(fullSlug))] = fullSlug
+		r.bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(fullSlug))] = fullSlug
 	}
 	for fullSlug, title := range pageTitles {
 		if t := strings.TrimSpace(title); t != "" {
-			titleToSlug[t] = fullSlug
+			r.titleToSlug[t] = fullSlug
 		}
 	}
-	resolveSlug := func(slug string) string {
-		slug = strings.TrimSpace(slug)
-		if slug == "" {
-			return ""
-		}
-		if _, ok := slugToPageType[slug]; ok {
-			return slug
-		}
-		if full, ok := bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(slug))]; ok {
-			return full
-		}
-		if full, ok := titleToSlug[slug]; ok {
-			return full
-		}
+	return r
+}
+
+// resolve returns the canonical hyphen full-slug for target, or "" when the
+// target is not a known page (dead link). The result is always emitted in the
+// canonical hyphen form so outlinks_kwd and slug_kwd agree in format.
+func (r *wikiSlugResolver) resolve(target string) string {
+	slug := strings.TrimSpace(target)
+	if slug == "" {
 		return ""
 	}
+	if _, ok := r.slugToPageType[slug]; ok {
+		return normalizeWikiSlugHyphens(slug)
+	}
+	if full, ok := r.bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(slug))]; ok {
+		return normalizeWikiSlugHyphens(full)
+	}
+	if full, ok := r.titleToSlug[slug]; ok {
+		return normalizeWikiSlugHyphens(full)
+	}
+	return ""
+}
+
+func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
+	kbID = strings.TrimSpace(kbID)
+	resolver := newWikiSlugResolver(pageTitles, slugToPageType)
+	resolveSlug := resolver.resolve
 	seen := map[string]bool{}
 	var outlinks []string
 	track := func(slug string) {
@@ -2127,7 +2422,7 @@ func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[str
 	})
 	// rawLinks counts the model-authored wikilinks in the source content. It
 	// must be counted against content, not out: by this point every [[...]] has
-	// been rewritten to markdown, so counting on out would always report zero.
+	// been rewritten to Markdown, so counting on out would always report zero.
 	rawLinks := wikiWikilinkSimpleRe.FindAllString(content, -1)
 	appcommon.Info("knowledge_compiler: transformWikiLinks resolved outlinks",
 		zap.Int("raw_wikilinks", len(rawLinks)),
@@ -2136,6 +2431,91 @@ func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[str
 		zap.Strings("sample_raw", firstN(rawLinks, 5)))
 	return out, outlinks
 }
+
+// formatWikiRelatedKB renders the RelatedKB page list for the refine-writer
+// prompt (O1): one "- [[<slug>]]" bullet per related full-slug, with the page
+// title as display text when known. It is a prompt hint only — the authoritative
+// See-also section is appended deterministically by appendWikiSeeAlso after the
+// LLM output is transformed.
+func formatWikiRelatedKB(related []string, pageTitles map[string]string) string {
+	if len(related) == 0 {
+		return "(none)"
+	}
+	var b strings.Builder
+	for _, slug := range related {
+		slug = strings.TrimSpace(slug)
+		if slug == "" {
+			continue
+		}
+		canon := normalizeWikiSlugHyphens(slug)
+		if title := strings.TrimSpace(pageTitles[canon]); title != "" {
+			b.WriteString("- [[" + canon + "|" + title + "]]\n")
+		} else {
+			b.WriteString("- [[" + canon + "]]\n")
+		}
+	}
+	if b.Len() == 0 {
+		return "(none)"
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// appendWikiSeeAlso guarantees a cross-link section from RelatedKB (O2). It runs
+// AFTER transformWikiLinks, which drops dead links (targets that cannot be
+// resolved). To avoid losing every RelatedKB edge when a target is missing, we do
+// NOT re-run the resolver here: each RelatedKB full-slug is linked once as
+// artifact/<kb>/<page_type>/<slug>, only if it is not already present in
+// outlinks. This bypasses the dead-link drop and keeps the graph edge.
+func appendWikiSeeAlso(content string, outlinks, related []string, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
+	if len(related) == 0 {
+		return content, outlinks
+	}
+	resolver := newWikiSlugResolver(pageTitles, slugToPageType)
+	have := make(map[string]bool, len(outlinks))
+	for _, o := range outlinks {
+		have[normalizeWikiSlugHyphens(o)] = true
+	}
+	var bullets []string
+	for _, slug := range related {
+		// Resolve the RelatedKB target against the current page index. An
+		// unresolved target is not a known page: omit it entirely (no broken
+		// artifact link) and do NOT append it to outlinks, so no phantom graph
+		// edge is persisted for a page that was never compiled.
+		canon := resolver.resolve(slug)
+		if canon == "" || have[canon] {
+			continue
+		}
+		have[canon] = true
+		bareSlug := canon
+		pageType := pageTypeOf(canon, slugToPageType)
+		if idx := strings.Index(canon, "/"); idx >= 0 && canon[:idx] == pageType {
+			bareSlug = canon[idx+1:]
+		}
+		if pageType == "" {
+			pageType = "page"
+		}
+		label := pageTitles[canon]
+		if label == "" {
+			label = strings.Title(strings.ReplaceAll(lastPathSlug(canon), "-", " "))
+		}
+		bullets = append(bullets, "- ["+label+"](artifact/"+kbID+"/"+pageType+"/"+bareSlug+")")
+		outlinks = append(outlinks, canon)
+	}
+	if len(bullets) == 0 {
+		return content, outlinks
+	}
+	// Append a "See also" section if one is not already present; otherwise add
+	// the bullets under the existing "See also" heading.
+	body := strings.TrimRight(content, "\n")
+	if seeAlsoRe.MatchString(body) {
+		return body + "\n" + strings.Join(bullets, "\n") + "\n", outlinks
+	}
+	return body + "\n\n## See also\n\n" + strings.Join(bullets, "\n") + "\n", outlinks
+}
+
+// seeAlsoRe matches a Markdown "See also" heading (case-insensitive) so we can
+// append related links under an existing section instead of duplicating it.
+var seeAlsoRe = regexp.MustCompile(`(?m)^#{1,6}\s*see\s*also\s*$`)
 
 func firstN(s []string, n int) []string {
 	if len(s) <= n {

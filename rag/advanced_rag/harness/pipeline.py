@@ -1,19 +1,19 @@
 """Pipeline — unified tool execution dispatcher."""
 
-import time
 import logging
+import time
 from typing import Any
 
-from rag.advanced_rag.harness.types import ToolResult
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
+from rag.advanced_rag.harness.types import ToolResult
 
 _LOG = logging.getLogger(__name__)
 
 # Tools that retrieve *within* a set of documents. When a routing tool
-# (``dataset_navigation_by_tree``) has produced a relevant-document set, these
+# (``dataset_navigation_search``) has produced a relevant-document set, these
 # inherit it as their ``doc_scope`` unless the caller passed one explicitly, so
 # a follow-up search stays within the routed docs instead of re-scanning the KB.
-_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "mindmap_navigate", "graph_explore", "hybrid_search", "vector_search", "bm25_search", "structured_query", "dataset_navigation_by_tree"}
+_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "mindmap_navigate", "graph_explore", "hybrid_search", "vector_search", "bm25_search", "structured_query", "dataset_navigation_search"}
 
 
 class Pipeline:
@@ -43,7 +43,7 @@ class Pipeline:
             return ToolResult(chunks=[], metadata={}, error=f"Tool {tool_name} has no executor")
 
         # Downstream scoping: a within-document tool inherits the doc IDs a prior
-        # router (dataset_navigation_by_tree) produced, unless the caller passed
+        # router (dataset_navigation_search) produced, unless the caller passed
         # an explicit doc_scope.
         if tool_name in _DOC_SCOPE_CONSUMERS and self._routed_docs and not kwargs.get("doc_scope"):
             kwargs["doc_scope"] = list(self._routed_docs)
@@ -54,7 +54,7 @@ class Pipeline:
             elapsed = time.time() - start
             self.trace.append({"tool": tool_name, "args": kwargs, "elapsed": elapsed, "success": True})
             result = self._normalize(raw)
-            # A routing tool (e.g. dataset_navigation_by_tree) yields the relevant
+            # A routing tool (e.g. dataset_navigation_search) yields the relevant
             # document IDs; remember them so the scope-consuming tools above can
             # inherit them on later turns.
             if result.docs:
@@ -130,7 +130,7 @@ class Pipeline:
             )
         if isinstance(raw, list):
             # A list of doc-id strings is a document-routing result (e.g.
-            # dataset_navigation_by_tree); a list of dicts is chunks.
+            # dataset_navigation_search); a list of dicts is chunks.
             if raw and all(isinstance(x, str) for x in raw):
                 return ToolResult(docs=list(raw), metadata={})
             return ToolResult(chunks=raw, metadata={})

@@ -248,44 +248,58 @@ func (q *QueritTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	if err != nil {
 		return queritErrorJSON(fmt.Errorf("encode request: %w", err), apiKey), nil
 	}
+	raw, requestErr := doQueritRequest(ctx, q.helper, q.retryWait, queritEndpoint, body, apiKey)
+	if requestErr != nil {
+		return queritErrorJSON(requestErr, apiKey), nil
+	}
+	if _, err := decodeQueritResponse(raw); err != nil {
+		return queritErrorJSON(err, apiKey), nil
+	}
+	return string(raw), nil
+}
+
+func doQueritRequest(
+	ctx context.Context,
+	helper *HTTPHelper,
+	retryWait func(context.Context, int) bool,
+	endpoint string,
+	body []byte,
+	apiKey string,
+) ([]byte, error) {
 	for attempt := 1; attempt <= queritMaxAttempts; attempt++ {
-		resp, requestErr := q.helper.Do(
+		resp, err := helper.Do(
 			ctx,
 			http.MethodPost,
-			queritEndpoint,
+			endpoint,
 			string(body),
 			"application/json",
 			map[string]string{"Authorization": "Bearer " + apiKey},
 		)
-		if requestErr != nil {
-			return queritErrorJSON(fmt.Errorf("request failed: %w", requestErr), apiKey), nil
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
-			if attempt == queritMaxAttempts || !q.retryWait(ctx, attempt) {
-				return queritErrorJSON(fmt.Errorf("upstream returned %d after %d attempts", resp.StatusCode, attempt), apiKey), nil
+			if attempt == queritMaxAttempts || !retryWait(ctx, attempt) {
+				return nil, fmt.Errorf("upstream returned %d after %d attempts", resp.StatusCode, attempt)
 			}
 			continue
 		}
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
-			return queritErrorJSON(fmt.Errorf("upstream returned %d", resp.StatusCode), apiKey), nil
+			return nil, fmt.Errorf("upstream returned %d", resp.StatusCode)
 		}
 
 		raw, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if readErr != nil {
-			return queritErrorJSON(fmt.Errorf("read response: %w", readErr), apiKey), nil
+			return nil, fmt.Errorf("read response: %w", readErr)
 		}
-		if _, err := decodeQueritResponse(raw); err != nil {
-			return queritErrorJSON(err, apiKey), nil
-		}
-		return string(raw), nil
+		return raw, nil
 	}
-
-	return queritErrorJSON(fmt.Errorf("request exhausted retries"), apiKey), nil
+	return nil, fmt.Errorf("request exhausted retries")
 }
 
 func mergeQueritParams(defaults, runtimeParams queritParams, provided map[string]json.RawMessage) queritParams {
@@ -360,21 +374,9 @@ func buildQueritRequest(params queritParams) queritRequest {
 }
 
 func decodeQueritResponse(raw []byte) (map[string]any, error) {
-	var decoded any
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.UseNumber()
-	if err := decoder.Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("decode response: expected exactly one JSON value")
-		}
-		return nil, fmt.Errorf("decode response: trailing content: %w", err)
-	}
-	response, ok := decoded.(map[string]any)
-	if !ok || response == nil {
-		return nil, fmt.Errorf("decode response: expected a JSON object")
+	response, err := decodeQueritJSONObject(raw)
+	if err != nil {
+		return nil, err
 	}
 	resultsValue, exists := response["results"]
 	if !exists {
@@ -390,6 +392,26 @@ func decodeQueritResponse(raw []byte) (map[string]any, error) {
 	}
 	if _, ok := resultValue.([]any); !ok {
 		return nil, fmt.Errorf("decode response: results.result must be a JSON array")
+	}
+	return response, nil
+}
+
+func decodeQueritJSONObject(raw []byte) (map[string]any, error) {
+	var decoded any
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("decode response: expected exactly one JSON value")
+		}
+		return nil, fmt.Errorf("decode response: trailing content: %w", err)
+	}
+	response, ok := decoded.(map[string]any)
+	if !ok || response == nil {
+		return nil, fmt.Errorf("decode response: expected a JSON object")
 	}
 	return response, nil
 }
@@ -588,9 +610,13 @@ func queritStringSlice(value any) ([]string, bool) {
 }
 
 func queritErrorJSON(err error, apiKeys ...string) string {
-	message := "querit_search: unknown error"
+	return queritToolErrorJSON(queritToolName, err, apiKeys...)
+}
+
+func queritToolErrorJSON(toolName string, err error, apiKeys ...string) string {
+	message := toolName + ": unknown error"
 	if err != nil {
-		message = "querit_search: " + err.Error()
+		message = toolName + ": " + err.Error()
 	}
 	for _, apiKey := range apiKeys {
 		if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
@@ -599,7 +625,7 @@ func queritErrorJSON(err error, apiKeys ...string) string {
 	}
 	raw, marshalErr := json.Marshal(map[string]any{"_ERROR": message})
 	if marshalErr != nil {
-		return `{"_ERROR":"querit_search: marshal error"}`
+		return fmt.Sprintf(`{"_ERROR":%q}`, toolName+": marshal error")
 	}
 	return string(raw)
 }

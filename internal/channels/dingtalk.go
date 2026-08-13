@@ -439,7 +439,7 @@ func (c *dingTalkChannel) saveSessionWebhook(chatID, sessionWebhook string) {
 	c.sessionWebhooks[chatID] = sessionWebhook
 }
 
-// postWebhook posts a markdown reply payload to a DingTalk sessionWebhook.
+// postWebhook posts a Markdown reply payload to a DingTalk sessionWebhook.
 func (c *dingTalkChannel) postWebhook(ctx context.Context, sessionWebhook string, payload map[string]any) error {
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sessionWebhook, bytes.NewReader(body))

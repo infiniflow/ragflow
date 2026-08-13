@@ -14,6 +14,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -276,35 +277,56 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	common.SuccessWithData(c, graph, "success")
 }
 
-// ListStructures handles GET /artifacts/structure — list compiled structures of a dataset.
+// ListStructures handles GET /artifacts/structure?kind=<kind> — the dataset-scope
+// structure graph for a resolved kind (mirrors Python get_dataset_structure).
+// kind is REQUIRED: missing or invalid → 400 ARGUMENT_ERROR.
 func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	structureKind := c.Query("structure_kind")
-	structureIndexType := c.Query("structure_index_type")
-	items, total, err := h.svc.ListStructures(c.Request.Context(), tenantID, datasetID, structureKind, structureIndexType)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+	kind := c.Query("kind")
+	if kind == "" {
+		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "structures": items}, "success")
+	in := service.DatasetStructureGraphInput{TenantID: tenantID, DatasetID: datasetID, Kind: kind}
+	resp, err := h.svc.GetDatasetStructure(c.Request.Context(), in)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidStructureKind) {
+			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		} else {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		}
+		return
+	}
+	common.SuccessWithData(c, resp, "success")
 }
 
-// DeleteStructures handles DELETE /artifacts/structure — delete compiled structures of a dataset.
+// DeleteStructures handles DELETE /artifacts/structure?kind=<kind>&wipe=<bool> —
+// cancel the kind's task (wipe=false) or delete its dataset rows (wipe=true).
+// kind is REQUIRED.
 func (h *DatasetArtifactHandler) DeleteStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	structureKind := c.Query("structure_kind")
-	structureIndexType := c.Query("structure_index_type")
-	n, err := h.svc.DeleteStructures(c.Request.Context(), tenantID, datasetID, structureKind, structureIndexType)
+	kind := c.Query("kind")
+	if kind == "" {
+		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
+		return
+	}
+	wipe := c.Query("wipe") == "true"
+	in := service.DatasetStructureGraphInput{TenantID: tenantID, DatasetID: datasetID, Kind: kind, Wipe: wipe}
+	n, err := h.svc.DeleteDatasetStructure(c.Request.Context(), in)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		if errors.Is(err, service.ErrInvalidStructureKind) {
+			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		} else {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		}
 		return
 	}
 	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
@@ -339,7 +361,9 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "nav": items}, "success")
+	// Response key is "items" (not "nav") — the frontend DatasetNavList reads
+	// data.items and Python list_nav_clusters/_nav_search return {"total","items"}.
+	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // DeleteNavigation handles DELETE /navigation — delete all navigation clusters.
@@ -381,7 +405,9 @@ func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "children": items}, "success")
+	// Same contract as the top-level nav list: Python list_nav_children returns
+	// {"total","items"} and the frontend reads data.items for child expansion.
+	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // GetSkillTree handles GET /skills — skill tree.
@@ -453,13 +479,20 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
-	graphType := c.Query("graph_type")
-	items, total, err := h.svc.GetDocumentGraph(c.Request.Context(), tenantID, datasetID, documentID, graphType)
+	resp, err := h.svc.GetDocumentGraph(c.Request.Context(), service.DocumentStructureGraphInput{
+		TenantID:   tenantID,
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		Keywords:   c.Query("keywords"),
+	})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "graph": items}, "success")
+	if resp == nil {
+		resp = &service.DocumentStructureGraphResponse{Templates: []service.DocumentStructureGraphTemplate{}}
+	}
+	common.SuccessWithData(c, resp, "success")
 }
 
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.

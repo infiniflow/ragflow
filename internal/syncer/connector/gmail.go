@@ -26,6 +26,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -46,10 +47,6 @@ var gmailScopes = []string{
 	"https://www.googleapis.com/auth/admin.directory.user.readonly",
 	"https://www.googleapis.com/auth/admin.directory.group.readonly",
 }
-
-// FIXME: IDK why everytime, gmail do sync, It will update all file's Metadata.
-// FIXME: I think this need to be checked or fixed after all data syncer is done
-// FIXME: Some file sync from gmail have no content, this need to be checked too
 
 // GmailConnector reads Gmail threads from a Workspace domain or one Gmail account.
 type GmailConnector struct {
@@ -103,7 +100,14 @@ func (c *GmailConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 	if !request.FromBeginning && request.WindowStart != nil {
 		query = gmailTimeRangeQuery(request.WindowStart, request.WindowEnd)
 	}
-	return &gmailSyncSession{connector: c, users: users, batchSize: c.batchSize, query: query}, nil
+	session := &gmailSyncSession{
+		connector: c,
+		users:     users,
+		batchSize: c.batchSize,
+		query:     query,
+	}
+	session.applyResume(request.Resume)
+	return session, nil
 }
 
 // OpenPrune opens one complete Gmail prune snapshot session.
@@ -291,21 +295,28 @@ func (c *GmailConnector) getJSON(ctx context.Context, client *http.Client, apiUR
 }
 
 type gmailSyncSession struct {
-	connector *GmailConnector
-	users     []string
-	userIndex int
-	pageToken string
-	batchSize int
-	query     string
-	buffer    []SourceDocument
+	connector       *GmailConnector
+	users           []string
+	userIndex       int
+	pageToken       string
+	batchSize       int
+	query           string
+	buffer          []gmailBufferedDocument
+	resumePageToken string
+	resumeOffset    int
+	resumeFilename  string
 }
 
 // NextBatch returns the next Gmail document batch.
 func (s *gmailSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	documents := make([]SourceDocument, 0, s.batchSize)
+	var checkpoint *SyncCheckpoint
 	if len(s.buffer) > 0 {
 		n := min(s.batchSize, len(s.buffer))
-		documents = append(documents, s.buffer[:n]...)
+		for _, buffered := range s.buffer[:n] {
+			documents = append(documents, buffered.document)
+			checkpoint = buffered.checkpoint
+		}
 		s.buffer = s.buffer[n:]
 	}
 	for len(documents) < s.batchSize {
@@ -321,13 +332,19 @@ func (s *gmailSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		remaining := s.batchSize - len(documents)
 		if len(batch) > remaining {
-			documents = append(documents, batch[:remaining]...)
+			for _, buffered := range batch[:remaining] {
+				documents = append(documents, buffered.document)
+				checkpoint = buffered.checkpoint
+			}
 			s.buffer = append(s.buffer, batch[remaining:]...)
 			break
 		}
-		documents = append(documents, batch...)
+		for _, buffered := range batch {
+			documents = append(documents, buffered.document)
+			checkpoint = buffered.checkpoint
+		}
 	}
-	return SyncBatch{Documents: documents}, nil
+	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
 // Close closes the Gmail sync session.
@@ -336,9 +353,10 @@ func (s *gmailSyncSession) Close() error {
 }
 
 // nextDocumentPage fetches one Gmail list page and expands threads.
-func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocument, error) {
+func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]gmailBufferedDocument, error) {
 	userEmail := s.users[s.userIndex]
-	page, err := s.connector.listThreads(ctx, userEmail, s.query, s.pageToken, gmailItemsPerPage)
+	requestPageToken := s.pageToken
+	page, err := s.connector.listThreads(ctx, userEmail, s.query, requestPageToken, gmailItemsPerPage)
 	if err != nil {
 		if isGmailDisabled(err) {
 			s.advanceUser()
@@ -346,7 +364,8 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocume
 		}
 		return nil, err
 	}
-	documents := make([]SourceDocument, 0, len(page.Threads))
+	candidates := make([]gmailBufferedDocument, 0, len(page.Threads))
+	pageOffset := 0
 	for _, item := range page.Threads {
 		thread, err := s.connector.loadThread(ctx, userEmail, item.ID)
 		if err != nil {
@@ -357,9 +376,16 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocume
 		}
 		doc, ok := thread.toSourceDocument(userEmail)
 		if ok {
-			documents = append(documents, doc)
+			pageOffset++
+			candidates = append(candidates, gmailBufferedDocument{
+				document:   doc,
+				checkpoint: gmailSyncCheckpoint(userEmail, requestPageToken, pageOffset, doc),
+				offset:     pageOffset,
+				filename:   syncSourceDocumentFilenameFromDocument(doc),
+			})
 		}
 	}
+	documents := s.filterResumedDocuments(requestPageToken, candidates)
 	if page.NextPageToken == "" {
 		s.advanceUser()
 	} else {
@@ -368,10 +394,103 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocume
 	return documents, nil
 }
 
+// applyResume apply resume if resume is available (adjust session's token and pageOffset)
+func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+	if checkpoint == nil || checkpoint.Cursor == "" {
+		return
+	}
+
+	var cursor gmailSyncCursor
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return
+	}
+	if cursor.UserEmail == "" {
+		return
+	}
+	for index, userEmail := range s.users {
+		if userEmail != cursor.UserEmail {
+			continue
+		}
+		s.userIndex = index
+		s.pageToken = cursor.PageToken
+		s.resumePageToken = cursor.PageToken
+		s.resumeFilename = cursor.Filename
+		if cursor.Offset > 0 {
+			s.resumeOffset = cursor.Offset
+		}
+		return
+	}
+}
+
+// filterResumedDocuments applies checkpoint offset using the filename at that offset.
+func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates []gmailBufferedDocument) []gmailBufferedDocument {
+	if s.resumeOffset <= 0 {
+		return candidates
+	}
+	if pageToken != s.resumePageToken {
+		s.clearResumeOffset()
+		return candidates
+	}
+	if s.resumeOffset <= len(candidates) && candidates[s.resumeOffset-1].filename == s.resumeFilename {
+		filtered := candidates[:0]
+		for _, candidate := range candidates {
+			if candidate.offset > s.resumeOffset {
+				filtered = append(filtered, candidate)
+			}
+		}
+		s.clearResumeOffset()
+		return filtered
+	}
+
+	filtered := candidates[:0]
+	for _, candidate := range candidates {
+		if candidate.offset >= s.resumeOffset {
+			filtered = append(filtered, candidate)
+		}
+	}
+	s.clearResumeOffset()
+	return filtered
+}
+
+func (s *gmailSyncSession) clearResumeOffset() {
+	s.resumeOffset = 0
+	s.resumePageToken = ""
+	s.resumeFilename = ""
+}
+
 // advanceUser moves a Gmail session to the next mailbox.
 func (s *gmailSyncSession) advanceUser() {
 	s.userIndex++
 	s.pageToken = ""
+	s.clearResumeOffset()
+}
+
+type gmailBufferedDocument struct {
+	document   SourceDocument
+	checkpoint *SyncCheckpoint
+	offset     int
+	filename   string
+}
+
+type gmailSyncCursor struct {
+	UserEmail string `json:"user_email"`
+	PageToken string `json:"page_token,omitempty"`
+	Offset    int    `json:"offset"`
+	Filename  string `json:"filename"`
+}
+
+func gmailSyncCheckpoint(userEmail, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
+	filename := syncSourceDocumentFilenameFromDocument(doc)
+	cursor, err := json.Marshal(gmailSyncCursor{UserEmail: userEmail, PageToken: pageToken, Offset: offset, Filename: filename})
+	if err != nil {
+		return nil
+	}
+	updatedAt := doc.UpdatedAt
+	return &SyncCheckpoint{
+		Cursor:    string(cursor),
+		UpdatedAt: &updatedAt,
+		SourceID:  doc.SourceID,
+	}
 }
 
 type gmailPruneSession struct {
@@ -526,6 +645,7 @@ func (t gmailThread) toSourceDocument(userEmail string) (SourceDocument, bool) {
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
+		Fingerprint:        contentFingerprint(blob),
 	}, true
 }
 
@@ -659,7 +779,13 @@ func parseGmailAddress(value string) (string, string) {
 // gmailOwnersMetadata converts email owners to compact metadata.
 func gmailOwnersMetadata(owners map[string]string) []map[string]string {
 	out := make([]map[string]string, 0, len(owners))
-	for email, name := range owners {
+	emails := make([]string, 0, len(owners))
+	for email := range owners {
+		emails = append(emails, email)
+	}
+	sort.Strings(emails)
+	for _, email := range emails {
+		name := owners[email]
 		item := map[string]string{"email": email}
 		if name != "" {
 			parts := strings.Fields(name)
@@ -695,10 +821,63 @@ func isGmailDisabled(err error) bool {
 
 // isGoogleForbiddenOrNotFound reports item-level Google visibility failures.
 func isGoogleForbiddenOrNotFound(err error) bool {
+	return isGooglePermissionDeniedOrNotFound(err)
+}
+
+func isGooglePermissionDeniedOrNotFound(err error) bool {
 	if httpErr, ok := err.(googleHTTPError); ok {
-		return httpErr.status == http.StatusForbidden || httpErr.status == http.StatusNotFound
+		if httpErr.status == http.StatusNotFound {
+			return true
+		}
+		return httpErr.status == http.StatusForbidden && !isGoogleRateLimited(err)
 	}
 	return false
+}
+
+func isGoogleRateLimited(err error) bool {
+	httpErr, ok := err.(googleHTTPError)
+	if !ok {
+		return false
+	}
+	if httpErr.status == http.StatusTooManyRequests {
+		return true
+	}
+	if httpErr.status != http.StatusForbidden {
+		return false
+	}
+	if strings.Contains(httpErr.body, "rateLimitExceeded") || strings.Contains(httpErr.body, "userRateLimitExceeded") || strings.Contains(httpErr.body, "quotaExceeded") {
+		return true
+	}
+	for _, reason := range googleErrorReasons(httpErr.body) {
+		switch reason {
+		case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "RESOURCE_EXHAUSTED":
+		}
+	}
+	return false
+}
+
+func googleErrorReasons(body string) []string {
+	var response struct {
+		Error struct {
+			Errors []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+			Status string `json:"status"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		return nil
+	}
+	reasons := make([]string, 0, len(response.Error.Errors)+1)
+	for _, item := range response.Error.Errors {
+		if item.Reason != "" {
+			reasons = append(reasons, item.Reason)
+		}
+	}
+	if response.Error.Status != "" {
+		reasons = append(reasons, response.Error.Status)
+	}
+	return reasons
 }
 
 type googleHTTPError struct {
