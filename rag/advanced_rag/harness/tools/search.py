@@ -201,9 +201,9 @@ def _normalize(kbinfos: dict, tenant_ids: list[str] | str | None) -> dict:
 
 
 async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "", use_compiled: bool = False) -> dict:
-    if not tools.kb_ids and not kb_ids:
+    target_ids = kb_ids or list(dict.fromkeys(tools.kb_ids + [kb.id for kb in tools.sql_kbs]))
+    if not target_ids:
         return {"chunks": [], "doc_aggs": []}
-    target_ids = kb_ids or tools.kb_ids
     if hasattr(tools, "scoped_doc_ids"):
         doc_scope = tools.scoped_doc_ids(doc_scope)
     _LOG.info(f'[Hybrid search] Searching the knowledge base for "{query}" (keywords: {keywords})')
