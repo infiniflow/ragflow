@@ -1100,15 +1100,21 @@ func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID strin
 	}
 	tenantIDs = append(tenantIDs, userID)
 
-	if page < 1 {
-		page = 1
+	offset, limit := 0, pageSize
+	if pageSize <= 0 {
+		// pageSize == 0 means no pagination: return every matching row.
+		limit = 0
+	} else {
+		if page < 1 {
+			page = 1
+		}
+		if pageSize > 100 {
+			limit = 15
+		}
+		offset = (page - 1) * limit
 	}
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 15
-	}
-	offset := (page - 1) * pageSize
 
-	logs, total, err := s.connectorDAO.ListLogs(ctx, dao.DB, tenantIDs, datasetID, offset, pageSize)
+	logs, total, err := s.connectorDAO.ListLogs(ctx, dao.DB, tenantIDs, datasetID, offset, limit)
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch sync logs: %w", err)
 	}

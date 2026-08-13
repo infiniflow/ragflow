@@ -3493,8 +3493,18 @@ func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	url := "/connectors/sync_logs"
+	query := netUrl.Values{}
 	if datasetID != "" {
-		url = fmt.Sprintf("/connectors/sync_logs?dataset_id=%s", netUrl.QueryEscape(datasetID))
+		query.Set("dataset_id", datasetID)
+	}
+	if page, ok := cmd.Params["page"].(int); ok {
+		query.Set("page", fmt.Sprintf("%d", page))
+	}
+	if pageSize, ok := cmd.Params["page_size"].(int); ok {
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	}
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
 	}
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)

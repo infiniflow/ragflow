@@ -248,6 +248,7 @@ func (p *Parser) parseAPIListDatasetIngestionTasks(datasetName string) (*Command
 
 // LIST SYNC LOGS;
 // LIST SYNC LOGS FROM 'dataset_id'
+// LIST SYNC LOGS [FROM 'dataset_id'] WITH PAGE 2 PAGE_SIZE 50
 func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
 	p.nextToken() // consume SYNC
 
@@ -266,6 +267,11 @@ func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
 			return nil, err
 		}
 		cmd.Params["dataset_id"] = datasetID
+		p.nextToken() // move past the dataset id
+	}
+
+	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+		return nil, err
 	}
 
 	// Semicolon is optional
@@ -275,7 +281,7 @@ func (p *Parser) parseAPIListSyncLogs() (*Command, error) {
 	return cmd, nil
 }
 
-// LIST DATASET 'dataset_name' SYNC LOGS;
+// LIST DATASET 'dataset_name' SYNC LOGS [WITH PAGE 2 PAGE_SIZE 50];
 func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, error) {
 	p.nextToken() // consume SYNC
 
@@ -283,14 +289,61 @@ func (p *Parser) parseAPIListDatasetSyncLogs(datasetName string) (*Command, erro
 		return nil, fmt.Errorf("expected LOGS")
 	}
 
+	p.nextToken() // consume LOGS
+
+	cmd := NewCommand("api_list_sync_logs")
+	cmd.Params["dataset_name"] = datasetName
+
+	if err := p.parseSyncLogsWithOptions(cmd); err != nil {
+		return nil, err
+	}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-
-	cmd := NewCommand("api_list_sync_logs")
-	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
+}
+
+// parseSyncLogsWithOptions parses the optional WITH clause of the sync logs
+// listing commands. Only PAGE and PAGE_SIZE are accepted, both as integers,
+// mirroring the search command's space-separated WITH syntax.
+func (p *Parser) parseSyncLogsWithOptions(cmd *Command) error {
+	if p.curToken.Type != TokenWith && !(p.curToken.Type == TokenIdentifier && strings.EqualFold(p.curToken.Value, "with")) {
+		return nil
+	}
+	p.nextToken() // consume WITH
+
+	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
+		if p.curToken.Type == TokenComma {
+			return fmt.Errorf("syntax error: WITH options must be space-separated, not comma-separated")
+		}
+		if p.curToken.Type != TokenIdentifier {
+			break
+		}
+		paramName := strings.ToLower(p.curToken.Value)
+		p.nextToken()
+
+		if p.curToken.Type != TokenInteger {
+			if p.curToken.Type == TokenEOF || p.curToken.Type == TokenSemicolon {
+				return fmt.Errorf("WITH option %q is missing a value", paramName)
+			}
+			return fmt.Errorf("WITH option %q must be an integer, got %s", paramName, tokenTypeDescription(p.curToken.Type, p.curToken))
+		}
+		value, err := p.parseNumber()
+		if err != nil {
+			return err
+		}
+		p.nextToken()
+
+		switch paramName {
+		case "page", "page_size":
+			cmd.Params[paramName] = value
+		default:
+			return fmt.Errorf("unknown WITH option %q", paramName)
+		}
+	}
+	return nil
 }
 
 func (p *Parser) parseAPIListAgents() (*Command, error) {

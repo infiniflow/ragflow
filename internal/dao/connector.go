@@ -517,7 +517,7 @@ func (dao *ConnectorDAO) ListLogs(ctx context.Context, db *gorm.DB, tenantIDs []
 	}
 
 	var logs []*entity.ConnectorSyncLog
-	err := baseQuery.
+	query := baseQuery.
 		Select(
 			"sync_logs.id",
 			"sync_logs.connector_id",
@@ -536,10 +536,11 @@ func (dao *ConnectorDAO) ListLogs(ctx context.Context, db *gorm.DB, tenantIDs []
 			"sync_logs.status",
 		).
 		Distinct().
-		Order("sync_logs.update_date DESC").
-		Offset(offset).
-		Limit(limit).
-		Scan(&logs).Error
+		Order("sync_logs.update_date DESC")
+	if limit > 0 {
+		query = query.Offset(offset).Limit(limit)
+	}
+	err := query.Scan(&logs).Error
 	if err != nil {
 		return nil, 0, err
 	}

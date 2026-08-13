@@ -253,23 +253,29 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 	}
 
 	page := 1
-	if rawPage := strings.TrimSpace(c.DefaultQuery("page", "1")); rawPage != "" {
-		parsedPage, err := strconv.Atoi(rawPage)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
-			return
-		}
-		page = parsedPage
-	}
-
 	pageSize := 15
-	if rawPageSize := strings.TrimSpace(c.DefaultQuery("page_size", "15")); rawPageSize != "" {
-		parsedPageSize, err := strconv.Atoi(rawPageSize)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
-			return
+	rawPage := strings.TrimSpace(c.Query("page"))
+	rawPageSize := strings.TrimSpace(c.Query("page_size"))
+	if rawPage == "" && rawPageSize == "" {
+		// No pagination requested: pageSize == 0 means list everything.
+		pageSize = 0
+	} else {
+		if rawPage != "" {
+			parsedPage, err := strconv.Atoi(rawPage)
+			if err != nil {
+				common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
+				return
+			}
+			page = parsedPage
 		}
-		pageSize = parsedPageSize
+		if rawPageSize != "" {
+			parsedPageSize, err := strconv.Atoi(rawPageSize)
+			if err != nil {
+				common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
+				return
+			}
+			pageSize = parsedPageSize
+		}
 	}
 
 	datasetID := strings.TrimSpace(c.Query("dataset_id"))
