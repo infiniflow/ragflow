@@ -115,6 +115,25 @@ class TestResolveQianfanCredentials:
         out = _resolve_qianfan_credentials(raw)
         assert out == raw
 
+    def test_partial_dict_with_only_ak_passes_through(self):
+        """A partial dict (only ``yiyan_ak``, missing ``yiyan_sk``) is
+        accepted by the resolver -- the missing field defaults to ``""``
+        downstream in the model class via ``key.get("yiyan_sk", "")``.
+        The resolver only enforces that the input is a JSON object, not
+        that both fields are present.
+        """
+        raw = {"yiyan_ak": "ak_test"}
+        out = _resolve_qianfan_credentials(json.dumps(raw))
+        assert out == raw
+
+    def test_partial_dict_with_only_sk_passes_through(self):
+        """Symmetric to the above: only ``yiyan_sk`` is present, missing
+        ``yiyan_ak`` defaults to ``""`` downstream.
+        """
+        raw = {"yiyan_sk": "sk_test"}
+        out = _resolve_qianfan_credentials(json.dumps(raw))
+        assert out == raw
+
     def test_json_array_payload_raises_clear_model_exception(self):
         """A valid JSON array is not the expected object shape. The helper
         must raise ModelException (not AttributeError when the caller

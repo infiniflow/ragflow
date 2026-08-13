@@ -37,9 +37,12 @@ def _normalize_replicate_key(key):
 def _resolve_qianfan_credentials(key):
     """Parse a BaiduYiyan (Baidu Qianfan) ``key`` and return it as a dict.
 
-    The BaiduYiyan / Qianfan API requires a JSON object with at least
-    ``yiyan_ak`` and ``yiyan_sk``. See ``conf/models/baidu.json`` for the
-    model class.
+    The BaiduYiyan / Qianfan API expects a JSON object whose ``yiyan_ak``
+    and ``yiyan_sk`` fields carry the API credentials. See
+    ``conf/models/baidu.json`` for the model class. A partial object
+    (e.g. only ``yiyan_ak``) is accepted and missing fields default to
+    ``""`` downstream, so the resolver only enforces that the input is a
+    JSON object, not that both fields are present.
 
     On non-JSON input -- for example a user pasting a plain Baidu API key
     like ``"bce-v3/ALTAK-.../..."`` -- we raise a clear
@@ -58,14 +61,14 @@ def _resolve_qianfan_credentials(key):
     elif isinstance(key, str):
         try:
             payload = json.loads(key)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
             logging.warning(
-                "BaiduYiyan key is not valid JSON; expected a JSON object with 'yiyan_ak' and 'yiyan_sk' (see conf/models/baidu.json).",
+                "BaiduYiyan key is not valid JSON; expected a JSON object (missing 'yiyan_ak' or 'yiyan_sk' fields fall back to \"\" downstream). See conf/models/baidu.json.",
             )
             raise ModelException(
-                'BaiduYiyan requires a JSON key with at least \'yiyan_ak\' and \'yiyan_sk\'. Example: {"yiyan_ak": "...", "yiyan_sk": "..."}. See conf/models/baidu.json for the model class.',
+                'BaiduYiyan requires a JSON key object. Example: {"yiyan_ak": "...", "yiyan_sk": "..."}. Missing fields default to "". See conf/models/baidu.json for the model class.',
                 retryable=False,
-            )
+            ) from exc
     else:
         logging.warning(
             "BaiduYiyan key is not a string or dict (got %s); expected a JSON object with 'yiyan_ak' and 'yiyan_sk'.",
