@@ -116,9 +116,10 @@ type docxParagraphNumbering struct {
 }
 
 type docxResolvedStyle struct {
-	Name         string
-	NumberingRef *docxParagraphNumbering
-	OutlineLevel *int
+	Name              string
+	NumberingRef      *docxParagraphNumbering
+	NumberingDisabled bool
+	OutlineLevel      *int
 }
 
 // extractDOCXNumberedHeadings materializes Word's display-only heading
@@ -146,10 +147,12 @@ func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 		}
 		style := resolveDOCXStyle(styleID, styles, nil)
 		ref := paragraphNumberingRef(paragraph.Properties)
-		if ref == nil {
+		numberingDisabled := isParagraphNumberingDisabled(paragraph.Properties)
+		if ref == nil && !numberingDisabled {
 			ref = style.NumberingRef
+			numberingDisabled = style.NumberingDisabled
 		}
-		if ref == nil {
+		if ref == nil && !numberingDisabled {
 			ref = numberingRefForParagraphStyle(styleID, numbering)
 		}
 		if ref == nil {
@@ -337,6 +340,14 @@ func paragraphNumberingRef(properties *docxXMLParagraphProperties) *docxParagrap
 	return &docxParagraphNumbering{ID: id, Level: level}
 }
 
+func isParagraphNumberingDisabled(properties *docxXMLParagraphProperties) bool {
+	if properties == nil || properties.NumberingRef == nil {
+		return false
+	}
+	id, ok := parseDOCXXMLInt(properties.NumberingRef.ID)
+	return ok && id == 0
+}
+
 func resolveDOCXStyle(id string, styles map[string]docxXMLStyle, seen map[string]bool) docxResolvedStyle {
 	if id == "" {
 		return docxResolvedStyle{}
@@ -359,8 +370,12 @@ func resolveDOCXStyle(id string, styles map[string]docxXMLStyle, seen map[string
 	if style.Name != nil {
 		resolved.Name = style.Name.Value
 	}
-	if ref := paragraphNumberingRef(style.Properties); ref != nil {
+	if isParagraphNumberingDisabled(style.Properties) {
+		resolved.NumberingRef = nil
+		resolved.NumberingDisabled = true
+	} else if ref := paragraphNumberingRef(style.Properties); ref != nil {
 		resolved.NumberingRef = ref
+		resolved.NumberingDisabled = false
 	}
 	if style.Properties != nil {
 		if level, ok := parseDOCXXMLInt(style.Properties.OutlineLevel); ok {

@@ -128,7 +128,11 @@ class DOCXNumberingResolver:
             self._instance_order.append(number_id)
 
     def _paragraph_numbering_reference(self, paragraph):
-        reference = _properties_numbering_reference(paragraph._p.pPr)
+        properties = paragraph._p.pPr
+        if _is_numbering_disabled(properties):
+            return None
+
+        reference = _properties_numbering_reference(properties)
         if reference is not None:
             return reference
 
@@ -136,6 +140,8 @@ class DOCXNumberingResolver:
         seen = set()
         while style is not None and style.style_id not in seen:
             seen.add(style.style_id)
+            if _is_numbering_disabled(style.element.pPr):
+                return None
             reference = _properties_numbering_reference(style.element.pPr)
             if reference is not None:
                 number_id, list_level = reference
@@ -242,6 +248,12 @@ def _properties_numbering_reference(properties):
         return None
     list_level = _value_int(properties.numPr.ilvl)
     return number_id, list_level or 0
+
+
+def _is_numbering_disabled(properties):
+    if properties is None or properties.numPr is None or properties.numPr.numId is None:
+        return False
+    return _value_int(properties.numPr.numId) == 0
 
 
 def _parse_level(element):

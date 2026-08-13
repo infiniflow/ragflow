@@ -12,6 +12,8 @@ func numberedHeadingsDOCX(t *testing.T) []byte {
 	parts := map[string]string{
 		"word/document.xml": `<?xml version="1.0" encoding="UTF-8"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+  <w:p><w:pPr><w:pStyle w:val="UnnumberedHeading"/></w:pPr><w:r><w:t>Unnumbered by style</w:t></w:r></w:p>
+  <w:p><w:pPr><w:pStyle w:val="Heading1"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>Unnumbered introduction</w:t></w:r></w:p>
   <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Общие сведения</w:t></w:r></w:p>
   <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Установка</w:t></w:r></w:p>
   <w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Начало работы</w:t></w:r></w:p>
@@ -19,6 +21,7 @@ func numberedHeadingsDOCX(t *testing.T) []byte {
 </w:body></w:document>`,
 		"word/styles.xml": `<?xml version="1.0" encoding="UTF-8"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:styleId="UnnumberedHeading"><w:name w:val="unnumbered heading"/><w:basedOn w:val="Heading1"/><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style>
   <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="42"/></w:numPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
   <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="42"/></w:numPr><w:outlineLvl w:val="1"/></w:pPr></w:style>
 </w:styles>`,

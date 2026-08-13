@@ -17,6 +17,7 @@
 from io import BytesIO
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
@@ -51,6 +52,14 @@ def _set_style_numbering(style, number_id, level):
     properties.append(numbering)
 
 
+def _disable_paragraph_numbering(paragraph):
+    properties = paragraph._p.get_or_add_pPr()
+    numbering = _element("w:numPr")
+    numbering.append(_element("w:ilvl", 0))
+    numbering.append(_element("w:numId", 0))
+    properties.append(numbering)
+
+
 def _numbered_document():
     document = Document()
     numbering_root = document.part.numbering_part.element
@@ -68,7 +77,13 @@ def _numbered_document():
 
     _set_style_numbering(document.styles["Heading 1"], number_id, 0)
     _set_style_numbering(document.styles["Heading 2"], number_id, 1)
-    document.add_paragraph("Введение", style="Heading 1")
+    unnumbered_heading = document.styles.add_style("Unnumbered Heading", WD_STYLE_TYPE.PARAGRAPH)
+    unnumbered_heading.base_style = document.styles["Heading 1"]
+    _set_style_numbering(unnumbered_heading, 0, 0)
+    document.add_paragraph("Аннотация", style=unnumbered_heading)
+    introduction = document.add_paragraph("Введение", style="Heading 1")
+    _disable_paragraph_numbering(introduction)
+    document.add_paragraph("Общие сведения", style="Heading 1")
     document.add_paragraph("Порядок работы", style="Heading 1")
     document.add_paragraph("Начало работы", style="Heading 2")
 
@@ -82,23 +97,29 @@ def test_extract_numbered_headings_from_style_numbering():
     headings = extract_numbered_headings(_numbered_document())
 
     assert [(heading.numbered_text, heading.level) for heading in headings] == [
-        ("1 Введение", 1),
+        ("1 Общие сведения", 1),
         ("2 Порядок работы", 1),
         ("2.1 Начало работы", 2),
     ]
 
 
+def test_explicit_numbering_disable_wins_over_numbered_style():
+    headings = extract_numbered_headings(_numbered_document())
+
+    assert not any(heading.text in {"Аннотация", "Введение"} for heading in headings)
+
+
 def test_apply_numbered_headings_to_markdown():
     headings = extract_numbered_headings(_numbered_document())
 
-    markdown = "# Введение\n\n# Порядок работы\n\n## Начало работы\n"
+    markdown = "# Введение\n\n# Общие сведения\n\n# Порядок работы\n\n## Начало работы\n"
 
-    assert apply_numbered_headings_to_markdown(markdown, headings) == "# 1 Введение\n\n# 2 Порядок работы\n\n## 2.1 Начало работы"
+    assert apply_numbered_headings_to_markdown(markdown, headings) == "# Введение\n\n# 1 Общие сведения\n\n# 2 Порядок работы\n\n## 2.1 Начало работы"
 
 
 def test_apply_numbered_headings_to_setext_markdown():
     headings = extract_numbered_headings(_numbered_document())
 
-    markdown = "Введение\n========\n\nПорядок работы\n===============\n\nНачало работы\n-------------\n"
+    markdown = "Введение\n========\n\nОбщие сведения\n===============\n\nПорядок работы\n===============\n\nНачало работы\n-------------\n"
 
-    assert apply_numbered_headings_to_markdown(markdown, headings) == "1 Введение\n========\n\n2 Порядок работы\n===============\n\n2.1 Начало работы\n-------------"
+    assert apply_numbered_headings_to_markdown(markdown, headings) == "Введение\n========\n\n1 Общие сведения\n===============\n\n2 Порядок работы\n===============\n\n2.1 Начало работы\n-------------"
