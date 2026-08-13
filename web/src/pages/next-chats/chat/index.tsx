@@ -136,11 +136,7 @@ export default function Chat() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex-1 p-0 min-h-0">
-                  <SingleChatBox
-                    controller={controller}
-                    stopOutputMessage={stopOutputMessage}
-                    conversation={currentConversation}
-                  />
+                  <SingleChatBox conversation={currentConversation} />
                 </CardContent>
               </Card>
 
