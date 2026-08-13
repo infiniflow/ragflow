@@ -1043,12 +1043,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelID, cfg)
-	// ChatConfig construction is conditional on TopP being set, unlike
-	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
-	// pass-through). The asymmetry is intentional: AgentParam has no
-	// Temperature/MaxTokens yet, so building a zero-config ChatConfig
-	// would be dead weight. When AgentParam grows Temperature/
-	// MaxTokens, switch to always-build.
+	// Build ChatConfig when a generation parameter or Thinking is set.
 	var chatCfg *models.ChatConfig
 	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
 		chatCfg = &models.ChatConfig{
@@ -1375,6 +1370,14 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
+	}
+	if v, ok := intFrom(inputs, "max_tokens"); ok {
+		f := v
+		p.MaxTokens = &f
+	}
+	if v, ok := floatFrom(inputs, "temperature"); ok {
+		f := v
+		p.Temperature = &f
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
 		p.Thinking = v
