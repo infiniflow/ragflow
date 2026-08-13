@@ -203,11 +203,23 @@ export function TemplateConfiguration({
           </RAGFlowFormItem>
 
           {kind === CompilationTemplateKind.Artifacts && (
-            <SwitchFormField
-              name={`templates.${selectedTemplateIndex}.config.plan`}
-              label={t('setting.plan')}
-              vertical={false}
-            />
+            <RAGFlowFormItem
+              name={`templates.${selectedTemplateIndex}.config.mode`}
+              label={t('setting.wikiMode')}
+              tooltip={t('setting.wikiModeTip')}
+            >
+              {(field) => (
+                <SelectWithSearch
+                  value={typeof field.value === 'string' ? field.value : ''}
+                  onChange={field.onChange}
+                  disabled={field.disabled}
+                  options={[
+                    { label: t('setting.entityMode'), value: 'entity' },
+                    { label: t('setting.topicMode'), value: 'topic' },
+                  ]}
+                />
+              )}
+            </RAGFlowFormItem>
           )}
 
           {kind === CompilationTemplateKind.Tree ? (

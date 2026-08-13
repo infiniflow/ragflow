@@ -20,6 +20,7 @@ import {
   useChatStreamStore,
   useIsChatStreaming,
 } from '../chat-stream/store';
+import { resolveResendOptions } from '../utils';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
@@ -88,6 +89,11 @@ export const useSendMessage = () => {
   );
   const stopStream = useChatStreamStore((state) => state.stopStream);
 
+  // The regenerate button lives in the transcript, which has no access to the
+  // input box's thinking / internet toggles. Remember what the last send used
+  // so a retry keeps the same options instead of silently dropping them.
+  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
+
   const sendMessage = useCallback(
     async ({
       message,
@@ -98,17 +104,21 @@ export const useSendMessage = () => {
     }: {
       message: IMessage;
       currentConversationId?: string;
-      messages: IMessage[];
+      messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
+
+      lastSendOptionsRef.current = { enableInternet, enableThinking };
 
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
         chatId,
-        // The history is always supplied by the caller, captured *before* it
-        // appended the question and its placeholder to the store — reading it
-        // here would include both and send the question twice.
-        messages: [...explicitMessages, message],
+        // An explicitly provided list is authoritative, even when empty
+        // (e.g. regenerating the first question must truncate history).
+        messages: [
+          ...(Array.isArray(explicitMessages) ? explicitMessages : messages),
+          message,
+        ],
         enableThinking,
         enableInternet,
       });
@@ -122,7 +132,7 @@ export const useSendMessage = () => {
         notification.error({ message: t('message.requestError') });
       }
     },
-    [conversationId, chatId, failStream, t],
+    [conversationId, chatId, messages, failStream, t],
   );
 
   // Hand a failed question back to the input box, but only once the box is
@@ -154,13 +164,11 @@ export const useSendMessage = () => {
         conversationId,
       };
 
-      // Snapshot the history before appendQuestion writes the question and its
-      // assistant placeholder into the store.
-      const history =
-        useChatStreamStore.getState().sessions[conversationId]?.messages ?? [];
-
       appendQuestion(conversationId, questionMessage);
-      sendMessage({ message: questionMessage, messages: history });
+      sendMessage({
+        message: questionMessage,
+        ...resolveResendOptions(lastSendOptionsRef.current),
+      });
     },
     [conversationId, isStreaming, appendQuestion, sendMessage],
   );

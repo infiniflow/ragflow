@@ -57,10 +57,10 @@ import {
   UseSendSingleMessageParameter,
 } from '../../hooks/use-send-single-message';
 import { useUploadFile } from '../../hooks/use-upload-file';
-import { useMessageReferences } from '../../hooks/use-message-references';
-import { EmptyReference } from '../../utils';
+import { EmptyReference, resolveResendOptions } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
 import { useShowInternet } from '../use-show-internet';
+import { useMessageReferences } from '../../hooks/use-message-references';
 
 type MultipleChatBoxProps = {
   controller: AbortController;
@@ -140,6 +140,11 @@ const ChatCard = forwardRef(function ChatCard(
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
+  // Regenerate is triggered from the transcript, which has no access to the
+  // input box's thinking / internet toggles. Remember what the last send used so
+  // a retry keeps the same options instead of silently dropping them.
+  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
+
   // Regenerate within this card: reuse the card's own message state and
   // resend with the card's model settings (llm_id, temperature, ...).
   const sendCardMessage = useCallback(
@@ -147,6 +152,7 @@ const ChatCard = forwardRef(function ChatCard(
       sendMessage({
         message,
         messages,
+        ...resolveResendOptions(lastSendOptionsRef.current),
         ...form.getValues(),
         storeHistoryMessages: false,
         omitSessionId: true,
@@ -203,13 +209,15 @@ const ChatCard = forwardRef(function ChatCard(
 
   useImperativeHandle(
     ref,
-    (): HandlePressEnterType => (params) =>
-      handlePressEnter({
+    (): HandlePressEnterType => (params) => {
+      lastSendOptionsRef.current = params;
+      return handlePressEnter({
         ...params,
         ...form.getValues(),
         storeHistoryMessages: false,
         omitSessionId: true,
-      }),
+      });
+    },
   );
 
   useEffect(() => {
