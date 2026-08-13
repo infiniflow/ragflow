@@ -249,12 +249,12 @@ def test_wiki_plan_toggle_resets_state(wiki_dataset):
     import asyncio
     from rag.svr.task_executor_refactor import dataset_wiki_generator as dwg
 
-    # Mode-A (plan=off) build records plan_kwd=false in the mode meta row.
-    asyncio.run(dwg._wiki_save_mode_plan(tenant_id, ds_id, False))
-    loaded = asyncio.run(dwg._wiki_load_mode_plan(tenant_id, ds_id))
-    assert loaded is False, f"expected recorded mode plan=false, got {loaded!r}"
+    # Entity mode records its mode in the mode meta row.
+    asyncio.run(dwg._wiki_save_mode(tenant_id, ds_id, "entity"))
+    loaded = asyncio.run(dwg._wiki_load_mode(tenant_id, ds_id))
+    assert loaded == "entity", f"expected recorded entity mode, got {loaded!r}"
 
-    # Toggling to plan=true (Mode B) is a config change: run_wiki_incremental
+    # Switching to topic mode is a config change: run_wiki_incremental
     # detects prev != new and resets all wiki-derived state so the next build
     # rebuilds cleanly in the new mode (no mixing of A/B page structures).
     asyncio.run(dwg._wiki_reset_all_wiki_state(tenant_id, ds_id))
@@ -262,4 +262,4 @@ def test_wiki_plan_toggle_resets_state(wiki_dataset):
     assert pages_after == 0, "full reset did not clear wiki state"
 
     # After reset the mode meta is gone too (first build of the new mode).
-    assert asyncio.run(dwg._wiki_load_mode_plan(tenant_id, ds_id)) is None, "mode meta was not cleared by reset"
+    assert asyncio.run(dwg._wiki_load_mode(tenant_id, ds_id)) is None, "mode meta was not cleared by reset"

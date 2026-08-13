@@ -1602,9 +1602,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       instruction: 'Instruction',
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
-      plan: 'Plan',
-      planTip:
-        '关闭：每个 Entity 或 Concept 对应一个 Wiki 页面。开启：让 LLM 决定将某些 Entity/Concept 组合到单个 Wiki 页面。',
+      wikiMode: 'Wiki 模式',
+      entityMode: '实体模式',
+      topicMode: '主题模式',
+      wikiModeRequired: '请选择 Wiki 模式',
+      wikiModeTip:
+        '实体模式：每个实体或概念对应一个 Wiki 页面。主题模式：让 LLM 按主题将相关实体或概念组合到同一个 Wiki 页面。',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
       maxToken: '最大 token 数',

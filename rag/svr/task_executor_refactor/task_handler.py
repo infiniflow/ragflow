@@ -260,8 +260,8 @@ class TaskHandler:
                     run_wiki_incremental,
                 )
 
-                # Parse plan: yes/no from the template config (default no-plan)
-                plan_enabled = False
+                # Parse the Wiki mode from the template config.
+                wiki_mode = None
                 try:
                     from api.db.services.compilation_template_service import (
                         CompilationTemplateService,
@@ -274,17 +274,17 @@ class TaskHandler:
                     for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
                         tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
                         cfg = (tpl.get("config") or {}) if tpl else {}
-                        if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
-                            plan_enabled = True
+                        if isinstance(cfg, dict) and cfg.get("mode") in ("entity", "topic"):
+                            wiki_mode = cfg["mode"]
                             break
                 except Exception:
-                    pass  # default to no-plan
+                    pass
 
                 await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
-                    plan=plan_enabled,
+                    mode=wiki_mode,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (

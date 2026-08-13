@@ -19,7 +19,6 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,13 +218,19 @@ export function TemplateConfiguration({
 
           {isArtifacts && (
             <RAGFlowFormItem
-              name={`templates.${selectedTemplateIndex}.config.plan`}
-              label={t('setting.plan')}
+              name={`templates.${selectedTemplateIndex}.config.mode`}
+              label={t('setting.wikiMode')}
+              tooltip={t('setting.wikiModeTip')}
             >
               {(field) => (
-                <Checkbox
-                  checked={!!field.value}
-                  onCheckedChange={(v: boolean) => field.onChange(v)}
+                <SelectWithSearch
+                  value={typeof field.value === 'string' ? field.value : ''}
+                  onChange={field.onChange}
+                  disabled={field.disabled}
+                  options={[
+                    { label: t('setting.entityMode'), value: 'entity' },
+                    { label: t('setting.topicMode'), value: 'topic' },
+                  ]}
                 />
               )}
             </RAGFlowFormItem>

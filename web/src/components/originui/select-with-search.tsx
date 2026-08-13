@@ -299,7 +299,9 @@ export const SelectWithSearch = forwardRef<
             )}
             <CommandList className="mt-2 outline-none">
               <CommandEmpty>
-                <div dangerouslySetInnerHTML={{ __html: resolvedEmptyData }}></div>
+                <div
+                  dangerouslySetInnerHTML={{ __html: resolvedEmptyData }}
+                ></div>
               </CommandEmpty>
               {hasCustomSearchValue && (
                 <CommandItem
@@ -372,7 +374,7 @@ export const SelectWithSearch = forwardRef<
                         (typeof group.label === 'string' ? [group.label] : [])
                       }
                       onSelect={handleSelect}
-                      data-testid={ 
+                      data-testid={
                         optionTestIdPrefix && group.value
                           ? `${optionTestIdPrefix}${group.value}`
                           : 'combobox-option'
