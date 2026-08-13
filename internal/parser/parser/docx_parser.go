@@ -82,6 +82,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// Extract IR JSON for section building (JSON path) and
 	// embedded-image extraction (both paths).
 	irJSON, irErr := doc.ToIRJSON()
+	numberedHeadings := extractDOCXNumberedHeadings(data)
 	var figures []DOCXFigure
 	if irErr == nil {
 		figures = extractDOCXFiguresFromIR(irJSON)
@@ -96,6 +97,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		}
 		var sections []map[string]any
 		sections = buildDOCXJSONSections(irJSON)
+		sections = applyDOCXNumberedHeadingsToSections(sections, numberedHeadings)
 		// remove_header_footer: drop sections whose normalized text
 		// matches a docx header/footer entry (mirrors Python
 		// parser.py:889-891 extract_docx_header_footer_texts +
@@ -108,6 +110,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// (mirrors Python parser.py:892-893 remove_toc_word).
 		if p.RemoveTOC {
 			outlines := extractDOCXOutlines(irJSON)
+			outlines = appendDOCXNumberedHeadingOutlines(outlines, numberedHeadings)
 			sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
 		}
 		if len(sections) == 0 {
@@ -125,6 +128,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("docx to-markdown: %w", err)}
 	}
+	md = applyDOCXNumberedHeadingsToMarkdown(md, numberedHeadings)
 	// remove_header_footer on Markdown: filter lines by exact match
 	// (mirrors Python parser.py:923-926 split lines → filter → rejoin).
 	if p.RemoveHeaderFooter {
@@ -145,6 +149,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// (mirrors Python parser.py:927-928 remove_toc_word on Markdown).
 	if p.RemoveTOC && irErr == nil {
 		outlines := extractDOCXOutlines(irJSON)
+		outlines = appendDOCXNumberedHeadingOutlines(outlines, numberedHeadings)
 		lines := strings.Split(md, "\n")
 		lineItems := make([]map[string]any, 0, len(lines))
 		for _, ln := range lines {
