@@ -509,11 +509,15 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
                 return False, "Cannot move a folder into its own subfolder."
 
     def _move_entry_recursive(source_file_entry, dest_folder_entry, override_name=None):
+        if source_file_entry.id == dest_folder_entry.id:
+            raise RuntimeError("The folder is already in the target location. There is no need to move it.")
         effective_name = override_name or source_file_entry.name
 
         if source_file_entry.type == FileType.FOLDER.value:
             existing_folder = FileService.query(name=effective_name, parent_id=dest_folder_entry.id)
             if existing_folder:
+                if existing_folder[0].id == source_file_entry.id:
+                    raise RuntimeError("The folder is already in the target location. There is no need to move it.")
                 new_folder = existing_folder[0]
             else:
                 new_folder = FileService.insert(
@@ -588,7 +592,10 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
                 return False, str(e)
         return True, True
 
-    return await thread_pool_exec(_move_or_rename_sync)
+    try:
+        return await thread_pool_exec(_move_or_rename_sync)
+    except RuntimeError as e:
+        return False, str(e)
 
 
 def get_file_content(uid: str, file_id: str):
