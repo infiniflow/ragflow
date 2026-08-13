@@ -1978,8 +1978,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         enableTextCrossPage: '文字跨页合并',
         enableTableCrossPage: '表格跨页合并',
         keepHeaderFooter: '保留页眉页脚',
-        purchaseUrl:
-          '购买 API：中国大陆 https://somark.cn/workbench/purchase；海外（含中国台湾、中国香港、中国澳门）https://somark.ai/studio/purchase',
       },
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
