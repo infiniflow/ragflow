@@ -268,7 +268,7 @@ def _try_meta_pushdown(
     conditions: list[dict],
     logic: str,
 ) -> list[str] | None:
-    """Attempt the ES push-down path; return ``None`` to fall back in-memory.
+    """Attempt metadata-index push-down; return ``None`` to fall back in memory.
 
     Lazy-imports ``DocMetadataService`` so this module stays usable in
     environments where the API/db layer hasn't been wired up (e.g. unit tests
@@ -277,13 +277,26 @@ def _try_meta_pushdown(
     try:
         from api.db.services.doc_metadata_service import DocMetadataService
     except Exception as e:
-        logging.debug(f"[apply_meta_data_filter] push-down disabled, import failed: {e}")
+        logging.debug(f"Metadata filter push-down disabled because the service import failed: {e}")
         return None
     try:
         return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
     except Exception as e:
-        logging.warning(f"[apply_meta_data_filter] push-down errored, falling back: {e}")
+        logging.warning(f"Metadata filter push-down failed; falling back to in-memory filtering: {e}")
         return None
+
+
+def filter_doc_ids_by_metadata(
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
+    metas_loader: Callable[[], dict],
+) -> list[str]:
+    """Filter document IDs through the metadata index with a lazy exact fallback."""
+    doc_ids = _try_meta_pushdown(kb_ids, conditions, logic)
+    if doc_ids is not None:
+        return doc_ids
+    return meta_filter(metas_loader(), conditions, logic)
 
 
 def dedupe_list(values: list) -> list:
