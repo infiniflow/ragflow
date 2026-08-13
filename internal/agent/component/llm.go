@@ -887,6 +887,15 @@ func buildMessagesWithImages(system, user string, images []string, cite bool) []
 		return out
 	}
 
+	out = append(out, userMessageWithImages(user, images))
+	return out
+}
+
+// userMessageWithImages builds a user message carrying the text plus the
+// given data-image URIs as eino multi-modal content parts. Shared by the
+// LLM component (buildMessagesWithImages) and the Agent component
+// (buildAgentInputMessages) so both produce the exact same part shape.
+func userMessageWithImages(user string, images []string) schema.Message {
 	parts := make([]schema.MessageInputPart, 0, 1+len(images))
 	if user != "" {
 		parts = append(parts, schema.MessageInputPart{
@@ -903,11 +912,10 @@ func buildMessagesWithImages(system, user string, images []string, cite bool) []
 			},
 		})
 	}
-	out = append(out, schema.Message{
+	return schema.Message{
 		Role:                  schema.User,
 		UserInputMultiContent: parts,
-	})
-	return out
+	}
 }
 
 // mergeLLMParam layers raw inputs over the receiver's default param set.
