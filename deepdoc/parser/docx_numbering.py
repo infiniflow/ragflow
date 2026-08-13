@@ -217,14 +217,18 @@ def apply_numbered_headings_to_markdown(markdown, headings):
     heading_index = 0
     for index, line in enumerate(lines):
         match = re.match(r"^(#{1,6})\s+(.*?)\s*$", line)
-        if not match:
+        is_setext_heading = index + 1 < len(lines) and re.fullmatch(r"\s*[=-]+\s*", lines[index + 1]) is not None
+        if match is None and not is_setext_heading:
             continue
-        text = re.sub(r"[*_~`]", "", match.group(2)).strip()
+        text = re.sub(r"[*_~`]", "", match.group(2) if match is not None else line).strip()
         for candidate_index in range(heading_index, len(headings)):
             heading = headings[candidate_index]
             if text != heading.text:
                 continue
-            lines[index] = f"{'#' * min(max(heading.level, 1), 6)} {heading.numbered_text}"
+            if match is not None:
+                lines[index] = f"{'#' * min(max(heading.level, 1), 6)} {heading.numbered_text}"
+            else:
+                lines[index] = heading.numbered_text
             heading_index = candidate_index + 1
             break
     return "\n".join(lines)

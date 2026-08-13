@@ -94,3 +94,11 @@ def test_apply_numbered_headings_to_markdown():
     markdown = "# Введение\n\n# Порядок работы\n\n## Начало работы\n"
 
     assert apply_numbered_headings_to_markdown(markdown, headings) == "# 1 Введение\n\n# 2 Порядок работы\n\n## 2.1 Начало работы"
+
+
+def test_apply_numbered_headings_to_setext_markdown():
+    headings = extract_numbered_headings(_numbered_document())
+
+    markdown = "Введение\n========\n\nПорядок работы\n===============\n\nНачало работы\n-------------\n"
+
+    assert apply_numbered_headings_to_markdown(markdown, headings) == "1 Введение\n========\n\n2 Порядок работы\n===============\n\n2.1 Начало работы\n-------------"
