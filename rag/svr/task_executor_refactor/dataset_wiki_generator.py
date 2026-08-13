@@ -223,6 +223,60 @@ def _pipeline_compilation_template_ids(pipeline_id: str, tenant_id: str) -> list
     return template_ids
 
 
+def _pipeline_compiler_llm_id(pipeline_id: str) -> str | None:
+    """Return the chat model configured on a pipeline's Compiler component."""
+    pipeline_id = (pipeline_id or "").strip()
+    if not pipeline_id:
+        return None
+    from api.db.services.canvas_service import UserCanvasService
+
+    ok, canvas = UserCanvasService.get_by_id(pipeline_id)
+    if not ok or not canvas:
+        return None
+    dsl = getattr(canvas, "dsl", None)
+    if isinstance(dsl, str):
+        try:
+            dsl = json.loads(dsl)
+        except Exception:
+            return None
+    if not isinstance(dsl, dict) or not isinstance(dsl.get("components"), dict):
+        return None
+    for component in dsl["components"].values():
+        if not isinstance(component, dict):
+            continue
+        obj = component.get("obj") if isinstance(component.get("obj"), dict) else {}
+        component_name = obj.get("component_name") or component.get("component_name") or component.get("name")
+        if not isinstance(component_name, str) or component_name.lower() != "compiler":
+            continue
+        candidates = [
+            obj.get("params") if isinstance(obj.get("params"), dict) else {},
+            obj,
+            component.get("params") if isinstance(component.get("params"), dict) else {},
+            component,
+        ]
+        for candidate in candidates:
+            llm_id = candidate.get("llm_id")
+            if isinstance(llm_id, str) and llm_id.strip():
+                return llm_id.strip()
+        return None
+    return None
+
+
+def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, str | None]:
+    """Validate one Wiki template and return each doc's pipeline chat model."""
+    template_ids = {template_id for _, template_id in eligible}
+    if len(template_ids) > 1:
+        raise ValueError("Eligible Wiki documents must use the same template")
+    pipeline_chat_llm_ids: dict[str, str | None] = {}
+    for doc, _ in eligible:
+        doc_id = str(doc.get("id") or "")
+        pipeline_id = (doc.get("pipeline_id") or "").strip()
+        if not pipeline_id:
+            raise ValueError(f"Wiki document {doc_id} must use a pipeline")
+        pipeline_chat_llm_ids[doc_id] = _pipeline_compiler_llm_id(pipeline_id)
+    return pipeline_chat_llm_ids
+
+
 def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tuple[dict, str]]:
     """Docs eligible for wiki compilation, each paired with its wiki template id.
 
@@ -1339,11 +1393,12 @@ async def run_wiki(
     if not eligible:
         progress(1.0, "No documents are configured for wiki compilation.")
         return
+    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible)
 
-    # 3. Resolve chat models. MAP is per-(doc, template) so each pair
-    # uses its template's own ``llm_id``. REDUCE / PLAN / REFINE are
+    # 3. Resolve chat models. MAP is per document, so each document uses
+    # its pipeline Compiler's ``llm_id``. REDUCE / PLAN / REFINE are
     # KB-wide and need exactly one model — we pick the first eligible
-    # template's ``llm_id`` as the canonical KB chat model.
+    # pipeline Compiler's ``llm_id`` as the canonical KB chat model.
     llm_bundle_cache: dict[str, LLMBundle] = {}
 
     def _bundle_for(llm_id: str | None) -> LLMBundle:
@@ -1413,13 +1468,14 @@ async def run_wiki(
         progress(1.0, "No valid templates resolved for wiki compilation.")
         return
 
-    # ``kb_chat_llm_id`` is captured from the first eligible template and
+    # ``kb_chat_llm_id`` is captured from the first eligible pipeline and
     # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
     # Writer instructions and page examples follow the same first-template-
     # wins rule.
+    first_doc = resolved_eligible[0][0]
     first_parser_cfg = resolved_eligible[0][2]
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
-    kb_chat_llm_id: Optional[str] = (first_parser_cfg.get("llm_id") or "").strip() or None
+    kb_chat_llm_id = pipeline_chat_llm_ids.get(str(first_doc.get("id") or ""))
     first_instruction = first_parser_cfg.get("instruction")
     first_example = first_parser_cfg.get("example")
     kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
@@ -1468,7 +1524,7 @@ async def run_wiki(
                 i, doc, template_id, parser_cfg, batch, batch_no = item
                 doc_id = doc["id"]
                 stats = doc_stats[i]
-                map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
+                map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
                 phase1 = await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
@@ -1699,10 +1755,7 @@ async def run_wiki_incremental(
     if not eligible and not is_incremental:
         progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
-
-    pipeline_ids = {(doc.get("pipeline_id") or "").strip() for doc, _ in eligible}
-    if len(pipeline_ids) > 1:
-        raise ValueError("Eligible Wiki documents must use the same pipeline_id")
+    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible) if eligible else {}
 
     # Resolve mode from the eligible documents' templates. Each eligible
     # doc resolves to a wiki template either via its own parser_config or via
@@ -1790,10 +1843,7 @@ async def run_wiki_incremental(
             doc_configs[d["id"]] = cfg
             if not first_template_found and isinstance(cfg, dict):
                 first_template_found = True
-                llm_id = (cfg.get("llm_id") or "").strip()
-                kb_chat_llm_id = llm_id or None
-                if not kb_chat_llm_id:
-                    kb_chat_llm_id = None
+                kb_chat_llm_id = pipeline_chat_llm_ids.get(str(d.get("id") or ""))
         except Exception:
             logging.exception("wiki: config resolve failed for doc %s", d["id"])
             doc_configs[d["id"]] = {}
@@ -1821,7 +1871,7 @@ async def run_wiki_incremental(
                     return
                 _, doc, template_id, parser_cfg, batch = item
                 doc_id = doc["id"]
-                map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
+                map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
 
                 result = await wiki_map_from_chunks(
                     chunks=batch,
