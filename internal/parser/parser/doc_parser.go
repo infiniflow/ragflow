@@ -21,6 +21,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
@@ -35,11 +36,14 @@ func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
-// ParseWithResult captures the office_oxide PlainText output for
-// the DOC family. Python parser.py routes .doc through tika;
-// the Go side uses office_oxide which supports DOC via PlainText.
-// OutputFormat="text" — the python side falls back to text for
-// legacy DOC files since structured extraction is unreliable.
+// ParseWithResult extracts text for the DOC family. Python parser.py routes
+// .doc through tika; the Go side uses office_oxide which supports DOC. To
+// match Tika's higher text fidelity (paragraphs, headings, lists, tables), we
+// prefer the structured IR (flattened to plain text) and fall back to
+// ToMarkdown, then to PlainText. OutputFormat="text" — the python side also
+// falls back to text for legacy DOC files since structured extraction is
+// unreliable, and keeping the downstream text contract unchanged avoids new
+// consumer branches.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "doc")
 	if err != nil {
@@ -47,9 +51,9 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	defer doc.Close()
 
-	text, err := doc.PlainText()
+	text, err := extractDocText(doc)
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("doc plain-text: %w", err)}
+		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
 	return ParseResult{
@@ -57,4 +61,25 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		File:         map[string]any{"name": filename, "format": "doc"},
 		Text:         text,
 	}
+}
+
+// extractDocText returns the best-effort plain text for a legacy .doc
+// document. office_oxide's ToIRJSON exposes paragraph/heading/list/table
+// structure; flattenDocIR turns that into plain text so table and paragraph
+// content is preserved (the Tika-parity goal). It falls back to ToMarkdown,
+// then to PlainText, so a failure at any stage degrades gracefully instead of
+// yielding empty text. The final PlainText call's error is propagated,
+// preserving the original "no text at all" failure semantics.
+func extractDocText(doc *officeOxide.Document) (string, error) {
+	if irJSON, err := doc.ToIRJSON(); err == nil {
+		if t := flattenDocIR(irJSON); strings.TrimSpace(t) != "" {
+			return t, nil
+		}
+	}
+	if md, err := doc.ToMarkdown(); err == nil {
+		if strings.TrimSpace(md) != "" {
+			return md, nil
+		}
+	}
+	return doc.PlainText()
 }
