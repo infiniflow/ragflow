@@ -569,6 +569,14 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
 	)
+	// The dataset-level knowledge-compile consumer (tree/structure products) upserts
+	// into the dataset-nav tree, so the Ingestor must install the same ES-backed
+	// NavService the API server installs. Without this, nav.GetNavService() returns
+	// nil and tree/structure products are dropped (the consumer logs "nav service
+	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
+	// The embedder resolves the tenant's embedding model on demand, so both
+	// Search and UpsertDoc can embed queries/summaries automatically.
+	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(service.NewModelProviderService(), "")))
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by processMessage -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
