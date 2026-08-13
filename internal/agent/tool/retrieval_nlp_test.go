@@ -437,12 +437,34 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 func TestValidateEmbeddingModelsRejectsDifferentTenantModels(t *testing.T) {
 	firstID := "tenant-embedding-1"
 	secondID := "tenant-embedding-2"
-	err := validateEmbeddingModels([]*entity.Knowledgebase{
+	err := validateEmbeddingModels(t.Context(), nil, []*entity.Knowledgebase{
 		{ID: "kb-1", TenantID: "tenant-1", TenantEmbdID: &firstID},
 		{ID: "kb-2", TenantID: "tenant-1", TenantEmbdID: &secondID},
 	})
 	if err == nil {
 		t.Fatal("expected different tenant embedding models to be rejected")
+	}
+}
+
+func TestValidateEmbeddingModelsAllowsSameBaseAcrossInstances(t *testing.T) {
+	// Datasets using the same base embedding model through different provider
+	// instances must validate together, matching the chat/dataset-search rule.
+	err := validateEmbeddingModels(t.Context(), nil, []*entity.Knowledgebase{
+		{ID: "kb-1", TenantID: "tenant-1", EmbdID: "BAAI/bge-m3@renew@SILICONFLOW"},
+		{ID: "kb-2", TenantID: "tenant-1", EmbdID: "BAAI/bge-m3@COPY@SILICONFLOW"},
+	})
+	if err != nil {
+		t.Fatalf("expected same-base composites to be accepted, got %v", err)
+	}
+}
+
+func TestValidateEmbeddingModelsRejectsDifferentBases(t *testing.T) {
+	err := validateEmbeddingModels(t.Context(), nil, []*entity.Knowledgebase{
+		{ID: "kb-1", TenantID: "tenant-1", EmbdID: "BAAI/bge-m3@renew@SILICONFLOW"},
+		{ID: "kb-2", TenantID: "tenant-1", EmbdID: "Qwen/Qwen3-Embedding-0.6B@renew@SILICONFLOW"},
+	})
+	if err == nil {
+		t.Fatal("expected different base embedding models to be rejected")
 	}
 }
 
