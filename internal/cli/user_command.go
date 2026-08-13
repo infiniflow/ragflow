@@ -3492,9 +3492,9 @@ func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
 		datasetID = id
 	}
 
-	url := "/sync_logs"
+	url := "/connectors/sync_logs"
 	if datasetID != "" {
-		url = fmt.Sprintf("/sync_logs?dataset_id=%s", netUrl.QueryEscape(datasetID))
+		url = fmt.Sprintf("/connectors/sync_logs?dataset_id=%s", netUrl.QueryEscape(datasetID))
 	}
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)

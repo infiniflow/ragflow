@@ -626,6 +626,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)
 				connectors.POST("", r.connectorHandler.CreateConnector)
+				// Sync logs for the current user, optionally filtered by dataset.
+				connectors.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
@@ -637,9 +639,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
-
-			// Sync logs for the current user, optionally filtered by dataset.
-			v1.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
 
 			// MCP server routes.
 			mcp := v1.Group("/mcp")
