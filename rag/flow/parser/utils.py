@@ -81,6 +81,9 @@ def extract_word_outlines(filename, binary=None, extract_automatic_numbering=Tru
     outlines = []
     for paragraph in doc.paragraphs:
         numbered_heading = numbering.numbered_heading(paragraph)
+        style_name = paragraph.style.name if paragraph.style else ""
+        if not re.search(r"Heading\s*(\d+)", style_name, re.I):
+            continue
         text = numbered_heading.numbered_text if numbered_heading is not None else paragraph.text.strip()
         if not text:
             continue

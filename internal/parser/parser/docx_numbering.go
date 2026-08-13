@@ -148,13 +148,18 @@ func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 	}
 
 	counters := make(map[int][]int)
+	resolvedStyles := make(map[string]docxResolvedStyle)
 	var headings []docxNumberedHeading
 	for _, paragraph := range paragraphs {
 		styleID := ""
 		if paragraph.Properties != nil && paragraph.Properties.Style != nil {
 			styleID = paragraph.Properties.Style.Value
 		}
-		style := resolveDOCXStyle(styleID, styles, nil)
+		style, ok := resolvedStyles[styleID]
+		if !ok {
+			style = resolveDOCXStyle(styleID, styles, nil)
+			resolvedStyles[styleID] = style
+		}
 		ref := paragraphNumberingRef(paragraph.Properties)
 		numberingDisabled := isParagraphNumberingDisabled(paragraph.Properties)
 		if ref == nil && !numberingDisabled {
@@ -197,7 +202,7 @@ func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 			continue
 		}
 		numberedText := strings.TrimSpace(text)
-		if !strings.HasPrefix(numberedText, marker) {
+		if !hasDOCXNumberingMarker(numberedText, marker) {
 			numberedText = marker + " " + numberedText
 		}
 		headings = append(headings, docxNumberedHeading{
@@ -207,6 +212,10 @@ func extractDOCXNumberedHeadings(data []byte) []docxNumberedHeading {
 		})
 	}
 	return headings
+}
+
+func hasDOCXNumberingMarker(text, marker string) bool {
+	return text == marker || strings.HasPrefix(text, marker+" ")
 }
 
 func readDOCXXMLParts(data []byte, names ...string) map[string][]byte {
@@ -227,9 +236,9 @@ func readDOCXXMLParts(data []byte, names ...string) map[string][]byte {
 		if err != nil {
 			continue
 		}
-		content, err := io.ReadAll(r)
-		r.Close()
-		if err == nil {
+		content, readErr := io.ReadAll(r)
+		closeErr := r.Close()
+		if readErr == nil && closeErr == nil {
 			parts[file.Name] = content
 		}
 	}
@@ -326,6 +335,9 @@ func convertDOCXNumberingLevel(level docxXMLNumberingLevel) docxNumberingLevel {
 }
 
 func (definitions docxNumberingDefinitions) resolveLevel(id, level int) (docxNumberingLevel, bool) {
+	if level < 0 || level >= 9 {
+		return docxNumberingLevel{}, false
+	}
 	instance, ok := definitions.Instances[id]
 	if !ok {
 		return docxNumberingLevel{}, false

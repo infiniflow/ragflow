@@ -14,10 +14,14 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 from dataclasses import dataclass
 
 from docx.oxml.ns import qn
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,7 @@ class DOCXNumberingResolver:
         try:
             root = document.part.numbering_part.element
         except (AttributeError, KeyError):
+            logger.debug("DOCX numbering part is unavailable")
             return
 
         for abstract in root.findall(qn("w:abstractNum")):
@@ -130,6 +135,7 @@ class DOCXNumberingResolver:
                 overrides[list_level] = definition
             self._instances[number_id] = _NumberingInstance(abstract_id=abstract_id, overrides=overrides)
             self._instance_order.append(number_id)
+        logger.debug("Resolved %d DOCX numbering definitions", len(self._instances))
 
     def _paragraph_numbering_reference(self, paragraph):
         properties = paragraph._p.pPr
@@ -173,6 +179,8 @@ class DOCXNumberingResolver:
         return default
 
     def _resolve_level(self, number_id, list_level):
+        if not 0 <= list_level < 9:
+            return None
         instance = self._instances.get(number_id)
         if instance is None:
             return None
@@ -227,7 +235,14 @@ def apply_numbered_headings_to_markdown(markdown, headings):
     heading_index = 0
     for index, line in enumerate(lines):
         match = re.match(r"^(#{1,6})\s+(.*?)\s*$", line)
-        is_setext_heading = index + 1 < len(lines) and re.fullmatch(r"\s*[=-]+\s*", lines[index + 1]) is not None
+        candidate = line.strip()
+        is_setext_heading = (
+            bool(candidate)
+            and re.match(r"(?:[-+*]|\d+[.)])\s+", candidate) is None
+            and "|" not in candidate
+            and index + 1 < len(lines)
+            and re.fullmatch(r"\s*[=-]+\s*", lines[index + 1]) is not None
+        )
         if match is None and not is_setext_heading:
             continue
         text = re.sub(r"[*_~`]", "", match.group(2) if match is not None else line).strip()

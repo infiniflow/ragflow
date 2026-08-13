@@ -1027,7 +1027,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         _SerializedRelationships.load_from_xml = load_from_xml_v2
 
         # sections = (text, image, tables)
-        sections = Docx()(filename, binary)
+        sections = Docx()(filename, binary, extract_automatic_numbering=parser_config.get("extract_automatic_numbering", True))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         # chunks list[dict]

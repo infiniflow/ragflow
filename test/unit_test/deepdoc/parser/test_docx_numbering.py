@@ -21,7 +21,7 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from deepdoc.parser.docx_numbering import apply_numbered_headings_to_markdown, extract_numbered_headings
+from deepdoc.parser.docx_numbering import NumberedHeading, apply_numbered_headings_to_markdown, extract_numbered_headings
 
 
 def _element(tag, value=None, **attributes):
@@ -69,6 +69,7 @@ def _numbered_document():
     abstract = _element("w:abstractNum", abstractNumId=abstract_id)
     _add_numbering_level(abstract, 0, "Heading1", "%1")
     _add_numbering_level(abstract, 1, "Heading2", "%1.%2")
+    _add_numbering_level(abstract, 9, "Heading1", "%1")
     numbering_root.append(abstract)
 
     number = _element("w:num", numId=number_id)
@@ -86,6 +87,13 @@ def _numbered_document():
     document.add_paragraph("Общие сведения", style="Heading 1")
     document.add_paragraph("Порядок работы", style="Heading 1")
     document.add_paragraph("Начало работы", style="Heading 2")
+
+    invalid_level = document.add_paragraph("Invalid level", style="Heading 1")
+    invalid_properties = invalid_level._p.get_or_add_pPr()
+    invalid_numbering = _element("w:numPr")
+    invalid_numbering.append(_element("w:ilvl", 9))
+    invalid_numbering.append(_element("w:numId", number_id))
+    invalid_properties.append(invalid_numbering)
 
     stream = BytesIO()
     document.save(stream)
@@ -121,6 +129,14 @@ def test_apply_numbered_headings_to_markdown():
     markdown = "# Введение\n\n# Общие сведения\n\n# Порядок работы\n\n## Начало работы\n"
 
     assert apply_numbered_headings_to_markdown(markdown, headings) == "# Введение\n\n# 1 Общие сведения\n\n# 2 Порядок работы\n\n## 2.1 Начало работы"
+
+
+def test_setext_detection_ignores_empty_list_and_table_candidates():
+    for candidate in ("", "- List item", "1. List item", "Heading | Value"):
+        markdown = f"{candidate}\n---"
+        headings = [NumberedHeading(text=candidate, numbered_text=f"1 {candidate}", level=1)]
+
+        assert apply_numbered_headings_to_markdown(markdown, headings) == markdown
 
 
 def test_apply_numbered_headings_to_setext_markdown():

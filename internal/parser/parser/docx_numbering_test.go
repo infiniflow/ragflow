@@ -118,3 +118,32 @@ func TestFormatDOCXNumber(t *testing.T) {
 		})
 	}
 }
+
+func TestHasDOCXNumberingMarker(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "exact marker", text: "1", want: true},
+		{name: "marker and space", text: "1 Heading", want: true},
+		{name: "shared prefix", text: "1Password", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasDOCXNumberingMarker(test.text, "1"); got != test.want {
+				t.Fatalf("hasDOCXNumberingMarker(%q, %q) = %t, want %t", test.text, "1", got, test.want)
+			}
+		})
+	}
+}
+
+func TestResolveDOCXNumberingLevelRejectsInvalidLevels(t *testing.T) {
+	definitions := docxNumberingDefinitions{
+		Abstracts: map[int]map[int]docxNumberingLevel{7: {9: {Text: "%1", Format: "decimal"}}},
+		Instances: map[int]docxNumberingInstance{42: {AbstractID: 7}},
+	}
+	if _, ok := definitions.resolveLevel(42, 9); ok {
+		t.Fatal("resolveLevel accepted list level 9")
+	}
+}
