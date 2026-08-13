@@ -799,3 +799,26 @@ func TestLLM_Invoke_UsesModelContentLengthBudget(t *testing.T) {
 		t.Fatal("user prompt was modified by fitting despite fitting the content_length budget")
 	}
 }
+
+// TestCleanFormattedAnswer pins cleanFormattedAnswer's pipeline: think-block
+// strip (common.StripThinkTrailing) first, then JSON-fence prefix/suffix.
+func TestCleanFormattedAnswer(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain", in: "plain answer", want: "plain answer"},
+		{name: "think prefix", in: "<think>reasoning</think>{\"a\":1}", want: "{\"a\":1}"},
+		{name: "mid-text think", in: "note<think>reasoning</think>{\"a\":1}", want: "{\"a\":1}"},
+		{name: "json fence", in: "```json\n{\"a\":1}\n```", want: "\n{\"a\":1}\n"},
+		{name: "think then fence", in: "<think>reasoning</think>```json\n{\"a\":1}\n```", want: "\n{\"a\":1}\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanFormattedAnswer(tt.in); got != tt.want {
+				t.Errorf("cleanFormattedAnswer(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

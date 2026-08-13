@@ -739,10 +739,7 @@ func buildTaggerPrompt(topN int, tagSetStr string, examples []schema.TaggedChunk
 }
 
 func parseTaggerResponse(raw string, topN int) map[string]int {
-	raw = strings.TrimSpace(raw)
-	if idx := strings.LastIndex(raw, "</think>"); idx >= 0 {
-		raw = strings.TrimSpace(raw[idx+len("</think>"):])
-	}
+	raw = strings.TrimSpace(common.StripThinkTrailing(raw))
 	if strings.Contains(raw, "**ERROR**") {
 		common.Warn("extractor tags: LLM returned **ERROR**")
 		return nil
