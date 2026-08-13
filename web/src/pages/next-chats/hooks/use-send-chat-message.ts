@@ -228,6 +228,13 @@ export const useSendMessage = () => {
 
       // Route the question to the conversation it was asked in, not whichever
       // is currently displayed.
+      //
+      // Snapshot the history before appendQuestion writes the question and its
+      // assistant placeholder into the store.
+      const history =
+        useChatStreamStore.getState().sessions[targetConversationId]
+          ?.messages ?? [];
+
       appendQuestion(targetConversationId, questionMessage);
 
       setValue('');
@@ -235,7 +242,7 @@ export const useSendMessage = () => {
         currentConversationId: targetConversationId,
         // For an existing conversation currentMessages is empty; fall back to
         // the store's message list instead of sending an empty history.
-        messages: currentMessages.length > 0 ? currentMessages : undefined,
+        messages: currentMessages.length > 0 ? currentMessages : history,
         message: {
           id,
           content: value.trim(),
