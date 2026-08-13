@@ -117,3 +117,124 @@ func TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix(t *testing.T) {
 		t.Fatalf("positions matrix has %d groups, want 2 (both merged items)", len(matrix))
 	}
 }
+
+// TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions is a TDD test
+// for issue #18148. Python's token_chunker drops overlap-head PDF coordinates,
+// and the Go mergeUnits overlap branch has the SAME defect: when a fresh chunk
+// starts and overlap>0, the tail of the previous chunk is prepended to the new
+// chunk's text (computeOverlapPrefix, token.go:839 / :860), but the new chunk's
+// PDFPositions is left as only cur's coordinates (token.go:836-848 and
+// :854-868). The overlap prefix is part of the chunk's visible/displayed
+// content, so its coordinates must be carried forward — exactly like the
+// merge-into-prev path extends positions (token.go:877). On the buggy code the
+// overlap text is shown but NOT highlighted.
+//
+// overlappedPct=100 forces the overlap prefix to be the ENTIRE previous chunk,
+// so the expectation is crisp: every new chunk must carry the previous chunk's
+// full coordinates. This test is RED until the overlap branch carries
+// coordinates.
+func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T) {
+	posA := json.RawMessage(`[[1,0,10,0,5]]`)
+	posB := json.RawMessage(`[[2,0,20,0,8]]`)
+	posC := json.RawMessage(`[[3,0,30,0,12]]`)
+	// At overlapPct=100 the scaled threshold is 0, so every unit after the
+	// first starts a fresh chunk carrying the WHOLE previous chunk as overlap.
+	items := [][]schema.ChunkDoc{
+		{
+			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "gamma", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posC},
+		},
+	}
+	got := mergeByTokenSizeFromJSON(items, 20, 100, schema.MergeOverCap)
+	merged := got[0]
+	if len(merged) != 3 {
+		t.Fatalf("want 3 chunks (each unit starts fresh at overlapPct=100), got %d", len(merged))
+	}
+
+	// chunk[1] starts with the overlap prefix copied from chunk[0] ("alpha").
+	if !strings.Contains(merged[1].Text, "alpha") {
+		t.Errorf("chunk[1] missing overlap prefix from prev chunk: text=%q", merged[1].Text)
+	}
+	// The overlap prefix is shown, so chunk[1] must also carry chunk[0]'s
+	// coordinates. BUG: only chunk[1]'s own (posB) coordinates survive today.
+	if !strings.Contains(string(merged[1].PDFPositions), "1,0,10,0,5") {
+		t.Errorf("chunk[1] dropped overlap-head coordinates (prev chunk[0] posA): pdf_positions=%s", string(merged[1].PDFPositions))
+	}
+	if !strings.Contains(string(merged[1].PDFPositions), "2,0,20,0,8") {
+		t.Errorf("chunk[1] lost its own coordinates: pdf_positions=%s", string(merged[1].PDFPositions))
+	}
+
+	// chunk[2]'s overlap prefix is the full chunk[1] text; its coordinates must
+	// include chunk[0], chunk[1], and its own (the overlap chain is carried).
+	if !strings.Contains(merged[2].Text, "alphabeta") {
+		t.Errorf("chunk[2] missing overlap prefix from prev chunk: text=%q", merged[2].Text)
+	}
+	for _, want := range []string{"1,0,10,0,5", "2,0,20,0,8", "3,0,30,0,12"} {
+		if !strings.Contains(string(merged[2].PDFPositions), want) {
+			t.Errorf("chunk[2] missing coordinates %s (overlap chain not carried): pdf_positions=%s", want, string(merged[2].PDFPositions))
+		}
+	}
+}
+
+// TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions is
+// a partial-overlap companion to
+// TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions (#18148).
+// overlappedPct=100 (the full-overlap test) forces the ENTIRE previous chunk
+// into the overlap prefix; here overlappedPct=20 means the overlap prefix is
+// only the TAIL ~20% of the previous chunk. The coordinates carried must be
+// exactly the previous chunk's tail items whose span intersects that tail --
+// NOT the whole previous chunk. This locks the per-item tail-selection in
+// overlapTailPositions (token.go:832): a regression that carried the entire
+// previous chunk's coordinates (over-inflating the highlight box) or dropped
+// overlap coordinates entirely would both fail this test.
+func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t *testing.T) {
+	posA := json.RawMessage(`[[1,0,10,0,5]]`)
+	posB := json.RawMessage(`[[2,0,20,0,8]]`)
+	posC := json.RawMessage(`[[3,0,30,0,12]]`)
+	posD := json.RawMessage(`[[4,0,40,0,16]]`)
+	posE := json.RawMessage(`[[5,0,50,0,20]]`)
+	posF := json.RawMessage(`[[6,0,60,0,24]]`)
+	// 6 equal-length items (5 runes each). With chunkTokens=5 and each item
+	// TKNums=1, items 0..4 merge into one chunk (tk reaches 5); item5 starts a
+	// fresh chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of
+	// the 5-item previous chunk's text => only the last item ("eeeee", posE)
+	// intersects the tail. So chunk[1] must carry posE (tail) + posF (own), but
+	// NOT posA/posB/posC/posD.
+	items := [][]schema.ChunkDoc{
+		{
+			{Text: "aaaaa", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posA},
+			{Text: "bbbbb", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posB},
+			{Text: "ccccc", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posC},
+			{Text: "ddddd", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posD},
+			{Text: "eeeee", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posE},
+			{Text: "fffff", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
+		},
+	}
+	got := mergeByTokenSizeFromJSON(items, 5, 20, schema.MergeOverCap)
+	merged := got[0]
+	if len(merged) != 2 {
+		t.Fatalf("want 2 chunks (5 items merge, 6th starts fresh with partial overlap), got %d", len(merged))
+	}
+
+	// The new chunk's overlap text is the tail of the previous chunk.
+	if !strings.Contains(merged[1].Text, "eeeee") {
+		t.Errorf("chunk[1] missing overlap tail text from prev chunk: text=%q", merged[1].Text)
+	}
+	// The tail item's coordinates MUST be carried.
+	pdf := string(merged[1].PDFPositions)
+	if !strings.Contains(pdf, "5,0,50,0,20") {
+		t.Errorf("chunk[1] dropped tail-item coordinates (prev posE): pdf_positions=%s", pdf)
+	}
+	if !strings.Contains(pdf, "6,0,60,0,24") {
+		t.Errorf("chunk[1] lost its own coordinates (posF): pdf_positions=%s", pdf)
+	}
+	// Partial overlap: the head items of the previous chunk must NOT be carried
+	// (that would over-inflate the highlight box). A whole-prev carry bug or a
+	// no-carry bug both fail here.
+	for _, absent := range []string{"1,0,10,0,5", "2,0,20,0,8", "3,0,30,0,12", "4,0,40,0,16"} {
+		if strings.Contains(pdf, absent) {
+			t.Errorf("chunk[1] over-carried non-overlap head coordinates %s: pdf_positions=%s", absent, pdf)
+		}
+	}
+}
