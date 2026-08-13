@@ -70,7 +70,7 @@ const methods = {
   },
   listProviderModels: {
     url: listProviderModels,
-    method: 'get',
+    method: 'post',
   },
   listProviderInstances: {
     url: listProviderInstances,

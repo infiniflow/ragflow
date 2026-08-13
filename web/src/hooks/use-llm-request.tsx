@@ -268,20 +268,15 @@ export const useAddProviderInstance = () => {
       try {
         await addProvider({ provider_name: params.llm_factory });
 
-        // When `id` is supplied the caller is updating an existing
-        // instance (blur-save on a saved card), so do not short-circuit
-        // on the "already exists" check — we *want* the server call.
-        if (!params.id) {
-          const { data: instancesRes } = await llmService.listProviderInstances(
-            { provider_name: params.llm_factory },
-            true,
-          );
-          const instanceExists = instancesRes?.data?.some(
-            (i: IProviderInstance) => i.instance_name === params.instance_name,
-          );
-          if (instanceExists && !params.verify) {
-            return { code: 0, data: null };
-          }
+        const { data: instancesRes } = await llmService.listProviderInstances(
+          { provider_name: params.llm_factory },
+          true,
+        );
+        const instanceExists = instancesRes?.data?.some(
+          (i: IProviderInstance) => i.instance_name === params.instance_name,
+        );
+        if (instanceExists && !params.verify) {
+          return { code: 0, data: null };
         }
       } catch {
         // ignore list failure and proceed to add
@@ -312,6 +307,9 @@ export const useAddProviderInstance = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
       }
       return data;
@@ -349,20 +347,15 @@ export const useListProviderModels = () => {
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
       const { provider_name, api_key, base_url } = params;
-      // GET /api/v1/providers/<provider_name>/models
-      // The API accepts api_key and base_url as optional query parameters.
-      // api_key is expected as a string; values in {} object form must be
-      // JSON-stringified before being sent.
-      const queryParams: Record<string, string> = {};
+      const requestData: Record<string, unknown> = {};
       if (api_key) {
-        queryParams.api_key =
-          typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
+        requestData.api_key = api_key;
       }
       if (base_url) {
-        queryParams.base_url = base_url;
+        requestData.base_url = base_url;
       }
       const { data } = await llmService.listProviderModels(
-        { provider_name, params: queryParams },
+        { provider_name, data: requestData },
         true,
       );
       return data;

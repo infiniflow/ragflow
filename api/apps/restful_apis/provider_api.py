@@ -197,7 +197,7 @@ def delete_provider(tenant_id: str = None, provider_id_or_name: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_id_or_name>/models", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/models", methods=["GET", "POST"])  # noqa: F821
 @login_required
 async def list_provider_models(provider_id_or_name: str):
     """
@@ -230,8 +230,13 @@ async def list_provider_models(provider_id_or_name: str):
                 type: object
     """
     try:
-        api_key = request.args.get("api_key")
-        base_url = request.args.get("base_url")
+        body = await request.get_json(silent=True) if request.method == "POST" else {}
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return get_error_argument_result(message="request body must be an object")
+        api_key = body.get("api_key") or request.args.get("api_key")
+        base_url = body.get("base_url") or request.args.get("base_url")
         success, result = await provider_api_service.list_provider_models(provider_id_or_name, api_key, base_url)
         if success:
             return get_result(data=result)
@@ -315,10 +320,6 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           type: object
           required:
             - instance_name
-            - api_key
-            - base_url
-            - region
-            - model_info
           properties:
             instance_name:
               type: string
@@ -326,6 +327,9 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
             api_key:
               type: string
               description: API key.
+            base_url:
+              type: string
+              description: Base URL.
             region:
               type: string
               description: Region.
@@ -578,9 +582,6 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
           required:
             - instance_name
             - api_key
-            - base_url
-            - region
-            - model_info
           properties:
             instance_name:
               type: string
@@ -628,16 +629,18 @@ async def update_provider_instance(tenant_id: str = None, provider_id_or_name: s
         return get_error_argument_result(message="instance_id_or_name is required")
     if not data:
         return get_error_argument_result(message="Request body is required")
-    required_keys = ["instance_name", "api_key", "base_url", "model_info"]
+    required_keys = ["instance_name", "api_key"]
     missing = [k for k in required_keys if k not in data]
     if missing:
         return get_error_argument_result(message=f"Missing required fields: {', '.join(missing)}")
 
     instance_name = data["instance_name"]
     api_key = data["api_key"]
-    base_url = data["base_url"]
+    base_url = data.get("base_url", "")
     region = data.get("region", "default")
-    model_info = data["model_info"]
+    if "model_info" in data and not isinstance(data["model_info"], list):
+        return get_error_argument_result(message="model_info must be an array")
+    model_info = data.get("model_info")
     verify = data.get("verify", True)
 
     try:

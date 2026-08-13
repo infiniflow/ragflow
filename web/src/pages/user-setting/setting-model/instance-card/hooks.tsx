@@ -63,8 +63,8 @@ export function buildApiKeyValue(
  *   1. a raw JSON string  `'{"api_key":"sk-x","group_id":"123"}'`
  *   2. an already-parsed object `{ api_key, group_id }`
  *   3. a plain bare key string `'sk-x'`
- * Normalise all three into the bare key plus any nested credential
- * fields so the form pre-fills group_id / api_version / provider_order.
+ * Normalise all three into the bare key plus the registered nested
+ * credential fields so provider forms can restore their inputs.
  */
 export function unwrapApiKey(raw: unknown): {
   apiKey: string;
@@ -165,8 +165,8 @@ export function useProviderBaseUrlOptions(providerName: string) {
  *   nested `spark_api_password`), use it to reverse the corresponding
  *   `submitTransform` so the provider-specific credential fields
  *   pre-fill. Otherwise fall back to the generic `unwrapApiKey` path
- *   which lifts the bare `api_key` plus `API_KEY_NESTED_FIELDS`
- *   (`group_id` / `api_version` / `provider_order`).
+ *   which lifts the bare `api_key` plus the provider-specific fields
+ *   registered in `API_KEY_NESTED_FIELDS`.
  */
 export function useProviderInitialValues(
   instance: IProviderInstance,
@@ -203,9 +203,8 @@ export function useProviderInitialValues(
     } else if (merged.api_key) {
       // api_key may come back as a JSON string, an already-parsed object,
       // or a plain bare key (see `unwrapApiKey`). Normalise it so the
-      // api_key text field shows the bare key and the nested credential
-      // fields (MiniMax group_id, Azure api_version, OpenRouter
-      // provider_order) pre-fill their own form inputs.
+      // api_key text field shows the bare key and registered nested
+      // credentials pre-fill their own form inputs.
       const { apiKey, nested } = unwrapApiKey(merged.api_key);
       values.api_key = apiKey;
       Object.assign(values, nested);

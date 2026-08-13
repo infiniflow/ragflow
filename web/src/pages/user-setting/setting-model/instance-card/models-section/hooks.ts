@@ -91,7 +91,10 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
  *  field (e.g. VolcEngine, Google Cloud) so the auto-fetch gate can
  *  distinguish "no base_url field" from "base_url field exists but is
  *  empty". */
-export type ResolvedCreds = { apiKey: string; baseUrl: string | undefined };
+export type ResolvedCreds = {
+  apiKey: string | object;
+  baseUrl: string | undefined;
+};
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
@@ -107,7 +110,7 @@ export function useResolveCreds(
   const resolveCreds = useCallback((): ResolvedCreds => {
     const fv = getFormValues?.() ?? {};
     return {
-      apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
+      apiKey: (fv.api_key as string | object) ?? instance?.api_key ?? '',
       baseUrl: (fv.base_url as string) ?? instance?.base_url,
     };
   }, [getFormValues, instance]);
@@ -126,7 +129,7 @@ interface UseModelsCatalogArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
 
-  apiKeyValue: string;
+  apiKeyValue: ResolvedCreds['apiKey'];
 
   baseUrlValue: string | undefined;
 
@@ -236,25 +239,42 @@ export function useModelsCatalog({
   // to know which server to query. For every other provider we fetch on
   // mount regardless.
   //
-  // The credential check is performed INSIDE the effect (not in the deps)
-  // because for saved cards the form is reset by
-  // `useFormResetOnDetailsLoad` in a parent effect that runs BEFORE this
-  // one. Reading `resolveCreds()` at effect time picks up the freshly
-  // reset `base_url` / `api_key` values, whereas reading them during
-  // render would see the stale (pre-reset) values and defer forever.
-
-  const requiresApiKey = providerName === LLMFactory.VolcEngine;
+  // The credential check is performed INSIDE the effect (not in the deps).
+  // The host restores saved credentials before passive effects run, so this
+  // reads the current form snapshot instead of the previous render's values.
 
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
+    if (
+      providerName === LLMFactory.Bedrock &&
+      instanceName === DRAFT_INSTANCE_SENTINEL
+    )
+      return;
 
     const creds = resolveCreds();
+    const apiKeyConfig =
+      typeof creds.apiKey === 'object' && creds.apiKey !== null
+        ? (creds.apiKey as Record<string, unknown>)
+        : undefined;
+    const requiresApiKey =
+      providerName === LLMFactory.VolcEngine ||
+      (providerName === LLMFactory.Bedrock &&
+        apiKeyConfig?.auth_mode === 'bedrock_api_key');
+    const hasApiKey =
+      providerName === LLMFactory.Bedrock && requiresApiKey
+        ? Boolean(apiKeyConfig?.bedrock_api_key && apiKeyConfig?.bedrock_region)
+        : Boolean(creds.apiKey);
+    const waitingForInstanceDetails =
+      providerName === LLMFactory.Bedrock &&
+      instanceName !== DRAFT_INSTANCE_SENTINEL &&
+      !instanceDetailsLoaded;
     const hasBaseUrlField = creds.baseUrl !== undefined;
     const ready =
-      (!requiresApiKey || !!creds.apiKey) &&
+      !waitingForInstanceDetails &&
+      (!requiresApiKey || hasApiKey) &&
       (!hasBaseUrlField || !!creds.baseUrl);
     if (!ready) return;
     hasAutoFetchedRef.current = true;
@@ -472,26 +492,8 @@ interface UseModelVerifyArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
   instance?: IProviderInstance;
-  /**
-   * Host card's current form values. Required when `verifyTransform` is
-   * supplied so the transform can map provider-specific field names
-   * (e.g. PaddleOCR's `paddleocr_api_url`) onto the structured `api_key`
-   * object the verify endpoint expects.
-   */
   getFormValues?: () => Record<string, any>;
-  /**
-   * Provider-specific transform that maps form values onto the verify
-   * payload's `api_key` / `base_url` / `region`. When present it takes
-   * precedence over the generic `resolveCreds()` mapping. The
-   * `modelInfo` it returns is ignored - per-model verify always sends
-   * only the single model being verified.
-   */
-  verifyTransform?: (values: Record<string, any>) => {
-    apiKey: string | object | Record<string, any>;
-    baseUrl?: string;
-    region?: string;
-    modelInfo?: IModelInfo[];
-  };
+  verifyTransform?: ModelsSectionProps['verifyTransform'];
 }
 
 /**
@@ -520,8 +522,7 @@ function buildVerifyArgs(
   let region: string | undefined;
 
   if (verifyTransform) {
-    const formValues = getFormValues?.() ?? {};
-    const transformed = verifyTransform(formValues);
+    const transformed = verifyTransform(getFormValues?.() ?? {});
     apiKey = transformed.apiKey;
     baseUrl = transformed.baseUrl;
     region = transformed.region;

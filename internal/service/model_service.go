@@ -535,6 +535,27 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
+func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, error) {
+	if !strings.EqualFold(providerName, "Bedrock") {
+		return false, nil
+	}
+	var config struct {
+		AuthMode string `json:"auth_mode"`
+		APIKey   string `json:"bedrock_api_key"`
+		Region   string `json:"bedrock_region"`
+	}
+	if json.Unmarshal([]byte(apiKey), &config) != nil || config.AuthMode != "bedrock_api_key" {
+		return false, nil
+	}
+	if strings.TrimSpace(config.APIKey) == "" {
+		return false, errors.New("Bedrock API key must be provided")
+	}
+	if strings.TrimSpace(config.Region) == "" {
+		return false, errors.New("AWS region must be provided")
+	}
+	return true, nil
+}
+
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
@@ -545,6 +566,9 @@ func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenant
 
 func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -570,9 +594,20 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		apiKey = "x"
 	}
 
+	bedrockAPIKeyAuth, err := validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
+	if bedrockAPIKeyAuth && len(modelInfo) == 0 {
+		return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
+	}
+
 	// Verify the API key against the provider.
 	// Mirrors Python's verify_api_key (provider_api_service.py:596).
-	modelVerifyResult := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+	modelVerifyResult := make(map[string]string)
+	if !bedrockAPIKeyAuth {
+		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+	}
 
 	instanceID := utility.GenerateToken()
 
@@ -613,7 +648,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 				return common.CodeServerError, err
 			}
 		}
-	} else {
+	} else if !bedrockAPIKeyAuth {
 		// model_info not provided — add all factory default models.
 		// Mirrors Python's create_provider_instance
 		// (api/apps/services/provider_api_service.py:506-531).
@@ -1983,6 +2018,9 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 }
 
 func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -2014,9 +2052,15 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		apiKey = "x"
 	}
 
+	bedrockAPIKeyAuth, err := validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
+
 	// Verify API key if requested.
 	modelVerifyResult := make(map[string]string)
-	if verify {
+	runtimeVerify := verify && !bedrockAPIKeyAuth
+	if runtimeVerify {
 		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
 	}
 
@@ -2060,45 +2104,43 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		effectiveInstanceName = newInstanceName
 	}
 
-	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
-	existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	existingModelMap := make(map[string]*entity.TenantModel)
-	for _, mdl := range existingModels {
-		existingModelMap[mdl.ModelName] = mdl
-	}
-
-	// Delete models that are no longer in the submitted model_info.
-	submittedModelNames := make(map[string]bool)
+	// Omitted model_info is a credential-only update. An explicit list,
+	// including [], is authoritative for model replacement.
 	if modelInfo != nil {
+		existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+		existingModelMap := make(map[string]*entity.TenantModel)
+		for _, mdl := range existingModels {
+			existingModelMap[mdl.ModelName] = mdl
+		}
+
+		submittedModelNames := make(map[string]bool)
 		for _, mdl := range modelInfo {
 			if mdl.ModelName != "" {
 				submittedModelNames[mdl.ModelName] = true
 			}
 		}
-	}
-	var idsToRemove []string
-	for name, mdl := range existingModelMap {
-		if !submittedModelNames[name] {
-			idsToRemove = append(idsToRemove, mdl.ID)
+		var idsToRemove []string
+		for name, mdl := range existingModelMap {
+			if !submittedModelNames[name] {
+				idsToRemove = append(idsToRemove, mdl.ID)
+			}
 		}
-	}
-	if len(idsToRemove) > 0 {
-		if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
-			return common.CodeServerError, err
+		if len(idsToRemove) > 0 {
+			if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
+				return common.CodeServerError, err
+			}
 		}
-	}
 
-	// Add or update models from model_info.
-	if modelInfo != nil {
+		// Add or update models from model_info.
 		for _, mdl := range modelInfo {
 			if mdl.ModelName == "" {
 				continue
 			}
 			// Attach verify status.
-			if verify {
+			if runtimeVerify {
 				verifyStatus := modelVerifyResult[mdl.ModelName]
 				if verifyStatus == "" {
 					verifyStatus = entity.ModelVerifyUnknown
