@@ -96,6 +96,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
         PipelineTaskType=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        TaskStatus=SimpleNamespace(SCHEDULE="schedule", RUNNING="running", CANCEL="cancel"),
         RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )

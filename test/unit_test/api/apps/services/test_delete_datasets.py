@@ -52,10 +52,13 @@ def _stub(monkeypatch, name, **attrs):
 
 def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete, stranded_doc_rows=0):
     f2d_delete = MagicMock()
+    calls = []
     cleanup = SimpleNamespace(
-        doc_filter_delete=MagicMock(return_value=stranded_doc_rows),
-        connector2kb_filter_delete=MagicMock(),
-        sync_logs_filter_delete=MagicMock(),
+        calls=calls,
+        doc_filter_delete=MagicMock(side_effect=lambda *_a, **_k: (calls.append("sweep_documents"), stranded_doc_rows)[1]),
+        connector2kb_filter_delete=MagicMock(side_effect=lambda *_a, **_k: calls.append("unlink_connectors")),
+        sync_logs_filter_delete=MagicMock(side_effect=lambda *_a, **_k: calls.append("delete_sync_logs")),
+        sync_logs_filter_update=MagicMock(side_effect=lambda *_a, **_k: calls.append("cancel_running_syncs")),
     )
     kb = SimpleNamespace(id="kb-1", tenant_id="tenant-1", name="test-kb")
     doc = SimpleNamespace(id="doc-1")
@@ -87,8 +90,8 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete, s
         monkeypatch,
         "api.db.services.knowledgebase_service",
         KnowledgebaseService=SimpleNamespace(
-            get_or_none=lambda id, tenant_id: kb,
-            delete_by_id=lambda kb_id: True,
+            get_or_none=lambda **_kwargs: kb,
+            delete_by_id=lambda kb_id: calls.append("delete_dataset") is None,
             query=lambda **kwargs: [],
         ),
         validate_dataset_embedding_models=lambda kbs: None,
@@ -97,7 +100,10 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete, s
         monkeypatch,
         "api.db.services.connector_service",
         Connector2KbService=SimpleNamespace(filter_delete=cleanup.connector2kb_filter_delete),
-        SyncLogsService=SimpleNamespace(filter_delete=cleanup.sync_logs_filter_delete),
+        SyncLogsService=SimpleNamespace(
+            filter_delete=cleanup.sync_logs_filter_delete,
+            filter_update=cleanup.sync_logs_filter_update,
+        ),
     )
     _stub(
         monkeypatch,
@@ -146,7 +152,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete, s
         Connector2Kb=SimpleNamespace(kb_id="kb_id"),
         Document=SimpleNamespace(kb_id="kb_id"),
         File=SimpleNamespace(source_type="source_type", id="id", type="type", name="name"),
-        SyncLogs=SimpleNamespace(kb_id="kb_id"),
+        SyncLogs=SimpleNamespace(kb_id="kb_id", status=SimpleNamespace(in_=lambda _values: None)),
     )
     _stub(
         monkeypatch,
@@ -166,6 +172,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete, s
         StatusEnum=SimpleNamespace(),
         LLMType=SimpleNamespace(),
         RetCode=SimpleNamespace(),
+        TaskStatus=SimpleNamespace(SCHEDULE="schedule", RUNNING="running", CANCEL="cancel"),
         ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(monkeypatch, "rag.advanced_rag", __path__=[])
@@ -249,3 +256,15 @@ async def test_delete_datasets_unwires_connectors_and_sweeps_stranded_documents(
     cleanup.connector2kb_filter_delete.assert_called_once()
     cleanup.sync_logs_filter_delete.assert_called_once()
     cleanup.doc_filter_delete.assert_called_once()
+    cleanup.sync_logs_filter_update.assert_called_once()
+
+    # Queued syncs are cancelled while the connector mapping still exists, the
+    # mapping is dropped only once the dataset is really gone, and the sweep for
+    # rows an in-flight sync may have written runs last.
+    assert cleanup.calls == [
+        "cancel_running_syncs",
+        "delete_dataset",
+        "unlink_connectors",
+        "delete_sync_logs",
+        "sweep_documents",
+    ]

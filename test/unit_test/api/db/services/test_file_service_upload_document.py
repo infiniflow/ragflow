@@ -86,12 +86,16 @@ class _DummyStorage:
 
     def __init__(self):
         self.written = {}
+        self.removed = []
 
     def obj_exist(self, _bucket, _location):
         return False
 
     def put(self, bucket, location, blob, *_args):
         self.written[(bucket, location)] = blob
+
+    def rm(self, bucket, location):
+        self.removed.append((bucket, location))
 
 
 def _unwrapped_upload_document():
@@ -172,6 +176,9 @@ def test_upload_document_reclaims_document_stranded_by_deleted_kb(monkeypatch):
     storage = _DummyStorage()
     discarded = []
     inserted = []
+    tasks_deleted = []
+    files_deleted = []
+    mappings_deleted = []
 
     _stub_folder_lookups(monkeypatch)
     monkeypatch.setattr(file_service_module.DocumentService, "get_by_id", lambda _doc_id: (True, stranded_doc))
@@ -188,7 +195,27 @@ def test_upload_document_reclaims_document_stranded_by_deleted_kb(monkeypatch):
     monkeypatch.setattr(
         file_service_module.File2DocumentService,
         "delete_by_document_id",
-        classmethod(lambda cls, _doc_id: None),
+        classmethod(lambda cls, doc_id: mappings_deleted.append(doc_id)),
+    )
+    monkeypatch.setattr(
+        file_service_module.File2DocumentService,
+        "get_storage_address",
+        classmethod(lambda cls, **_kwargs: ("kb-deleted", "old-location.txt")),
+    )
+    monkeypatch.setattr(
+        file_service_module.File2DocumentService,
+        "get_by_document_id",
+        classmethod(lambda cls, _doc_id: [SimpleNamespace(file_id="file-1")]),
+    )
+    monkeypatch.setattr(
+        file_service_module.TaskService,
+        "filter_delete",
+        classmethod(lambda cls, _filters: tasks_deleted.append("doc-1")),
+    )
+    monkeypatch.setattr(
+        FileService,
+        "filter_delete",
+        classmethod(lambda cls, _filters: files_deleted.append("file-1") or 1),
     )
     monkeypatch.setattr(file_service_module.DocumentService, "check_doc_health", classmethod(lambda cls, _tid, _name: None))
     monkeypatch.setattr(file_service_module.DocumentService, "query", classmethod(lambda cls, **_kwargs: []))
@@ -206,6 +233,12 @@ def test_upload_document_reclaims_document_stranded_by_deleted_kb(monkeypatch):
 
     assert err == []
     assert discarded == ["doc-1"]
+    # The stranded row's debris goes with it, matching what delete_docs would
+    # have removed had the dataset deletion reached this document.
+    assert tasks_deleted == ["doc-1"]
+    assert files_deleted == ["file-1"]
+    assert mappings_deleted == ["doc-1"]
+    assert storage.removed == [("kb-deleted", "old-location.txt")]
     assert len(inserted) == 1
     assert inserted[0]["id"] == "doc-1"
     assert inserted[0]["kb_id"] == "kb-target"

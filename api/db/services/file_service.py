@@ -539,20 +539,38 @@ class FileService(CommonService):
 
     @classmethod
     def _discard_orphaned_document(cls, doc) -> bool:
-        """Drop a document row whose knowledge base no longer exists.
+        """Drop a document stranded by a deleted knowledge base, and its debris.
 
         Connector syncs derive document ids from the external document, so a row
-        stranded by a deleted knowledge base keeps answering ``get_by_id`` and
-        blocks that document from ever being ingested again -- while being
-        invisible to the user, because the knowledge base it names is gone. Its
-        chunks went with the dropped index, so the row is unreachable and safe to
-        remove. Returns whether it was removed.
+        stranded this way keeps answering ``get_by_id`` and blocks that document
+        from ever being ingested again -- while being invisible to the user,
+        because the knowledge base it names is gone. Returns whether it was
+        removed.
+
+        Mirrors the teardown ``delete_docs`` performs, minus the chunk work:
+        the chunks went with the index dropped at dataset deletion, and the
+        document's tenant is no longer resolvable through its knowledge base,
+        so there is no index left to address. Storage and row cleanup are
+        best-effort -- the point is to unblock ingestion, so debris that cannot
+        be reached must not resurrect the collision.
         """
         if KnowledgebaseService.get_or_none(id=doc.kb_id) is not None:
             return False
 
         logger.warning("Discarding orphaned document %s: its kb_id=%s no longer exists.", doc.id, doc.kb_id)
-        File2DocumentService.delete_by_document_id(doc.id)
+        try:
+            bucket, location = File2DocumentService.get_storage_address(doc_id=doc.id)
+            TaskService.filter_delete([Task.doc_id == doc.id])
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            deleted_file_count = 0
+            if f2d:
+                deleted_file_count = cls.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc.id)
+            if deleted_file_count > 0:
+                settings.STORAGE_IMPL.rm(bucket, location)
+        except Exception:
+            logger.exception("Failed to fully clean up orphaned document %s; removing the row anyway", doc.id)
+
         DocumentService.delete_by_id(doc.id)
         return True
 

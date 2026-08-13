@@ -66,7 +66,9 @@ def connector_doc_id_candidates(kb_id: str, connector_id: str, external_id: str)
         legacy       hash128(f"{connector_id}:{external_id}")
         current      hash128(f"{kb_id}:{connector_id}:{external_id}")
 
-    Ordered oldest first so callers can prefer an id already on disk.
+    Ordered oldest first, so a knowledge base holding rows from more than one
+    upgrade settles on the earliest id it owns instead of migrating forward
+    again on every sync.
     """
     return (
         hash128(external_id),
@@ -86,8 +88,8 @@ def resolve_connector_doc_id(kb_id: str, connector_id: str, external_id: str, ow
     collision and drop the document. Everything else gets the KB-scoped id,
     which cannot collide by construction.
     """
-    v0_doc_id, legacy_doc_id, scoped_doc_id = connector_doc_id_candidates(kb_id, connector_id, external_id)
-    for candidate in (legacy_doc_id, v0_doc_id):
+    *kb_agnostic_doc_ids, scoped_doc_id = connector_doc_id_candidates(kb_id, connector_id, external_id)
+    for candidate in kb_agnostic_doc_ids:
         if candidate in owned_doc_ids:
             return candidate
     return scoped_doc_id

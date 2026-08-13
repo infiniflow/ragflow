@@ -30,7 +30,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common import settings
-from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum
+from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum, TaskStatus
 from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
@@ -171,13 +171,14 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
     errors = []
     success_count = 0
     for kb_id, kb in kb_id_instance_pairs:
-        # Unwire the data sources first. While these rows live on, the connector
-        # scheduler keeps queueing syncs against a kb_id that is about to stop
-        # resolving, and any document such a run writes outlives its dataset --
-        # an invisible row that later reports a cross-KB id collision against
-        # whatever dataset is linked to the same connector next.
-        Connector2KbService.filter_delete([Connector2Kb.kb_id == kb_id])
-        SyncLogsService.filter_delete([SyncLogs.kb_id == kb_id])
+        # Cancel this dataset's queued syncs before touching its documents.
+        # Tasks are only picked up while they are SCHEDULE, so cancelling stops
+        # every run that has not started yet; a sync already in flight is not
+        # interruptible, which is what the stranded-row sweep below covers.
+        SyncLogsService.filter_update(
+            [SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])],
+            {"status": TaskStatus.CANCEL},
+        )
 
         for doc in DocumentService.query(kb_id=kb_id):
             if not DocumentService.remove_document(doc, tenant_id):
@@ -216,8 +217,17 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
             errors.append(f"Delete dataset error for {kb_id}")
             continue
 
-        # Sweep anything the per-document loop above could not see, so no row is
-        # left pointing at a dataset that no longer exists.
+        # Unwire the data sources only once the dataset is really gone, so a
+        # failed deletion above leaves a dataset that is still linked and still
+        # syncable. Left behind, these rows keep the connector scheduler queueing
+        # syncs against a kb_id that no longer resolves, and any document such a
+        # run writes outlives its dataset -- an invisible row that later reports
+        # a cross-KB id collision against whatever dataset is linked next.
+        Connector2KbService.filter_delete([Connector2Kb.kb_id == kb_id])
+        SyncLogsService.filter_delete([SyncLogs.kb_id == kb_id])
+
+        # Sweep anything the per-document loop could not see, including rows
+        # written by a sync that was already in flight when deletion started.
         stranded = DocumentService.filter_delete([Document.kb_id == kb_id])
         if stranded:
             logging.warning("delete_datasets: removed %s stranded document rows for dataset %s", stranded, kb_id)

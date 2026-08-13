@@ -66,6 +66,16 @@ def test_kb_agnostic_id_owned_elsewhere_is_never_reused(foreign_id):
 
 
 @pytest.mark.p2
+def test_oldest_owned_id_wins_when_several_upgrades_left_rows_behind():
+    """An instance carrying rows from more than one upgrade settles, not drifts.
+
+    Preferring the newest owned id would re-key the document on every upgrade
+    and strand the older row again each time.
+    """
+    assert resolve_connector_doc_id(KB_A, CONNECTOR_ID, EXTERNAL_ID, {V0_ID, LEGACY_ID}) == V0_ID
+
+
+@pytest.mark.p2
 def test_two_kbs_on_one_connector_never_share_an_id():
     assert resolve_connector_doc_id(KB_A, CONNECTOR_ID, EXTERNAL_ID, set()) != resolve_connector_doc_id(KB_B, CONNECTOR_ID, EXTERNAL_ID, set())
 
