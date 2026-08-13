@@ -1,14 +1,16 @@
 ---
-sidebar_position: 1
-title: Embed Agent Via Webpage
-sidebar_label: Embed Agent Via Webpage
-slug: /embed_agent_via_webpage
+sidebar_position: 5
+title: Embed into Web Pages
+sidebar_label: Embed into Web Pages
+slug: /embed_into_web_pages
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Embed Agent Via Webpage
+# Embed into Web Pages
+
+## Embed Agent Via Webpage
 You can embed the Agent into third-party web pages using iframe.
 
 Prerequisite: You must obtain an API Key.

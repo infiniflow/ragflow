@@ -23,6 +23,8 @@ export function useAgentToolInitialValues() {
           };
         case Operator.QueritSearch:
           return getQueritAgentInitialValues(initialValues);
+        case Operator.QueritContents:
+          return { api_key: '' };
         case Operator.ExeSQL:
           return omit(initialValues, 'sql');
         case Operator.Bing:

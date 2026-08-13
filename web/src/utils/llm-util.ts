@@ -123,6 +123,21 @@ export function parseModelValue(val: string) {
   };
 }
 
+/**
+ * Base embedding model name used to decide whether two datasets can be
+ * selected and searched together. Composite references
+ * ("modelName@instanceName@providerName" or "modelName@providerName") reduce
+ * to the bare model name, so datasets using the same embedding model through
+ * different provider instances still group together. Opaque values without
+ * '@' (e.g. an unresolved tenant_model id) are returned unchanged, so only
+ * exact matches group together. Mirrors the backend's base-name comparison
+ * (Python `_base_model_name`, Go `common.BaseModelName`).
+ */
+export function getEmbeddingBaseName(embeddingModel?: string | null): string {
+  if (!embeddingModel) return '';
+  return parseModelValue(embeddingModel)?.model_name ?? embeddingModel;
+}
+
 // Extract model name and factory ID from a model UUID
 // Supports both "model_name@factory_id" and "model_name@factory_id#instance_name".
 // Uses right-anchored split for the same reason as parseModelValue:

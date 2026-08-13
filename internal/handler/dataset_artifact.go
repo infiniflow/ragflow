@@ -339,7 +339,9 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "nav": items}, "success")
+	// Response key is "items" (not "nav") — the frontend DatasetNavList reads
+	// data.items and Python list_nav_clusters/_nav_search return {"total","items"}.
+	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // DeleteNavigation handles DELETE /navigation — delete all navigation clusters.
@@ -381,7 +383,9 @@ func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "children": items}, "success")
+	// Same contract as the top-level nav list: Python list_nav_children returns
+	// {"total","items"} and the frontend reads data.items for child expansion.
+	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // GetSkillTree handles GET /skills — skill tree.
@@ -453,13 +457,20 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
-	graphType := c.Query("graph_type")
-	items, total, err := h.svc.GetDocumentGraph(c.Request.Context(), tenantID, datasetID, documentID, graphType)
+	resp, err := h.svc.GetDocumentGraph(c.Request.Context(), service.DocumentStructureGraphInput{
+		TenantID:   tenantID,
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		Keywords:   c.Query("keywords"),
+	})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "graph": items}, "success")
+	if resp == nil {
+		resp = &service.DocumentStructureGraphResponse{Templates: []service.DocumentStructureGraphTemplate{}}
+	}
+	common.SuccessWithData(c, resp, "success")
 }
 
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
