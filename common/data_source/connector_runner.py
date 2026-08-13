@@ -1,3 +1,4 @@
+import re
 import sys
 import time
 import logging
@@ -50,6 +51,13 @@ _SENSITIVE_KEY_PATTERNS = (
     "auth",
     "cookie",
     "session",
+    # Provider/SDK credential field names that don't already substring-match
+    # any of the patterns above. ``secret`` already catches ``secret_key`` /
+    # ``aws_secret_access_key`` etc., so we only add the ones that would
+    # otherwise leak.
+    "private_key",  # google_service_account_private_key, privateKey, ...
+    "access_key",  # aws_access_key_id, access_key, AccessKey, ...
+    "creds",  # creds, creds_dict, service_account_creds, ...
 )
 
 
@@ -61,11 +69,16 @@ def _is_sensitive_key(name: object) -> bool:
     small allowlist of well-known credential-related field names -- see
     ``_SENSITIVE_KEY_PATTERNS`` for the full list. Non-string keys
     (e.g. tuple indices from ``f_locals``) are never sensitive.
+
+    Separators (``_``, ``-``) are stripped from the input before
+    matching so that ``privateKey``, ``private_key``, ``Private-Key``
+    etc. all collapse to the same canonical form and a single pattern
+    like ``private_key`` catches them all.
     """
     if not isinstance(name, str):
         return False
-    lowered = name.lower()
-    return any(pat in lowered for pat in _SENSITIVE_KEY_PATTERNS)
+    lowered = re.sub(r"[_\-]", "", name.lower())
+    return any(pat.replace("_", "").replace("-", "") in lowered for pat in _SENSITIVE_KEY_PATTERNS)
 
 
 _REDACTED = "<redacted>"
