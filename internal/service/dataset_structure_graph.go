@@ -884,6 +884,9 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	if resolved == "" {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidStructureKind, in.Kind)
 	}
+	if !datasetStructureSupported() {
+		return nil, errDatasetStructureUnsupported()
+	}
 	resp := &DatasetStructureGraphResponse{Kind: resolved, Templates: []DocumentStructureGraphTemplate{}}
 
 	// Discover distinct template ids whose stamped template kind resolves to the
