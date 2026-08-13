@@ -1600,7 +1600,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
       plan: 'Plan',
-      planTip: '关闭：每个实体或概念对应一个 wiki 页面。开启：让 LLM 决定将某些实体/概念组合到单个 wiki 页面。',
+      planTip:
+        '关闭：每个实体或概念对应一个 wiki 页面。开启：让 LLM 决定将某些实体/概念组合到单个 wiki 页面。',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
       maxToken: '最大 token 数',
@@ -1978,8 +1979,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         enableTextCrossPage: '文字跨页合并',
         enableTableCrossPage: '表格跨页合并',
         keepHeaderFooter: '保留页眉页脚',
-        purchaseUrl:
-          '购买 API：中国大陆 https://somark.cn/workbench/purchase；海外（含中国台湾、中国香港、中国澳门）https://somark.ai/studio/purchase',
       },
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',

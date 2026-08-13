@@ -2158,8 +2158,7 @@ Example: Virtual Hosted Style`,
       baseUrlNameMessage: 'Please input your Base URL',
       mwsApiUrl: 'API URL',
       mwsApiUrlMessage: 'Please enter the MWS project API URL',
-      mwsApiUrlPlaceholder:
-        'https://gpt.mwsapis.ru/projects/<project>',
+      mwsApiUrlPlaceholder: 'https://gpt.mwsapis.ru/projects/<project>',
       mwsToken: 'Token',
       mwsTokenMessage: 'Please enter the MWS Token',
       mwsTokenPlaceholder: 'MWS service account API key',
@@ -2347,8 +2346,6 @@ Example: Virtual Hosted Style`,
         enableTextCrossPage: 'Enable Text Cross Page',
         enableTableCrossPage: 'Enable Table Cross Page',
         keepHeaderFooter: 'Keep Header Footer',
-        purchaseUrl:
-          'Purchase API: mainland China — https://somark.cn/workbench/purchase; overseas (including Taiwan, China; Hong Kong, China; Macau, China) — https://somark.ai/studio/purchase',
       },
       modelTypes: {
         chat: 'Chat',
