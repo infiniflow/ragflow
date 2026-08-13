@@ -729,7 +729,7 @@ class TenantModelInstanceStage(MigrationStage):
             seen = {}  # canonical_key -> first record
             for rec in group:
                 _, _, api_key, _status, _provider_id, _api_base = rec
-                canonical = self._strip_is_tools_from_api_key(api_key)
+                canonical = TenantModelInstanceStage._strip_is_tools_from_api_key(api_key)
                 if canonical not in seen:
                     seen[canonical] = rec
                 else:
