@@ -49,6 +49,7 @@ Return JSON:
   "confidence": 0.0,
   "report": "Short evidence-backed finding, or what was learned so far.",
   "gaps": ["specific missing fact or relationship"],
+  "intermediate": "ONE bridge entity or relationship that must be retrieved BEFORE the claim can be answered, e.g. for 'company that Brian Bergstein is employed by violates which law' the intermediate is 'Who is Brian Bergstein's employer?'. Empty string if none / not a multi-hop bridge.",
   "next_queries": ["standalone follow-up search query"],
   "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match"],
   "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"]
@@ -483,7 +484,16 @@ def _normalize_analysis(
     is_verified = bool(parsed.get("is_verified")) and bool(evidence_ids) and confidence >= 0.55
     report = str(parsed.get("report") or "").strip() or _summarize(result)
     gaps = _string_list(parsed.get("gaps"))
+    # Multi-hop step-wise retrieval: if the claim needs a bridge entity/relationship
+    # (e.g. "employer of X" before "which law X's employer violated"), the analysis
+    # emits an ``intermediate`` query. Search it FIRST next round so we resolve the
+    # intermediate node (e.g. Uber) before re-targeting the final answer. This is what
+    # makes multi-hop questions retrieve correctly instead of one-shot keyword hit.
+    intermediate = str(parsed.get("intermediate") or "").strip()
     next_queries = _string_list(parsed.get("next_queries"))[:_MAX_NEXT_QUERIES]
+    if intermediate and not is_verified:
+        next_queries = [intermediate] + [q for q in next_queries if q != intermediate]
+        next_queries = next_queries[:_MAX_NEXT_QUERIES]
     grounded = _string_list(parsed.get("grounded"))
     numbers = _string_list(parsed.get("numbers"))
 
@@ -584,6 +594,16 @@ def _pick_next_query(
     pending: list[str],
     global_pool: list[str] | None = None,
 ) -> str:
+    # 0. Multi-hop: resolve the claim's prerequisite (bridge entity/relationship)
+    # before targeting the claim itself. The first time the claim is researched, the
+    # prerequisite OPEN query is searched; the found entity feeds back through the
+    # evidence the next round (the analyzer then re-targets the claim).
+    prereq = (claim.prerequisite or "").strip()
+    if prereq and not attempted:
+        normalized = _normalize_query(prereq)
+        if normalized and normalized not in attempted:
+            return prereq
+
     # 1. claim-specific pending follow-ups (from _analyze_claim_evidence).
     while pending:
         query = (pending.pop(0) or "").strip()

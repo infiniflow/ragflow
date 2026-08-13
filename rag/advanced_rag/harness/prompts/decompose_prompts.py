@@ -45,6 +45,44 @@ Output format (JSON):
 """
 
 
+DECOMPOSE_MULTIHOP = """This question requires a chain of reasoning: the answer depends on resolving an intermediate entity/relationship first, then using it to reach the final fact. Examples:
+- "Which law did the company that employs Brian Bergstein violate?" → need "Who is Brian Bergstein's employer?" first, then "which antitrust law did that employer violate".
+- "The sister of the 2003 Pan Am women's sailing medalist's brother's keelboat partner — who is she?" → resolve each hop in order.
+
+Decompose this into a DEPENDENCY CHAIN of claims. Each claim may carry a "prerequisite": an OPEN query for the intermediate entity/relationship that must be retrieved BEFORE this claim can be answered (leave empty for the first claim). The prerequisite of a later claim may reference the result of an earlier one.
+
+Relevance rules (strict):
+- Every claim MUST be one hop needed to reach the final answer. Do NOT add tangential facts.
+- If the question is NOT actually a multi-hop chain (you judge the reasoning is flat), output ordinary independent claims WITHOUT prerequisite.
+- OPEN QUERY (CRITICAL): each claim and prerequisite must be an OPEN research target (who/what/which/when/how), NOT a pre-answered assertion. Never bake a guessed value.
+
+Question: {question}
+Maximum number of claims: {max_claims}
+Detail level: {detail_level}
+
+Preliminary retrieved context (use it to ground claims in what the corpus actually contains; do not invent facts it cannot support):
+{retrieved}
+
+Output format (JSON):
+{{
+    "claims": [
+        {{
+            "claim_id": "c1",
+            "description": "Who is the employer of Brian Bergstein?",
+            "prerequisite": "",
+            "priority": 1
+        }},
+        {{
+            "claim_id": "c2",
+            "description": "Which federal law was found violated by Brian Bergstein's employer?",
+            "prerequisite": "Who is Brian Bergstein's employer?",
+            "priority": 1
+        }}
+    ]
+}}
+"""
+
+
 DECOMPOSE_COMPARATIVE = """This is a comparative question. It needs to be decomposed into:
 1. Information about entity A for the comparison dimension.
 2. Information about entity B for the comparison dimension.

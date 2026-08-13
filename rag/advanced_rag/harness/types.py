@@ -73,6 +73,11 @@ class ClaimTarget:
     confidence: float = 0.0
     suggested_tools: list[str] = field(default_factory=list)
     agent_result: AgentResult | None = None
+    # Multi-hop: an OPEN query for a bridge entity/relationship that must be
+    # retrieved BEFORE this claim can be answered (e.g. "Who is Brian Bergstein's
+    # employer?"). decompose resolves the prerequisite first, then uses the found
+    # entity to target this claim. Empty when not multi-hop.
+    prerequisite: str = ""
 
 
 @dataclass

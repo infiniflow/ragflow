@@ -206,6 +206,11 @@ class RAGTools:
         # loop (via `rag`) to decide whether to re-run research and how to rephrase
         # the next question. Set in run_agentic_rag.
         self._rag_verdict: dict | None = None
+        # Outer-loop guardrail: count of consecutive rag calls that ended
+        # UNANSWERABLE / INSUFFICIENT (evidence conflicts or missing). Once this
+        # exceeds a threshold, `rag` tells the outer LLM to stop re-running, so we
+        # keep the outer loop's question-rewrite value while bounding useless retries.
+        self._consecutive_unanswerable = 0
 
         # Per-request retrieval cache keyed by the effective query + scope, so
         # the same question is never retrieved twice within one turn (e.g.
@@ -701,7 +706,14 @@ class RAGTools:
         # instead of guessing from the answer text. This is appended to the tool
         # result — it does NOT change the final answer (the graph's formalize_answer
         # composes that independently from kbinfos).
+        #
+        # Outer-loop guardrail: bound useless re-runs. If consecutive rag calls keep
+        # ending insufficient (UNANSWERABLE / INSUFFICIENT / CONFLICTING), tell the
+        # outer LLM to STOP re-running and answer from the existing evidence — the
+        # corpus likely lacks the data, so re-querying different angles won't help
+        # and only inflates latency / risks timeout.
         verdict = getattr(self, "_rag_verdict", None)
+        insufficient_statuses = {"UNANSWERABLE", "INSUFFICIENT", "CONFLICTING"}
         if isinstance(verdict, dict):
             status = verdict.get("status")
             missing = verdict.get("missing_claims") or []
@@ -718,7 +730,16 @@ class RAGTools:
                 hard_txt = ("; hard gaps: " + ", ".join(str(x) for x in hard[:3])) if hard else ""
                 conf_txt = f"; agent confidence: {conf:.2f}" if isinstance(conf, (int, float)) else ""
                 fb_txt = f"; feedback: {feedback[:200]}" if feedback else ""
-                final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. If these gaps are material, call rag again with a question focused on them."
+                # Guardrail counter.
+                if status in insufficient_statuses:
+                    self._consecutive_unanswerable += 1
+                else:
+                    self._consecutive_unanswerable = 0
+                _GUA = 2  # consecutive-insufficient threshold
+                if self._consecutive_unanswerable >= _GUA:
+                    final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. STOP calling rag again: {self._consecutive_unanswerable} consecutive research rounds returned insufficient evidence. The sources likely lack the required data. Give your best answer from the evidence already gathered; do not re-run rag."
+                else:
+                    final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. If these gaps are material, call rag again with a question focused on them."
         return final
 
     @tool

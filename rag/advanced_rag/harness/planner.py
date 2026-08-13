@@ -12,6 +12,7 @@ from rag.advanced_rag.harness.prompts.decompose_prompts import (
     DECOMPOSE_COMPARATIVE,
     DECOMPOSE_PROCEDURAL,
     DECOMPOSE_EXPLORATORY,
+    DECOMPOSE_MULTIHOP,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -44,15 +45,22 @@ async def planner_node(state: dict, tools) -> dict:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
 
-    # Select decompose prompt by question type
-    prompt_map = {
-        "factual": DECOMPOSE_FACTUAL,
-        "comparative": DECOMPOSE_COMPARATIVE,
-        "procedural": DECOMPOSE_PROCEDURAL,
-        "analytical": DECOMPOSE_EXPLORATORY,
-        "exploratory": DECOMPOSE_EXPLORATORY,
-    }
-    decompose_prompt = prompt_map.get(route.question_type, DECOMPOSE_FACTUAL)
+    # Select decompose prompt by question type. Multi-hop questions (an answer
+    # chained through intermediate entities/relationships) use a dedicated
+    # dependency-chain template; a conservative regex gate avoids touching other
+    # questions (no regression).
+    if _is_multihop(route.question):
+        _LOG.info("[Planner] Detected multi-hop chain; using dependency-chain decomposition.")
+        decompose_prompt = DECOMPOSE_MULTIHOP
+    else:
+        prompt_map = {
+            "factual": DECOMPOSE_FACTUAL,
+            "comparative": DECOMPOSE_COMPARATIVE,
+            "procedural": DECOMPOSE_PROCEDURAL,
+            "analytical": DECOMPOSE_EXPLORATORY,
+            "exploratory": DECOMPOSE_EXPLORATORY,
+        }
+        decompose_prompt = prompt_map.get(route.question_type, DECOMPOSE_FACTUAL)
 
     mode = get_mode(route.thinking_mode)
     max_claims = _get_max_claims(mode.label)
@@ -104,6 +112,7 @@ async def planner_node(state: dict, tools) -> dict:
                     description=c["description"],
                     priority=c.get("priority", 0),
                     suggested_tools=c.get("suggested_tools", []),
+                    prerequisite=str(c.get("prerequisite") or "").strip(),
                 )
             )
 
@@ -151,6 +160,23 @@ def _default_plan(question: str) -> dict:
 
 def _get_max_claims(mode_label: str) -> int:
     return {"low": 1, "medium": 3, "high": 5, "ultra": 8}.get(mode_label, 3)
+
+
+# Conservative heuristic for "answer needs a chained intermediate entity/relationship".
+# Only explicit bridge-relationship phrases route to the multi-hop template, so
+# ordinary questions (e.g. "Who is the CEO of Apple?") are NOT touched — high
+# precision over recall, to avoid regression. The MULTIHOP template additionally asks
+# the LLM to fall back to flat claims if the question is not genuinely a chain.
+_MULTIHOP_RE = re.compile(
+    r"(employer of|employed by|works for|company that .{0,30} employ"
+    r"|partner of|teammate of|brother of|sister of|father of|mother of|son of|daughter of"
+    r"|spouse of|wife of|husband of|the .{0,20} (of|for) the .{0,20} (of|for))"
+)
+
+
+def _is_multihop(question: str) -> bool:
+    q = (question or "").lower()
+    return bool(_MULTIHOP_RE.search(q))
 
 
 def _get_detail_level(mode_label: str) -> str:
