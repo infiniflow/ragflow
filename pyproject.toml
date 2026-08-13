@@ -130,6 +130,7 @@ dependencies = [
     "tavily-python==0.5.1",
     "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
+    "ucloud-sandbox>=1.4.2,<2.0.0",
     "valkey==6.0.2",
     "volcengine==1.0.194",
     "voyageai==0.2.3",

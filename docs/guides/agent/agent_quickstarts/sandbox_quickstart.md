@@ -26,7 +26,7 @@ Configure sandbox providers from the admin page:
 - `self_managed`: Uses the executor manager service.
 - `local`: Runs code on the current machine.
 - `ssh`: Runs code on a remote machine over SSH.
-- `aliyun_codeinterpreter`, `e2b`, and `tenki`: Cloud providers.
+- `aliyun_codeinterpreter`, `e2b`, `tenki`, and `ucloud_agent_sandbox`: Cloud providers.
 
 
 ## Provider Options
@@ -40,6 +40,7 @@ Admin > Sandbox Settings after the services are up.
 - `ssh`: Runs code on a remote machine over SSH.
 - `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
 - `tenki`: Cloud-hosted provider that runs each execution in a disposable [Tenki](https://tenki.cloud) microVM. See [Tenki](#tenki) below.
+- `ucloud_agent_sandbox`: Cloud-hosted provider that runs each execution in a disposable [UCloud Agent Sandbox](https://astraflow.ucloud.cn/docs/agent-sandbox). See [UCloud Agent Sandbox](#ucloud-agent-sandbox) below.
 
 ### Tenki
 
@@ -64,6 +65,28 @@ Notes:
 - Supported languages are Python and JavaScript.
 - Files written to the `artifacts/` directory of the working directory are returned as run artifacts.
 - The provider uses only Tenki's create/exec/destroy operations; it does not use volumes or snapshots.
+
+### UCloud Agent Sandbox
+
+`ucloud_agent_sandbox` uses UCloud's native Sandbox SDK to create one disposable sandbox for each CodeExec run. No local sandbox service or Docker runtime is required.
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): obtain one from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys).
+- `region`: defaults to `cn-wlcb`; `us-ca` is also supported.
+- `domain` and `api_url`: optional endpoint overrides for private or custom deployments.
+- `template`: defaults to `base`, which includes Python and Node.js runtimes.
+- `allow_internet_access`: defaults to `false`; enable it only when sandboxed code needs outbound network access.
+- `timeout`, `sandbox_timeout`, and the output/artifact limits can be tuned for the workload.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- RAGFlow uses HTTPS with TLS certificate verification. The `insecure_http` option is intended only for trusted test deployments.
+- Files written to the execution workspace's `artifacts/` directory are returned as run artifacts.
+- The Python runtime dependency is installed with RAGFlow. The Go runtime uses UCloud's native Go SDK.
+
+See [UCloud Agent Sandbox prerequisites](https://astraflow.ucloud.cn/docs/agent-sandbox/product/prerequisites) and [regions](https://astraflow.ucloud.cn/docs/agent-sandbox/product/region).
 
 ## Prerequisites
 

@@ -19,6 +19,7 @@ The current page supports the following `Provider` options:
 | `SSH` | Execute code on a remote machine through SSH. |
 | `AliyunCodeInterpreter` | Use Alibaba Cloud Function Compute Code Interpreter. |
 | `E2B` | Use E2B Cloud Code Execution Sandboxes. |
+| `UCloud Agent Sandbox` | Run code in disposable UCloud cloud sandboxes. |
 
 After selecting a `Provider`, the page displays the corresponding configuration area.
 
@@ -33,6 +34,7 @@ After selecting a `Provider`, the page displays the corresponding configuration 
 | `SSH` | Existing independent execution servers | Executes code on a remote host through SSH. | Suitable for reusing existing servers or custom runtime environments. |
 | `AliyunCodeInterpreter` | Alibaba Cloud-related services | Uses a cloud service to provide the code execution environment, making elastic scaling easier. | Suitable for organizations already using the corresponding cloud service. |
 | `E2B` | Fast access to a cloud sandbox | Executes code in an isolated environment provided by E2B. | Suitable for scenarios that need quick use without deployment. |
+| `UCloud Agent Sandbox` | UCloud-hosted agent workloads | Creates a disposable sandbox from a template containing Python and Node.js. | Suitable for teams using UCloud or needing managed sandboxes in China or North America. |
 
 ## Test and Save Configuration
 
@@ -152,3 +154,29 @@ Alibaba Cloud `CodeInterpreter` configuration connects to Alibaba Cloud CodeInte
 | `API Key` | API key provided by E2B Cloud for authentication. | Log in to the E2B platform, create the corresponding API key, and enter it. |
 | `Region` | Region where the E2B service is located. | Enter the actual region, such as `us`. |
 | `Request Timeout (seconds)` | Timeout for requests to the E2B service. | The default is 30 seconds. Increase it if the network is slow or execution takes longer. |
+
+## UCloud Agent Sandbox Configuration
+
+`UCloud Agent Sandbox` creates a fresh cloud sandbox for each code execution and destroys it when execution finishes. RAGFlow uses UCloud's native SDK and supports Python and JavaScript with the built-in `base` template.
+
+1. Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys).
+2. Go to **UCloud Agent Sandbox Configuration**.
+3. Enter the API key and select the desired region.
+4. Click **Test connection**, then click **Save** after the test succeeds.
+
+| Parameter | Description | Recommendation |
+| --- | --- | --- |
+| `API Key` | UCloud Agent Sandbox API key used for authentication. | Keep it secret and rotate it according to your organization's credential policy. |
+| `Region` | Sandbox region. Supported values include `cn-wlcb` and `us-ca`. | Keep `cn-wlcb` unless workloads should run in North America. |
+| `Domain` | Optional sandbox domain override. | Leave empty to derive `<region>.sandbox.ucloudai.com` from `Region`. |
+| `API URL` | Optional control-plane endpoint override. | Leave empty for the public service endpoint. |
+| `Template` | UCloud sandbox template. | Use `base`, which includes both Python and Node.js. |
+| `Allow Internet Access` | Allows executed code to make outbound network requests. | Disabled by default. Enable only when the code needs external services or package downloads. |
+| `Use Insecure HTTP` | Uses HTTP rather than HTTPS. | Keep disabled except in a trusted private test deployment. |
+| `Execution Timeout` | Maximum duration of one code execution. | The default is 30 seconds. |
+| `Sandbox Lifetime` | Maximum lifetime of the disposable sandbox. | The default is 300 seconds and is extended when needed for an allowed execution. |
+| Output and artifact limits | Bound console output and files returned from `artifacts/`. | Keep the defaults unless the workload has a known need for larger results. |
+
+Files written under the execution workspace's `artifacts/` directory are returned to RAGFlow. Supported artifact extensions are `.csv`, `.html`, `.jpeg`, `.jpg`, `.json`, `.pdf`, `.png`, and `.svg`.
+
+See the [UCloud Agent Sandbox prerequisites](https://astraflow.ucloud.cn/docs/agent-sandbox/product/prerequisites) and [region documentation](https://astraflow.ucloud.cn/docs/agent-sandbox/product/region) for service-side details.
