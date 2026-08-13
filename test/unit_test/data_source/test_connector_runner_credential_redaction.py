@@ -181,12 +181,12 @@ class _CredentialHoldingLoadConnector(LoadConnector):
         # sensitive vars). The noqa: F841 marks them as
         # intentionally-unread; without it ruff misreads the test
         # intent.
-        access_token = "ya29.a0fake_google_oauth_access_token_value_xyz"  # noqa: F841
-        refresh_token = "1//0g_fake_refresh_token_value_xyz"  # noqa: F841
-        client_secret = "GOCSPX-FakeClientSecretValueXYZ"  # noqa: F841
+        access_token = "ya29.a0fake_google_oauth_access_token_value_xyz"  # noqa: F841, S105
+        refresh_token = "1//0g_fake_refresh_token_value_xyz"  # noqa: F841, S105
+        client_secret = "GOCSPX-FakeClientSecretValueXYZ"  # noqa: F841, S105
         client_id = "1234567890.apps.googleusercontent.com"  # noqa: F841
         api_key = "sk-fake-openai-api-key-1234567890abcdef"  # noqa: F841
-        password = "hunter2"  # noqa: F841
+        password = "hunter2"  # noqa: F841, S105
         # Non-sensitive context that SHOULD appear in the log:
         tenant_id = "tenant-abc-123"  # noqa: F841
         document_id = "doc-uuid-456"  # noqa: F841
