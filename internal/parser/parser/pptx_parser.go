@@ -20,6 +20,7 @@ package parser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -113,27 +114,42 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	defer doc.Close()
 
-	text, err := doc.PlainText()
+	// office_oxide's PlainText renders slides back-to-back with no page
+	// delimiter, so per-slide splitting must go through the structured
+	// IR, which carries one section per slide. This mirrors the python
+	// RAGFlowPptParser, which iterates slides and yields one text per
+	// slide ("Every page will be treated as a chunk").
+	irJSON, err := doc.ToIRJSON()
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("pptx plain-text: %w", err)}
+		return ParseResult{Err: fmt.Errorf("presentation ir-json: %w", err)}
+	}
+	var ir presentationIR
+	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
+		return ParseResult{Err: fmt.Errorf("presentation ir-json decode: %w", err)}
 	}
 
-	// Split on form-feed (the python TxtParser convention used by
-	// RAGFlow's slide parser) — each block becomes a JSON item.
-	var items []map[string]any
-	for i, raw := range strings.Split(text, "\f") {
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			continue
-		}
+	// One JSON item per slide, including slides without extractable
+	// text — the python parser likewise appends one (possibly empty)
+	// text per slide.
+	items := make([]map[string]any, 0, len(ir.Sections))
+	for i, sec := range ir.Sections {
 		items = append(items, map[string]any{
-			"text":         trimmed,
+			"text":         sec.text(),
 			"doc_type_kwd": "text",
 			"slide_number": i + 1,
 		})
 	}
-	if items == nil {
-		items = []map[string]any{{"text": strings.TrimSpace(text), "doc_type_kwd": "text"}}
+	if len(items) == 0 {
+		// A deck whose IR carries no sections at all: keep the
+		// whole-document text as a single item so a still-readable
+		// file yields one chunk instead of none.
+		text, perr := doc.PlainText()
+		if perr != nil {
+			return ParseResult{Err: fmt.Errorf("presentation plain-text: %w", perr)}
+		}
+		if trimmed := strings.TrimSpace(text); trimmed != "" {
+			items = append(items, map[string]any{"text": trimmed, "doc_type_kwd": "text"})
+		}
 	}
 
 	return ParseResult{
@@ -141,4 +157,88 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		File:         map[string]any{"name": filename, "format": p.format},
 		JSON:         items,
 	}
+}
+
+// ── office_oxide presentation IR ─────────────────────────────────────
+// Subset of the office_oxide IR JSON schema needed to recover per-slide
+// plain text. Each slide is one section whose elements are block nodes
+// (headings, paragraphs, text boxes, tables, images); block nodes nest
+// (a text box contains paragraphs) and leaf "text" runs carry the
+// characters.
+
+type presentationIR struct {
+	Sections []irSection `json:"sections"`
+}
+
+type irSection struct {
+	Elements []irNode `json:"elements"`
+}
+
+type irNode struct {
+	Type    string   `json:"type"`
+	Text    string   `json:"text"`
+	Content []irNode `json:"content"`
+	Rows    []irRow  `json:"rows"`
+}
+
+type irRow struct {
+	Cells []irCell `json:"cells"`
+}
+
+type irCell struct {
+	Content []irNode `json:"content"`
+}
+
+// text flattens the slide's IR elements into plain text, one line per
+// paragraph-level block — the same shape the python parser produces by
+// joining per-shape texts with "\n".
+func (s irSection) text() string {
+	var lines []string
+	for _, el := range s.Elements {
+		lines = append(lines, irBlockLines(el)...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// irBlockLines returns one entry per paragraph-level block under n.
+// Leaf text runs concatenate into the enclosing block's line; tables
+// yield one line per row with cells joined by "; ".
+func irBlockLines(n irNode) []string {
+	if len(n.Rows) > 0 {
+		lines := make([]string, 0, len(n.Rows))
+		for _, row := range n.Rows {
+			cells := make([]string, 0, len(row.Cells))
+			for _, cell := range row.Cells {
+				var parts []string
+				for _, el := range cell.Content {
+					parts = append(parts, irBlockLines(el)...)
+				}
+				cells = append(cells, strings.Join(parts, " "))
+			}
+			lines = append(lines, strings.Join(cells, "; "))
+		}
+		return lines
+	}
+	runsOnly := true
+	for _, c := range n.Content {
+		if c.Type != "text" {
+			runsOnly = false
+			break
+		}
+	}
+	if runsOnly {
+		var b strings.Builder
+		for _, c := range n.Content {
+			b.WriteString(c.Text)
+		}
+		if s := strings.TrimSpace(b.String()); s != "" {
+			return []string{s}
+		}
+		return nil
+	}
+	var lines []string
+	for _, c := range n.Content {
+		lines = append(lines, irBlockLines(c)...)
+	}
+	return lines
 }
