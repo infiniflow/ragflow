@@ -422,7 +422,7 @@ func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
 	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	q := "mistral-large-latest"
-	_, err := m.Rerank(ctx, &q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
+	_, err := m.Rerank(ctx, &q, RerankRequest{Query: "what is rag?", Documents: []string{"a", "b"}}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected 'no such method', got %v", err)
 	}
@@ -588,7 +588,7 @@ func TestMistralEmbedHappyPath(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -619,7 +619,7 @@ func TestMistralEmbedReordersByIndex(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestMistralEmbedEmptyInputShortCircuits(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	vecs, err := m.Embed(ctx, &model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -658,7 +658,7 @@ func TestMistralEmbedRequiresAPIKey(t *testing.T) {
 	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -669,12 +669,12 @@ func TestMistralEmbedRequiresModelName(t *testing.T) {
 	ctx := t.Context()
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, nil, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 	empty := ""
-	_, err = m.Embed(ctx, &empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err = m.Embed(ctx, &empty, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: expected model-name error, got %v", err)
 	}
@@ -698,7 +698,7 @@ func TestMistralEmbedRejectsDuplicateIndex(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -719,7 +719,7 @@ func TestMistralEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -741,7 +741,7 @@ func TestMistralEmbedRejectsMissingSlot(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-embedding error for slot 1, got %v", err)
 	}
@@ -759,7 +759,7 @@ func TestMistralEmbedRejectsHTTPError(t *testing.T) {
 	m := newMistralForTest(srv.URL)
 	apiKey := "test-key"
 	model := "mistral-embed"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Mistral embeddings API error") {
 		t.Errorf("expected Mistral embeddings API error, got %v", err)
 	}

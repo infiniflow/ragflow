@@ -161,12 +161,12 @@ type nvidiaEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -181,7 +181,7 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"input":           texts,
+		"input":           request.Texts,
 		"input_type":      "query",
 		"encoding_format": "float",
 		"truncate":        "END",
@@ -272,11 +272,12 @@ type nvidiaRerankResponse struct {
 // RerankResult entries are in the API's ranking order; callers that
 // need original-input order should sort by Index. Same return-shape
 // contract as the Aliyun and ZhipuAI Rerank drivers.
-func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
