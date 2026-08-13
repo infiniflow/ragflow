@@ -5,6 +5,7 @@ import {
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { buildMessageListWithUuid } from '@/utils/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
 import { trim } from 'lodash';
@@ -201,14 +202,21 @@ export const useSendMessage = () => {
         conversationId: targetConversationId,
       };
 
+      // A brand new conversation is persisted under a server-generated id, so
+      // the prologue seeded on the temporary id doesn't carry over. Seed the
+      // real session from the server's list (which holds just the prologue)
+      // BEFORE appending the question — hydrating afterwards would pass the
+      // authority check (not streaming yet) and wipe the question and
+      // placeholder that were just appended.
+      if (currentMessages.length > 0) {
+        hydrateFromServer(
+          targetConversationId,
+          buildMessageListWithUuid(currentMessages),
+        );
+      }
+
       // Route the question to the conversation it was asked in, not whichever
       // is currently displayed.
-      //
-      // Do NOT hydrate from currentMessages here. For a freshly created
-      // conversation the server only returns the seeded prologue, which
-      // seedPrologue has already put in the store — and hydrating now would
-      // pass the authority check (not streaming yet) and wipe the question and
-      // placeholder that were just appended.
       appendQuestion(targetConversationId, questionMessage);
 
       setValue('');
@@ -246,6 +254,7 @@ export const useSendMessage = () => {
       isStreaming,
       createConversationBeforeSendMessage,
       appendQuestion,
+      hydrateFromServer,
       files,
       clearFiles,
       setValue,
