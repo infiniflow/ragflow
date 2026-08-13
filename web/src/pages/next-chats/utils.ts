@@ -1,10 +1,30 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { EmptyConversationId, MessageType } from '@/constants/chat';
 import {
   IConversation,
   IMessage,
   IReference,
 } from '@/interfaces/database/chat';
+import storage from '@/utils/authorization-util';
 import { isEmpty } from 'lodash';
+
+/**
+ * Regenerate is triggered from the transcript, which has no access to the input
+ * box's thinking / internet toggles, so callers replay the options of their last
+ * send. A view that hasn't sent anything yet has no record: fall back to the
+ * input box's own defaults — it re-reads the persisted thinking level and starts
+ * with internet off, so both stay in sync after a remount.
+ */
+export function resolveResendOptions(
+  lastSendOptions: NextMessageInputOnPressEnterParameter,
+): NextMessageInputOnPressEnterParameter {
+  const {
+    enableThinking = storage.getThinkingLevel(),
+    enableInternet = false,
+  } = lastSendOptions;
+
+  return { enableThinking, enableInternet };
+}
 
 export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';

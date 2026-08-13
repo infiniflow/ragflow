@@ -20,6 +20,7 @@ import {
   useChatStreamStore,
   useIsChatStreaming,
 } from '../chat-stream/store';
+import { resolveResendOptions } from '../utils';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
@@ -88,6 +89,11 @@ export const useSendMessage = () => {
   );
   const stopStream = useChatStreamStore((state) => state.stopStream);
 
+  // The regenerate button lives in the transcript, which has no access to the
+  // input box's thinking / internet toggles. Remember what the last send used
+  // so a retry keeps the same options instead of silently dropping them.
+  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
+
   const sendMessage = useCallback(
     async ({
       message,
@@ -101,6 +107,8 @@ export const useSendMessage = () => {
       messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
+
+      lastSendOptionsRef.current = { enableInternet, enableThinking };
 
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
@@ -157,7 +165,10 @@ export const useSendMessage = () => {
       };
 
       appendQuestion(conversationId, questionMessage);
-      sendMessage({ message: questionMessage });
+      sendMessage({
+        message: questionMessage,
+        ...resolveResendOptions(lastSendOptionsRef.current),
+      });
     },
     [conversationId, isStreaming, appendQuestion, sendMessage],
   );
