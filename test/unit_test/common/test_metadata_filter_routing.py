@@ -86,10 +86,10 @@ def test_pushdown_service_errors_are_not_masked(monkeypatch):
 
     real_import = builtins.__import__
 
-    def import_with_failing_service(name, globals=None, locals=None, fromlist=(), level=0):
+    def import_with_failing_service(name, module_globals=None, module_locals=None, fromlist=(), level=0):
         if name == "api.db.services.doc_metadata_service":
             return SimpleNamespace(DocMetadataService=FailingDocMetadataService)
-        return real_import(name, globals, locals, fromlist, level)
+        return real_import(name, module_globals, module_locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", import_with_failing_service)
 
@@ -104,10 +104,10 @@ def test_pushdown_service_errors_are_not_masked(monkeypatch):
 def test_missing_pushdown_service_uses_fallback(monkeypatch):
     real_import = builtins.__import__
 
-    def import_without_service(name, globals=None, locals=None, fromlist=(), level=0):
+    def import_without_service(name, module_globals=None, module_locals=None, fromlist=(), level=0):
         if name == "api.db.services.doc_metadata_service":
             raise ImportError("service is unavailable")
-        return real_import(name, globals, locals, fromlist, level)
+        return real_import(name, module_globals, module_locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", import_without_service)
 
