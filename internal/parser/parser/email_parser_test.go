@@ -17,10 +17,14 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/base64"
+	"mime/multipart"
+	"net/textproto"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEmailParser_EmlJSON(t *testing.T) {
@@ -912,5 +916,81 @@ func TestEmailParser_RechunkAttachmentTextPath(t *testing.T) {
 	}
 	if strings.Contains(text, "<binary bytes>") {
 		t.Errorf("binary payload leaked into indexed text: %q", text)
+	}
+}
+
+// TestFormatMsgDate verifies the .msg date rendering: a zero time (date
+// missing from the .msg) maps to nil (JSON null, matching extract_msg's
+// None) instead of a bogus sentinel like "0001-01-01 00:00:00+0000".
+func TestFormatMsgDate(t *testing.T) {
+	if got := formatMsgDate(time.Time{}); got != nil {
+		t.Errorf("zero date should map to nil, got %#v", got)
+	}
+	got := formatMsgDate(time.Date(2018, 3, 24, 0, 6, 29, 0, time.FixedZone("CST", 8*3600)))
+	if got != "2018-03-24 00:06:29+0800" {
+		t.Errorf("formatted date = %q, want 2018-03-24 00:06:29+0800", got)
+	}
+}
+
+// TestEmailParser_RechunkPrefersRaw verifies that rechunkEmailAttachments
+// re-parses the byte-exact "raw" bytes when present, rather than the
+// charset-decoded "payload". The fallback (no "raw") still uses "payload".
+func TestEmailParser_RechunkPrefersRaw(t *testing.T) {
+	ctx := t.Context()
+	p := NewEmailParser()
+
+	withRaw, textRaw := p.rechunkEmailAttachments(ctx, map[string]any{
+		"attachments": []map[string]any{
+			{"filename": "note.txt", "payload": "WORLD", "raw": "HELLO"},
+		},
+	}, 0)
+	if len(withRaw) != 1 || withRaw[0]["text"] != "HELLO" {
+		t.Fatalf("raw not preferred: extra=%#v text=%q", withRaw, textRaw)
+	}
+	if strings.Contains(textRaw, "WORLD") {
+		t.Errorf("re-chunk used payload instead of raw: %q", textRaw)
+	}
+
+	fallback, textFallback := p.rechunkEmailAttachments(ctx, map[string]any{
+		"attachments": []map[string]any{
+			{"filename": "note.txt", "payload": "WORLD"},
+		},
+	}, 0)
+	if len(fallback) != 1 || fallback[0]["text"] != "WORLD" {
+		t.Fatalf("payload fallback broken: extra=%#v text=%q", fallback, textFallback)
+	}
+}
+
+// TestReadMailBody_AttachmentPreservesRaw verifies that .eml attachment
+// collection stores the byte-exact decoded-CTE bytes under "raw" alongside the
+// charset-decoded "payload". Declaring charset=gbk makes decodeMailPayload
+// decode GBK bytes to a UTF-8 string, so the two differ — re-chunk relies on
+// "raw" to avoid silently corrupting the attachment.
+func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
+	// GBK-encoded "中文" (中=0xD6D0, 文=0xCEC4).
+	gbk := []byte{0xD6, 0xD0, 0xCE, 0xC4}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	bp, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Type": {"text/plain"}})
+	bp.Write([]byte("body"))
+	ap, _ := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"application/octet-stream; charset=gbk"},
+		"Content-Disposition":       {`attachment; filename="x.bin"`},
+		"Content-Transfer-Encoding": {"base64"},
+	})
+	ap.Write([]byte(base64.StdEncoding.EncodeToString(gbk)))
+	mw.Close()
+
+	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), true)
+	if len(attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d: %#v", len(attachments), attachments)
+	}
+	att := attachments[0]
+	if raw, _ := att["raw"].(string); raw != string(gbk) {
+		t.Errorf("raw = %q, want byte-exact %q", raw, string(gbk))
+	}
+	if payload, _ := att["payload"].(string); payload != "中文" {
+		t.Errorf("payload = %q, want 中文 (charset-decoded)", payload)
 	}
 }

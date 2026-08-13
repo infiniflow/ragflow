@@ -28,6 +28,7 @@ import (
 	"net/mail"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/AkmalOt/gomsg"
 	"golang.org/x/text/encoding"
@@ -86,7 +87,21 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 
 	var content map[string]any
 	if ext == ".msg" {
-		msg, err := parseMSG(data, p.fields)
+		var (
+			msg map[string]any
+			err error
+		)
+		// gomsg.Decode parses untrusted OLE2/CFB input; guard against a
+		// panic from a malformed .msg so one bad email can't take down the
+		// ingestion worker.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("email: .msg decode panicked: %v", r)
+				}
+			}()
+			msg, err = parseMSG(data, p.fields)
+		}()
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("email: .msg: %w", err)}
 		}
@@ -290,6 +305,12 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 			attachments = append(attachments, map[string]any{
 				"filename": attachmentFilename(part),
 				"payload":  decodeMailPayload(raw, partParams["charset"]),
+				// raw preserves the byte-exact decoded-CTE bytes so the
+				// re-chunk step re-parses the original attachment instead of
+				// the charset-decoded string (which can differ when the
+				// attachment declares a CJK charset). rechunkEmailAttachments
+				// prefers "raw" and falls back to "payload".
+				"raw": string(raw),
 			})
 			continue
 		}
@@ -466,11 +487,7 @@ func parseMSG(data []byte, fields []string) (map[string]any, error) {
 		content["bcc"] = formatRecipient(msg.DisplayBCC)
 	}
 	if target["date"] {
-		// Match Python extract_msg's datetime string form. extract_msg uses
-		// strftime("%Y-%m-%d %H:%M:%S%z"), which emits the zone without a
-		// colon (e.g. "2018-03-24 00:06:29+0800"); Go's -0700 layout
-		// reproduces that (the -07:00 layout would wrongly insert a colon).
-		content["date"] = msg.Date.Format("2006-01-02 15:04:05-0700")
+		content["date"] = formatMsgDate(msg.Date)
 	}
 	if target["subject"] {
 		content["subject"] = msg.Subject
@@ -590,6 +607,20 @@ func orNil(s string) any {
 	return s
 }
 
+// formatMsgDate renders an Outlook .msg date the way extract_msg does:
+// strftime("%Y-%m-%d %H:%M:%S%z"), which emits the zone without a colon
+// (e.g. "2018-03-24 00:06:29+0800"). Go's -0700 layout reproduces that
+// (the -07:00 layout would wrongly insert a colon). A zero time (date
+// missing from the .msg) maps to nil so it serializes as JSON null,
+// matching extract_msg's None, instead of a bogus sentinel such as
+// "0001-01-01 00:00:00+0000".
+func formatMsgDate(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.Format("2006-01-02 15:04:05-0700")
+}
+
 // rechunkEmailAttachments re-parses each email attachment by its file
 // extension and folds the extracted text back into the same document so
 // attachment content becomes retrievable. This mirrors the user-oriented
@@ -628,6 +659,11 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 	for _, att := range raw {
 		fn, _ := att["filename"].(string)
 		payload, _ := att["payload"].(string)
+		// Prefer the byte-exact raw bytes (when present) so a re-parsed
+		// attachment is not silently corrupted by a prior charset decode.
+		if rawPayload, ok := att["raw"].(string); ok && rawPayload != "" {
+			payload = rawPayload
+		}
 		if fn == "" || payload == "" {
 			// Empty payload (e.g. an embedded .msg with no exposed bytes) or
 			// a missing filename — nothing to re-parse.
