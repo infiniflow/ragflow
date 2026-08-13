@@ -262,17 +262,23 @@ def _pipeline_compiler_llm_id(pipeline_id: str) -> str | None:
     return None
 
 
-def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, str | None]:
-    """Validate one Wiki template and return each doc's pipeline chat model."""
+def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]], tenant_id: str) -> dict[str, str | None]:
+    """Validate one Wiki template and return each document's chat model."""
+    from api.db.services.compilation_template_service import CompilationTemplateService
+
     template_ids = {template_id for _, template_id in eligible}
     if len(template_ids) > 1:
         raise ValueError("Eligible Wiki documents must use the same template")
     pipeline_chat_llm_ids: dict[str, str | None] = {}
-    for doc, _ in eligible:
+    for doc, template_id in eligible:
         doc_id = str(doc.get("id") or "")
         pipeline_id = (doc.get("pipeline_id") or "").strip()
         if not pipeline_id:
-            raise ValueError(f"Wiki document {doc_id} must use a pipeline")
+            template = CompilationTemplateService.get_saved(template_id, tenant_id)
+            config = (template.get("config") or {}) if template else {}
+            llm_id = config.get("llm_id") if isinstance(config, dict) else None
+            pipeline_chat_llm_ids[doc_id] = llm_id.strip() if isinstance(llm_id, str) and llm_id.strip() else None
+            continue
         pipeline_chat_llm_ids[doc_id] = _pipeline_compiler_llm_id(pipeline_id)
     return pipeline_chat_llm_ids
 
@@ -1393,7 +1399,7 @@ async def run_wiki(
     if not eligible:
         progress(1.0, "No documents are configured for wiki compilation.")
         return
-    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible)
+    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible, ctx.tenant_id)
 
     # 3. Resolve chat models. MAP is per document, so each document uses
     # its pipeline Compiler's ``llm_id``. REDUCE / PLAN / REFINE are
@@ -1755,7 +1761,7 @@ async def run_wiki_incremental(
     if not eligible and not is_incremental:
         progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
-    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible) if eligible else {}
+    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible, ctx.tenant_id) if eligible else {}
 
     # Resolve mode from the eligible documents' templates. Each eligible
     # doc resolves to a wiki template either via its own parser_config or via
