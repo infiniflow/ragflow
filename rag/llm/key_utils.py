@@ -82,14 +82,14 @@ def _resolve_provider_credentials(key):
     if isinstance(key, str):
         try:
             payload = json.loads(key)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
             logging.warning(
                 'TTS/Seq2txt provider key is not valid JSON; expected a JSON object (e.g. {"fish_audio_ak": "..."} for Fish Audio, or {"spark_app_id": "..."} for XunFei Spark). See conf/llm_factories.json for supported TTS / Seq2txt factories.',
             )
             raise ModelException(
                 'TTS/Seq2txt provider key must be a JSON object. Example: {"fish_audio_ak": "..."} or {"spark_app_id": "..."} or {"tencent_cloud_sid": "..."}. See conf/llm_factories.json for supported TTS / Seq2txt factories.',
                 retryable=False,
-            )
+            ) from exc
     else:
         logging.warning(
             "TTS/Seq2txt provider key is not a string or dict (got %s); expected a JSON object.",
