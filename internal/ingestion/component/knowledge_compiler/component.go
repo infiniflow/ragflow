@@ -157,9 +157,15 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
 
+		// Per-spec Inputs copy: each spec must get its own VariantSpecific map,
+		// otherwise specIn.VariantSpecific below would mutate the shared map and
+		// let a later template inherit the previous template's parser_config
+		// (a template with an empty config would then run with the wrong parser
+		// behavior). Copy the map (and preserve an empty map when nil).
 		specIn := in
-		if specIn.VariantSpecific == nil {
-			specIn.VariantSpecific = map[string]any{}
+		specIn.VariantSpecific = make(map[string]any, len(in.VariantSpecific)+1)
+		for k, v := range in.VariantSpecific {
+			specIn.VariantSpecific[k] = v
 		}
 		// The template config (flat: kind/entity/relation/plan/…) is delivered to
 		// the structure and wiki variants under the "parser_config" key — the SAME
