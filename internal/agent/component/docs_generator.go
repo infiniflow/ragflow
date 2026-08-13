@@ -350,6 +350,8 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 		}
 	}
 	if !strings.Contains(content, "{{") {
+		// Trim even when no think block is present — matches Python's
+		// _strip_thinking, which always .strip()s the exported content.
 		return strings.TrimSpace(common.StripThinkTrailing(content)), nil
 	}
 
