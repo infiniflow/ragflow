@@ -30,7 +30,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common import settings
-from common.constants import PAGERANK_FLD, FileSource, LLMType, StatusEnum
+from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum
 from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
@@ -2167,7 +2167,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 
 # Non-folded template kinds that make a doc eligible for each API kind.
 _ALTERATION_ELIGIBLE_TEMPLATE_KINDS = {
-    "wiki": {"artifacts"},
+    "wiki": {"wiki"},
     "graph": {"knowledge_graph"},
     "mindmap": {"mind_map"},
     "timeline": {"timeline"},
@@ -3630,6 +3630,7 @@ async def search_dataset_layers(
     mode: str,
     *,
     top_k: int | None = None,
+    doc_scope: list[str] | None = None,
 ) -> tuple[bool, dict]:
     """Unified search across different knowledge layers of a dataset.
 
@@ -3640,15 +3641,20 @@ async def search_dataset_layers(
             - nav_cluster: navigation tree cluster nodes
             - navigation_tree: tree-structured BFS beam descent
             - all: union of all modes, deduplicated by doc_id with best score
+        doc_scope: Optional set of documents to restrict the search to.  None or
+            empty means all documents of the dataset.  Forwarded to every mode:
+            nav modes filter the compiled nav rows by doc, ``chunk`` restricts
+            the retriever via ``doc_ids``.  Applied query-time so scoped rows
+            are never dropped by the ``top_k`` truncation.
 
         Items are shaped as ``{"doc_id": str, "score": float}``.
     """
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_dataset_nav
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "no authorization"
+        return False, {"error": "no authorization", "code": RetCode.PERMISSION_ERROR}
     if mode not in _LAYERS_HANDLERS:
-        return False, f"unknown mode: {mode}, expected one of {list(_LAYERS_HANDLERS.keys())}"
+        return False, {"error": f"unknown mode: {mode}, expected one of {list(_LAYERS_HANDLERS.keys())}", "code": RetCode.ARGUMENT_ERROR}
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     try:
@@ -3670,21 +3676,27 @@ async def search_dataset_layers(
         logging.exception("Full traceback for LLMBundle(EMBEDDING) failure")
         embd_mdl = None
 
+    logging.debug(
+        "search_dataset_layers: dispatching scoped mode=%s for dataset=%s, scoped_docs=%d",
+        mode,
+        dataset_id,
+        len([d for d in (doc_scope or []) if str(d).strip()]),
+    )
     if mode == "nav_doc":
-        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
+        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "nav_cluster":
-        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
+        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope)
     elif mode == "chunk":
-        return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb)
+        return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
-        return await _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_dataset_nav)
+        return await _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_dataset_nav, doc_scope=doc_scope)
     else:
-        return False, f"unknown mode: {mode}"
+        return False, {"error": f"unknown mode: {mode}", "code": RetCode.ARGUMENT_ERROR}
 
 
-async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
+async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None):
     items = await _nav_search_result(
         tenant_id,
         dataset_id,
@@ -3693,11 +3705,12 @@ async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl,
         embd_mdl,
         search_fn,
         type_kwd="nav_doc",
+        doc_scope=doc_scope,
     )
     return True, {"mode": "nav_doc", "total": len(items), "items": items}
 
 
-async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
+async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None):
     items = await _nav_search_result(
         tenant_id,
         dataset_id,
@@ -3706,11 +3719,12 @@ async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_
         embd_mdl,
         search_fn,
         type_kwd="nav_cluster",
+        doc_scope=doc_scope,
     )
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, *, doc_scope=None):
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
 
     items = await search_nav_tree_descent(
@@ -3719,32 +3733,48 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
         query,
         embd_mdl,
         top_k=top_k,
+        doc_scope=doc_scope,
     )
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
 
 async def _nav_search_result(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, **kwargs):
+    doc_scope = kwargs.pop("doc_scope", None)
     results = await search_fn(
         tenant_id,
         dataset_id,
         query,
         embd_mdl=embd_mdl,
         top_k=top_k,
+        doc_scope=doc_scope,
         **kwargs,
     )
+    scope_set = {str(d).strip() for d in doc_scope if str(d).strip()} if doc_scope else None
     items: list[dict] = []
     for r in results:
-        doc_id = (r.get("doc_id") or "").strip() if isinstance(r.get("doc_id"), str) else (r.get("doc_ids") or [None])[0]
+        raw_doc_id = r.get("doc_id")
+        if isinstance(raw_doc_id, str) and raw_doc_id.strip():
+            doc_id = raw_doc_id.strip()
+        else:
+            # Cluster row: pick the first doc_id that's in scope (if a scope
+            # is set) so we never leak an out-of-scope doc_id into the results.
+            doc_ids = r.get("doc_ids") or []
+            if scope_set:
+                doc_id = next((str(d).strip() for d in doc_ids if str(d).strip() in scope_set), "")
+            else:
+                doc_id = str(doc_ids[0]).strip() if doc_ids else ""
+        if not doc_id:
+            continue
         items.append(
             {
-                "doc_id": str(doc_id) if doc_id else "",
+                "doc_id": doc_id,
                 "score": round(float(r.get("score", 0.0)), 4),
             }
         )
     return items
 
 
-async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb):
+async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, *, doc_scope=None):
     from common import settings
 
     tenant_ids = [tenant_id]
@@ -3752,6 +3782,8 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
     kwargs = {}
     if top_k is not None:
         kwargs["top"] = top_k
+    if doc_scope:
+        kwargs["doc_ids"] = [str(d) for d in doc_scope if str(d).strip()]
 
     fetch_k = max(top_k, 10) * 3 if top_k is not None else 1024
     try:
@@ -3767,7 +3799,7 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
             **kwargs,
         )
     except Exception:
-        return False, "chunk retrieval failed"
+        return False, {"error": "chunk retrieval failed", "code": RetCode.SERVER_ERROR}
 
     doc_scores: dict[str, float] = {}
     for c in ranks.get("chunks", []):
@@ -3787,15 +3819,15 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
     return True, {"mode": "chunk", "total": len(items), "items": items}
 
 
-async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_fn):
+async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_fn, *, doc_scope=None):
     """Run all modes and return the union of doc_ids, with best score per doc."""
     import asyncio as _asyncio
 
     result_lists = await _asyncio.gather(
-        _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn),
-        _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn),
-        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn),
-        _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb),
+        _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
+        _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
+        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope),
+        _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope),
         return_exceptions=True,
     )
 
@@ -3992,7 +4024,7 @@ async def update_wiki_page(
 # :meth:`FileCommitService.get_page_commit_detail`.
 
 
-# All seven row types the artifact pipeline writes. Listed in dependency
+# All row types the artifact pipeline writes. Listed in dependency
 # order so partial failures of earlier deletes don't leave behind state
 # that downstream phases would silently reuse. ``wiki_page_graph``
 # is the materialized canvas graph derived from the refined pages —
@@ -4004,8 +4036,13 @@ _WIKI_COMPILE_KWDS = (
     "wiki_page_draft",
     "wiki_page",
     "wiki_page_topic",
+    "wiki_canonical_entity",
+    "wiki_plan_group",
+    "wiki_doc_page_source",
+    "wiki_mode_meta",
     "wiki_entity",
     "wiki_relation",
+    "wiki_page_graph",
 )
 
 # Tunables for the incremental graph loader. See ``get_wiki_graph``.
@@ -4528,6 +4565,56 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
     if pack is None:
         return True, {"deleted": {}}
     index_nm, _ = pack
+
+    # Repair rows damaged by the former doc-page-source upsert before deleting
+    # that bucket. It updated by ``doc_id`` and could stamp ordinary source
+    # chunks as ``wiki_doc_page_source``. Those rows retain chunk content;
+    # genuine tracking rows do not. Removing only the bad marker preserves the
+    # source chunks while allowing the real tracking rows to be cleared below.
+    try:
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        fields = ["id", "content_with_weight"]
+        offset = 0
+        page_size = 1000
+        damaged_row_ids: list[str] = []
+        while True:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                fields,
+                [],
+                {"compile_kwd": ["wiki_doc_page_source"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index_nm,
+                [dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, fields) or {}
+            for row_id, row in rows.items():
+                if row.get("content_with_weight"):
+                    damaged_row_ids.append(row_id)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        for row_id in damaged_row_ids:
+            await thread_pool_exec(
+                settings.docStoreConn.update,
+                {"id": row_id},
+                {"remove": "compile_kwd"},
+                index_nm,
+                dataset_id,
+            )
+        if damaged_row_ids:
+            logging.warning(
+                "clear_wiki: repaired %d source chunk(s) mislabeled as wiki_doc_page_source kb=%s",
+                len(damaged_row_ids),
+                dataset_id,
+            )
+    except Exception:
+        logging.exception("clear_wiki: failed to repair mislabeled source chunks kb=%s", dataset_id)
+        return False, "Failed to repair legacy Wiki state before clearing"
 
     deleted: dict[str, object] = {}
     for kwd in _WIKI_COMPILE_KWDS:

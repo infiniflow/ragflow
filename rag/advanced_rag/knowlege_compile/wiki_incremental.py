@@ -1,10 +1,10 @@
 """Dual-mode wiki incremental compilation.
 
-Mode A (no-plan, plan=no):
+Entity mode:
   MAP → REDUCE → REFINE per-concept (generate/modify/re-synthesize) → FINALIZE
   1 concept = 1 page (WeKnora style). Entities enrich concept pages via source chunks.
 
-Mode B (with-plan, plan=yes):
+Topic mode:
   MAP → REDUCE → PLAN (LLM grouping) → REFINE per-page → FINALIZE
   Incremental: embeddings retrieve page candidates; the LLM makes final routes.
 
@@ -63,11 +63,9 @@ WIKI_TOPIC_FALLBACK = "General"  # bucket for pages that match no topic
 WIKI_PAGE_TOPIC_CANDIDATE_LIMIT = 50
 
 # Page Router thresholds (kept as code constants — not exposed in YAML)
-PAGE_ROUTER_UPDATE_THRESHOLD = 0.80
 PAGE_ROUTER_MAYBE_THRESHOLD = 0.50
-PAGE_ROUTER_DIRECT_THRESHOLD = 0.90
-PAGE_ROUTER_MIN_MARGIN = 0.03
 PAGE_ROUTER_TOP_K = 5
+PAGE_ROUTER_MAX_CANDIDATES = 12
 PAGE_CLUSTER_MIN_PAGES = 8
 PAGE_CLUSTER_MAX_PAGES = 60
 PAGE_CLUSTER_ITEMS_PER_PAGE = 3
@@ -89,6 +87,11 @@ WIKI_SOURCE_BUDGET_RUNES = 12_000  # per-chunk-batch budget (rune-based, mirrors
 
 
 # ----- helpers ---------------------------------------------------------------
+
+
+def _wiki_log_stats(stage: str, event: str, **fields) -> None:
+    """Emit machine-readable compilation statistics for one pipeline stage."""
+    logging.info("wiki stats %s", json.dumps({"stage": stage, "event": event, **fields}, ensure_ascii=False, sort_keys=True))
 
 
 def _wiki_derive_page_id(term: str, prefix: str = "concept") -> str:
@@ -674,6 +677,7 @@ async def _wiki_match_entities(
             exact_flat[_normalize_key(alias)] = cname
 
     name_resolution: dict[str, str] = {}  # raw_name → canonical_name
+    llm_merge_pairs: list[dict[str, str]] = []
     unmatched: list[dict] = []  # entities not matched by exact
     for entry in raw_entities:
         raw_name = entry["name"]
@@ -737,6 +741,7 @@ async def _wiki_match_entities(
             for raw_name, cname in confirmed:
                 name_resolution[raw_name] = cname
                 confirmed_set.add(raw_name)
+                llm_merge_pairs.append({"from": raw_name, "into": cname, "scope": "existing_canonical"})
             for e, cname in maybe_pairs:
                 if e["name"] not in confirmed_set:
                     still_unmatched.append(e)
@@ -824,8 +829,10 @@ async def _wiki_match_entities(
                         if ri != rj:
                             if unmatched[ri].get("claim_count", 0) >= unmatched[rj].get("claim_count", 0):
                                 merged_into[rj] = ri
+                                llm_merge_pairs.append({"from": unmatched[rj]["name"], "into": unmatched[ri]["name"], "scope": "intra_build"})
                             else:
                                 merged_into[ri] = rj
+                                llm_merge_pairs.append({"from": unmatched[ri]["name"], "into": unmatched[rj]["name"], "scope": "intra_build"})
 
             # Apply merges
             merged_indices: dict[int, list[int]] = {}
@@ -894,6 +901,10 @@ async def _wiki_match_entities(
                 aliases.add(raw_name)
             aliases.discard(cname)
             canonical_map[cname]["aliases"] = sorted(aliases)
+
+    for merge in llm_merge_pairs:
+        _wiki_log_stats("MATCH", "llm_merge", kb_id=kb_id, incremental=incremental, **merge)
+    _wiki_log_stats("MATCH", "llm_merge_summary", kb_id=kb_id, incremental=incremental, before=len(raw_entities), after=len(canonical_map), llm_merge_count=len(llm_merge_pairs))
 
     return canonical_map, name_resolution
 
@@ -987,7 +998,7 @@ async def _search_existing_pages(
     return results
 
 
-async def _load_map_relations(tenant_id: str, kb_id: str) -> list[dict]:
+async def _load_map_relations(tenant_id: str, kb_id: str, excluded_doc_ids: set[str] | None = None) -> list[dict]:
     """Load all extracted (from, to, type) relations from wiki_map_extract rows.
 
     These are the semantic edges the LLM extracted during MAP. When both
@@ -1006,7 +1017,7 @@ async def _load_map_relations(tenant_id: str, kb_id: str) -> list[dict]:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["content_with_weight"],
+                ["content_with_weight", "doc_id"],
                 [],
                 {"compile_kwd": ["wiki_map_extract"]},
                 [],
@@ -1016,11 +1027,14 @@ async def _load_map_relations(tenant_id: str, kb_id: str) -> list[dict]:
                 index,
                 [kb_id],
             )
-            field_map = settings.docStoreConn.get_fields(res, ["content_with_weight"]) or {}
+            field_map = settings.docStoreConn.get_fields(res, ["content_with_weight", "doc_id"]) or {}
         except Exception:
             logging.exception("wiki: failed to load map relations for kb=%s", kb_id)
             return relations
         for row in field_map.values():
+            row_doc_ids = _as_str_list(row.get("doc_id"))
+            if excluded_doc_ids and any(doc_id in excluded_doc_ids for doc_id in row_doc_ids):
+                continue
             raw = row.get("content_with_weight")
             if isinstance(raw, str):
                 try:
@@ -1041,7 +1055,11 @@ async def _load_map_relations(tenant_id: str, kb_id: str) -> list[dict]:
     return relations
 
 
-async def _wiki_load_pages_for_graph(tenant_id: str, kb_id: str) -> list[dict]:
+async def _wiki_load_pages_for_graph(
+    tenant_id: str,
+    kb_id: str,
+    excluded_doc_ids: set[str] | None = None,
+) -> list[dict]:
     """Reload compiled wiki_page rows and project them onto the canvas-graph
     shape expected by ``dataset_wiki_generator.build_wiki_page_graph``.
 
@@ -1121,6 +1139,37 @@ async def _wiki_load_pages_for_graph(tenant_id: str, kb_id: str) -> list[dict]:
         if len(field_map) < page_size:
             break
         offset += page_size
+    # A page may contain no generated wikilink even though MAP extracted a
+    # semantic relation.  Rebuild the graph from those grounded MAP relations
+    # as a fallback; otherwise wiki_entity rows exist but wiki_relation stays
+    # empty.  Page slugs remain the graph identities, while member names,
+    # titles, and slug suffixes are accepted as relation endpoints.
+    if pages:
+        name_to_slug: dict[str, str] = {}
+        for page in pages:
+            slug = page["slug"]
+            names = [slug.rsplit("/", 1)[-1], page.get("title", ""), *page.get("entity_names", [])]
+            for name in names:
+                if isinstance(name, str) and name.strip():
+                    name_to_slug.setdefault(name.strip(), slug)
+        try:
+            if excluded_doc_ids is None:
+                from api.db.services.document_service import DocumentService
+
+                excluded_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+            map_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=excluded_doc_ids)
+        except Exception:
+            logging.exception("wiki: failed to load MAP relations for graph fallback kb=%s", kb_id)
+            map_relations = []
+        pages_by_slug = {page["slug"]: page for page in pages}
+        for relation in map_relations:
+            source = name_to_slug.get(str(relation.get("from") or "").strip())
+            target = name_to_slug.get(str(relation.get("to") or "").strip())
+            if not source or not target or source == target:
+                continue
+            outlinks = pages_by_slug[source].setdefault("outlinks", [])
+            if target not in outlinks:
+                outlinks.append(target)
     return pages
 
 
@@ -1139,14 +1188,17 @@ def _wiki_extract_outlinks_from_content(content: str, kb_id: str = "") -> list[s
     seen: set[str] = set()
     outlinks: list[str] = []
     for m in _WIKILINK_RE.finditer(content):
-        link = m.group(1).strip()
+        # ``[[page_slug|display text]]`` stores the page identity before the
+        # pipe.  The display text is only presentation data and must never be
+        # used as the graph target.
+        link = m.group(1).split("|", 1)[0].strip()
         if link and link not in seen:
             seen.add(link)
             outlinks.append(link)
     if kb_id:
         kb_esc = re.escape(str(kb_id))
         for m in re.finditer(rf"\]\(artifact/{kb_esc}/([^)]+)\)", content):
-            slug = m.group(1).strip()
+            slug = m.group(1).split("|", 1)[0].strip()
             if slug and slug not in seen:
                 seen.add(slug)
                 outlinks.append(slug)
@@ -1313,7 +1365,11 @@ def _wiki_dedupe_claims(claims: list[dict]) -> list[dict]:
     return result
 
 
-def _wiki_topics_for_docs(doc_ids: list[str] | set[str], doc_topics: dict[str, list[str]] | None) -> list[str]:
+def _wiki_topics_for_docs(
+    doc_ids: list[str] | set[str],
+    doc_topics: dict[str, list[str]] | None,
+    topic_pool: dict[str, str] | None = None,
+) -> list[str]:
     topics: list[str] = []
     seen: set[str] = set()
     for doc_id in doc_ids:
@@ -1321,14 +1377,118 @@ def _wiki_topics_for_docs(doc_ids: list[str] | set[str], doc_topics: dict[str, l
             if not isinstance(topic, str):
                 continue
             topic = topic.strip()
-            key = topic.casefold()
-            if not topic or key == WIKI_TOPIC_FALLBACK.casefold() or key in seen:
+            key = _normalize_key(topic)
+            if not topic or key == _normalize_key(WIKI_TOPIC_FALLBACK) or key in seen:
                 continue
             seen.add(key)
             topics.append(topic)
-            if len(topics) >= WIKI_PAGE_TOPIC_CANDIDATE_LIMIT:
-                return topics
+    for topic in (topic_pool or {}).values():
+        key = _normalize_key(topic)
+        if topic and key not in seen:
+            seen.add(key)
+            topics.append(topic)
     return topics
+
+
+async def _wiki_prepare_topic_embeddings(
+    doc_topics: dict[str, list[str]],
+    embd_mdl,
+    extra_topics: list[str] | None = None,
+) -> dict[str, object]:
+    topics = sorted(
+        {
+            topic
+            for values in list(doc_topics.values()) + [extra_topics or []]
+            for topic in values
+            if isinstance(topic, str) and topic.strip() and _normalize_key(topic) != _normalize_key(WIKI_TOPIC_FALLBACK)
+        },
+        key=lambda value: (value.casefold(), value),
+    )
+    if not topics or embd_mdl is None:
+        return {}
+    embeddings, _ = await thread_pool_exec(embd_mdl.encode, topics)
+    return {topic: vector for topic, vector in zip(topics, embeddings, strict=True)}
+
+
+def _wiki_topic_query_text(
+    page_title: str,
+    claims: list[dict] | None,
+    source_chunks: list[dict] | None,
+    existing_page: dict | None = None,
+) -> str:
+    parts = [f"title={page_title}"] if page_title else []
+    if existing_page:
+        summary = existing_page.get("summary_with_weight") or ""
+        if summary:
+            parts.append(f"summary={summary}")
+    evidence = []
+    for claim in (claims or [])[:8]:
+        if isinstance(claim, dict):
+            text = claim.get("statement") or claim.get("text")
+            if text:
+                evidence.append(str(text))
+    if evidence:
+        parts.append(f"evidence={' | '.join(evidence)}")
+    chunk_text = []
+    for chunk in (source_chunks or [])[:4]:
+        if isinstance(chunk, dict):
+            text = chunk.get("text") or chunk.get("content_with_weight")
+            if text:
+                chunk_text.append(str(text)[:500])
+    if chunk_text:
+        parts.append(f"source={' | '.join(chunk_text)}")
+    return "; ".join(parts)
+
+
+async def _wiki_rank_topic_candidates(
+    page_title: str,
+    claims: list[dict] | None,
+    source_chunks: list[dict] | None,
+    existing_page: dict | None,
+    topic_candidates: list[str] | None,
+    topic_embeddings: dict[str, object] | None,
+    embd_mdl,
+) -> list[str]:
+    """Use embedding only to recall topic candidates; LLM remains the selector."""
+    candidates = []
+    seen: set[str] = set()
+    for topic in topic_candidates or []:
+        if not isinstance(topic, str):
+            continue
+        topic = topic.strip()
+        key = _normalize_key(topic)
+        if topic and key not in seen:
+            seen.add(key)
+            candidates.append(topic)
+    if len(candidates) <= 1 or embd_mdl is None:
+        return candidates[:WIKI_PAGE_TOPIC_CANDIDATE_LIMIT]
+
+    query_text = _wiki_topic_query_text(page_title, claims, source_chunks, existing_page)
+    query_embedding, _ = await thread_pool_exec(embd_mdl.encode, [query_text])
+    query = np.asarray(query_embedding[0], dtype=np.float32)
+    query_norm = np.linalg.norm(query)
+    if query_norm <= 0:
+        return candidates[:WIKI_PAGE_TOPIC_CANDIDATE_LIMIT]
+    query = query / query_norm
+
+    local_topic_embeddings = dict(topic_embeddings or {})
+    missing_topics = [topic for topic in candidates if topic not in local_topic_embeddings]
+    if missing_topics:
+        encoded, _ = await thread_pool_exec(embd_mdl.encode, missing_topics)
+        local_topic_embeddings.update({topic: vector for topic, vector in zip(missing_topics, encoded, strict=True)})
+        if topic_embeddings is not None:
+            topic_embeddings.update({topic: vector for topic, vector in zip(missing_topics, encoded, strict=True)})
+
+    ranked = []
+    for topic in candidates:
+        vector = np.asarray(local_topic_embeddings.get(topic), dtype=np.float32) if topic in local_topic_embeddings else None
+        if vector is None or vector.size == 0:
+            continue
+        norm = np.linalg.norm(vector)
+        score = float(np.dot(query, vector / norm)) if norm > 0 else -1.0
+        ranked.append((score, topic))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    return [topic for _, topic in ranked[:WIKI_PAGE_TOPIC_CANDIDATE_LIMIT]]
 
 
 def _wiki_decide_concept_pages(all_concepts: list[dict]) -> list[dict]:
@@ -1593,7 +1753,11 @@ async def _wiki_update_doc_page_source(
     if existing_map:
         await thread_pool_exec(
             settings.docStoreConn.update,
-            {"doc_id": doc_id},
+            # ``doc_id`` is shared by source chunks, MAP resume rows, and this
+            # tracking row. Updating by doc_id rewrites every one of them into
+            # ``wiki_doc_page_source``. The tracking row has a stable unique
+            # id, so updates must always use that identity.
+            {"id": doc["id"]},
             doc,
             index,
             kb_id,
@@ -1682,8 +1846,14 @@ async def _wiki_refine_page(
     page_version: int,
     entity_names: list[str] | None = None,
     page_embedding=None,
+    embed_routing_context: bool = False,
     source_doc_ids: list[str] | None = None,
     topic_candidates: list[str] | None = None,
+    topic_selection_stats: dict[str, int] | None = None,
+    topic_embeddings: dict[str, object] | None = None,
+    topic_pool: dict[str, str] | None = None,
+    topic_pool_lock: asyncio.Lock | None = None,
+    member_evidence: list[dict] | None = None,
 ) -> dict | None:
     """Run a single Mode A REFINE action on one concept page.
 
@@ -1694,6 +1864,16 @@ async def _wiki_refine_page(
     # Blank page_id would produce `slug_kwd: [""]` queries → Infinity 3052.
     if not page_id or not str(page_id).strip():
         return existing_page
+
+    topic_candidates = await _wiki_rank_topic_candidates(
+        page_title,
+        claims,
+        source_chunks,
+        existing_page,
+        topic_candidates,
+        topic_embeddings,
+        embd_mdl,
+    )
 
     if mode == "delete":
         deleted_count = await thread_pool_exec(
@@ -1736,6 +1916,7 @@ async def _wiki_refine_page(
             available_pages,
             contextual_hints,
             topic_candidates,
+            member_evidence,
         )
     elif mode == "re-synthesize":
         system_prompt = _WIKI_MODE_A_MODIFY_SYSTEM
@@ -1751,6 +1932,7 @@ async def _wiki_refine_page(
             contextual_hints,
             topic_candidates,
             force_full=True,
+            member_evidence=member_evidence,
         )
     else:  # modify
         system_prompt = _WIKI_MODE_A_MODIFY_SYSTEM
@@ -1766,6 +1948,7 @@ async def _wiki_refine_page(
             contextual_hints,
             topic_candidates,
             force_full=False,
+            member_evidence=member_evidence,
         )
 
     # Call LLM
@@ -1783,14 +1966,19 @@ async def _wiki_refine_page(
     # knowledge-base-wide embedding nearest-neighbour pass.
     content_lines = response.strip().splitlines()
     summary = ""
+    title = ""
     topic = ""
     while content_lines:
         line = content_lines[0].strip()
-        if not line and (summary or topic):
+        if not line and (summary or title or topic):
             content_lines.pop(0)
             continue
         if line.upper().startswith("SUMMARY:") and not summary:
             summary = line.split(":", 1)[1].strip()
+            content_lines.pop(0)
+            continue
+        if line.upper().startswith("TITLE:") and not title:
+            title = line.split(":", 1)[1].strip()
             content_lines.pop(0)
             continue
         if line.upper().startswith("TOPIC:") and not topic:
@@ -1802,13 +1990,52 @@ async def _wiki_refine_page(
     if not content:
         return existing_page
 
-    # Build the wiki_page dict
+    # Build the wiki_page dict. Single-member pages keep their original title;
+    # only grouped pages may receive a synthesized title from the LLM.
     existing = existing_page or {}
+    member_names = {str(name).strip() for name in (entity_names or []) if str(name).strip()}
+    if len(member_names) <= 1:
+        title = str(existing.get("title_kwd") or page_title).strip()
+    else:
+        title = title or str(existing.get("title_kwd") or page_title).strip()
     if not topic:
         existing_topic = existing.get("topic_kwd")
         if isinstance(existing_topic, (list, tuple)):
             existing_topic = existing_topic[0] if existing_topic else ""
         topic = str(existing_topic or WIKI_TOPIC_FALLBACK).strip()
+    topic_key = _normalize_key(topic)
+    candidate_keys = {_normalize_key(candidate) for candidate in topic_candidates or [] if candidate}
+    is_new_topic = bool(topic and topic_key not in candidate_keys)
+    added_to_candidates = False
+    if is_new_topic and topic_pool is not None:
+        added_to_candidates = topic_key not in topic_pool
+        if topic_pool_lock is not None:
+            async with topic_pool_lock:
+                added_to_candidates = topic_key not in topic_pool
+                topic_pool.setdefault(topic_key, topic)
+        else:
+            topic_pool.setdefault(topic_key, topic)
+        if topic_embeddings is not None and topic not in topic_embeddings:
+            encoded, _ = await thread_pool_exec(embd_mdl.encode, [topic])
+            topic_embeddings[topic] = encoded[0]
+        if added_to_candidates and topic_selection_stats is not None:
+            topic_selection_stats["new_added"] = topic_selection_stats.get("new_added", 0) + 1
+    normalized_topic_candidates = {_normalize_key(candidate) for candidate in topic_candidates or [] if candidate}
+    topic_in_candidates = _normalize_key(topic) in normalized_topic_candidates
+    _wiki_log_stats(
+        "TOPIC",
+        "page_selection",
+        page_id=page_id,
+        candidate_count=len(normalized_topic_candidates),
+        candidates=list((topic_candidates or [])[:WIKI_PAGE_TOPIC_CANDIDATE_LIMIT]),
+        selected=topic,
+        is_new=not topic_in_candidates,
+        added_to_candidates=added_to_candidates,
+    )
+    if topic_selection_stats is not None:
+        topic_selection_stats["selected"] = topic_selection_stats.get("selected", 0) + 1
+        if not topic_in_candidates:
+            topic_selection_stats["new"] = topic_selection_stats.get("new", 0) + 1
     new_version = page_version + 1
     raw_existing_claims = existing.get("claims", [])
     if isinstance(raw_existing_claims, str):
@@ -1857,12 +2084,25 @@ async def _wiki_refine_page(
             if did and did not in doc_ids:
                 doc_ids.append(did)
 
-    # Embed for search
-    from common.misc_utils import thread_pool_exec
+    # Mode B embeds the generated page subject for subsequent routing. A
+    # centroid of member vectors favors lexical similarity and loses thematic
+    # relations (for example a company and a technology it develops).
     from rag.nlp import rag_tokenizer
 
     if page_embedding is None:
-        embeddings, _ = await thread_pool_exec(embd_mdl.encode, [summary or content[:200]])
+        embedding_text = summary or content[:200]
+        if embed_routing_context:
+            embedding_text = "; ".join(
+                part
+                for part in (
+                    f"title={page_title}" if page_title else "",
+                    f"summary={summary}" if summary else "",
+                    f"members={', '.join(sorted(set(entity_names or [])))}" if entity_names else "",
+                    f"content={content[:500]}" if content else "",
+                )
+                if part
+            )
+        embeddings, _ = await thread_pool_exec(embd_mdl.encode, [embedding_text])
         page_embedding = embeddings[0]
 
     # Derive vector dimension from the embedding shape
@@ -1873,9 +2113,9 @@ async def _wiki_refine_page(
     page = {
         "id": _stable_row_id(WIKI_PAGE_COMPILE_KWD, kb_id, page_id),
         "slug_kwd": page_id,
-        "title_kwd": page_title,
+        "title_kwd": title,
         "md_with_weight": content,
-        "summary_with_weight": summary or page_title,
+        "summary_with_weight": summary or title,
         "entity_names_kwd": sorted(set(entity_names or [page_title])),
         "source_chunk_ids": sorted(source_chunk_ids),
         "source_doc_ids": doc_ids,
@@ -1886,7 +2126,7 @@ async def _wiki_refine_page(
         "topic_kwd": topic,
         "compile_kwd": WIKI_PAGE_COMPILE_KWD,
         "knowledge_graph_kwd": WIKI_PAGE_COMPILE_KWD,
-        "title_tks": rag_tokenizer.tokenize(page_title),
+        "title_tks": rag_tokenizer.tokenize(title),
         "content_ltks": content_ltks,
         "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
     }
@@ -1992,13 +2232,19 @@ def _build_mode_a_generate_prompt(
     available_pages: list[str],
     contextual_hints: str,
     topic_candidates: list[str] | None = None,
+    member_evidence: list[dict] | None = None,
 ) -> str:
     chunks_text = _build_source_chunks_block(source_chunks)
     claims_text = "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in claims) if claims else "(no claims)"
 
+    member_text = _build_member_evidence_block(member_evidence)
+
     return f"""## Concept Page Identity
 - Page ID: {page_id}
 - Title: {page_title}
+
+## Required Page Members
+{member_text or "(single member page)"}
 
 ## Source Chunks (verbatim source text — ground every fact in these)
 {chunks_text or "(no source chunks available)"}
@@ -2028,12 +2274,14 @@ def _build_mode_a_modify_prompt(
     contextual_hints: str,
     topic_candidates: list[str] | None = None,
     force_full: bool = False,
+    member_evidence: list[dict] | None = None,
 ) -> str:
     existing_content = existing_page.get("md_with_weight", "") if existing_page else ""
     existing_topic = existing_page.get("topic_kwd", "") if existing_page else ""
     if isinstance(existing_topic, (list, tuple)):
         existing_topic = existing_topic[0] if existing_topic else ""
     topic_block = chr(10).join(f"- {topic}" for topic in (topic_candidates or [])[:WIKI_PAGE_TOPIC_CANDIDATE_LIMIT])
+    member_text = _build_member_evidence_block(member_evidence)
 
     if not force_full:
         additions_text = "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in (additions or [])) if additions else "(none)"
@@ -2043,6 +2291,9 @@ def _build_mode_a_modify_prompt(
         return f"""## Page Identity
 - Page ID: {page_id}
 - Title: {page_title}
+
+## Required Page Members
+{member_text or "(single member page)"}
 
 ## Current Page
 {existing_content[:10000] if existing_content else "(empty)"}
@@ -2076,6 +2327,9 @@ def _build_mode_a_modify_prompt(
 - Page ID: {page_id}
 - Title: {page_title}
 
+## Required Page Members
+{member_text or "(single member page)"}
+
 ## All Source Chunks (for full re-synthesis — verbatim source text)
 {chunks_text or "(none)"}
 
@@ -2095,6 +2349,25 @@ def _build_mode_a_modify_prompt(
 """
 
 
+def _build_member_evidence_block(member_evidence: list[dict] | None) -> str:
+    """Render per-member evidence so grouped pages cannot silently omit members."""
+    if not member_evidence:
+        return ""
+    blocks: list[str] = []
+    for member in member_evidence:
+        name = str(member.get("name") or "").strip()
+        if not name:
+            continue
+        claims = member.get("claims") or []
+        claims_text = (
+            "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in claims if isinstance(c, dict) and c.get("statement", c.get("text", "")))
+            or "(no extracted claims; use the member's source evidence)"
+        )
+        chunk_ids = ", ".join(str(cid) for cid in member.get("source_chunk_ids") or [] if cid)
+        blocks.append(f"### Member: {name}\nClaims:\n{claims_text}\nSource chunk IDs: {chunk_ids or '(none)'}")
+    return "\n\n".join(blocks)
+
+
 # System prompts for Mode A
 
 _WIKI_MODE_A_GENERATE_SYSTEM = """You are a wiki COMPILER. Generate a new wiki page for the given concept using the provided source chunks and extracted claims.
@@ -2110,6 +2383,7 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
    Markdown formatting is mandatory: put every heading on its own line and separate every paragraph with a blank line.
 5. WIKILINKS: Use ONLY the exact page IDs listed in "Available Pages for [[wikilinks]]" (they already carry the entity/ or concept/ prefix). Insert [[EXACT_PAGE_ID]] on first mention of a related concept/entity. NEVER invent a link target, NEVER drop the prefix, NEVER write English names.
 6. DICTIONARY PREVENTION: Do NOT group content by source document. Do NOT create one section per entity. Do NOT write flat bullet lists.
+7. MEMBER COVERAGE: If "Required Page Members" lists multiple members, the page MUST contain grounded factual content about EVERY listed member. Do not silently omit or replace any member. If the members are unrelated, keep them in clearly separated subsections while preserving all supported facts.
 
 ## SOURCE GROUNDING (COMPILER, not writer)
 - The "Source Chunks" section contains VERBATIM source text. Stay close to the source wording — reuse the source's own sentences and facts where possible.
@@ -2120,8 +2394,13 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 ## OUTPUT
 Return ONLY the complete markdown page.
 First line: SUMMARY: {one-sentence description, 15-40 words}
-Second line: TOPIC: {the best short canonical topic for this page}
+Second line: TITLE: {a concise title covering all required page members}
+Third line: TOPIC: {the best short canonical topic for this page}
 Then the page content.
+
+TITLE is the human-readable page title, not the page ID. When multiple
+members are merged, synthesize a title covering the combined subject. For a
+single-member page, keep the supplied title unchanged.
 
 Choose TOPIC by understanding the page subject and evidence. Prefer a fitting
 item from Candidate Topics. If none fits, create a concise topic in the source
@@ -2141,6 +2420,7 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 5. For FULL RE-SYNTHESIS: Use all source chunks + all claims to rewrite from scratch.
 6. For INCREMENTAL MODIFY: Integrate additions, remove retracted content, keep unchanged content.
 7. MARKDOWN FORMATTING: Put every heading on its own line and separate every paragraph with a blank line. Do not return the whole page as one line.
+8. MEMBER COVERAGE: If "Required Page Members" lists multiple members, the updated page MUST retain grounded factual content about EVERY listed member. Do not silently omit any member.
 
 ## DICTIONARY PREVENTION
 - Do NOT group content by source document.
@@ -2156,8 +2436,13 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 ## OUTPUT
 Return ONLY the complete updated markdown page.
 First line: SUMMARY: {one-sentence description of what changed, 15-40 words}
-Second line: TOPIC: {the best short canonical topic for the complete updated page}
+Second line: TITLE: {a concise title covering all required page members}
+Third line: TOPIC: {the best short canonical topic for the complete updated page}
 Then the updated page content.
+
+TITLE is the human-readable page title, not the page ID. When multiple
+members are merged, rewrite the title to cover the complete updated subject.
+For a single-member page, keep the supplied title unchanged.
 
 Choose TOPIC by understanding the complete page subject and evidence. Prefer a
 fitting item from Candidate Topics; retain Current Topic when it remains the
@@ -2270,29 +2555,52 @@ async def _wiki_llm_group_entities(
     embeddings: list,
     chat_mdl,
     semaphore: asyncio.Semaphore | None = None,
+    kb_id: str = "",
 ) -> list[list[dict]]:
     """Use embeddings for candidate communities and the LLM for final groups."""
     if len(entities) <= 1:
+        _wiki_log_stats("PLAN", "group_summary", kb_id=kb_id, before=len(entities), after=len(entities), reduction_count=0, merged_group_count=0)
         return [entities]
     candidate_count = max(1, int(np.ceil(len(entities) / WIKI_GROUP_LLM_CANDIDATE_SIZE)))
     candidates = _wiki_cluster_entities(entities, embeddings, target_count=candidate_count)
-    embedding_by_entity_id = {id(entity): embedding for entity, embedding in zip(entities, embeddings, strict=True)}
     semaphore = semaphore or asyncio.Semaphore(WIKI_GROUP_LLM_MAX_CONCURRENT)
 
     async def _partition(candidate: list[dict]) -> list[list[dict]]:
-        async with semaphore:
-            try:
-                groups = await _wiki_llm_partition_candidate(candidate, chat_mdl)
-            except Exception:
-                logging.exception("wiki: LLM page grouping failed")
-                groups = None
+        groups = None
+        for attempt in range(2):
+            async with semaphore:
+                try:
+                    groups = await _wiki_llm_partition_candidate(candidate, chat_mdl)
+                except Exception:
+                    logging.exception("wiki: LLM page grouping failed (attempt %s)", attempt + 1)
+                    groups = None
+            if groups is not None:
+                break
         if groups is not None:
+            merged_groups = [[str(entity.get("entity_name") or entity.get("term") or "") for entity in group] for group in groups if len(group) > 1]
+            for members in merged_groups:
+                _wiki_log_stats("PLAN", "llm_page_group", kb_id=kb_id, member_count=len(members), members=members)
+            _wiki_log_stats(
+                "PLAN", "llm_group_candidate", kb_id=kb_id, before=len(candidate), after=len(groups), reduction_count=sum(len(group) - 1 for group in groups), merged_group_count=len(merged_groups)
+            )
             return groups
-        fallback_vectors = [embedding_by_entity_id[id(entity)] for entity in candidate]
-        return _wiki_cluster_entities(candidate, fallback_vectors)
+        # Embeddings only form the retrieval community. They must not decide
+        # the final page boundary when the LLM is unavailable or invalid.
+        _wiki_log_stats("PLAN", "llm_group_unresolved", kb_id=kb_id, before=len(candidate), after=len(candidate), retry_count=2)
+        return [[entity] for entity in candidate]
 
     grouped = await asyncio.gather(*(_partition(candidate) for candidate in candidates))
-    return [group for candidate_groups in grouped for group in candidate_groups]
+    groups = [group for candidate_groups in grouped for group in candidate_groups]
+    _wiki_log_stats(
+        "PLAN",
+        "group_summary",
+        kb_id=kb_id,
+        before=len(entities),
+        after=len(groups),
+        reduction_count=sum(len(group) - 1 for group in groups),
+        merged_group_count=sum(1 for group in groups if len(group) > 1),
+    )
+    return groups
 
 
 async def _wiki_llm_route_batches(
@@ -2304,11 +2612,10 @@ async def _wiki_llm_route_batches(
         return {}
     semaphore = asyncio.Semaphore(WIKI_GROUP_LLM_MAX_CONCURRENT)
 
-    async def _route_batch(offset: int, batch: list[tuple[dict, list[dict]]]) -> dict[int, str]:
+    async def _route_batch(batch: list[tuple[int, dict, list[dict]]]) -> dict[int, str]:
         lines = []
         allowed: dict[int, set[str]] = {}
-        for local_idx, (entity, candidates) in enumerate(batch):
-            item_id = offset + local_idx
+        for item_id, entity, candidates in batch:
             options = []
             allowed[item_id] = {"NEW"}
             for candidate in candidates:
@@ -2321,6 +2628,8 @@ async def _wiki_llm_route_batches(
                         "summary": candidate.get("summary", ""),
                         "members": candidate.get("members", []),
                         "similarity": round(candidate.get("score", 0.0), 4),
+                        "signals": candidate.get("signals", []),
+                        "cooccurrence_count": candidate.get("cooccurrence_count", 0),
                     }
                 )
             lines.append(json.dumps({"id": item_id, "entity": _wiki_entity_planning_text(entity), "options": options}, ensure_ascii=False))
@@ -2349,9 +2658,95 @@ Items:
                 result[item_id] = page_id
         return result
 
-    batches = [route_items[i : i + WIKI_ROUTE_LLM_BATCH_SIZE] for i in range(0, len(route_items), WIKI_ROUTE_LLM_BATCH_SIZE)]
-    results = await asyncio.gather(*(_route_batch(i * WIKI_ROUTE_LLM_BATCH_SIZE, batch) for i, batch in enumerate(batches)))
-    return {item_id: page_id for result in results for item_id, page_id in result.items()}
+    indexed_items = [(item_id, entity, candidates) for item_id, (entity, candidates) in enumerate(route_items)]
+
+    async def _run(items: list[tuple[int, dict, list[dict]]]) -> dict[int, str]:
+        batches = [items[i : i + WIKI_ROUTE_LLM_BATCH_SIZE] for i in range(0, len(items), WIKI_ROUTE_LLM_BATCH_SIZE)]
+        results = await asyncio.gather(*(_route_batch(batch) for batch in batches))
+        return {item_id: page_id for result in results for item_id, page_id in result.items()}
+
+    decisions = await _run(indexed_items)
+    missing = [item for item in indexed_items if item[0] not in decisions]
+    if missing:
+        # Retry only missing/invalid items. A malformed item in one batch must
+        # not make correctly routed entities pay for a full-batch retry.
+        decisions.update(await _run(missing))
+    return decisions
+
+
+def _wiki_route_page_candidate(page_id: str, page: dict, *, score: float = 0.0) -> dict:
+    title = page.get("title_kwd", "")
+    if isinstance(title, (list, tuple)):
+        title = title[0] if title else ""
+    return {
+        "score": float(score or 0.0),
+        "page_id": page_id,
+        "title": str(title or ""),
+        "summary": str(page.get("summary_with_weight") or ""),
+        "members": _as_str_list(page.get("entity_names_kwd"))[:12],
+        "signals": [],
+        "cooccurrence_count": 0,
+    }
+
+
+def _wiki_expand_route_candidates(
+    entity: dict,
+    dense_candidates: list[dict],
+    existing_pages: dict[str, dict],
+    entity_pages: dict[str, set[str]],
+    chunk_pages: dict[str, set[str]],
+    *,
+    include_candidate_neighbors: bool = False,
+) -> list[dict]:
+    """Merge semantic retrieval with authoritative ownership and graph evidence."""
+    candidates = {candidate["page_id"]: dict(candidate) for candidate in dense_candidates if candidate.get("page_id") in existing_pages}
+
+    def _add(page_id: str, signal: str, *, cooccurrence_count: int = 0) -> None:
+        page = existing_pages.get(page_id)
+        if not page:
+            return
+        candidate = candidates.setdefault(page_id, _wiki_route_page_candidate(page_id, page))
+        signals = set(candidate.get("signals") or [])
+        signals.add(signal)
+        candidate["signals"] = sorted(signals)
+        candidate["cooccurrence_count"] = max(int(candidate.get("cooccurrence_count") or 0), cooccurrence_count)
+
+    entity_name = str(entity.get("entity_name") or entity.get("term") or "").strip()
+    for page_id in entity_pages.get(_normalize_key(entity_name), set()):
+        _add(page_id, "current_owner")
+
+    for relation in entity.get("relations") or []:
+        if not isinstance(relation, dict):
+            continue
+        counterpart = str(relation.get("entity") or relation.get("counterpart") or "").strip()
+        for page_id in entity_pages.get(_normalize_key(counterpart), set()):
+            _add(page_id, "relation")
+
+    cooccurrence: dict[str, int] = {}
+    for chunk_id in _as_str_list(entity.get("source_chunk_ids")):
+        for page_id in chunk_pages.get(chunk_id, set()):
+            cooccurrence[page_id] = cooccurrence.get(page_id, 0) + 1
+    for page_id, count in cooccurrence.items():
+        _add(page_id, "cooccurrence", cooccurrence_count=count)
+
+    if include_candidate_neighbors:
+        initial_page_ids = list(candidates)
+        for page_id in initial_page_ids:
+            page = existing_pages.get(page_id, {})
+            for neighbor_ref in _as_str_list(page.get("outlinks_kwd")) + _as_str_list(page.get("related_kb_pages_kwd")):
+                if neighbor_ref in existing_pages:
+                    _add(neighbor_ref, "candidate_neighbor")
+                    continue
+                for neighbor_id in entity_pages.get(_normalize_key(neighbor_ref), set()):
+                    _add(neighbor_id, "candidate_neighbor")
+
+    priority = {"current_owner": 0, "relation": 1, "cooccurrence": 2, "embedding": 3, "candidate_neighbor": 4}
+
+    def _rank(candidate: dict) -> tuple:
+        signal_rank = min((priority.get(signal, 4) for signal in candidate.get("signals") or []), default=4)
+        return (signal_rank, -int(candidate.get("cooccurrence_count") or 0), -float(candidate.get("score") or 0.0), candidate["page_id"])
+
+    return sorted(candidates.values(), key=_rank)[:PAGE_ROUTER_MAX_CANDIDATES]
 
 
 async def _wiki_page_router(
@@ -2360,7 +2755,7 @@ async def _wiki_page_router(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    existing_page_ids: set[str] | None = None,
+    existing_pages: dict[str, dict] | None = None,
 ) -> dict[str, list[dict]]:
     """Route entities using KNN candidates followed by an LLM decision.
 
@@ -2368,8 +2763,8 @@ async def _wiki_page_router(
     - "_new_{page_id}" → new page to create
     - existing page_id → entities assigned to that page
 
-    ``existing_page_ids`` is supplied by Mode B from its already-loaded page
-    set. An explicitly empty set means this is a first build, so page-index
+    ``existing_pages`` is supplied by Mode B from its already-loaded page set.
+    An explicitly empty dict means this is a first build, so page-index
     candidate retrieval can be skipped and entities can go straight to grouping.
     """
     from common.misc_utils import thread_pool_exec
@@ -2388,11 +2783,21 @@ async def _wiki_page_router(
     orphans: list[dict] = []
     embedding_by_entity_id = {id(entity): vec for entity, vec in zip(affected_entities, embeddings, strict=False)}
 
-    if existing_page_ids is not None and not existing_page_ids:
+    existing_pages = existing_pages or {}
+    entity_pages: dict[str, set[str]] = {}
+    chunk_pages: dict[str, set[str]] = {}
+    for page_id, page in existing_pages.items():
+        for entity_name in _as_str_list(page.get("entity_names_kwd")):
+            entity_pages.setdefault(_normalize_key(entity_name), set()).add(page_id)
+        for chunk_id in _as_str_list(page.get("source_chunk_ids")):
+            chunk_pages.setdefault(chunk_id, set()).add(page_id)
+
+    if not existing_pages:
         # On a first build there are no pages that can accept a routed entity.
         # Querying the page index once per entity only produces orphans, so go
         # directly to clustering and reuse the embeddings already computed.
         orphans = list(affected_entities)
+        _wiki_log_stats("ROUTE", "summary", affected=len(affected_entities), llm_existing=0, llm_new=0, llm_missing=0, new_confirmed_existing=0, final_new=len(orphans))
     else:
         router_sem = asyncio.Semaphore(PAGE_ROUTER_KNN_CONCURRENT)
 
@@ -2426,12 +2831,8 @@ async def _wiki_page_router(
             if entity.get("action") == "delete":
                 assignments.setdefault("_deleted", []).append(entity)
                 continue
-            if not field_map:
-                orphans.append(entity)
-                continue
-
             candidates = []
-            for row in field_map.values():
+            for row in (field_map or {}).values():
                 score = float(row.get("_score", 0.0) or 0.0)
                 page_id = row.get("slug_kwd", "")
                 if isinstance(page_id, (list, tuple)):
@@ -2441,16 +2842,10 @@ async def _wiki_page_router(
                     title = row.get("title_kwd", "")
                     if isinstance(title, (list, tuple)):
                         title = title[0] if title else ""
-                    candidates.append(
-                        {
-                            "score": score,
-                            "page_id": page_id,
-                            "title": str(title or ""),
-                            "summary": str(row.get("summary_with_weight") or ""),
-                            "members": _as_str_list(row.get("entity_names_kwd"))[:12],
-                        }
-                    )
-            candidates.sort(key=lambda item: (-item["score"], item["page_id"]))
+                    candidate = _wiki_route_page_candidate(page_id, existing_pages.get(page_id, row), score=score)
+                    candidate["signals"] = ["embedding"]
+                    candidates.append(candidate)
+            candidates = _wiki_expand_route_candidates(entity, candidates, existing_pages, entity_pages, chunk_pages)
             if not candidates:
                 orphans.append(entity)
                 continue
@@ -2461,20 +2856,69 @@ async def _wiki_page_router(
         except Exception:
             logging.exception("wiki: LLM page routing failed")
             decisions = {}
+        first_new_count = sum(1 for page_id in decisions.values() if page_id == "NEW")
+        first_existing_count = sum(1 for page_id in decisions.values() if page_id != "NEW")
+        missing_count = len(route_items) - len(decisions)
+        second_pass_items: list[tuple[int, dict, list[dict]]] = []
+        confirmed_existing_count = 0
         for item_id, (entity, candidates) in enumerate(route_items):
             page_id = decisions.get(item_id)
             if page_id and page_id != "NEW":
                 assignments.setdefault(page_id, []).append(entity)
                 continue
             if page_id == "NEW":
-                orphans.append(entity)
+                expanded = _wiki_expand_route_candidates(
+                    entity,
+                    candidates,
+                    existing_pages,
+                    entity_pages,
+                    chunk_pages,
+                    include_candidate_neighbors=True,
+                )
+                original_ids = {candidate["page_id"] for candidate in candidates}
+                added_ids = [candidate["page_id"] for candidate in expanded if candidate["page_id"] not in original_ids]
+                _wiki_log_stats(
+                    "ROUTE",
+                    "new_confirmation_candidates",
+                    entity=str(entity.get("entity_name") or entity.get("term") or ""),
+                    initial_candidate_count=len(candidates),
+                    added_candidate_count=len(added_ids),
+                    added_to_candidates=bool(added_ids),
+                    added_page_ids=added_ids,
+                    confirmation_candidate_count=len(expanded),
+                )
+                second_pass_items.append((item_id, entity, expanded))
                 continue
-            best = candidates[0]
-            second_score = candidates[1]["score"] if len(candidates) > 1 else 0.0
-            if best["score"] >= PAGE_ROUTER_DIRECT_THRESHOLD or (best["score"] >= PAGE_ROUTER_UPDATE_THRESHOLD and best["score"] - second_score >= PAGE_ROUTER_MIN_MARGIN):
-                assignments.setdefault(best["page_id"], []).append(entity)
+            owner = next((candidate for candidate in candidates if "current_owner" in candidate.get("signals", [])), None)
+            if owner:
+                assignments.setdefault(owner["page_id"], []).append(entity)
             else:
                 orphans.append(entity)
+
+        if second_pass_items:
+            confirmation_items = [(entity, candidates) for _, entity, candidates in second_pass_items]
+            confirmations = await _wiki_llm_route_batches(confirmation_items, chat_mdl)
+            for confirmation_id, (_, entity, candidates) in enumerate(second_pass_items):
+                page_id = confirmations.get(confirmation_id)
+                if page_id and page_id != "NEW":
+                    assignments.setdefault(page_id, []).append(entity)
+                    confirmed_existing_count += 1
+                    continue
+                owner = next((candidate for candidate in candidates if "current_owner" in candidate.get("signals", [])), None)
+                if owner and page_id is None:
+                    assignments.setdefault(owner["page_id"], []).append(entity)
+                else:
+                    orphans.append(entity)
+        _wiki_log_stats(
+            "ROUTE",
+            "summary",
+            affected=len(affected_entities),
+            llm_existing=first_existing_count,
+            llm_new=first_new_count,
+            llm_missing=missing_count,
+            new_confirmed_existing=confirmed_existing_count,
+            final_new=len(orphans),
+        )
 
     # Orphans: cluster by similarity, create grouped pages
     # A deletion that cannot be routed to an existing page must not create a
@@ -2482,8 +2926,8 @@ async def _wiki_page_router(
     orphans = [entity for entity in orphans if entity.get("action") != "delete"]
     if orphans:
         orphan_embs = [embedding_by_entity_id[id(entity)] for entity in orphans]
-        clusters = await _wiki_llm_group_entities(orphans, orphan_embs, chat_mdl)
-        used_page_ids = set(existing_page_ids or ()) | {key[5:] for key in assignments if key.startswith("_new_")}
+        clusters = await _wiki_llm_group_entities(orphans, orphan_embs, chat_mdl, kb_id=kb_id)
+        used_page_ids = set(existing_pages) | {key[5:] for key in assignments if key.startswith("_new_")}
         for cluster in clusters:
             representative = min(
                 cluster,
@@ -2667,6 +3111,7 @@ async def _wiki_finalize(
     relation_map: dict[str, list[dict]] = {}
     outlink_map: dict[str, list[str]] = {}  # pid → [valid target slugs]
     dead_links: dict[str, list[str]] = {}  # pid → [dead links to remove]
+    index = search.index_name(tenant_id)
 
     # name → page slug map for AUTO-LINKING. Built from every page's plain name
     # (slug suffix) + title, longest names first so multi-word / multi-char
@@ -2694,7 +3139,10 @@ async def _wiki_finalize(
     # MAP to connect pages. A page-to-page edge is created whenever both
     # endpoints resolve to compiled wiki pages. This is the primary source of
     # graph connections — far more reliable than prose [[wikilinks]].
-    map_relations = await _load_map_relations(tenant_id, kb_id)
+    from api.db.services.document_service import DocumentService
+
+    disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+    map_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=disabled_doc_ids)
     relation_edges: dict[str, set[str]] = {}  # pid → {target slug}
     if map_relations:
         for rel in map_relations:
@@ -2710,31 +3158,39 @@ async def _wiki_finalize(
 
         for match in wikilink_re.finditer(content):
             link = match.group(1).strip()
-            if link in valid_ids and link != pid:
+            # Keep an explicit display label when a page contains several
+            # merged entities.  The page slug identifies the destination;
+            # it must not replace the entity name shown in the prose.
+            target, separator, display_text = link.partition("|")
+            target = target.strip()
+            display_text = display_text.strip() if separator else ""
+            if target in valid_ids and target != pid:
                 # Valid wikilink → record for cross-reference + outlink
                 relation_map.setdefault(pid, []).append(
                     {
-                        "entity_name": link.split("/")[-1] if "/" in link else link,
+                        "entity_name": display_text or (target.split("/")[-1] if "/" in target else target),
                         "relation": "see_also",
                     }
                 )
-                outlink_map.setdefault(pid, []).append(link)
-            elif link in canonical_names:
+                outlink_map.setdefault(pid, []).append(target)
+            elif target in canonical_names:
                 # Entity reference (Mode A): remove [[]] keep plain text
-                content = content.replace(f"[[{link}]]", link, 1)
+                replacement = display_text or target
+                content = content.replace(match.group(0), replacement, 1)
             else:
                 # Dead link — try WeKnora-style fuzzy resolution to a similar
                 # existing page before giving up. If a close slug exists, retarget
                 # the link (cross-link survives); otherwise degrade to plain text.
-                resolved = _wiki_resolve_dead_slug(link, valid_ids, name_slug)
+                resolved = _wiki_resolve_dead_slug(target, valid_ids, name_slug)
                 if resolved:
-                    content = content.replace(f"[[{link}]]", f"[[{resolved}]]", 1)
-                    relation_map.setdefault(pid, []).append({"entity_name": resolved.split("/")[-1] if "/" in resolved else resolved, "relation": "see_also"})
+                    resolved_link = f"[[{resolved}|{display_text}]]" if display_text else f"[[{resolved}]]"
+                    content = content.replace(match.group(0), resolved_link, 1)
+                    relation_map.setdefault(pid, []).append({"entity_name": display_text or (resolved.split("/")[-1] if "/" in resolved else resolved), "relation": "see_also"})
                     if resolved not in outlink_map.setdefault(pid, []):
                         outlink_map[pid].append(resolved)
                 else:
-                    content = content.replace(f"[[{link}]]", link, 1)
-                    dead_links.setdefault(pid, []).append(link)
+                    content = content.replace(match.group(0), display_text or target, 1)
+                    dead_links.setdefault(pid, []).append(target)
 
         # AUTO-LINK: guarantee cross-page connections even when the LLM omits
         # [[...]]. Scan for standalone mentions of other pages' plain names and
@@ -2742,7 +3198,7 @@ async def _wiki_finalize(
         # existing_links covers both the raw [[slug]] form and the rendered
         # `[text](artifact/{kb_id}/slug)` form (so re-runs stay idempotent even
         # after links were rendered on a previous run).
-        existing_links = {m.group(1).strip() for m in wikilink_re.finditer(content)}
+        existing_links = {m.group(1).split("|", 1)[0].strip() for m in wikilink_re.finditer(content)}
         existing_links |= {m.group(1) for m in re.finditer(rf"\]\(artifact/{re.escape(str(kb_id))}/([^)]+)\)", content)}
         for name in ordered_names:
             target = name_slug[name]
@@ -2756,7 +3212,11 @@ async def _wiki_finalize(
             # Skip if the occurrence is already inside a [[...]] link span
             if _inside_wikilink(content, idx):
                 continue
-            content = content[:idx] + f"[[{target}]]" + content[idx + len(name) :]
+            # Preserve the matched prose as the link label.  This matters when
+            # several entities share one page: e.g. the page slug may be
+            # ``entity/五色棒`` while the text mentions
+            # ``治世之能臣，乱世之奸雄``.
+            content = content[:idx] + f"[[{target}|{name}]]" + content[idx + len(name) :]
             existing_links.add(target)
             if target not in outlink_map.setdefault(pid, []):
                 outlink_map[pid].append(target)
@@ -2826,7 +3286,6 @@ async def _wiki_finalize(
         update["outlinks_kwd"] = list(outlinks)
         update["outlinks_int"] = len(outlinks)
 
-        index = search.index_name(tenant_id)
         await thread_pool_exec(
             settings.docStoreConn.update,
             {"id": page["id"]},
@@ -2834,6 +3293,15 @@ async def _wiki_finalize(
             index,
             kb_id,
         )
+
+    # FINALIZE updates every page without forcing a refresh per write. Make the
+    # complete batch searchable once here, before the caller reloads these rows
+    # to materialize wiki_entity/wiki_relation. Without this barrier, the page
+    # API can expose the new outlinks while the graph is built from the previous
+    # search snapshot (for example, a linked page still gets weight=0/no edges).
+    refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
+    if callable(refresh_idx):
+        await thread_pool_exec(refresh_idx, index)
 
 
 def _wiki_normalize_rows(matrix):
@@ -2853,7 +3321,7 @@ async def wiki_compile_incremental(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    plan: bool = False,  # True = Mode B, False = Mode A
+    mode: str,
     incremental: bool = False,  # True = incremental run
     map_results: list[dict] | None = None,  # from MAP phase
     deleted_doc_ids: set[str] | None = None,
@@ -2862,7 +3330,7 @@ async def wiki_compile_incremental(
     """Main entry point for dual-mode wiki compilation.
 
     Args:
-        plan: True=Mode B (with PLAN), False=Mode A (no-plan, WeKnora style)
+        mode: ``entity`` for Mode A, or ``topic`` for Mode B.
         incremental: True=incremental update, False=full build
         map_results: MAP outputs. If None, loads from ES.
         deleted_doc_ids: Documents that were removed.
@@ -2967,6 +3435,7 @@ async def wiki_compile_incremental(
     # extracted from that page's own source documents, rather than from an
     # unrelated knowledge-base-wide label pool.
     doc_topics: dict[str, list[str]] = {}
+    raw_topic_count = 0
     raw_relations: list[dict] = []
     for _mr in map_results:
         _doc_id = str(_mr.get("doc_id") or "").strip()
@@ -2975,6 +3444,7 @@ async def wiki_compile_incremental(
         _seen_topics: set[str] = set()
         for _t in _mr.get("topics") or []:
             if isinstance(_t, str):
+                raw_topic_count += 1
                 _t = _t.strip()
                 _k = _t.casefold()
                 if _t and _k not in _seen_topics:
@@ -2993,6 +3463,16 @@ async def wiki_compile_incremental(
             if isinstance(_from, str) and isinstance(_to, str) and _from and _to:
                 raw_relations.append({"from": _from, "to": _to, "type": _relation.get("type") or "related"})
 
+    unique_topics = sorted({_t for _topics in doc_topics.values() for _t in _topics}, key=lambda value: (value.casefold(), value))
+    _wiki_log_stats(
+        "TOPIC",
+        "map_summary",
+        document_count=len(doc_topics),
+        raw_count=raw_topic_count,
+        unique_count=len(unique_topics),
+        topics=unique_topics,
+    )
+
     # Release the heavy raw MAP payload as early as possible.  All metadata is
     # now in raw_entities and full claim text in claim_index; keeping
     # map_results alive would pin the raw MAP structures in memory.
@@ -3009,11 +3489,27 @@ async def wiki_compile_incremental(
         kb_id=kb_id,
         incremental=incremental,
     )
+    if mode == "topic" and incremental:
+        try:
+            from api.db.services.document_service import DocumentService
+
+            disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+            historical_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=disabled_doc_ids)
+            raw_relations.extend(historical_relations)
+        except Exception:
+            logging.exception("wiki: failed to load historical relations for incremental routing")
+
+    canonical_resolution = dict(name_resolution)
+    for canonical_name, canonical_entry in canonical_entities.items():
+        canonical_resolution.setdefault(canonical_name, canonical_name)
+        for alias in canonical_entry.get("aliases") or []:
+            if isinstance(alias, str) and alias:
+                canonical_resolution.setdefault(alias, canonical_name)
     entity_relations: dict[str, list[dict]] = {}
     seen_relations: set[tuple[str, str, str]] = set()
     for relation in raw_relations:
-        source = name_resolution.get(relation["from"], relation["from"])
-        target = name_resolution.get(relation["to"], relation["to"])
+        source = canonical_resolution.get(relation["from"], relation["from"])
+        target = canonical_resolution.get(relation["to"], relation["to"])
         relation_type = str(relation.get("type") or "related")
         if not source or not target or source == target:
             continue
@@ -3024,6 +3520,7 @@ async def wiki_compile_incremental(
             seen_relations.add(key)
             entity_relations.setdefault(owner, []).append({"entity": counterpart, "type": relation_type})
     del raw_relations
+    del canonical_resolution
 
     # raw_entities (lightweight) no longer needed after matching.
     del raw_entities
@@ -3171,12 +3668,16 @@ async def wiki_compile_incremental(
             "page_version_int",
             "synthesis_version_int",
             "entity_names_kwd",
+            "outlinks_kwd",
             "related_kb_pages_kwd",
             "page_type_kwd",
             "topic_kwd",
         ],
     )
-    if plan and existing_pages:
+    topic_pool = {
+        _normalize_key(topic): topic for page in existing_pages.values() for topic in _as_str_list(page.get("topic_kwd")) if topic and _normalize_key(topic) != _normalize_key(WIKI_TOPIC_FALLBACK)
+    }
+    if mode == "topic" and existing_pages:
         plan_members = await _wiki_load_plan_group_members(tenant_id, kb_id)
         for page_id, names in plan_members.items():
             if page_id in existing_pages and names:
@@ -3225,7 +3726,9 @@ async def wiki_compile_incremental(
             doc_to_entities.setdefault(did, []).append(cname)
     del canonical_map
 
-    if plan:
+    topic_embeddings = await _wiki_prepare_topic_embeddings(doc_topics, embd_mdl, list(topic_pool.values()))
+    topic_pool_lock = asyncio.Lock()
+    if mode == "topic":
         summary = await _wiki_mode_b_run(
             deltas=deltas,
             existing_pages=existing_pages,
@@ -3238,6 +3741,9 @@ async def wiki_compile_incremental(
             entity_evidence=entity_evidence,
             entity_relations=entity_relations,
             doc_topics=doc_topics,
+            topic_embeddings=topic_embeddings,
+            topic_pool=topic_pool,
+            topic_pool_lock=topic_pool_lock,
         )
     else:
         # Mode A: every entity AND concept becomes a page (no PLAN grouping).
@@ -3254,6 +3760,9 @@ async def wiki_compile_incremental(
             canonical_claims=canonical_claims,
             doc_to_entities=doc_to_entities,
             doc_topics=doc_topics,
+            topic_embeddings=topic_embeddings,
+            topic_pool=topic_pool,
+            topic_pool_lock=topic_pool_lock,
         )
     del deltas
     del canonical_claims
@@ -3285,6 +3794,9 @@ async def _wiki_mode_a_run(
     canonical_claims: dict[str, list[dict]] | None = None,
     doc_to_entities: dict[str, list[str]] | None = None,
     doc_topics: dict[str, list[str]] | None = None,
+    topic_embeddings: dict[str, object] | None = None,
+    topic_pool: dict[str, str] | None = None,
+    topic_pool_lock: asyncio.Lock | None = None,
 ) -> dict:
     """Mode A: every grounded entity and concept compiles to its own page.
 
@@ -3408,6 +3920,7 @@ async def _wiki_mode_a_run(
 
     all_page_ids = list(existing_pages.keys())
     doc_updates: dict[str, list[str]] = {}
+    topic_selection_stats = {"selected": 0, "new": 0, "new_added": 0}
     # Do not use a 20-slot semaphore around the whole page worker.  The worker
     # also performs source loading, embedding, and persistence after the LLM
     # returns; limiting that whole region would artificially starve the LLM
@@ -3468,7 +3981,11 @@ async def _wiki_mode_a_run(
                     kb_id=kb_id,
                     page_version=existing.get("page_version_int", 0) if existing else 0,
                     source_doc_ids=sorted(entry["source_doc_ids"]),
-                    topic_candidates=_wiki_topics_for_docs(entry["source_doc_ids"], doc_topics),
+                    topic_candidates=_wiki_topics_for_docs(entry["source_doc_ids"], doc_topics, topic_pool),
+                    topic_selection_stats=topic_selection_stats,
+                    topic_embeddings=topic_embeddings,
+                    topic_pool=topic_pool,
+                    topic_pool_lock=topic_pool_lock,
                 )
                 if refine_mode == "generate":
                     summary["pages_created"] += 1
@@ -3487,6 +4004,7 @@ async def _wiki_mode_a_run(
     if tasks:
         _progress(f"REFINE A: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
         await asyncio.gather(*tasks)
+    _wiki_log_stats("TOPIC", "selection_summary", mode="A", **topic_selection_stats)
 
     for did, pids in doc_updates.items():
         try:
@@ -3583,6 +4101,9 @@ async def _wiki_mode_b_run(
     entity_evidence: dict[str, dict[str, list[str]]] | None = None,
     entity_relations: dict[str, list[dict]] | None = None,
     doc_topics: dict[str, list[str]] | None = None,
+    topic_embeddings: dict[str, object] | None = None,
+    topic_pool: dict[str, str] | None = None,
+    topic_pool_lock: asyncio.Lock | None = None,
 ) -> dict:
     """Mode B: Page Router + per-page REFINE."""
 
@@ -3624,7 +4145,7 @@ async def _wiki_mode_b_run(
         embd_mdl=embd_mdl,
         tenant_id=tenant_id,
         kb_id=kb_id,
-        existing_page_ids=set(existing_pages),
+        existing_pages=existing_pages,
     )
 
     assignments = _wiki_reconcile_page_moves(assignments, existing_pages)
@@ -3633,6 +4154,7 @@ async def _wiki_mode_b_run(
         existing_pages=existing_pages,
         chat_mdl=chat_mdl,
         embd_mdl=embd_mdl,
+        kb_id=kb_id,
     )
 
     if not assignments:
@@ -3664,6 +4186,7 @@ async def _wiki_mode_b_run(
 
     doc_updates: dict[str, list[str]] = {}  # doc_id → [page_ids]
     doc_removals: dict[str, list[str]] = {}  # doc_id → [page_ids]
+    topic_selection_stats = {"selected": 0, "new": 0, "new_added": 0}
     # The shared LLMCallPool limits chat calls.  This semaphore must not cap
     # the complete worker because embedding and page persistence happen after
     # the chat call and should not consume an LLM concurrency slot.
@@ -3700,11 +4223,20 @@ async def _wiki_mode_b_run(
                 additions = []
                 retractions = []
                 page_source_doc_ids: set[str] = set()
+                member_evidence: list[dict] = []
                 action = "create" if is_new else "update"
                 for ent in entities:
-                    additions.extend(ent.get("claims", []))
+                    ent_claims = list(ent.get("claims", []))
+                    additions.extend(ent_claims)
                     retractions.extend(ent.get("retractions", []))
                     page_source_doc_ids.update(ent.get("source_doc_ids", []))
+                    member_evidence.append(
+                        {
+                            "name": ent.get("entity_name", ""),
+                            "claims": ent_claims,
+                            "source_chunk_ids": ent.get("source_chunk_ids", []),
+                        }
+                    )
 
                 existing_names = _as_str_list(existing.get("entity_names_kwd")) if existing else []
                 added_names = [ent.get("entity_name", "") for ent in entities if ent.get("action") != "delete" and ent.get("entity_name")]
@@ -3718,6 +4250,14 @@ async def _wiki_mode_b_run(
                     evidence = (entity_evidence or {}).get(member_name, {})
                     page_source_doc_ids.update(evidence.get("source_doc_ids", []))
                     member_source_chunks.extend({"id": cid, "text": ""} for cid in evidence.get("source_chunk_ids", []))
+                    if not any(item.get("name") == member_name for item in member_evidence):
+                        member_evidence.append(
+                            {
+                                "name": member_name,
+                                "claims": _wiki_claims_for_entity(existing, member_name) if existing else [],
+                                "source_chunk_ids": evidence.get("source_chunk_ids", []),
+                            }
+                        )
 
                 if action == "delete":
                     deleted_page = await _wiki_refine_page(
@@ -3753,21 +4293,6 @@ async def _wiki_mode_b_run(
                 ):
                     refine_mode = "re-synthesize"
 
-                incoming_vectors = {
-                    ent.get("entity_name"): np.asarray(ent["_embedding"], dtype=np.float32)
-                    for ent in entities
-                    if ent.get("action") != "delete" and ent.get("entity_name") and ent.get("_embedding") is not None
-                }
-                missing_names = [name for name in member_names if name not in incoming_vectors]
-                if missing_names:
-                    missing_vectors, _ = await thread_pool_exec(embd_mdl.encode, missing_names)
-                    incoming_vectors.update(zip(missing_names, np.asarray(missing_vectors, dtype=np.float32), strict=True))
-                member_matrix = _wiki_normalize_rows(np.asarray([incoming_vectors[name] for name in member_names], dtype=np.float32))
-                page_centroid = np.mean(member_matrix, axis=0)
-                centroid_norm = np.linalg.norm(page_centroid)
-                if centroid_norm > 0:
-                    page_centroid = page_centroid / centroid_norm
-
                 result = await _wiki_refine_page(
                     mode=refine_mode,
                     page_id=page_key,
@@ -3786,9 +4311,14 @@ async def _wiki_mode_b_run(
                     kb_id=kb_id,
                     page_version=existing.get("page_version_int", 0) if existing else 0,
                     entity_names=member_names,
-                    page_embedding=page_centroid,
+                    embed_routing_context=True,
                     source_doc_ids=sorted(page_source_doc_ids),
-                    topic_candidates=_wiki_topics_for_docs(page_source_doc_ids, doc_topics),
+                    topic_candidates=_wiki_topics_for_docs(page_source_doc_ids, doc_topics, topic_pool),
+                    topic_selection_stats=topic_selection_stats,
+                    topic_embeddings=topic_embeddings,
+                    topic_pool=topic_pool,
+                    topic_pool_lock=topic_pool_lock,
+                    member_evidence=member_evidence,
                 )
                 if result:
                     if is_new:
@@ -3824,6 +4354,7 @@ async def _wiki_mode_b_run(
     if tasks:
         _progress(f"REFINE B: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
         await asyncio.gather(*tasks)
+    _wiki_log_stats("TOPIC", "selection_summary", mode="B", **topic_selection_stats)
 
     # Apply doc_page_source updates serially (no race), preserving metadata
     for did in set(doc_updates) | set(doc_removals):
@@ -3876,6 +4407,7 @@ async def _wiki_split_unstable_page_assignments(
     existing_pages: dict[str, dict],
     chat_mdl,
     embd_mdl,
+    kb_id: str = "",
 ) -> dict[str, list[dict]]:
     """Let the LLM reconsider affected pages whose embedding cohesion degrades."""
     if not assignments:
@@ -3936,7 +4468,7 @@ async def _wiki_split_unstable_page_assignments(
         degraded = len(old_member_indices) >= 2 and combined_cohesion < old_cohesion - 0.05
         if not over_capacity and not degraded:
             return None
-        return await _wiki_llm_group_entities(record["members"], member_matrix, chat_mdl, semaphore=group_semaphore)
+        return await _wiki_llm_group_entities(record["members"], member_matrix, chat_mdl, semaphore=group_semaphore, kb_id=kb_id)
 
     reconsidered = await asyncio.gather(*(_reconsider(record) for record in candidates.values()))
     for record, clusters in zip(candidates.values(), reconsidered, strict=True):
@@ -4101,12 +4633,12 @@ async def wiki_handle_document_deleted(
     doc_id: str,
     chat_mdl,
     embd_mdl,
-    plan: bool = False,
+    mode: str,
 ) -> dict:
     """Clean up wiki pages + canonical entities when a document is deleted.
 
     Args:
-        plan: True=Mode B (update plan_group), False=Mode A
+        mode: ``topic`` updates plan groups; ``entity`` does not.
 
     Returns: {pages_modified, pages_deleted, errors}
     """
@@ -4174,7 +4706,7 @@ async def wiki_handle_document_deleted(
             if doc_id in source_doc_ids:
                 source_doc_ids.remove(doc_id)
 
-            page_type = existing.get("page_type_kwd", "concept" if not plan else "entity")
+            page_type = existing.get("page_type_kwd", "concept" if mode == "entity" else "entity")
 
             if not source_doc_ids:
                 await _wiki_refine_page(
@@ -4225,7 +4757,7 @@ async def wiki_handle_document_deleted(
                 )
                 summary["pages_modified"] += 1
 
-            if plan:
+            if mode == "topic":
                 plan_condition = {
                     "compile_kwd": [WIKI_PLAN_GROUP_COMPILE_KWD],
                     "page_id": [page_id],

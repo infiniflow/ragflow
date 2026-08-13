@@ -227,3 +227,24 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 		t.Fatalf("download_info has type %T, want map", out["download_info"])
 	}
 }
+
+// TestResolveDocsGeneratorContent_ThinkAndTrim pins the static-content path:
+// a think preamble is stripped, and outer whitespace is trimmed even when no
+// think block is present — matching Python _strip_thinking's final .strip().
+func TestResolveDocsGeneratorContent_ThinkAndTrim(t *testing.T) {
+	got, err := resolveDocsGeneratorContent(t.Context(), "<think>reasoning</think>\n# Title\n", nil)
+	if err != nil {
+		t.Fatalf("resolveDocsGeneratorContent: %v", err)
+	}
+	if got != "# Title" {
+		t.Errorf("content = %q, want %q", got, "# Title")
+	}
+
+	got, err = resolveDocsGeneratorContent(t.Context(), "  plain  \n", nil)
+	if err != nil {
+		t.Fatalf("resolveDocsGeneratorContent: %v", err)
+	}
+	if got != "plain" {
+		t.Errorf("content = %q, want %q", got, "plain")
+	}
+}

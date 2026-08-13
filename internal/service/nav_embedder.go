@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"ragflow/internal/entity"
 )
 
 // NavEmbedder is the production implementation of nlp.NavEmbedder. It resolves
@@ -45,7 +47,17 @@ func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []strin
 	}
 	name := e.embdModelName
 	if name == "" {
-		name = tenantID // composite name falls back to tenant default resolution
+		// Resolve the tenant's default embedding model composite reference
+		// ("<model>@<instance>@<provider>") — NOT the tenant id. Passing the
+		// tenant id as the model ref makes ResolveModelConfig parse it as a
+		// "model@provider" key, which fails with "provider name missing in model
+		// name: <tenant_id>". Mirrors knowledge_compiler_wiring.go's chat-model
+		// default resolution.
+		ref, err := e.modelSvc.GetTenantDefaultModelRef(ctx, tenantID, entity.ModelTypeEmbedding)
+		if err != nil {
+			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
+		}
+		name = ref
 	}
 	model, err := e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
 	if err != nil {

@@ -39,7 +39,7 @@ internal/cli/
 └── filesystem/         # Virtual Filesystem
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
-    ├── base.go         # Provider interface definition    
+    ├── base.go         # Provider interface definition
     ├── dataset.go      # Dataset provider implementation
     ├── file.go         # File manager provider implementation
     └── utils.go        # Helper functions
@@ -148,6 +148,10 @@ GRANT read,write ON datasets TO ROLE admin;
 CREATE DATASET 'my_dataset' WITH EMBEDDING 'text-embedding-ada-002' PARSER 'naive';
 LIST DATASETS;
 DROP DATASET 'my_dataset';
+
+-- Data sync logs
+LIST SYNC_LOGS;
+LIST DATASET 'my_dataset' SYNC_LOGS;
 
 -- Model configuration
 SET DEFAULT LLM 'gpt-4';

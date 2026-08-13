@@ -119,29 +119,42 @@ func TestCompileDelimPattern_BacktickEndIsCaseSensitive(t *testing.T) {
 	}
 }
 
-func TestCompileDelimPattern_BareCharIsNotActivePattern(t *testing.T) {
-	// Plain delimiters are not compiled — only backtick-wrapped tokens are.
-	if p := compileDelimPattern([]string{"a"}); p != nil {
-		t.Fatalf("compileDelimPattern([a]) = %v, want nil", p)
+func TestCompileDelimPattern_BareCharIsActivePattern(t *testing.T) {
+	// Plain (bare) delimiters ARE compiled into an active pattern (#17723
+	// fix): they split the payload into paragraphs that are then merged by
+	// token size. Only when no entry yields a pattern does compileDelimPattern
+	// return nil.
+	if p := compileDelimPattern([]string{"a"}); p == nil {
+		t.Fatalf("compileDelimPattern([a]) = nil, want active pattern")
+	}
+	// Empty / all-empty entries still yield nil.
+	if p := compileDelimPattern([]string{""}); p != nil {
+		t.Fatalf("compileDelimPattern([\"\"]) = %v, want nil", p)
 	}
 }
 
 func TestCompileDelimPattern_ExtractsPerEntryIndependently(t *testing.T) {
-	// Adjacent entries must not form a cross-boundary backtick pair.
-	// Concatenating "`aa" + "`bb`" would invent an "aa`bb" token; per-entry
-	// extraction only sees the complete "`bb`" pair in the second entry.
+	// Adjacent entries must not form a cross-boundary backtick pair:
+	// "`aa" + "`bb`" must NOT invent an "aa`bb" token. Per-entry extraction
+	// compiles "`aa" as its literal content (keepBare only promotes entries
+	// with NO backticks at all) and "`bb`" as the inner "bb"; the two are
+	// alternated, never concatenated into a single "aa`bb" delimiter.
 	p := compileDelimPattern([]string{"`aa", "`bb`"})
 	if p == nil {
-		t.Fatal("expected pattern from second entry `bb`")
+		t.Fatal("expected pattern from entries")
 	}
-	if got := p.String(); got != "bb" {
-		t.Fatalf("pattern = %q, want %q (no cross-entry token)", got, "bb")
-	}
-	if p.MatchString("aa") {
-		t.Fatalf("must not match incomplete first-entry token; pattern=%q", p.String())
-	}
+	// The complete backtick entry "`bb`" is active.
 	if !p.MatchString("bb") {
 		t.Fatalf("must match token from second entry; pattern=%q", p.String())
+	}
+	// An incomplete backtick entry "`aa" is compiled as its literal content,
+	// not promoted to a bare "aa", so a bare "aa" must not match.
+	if p.MatchString("aa") {
+		t.Fatalf("incomplete backtick entry must not match a bare token; pattern=%q", p.String())
+	}
+	// No cross-entry "aa`bb" delimiter was invented.
+	if strings.Contains(p.String(), "aa`bb") {
+		t.Fatalf("cross-entry backtick token invented; pattern=%q", p.String())
 	}
 
 	// Multiple well-formed entries still combine.

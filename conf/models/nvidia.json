@@ -108,6 +108,24 @@
       }
     },
     {
+      "name": "nvidia/llama-3.2-nemoretriever-500m-rerank-v2",
+      "url": "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-3_2-nemoretriever-500m-rerank-v2/reranking",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "nvidia/llama-3.2-nv-rerankqa-1b-v1",
+      "url": "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-3_2-nv-rerankqa-1b-v1/reranking",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
       "name": "meta/llama-3.3-70b-instruct",
       "content_length": 131072,
       "max_output": 8192,
@@ -165,6 +183,15 @@
       "tools": {
         "support": true
       }
+    },
+    {
+      "name": "nvidia/embed-qa-4",
+      "url": "https://ai.api.nvidia.com/v1/retrieval/nvidia/embeddings",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "embedding"
+      ]
     },
     {
       "name": "nvidia/ising-calibration-1.5-31b",

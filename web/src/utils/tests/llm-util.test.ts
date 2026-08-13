@@ -1,4 +1,9 @@
-import { buildModelValue, parseModelUuid, parseModelValue } from '../llm-util';
+import {
+  buildModelValue,
+  getEmbeddingBaseName,
+  parseModelUuid,
+  parseModelValue,
+} from '../llm-util';
 
 // Composite model keys are right-anchored:
 // "model_name@instance_name@provider_name" or "model_name@provider_name".
@@ -115,5 +120,43 @@ describe('parseModelUuid — right-anchored', () => {
       modelName: 'plain-model',
       factoryId: '',
     });
+  });
+});
+
+describe('getEmbeddingBaseName — dataset co-selection grouping', () => {
+  test('3-part composite reduces to bare model name', () => {
+    expect(getEmbeddingBaseName('BAAI/bge-m3@renew@SILICONFLOW')).toBe(
+      'BAAI/bge-m3',
+    );
+  });
+
+  test('same model through different instances shares one base name', () => {
+    expect(
+      getEmbeddingBaseName('BAAI/bge-m3@renew@SILICONFLOW') ===
+        getEmbeddingBaseName('BAAI/bge-m3@COPY@SILICONFLOW'),
+    ).toBe(true);
+  });
+
+  test('2-part composite strips the provider', () => {
+    expect(getEmbeddingBaseName('BAAI/bge-m3@SILICONFLOW')).toBe('BAAI/bge-m3');
+  });
+
+  test('model names containing "@" keep their suffix', () => {
+    expect(
+      getEmbeddingBaseName(
+        'text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio',
+      ),
+    ).toBe('text-embedding-nomic-embed-text-v1.5@q8_0');
+  });
+
+  test('opaque tenant_model id is returned unchanged', () => {
+    expect(getEmbeddingBaseName('2d8ff0a97d75431c8c91526549939328')).toBe(
+      '2d8ff0a97d75431c8c91526549939328',
+    );
+  });
+
+  test('empty and undefined values produce an empty base name', () => {
+    expect(getEmbeddingBaseName('')).toBe('');
+    expect(getEmbeddingBaseName(undefined)).toBe('');
   });
 });

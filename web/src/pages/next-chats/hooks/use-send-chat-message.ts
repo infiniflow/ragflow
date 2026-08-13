@@ -2,168 +2,103 @@ import { NextMessageInputOnPressEnterParameter } from '@/components/message-inpu
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
-  useRegenerateMessage,
-  useSelectDerivedMessages,
-  useSendMessageWithSse,
+  useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
-import { IAnswer, IMessage } from '@/interfaces/database/chat';
-import api from '@/utils/api';
-import { buildMessageUuid } from '@/utils/chat';
-import { omit, trim } from 'lodash';
+import { buildMessageListWithUuid } from '@/utils/chat';
+import { IMessage, Message } from '@/interfaces/database/chat';
+import notification from '@/utils/notification';
+import { trim } from 'lodash';
 import { useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
+import { runChatCompletionStream } from '../chat-stream/run-stream';
+import {
+  useChatPendingInput,
+  useChatStreamMessages,
+  useChatStreamStore,
+  useIsChatStreaming,
+} from '../chat-stream/store';
+import { resolveResendOptions } from '../utils';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
 
-// Append an answer to a messages array (mirrors addNewestAnswer logic in
-// useSelectDerivedMessages) for updating a background conversation's cache
-// without touching the currently displayed derivedMessages.
-function appendAnswerToMessages(
-  messages: IMessage[],
-  answer: IAnswer,
-): IMessage[] {
-  return [
-    ...(messages.slice(0, -1) ?? []),
-    {
-      role: MessageType.Assistant,
-      content: answer.answer,
-      reference: answer.reference,
-      id: buildMessageUuid({ id: answer.id, role: MessageType.Assistant }),
-      prompt: answer.prompt,
-      audio_binary: answer.audio_binary,
-      ...omit(answer, 'reference'),
-    },
-  ];
-}
-
-// Append a user question + empty assistant placeholder to a messages array
-// (mirrors addNewestQuestion logic) for updating a background conversation's
-// cache when the user asks a question right before switching conversations.
-function appendQuestionToMessages(
-  messages: IMessage[],
-  message: IMessage,
-): IMessage[] {
-  return [
-    ...messages,
-    {
-      ...message,
-      id: buildMessageUuid(message),
-    },
-    {
-      role: MessageType.Assistant,
-      content: '',
-      conversationId: message.conversationId,
-      id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
-    },
-  ];
-}
-
-export const useSelectNextMessages = () => {
-  const {
-    scrollRef,
-    messageContainerRef,
-    setDerivedMessages,
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-  } = useSelectDerivedMessages();
-  const { isNew, conversationId } = useGetChatSearchParams();
+/**
+ * Subscribes to the current conversation's entry in the chat stream store and
+ * seeds the prologue for a brand new session. Because the store lives at module
+ * level, an in-flight stream keeps updating it while this page is unmounted, so
+ * switching back re-attaches to the still-running stream.
+ */
+export const useCurrentChatSession = () => {
+  const { conversationId, isNew } = useGetChatSearchParams();
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
 
-  // Per-conversation message cache so switching conversations preserves the
-  // local derivedMessages (including in-flight SSE answers) instead of wiping
-  // them. Keyed by conversationId.
-  const messagesCacheRef = useRef<Record<string, IMessage[]>>({});
-  // Tracks conversations with an in-flight SSE stream so the backend sync
-  // effect in SingleChatBox can avoid overwriting local streaming state.
-  const activeStreamsRef = useRef<Set<string>>(new Set());
-  // Tracks which conversationId the current derivedMessages belongs to, so
-  // the cache-write effect doesn't mistakenly write the previous conversation's
-  // messages into the newly switched conversation's cache entry during the
-  // render where conversationId has changed but derivedMessages hasn't yet.
-  const messagesConversationIdRef = useRef(conversationId);
+  const messages = useChatStreamMessages(conversationId);
+  const isStreaming = useIsChatStreaming(conversationId);
 
-  // On conversation switch, restore cached messages (or start empty).
-  useEffect(() => {
-    messagesConversationIdRef.current = conversationId;
-    const cached = messagesCacheRef.current[conversationId];
-    setDerivedMessages(cached ?? []);
-  }, [conversationId, setDerivedMessages]);
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+  const { scrollRef } = useScrollToBottom(messages, messageContainerRef);
 
-  const addPrologue = useCallback(() => {
-    if (dialogId !== '' && isNew === 'true') {
-      const nextMessage = {
-        role: MessageType.Assistant,
-        content: prologue,
-        id: uuid(),
-        conversationId: conversationId,
-      } as IMessage;
-
-      setDerivedMessages([nextMessage]);
-    }
-  }, [conversationId, dialogId, isNew, prologue, setDerivedMessages]);
+  const ensureSession = useChatStreamStore((state) => state.ensureSession);
+  const seedPrologue = useChatStreamStore((state) => state.seedPrologue);
 
   useEffect(() => {
-    addPrologue();
-  }, [addPrologue]);
+    if (!conversationId) return;
+    ensureSession(conversationId, dialogId ?? '');
+  }, [conversationId, dialogId, ensureSession]);
 
-  // Persist current derivedMessages back into the cache for the conversation
-  // they actually belong to (not necessarily the URL's current conversationId
-  // during a switch).
   useEffect(() => {
-    messagesCacheRef.current[messagesConversationIdRef.current] = derivedMessages;
-  }, [derivedMessages]);
+    if (!conversationId || isNew !== 'true') return;
+    seedPrologue(conversationId, dialogId ?? '', prologue ?? '');
+  }, [conversationId, dialogId, isNew, prologue, seedPrologue]);
 
   return {
+    messages,
+    isStreaming,
     scrollRef,
     messageContainerRef,
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    setDerivedMessages,
-    messagesCacheRef,
-    activeStreamsRef,
   };
 };
 
-export const useSendMessage = (controller: AbortController) => {
-  const { conversationId, isNew } = useGetChatSearchParams();
+export const useSendMessage = () => {
+  const { conversationId } = useGetChatSearchParams();
+  const { t } = useTranslation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
   const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
 
   const { id: chatId } = useParams();
-  const { send, answer, done } = useSendMessageWithSse();
-  const {
-    scrollRef,
-    messageContainerRef,
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    setDerivedMessages,
-    messagesCacheRef,
-    activeStreamsRef,
-  } = useSelectNextMessages();
+  const { messages, isStreaming, scrollRef, messageContainerRef } =
+    useCurrentChatSession();
+
+  const appendQuestion = useChatStreamStore((state) => state.appendQuestion);
+  const failStream = useChatStreamStore((state) => state.failStream);
+  const consumePendingInput = useChatStreamStore(
+    (state) => state.consumePendingInput,
+  );
+  const pendingInput = useChatPendingInput(conversationId);
+  const removeMessageFromStore = useChatStreamStore(
+    (state) => state.removeMessageById,
+  );
+  const hydrateFromServer = useChatStreamStore(
+    (state) => state.hydrateFromServer,
+  );
+  const stopStream = useChatStreamStore((state) => state.stopStream);
+
+  // The regenerate button lives in the transcript, which has no access to the
+  // input box's thinking / internet toggles. Remember what the last send used
+  // so a retry keeps the same options instead of silently dropping them.
+  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
 
   const sendMessage = useCallback(
     async ({
       message,
       currentConversationId,
-      messages,
+      messages: explicitMessages,
       enableInternet,
       enableThinking,
     }: {
@@ -172,53 +107,71 @@ export const useSendMessage = (controller: AbortController) => {
       messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
-      activeStreamsRef.current.add(sessionId);
-      try {
-        const res = await send(
-          api.completionUrl,
-          {
-            chat_id: chatId,
-            session_id: sessionId,
-            // An explicitly provided list is authoritative, even when empty
-            // (e.g. regenerating the first question must truncate history).
-            messages: [
-              ...(Array.isArray(messages) ? messages : (derivedMessages ?? [])),
-              message,
-            ],
-            pass_all_history_messages: true,
-            reasoning: Number(enableThinking),
-            internet: enableInternet,
-          },
-          controller,
-        );
 
-        if (res && (res?.response.status !== 200 || res?.data?.code !== 0)) {
-          // cancel loading
-          setValue(message.content);
-          console.info('removeLatestMessage111');
-          removeLatestMessage();
-        }
-      } finally {
-        activeStreamsRef.current.delete(sessionId);
+      lastSendOptionsRef.current = { enableInternet, enableThinking };
+
+      const { ok, aborted } = await runChatCompletionStream({
+        conversationId: sessionId,
+        chatId,
+        // An explicitly provided list is authoritative, even when empty
+        // (e.g. regenerating the first question must truncate history).
+        messages: [
+          ...(Array.isArray(explicitMessages) ? explicitMessages : messages),
+          message,
+        ],
+        enableThinking,
+        enableInternet,
+      });
+
+      if (!ok && !aborted) {
+        // The failure can land long after the page unmounted or after the user
+        // switched conversations, so don't write to the input box here: park the
+        // text on the failing session instead, and tell the user something went
+        // wrong wherever they currently are.
+        failStream(sessionId, message.content);
+        notification.error({ message: t('message.requestError') });
       }
     },
-    [
-      derivedMessages,
-      conversationId,
-      chatId,
-      removeLatestMessage,
-      setValue,
-      send,
-      controller,
-      activeStreamsRef,
-    ],
+    [conversationId, chatId, messages, failStream, t],
   );
 
-  const { regenerateMessage } = useRegenerateMessage({
-    removeMessagesAfterCurrentMessage,
-    sendMessage,
-    messages: derivedMessages,
-  });
+  // Hand a failed question back to the input box, but only once the box is
+  // empty so a message the user is currently typing is never clobbered.
+  useEffect(() => {
+    if (!pendingInput || trim(value) !== '') return;
+    consumePendingInput(conversationId);
+    setValue(pendingInput);
+  }, [pendingInput, value, conversationId, consumePendingInput, setValue]);
+
+  const removeMessageById = useCallback(
+    (messageId: string) => {
+      removeMessageFromStore(conversationId, messageId);
+    },
+    [conversationId, removeMessageFromStore],
+  );
+
+  // Regenerating re-asks the same question as a new turn instead of rewriting
+  // the original exchange, so every earlier answer stays in the transcript.
+  const regenerateMessage = useCallback(
+    (message: Message) => {
+      if (isStreaming) return;
+
+      const questionMessage: IMessage = {
+        content: message.content,
+        files: message.files,
+        id: uuid(),
+        role: MessageType.User,
+        conversationId,
+      };
+
+      appendQuestion(conversationId, questionMessage);
+      sendMessage({
+        message: questionMessage,
+        ...resolveResendOptions(lastSendOptionsRef.current),
+      });
+    },
+    [conversationId, isStreaming, appendQuestion, sendMessage],
+  );
 
   const { createConversationBeforeSendMessage } =
     useCreateConversationBeforeSendMessage();
@@ -228,7 +181,7 @@ export const useSendMessage = (controller: AbortController) => {
       enableThinking,
       enableInternet,
     }: NextMessageInputOnPressEnterParameter) => {
-      if (trim(value) === '' || !done) return;
+      if (trim(value) === '' || isStreaming) return;
 
       const data = await createConversationBeforeSendMessage(value);
 
@@ -238,44 +191,68 @@ export const useSendMessage = (controller: AbortController) => {
 
       const { targetConversationId, currentMessages } = data;
 
+      // The await above can span a conversation switch, and the target session
+      // may already have a stream running.
+      if (
+        useChatStreamStore.getState().sessions[targetConversationId]
+          ?.isStreaming
+      ) {
+        return;
+      }
+
       const id = uuid();
 
-      const questionMessage = {
+      // useUploadFile tracks files as loosely typed records; narrow once here.
+      const attachedFiles = files as IMessage['files'];
+
+      const questionMessage: IMessage = {
         content: value,
-        files: files,
+        files: attachedFiles,
         id,
         role: MessageType.User,
         conversationId: targetConversationId,
       };
-      // The await on createConversationBeforeSendMessage above can span a
-      // conversation switch. Route the question to the conversation it was
-      // asked in, not whichever is currently displayed.
-      if (targetConversationId === conversationId) {
-        addNewestQuestion(questionMessage);
-      } else {
-        const cached = messagesCacheRef.current[targetConversationId] ?? [];
-        messagesCacheRef.current[targetConversationId] =
-          appendQuestionToMessages(cached, questionMessage);
+
+      // A brand new conversation is persisted under a server-generated id, so
+      // the prologue seeded on the temporary id doesn't carry over. Seed the
+      // real session from the server's list (which holds just the prologue)
+      // BEFORE appending the question — hydrating afterwards would pass the
+      // authority check (not streaming yet) and wipe the question and
+      // placeholder that were just appended.
+      if (currentMessages.length > 0) {
+        hydrateFromServer(
+          targetConversationId,
+          buildMessageListWithUuid(currentMessages),
+        );
       }
 
-      if (done) {
-        setValue('');
-        sendMessage({
-          currentConversationId: targetConversationId,
-          // For an existing conversation currentMessages is empty; fall back
-          // to derivedMessages instead of sending an empty history.
-          messages: currentMessages.length > 0 ? currentMessages : undefined,
-          message: {
-            id,
-            content: value.trim(),
-            role: MessageType.User,
-            files,
-            conversationId: targetConversationId,
-          },
-          enableInternet,
-          enableThinking,
-        });
-      }
+      // Route the question to the conversation it was asked in, not whichever
+      // is currently displayed.
+      //
+      // Snapshot the history before appendQuestion writes the question and its
+      // assistant placeholder into the store.
+      const history =
+        useChatStreamStore.getState().sessions[targetConversationId]
+          ?.messages ?? [];
+
+      appendQuestion(targetConversationId, questionMessage);
+
+      setValue('');
+      sendMessage({
+        currentConversationId: targetConversationId,
+        // For an existing conversation currentMessages is empty; fall back to
+        // the store's message list instead of sending an empty history.
+        messages: currentMessages.length > 0 ? currentMessages : history,
+        message: {
+          id,
+          content: value.trim(),
+          role: MessageType.User,
+          files: attachedFiles,
+          conversationId: targetConversationId,
+        },
+        enableInternet,
+        enableThinking,
+      });
 
       clearFiles();
 
@@ -292,38 +269,21 @@ export const useSendMessage = (controller: AbortController) => {
     },
     [
       value,
-      done,
+      isStreaming,
       createConversationBeforeSendMessage,
-      addNewestQuestion,
+      appendQuestion,
+      hydrateFromServer,
       files,
       clearFiles,
       setValue,
       sendMessage,
       messageContainerRef,
-      conversationId,
-      messagesCacheRef,
     ],
   );
 
-  useEffect(() => {
-    //  #1289
-    if (!answer.answer || isNew === 'true') return;
-    // Route the answer to the conversation it belongs to. answer.conversationId
-    // comes from the request body's session_id (set in useSendMessageWithSse.send),
-    // NOT from the URL, so it stays correct even after switching conversations.
-    // This prevents a background stream's answer from leaking into the currently
-    // displayed conversation, and keeps the background conversation's cache
-    // updating so switching back shows the streamed answer.
-    const targetId = answer.conversationId;
-    if (!targetId) return;
-    if (targetId === conversationId) {
-      addNewestAnswer(answer);
-    } else {
-      const cached = messagesCacheRef.current[targetId] ?? [];
-      messagesCacheRef.current[targetId] =
-        appendAnswerToMessages(cached, answer);
-    }
-  }, [answer, addNewestAnswer, conversationId, isNew, messagesCacheRef]);
+  const stopOutputMessage = useCallback(() => {
+    stopStream(conversationId);
+  }, [conversationId, stopStream]);
 
   return {
     handlePressEnter,
@@ -331,16 +291,15 @@ export const useSendMessage = (controller: AbortController) => {
     value,
     setValue,
     regenerateMessage,
-    sendLoading: !done,
+    sendLoading: isStreaming,
     scrollRef,
     messageContainerRef,
-    derivedMessages,
+    messages,
     removeMessageById,
     handleUploadFile,
     isUploading,
     removeFile,
-    setDerivedMessages,
-    messagesCacheRef,
-    activeStreamsRef,
+    hydrateFromServer,
+    stopOutputMessage,
   };
 };
