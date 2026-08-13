@@ -43,6 +43,7 @@ export function CompilationTemplateFormField({
       }}
       className="pb-4"
       horizontal={horizontal}
+      required
     >
       {(field) => (
         <SelectWithSearch

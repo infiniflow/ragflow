@@ -5,6 +5,7 @@ import {
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { buildMessageListWithUuid } from '@/utils/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
 import { trim } from 'lodash';
@@ -97,19 +98,17 @@ export const useSendMessage = () => {
     }: {
       message: IMessage;
       currentConversationId?: string;
-      messages?: IMessage[];
+      messages: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
 
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
         chatId,
-        // An explicitly provided list is authoritative, even when empty
-        // (e.g. regenerating the first question must truncate history).
-        messages: [
-          ...(Array.isArray(explicitMessages) ? explicitMessages : messages),
-          message,
-        ],
+        // The history is always supplied by the caller, captured *before* it
+        // appended the question and its placeholder to the store — reading it
+        // here would include both and send the question twice.
+        messages: [...explicitMessages, message],
         enableThinking,
         enableInternet,
       });
@@ -123,7 +122,7 @@ export const useSendMessage = () => {
         notification.error({ message: t('message.requestError') });
       }
     },
-    [conversationId, chatId, messages, failStream, t],
+    [conversationId, chatId, failStream, t],
   );
 
   // Hand a failed question back to the input box, but only once the box is
@@ -155,8 +154,13 @@ export const useSendMessage = () => {
         conversationId,
       };
 
+      // Snapshot the history before appendQuestion writes the question and its
+      // assistant placeholder into the store.
+      const history =
+        useChatStreamStore.getState().sessions[conversationId]?.messages ?? [];
+
       appendQuestion(conversationId, questionMessage);
-      sendMessage({ message: questionMessage });
+      sendMessage({ message: questionMessage, messages: history });
     },
     [conversationId, isStreaming, appendQuestion, sendMessage],
   );
@@ -201,14 +205,28 @@ export const useSendMessage = () => {
         conversationId: targetConversationId,
       };
 
+      // A brand new conversation is persisted under a server-generated id, so
+      // the prologue seeded on the temporary id doesn't carry over. Seed the
+      // real session from the server's list (which holds just the prologue)
+      // BEFORE appending the question — hydrating afterwards would pass the
+      // authority check (not streaming yet) and wipe the question and
+      // placeholder that were just appended.
+      if (currentMessages.length > 0) {
+        hydrateFromServer(
+          targetConversationId,
+          buildMessageListWithUuid(currentMessages),
+        );
+      }
+
       // Route the question to the conversation it was asked in, not whichever
       // is currently displayed.
       //
-      // Do NOT hydrate from currentMessages here. For a freshly created
-      // conversation the server only returns the seeded prologue, which
-      // seedPrologue has already put in the store — and hydrating now would
-      // pass the authority check (not streaming yet) and wipe the question and
-      // placeholder that were just appended.
+      // Snapshot the history before appendQuestion writes the question and its
+      // assistant placeholder into the store.
+      const history =
+        useChatStreamStore.getState().sessions[targetConversationId]
+          ?.messages ?? [];
+
       appendQuestion(targetConversationId, questionMessage);
 
       setValue('');
@@ -216,7 +234,7 @@ export const useSendMessage = () => {
         currentConversationId: targetConversationId,
         // For an existing conversation currentMessages is empty; fall back to
         // the store's message list instead of sending an empty history.
-        messages: currentMessages.length > 0 ? currentMessages : undefined,
+        messages: currentMessages.length > 0 ? currentMessages : history,
         message: {
           id,
           content: value.trim(),
@@ -246,6 +264,7 @@ export const useSendMessage = () => {
       isStreaming,
       createConversationBeforeSendMessage,
       appendQuestion,
+      hydrateFromServer,
       files,
       clearFiles,
       setValue,

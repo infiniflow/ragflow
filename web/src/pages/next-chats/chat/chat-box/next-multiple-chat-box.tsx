@@ -57,7 +57,8 @@ import {
   UseSendSingleMessageParameter,
 } from '../../hooks/use-send-single-message';
 import { useUploadFile } from '../../hooks/use-upload-file';
-import { buildMessageItemReference } from '../../utils';
+import { useMessageReferences } from '../../hooks/use-message-references';
+import { EmptyReference } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
 import { useShowInternet } from '../use-show-internet';
 
@@ -123,6 +124,11 @@ const ChatCard = forwardRef(function ChatCard(
 
   const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
 
+  const messageReferences = useMessageReferences(
+    derivedMessages,
+    conversation.reference,
+  );
+
   const FormSchema = z.object(LlmSettingSchema);
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -166,10 +172,7 @@ const ChatCard = forwardRef(function ChatCard(
   // conversation switch), not when currentDialog.llm_id changes due to Apply.
   const syncedDialogIdRef = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
-    if (
-      syncedDialogIdRef.current !== dialogId &&
-      currentDialog?.llm_id
-    ) {
+    if (syncedDialogIdRef.current !== dialogId && currentDialog?.llm_id) {
       form.setValue('llm_id', currentDialog.llm_id);
       syncedDialogIdRef.current = dialogId;
     }
@@ -290,13 +293,7 @@ const ChatCard = forwardRef(function ChatCard(
                   nickname={userInfo.nickname}
                   avatar={userInfo.avatar}
                   avatarDialog={currentDialog.icon}
-                  reference={buildMessageItemReference(
-                    {
-                      messages: derivedMessages,
-                      reference: conversation.reference,
-                    },
-                    message,
-                  )}
+                  reference={messageReferences.get(message) ?? EmptyReference}
                   // clickDocumentButton={clickDocumentButton}
                   index={i}
                   removeMessageById={removeMessageById}

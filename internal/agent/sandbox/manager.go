@@ -24,7 +24,7 @@
 //     Go port reads this via `internal/dao.SystemSettingsDAO`.
 //  2. SANDBOX_PROVIDER_TYPE env var — defaults to "self_managed".
 //  3. SANDBOX_EXECUTOR_MANAGER_URL / AGENTRUN_* / LOCAL_* / SSH_*
-//     / E2B_* env vars for the per-provider knobs. The
+//     / E2B_* / UCLOUD_SANDBOX_* env vars for the per-provider knobs. The
 //     `xxxConfigFromEnv` helpers in each provider file build the
 //     same config map the admin-panel JSON would, so the
 //     `FromConfig` constructor is the single source of truth.
@@ -301,8 +301,10 @@ func buildProvider(t ProviderType) (SandboxProvider, error) {
 		return newSSHProviderFromEnv(), nil
 	case ProviderTenki:
 		return newTenkiProviderFromEnv(), nil
+	case ProviderUCloudAgentSandbox:
+		return newUCloudAgentSandboxProviderFromEnv(), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox)", t)
 	}
 }
 
@@ -324,7 +326,9 @@ func buildProviderFromConfig(t ProviderType, cfg map[string]any) (SandboxProvide
 		return newSSHProviderFromConfig(cfg), nil
 	case ProviderTenki:
 		return newTenkiProviderFromConfig(cfg), nil
+	case ProviderUCloudAgentSandbox:
+		return newUCloudAgentSandboxProviderFromConfig(cfg), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox)", t)
 	}
 }
