@@ -101,6 +101,14 @@ func (s fakeStore) ListIDs(ctx context.Context, kbID, sourceType string) (map[st
 	return s.ids, nil
 }
 
+// ListFingerprintsBySourceType returns configured fingerprints.
+func (s fakeStore) ListFingerprintsBySourceType(ctx context.Context, kbID, sourceType string) (map[string]string, error) {
+	if s.fingerprints == nil {
+		return map[string]string{}, nil
+	}
+	return s.fingerprints, nil
+}
+
 // GetFingerprintsByIDs returns configured fingerprints for requested IDs.
 func (s fakeStore) GetFingerprintsByIDs(ctx context.Context, kbID, sourceType string, ids []string) (map[string]string, error) {
 	result := make(map[string]string, len(ids))
@@ -168,6 +176,9 @@ func (b *fakeSyncTaskBroker) PublishSyncerTask(taskID string) error {
 	defer b.mu.Unlock()
 	b.published = append(b.published, taskID)
 	return nil
+}
+func (b *fakeSyncTaskBroker) PublishSyncerTaskWakeup(taskID string) error {
+	return b.PublishSyncerTask(taskID)
 }
 func (b *fakeSyncTaskBroker) SubscribeSyncerTasks(ctx context.Context, handler func(common.TaskHandle)) error {
 	b.handler = handler

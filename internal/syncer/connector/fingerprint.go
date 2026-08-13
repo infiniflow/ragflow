@@ -36,3 +36,25 @@ func contentFingerprint(data []byte) string {
 	sum := xxh3.Hash128(data).Bytes()
 	return hex.EncodeToString(sum[:])
 }
+
+func syncDocumentID(value string) string {
+	sum := xxh3.Hash128([]byte(value)).Bytes()
+	return hex.EncodeToString(sum[:])
+}
+
+func syncDocumentStoredFingerprint(fingerprints map[string]string, kbID, connectorID, sourceID string) string {
+	if len(fingerprints) == 0 || connectorID == "" || sourceID == "" {
+		return ""
+	}
+	legacyID := syncDocumentID(connectorID + ":" + sourceID)
+	newID := syncDocumentID(kbID + ":" + connectorID + ":" + sourceID)
+	if stored := fingerprints[legacyID]; stored != "" {
+		return stored
+	}
+	return fingerprints[newID]
+}
+
+func isSubmittedUnchanged(fingerprints map[string]string, kbID, connectorID string, doc SourceDocument) bool {
+	stored := syncDocumentStoredFingerprint(fingerprints, kbID, connectorID, doc.SourceID)
+	return stored != "" && stored == doc.Fingerprint
+}

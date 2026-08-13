@@ -103,6 +103,52 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
+// TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged verifies page deletions do not skip a new document at the old offset.
+func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
+	connector := newFixtureGmailConnector()
+	connector.GmailConnector.batchSize = 2
+	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
+		return gmailThreadListPage{Threads: []struct {
+			ID string `json:"id"`
+		}{{ID: "thread-1"}, {ID: "thread-2"}, {ID: "thread-3"}}}, nil
+	}
+	connector.GmailConnector.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
+		return gmailTestThread(threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1"})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "thread-2" {
+		t.Fatalf("first checkpoint = %+v, want thread-2", first.Checkpoint)
+	}
+	fingerprints := map[string]string{}
+	for _, doc := range first.Documents {
+		fingerprints[syncDocumentID("kb-1:conn-1:"+doc.SourceID)] = doc.Fingerprint
+	}
+
+	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
+		return gmailThreadListPage{Threads: []struct {
+			ID string `json:"id"`
+		}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
+	}
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1", Fingerprints: fingerprints, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
+		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
+	}
+}
+
 // TestGmailFingerprintStable verifies Gmail fingerprints are stable and content-sensitive.
 func TestGmailFingerprintStable(t *testing.T) {
 	thread := gmailThread{

@@ -134,7 +134,7 @@ func (n *NatsEngine) initSyncCheckpointsLocked() error {
 		Description:  "running datasource sync checkpoints",
 		History:      1,
 		TTL:          syncCheckpointTTL,
-		MaxValueSize: 64 * 1024,
+		MaxValueSize: 1024 * 1024,
 		Storage:      jetstream.FileStorage,
 	})
 	if err != nil {

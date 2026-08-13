@@ -19,14 +19,12 @@ package config
 import "github.com/spf13/viper"
 
 type SyncerConfig struct {
-	MaxConcurrentSyncs    int `mapstructure:"max_concurrent_syncs"`
-	SchedulerPollInterval int `mapstructure:"scheduler_poll_interval"`
+	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
 }
 
 func (c *Config) ParseSyncerConfig(v *viper.Viper) error {
 	// Default Syncer config
 	c.syncer.MaxConcurrentSyncs = 5
-	c.syncer.SchedulerPollInterval = 3
 
 	if !v.IsSet("file_syncer") {
 		return nil
@@ -38,10 +36,6 @@ func (c *Config) ParseSyncerConfig(v *viper.Viper) error {
 
 	if sub.IsSet("max_concurrent_syncs") {
 		c.syncer.MaxConcurrentSyncs = sub.GetInt("max_concurrent_syncs")
-	}
-
-	if sub.IsSet("scheduler_poll_interval") {
-		c.syncer.SchedulerPollInterval = sub.GetInt("scheduler_poll_interval")
 	}
 
 	return nil

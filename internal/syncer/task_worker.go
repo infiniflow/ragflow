@@ -177,6 +177,7 @@ func (w *TaskWorker) scheduleNext(ctx context.Context, taskID string) {
 	}
 }
 
+// scheduleRetry schedule retry when web error occurred
 func (w *TaskWorker) scheduleRetry(ctx context.Context, taskID string, delay time.Duration) {
 	if w.scheduler == nil || taskID == "" {
 		return
@@ -186,10 +187,12 @@ func (w *TaskWorker) scheduleRetry(ctx context.Context, taskID string, delay tim
 	}
 }
 
+// transientRetryDelay return retry delay
 func transientRetryDelay(attempts int64) time.Duration {
 	if attempts < 1 {
 		attempts = 1
 	}
+
 	shift := attempts - 1
 	if shift > 5 {
 		shift = 5

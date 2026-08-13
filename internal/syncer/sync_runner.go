@@ -67,10 +67,17 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 		return "", err
 	}
 
+	sourceType := service.SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
+	fingerprints, err := r.idResolver.ListFingerprintsBySourceType(ctx, taskContext.Knowledgebase.ID, sourceType)
+	if err != nil {
+		return "", err
+	}
 	session, err := connector.OpenSync(ctx, syncerconnector.SyncRequest{
 		TaskID:        taskContext.Task.ID,
 		ConnectorID:   taskContext.Connector.ID,
 		KBID:          taskContext.Knowledgebase.ID,
+		SourceType:    sourceType,
+		Fingerprints:  fingerprints,
 		FromBeginning: checkpointState.WindowStart == nil,
 		WindowStart:   checkpointState.WindowStart,
 		WindowEnd:     checkpointState.WindowEnd,
@@ -82,7 +89,6 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 	defer session.Close()
 
 	// prepare sourceType, waterline, stats, resultChan
-	sourceType := service.SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
 	stats := statsFromCheckpointState(checkpointState) // count `add`, `updated`, `skipped`
 	resultChans := make([]<-chan syncJobResult, 0)
 
@@ -199,6 +205,7 @@ func statsFromCheckpointState(state syncerconnector.SyncCheckpointState) service
 	}
 }
 
+// applyStatsToCheckpointState store checkpoint's state data
 func applyStatsToCheckpointState(state *syncerconnector.SyncCheckpointState, stats service.SyncStats) {
 	state.Added = stats.Added
 	state.Updated = stats.Updated
@@ -218,6 +225,7 @@ func (r *SyncRunner) submitBatch(ctx context.Context, taskContext service.SyncTa
 	return resultChan, nil
 }
 
+// cloneSyncCheckpoint safe clone
 func cloneSyncCheckpoint(checkpoint *syncerconnector.SyncCheckpoint) *syncerconnector.SyncCheckpoint {
 	if checkpoint == nil {
 		return nil

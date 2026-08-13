@@ -49,11 +49,10 @@ type Syncer struct {
 }
 
 // NewSyncer creates a server-compatible syncer with default dependencies.
-func NewSyncer(taskWorkerCount int, pollInterval time.Duration) *Syncer {
+func NewSyncer(taskWorkerCount int) *Syncer {
 	// init the config
 	config := DefaultConfig()
 	config.TaskWorkerCount = taskWorkerCount
-	config.PollInterval = pollInterval
 
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()

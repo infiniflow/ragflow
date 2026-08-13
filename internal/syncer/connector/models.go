@@ -63,9 +63,12 @@ type SyncCheckpointState struct {
 
 // SyncRequest describes one fixed sync window.
 type SyncRequest struct {
-	TaskID        string
-	ConnectorID   string
-	KBID          string
+	TaskID       string
+	ConnectorID  string
+	KBID         string
+	SourceType   string
+	Fingerprints map[string]string
+
 	FromBeginning bool
 	WindowStart   *time.Time
 	WindowEnd     time.Time

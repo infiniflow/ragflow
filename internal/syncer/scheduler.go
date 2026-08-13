@@ -40,6 +40,7 @@ type SyncTaskBroker interface {
 	InitSyncerStream() error
 	InitSyncerConsumer() error
 	PublishSyncerTask(taskID string) error
+	PublishSyncerTaskWakeup(taskID string) error
 	SubscribeSyncerTasks(ctx context.Context, handler func(common.TaskHandle)) error
 }
 
@@ -164,8 +165,10 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 		existing.Stop()
 	}
 	timer := time.AfterFunc(delay, func() {
-		if err := s.publishTask(ctx, taskID); err != nil && ctx.Err() == nil {
+		if err := s.publishTaskWakeup(ctx, taskID); err != nil && ctx.Err() == nil {
 			common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
+			_ = s.ScheduleTaskAfter(ctx, taskID, 3*time.Second)
+			return
 		}
 		s.timerMu.Lock()
 		delete(s.timers, taskID)
@@ -173,6 +176,17 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 	})
 	s.timers[taskID] = timer
 	s.timerMu.Unlock()
+	return nil
+}
+
+func (s *Scheduler) publishTaskWakeup(ctx context.Context, taskID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.broker.PublishSyncerTaskWakeup(taskID); err != nil {
+		common.Warn("syncer task wakeup publish failed", zap.String("task_id", taskID), zap.Error(err))
+		return err
+	}
 	return nil
 }
 

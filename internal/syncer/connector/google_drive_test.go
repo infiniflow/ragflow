@@ -92,6 +92,118 @@ func TestGoogleDriveConnectorOpenSyncUsesWindowFingerprintAndFetch(t *testing.T)
 	}
 }
 
+// TestGoogleDriveConnectorOpenSyncResumesWithinPage verifies Drive checkpoints resume inside a list page.
+func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"batch_size":      2,
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+	files := []googleDriveFile{
+		googleDriveTestFile("file-1", "One.txt", "2026-01-01T00:00:00Z"),
+		googleDriveTestFile("file-2", "Two.txt", "2026-01-02T00:00:00Z"),
+		googleDriveTestFile("file-3", "Three.txt", "2026-01-03T00:00:00Z"),
+	}
+	var pageTokens []string
+	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
+		pageTokens = append(pageTokens, request.PageToken)
+		return googleDriveFilePage{Files: files}, nil
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if len(first.Documents) != 2 || first.Documents[0].SourceID != "https://drive.google.com/file/d/file-1" || first.Documents[1].SourceID != "https://drive.google.com/file/d/file-2" {
+		t.Fatalf("first documents = %+v", first.Documents)
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "https://drive.google.com/file/d/file-2" {
+		t.Fatalf("first checkpoint = %+v, want file-2", first.Checkpoint)
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://drive.google.com/file/d/file-3" {
+		t.Fatalf("resume documents = %+v, want file-3", second.Documents)
+	}
+	if second.Checkpoint == nil || second.Checkpoint.SourceID != "https://drive.google.com/file/d/file-3" {
+		t.Fatalf("resume checkpoint = %+v, want file-3", second.Checkpoint)
+	}
+	if len(pageTokens) != 2 || pageTokens[1] != "" {
+		t.Fatalf("page tokens = %v, want resume from first page", pageTokens)
+	}
+}
+
+// TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged verifies page deletions do not skip a new document at the old offset.
+func TestGoogleDriveConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"batch_size":      2,
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+	files := []googleDriveFile{
+		googleDriveTestFile("file-1", "One.txt", "2026-01-01T00:00:00Z"),
+		googleDriveTestFile("file-2", "Two.txt", "2026-01-02T00:00:00Z"),
+		googleDriveTestFile("file-3", "Three.txt", "2026-01-03T00:00:00Z"),
+	}
+	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
+		return googleDriveFilePage{Files: files}, nil
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1"})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "https://drive.google.com/file/d/file-2" {
+		t.Fatalf("first checkpoint = %+v, want file-2", first.Checkpoint)
+	}
+	fingerprints := map[string]string{}
+	for _, doc := range first.Documents {
+		fingerprints[syncDocumentID("kb-1:conn-1:"+doc.SourceID)] = doc.Fingerprint
+	}
+
+	files = []googleDriveFile{
+		googleDriveTestFile("file-1", "One.txt", "2026-01-01T00:00:00Z"),
+		googleDriveTestFile("file-3", "Three.txt", "2026-01-03T00:00:00Z"),
+	}
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, KBID: "kb-1", ConnectorID: "conn-1", Fingerprints: fingerprints, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://drive.google.com/file/d/file-3" {
+		t.Fatalf("resume documents = %+v, want file-3", second.Documents)
+	}
+}
+
 // TestGoogleDriveSharedFolderScopesRecurse verifies shared folders walk child folders.
 func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 	connector, err := NewGoogleDriveConnector(map[string]any{
@@ -231,5 +343,15 @@ func TestGoogleDriveFileQueryUsesIncrementalWindow(t *testing.T) {
 		!strings.Contains(query, "modifiedTime <= '2026-01-04T00:00:00Z'") ||
 		!strings.Contains(query, "'me' in owners") {
 		t.Fatalf("query = %q", query)
+	}
+}
+
+func googleDriveTestFile(id, name, modifiedTime string) googleDriveFile {
+	return googleDriveFile{
+		ID:           id,
+		Name:         name,
+		MimeType:     "text/plain",
+		ModifiedTime: modifiedTime,
+		WebViewLink:  "https://drive.google.com/file/d/" + id + "/view",
 	}
 }
