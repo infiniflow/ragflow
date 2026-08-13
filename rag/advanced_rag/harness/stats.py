@@ -388,12 +388,12 @@ class CountingChatModel:
     async def async_chat(self, system: str, history: list, gen_conf: dict | None = None, **kwargs):
         stats = self._stats_for()
         phase_name = _CURRENT_PHASE.get()
+        stats.record_call(phase_name)
         try:
             txt = await self._chat_mdl.async_chat(system, history, gen_conf or {}, **kwargs)
         except Exception:
             stats.record_failed(phase_name)
             raise
-        stats.record_call(phase_name)
         stats.record_usage(phase_name, _last_usage(self._chat_mdl))
         return txt
 
