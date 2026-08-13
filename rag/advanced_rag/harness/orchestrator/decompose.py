@@ -13,6 +13,7 @@ from rag.advanced_rag.harness.sufficiency import (
     route_sufficiency_verdict,
 )
 from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
+from rag.advanced_rag.harness.stats import in_phase
 from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ Return JSON:
 Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one."""
 
 
+@in_phase("decompose")
 async def decompose_and_search(state: dict, tools) -> dict:
     """Decompose, retrieve, analyze evidence, then iterate with next-hop queries."""
     question = state.get("question", "")
