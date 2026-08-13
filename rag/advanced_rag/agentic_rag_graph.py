@@ -507,7 +507,20 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     if isinstance(final_kb, dict) and final_kb.get("chunks"):
         tools.kbinfos = final_kb
 
-    _LOG.info("[Agentic RAG] Research complete — %d passage(s) gathered after %d round(s).", len((state.get("kbinfos") or {}).get("chunks", [])), state.get("loop", 0))
+    # Expose the sufficiency verdict to the outer loop so it can decide whether to
+    # re-run `rag` (and how to rephrase the next question) from the reported gaps,
+    # rather than guessing from the answer text alone.
+    verdict = state.get("verdict")
+    try:
+        tools._rag_verdict = verdict
+        _LOG.info(
+            "[Agentic RAG] Research complete — %d passage(s), %d round(s), verdict=%s",
+            len((state.get("kbinfos") or {}).get("chunks", [])),
+            state.get("loop", 0),
+            (verdict or {}).get("status") if isinstance(verdict, dict) else verdict,
+        )
+    except Exception:
+        _LOG.info("[Agentic RAG] Research complete — %d passage(s) gathered after %d round(s).", len((state.get("kbinfos") or {}).get("chunks", [])), state.get("loop", 0))
 
     if not produced and holder.get("error"):
         yield "I couldn't complete the search due to an internal error."
