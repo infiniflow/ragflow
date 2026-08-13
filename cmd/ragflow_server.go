@@ -625,7 +625,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
-	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs, time.Duration(syncerConfig.SchedulerPollInterval)*time.Second)
+	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
 
 	if err := fileSyncer.StartContext(ctx); err != nil {
 		common.Error("Failed to initialize file syncer", err)
