@@ -1070,11 +1070,6 @@ class OpenAI_APIChat(Base):
         model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
 
-    def _clean_conf(self, gen_conf):
-        gen_conf = gen_conf or {}
-        allowed = ALLOWED_GEN_CONF_KEYS | {"max_tokens"}
-        return {k: v for k, v in gen_conf.items() if k in allowed}
-
 
 class MWSChat(Base):
     """MWS Chat Completions adapter with a documentation-only request body."""
@@ -1898,24 +1893,10 @@ class LiteLLMBase(ABC):
                     candidate = 0
                 if candidate > 0:
                     deepseek_max_tokens = candidate
-        elif self.provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI}:
-            # OpenAI and Azure OpenAI accept the legacy max_tokens field for
-            # output generation. Keep it so a large value set in the agent/LLM
-            # component is not dropped and the provider's default output limit
-            # does not silently truncate long answers.
-            raw_max_tokens = gen_conf.get("max_tokens")
-            if raw_max_tokens is not None and not isinstance(raw_max_tokens, bool):
-                try:
-                    gen_conf["max_tokens"] = int(raw_max_tokens)
-                except (TypeError, ValueError):
-                    gen_conf.pop("max_tokens", None)
         else:
             gen_conf.pop("max_tokens", None)
 
-        allowed = LITELLM_ALLOWED_GEN_CONF_KEYS
-        if self.provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI}:
-            allowed = allowed | {"max_tokens"}
-        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed}
+        gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         if deepseek_max_tokens is not None:
             gen_conf["max_tokens"] = deepseek_max_tokens
         return gen_conf
