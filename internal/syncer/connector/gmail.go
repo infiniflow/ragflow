@@ -311,6 +311,8 @@ type gmailSyncSession struct {
 	resumePageToken string
 	resumeOffset    int
 	resumeSourceID  string
+	resumeFallback  bool
+	resumeRestart   bool
 }
 
 // NextBatch returns the next Gmail document batch.
@@ -391,6 +393,11 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]gmailBuffere
 		}
 	}
 	documents := s.filterResumedDocuments(requestPageToken, candidates)
+	if s.resumeRestart {
+		s.resumeRestart = false
+		s.pageToken = ""
+		return nil, nil
+	}
 	if page.NextPageToken == "" {
 		s.advanceUser()
 	} else {
@@ -429,6 +436,9 @@ func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 
 // filterResumedDocuments applies checkpoint offset when it still points to the same source.
 func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates []gmailBufferedDocument) []gmailBufferedDocument {
+	if s.resumeFallback {
+		return s.filterSubmittedUnchanged(candidates)
+	}
 	if s.resumeOffset <= 0 {
 		return candidates
 	}
@@ -447,14 +457,23 @@ func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates [
 		return filtered
 	}
 
+	s.resumeFallback = true
+	s.resumeRestart = true
+	return nil
+}
+
+func (s *gmailSyncSession) filterSubmittedUnchanged(candidates []gmailBufferedDocument) []gmailBufferedDocument {
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
+		if candidate.document.SourceID == s.resumeSourceID {
+			s.clearResumeOffset()
+			continue
+		}
 		if isSubmittedUnchanged(s.fingerprints, s.kbID, s.connectorID, candidate.document) {
 			continue
 		}
 		filtered = append(filtered, candidate)
 	}
-	s.clearResumeOffset()
 	return filtered
 }
 
@@ -462,6 +481,8 @@ func (s *gmailSyncSession) clearResumeOffset() {
 	s.resumeOffset = 0
 	s.resumePageToken = ""
 	s.resumeSourceID = ""
+	s.resumeFallback = false
+	s.resumeRestart = false
 }
 
 // advanceUser moves a Gmail session to the next mailbox.

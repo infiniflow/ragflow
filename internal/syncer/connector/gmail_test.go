@@ -131,7 +131,20 @@ func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
 		fingerprints[syncDocumentID("kb-1:conn-1:"+doc.SourceID)] = doc.Fingerprint
 	}
 
+	resumeListCalls := 0
 	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
+		resumeListCalls++
+		if resumeListCalls == 1 && pageToken != "" {
+			return gmailThreadListPage{Threads: []struct {
+				ID string `json:"id"`
+			}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
+		}
+		if pageToken != "" {
+			t.Fatalf("resume fallback did not restart from list head, pageToken=%q", pageToken)
+		}
+		if resumeListCalls > 2 {
+			return gmailThreadListPage{}, nil
+		}
 		return gmailThreadListPage{Threads: []struct {
 			ID string `json:"id"`
 		}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
@@ -146,6 +159,9 @@ func TestGmailConnectorResumeFallsBackWhenOffsetSourceChanged(t *testing.T) {
 	}
 	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
 		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
+	}
+	if resumeListCalls != 2 {
+		t.Fatalf("resume list calls = %d, want checkpoint page then list head", resumeListCalls)
 	}
 }
 

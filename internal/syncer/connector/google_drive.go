@@ -560,6 +560,8 @@ type googleDriveSyncSession struct {
 	resumePageToken  string
 	resumePageOffset int
 	resumeSourceID   string
+	resumeFallback   bool
+	resumeRestart    bool
 }
 
 // NextBatch returns the next Google Drive document batch.
@@ -627,17 +629,18 @@ func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]google
 			continue
 		}
 		pageOffset++
-		if _, ok = s.seen[doc.SourceID]; ok {
-			continue
-		}
-		s.seen[doc.SourceID] = struct{}{}
 		candidates = append(candidates, googleDriveBufferedDocument{
 			document:   doc,
 			checkpoint: s.syncCheckpoint(scope, requestPageToken, pageOffset, doc),
 			offset:     pageOffset,
 		})
 	}
-	docs := s.filterResumedDocuments(requestPageToken, candidates)
+	docs := s.filterSeenDocuments(s.filterResumedDocuments(requestPageToken, candidates))
+	if s.resumeRestart {
+		s.resumeRestart = false
+		s.pageToken = ""
+		return nil, nil
+	}
 	if page.NextPageToken == "" {
 		if err = s.finishScope(ctx, scope); err != nil {
 			return nil, err
@@ -684,6 +687,18 @@ func (s *googleDriveSyncSession) Fetch(ctx context.Context, ref FetchReference) 
 	return s.connector.Fetch(ctx, ref)
 }
 
+func (s *googleDriveSyncSession) filterSeenDocuments(candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
+	filtered := candidates[:0]
+	for _, candidate := range candidates {
+		if _, ok := s.seen[candidate.document.SourceID]; ok {
+			continue
+		}
+		s.seen[candidate.document.SourceID] = struct{}{}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
 // applyResume apply resume if checkpoint is available
 func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) *googleDriveSyncSession {
 	if checkpoint == nil || checkpoint.Cursor == "" {
@@ -719,6 +734,9 @@ func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) *google
 }
 
 func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
+	if s.resumeFallback {
+		return s.filterSubmittedUnchanged(candidates)
+	}
 	if s.resumePageOffset <= 0 {
 		return candidates
 	}
@@ -737,14 +755,23 @@ func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candid
 		return filtered
 	}
 
+	s.resumeFallback = true
+	s.resumeRestart = true
+	return nil
+}
+
+func (s *googleDriveSyncSession) filterSubmittedUnchanged(candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
+		if candidate.document.SourceID == s.resumeSourceID {
+			s.clearResumeOffset()
+			continue
+		}
 		if isSubmittedUnchanged(s.fingerprints, s.kbID, s.connectorID, candidate.document) {
 			continue
 		}
 		filtered = append(filtered, candidate)
 	}
-	s.clearResumeOffset()
 	return filtered
 }
 
@@ -752,6 +779,8 @@ func (s *googleDriveSyncSession) clearResumeOffset() {
 	s.resumePageOffset = 0
 	s.resumePageToken = ""
 	s.resumeSourceID = ""
+	s.resumeFallback = false
+	s.resumeRestart = false
 }
 
 func (s *googleDriveSyncSession) syncCheckpoint(scope googleDriveScope, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
