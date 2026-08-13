@@ -69,6 +69,11 @@ func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbin
 
 	var b strings.Builder
 	b.WriteString("Question:\n" + question + "\n")
+	// Research summary (merged claim reports from the high/ultra loop) precedes
+	// the raw evidence, mirroring Python formalize_answer.
+	if kb.PreSummary != "" {
+		b.WriteString("\nResearch Summary:\n" + kb.PreSummary + "\n")
+	}
 	if partial {
 		b.WriteString(partialAnswerPreamble + "\n")
 	}
@@ -108,6 +113,11 @@ func chunkText(c map[string]interface{}) string {
 		return t
 	}
 	if t, ok := c["content"].(string); ok {
+		return t
+	}
+	// "text" is the fallback used by the AutoRater evidence renderer (Python
+	// _evidence_md: content_with_weight or text).
+	if t, ok := c["text"].(string); ok {
 		return t
 	}
 	return ""

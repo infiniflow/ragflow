@@ -31,6 +31,9 @@ type SearchFn func(ctx context.Context, query, keywords string) ([]map[string]in
 type Kbinfos struct {
 	Chunks  []map[string]interface{}
 	DocAggs []map[string]interface{}
+	// PreSummary is the merged claim-report summary produced by AgenticResearch
+	// (Python kbinfos["pre_summary"]). The final-answer call reads it when set.
+	PreSummary string
 }
 
 func (k *Kbinfos) HasChunks() bool { return len(k.Chunks) > 0 }
@@ -199,8 +202,14 @@ func DecomposeAndSearch(ctx context.Context, search SearchFn, question, keywords
 				crossResults = append(crossResults, CrossCheckClaim(c.AgentResult, allChunks))
 			}
 		}
-		verdict := ComputeFusionScore(agentResults, crossResults, mode)
-		action, _ := RouteSufficiencyVerdict(verdict, modeLabel, cycle, mode.MaxOrchestratorCycles)
+		claimTargets := make([]ClaimTarget, 0, len(claims))
+		for _, c := range claims {
+			if c != nil {
+				claimTargets = append(claimTargets, *c)
+			}
+		}
+		verdict := ComputeFusionScore(agentResults, crossResults, mode, question, claimTargets, allChunks)
+		action, _, _ := RouteSufficiencyVerdict(verdict, modeLabel, cycle, mode.MaxOrchestratorCycles, nil)
 
 		switch action {
 		case "ANSWER", "ANSWER_PARTIAL":
