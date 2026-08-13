@@ -1700,20 +1700,27 @@ async def run_wiki_incremental(
         progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
 
+    pipeline_ids = {(doc.get("pipeline_id") or "").strip() for doc, _ in eligible}
+    if len(pipeline_ids) > 1:
+        raise ValueError("Eligible Wiki documents must use the same pipeline_id")
+
     # Resolve mode from the eligible documents' templates. Each eligible
     # doc resolves to a wiki template either via its own parser_config or via
     # its ingestion pipeline (doc.pipeline_id → pipeline dsl → compiler →
     # template). This also covers pipeline-bound templates.
-    if mode is None:
-        try:
-            for _doc, tid in eligible:
-                tpl = CompilationTemplateService.get_saved(tid, ctx.tenant_id)
-                cfg = (tpl.get("config") or {}) if tpl else {}
-                candidate_mode = cfg.get("mode") if isinstance(cfg, dict) else None
-                if candidate_mode in ("entity", "topic"):
-                    mode = candidate_mode
-        except Exception:
-            pass
+    resolved_modes = set()
+    for _doc, tid in eligible:
+        tpl = CompilationTemplateService.get_saved(tid, ctx.tenant_id)
+        cfg = (tpl.get("config") or {}) if tpl else {}
+        candidate_mode = cfg.get("mode") if isinstance(cfg, dict) else None
+        if candidate_mode not in ("entity", "topic"):
+            raise ValueError(f"Wiki template {tid} must define mode as 'entity' or 'topic'")
+        resolved_modes.add(candidate_mode)
+
+    if len(resolved_modes) > 1:
+        raise ValueError("Eligible Wiki templates must use the same mode")
+    if resolved_modes:
+        mode = resolved_modes.pop()
 
     if mode is None:
         mode = await _wiki_load_mode(ctx.tenant_id, ctx.kb_id)
