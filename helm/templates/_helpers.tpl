@@ -68,11 +68,9 @@ Usage: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.foo.image.re
 {{- end }}
 
 {{/*
-Render a map as YAML, dropping keys whose value is null.
-
-Helm merges an override file into values.yaml instead of replacing it, so
-setting a key to null is the only way to remove a default. Without this the
-null survives into the manifest as an explicit `key: null`.
+Render a map as YAML, dropping keys whose value is null. Helm merges override
+files into values.yaml rather than replacing them, so null is the only way to
+remove a default, and it would otherwise reach the manifest as `key: null`.
 
 Usage: {{ include "ragflow.compactYaml" .Values.foo.securityContext }}
 */}}

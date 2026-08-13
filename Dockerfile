@@ -116,11 +116,8 @@ COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 # Set environment variables
 ENV HF_ENDPOINT=https://hf-mirror.com
 
-# Support an arbitrary, unknown UID at runtime (OpenShift's restricted-v2 SCC
-# and equivalent policies pick a random UID from the namespace range and put it
-# in group 0 only). Such a UID gets no passwd entry and cannot read /root, so
-# the home directory moves into /ragflow and group 0 gets the same rights as
-# the owner on everything written at runtime.
+# Run under an arbitrary UID (OpenShift restricted-v2): it gets group 0 only, no
+# passwd entry and no access to /root.
 ENV HOME=/ragflow \
     NLTK_DATA=/ragflow/nltk_data \
     XDG_CACHE_HOME=/ragflow/.cache \
@@ -135,11 +132,12 @@ RUN set -eux; \
         fi; \
     done; \
     mkdir -p ${writable}; \
-    # entrypoint.sh appends the runtime UID here so getpwuid() lookups resolve.
     chmod g=u /etc/passwd; \
-    # /ragflow itself only needs to accept new entries; recursing into it would
-    # copy the whole virtualenv into this layer for no benefit, since everything
-    # copied in is world-readable already.
+    # The venv interpreter is a symlink into uv's install under /root, which is
+    # 0700. Without this, python3 resolves to /usr/bin/python3 and every import
+    # of a project dependency fails.
+    chmod g+rx /root; \
+    # Not recursive: that would copy the virtualenv into this layer.
     chgrp 0 /ragflow && chmod g=u /ragflow; \
     chgrp -R 0 ${writable}; \
     chmod -R g=u ${writable}

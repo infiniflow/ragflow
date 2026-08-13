@@ -158,11 +158,8 @@ for arg in "$@"; do
 done
 
 # -----------------------------------------------------------------------------
-# Arbitrary UID support
-#
-# OpenShift's restricted-v2 SCC (and equivalent policies) start the container
-# with a random UID that has no /etc/passwd entry. Anything calling getpwuid()
-# then fails, so add an entry when /etc/passwd is group-writable.
+# An arbitrary UID (OpenShift restricted-v2) has no passwd entry, so every
+# getpwuid() lookup fails until one is added.
 # -----------------------------------------------------------------------------
 function ensure_passwd_entry() {
     local uid
@@ -208,15 +205,8 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # -----------------------------------------------------------------------------
-# Render the Nginx server configuration
-#
-# The shipped configs live in a read-only location, so the selected one is
-# rendered into ${NGINX_RUNTIME_DIR}, the same directory nginx.conf points its
-# pid and temp files at. That directory is group-0 writable, which is what makes
-# nginx work under an arbitrary UID.
-#
-# NGINX_LISTEN_PORT defaults to 80 for root and to 8080 otherwise, because a
-# non-root process cannot bind a privileged port without NET_BIND_SERVICE.
+# Render the Nginx configuration into ${NGINX_RUNTIME_DIR}. Unlike /etc/nginx,
+# it stays writable under an arbitrary UID. Port 80 needs root.
 # -----------------------------------------------------------------------------
 NGINX_CONF_DIR="/etc/nginx/conf.d"
 NGINX_RUNTIME_DIR="${NGINX_RUNTIME_DIR:-/ragflow/nginx}"
@@ -238,12 +228,10 @@ sed -E "s|^([[:space:]]*)listen[[:space:]]+80[[:space:]]*;|\1listen ${NGINX_LIST
 echo "Applied nginx config: $NGINX_SERVER_CONF (listening on ${NGINX_LISTEN_PORT})"
 
 cp -f /etc/nginx/nginx.conf "$NGINX_RUNTIME_DIR/nginx.conf"
-# nginx resolves relative `include` paths against the directory of the main
-# config file, so proxy.conf has to sit next to the copy.
+# Relative `include` paths resolve against the main config's directory.
 cp -f /etc/nginx/proxy.conf "$NGINX_RUNTIME_DIR/proxy.conf"
 if [ "$(id -u)" -ne 0 ]; then
-    # nginx only honours `user` when the master process runs as root, and warns
-    # about it on every start otherwise.
+    # Only honoured as root, and warns on every start otherwise.
     sed -i -E "/^[[:space:]]*user[[:space:]]/d" "$NGINX_RUNTIME_DIR/nginx.conf"
 fi
 
