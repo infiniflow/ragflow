@@ -19,7 +19,6 @@ import aiohttp
 from abc import ABC
 from datetime import datetime, timezone
 from urllib.parse import urlparse
-from json.decoder import JSONDecodeError
 from typing import ClassVar
 
 from common.aimlapi_utils import attribution_headers
@@ -101,11 +100,17 @@ class VolcEngine(Base):
     _FACTORY_NAME = "VolcEngine"
 
     def _get_api_key(self):
-        try:
-            api_key = json.loads(self.api_key).get("ark_api_key", "")
-        except JSONDecodeError:
-            api_key = self.api_key
-        return api_key
+        # Wire through the shared helper from rag.llm.key_utils so the
+        # model_meta.py site stays consistent with chat_model.py /
+        # cv_model.py / embedding_model.py VolcEngine (cycle 7, PR
+        # #17457). The helper accepts plain string OR JSON dict, and
+        # raises ModelException on JSON non-object so the user sees a
+        # clear error instead of ``AttributeError: 'list' object has
+        # no attribute 'get'``. Returns the ark_api_key field for the
+        # caller.
+        from rag.llm.key_utils import _resolve_volcengine_credentials
+
+        return _resolve_volcengine_credentials(self.api_key)["ark_api_key"]
 
     def _get_model_list_url(self):
         if not self.base_url:
@@ -438,16 +443,22 @@ class OpenRouter(Base):
     _FACTORY_NAME = "OpenRouter"
 
     def _get_api_key(self):
-        api_key = self.api_key
-        if not api_key:
+        # Wire through the shared helper from rag.llm.key_utils so the
+        # model_meta.py site stays consistent with the chat / CV /
+        # embed OpenRouter sites (cycle 8, PR #17459). The helper
+        # accepts plain string OR JSON dict, and raises
+        # ``ModelException`` on JSON non-object instead of silently
+        # using the raw JSON string as the api_key (which then 401s
+        # at the upstream API with a less-actionable error). The
+        # pre-fix ``if not api_key: return ""`` early return and the
+        # ``payload.get("api_key") or api_key`` fallback for a missing
+        # ``api_key`` field in a JSON dict are both preserved.
+        if not self.api_key:
             return ""
-        try:
-            payload = json.loads(api_key)
-        except Exception:
-            return api_key
-        if isinstance(payload, dict):
-            return payload.get("api_key") or api_key
-        return api_key
+        from rag.llm.key_utils import _resolve_openrouter_credentials
+
+        result = _resolve_openrouter_credentials(self.api_key)
+        return result["api_key"] or self.api_key
 
     def _get_model_list_url(self):
         tail = "/api/v1/models?output_modalities=all"
@@ -1001,13 +1012,16 @@ class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 
     def _get_api_key(self):
-        try:
-            parsed = json.loads(self.api_key)
-            if isinstance(parsed, dict):
-                return parsed.get("api_key", self.api_key)
-        except (JSONDecodeError, TypeError):
-            pass
-        return self.api_key
+        # Wire through the shared helper from rag.llm.key_utils. The
+        # NewAPI site has the same shape as OpenRouter (plain string OR
+        # JSON dict with ``api_key``), so the OpenRouter helper is the
+        # right one. Pre-fix, a JSON non-object (e.g. ``'[1,2,3]'``) was
+        # silently returned as the api_key, which then 401s at the
+        # upstream API with a less-actionable error; the helper raises
+        # ``ModelException`` so the user sees a clear message.
+        from rag.llm.key_utils import _resolve_openrouter_credentials
+
+        return _resolve_openrouter_credentials(self.api_key)["api_key"]
 
 
 class RAGcon(OpenAIAPICompatible):
