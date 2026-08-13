@@ -148,7 +148,7 @@ function ParserItem({
     >
       <div className="flex justify-between items-center">
         <span className="text-text-primary text-sm font-medium">
-          Parser {index + 1}
+          {t('flow.parser')} {index + 1}
         </span>
         {index > 0 && (
           <Button variant={'ghost'} onClick={() => remove(index)} ref={ref}>
