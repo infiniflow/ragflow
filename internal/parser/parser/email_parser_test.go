@@ -953,6 +953,37 @@ func TestFormatMsgDate(t *testing.T) {
 	}
 }
 
+// TestRecoverParse_IsolatesPanic verifies that a panic from an untrusted
+// attachment parser is converted into a zero ParseResult with panicked=true
+// and does NOT propagate out of recoverParse (so a single bad attachment can
+// be skipped instead of failing the whole email).
+func TestRecoverParse_IsolatesPanic(t *testing.T) {
+	res, panicked := recoverParse(func() ParseResult {
+		panic("boom")
+	})
+	if !panicked {
+		t.Error("expected panicked=true")
+	}
+	if res.Err != nil || res.JSON != nil || res.Text != "" {
+		t.Errorf("panic should yield a zero ParseResult, got %#v", res)
+	}
+}
+
+// TestRecoverParse_PassesThrough verifies a normal parser result is returned
+// unchanged with panicked=false.
+func TestRecoverParse_PassesThrough(t *testing.T) {
+	want := ParseResult{OutputFormat: "text", Text: "hello"}
+	res, panicked := recoverParse(func() ParseResult {
+		return want
+	})
+	if panicked {
+		t.Error("expected panicked=false for a normal result")
+	}
+	if res.Text != "hello" {
+		t.Errorf("result not passed through: %#v", res)
+	}
+}
+
 // TestEmailParser_RechunkPrefersRaw verifies that rechunkEmailAttachments
 // re-parses the byte-exact "raw" bytes when present, rather than the
 // charset-decoded "payload". The fallback (no "raw") still uses "payload".

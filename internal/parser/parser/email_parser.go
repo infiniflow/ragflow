@@ -635,6 +635,20 @@ func formatMsgDate(t time.Time) any {
 	return t.Format("2006-01-02 15:04:05-0700")
 }
 
+// recoverParse runs fn, converting a panic from an untrusted attachment
+// parser (e.g. a corrupt PDF/DOCX hitting a native CGO backend) into a zero
+// ParseResult with panicked=true, so the caller can skip that one attachment
+// instead of failing the whole email. This mirrors the recover around the
+// .msg parseMSG call in parseEmail.
+func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			panicked = true
+		}
+	}()
+	return fn(), false
+}
+
 // rechunkEmailAttachments re-parses each email attachment by its file
 // extension and folds the extracted text back into the same document so
 // attachment content becomes retrievable. This mirrors the user-oriented
@@ -642,11 +656,22 @@ func formatMsgDate(t time.Time) any {
 // attachment via naive_chunk and merges the resulting chunks into the same
 // document.
 //
+// KNOWN LIMITATION: re-chunk uses the default-config parser returned by
+// GetParser(ft) (and, for a nested email, only the top-level p.fields — no
+// tenant/setup language, parse_method, or OCR/VLM model). The extracted
+// attachment text may therefore differ from ingesting the same file as a
+// standalone document through the pipeline's tenant/setup-configured
+// parser. This is a deliberate, best-effort approximation for making
+// attachment content retrievable (the same simplification Python's
+// email.py naive_chunk makes), not a correctness bug; threading the full
+// tenant/setup config into re-chunk is intentionally out of scope here.
+//
 // Attachments whose extension has no text-oriented parser (images, audio,
 // video) are skipped: they carry no plain text in this pipeline and would
 // require vision/speech models that are out of scope here. A single
-// unparseable, empty, or unsupported attachment is skipped without failing
-// the whole email (mirrors email.py's per-attachment try/except).
+// unparseable, empty, unsupported, or panicking attachment is skipped
+// without failing the whole email (mirrors email.py's per-attachment
+// try/except).
 //
 // The function returns both forms the caller needs:
 //   - extraItems: structured JSON items (one per non-empty text segment),
@@ -699,6 +724,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			continue
 		}
 		var res ParseResult
+		var panicked bool
 		if ft == utility.FileTypeEMAIL {
 			// Reuse the top-level field configuration (including "body") so a
 			// nested .eml/.msg is parsed for its body instead of with a fresh,
@@ -711,15 +737,26 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 				"fields":        p.fields,
 				"output_format": "json",
 			})
-			res = ep.parseEmail(ctx, fn, []byte(payload), depth+1)
+			res, panicked = recoverParse(func() ParseResult {
+				return ep.parseEmail(ctx, fn, []byte(payload), depth+1)
+			})
 		} else {
 			np, err := GetParser(ft)
 			if err != nil {
 				continue
 			}
-			res = np.ParseWithResult(ctx, fn, []byte(payload))
+			res, panicked = recoverParse(func() ParseResult {
+				return np.ParseWithResult(ctx, fn, []byte(payload))
+			})
 		}
-		if res.Err != nil {
+		if panicked {
+			// An untrusted attachment parser (e.g. a corrupt PDF/DOCX hitting
+			// a native CGO backend) panicked. Skip just this attachment so one
+			// bad file can't fail the whole email — mirrors the .msg
+			// parseMSG recover.
+			log.Printf("email: attachment %q re-parse panicked; skipping", fn)
+		}
+		if panicked || res.Err != nil {
 			continue
 		}
 
