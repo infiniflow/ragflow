@@ -130,7 +130,7 @@ export interface IReferenceChunk {
   similarity: number;
   vector_similarity: number;
   term_similarity: number;
-  positions: number[];
+  positions: number[][];
   doc_type?: string;
   document_metadata?: Record<string, any>;
 }
