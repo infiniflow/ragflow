@@ -234,9 +234,7 @@ class LLMUsageStats:
             return
         total_calls = sum(r["calls"] for r in rows.values())
         total_tokens = sum(r["total_tokens"] for r in rows.values())
-        header = "  %-16s %7s %10s %12s %10s %10s" % (
-            "phase", "llm_calls", "prompt_tok", "output_tok", "total_tok", "time(s)",
-        )
+        header = f"  {'phase':<16} {'llm_calls':>7} {'prompt_tok':>10} {'output_tok':>12} {'total_tok':>10} {'time(s)':>10}"
         lines = ["[Agentic RAG] LLM usage by phase:", header]
 
         # With orchestrator-round data, expand the table hierarchically: each
@@ -259,19 +257,14 @@ class LLMUsageStats:
 
         def row(indent: str, p: str, t_ms: float, round_idx: int | None = None) -> str:
             r = rows[p]
-            return "%s%-16s %7d %10d %12d %10d %10.1f" % (
-                indent, phase_label(p, r, round_idx), r["calls"],
-                r["prompt_tokens"], r["completion_tokens"], r["total_tokens"], t_ms / 1000.0,
-            )
+            label = phase_label(p, r, round_idx)
+            return f"{indent}{label:<16} {r['calls']:>7} {r['prompt_tokens']:>10} {r['completion_tokens']:>12} {r['total_tokens']:>10} {t_ms / 1000.0:>10.1f}"
 
         in_rounds = set(per_round)
 
         def custom_row(indent: str, label: str, p: str, t_ms: float) -> str:
             r = rows[p]
-            return "%s%-16s %7d %10d %12d %10d %10.1f" % (
-                indent, label, r["calls"],
-                r["prompt_tokens"], r["completion_tokens"], r["total_tokens"], t_ms / 1000.0,
-            )
+            return f"{indent}{label:<16} {r['calls']:>7} {r['prompt_tokens']:>10} {r['completion_tokens']:>12} {r['total_tokens']:>10} {t_ms / 1000.0:>10.1f}"
 
         # Walk ``rows`` in its existing (canonical) order. When we reach the
         # orchestrator phase, print one block per round with its nested
@@ -296,7 +289,7 @@ class LLMUsageStats:
                 continue
             else:
                 lines.append(row("  ", p, rows[p]["phase_time_ms"]))
-        lines.append("  total: %d LLM calls, %d tokens" % (total_calls, total_tokens))
+        lines.append(f"  total: {total_calls} LLM calls, {total_tokens} tokens")
         log.info("\n".join(lines))
 
 

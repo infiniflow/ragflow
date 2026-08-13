@@ -3,9 +3,9 @@
 import logging
 
 from rag.advanced_rag.harness.config import get_mode
-from rag.advanced_rag.harness.orchestrator.direct import direct_search
-from rag.advanced_rag.harness.orchestrator.decompose import decompose_and_search
 from rag.advanced_rag.harness.orchestrator.agentic import agentic_research
+from rag.advanced_rag.harness.orchestrator.decompose import decompose_and_search
+from rag.advanced_rag.harness.orchestrator.direct import direct_search
 from rag.advanced_rag.harness.stats import in_phase
 
 _LOG = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ async def orchestrator_loop(state: dict, tools) -> dict:
     mode_label = route.thinking_mode if isinstance(route, dict) else route.thinking_mode
     mode = get_mode(mode_label)
 
-    _LOG.info("[Orchestrator] Researching with the \"%s\" approach (%s thinking).", mode.execution_strategy, mode_label)
+    _LOG.info('[Orchestrator] Researching with the "%s" approach (%s thinking).', mode.execution_strategy, mode_label)
 
     if mode.execution_strategy == "direct_search":
         return await direct_search(state, tools)

@@ -4,17 +4,17 @@ import json
 import logging
 import re
 
+from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _snip
-from rag.advanced_rag.harness.types import ClaimTarget, WorkflowPlan, RouteDecision
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.prompts.decompose_prompts import (
-    DECOMPOSE_FACTUAL,
     DECOMPOSE_COMPARATIVE,
-    DECOMPOSE_PROCEDURAL,
     DECOMPOSE_EXPLORATORY,
+    DECOMPOSE_FACTUAL,
+    DECOMPOSE_PROCEDURAL,
 )
 from rag.advanced_rag.harness.stats import in_phase
-from common.token_utils import num_tokens_from_string
+from rag.advanced_rag.harness.types import ClaimTarget, RouteDecision, WorkflowPlan
 
 _LOG = logging.getLogger(__name__)
 
@@ -137,7 +137,8 @@ def _format_seed_chunks(seed_chunks, tools) -> str:
             return "(no preliminary results)"
         _LOG.info(
             "[Planner] Grounding the plan with %d preliminary passage(s) (~%d tokens of grounding context).",
-            len(seed_chunks), num_tokens_from_string(text),
+            len(seed_chunks),
+            num_tokens_from_string(text),
         )
         return text
     except Exception:
