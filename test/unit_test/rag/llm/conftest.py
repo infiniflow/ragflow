@@ -65,6 +65,14 @@ def _install_rag_llm_stub():
         OpenAI = "OpenAI"
         Azure_OpenAI = "Azure-OpenAI"
         HunYuan = "Tencent Hunyuan"
+        Anthropic = "Anthropic"
+        DeepSeek = "DeepSeek"
+        MiniMax = "MiniMax"
+        Nvidia = "NVIDIA"
+        Bedrock = "Bedrock"
+        OpenRouter = "OpenRouter"
+        GPUStack = "GPUStack"
+        Ollama = "Ollama"
 
     llm_pkg.SupportedLiteLLMProvider = SupportedLiteLLMProvider
     llm_pkg.FACTORY_DEFAULT_BASE_URL = {}

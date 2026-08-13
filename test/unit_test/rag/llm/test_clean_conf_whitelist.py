@@ -45,6 +45,7 @@ from rag.llm.chat_model import (
     LITELLM_ALLOWED_GEN_CONF_KEYS,
     Base,
     LiteLLMBase,
+    OpenAI_APIChat,
 )
 
 
@@ -131,6 +132,33 @@ def test_litellm_preserves_provider_mapped_thinking_param():
 def test_max_tokens_is_dropped_on_both_backends():
     assert "max_tokens" not in _make_litellm()._clean_conf({"max_tokens": 100, "temperature": 0.3})
     assert "max_tokens" not in _make_base()._clean_conf({"max_tokens": 100, "temperature": 0.3})
+
+
+def test_openai_api_compatible_preserves_max_tokens():
+    """OpenAI-compatible endpoints accept ``max_tokens``; it must not be
+    stripped, otherwise long generations get silently truncated by the
+    provider's default output limit."""
+    inst = OpenAI_APIChat.__new__(OpenAI_APIChat)
+    inst.model_name = "gpt-4o"
+    cleaned = inst._clean_conf({"max_tokens": 32768, "temperature": 0.3, "model_type": "chat"})
+    assert cleaned["max_tokens"] == 32768
+    assert cleaned["temperature"] == 0.3
+    assert "model_type" not in cleaned
+
+
+def test_litellm_openai_provider_preserves_max_tokens():
+    """The OpenAI provider (via LiteLLM) keeps ``max_tokens`` from gen_conf;
+    other providers still drop it."""
+    cleaned = _make_litellm(provider=SupportedLiteLLMProvider.OpenAI)._clean_conf(
+        {"max_tokens": 32768, "temperature": 0.3}
+    )
+    assert cleaned["max_tokens"] == 32768
+    assert cleaned["temperature"] == 0.3
+
+    azure_cleaned = _make_litellm(provider=SupportedLiteLLMProvider.Azure_OpenAI)._clean_conf(
+        {"max_tokens": 16384}
+    )
+    assert azure_cleaned["max_tokens"] == 16384
 
 
 # --------------------------------------------------------------------------- #
