@@ -455,13 +455,10 @@ def user_register(user_id, user):
         "location": "",
     }
 
-    # tenant_llm = get_init_tenant_llm(user_id)
-
     if not UserService.save(**user):
         return None
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
-    # TenantLLMService.insert_many(tenant_llm)
     seed_tenant_default_models(user_id)
     FileService.insert(file)
     return UserService.query(email=user["email"])

@@ -13,12 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import sys
 import types
 import warnings
 from types import SimpleNamespace
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 # xgboost imports pkg_resources and emits a deprecation warning that is promoted
 # to error in our pytest configuration; ignore it for this unit test module.
@@ -34,8 +37,8 @@ def _install_cv2_stub_if_unavailable():
         import cv2  # noqa: F401
 
         return
-    except Exception:
-        pass
+    except ImportError:
+        logger.info("Installing cv2 stub for tenant default model seeding tests")
 
     stub = types.ModuleType("cv2")
 
@@ -84,9 +87,12 @@ class _InstanceStore:
     def get_by_provider_id_and_instance_name(self, provider_id, name):
         return self.by_key.get((provider_id, name))
 
+    def get_all_by_provider_id(self, provider_id):
+        return [obj for (stored_provider_id, _), obj in self.by_key.items() if stored_provider_id == provider_id]
+
     def create_instance(self, **kwargs):
         self.inserts.append(kwargs)
-        obj = SimpleNamespace(id=f"inst-{len(self.inserts)}", **kwargs)
+        obj = SimpleNamespace(id=f"inst-{len(self.inserts)}", status="1", **kwargs)
         self.by_key[(kwargs["provider_id"], kwargs["instance_name"])] = obj
         return obj
 
@@ -100,9 +106,13 @@ class _ModelStore:
     def get_by_provider_id_and_instance_id_and_model_name(self, provider_id, instance_id, name):
         return self.by_key.get((provider_id, instance_id, name))
 
+    def get_by_provider_id_and_instance_id_and_model_type_and_model_name(self, provider_id, instance_id, model_type, name):
+        obj = self.by_key.get((provider_id, instance_id, name))
+        return obj if obj and obj.model_type & _model_type_bits([model_type]) else None
+
     def insert(self, **kwargs):
         self.inserts.append(kwargs)
-        obj = SimpleNamespace(id=f"mdl-{len(self.inserts) + 1}", model_type=kwargs["model_type"])
+        obj = SimpleNamespace(id=f"mdl-{len(self.inserts)}", status="1", **kwargs)
         self.by_key[(kwargs["provider_id"], kwargs["instance_id"], kwargs["model_name"])] = obj
         return obj
 
@@ -111,6 +121,15 @@ class _ModelStore:
         for obj in self.by_key.values():
             if obj.id == model_id and "model_type" in update_dict:
                 obj.model_type = update_dict["model_type"]
+
+
+class _TenantStore:
+    def __init__(self):
+        self.updates = []
+
+    def update_by_id(self, tenant_id, update):
+        self.updates.append((tenant_id, update))
+        return 1
 
 
 def _model_type_bits(type_names):
@@ -132,11 +151,13 @@ def catalog(monkeypatch):
     provider_store = _ProviderStore()
     instance_store = _InstanceStore()
     model_store = _ModelStore()
+    tenant_store = _TenantStore()
     monkeypatch.setattr(tms, "TenantModelProviderService", provider_store)
     monkeypatch.setattr(tms, "TenantModelInstanceService", instance_store)
     monkeypatch.setattr(tms, "TenantModelService", model_store)
+    monkeypatch.setattr(tms, "TenantService", tenant_store)
     monkeypatch.setattr(tms, "calculate_model_type", _model_type_bits)
-    return SimpleNamespace(provider=provider_store, instance=instance_store, model=model_store)
+    return SimpleNamespace(provider=provider_store, instance=instance_store, model=model_store, tenant=tenant_store)
 
 
 @pytest.fixture()
@@ -178,6 +199,25 @@ class TestSeedTenantDefaultModels:
         assert len(catalog.model.inserts) == 3
         assert catalog.model.updates == []
 
+    def test_keeps_distinct_credentials_for_models_from_same_factory(self, catalog, monkeypatch):
+        monkeypatch.setattr(tms.settings, "CHAT_CFG", _cfg("chat-model", api_key="sk-chat", base_url="https://chat.example/v1"))
+        monkeypatch.setattr(tms.settings, "EMBEDDING_CFG", _cfg("embedding-model", api_key="sk-embedding", base_url="https://embedding.example/v1"))
+        monkeypatch.setattr(tms.settings, "RERANK_CFG", _cfg(""))
+        monkeypatch.setattr(tms.settings, "ASR_CFG", _cfg(""))
+        monkeypatch.setattr(tms.settings, "VISION_CFG", _cfg(""))
+
+        assert tms.seed_tenant_default_models("tenant-1")
+
+        assert [item["instance_name"] for item in catalog.instance.inserts] == ["default", "default-embedding"]
+        chat_config = tms.get_model_config_from_provider_instance("tenant-1", "chat", "chat-model@default@Tongyi-Qianwen")
+        embedding_config = tms.get_model_config_from_provider_instance("tenant-1", "embedding", "embedding-model@default-embedding@Tongyi-Qianwen")
+        assert (chat_config["api_key"], chat_config["api_base"]) == ("sk-chat", "https://chat.example/v1")
+        assert (embedding_config["api_key"], embedding_config["api_base"]) == ("sk-embedding", "https://embedding.example/v1")
+
+        tenant_updates = {next(iter(update)): update for _, update in catalog.tenant.updates}
+        assert tenant_updates["llm_id"] == {"llm_id": "chat-model@default@Tongyi-Qianwen", "tenant_llm_id": "mdl-1"}
+        assert tenant_updates["embd_id"] == {"embd_id": "embedding-model@default-embedding@Tongyi-Qianwen", "tenant_embd_id": "mdl-2"}
+
     def test_skips_unconfigured_model_types(self, catalog, default_settings):
         tms.seed_tenant_default_models("tenant-1")
 
@@ -216,5 +256,5 @@ class TestSeedTenantDefaultModels:
 
         monkeypatch.setattr(catalog.provider, "insert", _boom)
 
-        # should swallow, not raise
-        tms.seed_tenant_default_models("tenant-1")
+        # should report failure, not raise
+        assert not tms.seed_tenant_default_models("tenant-1")
