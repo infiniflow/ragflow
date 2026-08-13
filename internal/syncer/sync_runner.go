@@ -56,8 +56,9 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 	var windowStart *time.Time // = nil if it is `Full synchronisation`
 	if !service.IsFromBeginning(taskContext.Task.FromBeginning) {
 		if pollRangeStart := taskContext.Task.PollRangeStart; pollRangeStart != nil {
-			start := pollRangeStart.Time()
-			windowStart = &start
+			if start := pollRangeStart.Time(); !start.IsZero() {
+				windowStart = &start
+			}
 		}
 	}
 

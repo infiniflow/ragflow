@@ -20,18 +20,29 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 )
 
-// flexibleTimeLayouts covers the formats persisted by the Python backend
-// (ISO strings in varchar columns) and the Go backend (native time.Time).
+// compactOffsetPattern expands the legacy "+0000" style offsets to "+00:00".
+var compactOffsetPattern = regexp.MustCompile(`([+-]\d{2})(\d{2})$`)
+
+// flexibleTimeLayouts covers every combination of the timestamp spellings
+// persisted by the Python backend (ISO strings in varchar columns) and the Go
+// backend (native time.Time and the UTC ISO strings written by Value): T or
+// space separator, optional fractional seconds, and optional zone.
 var flexibleTimeLayouts = []string{
-	"2006-01-02 15:04:05.999999999Z07:00",
-	"2006-01-02 15:04:05.999999999",
 	"2006-01-02T15:04:05.999999999Z07:00",
-	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02 15:04:05.999999999Z07:00",
+	"2006-01-02 15:04:05Z07:00",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02T15:04:05.999999999",
 	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
 	time.RFC3339Nano,
 	time.RFC3339,
 }
@@ -55,23 +66,49 @@ func (f *FlexibleTime) Scan(value any) error {
 		*f = FlexibleTime(typed)
 		return nil
 	case []byte:
-		return f.parse(string(typed))
+		f.parse(string(typed))
+		return nil
 	case string:
-		return f.parse(typed)
+		f.parse(typed)
+		return nil
 	}
 	return fmt.Errorf("cannot scan %T into FlexibleTime", value)
 }
 
-// parse parses a persisted timestamp string.
-func (f *FlexibleTime) parse(value string) error {
+// parse parses a persisted timestamp string. A value that matches no known
+// format falls back to the zero time instead of an error: the sync_logs poll
+// waterline is a varchar shared with the Python backend, and one
+// legacy/unexpected timestamp must not wedge the syncer by making ClaimTask
+// or ListDueTasks fail forever. The next successful sync rewrites the
+// waterline.
+func (f *FlexibleTime) parse(value string) {
+	original := value
 	value = strings.TrimSpace(value)
+	// RFC 5322 headers (for example raw Gmail Date values) keep the compact
+	// "+0000" zone spelling, so try the standard library parser first.
+	if value != "" {
+		if parsed, err := mail.ParseDate(value); err == nil {
+			*f = FlexibleTime(parsed)
+			return
+		}
+	}
+	if value != "" {
+		last := value[len(value)-1]
+		if last == 'Z' || last == 'z' {
+			value = value[:len(value)-1] + "+00:00"
+		}
+	}
+	value = compactOffsetPattern.ReplaceAllString(value, "$1:$2")
 	for _, layout := range flexibleTimeLayouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
 			*f = FlexibleTime(parsed)
-			return nil
+			return
 		}
 	}
-	return fmt.Errorf("cannot parse %q as time", value)
+	if strings.TrimSpace(original) != "" {
+		log.Printf("flexible_time: cannot parse %q as time, falling back to zero time", original)
+	}
+	*f = FlexibleTime{}
 }
 
 // Value implements driver.Valuer. The shared sync_logs columns are varchar
