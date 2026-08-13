@@ -110,8 +110,11 @@ def check_trailing_whitespace(paths: list[Path], fix: bool = False) -> int:
         if _is_binary(data):
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            # Not valid UTF-8 (and not NUL-binary): skip rather than silently
+            # dropping bytes with errors="ignore", which would corrupt the
+            # file when run with fix=True.
             continue
         if not text:
             continue
@@ -154,7 +157,18 @@ def check_merge_conflicts(paths: list[Path], fix: bool = False) -> int:
     for path in paths:
         if not path.is_file():
             continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            data = _read_bytes(path)
+        except OSError:
+            continue
+        if _is_binary(data):
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            # Not valid UTF-8: skip rather than risking a false positive from
+            # bytes mangled by errors="ignore".
+            continue
         if all(pattern in text for pattern in MERGE_PATTERNS):
             errors.append(f"merge conflict markers: {path}")
     return _report(errors)
