@@ -2,12 +2,13 @@ import {
   ModelTreeSelectFormField,
   ModelTypeMap,
 } from '@/components/model-tree-select';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Switch } from '@/components/ui/switch';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { FileType } from '../../constant/pipeline';
 import { useOwnerTenantId } from '../../context';
 import {
-  ExtractAutomaticNumberingFormField,
   FlattenMediaToTextFormField,
   OutputFormatFormFieldProps,
   RemoveHeaderFooterFormField,
@@ -30,7 +31,21 @@ export function WordFormFields({
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
       {fileType === FileType.Docx && (
-        <ExtractAutomaticNumberingFormField prefix={prefix} />
+        <RAGFlowFormItem
+          name={buildFieldNameWithPrefix('extract_automatic_numbering', prefix)}
+          label={t('flow.extractAutomaticNumbering')}
+          tooltip={t('flow.extractAutomaticNumberingTip')}
+          horizontal={true}
+          labelClassName="w-full"
+          valueClassName="w-8"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value ?? true}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
       )}
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (

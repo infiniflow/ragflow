@@ -1568,7 +1568,7 @@ export default {
       extractDepth: 'Глубина извлечения',
       extractAutomaticNumbering: 'Извлекать автоматическую нумерацию',
       extractAutomaticNumberingTip:
-        'Добавлять к заголовкам DOCX номера, автоматически созданные в Word.',
+        'Извлекать номера автоматически пронумерованных заголовков.',
       format: 'Формат',
       basic: 'базовый',
       advanced: 'продвинутый',
