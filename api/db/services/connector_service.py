@@ -54,6 +54,45 @@ def _append_text_expr(field, suffix: str):
     return fn.COALESCE(field + suffix, suffix)
 
 
+def connector_doc_id_candidates(kb_id: str, connector_id: str, external_id: str) -> tuple[str, str, str]:
+    """Every document id a connector-sourced document may legitimately carry.
+
+    A synced document's primary key is derived from its external id so that
+    re-running a sync updates the existing row instead of duplicating it. Two
+    historical derivations left ``kb_id`` out, which made the key identical for
+    every knowledge base linked to the same data source:
+
+        <= v0.25.1   hash128(external_id)
+        legacy       hash128(f"{connector_id}:{external_id}")
+        current      hash128(f"{kb_id}:{connector_id}:{external_id}")
+
+    Ordered oldest first so callers can prefer an id already on disk.
+    """
+    return (
+        hash128(external_id),
+        hash128(f"{connector_id}:{external_id}"),
+        hash128(f"{kb_id}:{connector_id}:{external_id}"),
+    )
+
+
+def resolve_connector_doc_id(kb_id: str, connector_id: str, external_id: str, owned_doc_ids) -> str:
+    """Pick the document id to sync ``external_id`` into ``kb_id`` under.
+
+    ``owned_doc_ids`` must only contain ids this knowledge base already owns
+    (see ``DocumentService.list_doc_headers_by_kb_and_source_type``). A
+    KB-agnostic id is reused only when it resolves to one of those rows; when it
+    does not, the row it would hit belongs to some other knowledge base and
+    ``FileService.upload_document`` would reject the write as a cross-KB
+    collision and drop the document. Everything else gets the KB-scoped id,
+    which cannot collide by construction.
+    """
+    v0_doc_id, legacy_doc_id, scoped_doc_id = connector_doc_id_candidates(kb_id, connector_id, external_id)
+    for candidate in (legacy_doc_id, v0_doc_id):
+        if candidate in owned_doc_ids:
+            return candidate
+    return scoped_doc_id
+
+
 class ConnectorService(CommonService):
     model = Connector
 
@@ -186,7 +225,7 @@ class ConnectorService(CommonService):
             return 0, []
 
         source_type = f"{conn.source}/{conn.id}"
-        retain_doc_ids = {doc_id for file in file_list for doc_id in (hash128(f"{connector_id}:{file.id}"), hash128(f"{kb_id}:{connector_id}:{file.id}"))}
+        retain_doc_ids = {doc_id for file in file_list for doc_id in connector_doc_id_candidates(kb_id, connector_id, file.id)}
         existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
             kb_id,
             source_type,

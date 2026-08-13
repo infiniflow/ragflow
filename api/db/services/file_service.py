@@ -538,6 +538,25 @@ class FileService(CommonService):
             raise RuntimeError("Database error (File move)!")
 
     @classmethod
+    def _discard_orphaned_document(cls, doc) -> bool:
+        """Drop a document row whose knowledge base no longer exists.
+
+        Connector syncs derive document ids from the external document, so a row
+        stranded by a deleted knowledge base keeps answering ``get_by_id`` and
+        blocks that document from ever being ingested again -- while being
+        invisible to the user, because the knowledge base it names is gone. Its
+        chunks went with the dropped index, so the row is unreachable and safe to
+        remove. Returns whether it was removed.
+        """
+        if KnowledgebaseService.get_or_none(id=doc.kb_id) is not None:
+            return False
+
+        logger.warning("Discarding orphaned document %s: its kb_id=%s no longer exists.", doc.id, doc.kb_id)
+        File2DocumentService.delete_by_document_id(doc.id)
+        DocumentService.delete_by_id(doc.id)
+        return True
+
+    @classmethod
     @DB.connection_context()
     def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, parser_config_override: dict | None = None):
         root_folder = self.get_root_folder(user_id)
@@ -559,18 +578,21 @@ class FileService(CommonService):
         for file in file_objs:
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
+            if e and str(doc.kb_id) != str(kb.id):
+                if not self._discard_orphaned_document(doc):
+                    logger.warning(
+                        "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
+                        doc_id,
+                        doc.kb_id,
+                        kb.id,
+                    )
+                    user_msg = f"Existing document id collision with knowledge base '{doc.kb_id}'; skipping update."
+                    err.append(file.filename + ": " + user_msg)
+                    continue
+                # The stranded row is gone; ingest as a fresh document.
+                e, doc = False, None
             if e:
                 try:
-                    if str(doc.kb_id) != str(kb.id):
-                        logger.warning(
-                            "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
-                            doc_id,
-                            doc.kb_id,
-                            kb.id,
-                        )
-                        user_msg = "Existing document id collision with another knowledge base; skipping update."
-                        err.append(file.filename + ": " + user_msg)
-                        continue
                     blob = file.read()
                     # Connector-supplied fingerprint (e.g. xxhash128(S3 ETag))
                     # takes precedence: for connector-sourced docs the bypass

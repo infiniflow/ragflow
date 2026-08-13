@@ -18,9 +18,9 @@ import logging
 import os
 import re
 
-from api.db.db_models import File
+from api.db.db_models import Connector2Kb, Document, File, SyncLogs
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids, resolve_model_config, resolve_model_id
-from api.db.services.connector_service import Connector2KbService
+from api.db.services.connector_service import Connector2KbService, SyncLogsService
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -171,6 +171,14 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
     errors = []
     success_count = 0
     for kb_id, kb in kb_id_instance_pairs:
+        # Unwire the data sources first. While these rows live on, the connector
+        # scheduler keeps queueing syncs against a kb_id that is about to stop
+        # resolving, and any document such a run writes outlives its dataset --
+        # an invisible row that later reports a cross-KB id collision against
+        # whatever dataset is linked to the same connector next.
+        Connector2KbService.filter_delete([Connector2Kb.kb_id == kb_id])
+        SyncLogsService.filter_delete([SyncLogs.kb_id == kb_id])
+
         for doc in DocumentService.query(kb_id=kb_id):
             if not DocumentService.remove_document(doc, tenant_id):
                 errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
@@ -207,6 +215,13 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
         if not KnowledgebaseService.delete_by_id(kb_id):
             errors.append(f"Delete dataset error for {kb_id}")
             continue
+
+        # Sweep anything the per-document loop above could not see, so no row is
+        # left pointing at a dataset that no longer exists.
+        stranded = DocumentService.filter_delete([Document.kb_id == kb_id])
+        if stranded:
+            logging.warning("delete_datasets: removed %s stranded document rows for dataset %s", stranded, kb_id)
+
         success_count += 1
 
     if not errors:

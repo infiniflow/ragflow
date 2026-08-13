@@ -107,7 +107,10 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     _stub(
         monkeypatch,
         "api.db.db_models",
+        Connector2Kb=SimpleNamespace(kb_id="kb_id"),
+        Document=SimpleNamespace(kb_id="kb_id"),
         File=SimpleNamespace(),
+        SyncLogs=SimpleNamespace(kb_id="kb_id"),
     )
     _stub(
         monkeypatch,
@@ -140,6 +143,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "api.db.services.connector_service",
         Connector2KbService=SimpleNamespace(),
+        SyncLogsService=SimpleNamespace(),
     )
     _stub(
         monkeypatch,
