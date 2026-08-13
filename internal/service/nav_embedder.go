@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	modelModule "ragflow/internal/entity/models"
 	"strings"
 
 	"ragflow/internal/entity"
@@ -72,7 +73,7 @@ func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, nonEmpty, model.APIConfig, nil, nil)
+	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty}, model.APIConfig, nil, nil)
 	if err != nil {
 		return nil, err
 	}

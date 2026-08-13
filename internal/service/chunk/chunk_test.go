@@ -1275,10 +1275,10 @@ func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models
 func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(context.Context, *string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, models.EmbedRequest, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(context.Context, *string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, models.RerankRequest, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
 func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {
