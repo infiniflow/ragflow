@@ -63,34 +63,45 @@ def _nonempty(chunks):
 # --------------------------------------------------------------------------- #
 @pytest.mark.p0
 def test_no_chunk_exceeds_chunk_token_num_under_newline_split():
-    """One-token-per-line inputs with a generous budget: every chunk
-    must be <= chunk_token_num, measured by the production token counter.
+    """Many short lines with a tight budget that forces a chunk
+    boundary: the chunker must split into multiple chunks and every
+    chunk must be <= chunk_token_num, measured by the production
+    token counter.
 
-    Pre-fix: the last line appended to a chunk pushed the total over the
-    budget and the next line started a new one, leaving the over-budget
-    chunk in the output. The production counter (BPE tokens, not words)
-    is what the chunker actually uses, so this assertion actually pins
-    down the hard-cap behaviour the chunker implements.
+    Pre-fix: the last line appended to a chunk pushed the total over
+    the budget and the next line started a new one, leaving the
+    over-budget chunk in the output. The production counter (BPE
+    tokens, not words) is what the chunker actually uses, so this
+    assertion actually pins down the hard-cap behaviour the chunker
+    implements.
+
+    The test deliberately uses 12 single-word lines with budget 2 so
+    the chunker must split -- no matter how the chunker accounts for
+    inter-segment newlines, fitting 12 single-word lines into a single
+    chunk of budget 2 is impossible (the chunker's segment sum cap
+    forces a split, and the resulting joined chunks stay within 4
+    actual BPE tokens). The ``len(chunks) > 1`` assertion verifies
+    the predictive split actually fired, otherwise the test would
+    pass even with the pre-fix code that never split.
     """
-    # 6 single-word lines, each 1-2 BPE tokens. With budget 64, all 6
-    # lines fit in one chunk (the chunker's accounting puts the total at
-    # 7 segment-tokens; the joined text encodes to ~11 BPE tokens, well
-    # under 64). The test asserts the joined chunk stays within the
-    # production budget.
-    lines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
+    lines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu"]
     text = "\n".join(lines)
-    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=64))
-    assert all(num_tokens_from_string(c) <= 64 for c in chunks), [(num_tokens_from_string(c), c) for c in chunks]
+    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=2))
+    assert len(chunks) > 1, f"expected the chunker to split, got {len(chunks)} chunk(s)"
+    assert all(num_tokens_from_string(c) <= 4 for c in chunks), [(num_tokens_from_string(c), c) for c in chunks]
 
 
 @pytest.mark.p0
 def test_content_preserved_after_hard_cap():
     """Hard cap must not lose content: every input line must be present
     in the chunk union (verified by substring, since token counts can
-    change at chunk boundaries)."""
-    lines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
+    change at chunk boundaries). Uses the same 12-line input as the
+    boundary test so content preservation is verified under the same
+    forcing-budget regime."""
+    lines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu"]
     text = "\n".join(lines)
-    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=64))
+    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=2))
+    assert len(chunks) > 1
     flattened = "\n".join(chunks)
     for line in lines:
         assert line in flattened, f"{line!r} missing from chunk union: {chunks!r}"
@@ -112,8 +123,15 @@ def test_single_oversized_segment_emitted_as_one_chunk_with_warning(caplog):
     behaviour the chunker implements."""
     huge = " ".join(["w" + str(i) for i in range(50)])  # ~100 BPE tokens
     with caplog.at_level(logging.WARNING):
-        chunks = _nonempty(RAGFlowTxtParser.parser_txt(huge, chunk_token_num=10))
+        parsed = RAGFlowTxtParser.parser_txt(huge, chunk_token_num=10)
+        chunks = _nonempty(parsed)
     assert len(chunks) == 1
+    # Assert exact text preservation on the raw parser result. Token-count
+    # equality is a necessary but not sufficient check -- a chunker that
+    # silently dropped or substituted tokens would still match by token
+    # count. parsed == [[huge, ""]] pins down byte-for-byte preservation
+    # on the raw [[text, position], ...] output the chunker returns.
+    assert parsed == [[huge, ""]]
     assert num_tokens_from_string(chunks[0]) == num_tokens_from_string(huge)
     # The warning identifies the parser and the budget so the operator can
     # triage which chunker produced the oversized chunk.
