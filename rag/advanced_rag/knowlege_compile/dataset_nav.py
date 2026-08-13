@@ -1275,6 +1275,11 @@ async def search_dataset_nav(
     if not query:
         return []
     allowed_docs = {str(d).strip() for d in (doc_scope or []) if str(d).strip()}
+    logging.debug(
+        "search_dataset_nav: flat-search scope normalized for kb=%s, scoped_docs=%d",
+        kb_id,
+        len(allowed_docs),
+    )
 
     condition: dict = {"compile_kwd": [compile_kwd]}
     if type_kwd:
@@ -1366,6 +1371,10 @@ async def search_dataset_nav(
                 # scope doc appears under a cluster that merely overlaps the
                 # scope.
                 doc_ids = [d for d in doc_ids if d in allowed_docs]
+            # Once the coverage list is scope-filtered, the reported count must
+            # match the returned doc_ids (the raw doc_count_int would otherwise
+            # include documents excluded by the scope).
+            scoped_cluster = bool(allowed_docs)
         else:
             # Leaf: ``name`` == the document id (see ``_make_nav_doc_row``).
             doc_id = r.get("doc_id") or name
@@ -1382,7 +1391,7 @@ async def search_dataset_nav(
                 "graph_content": payload.get("graph_content") or "",
                 "doc_title": payload.get("doc_title") or "",
                 "source_type": payload.get("source_type") or "",
-                "doc_count": int(r.get("doc_count_int") or len(doc_ids) or 0),
+                "doc_count": len(doc_ids) if (typ == "nav_cluster" and scoped_cluster) else int(r.get("doc_count_int") or len(doc_ids) or 0),
                 "score": float(score or 0.0),
             }
         )
@@ -1423,6 +1432,11 @@ async def search_nav_tree_descent(
     if not query:
         return []
     allowed_docs = {str(d).strip() for d in (doc_scope or []) if str(d).strip()}
+    logging.debug(
+        "search_nav_tree_descent: tree-search scope normalized for kb=%s, scoped_docs=%d",
+        kb_id,
+        len(allowed_docs),
+    )
     if embd_mdl is None:
         logging.warning(
             "search_nav_tree_descent: embd_mdl is None — falling back to text-only flat search for kb=%s query=%.80s",

@@ -3652,7 +3652,7 @@ async def search_dataset_layers(
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_dataset_nav
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, {"error": "no authorization", "code": RetCode.AUTHENTICATION_ERROR}
+        return False, {"error": "no authorization", "code": RetCode.PERMISSION_ERROR}
     if mode not in _LAYERS_HANDLERS:
         return False, {"error": f"unknown mode: {mode}, expected one of {list(_LAYERS_HANDLERS.keys())}", "code": RetCode.ARGUMENT_ERROR}
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -3676,6 +3676,12 @@ async def search_dataset_layers(
         logging.exception("Full traceback for LLMBundle(EMBEDDING) failure")
         embd_mdl = None
 
+    logging.debug(
+        "search_dataset_layers: dispatching scoped mode=%s for dataset=%s, scoped_docs=%d",
+        mode,
+        dataset_id,
+        len([d for d in (doc_scope or []) if str(d).strip()]),
+    )
     if mode == "nav_doc":
         return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "nav_cluster":

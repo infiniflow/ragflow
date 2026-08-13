@@ -661,8 +661,7 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     kbs = getattr(tools, "kbs", []) or []
     allowed_docs = set(doc_scope or [])
 
-    routed: list[str] = []
-    seen: set[str] = set()
+    candidates: dict[str, float] = {}
     for kb in kbs:
         # ``doc_scope`` is forwarded query-time (search_dataset_layers applies
         # it as a store filter on every mode), so the top_k truncation never
@@ -686,14 +685,11 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
             if score < _NAV_MIN_DOC_SCORE:
                 continue
             did = str(item.get("doc_id") or "").strip()
-            if not did or did in seen:
+            if not did:
                 continue
-            seen.add(did)
-            routed.append(did)
-            if len(routed) >= _NAV_SEARCH_MAX_DOCS:
-                break
-        if len(routed) >= _NAV_SEARCH_MAX_DOCS:
-            break
+            candidates[did] = max(candidates.get(did, float("-inf")), score)
+
+    routed = [did for did, _ in sorted(candidates.items(), key=lambda pair: pair[1], reverse=True)[:_NAV_SEARCH_MAX_DOCS]]
 
     _LOG.info("[Dataset navigation search] Routed to %d document(s) (min_score=%.1f).", len(routed), _NAV_MIN_DOC_SCORE)
     return routed[:_NAV_SEARCH_MAX_DOCS]

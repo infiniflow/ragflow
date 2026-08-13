@@ -631,10 +631,10 @@ async def list_wiki_pages(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -669,10 +669,10 @@ async def list_wiki_topics(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -720,10 +720,10 @@ async def get_wiki_graph(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -773,10 +773,10 @@ async def get_dataset_structure(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -847,10 +847,10 @@ async def get_wiki_alteration(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -877,10 +877,10 @@ async def clear_wiki(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -910,10 +910,10 @@ async def get_wiki_page(tenant_id, dataset_id, page_type, slug):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -952,10 +952,10 @@ async def get_skill_tree(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -980,10 +980,10 @@ async def delete_all_skills(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1009,10 +1009,10 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1037,10 +1037,10 @@ async def list_dataset_nav(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1093,10 +1093,10 @@ async def search_dataset_nav(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1122,10 +1122,10 @@ async def list_dataset_nav_children(tenant_id, dataset_id, name):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1150,10 +1150,10 @@ async def delete_dataset_nav(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1179,10 +1179,10 @@ async def delete_dataset_nav_node(tenant_id, dataset_id, name):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1217,10 +1217,10 @@ async def generate_dataset_nav(tenant_id, dataset_id):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1246,10 +1246,10 @@ async def delete_skill_page(tenant_id, dataset_id, skill_kwd):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
@@ -1310,10 +1310,10 @@ async def update_wiki_page(tenant_id, dataset_id, page_type, slug):
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
-            code = result.get("code", RetCode.AUTHENTICATION_ERROR)
+            code = result.get("code", RetCode.SERVER_ERROR)
         else:
             msg = result
-            code = RetCode.AUTHENTICATION_ERROR
+            code = RetCode.SERVER_ERROR
         return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
