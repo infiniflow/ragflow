@@ -75,6 +75,13 @@ func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	return p.parseEmail(ctx, filename, data, 0)
+}
+
+// parseEmail is ParseWithResult with a re-chunk depth so nested email
+// attachments are parsed (and their body made retrievable) without unbounded
+// recursion into attachments-of-attachments.
+func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []byte, depth int) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 
 	var content map[string]any
@@ -98,7 +105,7 @@ func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data
 	// naive_chunk). Each attachment is re-parsed by its file extension via
 	// the shared parser registry; a single unparseable/skipped attachment
 	// never breaks the whole email.
-	extraItems, attachmentText := rechunkEmailAttachments(ctx, content)
+	extraItems, attachmentText := p.rechunkEmailAttachments(ctx, content, depth)
 
 	if outputFormat == "json" {
 		content["doc_type_kwd"] = "text"
@@ -138,7 +145,9 @@ func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data
 	}
 	// Attachment text (re-parsed by extension) replaces the old crude
 	// "filename:payload" flatten, so binary attachments no longer leak
-	// mojibake into the searchable text.
+	// mojibake into the searchable (indexed) text. Note this only affects
+	// the flattened text output: the raw attachment payload is still carried
+	// verbatim in content["attachments"] for the JSON output path.
 	if attachmentText != "" {
 		sb.WriteString(attachmentText)
 		sb.WriteString("\n")
@@ -457,9 +466,11 @@ func parseMSG(data []byte, fields []string) (map[string]any, error) {
 		content["bcc"] = formatRecipient(msg.DisplayBCC)
 	}
 	if target["date"] {
-		// Match Python extract_msg's datetime string form (e.g.
-		// "2018-03-24 00:06:29+08:00") rather than RFC3339.
-		content["date"] = msg.Date.Format("2006-01-02 15:04:05-07:00")
+		// Match Python extract_msg's datetime string form. extract_msg uses
+		// strftime("%Y-%m-%d %H:%M:%S%z"), which emits the zone without a
+		// colon (e.g. "2018-03-24 00:06:29+0800"); Go's -0700 layout
+		// reproduces that (the -07:00 layout would wrongly insert a colon).
+		content["date"] = msg.Date.Format("2006-01-02 15:04:05-0700")
 	}
 	if target["subject"] {
 		content["subject"] = msg.Subject
@@ -486,22 +497,47 @@ func parseMSG(data []byte, fields []string) (map[string]any, error) {
 	}
 
 	if target["attachments"] {
-		attachments := make([]map[string]any, 0, len(msg.Attachments))
-		for _, a := range msg.Attachments {
-			// Python's extract_msg exposes the attachment payload as raw bytes
-			// decoded as utf-8; mirror that via a string cast. Embedded .msg
-			// attachments expose no raw bytes via gomsg (only a parsed
-			// EmbeddedMessage), so their payload is empty here — a known
-			// divergence from Python noted in MSG_PARSER_HANDOFF.md.
-			attachments = append(attachments, map[string]any{
-				"filename": a.DisplayName(),
-				"payload":  string(a.Data()),
-			})
-		}
-		content["attachments"] = attachments
+		// Flatten attachments, recursing into embedded .msg files. gomsg
+		// parses an embedded Message via Attachment.EmbeddedMessage even
+		// though it exposes no raw bytes for it; the embedded message body
+		// is surfaced as a retrievable text attachment (see msgAttachments).
+		content["attachments"] = msgAttachments(msg)
 	}
 
 	return content, nil
+}
+
+// msgAttachments flattens a gomsg.Message's attachments into the
+// {filename, payload} shape rechunkEmailAttachments consumes. Embedded .msg
+// attachments expose no raw bytes via gomsg, but gomsg does parse the embedded
+// Message; we surface its body as a retrievable text attachment (named .txt so
+// the re-chunk step re-parses it as plain text) and recurse into its own
+// attachments, so an embedded email is no longer silently dropped.
+func msgAttachments(msg *gomsg.Message) []map[string]any {
+	out := make([]map[string]any, 0, len(msg.Attachments))
+	for _, a := range msg.Attachments {
+		if a.IsEmbeddedMessage() {
+			if em := a.EmbeddedMessage(); em != nil {
+				body := em.Body
+				if strings.TrimSpace(body) == "" {
+					body = string(em.BodyHTML)
+				}
+				if body != "" {
+					out = append(out, map[string]any{
+						"filename": a.DisplayName() + ".txt",
+						"payload":  body,
+					})
+				}
+				out = append(out, msgAttachments(em)...)
+				continue
+			}
+		}
+		out = append(out, map[string]any{
+			"filename": a.DisplayName(),
+			"payload":  string(a.Data()),
+		})
+	}
+	return out
 }
 
 // primarySenderEmail prefers the SMTP address, falling back to the raw email
@@ -571,7 +607,17 @@ func orNil(s string) any {
 //   - extraItems: structured JSON items (one per non-empty text segment),
 //     tagged with source_attachment, for the JSON output path.
 //   - text:       the concatenated attachment text, for the text output path.
-func rechunkEmailAttachments(ctx context.Context, content map[string]any) ([]map[string]any, string) {
+//
+// Re-chunking stops at one level of nesting: a nested email is parsed (so its
+// body becomes retrievable) but its own attachments are not re-chunked, to
+// avoid unbounded recursion through attachments-of-attachments.
+const maxRechunkPayloadBytes = 32 << 20 // 32 MiB
+
+func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) ([]map[string]any, string) {
+	if depth > 0 {
+		return nil, ""
+	}
+
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {
 		return nil, ""
@@ -583,8 +629,15 @@ func rechunkEmailAttachments(ctx context.Context, content map[string]any) ([]map
 		fn, _ := att["filename"].(string)
 		payload, _ := att["payload"].(string)
 		if fn == "" || payload == "" {
-			// Empty payload (e.g. a nested .msg, where gomsg exposes no
-			// raw bytes) or a missing filename — nothing to re-parse.
+			// Empty payload (e.g. an embedded .msg with no exposed bytes) or
+			// a missing filename — nothing to re-parse.
+			continue
+		}
+		if len(payload) > maxRechunkPayloadBytes {
+			// Too large to re-parse inline; re-chunking re-runs the heavy
+			// parsers (PDF/OCR/...), which would otherwise dominate or stall
+			// ingestion on a single huge attachment. The attachment remains
+			// referenced in metadata.
 			continue
 		}
 		ft := utility.GetFileType(fn)
@@ -595,11 +648,27 @@ func rechunkEmailAttachments(ctx context.Context, content map[string]any) ([]map
 			// a vision/speech model that is out of scope.
 			continue
 		}
-		p, err := GetParser(ft)
-		if err != nil {
-			continue
+		var res ParseResult
+		if ft == utility.FileTypeEMAIL {
+			// Reuse the top-level field configuration (including "body") so a
+			// nested .eml/.msg is parsed for its body instead of with a fresh,
+			// unconfigured parser that would only emit metadata and index
+			// garbage. We always request JSON output for the nested parse so
+			// the extracted "text" field is returned clean (the text output
+			// path would otherwise also flatten metadata into the result).
+			ep := NewEmailParser()
+			ep.ConfigureFromSetup(map[string]any{
+				"fields":        p.fields,
+				"output_format": "json",
+			})
+			res = ep.parseEmail(ctx, fn, []byte(payload), depth+1)
+		} else {
+			np, err := GetParser(ft)
+			if err != nil {
+				continue
+			}
+			res = np.ParseWithResult(ctx, fn, []byte(payload))
 		}
-		res := p.ParseWithResult(ctx, fn, []byte(payload))
 		if res.Err != nil {
 			continue
 		}

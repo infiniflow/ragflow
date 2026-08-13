@@ -146,8 +146,8 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 	if v, ok := item["subject"].(string); !ok || v != "asdf" {
 		t.Errorf("subject: got %q", v)
 	}
-	if v, ok := item["date"].(string); !ok || v != "2018-03-24 00:06:29+08:00" {
-		t.Errorf("date: got %q, want 2018-03-24 00:06:29+08:00", v)
+	if v, ok := item["date"].(string); !ok || v != "2018-03-24 00:06:29+0800" {
+		t.Errorf("date: got %q, want 2018-03-24 00:06:29+0800", v)
 	}
 	if v, ok := item["text"].(string); !ok || v != " \r\n\r\n" {
 		t.Errorf("text: got %q", v)
@@ -775,5 +775,142 @@ func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 	}
 	if pl, _ := atts[0]["payload"].(string); pl != attachmentContent {
 		t.Errorf("payload = %q, want %q", pl, attachmentContent)
+	}
+}
+
+// TestEmailParser_NestedEMLAttachmentRechunk locks the regression where a
+// nested .eml attachment was re-chunked with an UNCONFIGURED EmailParser
+// (fields == nil), so parseEML emitted only metadata and the text path indexed
+// "metadata:{...}" garbage. The nested email must instead be parsed with the
+// top-level field configuration (including "body") so its body becomes the
+// indexed text. The outer email's own metadata flattening is expected; the
+// nested email must NOT contribute a second "metadata:{" segment.
+func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
+	ctx := t.Context()
+
+	innerRaw := strings.Join([]string{
+		"From: inner@x.com",
+		"To: outer@y.com",
+		"Subject: inner",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"INNER BODY SECRET",
+	}, "\r\n")
+
+	boundary := "outerbound"
+	raw := strings.Join([]string{
+		"From: outer@y.com",
+		"To: someone@z.com",
+		"Subject: outer",
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"OUTER BODY VISIBLE",
+		"--" + boundary,
+		"Content-Type: message/rfc822",
+		"Content-Disposition: attachment; filename=\"inner.eml\"",
+		"",
+		innerRaw,
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	for _, format := range []string{"json", "text"} {
+		p := NewEmailParser()
+		p.ConfigureFromSetup(map[string]any{
+			"output_format": format,
+			"fields":        []string{"from", "to", "subject", "body", "attachments", "metadata"},
+		})
+
+		result := p.ParseWithResult(ctx, "outer.eml", []byte(raw))
+		if result.Err != nil {
+			t.Fatalf("[%s] unexpected error: %v", format, result.Err)
+		}
+
+		// Collect all indexed text for this output mode (JSON populates
+		// result.JSON; text populates result.Text).
+		var indexed strings.Builder
+		if format == "json" {
+			for _, it := range result.JSON {
+				if txt, ok := it["text"].(string); ok {
+					indexed.WriteString(txt)
+					indexed.WriteString("\n")
+				}
+			}
+		} else {
+			indexed.WriteString(result.Text)
+		}
+
+		// The nested email body must be retrievable.
+		if !strings.Contains(indexed.String(), "INNER BODY SECRET") {
+			t.Errorf("[%s] nested body not indexed: %q", format, indexed.String())
+		}
+		if !strings.Contains(indexed.String(), "OUTER BODY VISIBLE") {
+			t.Errorf("[%s] outer body missing: %q", format, indexed.String())
+		}
+
+		if format == "json" {
+			// The nested email must be a distinct, clean item: tagged with
+			// source_attachment and carrying no metadata key (the old bug
+			// leaked a "metadata:{...}" string as its text).
+			found := false
+			for _, it := range result.JSON {
+				if txt, ok := it["text"].(string); ok && strings.Contains(txt, "INNER BODY SECRET") {
+					found = true
+					if src, _ := it["source_attachment"].(string); src != "inner.eml" {
+						t.Errorf("[json] source_attachment = %q, want inner.eml", src)
+					}
+					if _, hasMeta := it["metadata"]; hasMeta {
+						t.Errorf("[json] nested item must not carry metadata key: %#v", it)
+					}
+				}
+			}
+			if !found {
+				t.Errorf("[json] nested body not found as separate item: %#v", result.JSON)
+			}
+		} else {
+			// Text mode: the outer email's own metadata is flattened once;
+			// the nested email must NOT add a second "metadata:{" segment.
+			if c := strings.Count(result.Text, "metadata:{"); c != 1 {
+				t.Errorf("[text] expected exactly 1 metadata:{ segment (outer only), got %d in: %q",
+					c, result.Text)
+			}
+		}
+	}
+}
+
+// TestEmailParser_RechunkAttachmentTextPath exercises rechunkEmailAttachments
+// directly with the {filename, payload} attachment shape that both .eml and
+// .msg parsing feed into it. It verifies text attachments are indexed while
+// binary (VISUAL) attachments are skipped, and that binary payloads never leak
+// into the indexed text.
+func TestEmailParser_RechunkAttachmentTextPath(t *testing.T) {
+	ctx := t.Context()
+	content := map[string]any{
+		"attachments": []map[string]any{
+			{"filename": "note.txt", "payload": "hello from attachment"},
+			{"filename": "pic.jpg", "payload": "<binary bytes>"},
+		},
+	}
+
+	p := NewEmailParser()
+	extra, text := p.rechunkEmailAttachments(ctx, content, 0)
+
+	if len(extra) != 1 {
+		t.Fatalf("expected 1 indexed attachment, got %d: %#v", len(extra), extra)
+	}
+	if v, _ := extra[0]["text"].(string); v != "hello from attachment" {
+		t.Errorf("text = %q, want hello from attachment", v)
+	}
+	if v, _ := extra[0]["source_attachment"].(string); v != "note.txt" {
+		t.Errorf("source_attachment = %q, want note.txt", v)
+	}
+	if !strings.Contains(text, "hello from attachment") {
+		t.Errorf("indexed text missing attachment: %q", text)
+	}
+	if strings.Contains(text, "<binary bytes>") {
+		t.Errorf("binary payload leaked into indexed text: %q", text)
 	}
 }
