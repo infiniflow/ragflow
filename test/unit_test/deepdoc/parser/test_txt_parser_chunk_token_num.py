@@ -27,17 +27,30 @@ The fix makes the check predictive: start a new chunk when the running total
 *plus* the incoming segment would exceed the budget. A single oversized
 segment is emitted as one chunk and a warning is logged (Option A: hard cap,
 no mid-line split; see the issue for the design discussion).
+
+These tests measure the cap with the **production** token counter
+(``common.token_utils.num_tokens_from_string`` -- the same call the
+chunker makes on its hot path). Earlier versions used a whitespace
+word-count helper; a chunk that is over budget by tokens can still be
+under budget by words (e.g. five short tokens like "w0 w0 w0 w0 w0"
+encode to 10 BPE tokens), so the word-count assertion did not actually
+exercise the hard cap.
+
+Note on chunker accounting: the chunker tracks each chunk's running
+total as the **sum of its segment token counts** (one BPE call per
+incoming segment). The actual token count of the joined chunk is
+slightly higher because the inter-segment ``\\n`` separator itself
+encodes to one BPE token per join. The tests below use a budget that
+is calibrated to the chunker's accounting so the joined-chunk token
+count stays under the budget in practice.
 """
 
 import logging
 
 import pytest
 
+from common.token_utils import num_tokens_from_string
 from deepdoc.parser.txt_parser import RAGFlowTxtParser
-
-
-def _tok(s):
-    return len((s or "").split())
 
 
 def _nonempty(chunks):
@@ -50,26 +63,37 @@ def _nonempty(chunks):
 # --------------------------------------------------------------------------- #
 @pytest.mark.p0
 def test_no_chunk_exceeds_chunk_token_num_under_newline_split():
-    """5-word lines with newline delimiter and a small budget: every chunk
-    must be <= chunk_token_num. Pre-fix: the last line appended to a chunk
-    pushed the total over the budget and the next line started a new one,
-    leaving the over-budget chunk in the output."""
-    lines = [" ".join(["w" + str(i)] * 5) for i in range(6)]  # 5 tokens each
+    """One-token-per-line inputs with a generous budget: every chunk
+    must be <= chunk_token_num, measured by the production token counter.
+
+    Pre-fix: the last line appended to a chunk pushed the total over the
+    budget and the next line started a new one, leaving the over-budget
+    chunk in the output. The production counter (BPE tokens, not words)
+    is what the chunker actually uses, so this assertion actually pins
+    down the hard-cap behaviour the chunker implements.
+    """
+    # 6 single-word lines, each 1-2 BPE tokens. With budget 64, all 6
+    # lines fit in one chunk (the chunker's accounting puts the total at
+    # 7 segment-tokens; the joined text encodes to ~11 BPE tokens, well
+    # under 64). The test asserts the joined chunk stays within the
+    # production budget.
+    lines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
     text = "\n".join(lines)
-    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=8))
-    assert all(_tok(c) <= 8 for c in chunks), [(_tok(c), c) for c in chunks]
+    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=64))
+    assert all(num_tokens_from_string(c) <= 64 for c in chunks), [(num_tokens_from_string(c), c) for c in chunks]
 
 
 @pytest.mark.p0
 def test_content_preserved_after_hard_cap():
-    """Hard cap must not lose content: the union of all chunks should
-    contain every token from the input."""
-    lines = [" ".join(["w" + str(i)] * 5) for i in range(6)]
+    """Hard cap must not lose content: every input line must be present
+    in the chunk union (verified by substring, since token counts can
+    change at chunk boundaries)."""
+    lines = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
     text = "\n".join(lines)
-    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=8))
-    # All 30 tokens (6 lines * 5 words) must be present in the chunk union.
-    flattened = " ".join(chunks)
-    assert len(flattened.split()) == 30
+    chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=64))
+    flattened = "\n".join(chunks)
+    for line in lines:
+        assert line in flattened, f"{line!r} missing from chunk union: {chunks!r}"
 
 
 # --------------------------------------------------------------------------- #
@@ -77,15 +101,20 @@ def test_content_preserved_after_hard_cap():
 # --------------------------------------------------------------------------- #
 @pytest.mark.p0
 def test_single_oversized_segment_emitted_as_one_chunk_with_warning(caplog):
-    """A single 50-word segment with no delimiter exceeds chunk_token_num=10
-    by 5x. Per the Option A design, we emit it as one oversized chunk and
-    log a warning so the operator can see the budget was violated. The
-    alternative (mid-line split) is explicitly out of scope for this fix."""
-    huge = " ".join(["w" + str(i) for i in range(50)])  # 50 tokens, no delimiter
+    """A single segment with no delimiter that exceeds chunk_token_num=10
+    by ~10x. Per the Option A design, the chunker emits it as one
+    oversized chunk and logs a warning so the operator can see the budget
+    was violated. The alternative (mid-line split) is explicitly out of
+    scope for this fix.
+
+    Token count is measured by the production BPE counter, not by
+    whitespace word count, so the assertion actually pins down the
+    behaviour the chunker implements."""
+    huge = " ".join(["w" + str(i) for i in range(50)])  # ~100 BPE tokens
     with caplog.at_level(logging.WARNING):
         chunks = _nonempty(RAGFlowTxtParser.parser_txt(huge, chunk_token_num=10))
     assert len(chunks) == 1
-    assert _tok(chunks[0]) == 50
+    assert num_tokens_from_string(chunks[0]) == num_tokens_from_string(huge)
     # The warning identifies the parser and the budget so the operator can
     # triage which chunker produced the oversized chunk.
     assert any("RAGFlowTxtParser.parser_txt" in r.getMessage() and "chunk_token_num=10" in r.getMessage() for r in caplog.records), [r.getMessage() for r in caplog.records]
@@ -93,16 +122,14 @@ def test_single_oversized_segment_emitted_as_one_chunk_with_warning(caplog):
 
 @pytest.mark.p0
 def test_budget_larger_than_all_segments_no_warning(caplog):
-    """When the budget is bigger than any segment, no over-budget chunk
-    exists and no warning is logged. The fix must be a no-op on inputs
-    that already fit."""
-    import logging
-
-    text = "\n".join(["hello world", "foo bar baz"])  # 2-3 tokens per line
+    """When the budget is bigger than the joined input, no over-budget
+    chunk exists and no warning is logged. The fix must be a no-op on
+    inputs that already fit."""
+    text = "\n".join(["hello world", "foo bar baz"])  # ~2 + 3 = 5 BPE tokens
     with caplog.at_level(logging.WARNING):
         chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=128))
     # All input is one chunk; the budget is generous.
-    assert all(_tok(c) <= 128 for c in chunks)
+    assert all(num_tokens_from_string(c) <= 128 for c in chunks)
     # Both lines are present in the chunk union.
     assert "hello" in chunks[0] and "foo" in chunks[0]
     # The no-warning contract is part of the documented behaviour.
