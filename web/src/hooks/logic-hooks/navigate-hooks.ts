@@ -209,7 +209,11 @@ export const useNavigatePage = () => {
       const params: string[] = [];
       Object.keys(props).forEach((key) => {
         if (props[key as keyof typeof props]) {
-          params.push(`${key}=${props[key as keyof typeof props]}`);
+          // Values may contain characters like `&`, `=` or `#` (e.g. file
+          // names), which would corrupt the query string without encoding.
+          params.push(
+            `${key}=${encodeURIComponent(props[key as keyof typeof props] as string)}`,
+          );
         }
       });
       navigate(

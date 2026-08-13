@@ -2,12 +2,11 @@ import { NextMessageInputOnPressEnterParameter } from '@/components/message-inpu
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
-  useRegenerateMessage,
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
-import { IMessage } from '@/interfaces/database/chat';
 import { buildMessageListWithUuid } from '@/utils/chat';
+import { IMessage, Message } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
 import { trim } from 'lodash';
 import { useCallback, useEffect, useRef } from 'react';
@@ -84,9 +83,6 @@ export const useSendMessage = () => {
   const removeMessageFromStore = useChatStreamStore(
     (state) => state.removeMessageById,
   );
-  const truncateAfterMessage = useChatStreamStore(
-    (state) => state.truncateAfterMessage,
-  );
   const hydrateFromServer = useChatStreamStore(
     (state) => state.hydrateFromServer,
   );
@@ -139,13 +135,6 @@ export const useSendMessage = () => {
     setValue(pendingInput);
   }, [pendingInput, value, conversationId, consumePendingInput, setValue]);
 
-  const removeMessagesAfterCurrentMessage = useCallback(
-    (messageId: string) => {
-      truncateAfterMessage(conversationId, messageId);
-    },
-    [conversationId, truncateAfterMessage],
-  );
-
   const removeMessageById = useCallback(
     (messageId: string) => {
       removeMessageFromStore(conversationId, messageId);
@@ -153,11 +142,25 @@ export const useSendMessage = () => {
     [conversationId, removeMessageFromStore],
   );
 
-  const { regenerateMessage } = useRegenerateMessage({
-    removeMessagesAfterCurrentMessage,
-    sendMessage,
-    messages,
-  });
+  // Regenerating re-asks the same question as a new turn instead of rewriting
+  // the original exchange, so every earlier answer stays in the transcript.
+  const regenerateMessage = useCallback(
+    (message: Message) => {
+      if (isStreaming) return;
+
+      const questionMessage: IMessage = {
+        content: message.content,
+        files: message.files,
+        id: uuid(),
+        role: MessageType.User,
+        conversationId,
+      };
+
+      appendQuestion(conversationId, questionMessage);
+      sendMessage({ message: questionMessage });
+    },
+    [conversationId, isStreaming, appendQuestion, sendMessage],
+  );
 
   const { createConversationBeforeSendMessage } =
     useCreateConversationBeforeSendMessage();

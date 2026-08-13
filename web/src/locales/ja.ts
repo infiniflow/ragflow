@@ -1862,8 +1862,6 @@ export default {
         enableTextCrossPage: 'ページをまたぐテキストの結合を有効化',
         enableTableCrossPage: 'ページをまたぐテーブルの結合を有効化',
         keepHeaderFooter: 'ヘッダー・フッターを保持',
-        purchaseUrl:
-          'API購入: 中国本土 — https://somark.cn/workbench/purchase / 海外(台湾、香港、マカオを含む) — https://somark.ai/studio/purchase',
       },
 
       modelTypes: {
