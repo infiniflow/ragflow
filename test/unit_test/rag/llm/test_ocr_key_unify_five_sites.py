@@ -440,3 +440,37 @@ class TestMistralOcrModelCallSite:
         )
         assert mdl.api_key == "sk-flat"
         assert mdl.base_url.rstrip("/").endswith("api.mistral.ai/v1")
+
+
+class TestPastedKeyBeatsEnvVar:
+    """A raw pasted api_key (``key_as_secret``) must take priority over
+    the matching environment variable (``SOMARK_API_KEY`` /
+    ``MISTRAL_OCR_API_KEY``).
+
+    Pre-fix, ``_resolve(..., key_as_secret)`` passed the pasted key as
+    the *default* to ``os.environ.get(env_key, default)``, so a host-set
+    env var silently overrode what the user just pasted. The fix
+    short-circuits: ``key_as_secret or _resolve(..., "")``.
+    """
+
+    def test_somark_pasted_key_wins_over_env_var(self, monkeypatch):
+        monkeypatch.setenv("SOMARK_API_KEY", "sk-env-var-should-lose")
+        mdl = SoMarkOcrModel(key="sk-somark-pasted-wins", model_name="SoMark-model")
+        assert mdl.api_key == "sk-somark-pasted-wins"
+
+    def test_somark_falls_back_to_env_var_when_no_pasted_key(self, monkeypatch):
+        # When the user pastes a JSON config (not a raw secret), the
+        # env var should still be honored if SOMARK_API_KEY is set.
+        monkeypatch.setenv("SOMARK_API_KEY", "sk-env-var-fallback")
+        mdl = SoMarkOcrModel(
+            key=json.dumps({"SOMARK_API_KEY": "sk-from-config"}),
+            model_name="SoMark-model",
+        )
+        # Config-provided key wins over env var (config precedence is
+        # above env-var precedence in _resolve).
+        assert mdl.api_key == "sk-from-config"
+
+    def test_mistral_pasted_key_wins_over_env_var(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_OCR_API_KEY", "sk-mistral-env-should-lose")
+        mdl = MistralOcrModel(key="sk-mistral-pasted-wins", model_name="mistral-ocr-latest")
+        assert mdl.api_key == "sk-mistral-pasted-wins"

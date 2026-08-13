@@ -71,14 +71,14 @@ def _resolve_ocr_credentials(key):
     if isinstance(key, str):
         try:
             payload = json.loads(key)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
             logging.warning(
                 'OCR provider key is not valid JSON; expected a JSON object (e.g. nested {"api_key": {...}} from the UI, or flat {"PROVIDER_*": "..."} auto-provisioned from env vars). See conf/llm_factories.json for supported OCR factories.',
             )
             raise ModelException(
                 'OCR provider key must be a JSON object. Example: {"api_key": {"mineru_apiserver": "..."}} or {"MINERU_API_KEY": "..."}. See conf/llm_factories.json for supported OCR factories.',
                 retryable=False,
-            )
+            ) from exc
     else:
         logging.warning(
             "OCR provider key is not a string or dict (got %s); expected a JSON object.",

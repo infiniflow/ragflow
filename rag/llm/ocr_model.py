@@ -281,7 +281,11 @@ class SoMarkOcrModel(Base, SoMarkParser):
             "SOMARK_BASE_URL",
             kwargs.get("base_url", "https://somark.cn/api/v1"),
         )
-        api_key = _resolve("api_key", "SOMARK_API_KEY", key_as_secret)
+        # A raw pasted api_key (key_as_secret) must take priority over the
+        # SOMARK_API_KEY env var. _resolve's os.environ.get(env_key, default)
+        # would otherwise let the env var silently win over what the user
+        # just pasted, reintroducing the failure mode #17683 sets out to fix.
+        api_key = key_as_secret or _resolve("api_key", "SOMARK_API_KEY", "")
         image_format = _resolve("somark_image_format", "SOMARK_IMAGE_FORMAT", "url")
         formula_format = _resolve("somark_formula_format", "SOMARK_FORMULA_FORMAT", "latex")
         table_format = _resolve("somark_table_format", "SOMARK_TABLE_FORMAT", "html")
@@ -374,7 +378,12 @@ class MistralOcrModel(Base, MistralParser):
             return config.get(ui_key, config.get(env_key, kwargs.get(ui_key, kwargs.get(env_key, os.environ.get(env_key, default)))))
 
         base_url = _resolve("mistral_ocr_base_url", "MISTRAL_OCR_BASE_URL", kwargs.get("base_url") or "https://api.mistral.ai/v1")
-        api_key = _resolve("api_key", "MISTRAL_OCR_API_KEY", key_as_secret)
+        # A raw pasted api_key (key_as_secret) must take priority over the
+        # MISTRAL_OCR_API_KEY env var. _resolve's os.environ.get(env_key,
+        # default) would otherwise let the env var silently win over what
+        # the user just pasted, reintroducing the failure mode #17683 sets
+        # out to fix.
+        api_key = key_as_secret or _resolve("api_key", "MISTRAL_OCR_API_KEY", "")
         table_format = _resolve("mistral_ocr_table_format", "MISTRAL_OCR_TABLE_FORMAT", "html")
         keep_hf = _resolve("mistral_ocr_keep_header_footer", "MISTRAL_OCR_KEEP_HEADER_FOOTER", 0)
 
