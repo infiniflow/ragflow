@@ -335,6 +335,19 @@ class TestDedupApiKeyRecords:
         assert result[0][5] == "https://a.test"
         assert result[1][5] == "https://b.test"
 
+    def test_does_not_merge_same_api_key_with_different_api_bases(self):
+        # Two rows that canonicalize to the same logical API key but
+        # carry different api_base values must NOT be merged. Pre-fix,
+        # the dedup identity ignored api_base entirely, so the first
+        # row could silently shadow the second even though the
+        # migration's stated contract is to preserve distinct bases.
+        records = [
+            _rec("t1", "OpenAI", '{"api_key": "sk-aaa"}', api_base="https://a.test"),
+            _rec("t1", "OpenAI", '{"api_key": "sk-aaa", "is_tools": true}', api_base="https://b.test"),
+        ]
+        result = _dedup(records)
+        assert result == records
+
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    raise SystemExit(pytest.main([__file__, "-v"]))

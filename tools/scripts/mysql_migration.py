@@ -725,16 +725,21 @@ class TenantModelInstanceStage(MigrationStage):
                 deduped.extend(group)
                 continue
 
-            # Multiple records in group — dedup by canonical api_key
-            seen = {}  # canonical_key -> first record
+            # Multiple records in group — dedup by (canonical api_key, api_base).
+            # api_base is part of the dedup identity so two rows that
+            # collapse to the same logical api_key but carry different
+            # base URLs are NOT merged: the migration's stated contract
+            # is to preserve distinct bases.
+            seen = {}  # (canonical_key, api_base) -> first record
             for rec in group:
-                _, _, api_key, _status, _provider_id, _api_base = rec
+                _, _, api_key, _status, _provider_id, api_base = rec
                 canonical = TenantModelInstanceStage._strip_is_tools_from_api_key(api_key)
-                if canonical not in seen:
-                    seen[canonical] = rec
+                identity = (canonical, api_base)
+                if identity not in seen:
+                    seen[identity] = rec
                 else:
                     dup_count += 1
-                    logger.debug(f"Dedup api_key for tenant={tenant_id}, factory={llm_factory}, provider={provider_id}: keeping '{api_key[:20]}...', dropping '{seen[canonical][2][:20]}...'")
+                    logger.debug(f"Dedup api_key for tenant={tenant_id}, factory={llm_factory}, provider={provider_id}: keeping '{api_key[:20]}...', dropping '{seen[identity][2][:20]}...'")
             deduped.extend(seen.values())
 
         if dup_count > 0:
