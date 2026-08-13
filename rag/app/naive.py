@@ -43,6 +43,7 @@ from api.db.joint_services.tenant_model_service import (
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
+from deepdoc.parser.docx_numbering import DOCXNumberingResolver, apply_numbered_headings_to_markdown, extract_numbered_headings
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
@@ -559,6 +560,7 @@ class Docx(DocxParser):
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        numbering = DOCXNumberingResolver(self.doc)
         pn = 0
         lines = []
         last_image = None
@@ -576,9 +578,10 @@ class Docx(DocxParser):
 
             if block.tag.endswith("p"):
                 p = Paragraph(block, self.doc)
+                numbered_heading = numbering.numbered_heading(p)
 
                 if from_page <= pn < to_page:
-                    text = p.text.strip()
+                    text = numbered_heading.numbered_text if numbered_heading is not None else p.text.strip()
                     style_name = p.style.name if p.style else ""
 
                     if text:
@@ -683,6 +686,8 @@ class Docx(DocxParser):
         import mammoth
         from markdownify import markdownify
 
+        document = Document(filename) if binary is None else Document(BytesIO(binary))
+        numbered_headings = extract_numbered_headings(document)
         docx_file = BytesIO(binary) if binary else open(filename, "rb")
 
         def _convert_image_to_base64(image):
@@ -709,7 +714,7 @@ class Docx(DocxParser):
             html = result.value
 
             markdown_text = markdownify(html)
-            return markdown_text
+            return apply_numbered_headings_to_markdown(markdown_text, numbered_headings)
 
         finally:
             if not binary:

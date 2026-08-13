@@ -28,6 +28,7 @@ from docx.image.exceptions import (
     UnrecognizedImageError,
 )
 from rag.utils.lazy_image import LazyImage
+from deepdoc.parser.docx_numbering import DOCXNumberingResolver
 
 
 class RAGFlowDocxParser:
@@ -159,12 +160,14 @@ class RAGFlowDocxParser:
 
     def __call__(self, fnm, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(fnm) if isinstance(fnm, str) else Document(BytesIO(fnm))
+        numbering = DOCXNumberingResolver(self.doc)
         pn = 0  # parsed page
         secs = []  # parsed contents
         for p in self.doc.paragraphs:
             if pn > to_page:
                 break
 
+            numbered_heading = numbering.numbered_heading(p)
             runs_within_single_paragraph = []  # save runs within the range of pages
             for run in p.runs:
                 if pn > to_page:
@@ -176,7 +179,10 @@ class RAGFlowDocxParser:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
 
-            secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, "name") else ""))  # then concat run.text as part of the paragraph
+            paragraph_text = "".join(runs_within_single_paragraph)
+            if paragraph_text and numbered_heading is not None:
+                paragraph_text = numbered_heading.numbered_text
+            secs.append((paragraph_text, p.style.name if hasattr(p.style, "name") else ""))  # then concat run.text as part of the paragraph
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls
