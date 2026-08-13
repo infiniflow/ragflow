@@ -1814,7 +1814,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			var tags []string
 			// Split by "###" for tag_kwd field
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
-				for _, tag := range strings.Split(valueStr, "###") {
+				for tag := range strings.SplitSeq(valueStr, "###") {
 					tag = strings.TrimSpace(tag)
 					if tag != "" {
 						tags = append(tags, tag)
@@ -1822,7 +1822,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 				}
 			} else {
 				// Fallback to comma separation
-				for _, tag := range strings.Split(valueStr, ",") {
+				for tag := range strings.SplitSeq(valueStr, ",") {
 					tag = strings.TrimSpace(tag)
 					if tag != "" {
 						tags = append(tags, tag)
