@@ -1,7 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { Handle, HandleProps, Position } from '@xyflow/react';
-import { Plus } from 'lucide-react';
+import { Plus, ChevronDown } from 'lucide-react';
 import { useMemo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { HandleContext } from '../../context';
@@ -98,5 +98,31 @@ export function LeftEndHandle({
       position={Position.Left}
       {...props}
     ></Handle>
+  );
+}
+
+export function BottomHandle({
+  id,
+  left,
+  visible,
+}: {
+  id: NodeHandleId;
+  left: number;
+  visible: boolean;
+}) {
+  return (
+    <Handle
+      type="source"
+      position={Position.Bottom}
+      isConnectable={false}
+      id={id}
+      style={{ left }}
+      className={cn(
+        '!size-3.5 !bg-text-disabled !border-border-button inline-flex items-center justify-center invisible',
+        { visible },
+      )}
+    >
+      <ChevronDown className="size-2.5 text-bg-base pointer-events-none" />
+    </Handle>
   );
 }
