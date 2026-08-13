@@ -27,6 +27,7 @@ This package contains:
 - local.py: Local process provider implementation
 - ssh.py: Remote SSH provider implementation
 - tenki.py: Tenki disposable microVM provider implementation
+- ucloud_agent_sandbox.py: UCloud Agent Sandbox provider implementation
 """
 
 from .base import SandboxProvider, SandboxInstance, ExecutionResult, SandboxProviderConfigError
@@ -37,6 +38,7 @@ from .e2b import E2BProvider
 from .local import LocalProvider
 from .ssh import SSHProvider
 from .tenki import TenkiProvider
+from .ucloud_agent_sandbox import UCloudAgentSandboxProvider
 
 __all__ = [
     "SandboxProvider",
@@ -50,4 +52,5 @@ __all__ = [
     "LocalProvider",
     "SSHProvider",
     "TenkiProvider",
+    "UCloudAgentSandboxProvider",
 ]

@@ -1035,29 +1035,16 @@ var toolCallRE = regexp.MustCompile(`(?s)<tool_call>.*?</tool_call>`)
 // to parse explicitly.
 func cleanLLMText(s string) string {
 	if strings.HasPrefix(s, "<think>") {
-		if j := strings.LastIndex(s, "</think>"); j >= 0 {
-			s = s[j+len("</think>"):]
-		}
+		s = common.StripThinkTrailing(s)
 	}
 	s = toolCallRE.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
 }
 
-// stripTrailingThink mirrors Python's re.sub(r"^.*</think>", "", s, re.DOTALL)
-// in generator.py's post-processing (e.g. gen_metadata:960): cut everything
-// through the LAST `</think>` so a mid-text reasoning block preceded by a
-// preamble is stripped on top of cleanLLMText's leading-only cleanup.
-func stripTrailingThink(s string) string {
-	if i := strings.LastIndex(s, "</think>"); i >= 0 {
-		s = s[i+len("</think>"):]
-	}
-	return s
-}
-
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
 // matching Python's keyword_extraction and question_proposal post-processing.
 func cleanExtractionResult(s string) string {
-	s = stripTrailingThink(s)
+	s = common.StripThinkTrailing(s)
 	s = strings.TrimSpace(s)
 	if strings.Contains(s, "**ERROR**") {
 		return ""
@@ -1214,7 +1201,7 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	// would otherwise survive into JSON parsing and silently drop the whole
 	// metadata extraction that Python would have kept. No **ERROR** check here
 	// — Python's gen_metadata has none either.
-	s = stripTrailingThink(s)
+	s = common.StripThinkTrailing(s)
 	parsed, ok := tryParseJSONObject(s)
 	if !ok {
 		return nil, nil
@@ -1540,8 +1527,7 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 // when chunks is non-empty. The python rag/flow/extractor/extractor.py
 // build_existing_prompt path performs the same substitution at
 // runtime; the Go port surfaces it as a regex on the prompt
-// template so the resume template's `{TitleChunker:FlatMiceFix@chunks}`
-// reference resolves without invoking a template engine.
+// template so the reference resolves without invoking a template engine.
 //
 // Substitution is opt-in: when chunks is nil/empty the placeholder
 // is left intact so a misconfigured template surfaces as a
@@ -1582,9 +1568,7 @@ func buildExtractorMessages(system, prompt, chunkText string, chunks []map[strin
 //	{CmpName:ParamName@chunks}
 //
 // The CmpName and ParamName are both matched but ignored — the
-// substitute is always "the joined chunk text" today, because the
-// only @chunks reference in production templates is the resume
-// template's `{TitleChunker:FlatMiceFix@chunks}` pattern. The
+// substitute is always "the joined chunk text" today. The
 // CmpName/ParamName parsing exists so a future per-component
 // substitution can extend the function without breaking the
 // existing call sites.
