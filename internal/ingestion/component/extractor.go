@@ -536,8 +536,15 @@ type extractorInputs struct {
 	llmID        string
 	systemPrompt string
 	prompt       string
-	lang         string
-	chunks       []map[string]any
+	// cacheModel is the model identity used to key the metadata LLM cache,
+	// resolved once per Invoke in runAutoExtractions (D25). When llm_id is
+	// empty it holds the tenant default chat model ref so the key keeps a
+	// real model identity instead of an empty segment (which would collide
+	// across tenants and go stale after the default model changes). Empty
+	// elsewhere falls back to llmID in runEnableMetadata.
+	cacheModel string
+	lang       string
+	chunks     []map[string]any
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
 	// (or the chat-model default) decides, matching Python's generic
@@ -823,6 +830,13 @@ func (c *ExtractorComponent) runAutoExtractions(ctx context.Context, db *gorm.DB
 	if c.Param.AutoKeywords == 0 && c.Param.AutoQuestions == 0 && c.Param.EnableMetadata == 0 {
 		return nil
 	}
+	// Resolve the metadata cache key model once per invocation, not per
+	// chunk (D25): every chunk job shares the same llm_id / tenant context,
+	// so a per-chunk resolve would fan N identical tenant queries through
+	// the pool workers. Only pay it when metadata extraction actually runs.
+	if c.Param.EnableMetadata > 0 && len(c.Param.Metadata) > 0 {
+		in.cacheModel = resolveMetadataCacheModel(ctx, db, in.llmID)
+	}
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
@@ -919,8 +933,14 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	// repeated runs / identical chunks don't re-pay the LLM call.
 	// Best-effort: a missing Redis client or any cache error falls through to
 	// a live call instead of failing the extraction.
+	// cacheModel is populated per-invocation in runAutoExtractions; direct
+	// callers (tests) leave it empty, in which case the raw llmID is used.
+	keyModel := in.cacheModel
+	if keyModel == "" {
+		keyModel = in.llmID
+	}
 	var parsed map[string]any
-	if cached, hit := getMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText); hit {
+	if cached, hit := getMetadataLLMCache(ctx, keyModel, schemaStr, chunkText); hit {
 		parsed = cached
 	} else {
 		metaTemp := extractorTemperature
@@ -940,7 +960,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			// empty result rather than failing the chunk.
 			return nil
 		}
-		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
+		setMetadataLLMCache(ctx, keyModel, schemaStr, chunkText, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
 	var meta map[string]any
@@ -960,6 +980,38 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	ck["metadata"] = meta
 	return nil
+}
+
+// resolveMetadataCacheModel returns the model identity to key the metadata
+// LLM cache on. A bare llm_id ("") means "tenant default chat model" — the
+// live call resolves it through resolveExtractorChatDefaultConfig — but the
+// raw empty string must not be hashed into the key: Python keys on the
+// resolved chat_mdl.llm_name (task_executor.py:540/547), so an empty model
+// segment would collide across tenants and go stale for 24h after the tenant
+// default model changes (D25). Non-empty llm_id passes through unchanged,
+// preserving the exact cache behavior of the ingestion path.
+// Returns "" only in the degenerate case (no tenant context / no default
+// model) where the extraction call would have no model to run anyway.
+func resolveMetadataCacheModel(ctx context.Context, db *gorm.DB, llmID string) string {
+	if llmID != "" {
+		return llmID
+	}
+	if db == nil {
+		db = dao.DB
+	}
+	if db == nil {
+		return ""
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return ""
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return ""
+	}
+	return defaultChatModelRef(ctx, db, tid)
 }
 
 // metadataLLMCacheTTL mirrors Python get_llm_cache/set_llm_cache 24h TTL.

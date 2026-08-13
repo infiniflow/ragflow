@@ -959,6 +959,48 @@ func TestExtractorComponent_runEnableMetadata_DegradesGracefully(t *testing.T) {
 	}
 }
 
+// TestResolveMetadataCacheModel_NonEmptyShortCircuits pins that a non-empty
+// llm_id is returned unchanged (D25): the ingestion path always injects
+// llm_id, so its cache key must not be perturbed by the tenant-default
+// resolution. This is the guard that keeps the fix from touching the hot path.
+func TestResolveMetadataCacheModel_NonEmptyShortCircuits(t *testing.T) {
+	got := resolveMetadataCacheModel(t.Context(), nil, "model-uuid")
+	if got != "model-uuid" {
+		t.Fatalf("resolveMetadataCacheModel(non-empty) = %q, want the input unchanged", got)
+	}
+}
+
+// TestResolveMetadataCacheModel_EmptyNoState_ReturnsEmpty pins the safe
+// degenerate path (D25): with no CanvasState / tenant context the resolver
+// must return "" rather than panic or invent a model — the same case that
+// would leave the extraction with no model to call anyway.
+func TestResolveMetadataCacheModel_EmptyNoState_ReturnsEmpty(t *testing.T) {
+	if got := resolveMetadataCacheModel(t.Context(), nil, ""); got != "" {
+		t.Fatalf("resolveMetadataCacheModel(empty, no state) = %q, want empty", got)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_UsesCacheModel verifies the
+// per-invocation cache model identity (populated by runAutoExtractions) is
+// consumed by the metadata path without breaking extraction: a cacheModel that
+// differs from llmID must still produce a normal extraction (D25).
+func TestExtractorComponent_runEnableMetadata_UsesCacheModel(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil,
+		extractorInputs{llmID: "m", cacheModel: "tenant-default-ref"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata = %v, want category=finance", meta)
+	}
+}
+
 // TestExtractorComponent_runEnableMetadata_CrossChunkUnion simulates two chunks
 // whose extraction returns overlapping list values for the same key. Aggregating
 // the chunk metadata maps with utility.UpdateMetadataTo (as mergeChunkMetadata
