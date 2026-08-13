@@ -1210,6 +1210,44 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 	return logs, total, common.CodeSuccess, nil
 }
 
+// ListLogs lists sync logs for the current user with pagination.
+// When datasetID is non-empty, only logs of that dataset are returned.
+func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, 0, common.CodeDataError, fmt.Errorf("user_id is required")
+	}
+
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, 0, common.CodeServerError, err
+	}
+	tenantIDs = append(tenantIDs, userID)
+
+	offset, limit := 0, pageSize
+	if pageSize <= 0 {
+		// pageSize == 0 means no pagination: return every matching row.
+		limit = 0
+	} else {
+		if page < 1 {
+			page = 1
+		}
+		if pageSize > 100 {
+			limit = 15
+		}
+		offset = (page - 1) * limit
+	}
+
+	logs, total, err := s.connectorDAO.ListLogs(ctx, dao.DB, tenantIDs, datasetID, offset, limit)
+	if err != nil {
+		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch sync logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+	return logs, total, common.CodeSuccess, nil
+}
+
 func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, userID string, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
 	var clientID, clientSecret, redirectURI string
 	if req != nil {

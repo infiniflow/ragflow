@@ -125,7 +125,6 @@ func (s *Scheduler) queueAvailable() int {
 
 // publishStartupTasks scans DB once for startup reconciliation.
 func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
-	// TODO restores running tasks during syncer startup.
 	if err := s.taskService.RecoverRunning(ctx); err != nil {
 		return err
 	}
