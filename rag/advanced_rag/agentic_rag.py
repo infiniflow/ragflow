@@ -33,9 +33,11 @@ the fast non-tool-calling path.
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, List
+from typing import Any
 
 import json_repair
+
+from api.db.db_models import Document, Knowledgebase
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -56,9 +58,7 @@ from rag.prompts.generator import (
     multi_queries_gen,
     sufficiency_select,
 )
-from api.db.db_models import Document, Knowledgebase
 from rag.utils.web_search_conn import WebSearchProvider
-
 
 # Tokens held back from the model's context when fitting retrieved evidence
 # into the sufficiency / follow-up prompts. The evidence sits in the MIDDLE of
@@ -88,9 +88,65 @@ _RAG_CACHE_MIN_SHARED = 2
 # Lightweight stopwords for the cross-`rag`-call dedup only. Never reused for
 # retrieval/answer quality.
 _RAG_CACHE_STOPWORDS = frozenset(
-    "the a an is was were what which when where who how of in to for and or but on at by be as it that this"
-    " about with their its have has had been being from over under do does did not no yes can could should would"
-    " also only very much more most some any".split()
+    [
+        "the",
+        "a",
+        "an",
+        "is",
+        "was",
+        "were",
+        "what",
+        "which",
+        "when",
+        "where",
+        "who",
+        "how",
+        "of",
+        "in",
+        "to",
+        "for",
+        "and",
+        "or",
+        "but",
+        "on",
+        "at",
+        "by",
+        "be",
+        "as",
+        "it",
+        "that",
+        "this",
+        "about",
+        "with",
+        "their",
+        "its",
+        "have",
+        "has",
+        "had",
+        "been",
+        "being",
+        "from",
+        "over",
+        "under",
+        "do",
+        "does",
+        "did",
+        "not",
+        "no",
+        "yes",
+        "can",
+        "could",
+        "should",
+        "would",
+        "also",
+        "only",
+        "very",
+        "much",
+        "more",
+        "most",
+        "some",
+        "any",
+    ]
 )
 
 
@@ -142,11 +198,11 @@ class RAGTools:
         tenant_ids: list[str],
         chat_mdl: LLMBundle,
         embed_mdl: LLMBundle | None = None,
-        kb_ids: List[str] | None = None,
+        kb_ids: list[str] | None = None,
         kbs: list[Knowledgebase] | None = None,
         web_search: WebSearchProvider | None = None,
         meta_data_filter: dict | None = None,
-        doc_scope: List[str] | None = None,
+        doc_scope: list[str] | None = None,
         user_defined_prompts: dict | None = None,
         empty_response: str = "",
         do_refer: bool | None = True,
@@ -233,7 +289,7 @@ class RAGTools:
     def has_llm(self) -> bool:
         return self.chat_mdl is not None
 
-    def scoped_doc_ids(self, doc_scope: List[str] | None = None) -> List[str] | None:
+    def scoped_doc_ids(self, doc_scope: list[str] | None = None) -> list[str] | None:
         if self.doc_scope is None:
             return doc_scope
         if not doc_scope:
@@ -280,7 +336,7 @@ class RAGTools:
     # Graph node helpers (plain async methods — never exposed as tools)
     # ------------------------------------------------------------------ #
     @in_phase("formalize")
-    async def formalize(self, messages: List[Any]) -> tuple[str, str]:
+    async def formalize(self, messages: list[Any]) -> tuple[str, str]:
         """Rewrite the latest user message into a standalone question AND derive
         its search keywords (each with close synonyms), in one LLM call.
 
@@ -353,7 +409,7 @@ class RAGTools:
         keywords = str(keywords).strip()
         return question, keywords
 
-    async def pick_documents(self, question: str) -> List[str] | None:
+    async def pick_documents(self, question: str) -> list[str] | None:
         """Narrow the search to a document subset for ``question``.
 
         Uses document metadata when the bound KBs carry any (mirrors the old
@@ -373,7 +429,7 @@ class RAGTools:
         ids = await self._select_by_titles(question)
         return ids or None
 
-    async def _filter_by_metadata(self, question: str, metas: dict) -> List[str]:
+    async def _filter_by_metadata(self, question: str, metas: dict) -> list[str]:
         filters = await gen_meta_filter(self.chat_mdl, metas, question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         conditions = filters.get("conditions") or []
@@ -392,7 +448,7 @@ class RAGTools:
             return []
         return doc_ids or []
 
-    async def _select_by_titles(self, question: str, max_docs: int = 512) -> List[str]:
+    async def _select_by_titles(self, question: str, max_docs: int = 512) -> list[str]:
         docs = await thread_pool_exec(self._collect_doc_titles, max_docs)
         if not docs:
             return []
@@ -454,7 +510,7 @@ class RAGTools:
         self,
         question: str,
         keywords: str | list = "",
-        doc_scope: List[str] | None = None,
+        doc_scope: list[str] | None = None,
         top_n: int = 6,
         similarity_threshold: float = 0.2,
         using_embedding: bool = False,
@@ -588,7 +644,7 @@ class RAGTools:
             return {}
 
     @in_phase("sufficiency")
-    async def gen_followups(self, question: str, query: str, missing: List[str], evidence_md: str) -> List[dict]:
+    async def gen_followups(self, question: str, query: str, missing: list[str], evidence_md: str) -> list[dict]:
         """Generate complementary follow-up (question, query) pairs for gaps."""
         evidence_md = self._fit_evidence(question, evidence_md)
         try:
@@ -688,8 +744,7 @@ class RAGTools:
                     final += delta
                 if self.answer_sink is not None:
                     self.answer_sink(delta, kind == "think")
-            for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
-                final = re.sub(p, r, final)
+            final = re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", final)
 
             # Cache the freshly produced answer for later near-identical questions.
             if question and final and not self.text_attachments_content:

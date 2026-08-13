@@ -20,6 +20,7 @@ from inspect import iscoroutinefunction
 _LOG = logging.getLogger("rag.advanced_rag.harness.stats")
 
 _CURRENT_PHASE: ContextVar[str] = ContextVar("agentic_rag_llm_phase", default="unknown")
+_ACTIVE_PHASES: ContextVar[tuple[str, ...]] = ContextVar("agentic_rag_active_phases", default=())
 
 # Canonical pipeline order for the per-phase usage table. Phases are listed in
 # the order they execute across the (high/ultra) agentic pipeline so the log
@@ -59,25 +60,26 @@ def phase(name: str):
     counted 2-3 times.
     """
     token = _CURRENT_PHASE.set(name)
+    active = _ACTIVE_PHASES.get()
+    active_token = _ACTIVE_PHASES.set(active + (name,))
+    shadowed = name in active
     stats = _CURRENT_STATS.get()
     if stats is not None:
         stats.note_start(name)
         entry_round = stats.current_round
-        shadowed = name in stats._active_phases
-        stats._active_phases.append(name)
+        if not shadowed:
+            stats.note_phase_enter(name, entry_round)
     else:
         entry_round = 0
         shadowed = True  # no stats object -> timing guarded by `if stats is not None` below
-    t0 = time.perf_counter()
     try:
         yield
     finally:
         _CURRENT_PHASE.reset(token)
+        _ACTIVE_PHASES.reset(active_token)
         stats = _CURRENT_STATS.get()
-        if stats is not None:
-            stats._active_phases.pop()
-            if not shadowed:
-                stats.record_phase_time(name, (time.perf_counter() - t0) * 1000.0, entry_round=entry_round)
+        if stats is not None and not shadowed:
+            stats.note_phase_exit(name, entry_round)
 
 
 def in_phase(name: str):
@@ -122,12 +124,10 @@ class LLMUsageStats:
         self.round_claim_counts: dict[str, list[int]] = defaultdict(list)
         self._round_starts: dict[str, float] = {}
         self._current_round: int = 0
-        # Stack of phase names currently entered (for re-entrancy detection).
-        # When the same phase name is wrapped multiple times along one call
-        # path (e.g. graph node + impl fn + orchestrator wrapper), only the
-        # outermost interval is timed; inner re-entries are shadowed and add no
-        # wall-clock, so the time is not double/triple counted.
-        self._active_phases: list[str] = []
+        self._phase_active_counts: dict[str, int] = defaultdict(int)
+        self._phase_starts: dict[str, float] = {}
+        self._round_phase_active_counts: dict[tuple[str, int], int] = defaultdict(int)
+        self._round_phase_starts: dict[tuple[str, int], float] = {}
 
     @property
     def current_round(self) -> int:
@@ -147,28 +147,57 @@ class LLMUsageStats:
     def record_failed(self, phase_name: str) -> None:
         self.failed[phase_name] += 1
 
-    def record_phase_time(self, phase_name: str, elapsed_ms: float, entry_round: int = 0) -> None:
+    def _accumulate_phase_time(self, phase_name: str, elapsed_ms: float, entry_round: int = 0) -> None:
         self.phase_time_ms[phase_name] += elapsed_ms
-        # Attribute the wall-clock to the orchestrator round this phase entered.
-        # The current round index is captured at phase entry, so a round with
-        # several nested entries (parallel agent runs) still accumulates into
-        # exactly one per-round slot.
         if entry_round > 0:
             times = self.round_phase_times_ms[phase_name]
             while len(times) < entry_round:
                 times.append(0.0)
             times[entry_round - 1] += elapsed_ms
-        # Settle any dangling final round (the loop ended without another
-        # ``record_round``) against the phase total: total minus settled rounds.
         pending = self.rounds[phase_name] - len(self.round_times[phase_name])
         if pending > 0:
             settled = sum(self.round_times[phase_name])
-            self.round_times[phase_name].append(max(0.0, elapsed_ms - settled))
+            self.round_times[phase_name].append(max(0.0, self.phase_time_ms[phase_name] - settled))
             self._round_starts.pop(phase_name, None)
         if phase_name == "orchestrator":
-            # The orchestrator phase brackets the whole loop; once it exits no
-            # later phase (e.g. finalize) belongs to any orchestrator round.
             self._current_round = 0
+
+    def note_phase_enter(self, phase_name: str, entry_round: int = 0) -> None:
+        now = time.perf_counter()
+        self._phase_active_counts[phase_name] += 1
+        if self._phase_active_counts[phase_name] == 1:
+            self._phase_starts[phase_name] = now
+        if entry_round > 0:
+            key = (phase_name, entry_round)
+            self._round_phase_active_counts[key] += 1
+            if self._round_phase_active_counts[key] == 1:
+                self._round_phase_starts[key] = now
+
+    def note_phase_exit(self, phase_name: str, entry_round: int = 0) -> None:
+        now = time.perf_counter()
+        active = self._phase_active_counts.get(phase_name, 0)
+        if active > 0:
+            active -= 1
+            if active == 0:
+                start = self._phase_starts.pop(phase_name, now)
+                self._phase_active_counts.pop(phase_name, None)
+                self._accumulate_phase_time(phase_name, (now - start) * 1000.0, entry_round=0)
+            else:
+                self._phase_active_counts[phase_name] = active
+        if entry_round > 0:
+            key = (phase_name, entry_round)
+            active = self._round_phase_active_counts.get(key, 0)
+            if active > 0:
+                active -= 1
+                if active == 0:
+                    start = self._round_phase_starts.pop(key, now)
+                    self._round_phase_active_counts.pop(key, None)
+                    times = self.round_phase_times_ms[phase_name]
+                    while len(times) < entry_round:
+                        times.append(0.0)
+                    times[entry_round - 1] += (now - start) * 1000.0
+                else:
+                    self._round_phase_active_counts[key] = active
 
     def record_usage(self, phase_name: str, usage: dict | None) -> None:
         if not usage:

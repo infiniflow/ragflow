@@ -3,21 +3,21 @@
 import asyncio
 import logging
 
-from rag.advanced_rag.harness.types import (
-    ClaimTarget,
-    AgentResult,
-    OrchestratorContext,
-)
-from rag.advanced_rag.harness.config import get_mode
-from rag.advanced_rag.harness.pipeline import Pipeline
 from rag.advanced_rag.harness.agent import research_agent_loop
+from rag.advanced_rag.harness.config import get_mode
+from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
+from rag.advanced_rag.harness.pipeline import Pipeline
+from rag.advanced_rag.harness.stats import in_phase, record_round, record_round_claims
 from rag.advanced_rag.harness.sufficiency import (
-    cross_check_claim,
     compute_fusion_score,
+    cross_check_claim,
     route_sufficiency_verdict,
 )
-from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
-from rag.advanced_rag.harness.stats import in_phase, record_round, record_round_claims
+from rag.advanced_rag.harness.types import (
+    AgentResult,
+    ClaimTarget,
+    OrchestratorContext,
+)
 
 _LOG = logging.getLogger(__name__)
 CLAIM_RESEARCH_TIMEOUT_SECONDS = 180
@@ -268,12 +268,12 @@ async def agentic_research(state: dict, tools) -> dict:
         _LOG.info("[Agentic research] Round %d: evidence looks %s (confidence %.0f%%) — next: %s", cycle + 1, verdict.status, verdict.score * 100, action)
 
         if action == "ANSWER":
-            return _finalize(ctx, tools, partial=False, rounds_run=rounds_run)
+            return _finalize(ctx, tools, partial=False, loop=rounds_run)
         if action == "ANSWER_PARTIAL":
-            return _finalize(ctx, tools, partial=True, rounds_run=rounds_run)
+            return _finalize(ctx, tools, partial=True, loop=rounds_run)
         if action == "ABSTAIN":
             tools.kbinfos["chunks"] = []
-            return {"verdict": verdict.__dict__, "abstain": True, "rounds_run": rounds_run}
+            return {"verdict": verdict.__dict__, "abstain": True, "loop": rounds_run}
         if action == "REPLAN":
             # Ultra: re-plan on low score. Ground the new plan on the evidence
             # gathered so far, and carry still-valid verified claims over so a
@@ -295,10 +295,10 @@ async def agentic_research(state: dict, tools) -> dict:
             seen = {c.description for c in verified}
             ctx.claims = verified + [c for c in new_by_desc.values() if c.description not in seen]
         if action == "FALLBACK_LLM":
-            return _finalize(ctx, tools, partial=True, fallback=True, rounds_run=rounds_run)
+            return _finalize(ctx, tools, partial=True, fallback=True, loop=rounds_run)
 
     # Max cycles reached
-    return _finalize(ctx, tools, partial=True, rounds_run=rounds_run)
+    return _finalize(ctx, tools, partial=True, loop=rounds_run)
 
 
 async def _run_claim_research(
@@ -318,7 +318,7 @@ async def _run_claim_research(
         )
     except asyncio.CancelledError:
         raise
-    except asyncio.TimeoutError:
+    except TimeoutError:
         _LOG.warning(
             '[Agentic research] Gave up on "%s" — it took longer than %ss.',
             _snip(claim.description),
@@ -354,13 +354,13 @@ async def _run_claim_research(
     return result
 
 
-def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False, rounds_run: int = 0) -> dict:
+def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False, loop: int = 0) -> dict:
     """Merge agent results into kbinfos and return."""
     _merge_agent_results(ctx, tools)
     return {
         "verdict": ctx.verdict.__dict__ if ctx.verdict else None,
         "partial_answer": partial or fallback,
-        "rounds_run": rounds_run,
+        "loop": loop,
         "kbinfos": tools.kbinfos,
     }
 
@@ -459,8 +459,8 @@ async def _add_template_group_compilations(comps: set[str], parser_config: dict,
     if not tenant_id:
         return
     try:
-        from common.misc_utils import thread_pool_exec
         from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+        from common.misc_utils import thread_pool_exec
         from rag.svr.task_executor_refactor.chunk_post_processor import (
             _parser_config_compilation_template_group_ids,
         )

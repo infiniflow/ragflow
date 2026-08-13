@@ -33,8 +33,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import logging
+import re
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -344,13 +344,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     async def orchestrator_loop(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.orchestrator import orchestrator_loop as _run
 
-        result = await _run(state, tools)
-        # Map the orchestrator's actual round count back onto ``loop`` so the
-        # final "Research complete" log reports the real number of rounds run
-        # (formalize_question seeds loop=0 and never updates it otherwise).
-        if isinstance(result, dict) and result.get("rounds_run"):
-            result["loop"] = result["rounds_run"]
-        return result
+        return await _run(state, tools)
 
     # ── Node: formalize_answer ──
     @in_phase("finalize")
