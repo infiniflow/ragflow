@@ -39,6 +39,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from rag.advanced_rag.harness.stats import in_phase
 from rag.prompts.generator import form_message, kb_prompt, message_fit_in
 
 _LOG = logging.getLogger(__name__)
@@ -277,6 +278,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
     answer_conf = dict(gen_conf) if gen_conf else {"temperature": 0.3}
 
     # ── Node: formalize_question ──
+    @in_phase("formalize")
     async def formalize_question(state: AgenticState) -> dict:
         msgs = state.get("messages") or []
         _LOG.info("[Formalizing the question] Reading the conversation (%d message(s)) to work out the standalone question...", len(msgs))
@@ -294,6 +296,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         }
 
     # ── Node: route ──
+    @in_phase("route")
     async def route(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.route import route_node
 
@@ -330,18 +333,27 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         return {"seed_chunks": chunks}
 
     # ── Node: planner ──
+    @in_phase("planner")
     async def planner(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.planner import planner_node
 
         return await planner_node(state, tools)
 
     # ── Node: orchestrator_loop ──
+    @in_phase("orchestrator")
     async def orchestrator_loop(state: AgenticState) -> dict:
         from rag.advanced_rag.harness.orchestrator import orchestrator_loop as _run
 
-        return await _run(state, tools)
+        result = await _run(state, tools)
+        # Map the orchestrator's actual round count back onto ``loop`` so the
+        # final "Research complete" log reports the real number of rounds run
+        # (formalize_question seeds loop=0 and never updates it otherwise).
+        if isinstance(result, dict) and result.get("rounds_run"):
+            result["loop"] = result["rounds_run"]
+        return result
 
     # ── Node: formalize_answer ──
+    @in_phase("finalize")
     async def formalize_answer(state: AgenticState) -> dict:
         kbinfos = state.get("kbinfos") or {"chunks": [], "doc_aggs": []}
         question = state.get("question") or ""

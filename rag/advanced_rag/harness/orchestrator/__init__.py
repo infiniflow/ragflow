@@ -6,10 +6,12 @@ from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.orchestrator.direct import direct_search
 from rag.advanced_rag.harness.orchestrator.decompose import decompose_and_search
 from rag.advanced_rag.harness.orchestrator.agentic import agentic_research
+from rag.advanced_rag.harness.stats import in_phase
 
 _LOG = logging.getLogger(__name__)
 
 
+@in_phase("orchestrator")
 async def orchestrator_loop(state: dict, tools) -> dict:
     """Main orchestrator — dispatch to strategy based on thinking mode."""
     route = state.get("route")

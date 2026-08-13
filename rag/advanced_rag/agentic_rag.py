@@ -44,6 +44,7 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _split_think_stream
+from rag.advanced_rag.harness.stats import CountingChatModel, LLMUsageStats, in_phase, using_stats
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -153,7 +154,11 @@ class RAGTools:
         text_attachments_content: str = "",
     ):
         self.tenant_ids = tenant_ids
-        self.chat_mdl = chat_mdl.clone()
+        # P0 instrumentation: count LLM calls / token usage per harness phase.
+        # The wrapper proxies every ``async_chat*`` entry point (and ``clone``)
+        # of the bundle, keeping the rest of the harness untouched.
+        self.llm_stats = LLMUsageStats()
+        self.chat_mdl = CountingChatModel(chat_mdl.clone(), self.llm_stats)
         self.embed_mdl = embed_mdl
         self.thinking_mode = thinking_mode
         self.field_map = {}
@@ -274,6 +279,7 @@ class RAGTools:
     # ------------------------------------------------------------------ #
     # Graph node helpers (plain async methods — never exposed as tools)
     # ------------------------------------------------------------------ #
+    @in_phase("formalize")
     async def formalize(self, messages: List[Any]) -> tuple[str, str]:
         """Rewrite the latest user message into a standalone question AND derive
         its search keywords (each with close synonyms), in one LLM call.
@@ -565,6 +571,7 @@ class RAGTools:
         _, msg = message_fit_in(form_message(question, evidence_md), budget)
         return msg[-1]["content"]
 
+    @in_phase("sufficiency")
     async def judge_sufficiency(self, question: str, evidence_md: str) -> dict:
         """Judge whether ``evidence_md`` answers ``question`` and pick useful chunks.
 
@@ -580,6 +587,7 @@ class RAGTools:
             logging.exception("judge_sufficiency failed")
             return {}
 
+    @in_phase("sufficiency")
     async def gen_followups(self, question: str, query: str, missing: List[str], evidence_md: str) -> List[dict]:
         """Generate complementary follow-up (question, query) pairs for gaps."""
         evidence_md = self._fit_evidence(question, evidence_md)
@@ -653,36 +661,41 @@ class RAGTools:
 
         if self.tool_started_sink is not None:
             self.tool_started_sink()
-        # P0: reuse a near-identical question's cached answer instead of re-running
-        # the whole agentic graph. Significant-keyword overlap (>= min_overlap AND
-        # >=2 shared words, and matching numbers) collapses the re-ask pattern
-        # while leaving genuinely different questions untouched. Attachments bypass
-        # the cache (their content is appended to the question message below).
-        if question and not self.text_attachments_content:
-            qk = _question_keywords(question)
-            if self._rag_cache:
-                for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
-                    if cached_gram and _cache_similar(qk, cached_gram):
-                        shared = len(qk[0] & cached_gram[0])
-                        _LOG.info("[rag] Reusing cached answer for near-identical question %r (%d shared words); skipping re-research.", question, shared)
-                        return cached_answer
+        # Per-call instrumentation: each `rag` invocation gets its own stats
+        # object (bound through the per-task ContextVar), so parallel calls
+        # report independent usage instead of one shared cumulative sink.
+        with using_stats(LLMUsageStats()) as call_stats:
+            # P0: reuse a near-identical question's cached answer instead of re-running
+            # the whole agentic graph. Significant-keyword overlap (>= min_overlap AND
+            # >=2 shared words, and matching numbers) collapses the re-ask pattern
+            # while leaving genuinely different questions untouched. Attachments bypass
+            # the cache (their content is appended to the question message below).
+            if question and not self.text_attachments_content:
+                qk = _question_keywords(question)
+                if self._rag_cache:
+                    for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
+                        if cached_gram and _cache_similar(qk, cached_gram):
+                            shared = len(qk[0] & cached_gram[0])
+                            _LOG.info("[Agentic RAG] Cache hit — reused prior answer for near-identical question %r (%d shared words); skipped research.", question, shared)
+                            return cached_answer
 
-        messages = [{"role": "user", "content": question}] if question else []
-        if self.text_attachments_content and messages:
-            messages[-1]["content"] += self.text_attachments_content
-        final = ""
-        async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
-            if kind == "answer":
-                final += delta
-            if self.answer_sink is not None:
-                self.answer_sink(delta, kind == "think")
-        for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
-            final = re.sub(p, r, final)
+            messages = [{"role": "user", "content": question}] if question else []
+            if self.text_attachments_content and messages:
+                messages[-1]["content"] += self.text_attachments_content
+            final = ""
+            async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
+                if kind == "answer":
+                    final += delta
+                if self.answer_sink is not None:
+                    self.answer_sink(delta, kind == "think")
+            for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
+                final = re.sub(p, r, final)
 
-        # Cache the freshly produced answer for later near-identical questions.
-        if question and final and not self.text_attachments_content:
-            self._rag_cache[question] = (final, _question_keywords(question))
-        return final
+            # Cache the freshly produced answer for later near-identical questions.
+            if question and final and not self.text_attachments_content:
+                self._rag_cache[question] = (final, _question_keywords(question))
+            call_stats.log()
+            return final
 
     @tool
     async def summarize_document(self, doc_id: str) -> list[str]:
