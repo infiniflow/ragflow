@@ -95,8 +95,8 @@ type ExtractorParam struct {
 	// SystemPrompt is the optional system prompt override.
 	SystemPrompt string `json:"system_prompt,omitempty"`
 
-	// Prompt is the user-side template passed to the LLM.
-	Prompt string `json:"prompt,omitempty"`
+	// UserPrompt is the user-side template passed to the LLM.
+	UserPrompt string `json:"user_prompt,omitempty"`
 
 	// AutoKeywords enables automatic keyword extraction with a fixed
 	// prompt. The value determines the top-N count.
@@ -137,7 +137,7 @@ func (ExtractorParam) Defaults() ExtractorParam {
 		FieldName:      "",
 		LLMID:          "",
 		SystemPrompt:   "",
-		Prompt:         "",
+		UserPrompt:     "",
 		AutoKeywords:   0,
 		AutoQuestions:  0,
 		AutoTags:       0,

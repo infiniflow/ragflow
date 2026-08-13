@@ -131,9 +131,9 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		LLMID:     "gpt-4o-mini",
-		Prompt:    "Summarize:",
+		FieldName:  "summary",
+		LLMID:      "gpt-4o-mini",
+		UserPrompt: "Summarize:",
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -301,8 +301,8 @@ func TestExtractorComponent_Invoke_KeepsJSONAsString(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "extraction",
-		Prompt:    "extract:",
+		FieldName:  "extraction",
+		UserPrompt: "extract:",
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "doc"}}},
@@ -557,7 +557,7 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 		"field_name":    "summary",
 		"llm_id":        "openai/gpt-4o-mini",
 		"system_prompt": "You are a precise summarizer.",
-		"prompt":        "Summarize:",
+		"user_prompt":   "Summarize:",
 	})
 	if err != nil {
 		t.Fatalf("NewExtractorComponent: %v", err)
@@ -569,20 +569,51 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	}
 }
 
-// TestNewExtractorComponent_SysPromptAlias verifies that "sys_prompt"
-// (the Python DSL name) is accepted as a fallback for SystemPrompt.
-func TestNewExtractorComponent_SysPromptAlias(t *testing.T) {
+// TestNewExtractorComponent_ParsesUserPrompt verifies that the DSL keys
+// "user_prompt" / "system_prompt" map onto the UserPrompt / SystemPrompt
+// fields. These are the only prompt keys the extractor recognizes.
+func TestNewExtractorComponent_ParsesUserPrompt(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: "ok"})
 	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"sys_prompt": "You are a Python DSL prompt.",
+		"field_name":    "out",
+		"system_prompt": "You are a precise summarizer.",
+		"user_prompt":   "Summarize:",
 	})
 	if err != nil {
 		t.Fatalf("NewExtractorComponent: %v", err)
 	}
 	ec := comp.(*ExtractorComponent)
-	if ec.Param.SystemPrompt != "You are a Python DSL prompt." {
-		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "You are a Python DSL prompt.")
+	if ec.Param.SystemPrompt != "You are a precise summarizer." {
+		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "You are a precise summarizer.")
+	}
+	if ec.Param.UserPrompt != "Summarize:" {
+		t.Errorf("UserPrompt = %q, want %q", ec.Param.UserPrompt, "Summarize:")
+	}
+}
+
+// TestNewExtractorComponent_IgnoresLegacyPromptKeys pins that the removed
+// prompt aliases ("sys_prompt", "prompt", and the "prompts" string/list
+// forms) are no longer read by the extractor: the two canonical fields
+// stay at their defaults even when only legacy keys are present.
+func TestNewExtractorComponent_IgnoresLegacyPromptKeys(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "ok"})
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name": "out",
+		"sys_prompt": "ignored sys",
+		"prompt":     "ignored user",
+		"prompts": []any{
+			map[string]any{"content": "ignored queue", "role": "user"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.SystemPrompt != "" {
+		t.Errorf("SystemPrompt = %q, want empty (sys_prompt must be ignored)", ec.Param.SystemPrompt)
+	}
+	if ec.Param.UserPrompt != "" {
+		t.Errorf("UserPrompt = %q, want empty (prompt/prompts must be ignored)", ec.Param.UserPrompt)
 	}
 }
 
@@ -619,113 +650,6 @@ func TestNewExtractorComponent_MetadataAsAnySlice(t *testing.T) {
 	}
 	if len(ec.Param.Metadata[1].Enum) != 2 {
 		t.Errorf("Metadata[1].Enum = %#v, want 2 enum values", ec.Param.Metadata[1].Enum)
-	}
-}
-
-// TestNewExtractorComponent_PromptsArray verifies that the Python DSL
-// "prompts" array format is parsed into Param.Prompt.
-func TestNewExtractorComponent_PromptsArray(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompts": []any{
-			map[string]any{
-				"content": "Analyze: {TitleChunker:FlatMiceFix@chunks}",
-				"role":    "user",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	want := "Analyze: {TitleChunker:FlatMiceFix@chunks}"
-	if ec.Param.Prompt != want {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, want)
-	}
-}
-
-// TestNewExtractorComponent_PromptsArray_PromptWins verifies that
-// "prompt" (string) takes priority over "prompts" (array) when both
-// are present in the DSL params.
-func TestNewExtractorComponent_PromptsArray_PromptWins(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompt":     "Direct prompt wins.",
-		"prompts": []any{
-			map[string]any{
-				"content": "Should be ignored.",
-				"role":    "user",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.Prompt != "Direct prompt wins." {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
-	}
-}
-
-// TestNewExtractorComponent_PromptsString verifies that a bare-string
-// "prompts" (the shape emitted by the front-end graph.nodes form and
-// the dsl/testdata templates) is normalized into Param.Prompt, mirroring
-// Python agent/component/llm.py:119-120 which coerces a string prompts
-// into [{"role":"user","content":prompts}]. Without this normalization
-// the string form is silently dropped (the .([]any) assertion fails).
-func TestNewExtractorComponent_PromptsString(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompts":    "Content: {TitleChunker:FlatMiceFix@chunks}",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	want := "Content: {TitleChunker:FlatMiceFix@chunks}"
-	if ec.Param.Prompt != want {
-		t.Errorf("Prompt = %q, want %q (string prompts should be normalized)", ec.Param.Prompt, want)
-	}
-}
-
-// TestNewExtractorComponent_PromptsString_PromptWins verifies that
-// "prompt" (string) still takes priority over a string-form "prompts"
-// when both are present, matching the prompt>prompts precedence of
-// the list-form path (TestNewExtractorComponent_PromptsArray_PromptWins).
-func TestNewExtractorComponent_PromptsString_PromptWins(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompt":     "Direct prompt wins.",
-		"prompts":    "Should be ignored.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.Prompt != "Direct prompt wins." {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
-	}
-}
-
-// TestNewExtractorComponent_SystemPromptWinsOverSysPrompt verifies
-// that "system_prompt" takes priority over "sys_prompt".
-func TestNewExtractorComponent_SystemPromptWinsOverSysPrompt(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name":    "out",
-		"system_prompt": "system_prompt wins.",
-		"sys_prompt":    "sys_prompt ignored.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.SystemPrompt != "system_prompt wins." {
-		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "system_prompt wins.")
 	}
 }
 
@@ -1474,9 +1398,9 @@ func TestExtractorComponent_Invoke_ContentWithWeightPlaceholder(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Weighted: {content_with_weight}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "out",
+		UserPrompt: "Weighted: {content_with_weight}",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
@@ -1513,9 +1437,9 @@ func TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText(t *testin
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Title: {title}\nExtract:",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "out",
+		UserPrompt: "Title: {title}\nExtract:",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{
@@ -1554,9 +1478,9 @@ func TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText(t *te
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Content: {text}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "out",
+		UserPrompt: "Content: {text}",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{
@@ -1592,9 +1516,9 @@ func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Analyze: {text}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "summary",
+		UserPrompt: "Analyze: {text}",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "the document content"}},
@@ -1634,9 +1558,9 @@ func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Content: {chunks}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "out",
+		UserPrompt: "Content: {chunks}",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
@@ -1674,9 +1598,9 @@ func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Summarize the above:",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "summary",
+		UserPrompt: "Summarize the above:",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "the document content"}},
@@ -1710,7 +1634,7 @@ func TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend(t *te
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		FieldName:    "out",
-		Prompt:       "Extract:",
+		UserPrompt:   "Extract:",
 		SystemPrompt: "Context: {text}",
 		LLMID:        "gpt-4o-mini",
 	}}
@@ -1756,9 +1680,9 @@ func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *tes
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Body: {text}\nLabel: {title}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:  "out",
+		UserPrompt: "Body: {text}\nLabel: {title}",
+		LLMID:      "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{
@@ -1867,7 +1791,7 @@ func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 
 	_, err := c.callText(t.Context(), nil, extractorInputs{
 		systemPrompt: "extract fields",
-		prompt:       "summarize",
+		userPrompt:   "summarize",
 		llmID:        "test@test",
 	}, strings.Repeat("chunk text with lots of tokens. ", 500))
 	if err != nil {
@@ -1923,7 +1847,7 @@ func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
 	c := &ExtractorComponent{}
 	_, err := c.callText(ctx, db, extractorInputs{
 		systemPrompt: "extract fields",
-		prompt:       "summarize",
+		userPrompt:   "summarize",
 		llmID:        "gpt-4o@OpenAI",
 	}, strings.Repeat("chunk text with lots of tokens. ", 500))
 	if err != nil {

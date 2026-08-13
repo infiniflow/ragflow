@@ -230,7 +230,7 @@ type ExtractorComponent struct {
 //	  "field_name":     string,           — optional; key the extraction lands under
 //	  "llm_id":         string,           — optional; resolves via models.NewModelFactory
 //	  "system_prompt":  string,           — optional override
-//	  "prompt":         string,           — optional user prompt
+//	  "user_prompt":    string,           — optional user prompt
 //	}
 //
 // errors here surface as canvas compile failures so a malformed
@@ -246,24 +246,9 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		}
 		if v, ok := params["system_prompt"].(string); ok {
 			p.SystemPrompt = v
-		} else if v, ok := params["sys_prompt"].(string); ok {
-			p.SystemPrompt = v
 		}
-		if v, ok := params["prompt"].(string); ok {
-			p.Prompt = v
-		} else if v, ok := params["prompts"].(string); ok && v != "" {
-			// Python agent/component/llm.py:119-120 normalizes a bare-string
-			// prompts into [{"role":"user","content":prompts}]. Mirror that
-			// here so a front-end/template that emits prompts as a string
-			// (the graph.nodes form / dsl testdata) is not silently dropped
-			// by the .([]any) assertion on the list branch below.
-			p.Prompt = v
-		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
-			if first, ok := promptsRaw[0].(map[string]any); ok {
-				if content, ok := first["content"].(string); ok {
-					p.Prompt = content
-				}
-			}
+		if v, ok := params["user_prompt"].(string); ok {
+			p.UserPrompt = v
 		}
 		if v, ok := params["auto_keywords"]; ok {
 			p.AutoKeywords = mapInt(v)
@@ -323,7 +308,7 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
 		"chunks":        "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
-		"prompt":        "Optional user prompt template. Falls back to Param.Prompt when absent.",
+		"user_prompt":   "Optional user prompt template. Falls back to Param.UserPrompt when absent.",
 		"llm_id":        "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
 		"system_prompt": "Optional per-call system prompt override. Falls back to Param.SystemPrompt.",
 	}
@@ -535,7 +520,7 @@ type extractorInputs struct {
 	fieldName    string
 	llmID        string
 	systemPrompt string
-	prompt       string
+	userPrompt   string
 	lang         string
 	chunks       []map[string]any
 	// temperature overrides the LLM temperature for this call. A
@@ -558,7 +543,7 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 		fieldName:    c.Param.FieldName,
 		llmID:        c.Param.LLMID,
 		systemPrompt: c.Param.SystemPrompt,
-		prompt:       c.Param.Prompt,
+		userPrompt:   c.Param.UserPrompt,
 	}
 	if inputs == nil {
 		return out
@@ -566,12 +551,10 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	if v, ok := inputs["llm_id"].(string); ok && v != "" {
 		out.llmID = v
 	}
-	if v, ok := inputs["prompt"].(string); ok && v != "" {
-		out.prompt = v
+	if v, ok := inputs["user_prompt"].(string); ok && v != "" {
+		out.userPrompt = v
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
-		out.systemPrompt = v
-	} else if v, ok := inputs["sys_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
 	}
 	if v, ok := inputs["lang"].(string); ok && v != "" {
@@ -628,7 +611,7 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //
 //	chunks         (optional, []map[string]any) — upstream chunks; each must
 //	                                            carry a string "text".
-//	prompt         (optional, string)            — overrides Param.Prompt.
+//	user_prompt    (optional, string)            — overrides Param.UserPrompt.
 //	system_prompt  (optional, string)            — overrides Param.SystemPrompt.
 //	llm_id         (optional, string)            — overrides Param.LLMID.
 //
@@ -704,7 +687,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// replaced, the chunk body is already in the prompt — suppress
 			// the append to avoid duplication.
 			var subP, subS bool
-			callIn.prompt, subP = substituteChunkPlaceholders(in.prompt, ck, text)
+			callIn.userPrompt, subP = substituteChunkPlaceholders(in.userPrompt, ck, text)
 			callIn.systemPrompt, subS = substituteChunkPlaceholders(in.systemPrompt, ck, text)
 			callChunkText := text
 			if subP || subS {
@@ -745,7 +728,7 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	kwIn := extractorInputs{
 		llmID:        in.llmID,
 		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
-		prompt:       "Output: ",
+		userPrompt:   "Output: ",
 		temperature:  &kwTemp,
 	}
 	resultStr, err := c.callText(ctx, db, kwIn, "")
@@ -780,7 +763,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	qIn := extractorInputs{
 		llmID:        in.llmID,
 		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
-		prompt:       "Output: ",
+		userPrompt:   "Output: ",
 		temperature:  &qTemp,
 	}
 	resultStr, err := c.callText(ctx, db, qIn, "")
@@ -927,7 +910,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 		metaIn := extractorInputs{
 			llmID:        in.llmID,
 			systemPrompt: fmt.Sprintf(autoMetadataPrompt, schemaStr, chunkText),
-			prompt:       "Output: ",
+			userPrompt:   "Output: ",
 			temperature:  &metaTemp,
 		}
 		parsed, err = c.callStructured(ctx, db, metaIn, "")
@@ -1131,7 +1114,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	if err != nil {
 		return nil, err
 	}
-	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
+	msgs := buildExtractorMessages(in.systemPrompt, in.userPrompt, chunkText, in.chunks)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
 	if fitErr != nil {
 		return nil, fitErr
@@ -1518,7 +1501,7 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 
 // buildExtractorMessages assembles system + user messages for
 // one extraction call. The user prompt is rendered as
-// "<prompt>\n\n<chunkText>" so the python behavior of
+// "<userPrompt>\n\n<chunkText>" so the python behavior of
 // substituting the chunk text into the args dict is preserved
 // without invoking a template engine.
 //
@@ -1532,12 +1515,12 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 // Substitution is opt-in: when chunks is nil/empty the placeholder
 // is left intact so a misconfigured template surfaces as a
 // clear pattern rather than silently disappearing.
-func buildExtractorMessages(system, prompt, chunkText string, chunks []map[string]any) []eschema.Message {
+func buildExtractorMessages(system, userPrompt, chunkText string, chunks []map[string]any) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
 	if system != "" {
 		out = append(out, eschema.Message{Role: eschema.System, Content: system})
 	}
-	user := prompt
+	user := userPrompt
 	if chunkText != "" {
 		if user != "" {
 			user += "\n\n"
