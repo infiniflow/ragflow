@@ -1868,7 +1868,7 @@ export default {
         chat: 'チャット',
         embedding: '埋め込み',
         rerank: '再ランク',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'VLM',
         ocr: 'OCR',
