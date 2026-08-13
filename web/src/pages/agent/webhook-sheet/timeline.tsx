@@ -26,7 +26,7 @@ import { get, isEmpty, isEqual, uniqWith } from 'lodash';
 import { useCallback, useEffect, useMemo } from 'react';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
-import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import { useCacheChatLog, getRunningNodeIds, resolveMessageId } from '../hooks/use-cache-chat-log';
 import ToolTimelineItem from '../log-sheet/tool-timeline-item';
 import OperatorIcon from '@/components/operator-icon';
 type LogFlowTimelineProps = Pick<
@@ -107,7 +107,9 @@ export const WorkFlowTimeline = ({
   } = useFetchMessageTrace(canvasId);
 
   useEffect(() => {
-    setMessageId(currentMessageId);
+    // currentMessageId может нести суффиксы сегмента («#1») или ожидания («-wait»),
+    // а trace-логи в Redis записаны под чистым message_id.
+    setMessageId(resolveMessageId(currentMessageId));
   }, [currentMessageId, setMessageId]);
   const getNodeName = (nodeId: string) => {
     if ('begin' === nodeId) return t('flow.begin');
@@ -136,6 +138,14 @@ export const WorkFlowTimeline = ({
     }, []);
   }, [currentEventListWithoutMessage, sendLoading, setISStopFetchTrace]);
 
+  // Узлы, которые СЕЙЧАС выполняются (последнее событие — node_started).
+  // Для loop это важно: узел повторно стартует, и его последнее событие
+  // снова становится node_started — спиннер загорается на каждом проходе.
+  const runningNodeIds = useMemo(
+    () => getRunningNodeIds(currentEventListWithoutMessage),
+    [currentEventListWithoutMessage],
+  );
+
   const getElapsedTime = (nodeId: string) => {
     if (nodeId === 'begin') {
       return '';
@@ -150,6 +160,17 @@ export const WorkFlowTimeline = ({
       return '';
     }
     return data?.data.elapsed_time || '';
+  };
+
+  // Ошибка узла лежит в node_finished, а не в node_started: статус узла
+  // определяется по событию завершения (node_finished.data.error).
+  const getNodeError = (nodeId: string) => {
+    const data = currentEventListWithoutMessage?.find(
+      (x) =>
+        x.data?.component_id === nodeId &&
+        x.event === MessageEventType.NodeFinished,
+    );
+    return data?.data.error || '';
   };
 
   const hasTrace = useCallback(
@@ -234,7 +255,7 @@ export const WorkFlowTimeline = ({
                       <div
                         className={cn('rounded-full w-6 h-6', {
                           ' border-muted-foreground border-2 border-t-transparent animate-spin ':
-                            !finishNodeIds.includes(x.data.component_id) &&
+                            runningNodeIds.includes(x.data.component_id) &&
                             sendLoading,
                         })}
                       ></div>
@@ -279,8 +300,8 @@ export const WorkFlowTimeline = ({
                           <span
                             className={cn(
                               'border-background  -end-1 -top-1 size-2 rounded-full',
-                              { 'bg-state--success': isEmpty(x.data.error) },
-                              { 'bg-state--error': !isEmpty(x.data.error) },
+                              { 'bg-state--success': isEmpty(getNodeError(x.data.component_id)) },
+                              { 'bg-state--error': !isEmpty(getNodeError(x.data.component_id)) },
                             )}
                           >
                             <span className="sr-only">Online</span>

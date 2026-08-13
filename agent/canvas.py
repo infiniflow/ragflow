@@ -1036,8 +1036,12 @@ class Canvas(Graph):
         agent_ids = agent_id.split("-->")
         agent_name = self.get_component_name(agent_ids[0])
         path = agent_name if len(agent_ids) < 2 else agent_name + "-->" + "-->".join(agent_ids[1:])
+        # Ключ логов пишется под agent_id (canvas_id), а не task_id (= session_id):
+        # чтение логов (agent_api.get_agent_logs, bot_api.agent_bot_logs) идёт по
+        # f"{agent_id}-{message_id}-logs", и task_id с ним не совпадает.
+        log_key_owner = self._id or self.task_id
         try:
-            bin = REDIS_CONN.get(f"{self.task_id}-{self.message_id}-logs")
+            bin = REDIS_CONN.get(f"{log_key_owner}-{self.message_id}-logs")
             if bin:
                 obj = json.loads(bin.encode("utf-8"))
                 if obj[-1]["component_id"] == agent_ids[0]:
@@ -1046,7 +1050,7 @@ class Canvas(Graph):
                     obj.append({"component_id": agent_ids[0], "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]})
             else:
                 obj = [{"component_id": agent_ids[0], "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]}]
-            REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60 * 10)
+            REDIS_CONN.set_obj(f"{log_key_owner}-{self.message_id}-logs", obj, 60 * 10)
         except Exception as e:
             logging.exception(e)
 

@@ -1,10 +1,7 @@
-import {
-  INodeData,
-  INodeEvent,
-  MessageEventType,
-} from '@/hooks/use-send-message';
+import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { IMessage } from '@/interfaces/database/chat';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { getRunningNodeIds } from './use-cache-chat-log';
 
 export const useNodeLoading = ({
   currentEventListWithoutMessageById,
@@ -38,18 +35,6 @@ export const useNodeLoading = ({
     }, []);
   }, [currentEventListWithoutMessage]);
 
-  const filterFinishedNodeList = useCallback(() => {
-    const nodeEventList = currentEventListWithoutMessage
-      .filter(
-        (x) => x.event === MessageEventType.NodeFinished,
-        // x.event === MessageEventType.NodeFinished &&
-        // (x.data as INodeData)?.component_id === componentId,
-      )
-      .map((x) => x.data);
-
-    return nodeEventList;
-  }, [currentEventListWithoutMessage]);
-
   const lastNode = useMemo(() => {
     if (!startedNodeList) {
       return null;
@@ -57,32 +42,16 @@ export const useNodeLoading = ({
     return startedNodeList[startedNodeList.length - 1];
   }, [startedNodeList]);
 
-  const startNodeIds = useMemo(() => {
-    if (!startedNodeList) {
-      return [];
-    }
-    return startedNodeList.map((x) => x.data.component_id);
-  }, [startedNodeList]);
-
-  const finishNodeIds = useMemo(() => {
-    if (!lastNode) {
-      return [];
-    }
-    const nodeDataList = filterFinishedNodeList();
-    const finishNodeIdsTemp = nodeDataList.map(
-      (x: INodeData) => x.component_id,
-    );
-    return Array.from(new Set(finishNodeIdsTemp));
-  }, [lastNode, filterFinishedNodeList]);
-
+  // Узел крутится, если его ПОСЛЕДНЕЕ событие в потоке — node_started.
+  // Это корректно работает и для loop: при повторном запуске узла
+  // последним снова становится node_started.
   const startButNotFinishedNodeIds = useMemo(() => {
-    return startNodeIds.filter((x) => !finishNodeIds.includes(x));
-  }, [finishNodeIds, startNodeIds]);
+    return getRunningNodeIds(currentEventListWithoutMessage);
+  }, [currentEventListWithoutMessage]);
 
   return {
     lastNode,
     startButNotFinishedNodeIds,
-    filterFinishedNodeList,
     setDerivedMessages,
   };
 };

@@ -319,6 +319,11 @@ export const useSendAgentMessage = ({
 
   const userId = searchParams.get('userId');
 
+  // Временный id пустого placeholder, создаваемого сразу при отправке вопроса,
+  // чтобы крутилка появлялась мгновенно — до первого SSE-события. Когда приходит
+  // первый message_id, placeholder перепривязывается к нему (см. useEffect ниже).
+  const pendingAnswerIdRef = useRef<string | null>(null);
+
   const stopConversation = useCallback(() => {
     stopOutputMessage();
   }, [stopOutputMessage]);
@@ -433,6 +438,7 @@ export const useSendAgentMessage = ({
   const resetSession = useCallback(() => {
     stopConversation();
     resetAnswerList();
+    pendingAnswerIdRef.current = null;
     setSessionId(null);
     if (isTaskMode) {
       removeAllMessages();
@@ -459,6 +465,12 @@ export const useSendAgentMessage = ({
         });
       }
       addNewestOneQuestion({ ...msgBody, files: fileList });
+      // Мгновенный placeholder «три точки»: сообщение ассистента появляется
+      // сразу, не дожидаясь первого SSE-события. После прихода первого
+      // message_id оно будет перепривязано к реальному id.
+      const pendingId = `${msgBody.id}-pending`;
+      pendingAnswerIdRef.current = pendingId;
+      addNewestOneAnswer({ answer: '', id: pendingId });
       setTimeout(() => {
         scrollToBottom();
       }, 100);
@@ -467,6 +479,7 @@ export const useSendAgentMessage = ({
       value,
       done,
       addNewestOneQuestion,
+      addNewestOneAnswer,
       fileList,
       setValue,
       sendMessage,
@@ -497,12 +510,39 @@ export const useSendAgentMessage = ({
     const segments = findMessageSegmentsFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const error = getLatestError(answerList);
+    const messageId = answerList[0]?.message_id;
+
+    // Мгновенный placeholder из handlePressEnter имеет временный id
+    // («<question>-pending»). Как только приходит первый message_id — меняем
+    // ему id на реальный, чтобы addNewestOneAnswer ниже обновил его, а не
+    // создал дубликат.
+    const pendingId = pendingAnswerIdRef.current;
+    if (pendingId && messageId) {
+      pendingAnswerIdRef.current = null;
+      setDerivedMessages((pre) =>
+        pre.map((x) => (x.id === pendingId ? { ...x, id: messageId } : x)),
+      );
+    }
 
     if (segments.length === 0) {
       if (error) {
         addNewestOneAnswer({
           answer: error,
-          id: answerList[0]?.message_id,
+          id: messageId,
+        });
+      } else if (
+        messageId &&
+        !answerList.some(
+          (x) => x.event === MessageEventType.WorkflowFinished,
+        )
+      ) {
+        // Пока агент работает (первые события уже пришли, но ответ ещё не
+        // завершён message_end), держим пустой placeholder — «три точки».
+        // Его id совпадает с id первого сегмента, поэтому по завершении
+        // области addNewestOneAnswer обновит сообщение вместо дубликата.
+        addNewestOneAnswer({
+          answer: '',
+          id: messageId,
         });
       }
       return;
@@ -532,7 +572,7 @@ export const useSendAgentMessage = ({
         id: `${lastId}${MessageWaitSuffix}`,
       });
     }
-  }, [answerList, addNewestOneAnswer]);
+  }, [answerList, addNewestOneAnswer, setDerivedMessages]);
 
   useEffect(() => {
     if (isTaskMode) {

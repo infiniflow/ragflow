@@ -197,13 +197,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     stopMessage,
   ]);
 
-  const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+  const setLastSendLoadingFunc = (loading: boolean, _messageId: string) => {
     setCurrentSendLoading(!!loading);
-    if (messageId === currentMessageId) {
-      setLastSendLoading(loading);
-    } else {
-      setLastSendLoading(false);
-    }
+    // lastSendLoading управляет sendLoading в LogSheet. Он должен отражать
+    // факт работы агента над последним сообщением, а не привязываться к
+    // currentMessageId: при loop/нескольких сегментах id последнего
+    // сообщения меняется (messageId#1, ...) и может не совпасть с
+    // currentMessageId в момент вызова — тогда крутилки в Log гаснут,
+    // хотя агент продолжает выполнение.
+    setLastSendLoading(loading);
   };
 
   useHideFormSheetOnNodeDeletion({ hideFormDrawer });

@@ -105,10 +105,14 @@ function MessageItem({
   const { setLastSendLoadingFunc } = useContext(AgentChatContext);
 
   useEffect(() => {
+    // Крутилки (на канвасе и в логе) должны гореть, пока агент РАБОТАЕТ
+    // (sendLoading), а не только пока последнее сообщение пустое (loading).
+    // Иначе после первого сегмента ответа с контентом (loop/несколько областей)
+    // индикатор гаснет, хотя агент продолжает выполнение.
     if (typeof setLastSendLoadingFunc === 'function') {
-      setLastSendLoadingFunc(loading, item.id);
+      setLastSendLoadingFunc(sendLoading, item.id);
     }
-  }, [loading, setLastSendLoadingFunc, item.id]);
+  }, [sendLoading, setLastSendLoadingFunc, item.id]);
 
   const referenceDocuments = useMemo(() => {
     const docs = reference?.doc_aggs ?? {};

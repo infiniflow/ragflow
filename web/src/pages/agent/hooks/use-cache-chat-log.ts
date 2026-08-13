@@ -12,10 +12,38 @@ export const ExcludeTypes = [
   MessageEventType.MessageEnd,
 ];
 
-const resolveMessageId = (messageId: string) =>
+export const resolveMessageId = (messageId: string) =>
   messageId
     ?.replace(new RegExp(`${MessageWaitSuffix}$`), '')
     .replace(/#\d+$/, '');
+
+/**
+ * Возвращает component_id узлов, которые СЕЙЧАС выполняются.
+ *
+ * В цикле (loop) узел запускается многократно: пары node_started/node_finished
+ * повторяются. Определять статус по факту «узел когда-либо завершался»
+ * нельзя — тогда после первого прохода цикла крутилка гаснет навсегда.
+ * Правильно смотреть на ПОСЛЕДНЕЕ событие узла в потоке: если это
+ * node_started (нет завершающего node_finished после него) — узел работает.
+ */
+export const getRunningNodeIds = (eventList: INodeEvent[] | undefined): string[] => {
+  if (!Array.isArray(eventList)) return [];
+  const lastStatus = new Map<string, MessageEventType>();
+  for (const x of eventList) {
+    if (x.event === MessageEventType.NodeStarted) {
+      lastStatus.set(x.data.component_id, x.event);
+    } else if (x.event === MessageEventType.NodeFinished) {
+      lastStatus.set(x.data.component_id, x.event);
+    }
+  }
+  const running: string[] = [];
+  for (const [componentId, event] of lastStatus) {
+    if (event === MessageEventType.NodeStarted) {
+      running.push(componentId);
+    }
+  }
+  return running;
+};
 
 export function useCacheChatLog() {
   const [messageIdPool, setMessageIdPool] = useState<
