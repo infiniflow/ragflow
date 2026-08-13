@@ -15,7 +15,8 @@
  */
 
 import { getExtension } from '@/utils/document-util';
-import SvgIcon from '../svg-icon';
+import { File as LucideFile } from 'lucide-react';
+import SvgIcon, { hasSvgIcon } from '../svg-icon';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useAuthenticatedImageUrl } from '@/components/image';
@@ -41,10 +42,14 @@ const FileIcon = ({ name, id }: IProps) => {
     }
   }, [id, setDocumentIds]);
 
+  const iconName = `file-icon/${fileExtension}`;
+
   return blobUrl ? (
     <img src={blobUrl} className={styles.thumbnailImg}></img>
+  ) : hasSvgIcon(iconName) ? (
+    <SvgIcon name={iconName} width={24}></SvgIcon>
   ) : (
-    <SvgIcon name={`file-icon/${fileExtension}`} width={24}></SvgIcon>
+    <LucideFile size={24}></LucideFile>
   );
 };
 
