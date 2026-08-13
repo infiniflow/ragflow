@@ -416,11 +416,11 @@ async def keyword_subgraph(
     # Entity names are identifiers in the graph. Check the exact normalized
     # name first: BM25 searches the entity description and may miss a stored
     # name even when the query equals it, which would otherwise trigger KNN
-    # and return several semantically related siblings. Partial-name queries
+    # and return an approximate result. Partial-name queries
     # continue through BM25 so they can intentionally return multiple nodes.
-    text_query = re.sub(r"[ :|\r\n\t,，。？?/`!！&^%()\[\]{}<>*~'\"\\=]+", " ", str(keywords)).strip()
+    text_query = re.sub(r"[ :|\r\n\t,，。？?/`!！&^%()\[\]{}<>*~'\"\\=]+", " ", str(keywords or "")).strip()
     candidates = []
-    exact_name = str(keywords).strip().lower()
+    exact_name = str(keywords or "").strip().lower()
     if exact_name:
         exact_map, _ = await graph_search(
             index_name,

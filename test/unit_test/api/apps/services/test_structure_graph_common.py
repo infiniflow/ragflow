@@ -91,6 +91,7 @@ def _relation(parent, child):
 def test_tree_keyword_subgraph_returns_only_match_and_ancestor_path(monkeypatch):
     module = _load_module(monkeypatch)
     leaf = _entity("Leaf")
+    fallback_expressions = []
     bucket_rows = [
         _entity("Root", "title"),
         _entity("Parent"),
@@ -103,6 +104,7 @@ def test_tree_keyword_subgraph_returns_only_match_and_ancestor_path(monkeypatch)
 
     async def graph_search(_index, _kb_id, _fields, condition, _order, _limit, match_expressions=None, offset=0):
         if match_expressions:
+            fallback_expressions.extend(match_expressions)
             return {"leaf": leaf}, 1
         kind = condition["knowledge_graph_kwd"]
         if kind == ["relation"]:
@@ -133,6 +135,7 @@ def test_tree_keyword_subgraph_returns_only_match_and_ancestor_path(monkeypatch)
     assert bucket["template_id"] == "tree-1"
     assert {entity["name"] for entity in entities} == {"Root", "Parent", "Leaf"}
     assert {(relation["from"], relation["to"]) for relation in relations} == {("Root", "Parent"), ("Parent", "Leaf")}
+    assert fallback_expressions == []
 
 
 def test_keyword_subgraph_tokenizes_query_before_bm25(monkeypatch):
