@@ -3468,8 +3468,9 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 }
 
 // APIListSyncLogsCommand lists sync logs (user mode).
-// LIST SYNC LOGS; lists the sync logs of all datasets, and
-// LIST DATASET 'dataset_name' SYNC LOGS; follows the ingestion-tasks pattern.
+// LIST SYNC LOGS; lists the sync logs of all datasets.
+// LIST SYNC LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC LOGS;
+// restrict the listing to one dataset.
 func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
@@ -3479,14 +3480,21 @@ func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	datasetID, ok := cmd.Params["dataset_id"].(*string)
-	if !ok {
-		datasetID = nil
+	datasetID := ""
+	if rawID, ok := cmd.Params["dataset_id"].(string); ok {
+		datasetID = strings.TrimSpace(rawID)
+	}
+	if datasetName, ok := cmd.Params["dataset_name"].(string); ok && datasetName != "" {
+		id, err := c.getDatasetID(datasetName)
+		if err != nil {
+			return nil, err
+		}
+		datasetID = id
 	}
 
 	url := "/sync_logs"
-	if datasetID != nil && *datasetID != "" {
-		url = fmt.Sprintf("/sync_logs?dataset_id=%s", *datasetID)
+	if datasetID != "" {
+		url = fmt.Sprintf("/sync_logs?dataset_id=%s", netUrl.QueryEscape(datasetID))
 	}
 
 	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
