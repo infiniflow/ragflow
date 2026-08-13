@@ -305,7 +305,7 @@ export const SelectWithSearch = forwardRef<
                 <CommandItem
                   value={searchValue.trim()}
                   onSelect={handleSelect}
-                  className="mb-1 min-h-10"
+                  className="mb-1 min-h-10 data-[selected='true']:bg-card-soft"
                 >
                   <span className="leading-none">{searchValue.trim()}</span>
                 </CommandItem>
@@ -338,7 +338,7 @@ export const SelectWithSearch = forwardRef<
                               : 'combobox-option'
                           }
                           className={cn(
-                            'relative flex flex-col min-h-10',
+                            "relative flex flex-col min-h-10 data-[selected='true']:bg-card-soft",
                             option.description
                               ? 'items-start gap-1'
                               : 'justify-center items-start',
@@ -372,13 +372,13 @@ export const SelectWithSearch = forwardRef<
                         (typeof group.label === 'string' ? [group.label] : [])
                       }
                       onSelect={handleSelect}
-                      data-testid={
+                      data-testid={ 
                         optionTestIdPrefix && group.value
                           ? `${optionTestIdPrefix}${group.value}`
                           : 'combobox-option'
                       }
                       className={cn(
-                        'relative flex flex-col min-h-10 mb-1',
+                        "relative flex flex-col min-h-10 mb-1 data-[selected='true']:bg-card-soft",
                         group.description
                           ? 'items-start gap-1'
                           : 'justify-center items-start',
