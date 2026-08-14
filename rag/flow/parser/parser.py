@@ -48,6 +48,7 @@ from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParse
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.docling import docling_tables_to_bboxes
 from rag.flow.parser.pdf_chunk_metadata import (
     extract_pdf_positions,
     normalize_pdf_items_metadata,
@@ -438,7 +439,7 @@ class Parser(ProcessBase):
 
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
-            lines, _ = pdf_parser.parse_pdf(
+            lines, docling_tables = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
@@ -462,6 +463,7 @@ class Parser(ProcessBase):
                     if image is not None:
                         box["image"] = image
                 bboxes.append(box)
+            bboxes.extend(docling_tables_to_bboxes(docling_tables))
 
         elif parse_method.lower() == "opendataloader":
 
