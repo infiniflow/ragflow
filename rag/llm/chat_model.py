@@ -1854,6 +1854,13 @@ class LiteLLMBase(ABC):
         "Tencent Hunyuan",
     ]
 
+    # The streaming path strips <tool_call>... traces from the answer stream
+    # (some LiteLLM providers such as MiniMax leak the raw tool-call JSON into
+    # content). The strip helper lives on ``Base``; reuse it here so
+    # ``LiteLLMBase`` (which does NOT inherit from ``Base``) has the same
+    # behaviour instead of raising AttributeError on streamed tool calls.
+    _strip_tool_calls = Base._strip_tool_calls
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
         self.provider = kwargs.get("provider", "")
