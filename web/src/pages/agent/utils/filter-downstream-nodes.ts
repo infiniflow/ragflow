@@ -57,6 +57,53 @@ export function filterBottomSubtreeNodeIds(
   );
 }
 
+export type CollapsedBottomHandles = Record<string, string[]>;
+
+// Toggle one bottom handle in the collapsed map, dropping the node entry
+// when it has no collapsed handles left
+export function toggleCollapsedBottomHandle(
+  collapsed: CollapsedBottomHandles,
+  nodeId: string,
+  handleId: string,
+): CollapsedBottomHandles {
+  const handleIds = collapsed[nodeId] ?? [];
+  const nextHandleIds = handleIds.includes(handleId)
+    ? handleIds.filter((x) => x !== handleId)
+    : handleIds.concat(handleId);
+
+  const next = { ...collapsed };
+  if (nextHandleIds.length > 0) {
+    next[nodeId] = nextHandleIds;
+  } else {
+    delete next[nodeId];
+  }
+  return next;
+}
+
+// Union of the node/edge ids hidden by all collapsed subtrees, so expanding
+// one handle keeps nodes hidden by another (e.g. nested) collapse hidden
+export function filterCollapsedHiddenIds(
+  edges: Edge[],
+  collapsed: CollapsedBottomHandles,
+) {
+  const nodeIdSet = new Set<string>();
+  Object.entries(collapsed).forEach(([nodeId, handleIds]) => {
+    handleIds.forEach((handleId) => {
+      filterBottomSubtreeNodeIds(edges, nodeId, handleId).forEach((x) =>
+        nodeIdSet.add(x),
+      );
+    });
+  });
+
+  const edgeIdSet = new Set(
+    edges
+      .filter((x) => nodeIdSet.has(x.source) || nodeIdSet.has(x.target))
+      .map((x) => x.id),
+  );
+
+  return { nodeIdSet, edgeIdSet };
+}
+
 // Get all downstream agent operators of the current agent operator
 export function filterAllDownstreamAgentNodeIds(
   edges: Edge[],
