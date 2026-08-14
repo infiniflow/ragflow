@@ -687,6 +687,11 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 	if depth > 0 {
 		return nil, ""
 	}
+	// Honor task cancellation so a long attachment list does not keep
+	// re-parsing after the ingestion task has been stopped/aborted.
+	if ctx.Err() != nil {
+		return nil, ""
+	}
 
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {

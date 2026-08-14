@@ -18,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"mime/multipart"
 	"net/textproto"
@@ -950,6 +951,23 @@ func TestFormatMsgDate(t *testing.T) {
 	got := formatMsgDate(time.Date(2018, 3, 24, 0, 6, 29, 0, time.FixedZone("CST", 8*3600)))
 	if got != "2018-03-24 00:06:29+0800" {
 		t.Errorf("formatted date = %q, want 2018-03-24 00:06:29+0800", got)
+	}
+}
+
+// TestRechunkEmailAttachments_ContextCancelled verifies that an already
+// cancelled context short-circuits re-chunking instead of re-parsing
+// attachments (mirrors the cancellation check CodeRabbit flagged).
+func TestRechunkEmailAttachments_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // task already aborted
+	content := map[string]any{
+		"attachments": []map[string]any{
+			{"filename": "note.txt", "payload": "must not be re-chunked"},
+		},
+	}
+	extra, text := NewEmailParser().rechunkEmailAttachments(ctx, content, 0)
+	if len(extra) != 0 || text != "" {
+		t.Errorf("cancelled context should short-circuit re-chunk: extra=%#v text=%q", extra, text)
 	}
 }
 
