@@ -269,18 +269,29 @@ def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]], tenant_id: st
     template_ids = {template_id for _, template_id in eligible}
     if len(template_ids) > 1:
         raise ValueError("Eligible Wiki documents must use the same template")
-    pipeline_chat_llm_ids: dict[str, str | None] = {}
-    for doc, template_id in eligible:
+
+    template_chat_llm_id = None
+    if any(not (doc.get("pipeline_id") or "").strip() for doc, _ in eligible):
+        template_id = next(iter(template_ids))
+        template = CompilationTemplateService.get_saved(template_id, tenant_id)
+        config = (template.get("config") or {}) if template else {}
+        llm_id = config.get("llm_id") if isinstance(config, dict) else None
+        template_chat_llm_id = llm_id.strip() if isinstance(llm_id, str) and llm_id.strip() else None
+        logging.info(
+            "wiki: template %s chat model resolved to %s",
+            template_id,
+            template_chat_llm_id or "tenant default",
+        )
+
+    chat_llm_ids: dict[str, str | None] = {}
+    for doc, _ in eligible:
         doc_id = str(doc.get("id") or "")
         pipeline_id = (doc.get("pipeline_id") or "").strip()
         if not pipeline_id:
-            template = CompilationTemplateService.get_saved(template_id, tenant_id)
-            config = (template.get("config") or {}) if template else {}
-            llm_id = config.get("llm_id") if isinstance(config, dict) else None
-            pipeline_chat_llm_ids[doc_id] = llm_id.strip() if isinstance(llm_id, str) and llm_id.strip() else None
+            chat_llm_ids[doc_id] = template_chat_llm_id
             continue
-        pipeline_chat_llm_ids[doc_id] = _pipeline_compiler_llm_id(pipeline_id)
-    return pipeline_chat_llm_ids
+        chat_llm_ids[doc_id] = _pipeline_compiler_llm_id(pipeline_id)
+    return chat_llm_ids
 
 
 def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tuple[dict, str]]:
@@ -1399,12 +1410,12 @@ async def run_wiki(
     if not eligible:
         progress(1.0, "No documents are configured for wiki compilation.")
         return
-    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible, ctx.tenant_id)
+    chat_llm_ids = _validate_wiki_eligible_docs(eligible, ctx.tenant_id)
 
     # 3. Resolve chat models. MAP is per document, so each document uses
-    # its pipeline Compiler's ``llm_id``. REDUCE / PLAN / REFINE are
-    # KB-wide and need exactly one model — we pick the first eligible
-    # pipeline Compiler's ``llm_id`` as the canonical KB chat model.
+    # its template or pipeline Compiler's ``llm_id``. REDUCE / PLAN / REFINE
+    # are KB-wide and need exactly one model — we pick the first eligible
+    # document's ``llm_id`` as the canonical KB chat model.
     llm_bundle_cache: dict[str, LLMBundle] = {}
 
     def _bundle_for(llm_id: str | None) -> LLMBundle:
@@ -1474,14 +1485,14 @@ async def run_wiki(
         progress(1.0, "No valid templates resolved for wiki compilation.")
         return
 
-    # ``kb_chat_llm_id`` is captured from the first eligible pipeline and
+    # ``kb_chat_llm_id`` is captured from the first eligible document and
     # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
     # Writer instructions and page examples follow the same first-template-
     # wins rule.
     first_doc = resolved_eligible[0][0]
     first_parser_cfg = resolved_eligible[0][2]
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
-    kb_chat_llm_id = pipeline_chat_llm_ids.get(str(first_doc.get("id") or ""))
+    kb_chat_llm_id = chat_llm_ids.get(str(first_doc.get("id") or ""))
     first_instruction = first_parser_cfg.get("instruction")
     first_example = first_parser_cfg.get("example")
     kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
@@ -1530,7 +1541,7 @@ async def run_wiki(
                 i, doc, template_id, parser_cfg, batch, batch_no = item
                 doc_id = doc["id"]
                 stats = doc_stats[i]
-                map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
+                map_llm_id = chat_llm_ids.get(str(doc_id))
                 phase1 = await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
@@ -1761,7 +1772,7 @@ async def run_wiki_incremental(
     if not eligible and not is_incremental:
         progress(1.0, "No enabled documents are configured for wiki compilation.")
         return
-    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible, ctx.tenant_id) if eligible else {}
+    chat_llm_ids = _validate_wiki_eligible_docs(eligible, ctx.tenant_id) if eligible else {}
 
     # Resolve mode from the eligible documents' templates. Each eligible
     # doc resolves to a wiki template either via its own parser_config or via
@@ -1849,7 +1860,7 @@ async def run_wiki_incremental(
             doc_configs[d["id"]] = cfg
             if not first_template_found and isinstance(cfg, dict):
                 first_template_found = True
-                kb_chat_llm_id = pipeline_chat_llm_ids.get(str(d.get("id") or ""))
+                kb_chat_llm_id = chat_llm_ids.get(str(d.get("id") or ""))
         except Exception:
             logging.exception("wiki: config resolve failed for doc %s", d["id"])
             doc_configs[d["id"]] = {}
@@ -1877,7 +1888,7 @@ async def run_wiki_incremental(
                     return
                 _, doc, template_id, parser_cfg, batch = item
                 doc_id = doc["id"]
-                map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
+                map_llm_id = chat_llm_ids.get(str(doc_id))
 
                 result = await wiki_map_from_chunks(
                     chunks=batch,

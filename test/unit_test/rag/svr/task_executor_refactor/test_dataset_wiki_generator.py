@@ -20,14 +20,29 @@ from rag.svr.task_executor_refactor.dataset_wiki_generator import _validate_wiki
 
 
 def test_validate_wiki_eligible_docs_uses_template_model_without_pipeline():
-    eligible = [({"id": "doc-1", "pipeline_id": ""}, "template-1")]
+    eligible = [
+        ({"id": "doc-1", "pipeline_id": ""}, "template-1"),
+        ({"id": "doc-2", "pipeline_id": ""}, "template-1"),
+    ]
 
     with patch("api.db.services.compilation_template_service.CompilationTemplateService.get_saved") as get_saved:
         get_saved.return_value = {"config": {"llm_id": "template-chat"}}
 
         result = _validate_wiki_eligible_docs(eligible, "tenant-1")
 
-    assert result == {"doc-1": "template-chat"}
+    assert result == {"doc-1": "template-chat", "doc-2": "template-chat"}
+    get_saved.assert_called_once_with("template-1", "tenant-1")
+
+
+def test_validate_wiki_eligible_docs_uses_tenant_default_without_template_model():
+    eligible = [({"id": "doc-1", "pipeline_id": ""}, "template-1")]
+
+    with patch("api.db.services.compilation_template_service.CompilationTemplateService.get_saved") as get_saved:
+        get_saved.return_value = {"config": {}}
+
+        result = _validate_wiki_eligible_docs(eligible, "tenant-1")
+
+    assert result == {"doc-1": None}
     get_saved.assert_called_once_with("template-1", "tenant-1")
 
 
