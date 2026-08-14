@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	cloud.google.com/go/storage v1.63.0
+	github.com/AkmalOt/gomsg v0.0.0-20260407083308-985c3a1a76b7
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
@@ -232,3 +233,5 @@ require (
 )
 
 replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9
+
+replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7
