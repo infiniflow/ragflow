@@ -25,7 +25,7 @@ If you find your online LLM is not on the list, don't feel disheartened. The lis
 
 Go to **User settings** **>** **Model providers**. In **Available models**, select a provider and complete its configuration. After the configuration succeeds, the provider is marked as **Configured**.
 
-![Select model provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_model_provider.png)
+![Select model provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_model_provider.jpeg)
 
 ### Create a Model Provider Instance and Configure Connection Information
 
@@ -43,7 +43,7 @@ To configure a model provider:
 3. Enter **API Key** and **Base URL**.
 4. Save the instance.
 
-![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.png)
+![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.jpeg)
 
 :::caution
 Do not expose your API Key. An incorrect Base URL causes connection verification or model calls to fail. When using a compatible API, confirm whether the path must include `/v1`.
@@ -97,7 +97,7 @@ At minimum, set the following defaults:
 
 If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, TTS, and OCR defaults as required by your business.
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpeg)
 
 ## Model Types and Usage
 
