@@ -37,7 +37,16 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		cropped := util.FastCrop(pageImg, x0, y0, x1, y1)
+		// Perspective de-skew the quad before recognition, matching
+		// Python's get_rotate_crop_image warp step (Step 4 / layer 1). The
+		// emitted box bounds below still use the axis-aligned detection
+		// bbox (x0..y1), exactly as Python emits the original detection box.
+		cropped := util.WarpCrop(pageImg, [4]util.Pt{
+			{X: b.X0, Y: b.Y0},
+			{X: b.X1, Y: b.Y1},
+			{X: b.X2, Y: b.Y2},
+			{X: b.X3, Y: b.Y3},
+		})
 		texts, recErr := p.inferOCRRecognize(ctx, doc, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
