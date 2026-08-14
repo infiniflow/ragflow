@@ -757,7 +757,7 @@ const useGraphStore = create<RFState>()(
           nodeId,
           handleId,
         );
-        const { nodeIdSet, edgeIdSet } = filterCollapsedHiddenIds(
+        const { hiddenNodeIds, hiddenEdgeIds } = filterCollapsedHiddenIds(
           edges,
           nextCollapsed,
         );
@@ -765,7 +765,7 @@ const useGraphStore = create<RFState>()(
         set((state) => {
           state.collapsedBottomHandles = nextCollapsed;
           for (const node of state.nodes) {
-            if (nodeIdSet.has(node.id)) {
+            if (hiddenNodeIds.has(node.id)) {
               node.hidden = true;
               node.selected = false;
             } else if (node.hidden) {
@@ -773,7 +773,7 @@ const useGraphStore = create<RFState>()(
             }
           }
           for (const edge of state.edges) {
-            if (edgeIdSet.has(edge.id)) {
+            if (hiddenEdgeIds.has(edge.id)) {
               edge.hidden = true;
               edge.selected = false;
             } else if (edge.hidden) {
@@ -781,10 +781,10 @@ const useGraphStore = create<RFState>()(
             }
           }
           state.selectedNodeIds = state.selectedNodeIds.filter(
-            (x) => !nodeIdSet.has(x),
+            (x) => !hiddenNodeIds.has(x),
           );
           state.selectedEdgeIds = state.selectedEdgeIds.filter(
-            (x) => !edgeIdSet.has(x),
+            (x) => !hiddenEdgeIds.has(x),
           );
         });
       },

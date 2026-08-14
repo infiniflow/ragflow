@@ -86,22 +86,22 @@ export function filterCollapsedHiddenIds(
   edges: Edge[],
   collapsed: CollapsedBottomHandles,
 ) {
-  const nodeIdSet = new Set<string>();
+  const hiddenNodeIds = new Set<string>();
   Object.entries(collapsed).forEach(([nodeId, handleIds]) => {
     handleIds.forEach((handleId) => {
       filterBottomSubtreeNodeIds(edges, nodeId, handleId).forEach((x) =>
-        nodeIdSet.add(x),
+        hiddenNodeIds.add(x),
       );
     });
   });
 
-  const edgeIdSet = new Set(
+  const hiddenEdgeIds = new Set(
     edges
-      .filter((x) => nodeIdSet.has(x.source) || nodeIdSet.has(x.target))
+      .filter((x) => hiddenNodeIds.has(x.source) || hiddenNodeIds.has(x.target))
       .map((x) => x.id),
   );
 
-  return { nodeIdSet, edgeIdSet };
+  return { hiddenNodeIds, hiddenEdgeIds };
 }
 
 // Get all downstream agent operators of the current agent operator
