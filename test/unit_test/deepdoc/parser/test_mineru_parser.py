@@ -125,8 +125,10 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypat
     parser = module.MinerUParser()
     outputs = [
         {
-            "type": module.MinerUContentType.TEXT,
-            "text": "&lt;td&gt;&lt;/td&gt;",
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "&lt;td&gt;&lt;/td&gt;",
+            "table_caption": [],
+            "table_footnote": [],
             "page_idx": 0,
             "bbox": (0, 0, 1, 1),
         }
@@ -137,7 +139,52 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypat
 
     assert sections == []
     assert "Skip section after sanitization" in caplog.text
-    assert f"type={module.MinerUContentType.TEXT}" in caplog.text
+    assert f"type={module.MinerUContentType.TABLE}" in caplog.text
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ({"type": "text", "text": "Use List<String> and a<b. 5 &lt; 6"}, "Use List<String> and a<b. 5 &lt; 6"),
+        ({"type": "code", "code_body": "template<typename T> void f();", "code_caption": []}, "template<typename T> void f();"),
+        ({"type": "equation", "text": "x < y > z"}, "x < y > z"),
+    ],
+)
+def test_transfer_to_sections_only_sanitizes_tables(monkeypatch, output, expected):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    output = {**output, "page_idx": 0, "bbox": (0, 0, 1, 1)}
+
+    sections = parser._transfer_to_sections([output], parse_method="raw", table_enable=False)
+
+    assert sections[0][0] == expected
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("transfer", ["sections", "tables"])
+def test_empty_table_fallback_is_logged(monkeypatch, caplog, transfer):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    output = {
+        "type": module.MinerUContentType.TABLE,
+        "table_body": "",
+        "table_caption": [],
+        "table_footnote": [],
+        "page_idx": 2,
+        "bbox": (0, 0, 1, 1),
+    }
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        if transfer == "sections":
+            result = parser._transfer_to_sections([output], parse_method="raw", table_enable=True)
+            fallback = result[0][0]
+        else:
+            result = parser._transfer_to_tables([output])
+            fallback = result[0][0][1]
+
+    assert fallback == "FAILED TO PARSE TABLE"
+    assert "Empty table content at page_idx=2; using fallback text." in caplog.text
 
 
 def test_transfer_to_sections_skips_page_chrome_without_duplicating_text(monkeypatch):
@@ -257,8 +304,12 @@ def test_tokenize_table_uses_payload_type_instead_of_html_content():
 
 
 @pytest.mark.p1
-def test_media_context_preserves_media_without_positions():
+def test_media_context_preserves_media_without_positions(monkeypatch):
     from rag.nlp import append_context2table_image4pdf
+
+    parser_module = ModuleType("deepdoc.parser")
+    parser_module.PdfParser = Mock()
+    monkeypatch.setitem(sys.modules, "deepdoc.parser", parser_module)
 
     image = object()
     media = [((None, "table"), []), ((image, ["figure"]), [])]

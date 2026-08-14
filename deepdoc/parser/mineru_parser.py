@@ -845,6 +845,7 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.TABLE:
                     section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
                     if not section.strip():
+                        self.logger.warning("[MinerU] Empty table content at page_idx=%s; using fallback text.", output.get("page_idx"))
                         section = "FAILED TO PARSE TABLE"
                 case MinerUContentType.IMAGE:
                     section = "".join(output.get("image_caption", [])) + "\n" + "".join(output.get("image_footnote", []))
@@ -866,7 +867,9 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
                     continue
 
-            if not table_enable:
+            # Only flatten table HTML when table extraction is disabled; the
+            # same sanitization would corrupt valid text, code, and equations.
+            if output_type == MinerUContentType.TABLE and not table_enable:
                 section = self._sanitize_section_text(section)
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
@@ -900,7 +903,10 @@ class MinerUParser(RAGFlowPdfParser):
 
             if output_type == MinerUContentType.TABLE:
                 text = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
-                tables.append(((None, text if text.strip() else "FAILED TO PARSE TABLE"), positions))
+                if not text.strip():
+                    self.logger.warning("[MinerU] Empty table content at page_idx=%s; using fallback text.", output.get("page_idx"))
+                    text = "FAILED TO PARSE TABLE"
+                tables.append(((None, text), positions))
                 continue
 
             texts = [*output.get("image_caption", []), *output.get("image_footnote", [])]
