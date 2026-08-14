@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #
-# Build the RAGFlow Docker image from source on a Linux server.
+# Собирает Docker-образ RAGFlow из исходников на Linux-сервере.
 #
-# Pulls the repository (your GitLab) to a local dir, checks out the target
-# branch, and builds the image with the repo's official Dockerfile. It never
-# (re)creates the app container; run the app yourself with the built tag.
+# Клонирует репозиторий (ваш GitLab) в локальную папку, переключается на нужную
+# ветку и собирает образ через официальный Dockerfile репозитория. Скрипт
+# никогда не пересоздаёт контейнер приложения: запускайте его сами с собранным
+# тегом.
 #
-# Server-local config (docker/.env, docker/service_conf.yaml.template) is
-# preserved across updates, so you can keep your own values there.
+# Локальные конфиги сервера (docker/.env, docker/service_conf.yaml.template)
+# и правки под Yandex SSO (api/apps/auth/*, api/apps/restful_apis/user_api.py)
+# сохраняются между обновлениями, так что свои значения можно держать там.
 #
 set -euo pipefail
 
@@ -19,15 +21,15 @@ NO_CACHE=0
 
 usage() {
   cat <<EOF
-Usage: $0 [options]
+Использование: $0 [параметры]
 
-Options:
-  --repo <url>       Git repository to pull (default: \$RAGFLOW_REPO_URL or the GitLab repo)
-  --branch <name>    Branch to build (default: \$RAGFLOW_BRANCH or main)
-  --tag <image:tag>  Result image tag (default: \$RAGFLOW_IMAGE_TAG or citysense/ragflow:<date-time>)
-  --data-dir <path>  Where the repo lives on this server (default: \$RAGFLOW_DATA_DIR or ~/ragflow)
-  --no-cache         Full rebuild without BuildKit cache
-  -h, --help         Show this help
+Параметры:
+  --repo <url>       Git-репозиторий для клонирования (по умолчанию: \$RAGFLOW_REPO_URL или GitLab-репозиторий)
+  --branch <имя>     Ветка для сборки (по умолчанию: \$RAGFLOW_BRANCH или main)
+  --tag <образ:тег>  Тег итогового образа (по умолчанию: \$RAGFLOW_IMAGE_TAG или citysense/ragflow:<дата-время>)
+  --data-dir <путь>  Где на сервере лежит репозиторий (по умолчанию: \$RAGFLOW_DATA_DIR или ~/ragflow)
+  --no-cache         Полная пересборка без кэша BuildKit
+  -h, --help         Показать эту справку
 EOF
 }
 
@@ -39,28 +41,30 @@ while [ $# -gt 0 ]; do
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --no-cache) NO_CACHE=1; shift ;;
     -h|--help)  usage; exit 0 ;;
-    *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
+    *) echo "Неизвестный параметр: $1" >&2; usage; exit 1 ;;
   esac
 done
 
 log() { echo -e "\n=== $* ==="; }
 
-# --- 1. Docker daemon -------------------------------------------------
-log "Checking Docker daemon"
-docker info >/dev/null 2>&1 || { echo "ERROR: Docker daemon is not running." >&2; exit 1; }
+# --- 1. Демон Docker -------------------------------------------------
+log "Проверка демона Docker"
+docker info >/dev/null 2>&1 || { echo "ОШИБКА: демон Docker не запущен." >&2; exit 1; }
 
-# --- 2. Clone / update the repository ---------------------------------
-log "Repository: $DATA_DIR (branch: $BRANCH)"
+# --- 2. Клонирование / обновление репозитория -------------------------
+log "Репозиторий: $DATA_DIR (ветка: $BRANCH)"
 if [ ! -d "$DATA_DIR/.git" ]; then
-  echo "Cloning $REPO_URL ..."
+  echo "Клонирование $REPO_URL ..."
   git clone "$REPO_URL" "$DATA_DIR"
 fi
 cd "$DATA_DIR"
 
-# Preserve server-local config files across updates
+# Сохраняем локальные конфиги сервера и правки под Yandex SSO между обновлениями
 BACKUP_DIR="$(mktemp -d)"
 trap 'rm -rf "$BACKUP_DIR"' EXIT
-for f in docker/.env docker/service_conf.yaml.template; do
+for f in docker/.env docker/service_conf.yaml.template \
+         api/apps/auth/yandex.py api/apps/auth/__init__.py \
+         api/apps/restful_apis/user_api.py; do
   if [ -f "$f" ]; then
     mkdir -p "$BACKUP_DIR/$(dirname "$f")"
     cp "$f" "$BACKUP_DIR/$f"
@@ -71,24 +75,26 @@ git fetch origin "$BRANCH"
 git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" --track origin/"$BRANCH"
 git reset --hard origin/"$BRANCH"
 
-# Restore server-local config
-for f in docker/.env docker/service_conf.yaml.template; do
+# Восстанавливаем локальные конфиги и правки под Yandex SSO
+for f in docker/.env docker/service_conf.yaml.template \
+         api/apps/auth/yandex.py api/apps/auth/__init__.py \
+         api/apps/restful_apis/user_api.py; do
   if [ -f "$BACKUP_DIR/$f" ]; then
     mkdir -p "$(dirname "$f")"
     cp "$BACKUP_DIR/$f" "$f"
-    echo "Restored $f (server-local values kept)"
+    echo "Восстановлен $f (локальные значения сохранены)"
   fi
 done
 
-# --- 3. Build the image -----------------------------------------------
-log "Building $TAG"
+# --- 3. Сборка образа -------------------------------------------------
+log "Сборка $TAG"
 BUILD_ARGS=(build --progress=plain -f Dockerfile -t "$TAG")
 if [ "$NO_CACHE" = "1" ]; then
   BUILD_ARGS+=(--no-cache)
 fi
 docker "${BUILD_ARGS[@]}" .
 
-log "Done"
-echo "To run the app, set RAGFLOW_IMAGE=$TAG in docker/.env and run:"
+log "Готово"
+echo "Чтобы запустить приложение, укажите RAGFLOW_IMAGE=$TAG в docker/.env и выполните:"
 echo "  docker compose -f docker/docker-compose.yml up -d ragflow-cpu"
 docker images "$TAG" --format "  {{.Repository}}:{{.Tag}}   ID={{.ID}}   Size={{.Size}}"

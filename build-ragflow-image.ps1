@@ -1,30 +1,32 @@
 <#
-.SYNOPSIS
-    Builds a local RAGFlow Docker image from the current working tree.
+.СИНОПСИС
+    Собирает локальный Docker-образ RAGFlow из текущего рабочего дерева.
 
-.DESCRIPTION
-    Follows the official build path (root Dockerfile, base image pulled from
-    Docker Hub). Reuses BuildKit's persistent cache mounts (uv/npm/apt), so
-    repeated builds after source changes are fast. Place this script in the
-    repository root next to the Dockerfile.
+.ОПИСАНИЕ
+    Идёт по официальному пути сборки (корневой Dockerfile, базовый образ
+    берётся с Docker Hub). Использует постоянные cache-монтирования BuildKit
+    (uv/npm/apt), поэтому повторные сборки после изменений в исходниках быстрые.
+    Скрипт должен лежать в корне репозитория рядом с Dockerfile.
 
-    Only builds the image; it never recreates the running app container. To
-    use a freshly built image, set RAGFLOW_IMAGE in docker/.env to the new tag
-    and start the app yourself.
+    Скрипт только собирает образ и никогда не пересоздаёт запущенный
+    контейнер приложения. Чтобы использовать свежесобранный образ, укажите
+    новый тег в RAGFLOW_IMAGE в docker/.env и запустите приложение сами.
 
-.PARAMETER Tag
-    Image name and tag. Default: citysense/ragflow:<date-time> (e.g. citysense/ragflow:20260814-153000)
+.ПАРАМЕТР Tag
+    Имя образа и тег. По умолчанию: citysense/ragflow:<дата-время>
+    (например, citysense/ragflow:20260814-153000)
 
-.PARAMETER NoCache
-    Force a full rebuild, ignoring BuildKit cache.
+.ПАРАМЕТР NoCache
+    Полная пересборка без учёта кэша BuildKit.
 
-.PARAMETER UseMirror
-    Pass NEED_MIRROR=1 so the build uses Aliyun mirrors (restricted networks).
+.ПАРАМЕТР UseMirror
+    Передаёт NEED_MIRROR=1, чтобы сборка использовала зеркала Aliyun
+    (для ограниченных сетей).
 
-.EXAMPLE
+.ПРИМЕР
     .\build-ragflow-image.ps1
 
-.EXAMPLE
+.ПРИМЕР
     .\build-ragflow-image.ps1 -Tag myrepo/ragflow:v1 -NoCache
 #>
 
@@ -44,38 +46,38 @@ function Write-Step([string]$msg) {
 
 function Assert-ExitOk([string]$what) {
     if ($LASTEXITCODE -ne 0) {
-        throw "$what failed (exit code $LASTEXITCODE)"
+        throw "$what завершилось с ошибкой (код выхода $LASTEXITCODE)"
     }
 }
 
 $RepoRoot = $PSScriptRoot
 
 # ---------------------------------------------------------------------------
-# 1. Preflight checks
+# 1. Предварительные проверки
 # ---------------------------------------------------------------------------
-Write-Step "Preflight checks"
+Write-Step "Предварительные проверки"
 
 docker info *> $null
-Assert-ExitOk "docker info (is Docker Desktop running?)"
+Assert-ExitOk "docker info (запущен ли Docker Desktop?)"
 
 if (-not (Test-Path (Join-Path $RepoRoot "Dockerfile"))) {
-    throw "Dockerfile not found in '$RepoRoot'. Place this script in the ragflow repository root."
+    throw "Dockerfile не найден в '$RepoRoot'. Положите скрипт в корень репозитория ragflow."
 }
 
 Push-Location $RepoRoot
 try {
     $gitVersion = git describe --tags --match=v* --first-parent --always 2>$null
     if ($gitVersion) {
-        Write-Host "  Version that will be baked into the image: $gitVersion" -ForegroundColor Yellow
+        Write-Host "  Версия, которая попадёт в образ: $gitVersion" -ForegroundColor Yellow
     }
 } catch {
-    Write-Host "  (git describe unavailable; image VERSION will fall back to a short hash)" -ForegroundColor Yellow
+    Write-Host "  (git describe недоступен; VERSION образа будет коротким хешем)" -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------------------
-# 2. Build
+# 2. Сборка
 # ---------------------------------------------------------------------------
-Write-Step "Building image: $Tag"
+Write-Step "Сборка образа: $Tag"
 
 $buildArgs = @(
     "build"
@@ -93,9 +95,9 @@ Assert-ExitOk "docker build"
 $sw.Stop()
 
 Write-Host ""
-Write-Host "  Build finished in $([math]::Round($sw.Elapsed.TotalMinutes, 1)) min" -ForegroundColor Green
+Write-Host "  Сборка завершена за $([math]::Round($sw.Elapsed.TotalMinutes, 1)) мин" -ForegroundColor Green
 docker images $Tag --format "  {{.Repository}}:{{.Tag}}   ID={{.ID}}   Size={{.Size}}"
 
 Write-Host ""
-Write-Host "  To run the app with this image, set RAGFLOW_IMAGE=$Tag in docker\.env and run:" -ForegroundColor Yellow
+Write-Host "  Чтобы запустить приложение с этим образом, укажите RAGFLOW_IMAGE=$Tag в docker\.env и выполните:" -ForegroundColor Yellow
 Write-Host "    docker compose -f docker\docker-compose.yml up -d ragflow-cpu" -ForegroundColor Yellow
