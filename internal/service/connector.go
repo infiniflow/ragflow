@@ -389,9 +389,12 @@ func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID s
 }
 
 // TestConnector validates a connector's stored configuration.
-// Temporarily inert: no live network validation. It verifies access, that
-// the connector exists, that the source is rest_api, and that stored
-// credentials are present; other sources return ErrConnectorTestUnsupported.
+// Equivalent to Python's test_connector. Per-connector credential validation
+// lives in the Python common.data_source package and is not yet available in
+// Go; for now this verifies access, that the connector exists, that the source
+// is REST_API (the only source Python currently tests), and that credentials
+// are present in the stored config. It returns ErrConnectorTestUnsupported for
+// other sources.
 func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
 	ok, err := s.accessible(ctx, connectorID, userID)
 	if err != nil && errors.Is(err, ErrConnectorNotFound) {
