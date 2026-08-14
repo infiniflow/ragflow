@@ -453,12 +453,17 @@ class OpenRouter(Base):
         # pre-fix ``if not api_key: return ""`` early return and the
         # ``payload.get("api_key") or api_key`` fallback for a missing
         # ``api_key`` field in a JSON dict are both preserved.
-        if not self.api_key:
+        if self.api_key is None or self.api_key == "":
             return ""
         from rag.llm.key_utils import _resolve_openrouter_credentials
 
         result = _resolve_openrouter_credentials(self.api_key)
-        return result["api_key"] or self.api_key
+        # The "or self.api_key" fallback covers the case where the JSON
+        # dict is well-formed but has no "api_key" field. Fall back to
+        # the raw self.api_key only when it is a plain string; a dict
+        # or other non-string would 401 at the upstream API with a
+        # less-actionable error, so prefer an empty string instead.
+        return result["api_key"] or (self.api_key if isinstance(self.api_key, str) else "")
 
     def _get_model_list_url(self):
         tail = "/api/v1/models?output_modalities=all"

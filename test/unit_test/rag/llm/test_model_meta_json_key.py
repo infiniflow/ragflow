@@ -162,6 +162,16 @@ class TestOpenRouterGetApiKey:
         o = OpenRouter('{"other_field": "value"}')
         assert o._get_api_key() == '{"other_field": "value"}'
 
+    def test_python_dict_without_api_key_returns_empty_string(self):
+        # A Python dict (not a JSON string) that has no ``api_key``
+        # field must NOT be forwarded as the api_key. The pre-fix
+        # ``or self.api_key`` fallback would have returned the dict
+        # itself, which the upstream API would reject with a generic
+        # 401 and no actionable error. Post-fix, the fallback only
+        # fires when self.api_key is a plain string.
+        o = OpenRouter({"other_field": "value"})
+        assert o._get_api_key() == ""
+
     def test_python_dict_input(self):
         o = OpenRouter({"api_key": "dict-openrouter-key"})
         assert o._get_api_key() == "dict-openrouter-key"
