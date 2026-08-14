@@ -25,7 +25,7 @@ func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APICon
 	return d.remoteModels, nil
 }
 
-func (d *remoteModelProbeDriver) Embed(context.Context, *string, []string, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.EmbedRequest, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	d.embedCalls++
 	return nil, nil
 }

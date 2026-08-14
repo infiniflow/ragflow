@@ -9,7 +9,7 @@ import (
 // TestFormalizeAnswer_Abstain asserts abstain short-circuits to the abstain
 // message without calling the model.
 func TestFormalizeAnswer_Abstain(t *testing.T) {
-	res := FormalizeAnswer(context.Background(), nil, "Q", &Kbinfos{}, false, true, false)
+	res := FormalizeAnswer(context.Background(), nil, "Q", &Kbinfos{}, false, true, false, "", false)
 	if !res.Abstained || res.FinalAnswer != abstainMessage {
 		t.Errorf("abstain result = %+v, want abstain message", res)
 	}
@@ -18,7 +18,7 @@ func TestFormalizeAnswer_Abstain(t *testing.T) {
 // TestFormalizeAnswer_Empty asserts empty chunks short-circuit to the empty
 // message.
 func TestFormalizeAnswer_Empty(t *testing.T) {
-	res := FormalizeAnswer(context.Background(), nil, "Q", &Kbinfos{}, false, false, false)
+	res := FormalizeAnswer(context.Background(), nil, "Q", &Kbinfos{}, false, false, false, "", false)
 	if !res.Empty || res.FinalAnswer != emptyResultMessage {
 		t.Errorf("empty result = %+v, want empty message", res)
 	}
@@ -29,7 +29,7 @@ func TestFormalizeAnswer_Empty(t *testing.T) {
 func TestFormalizeAnswer_Generates(t *testing.T) {
 	installChat(t, "here is the final answer")
 	kb := &Kbinfos{Chunks: []map[string]interface{}{{"content_with_weight": "evidence alpha"}}}
-	res := FormalizeAnswer(context.Background(), nil, "What is X?", kb, false, false, false)
+	res := FormalizeAnswer(context.Background(), nil, "What is X?", kb, false, false, false, "", false)
 	if res.FinalAnswer != "here is the final answer" {
 		t.Errorf("final answer = %q, want chat output", res.FinalAnswer)
 	}
@@ -40,9 +40,22 @@ func TestFormalizeAnswer_Generates(t *testing.T) {
 func TestFormalizeAnswer_PartialPreamble(t *testing.T) {
 	installChat(t, "partial ans")
 	kb := &Kbinfos{Chunks: []map[string]interface{}{{"content_with_weight": "evidence"}}}
-	res := FormalizeAnswer(context.Background(), nil, "Q", kb, true, false, false)
+	res := FormalizeAnswer(context.Background(), nil, "Q", kb, true, false, false, "", false)
 	if !strings.Contains(res.FinalAnswer, "partial ans") {
 		t.Errorf("final answer = %q", res.FinalAnswer)
+	}
+}
+
+// TestFormalizeAnswer_ForceLLM asserts forceLLM skips the empty short-circuit and
+// still calls the model, so the FALLBACK_LLM verdict reaches the direct LLM.
+func TestFormalizeAnswer_ForceLLM(t *testing.T) {
+	installChat(t, "direct llm fallback answer")
+	res := FormalizeAnswer(context.Background(), nil, "Q", &Kbinfos{}, false, false, true, "", true)
+	if res.Empty {
+		t.Error("forceLLM must not return the empty short-circuit")
+	}
+	if res.FinalAnswer != "direct llm fallback answer" {
+		t.Errorf("final answer = %q, want chat output (direct LLM invoked)", res.FinalAnswer)
 	}
 }
 

@@ -186,7 +186,7 @@ type gpustackEmbeddingResponse struct {
 func (g *GPUStackModel) Embed(
 	ctx context.Context,
 	modelName *string,
-	texts []string,
+	request EmbedRequest,
 	apiConfig *APIConfig,
 	embeddingConfig *EmbeddingConfig,
 	modelUsage *common.ModelUsage,
@@ -195,7 +195,7 @@ func (g *GPUStackModel) Embed(
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
@@ -214,7 +214,7 @@ func (g *GPUStackModel) Embed(
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -256,15 +256,15 @@ func (g *GPUStackModel) Embed(
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	filled := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
 		if item.Index == nil {
 			return nil, fmt.Errorf("gpustack: missing embedding index in response item")
 		}
 		idx := *item.Index
-		if idx < 0 || idx >= len(texts) {
-			return nil, fmt.Errorf("gpustack: embedding response index %d out of range for %d inputs", idx, len(texts))
+		if idx < 0 || idx >= len(request.Texts) {
+			return nil, fmt.Errorf("gpustack: embedding response index %d out of range for %d inputs", idx, len(request.Texts))
 		}
 		if filled[idx] {
 			return nil, fmt.Errorf("gpustack: duplicate embedding index %d in response", idx)
@@ -286,7 +286,7 @@ func (g *GPUStackModel) Embed(
 	return embeddings, nil
 }
 
-func (g *GPUStackModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (g *GPUStackModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
