@@ -833,7 +833,9 @@ async def get_wiki_alteration(tenant_id, dataset_id):
     GET /api/v1/datasets/<dataset_id>/artifacts/alteration?kind=<kind>
     ``kind`` (default ``wiki``) is one of: wiki | graph | mindmap | timeline |
     tree (tree covers both ``tree`` and ``page_index``).
-    Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}
+    Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}.
+    Wiki responses also include ``changed`` and ``changed_doc_ids`` based on
+    source chunk hash drift.
     """
     kind = (request.args.get("kind") or "wiki").strip().lower()
     if kind not in {"wiki", "graph", "mindmap", "timeline", "tree"}:
