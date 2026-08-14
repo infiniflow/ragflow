@@ -189,3 +189,108 @@ func TestAnnotateBoxLayouts_NMSDedupOverlappingRegions(t *testing.T) {
 		t.Errorf("#6 NMS: expected 1 figure box after per-class NMS merges overlapping detections (IoU ~0.5), got %d", got)
 	}
 }
+
+// TestAnnotateBoxLayouts_NMSDeterministic pins that equal-confidence
+// same-label detections collapse to the SAME region on every run. Before the
+// sort.SliceStable + original-index tie-break, sort.Slice ordered equal scores
+// nondeterministically, so the survivor (and its synthetic LayoutNo) could flip
+// between otherwise-identical runs — breaking reproducibility and the golden
+// comparison.
+func TestAnnotateBoxLayouts_NMSDeterministic(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Confidence: 0.9, Label: pdf.LayoutTypeFigure},  // A (lower original index)
+		{X0: 35, Y0: 0, X1: 135, Y1: 100, Confidence: 0.9, Label: pdf.LayoutTypeFigure}, // B overlaps A, equal score
+	}
+	var baseline []pdf.TextBox
+	for run := 0; run < 30; run++ {
+		out := AnnotateBoxLayouts([]pdf.TextBox{}, regions, 1.0, 100.0)
+		if got := countFigureBoxes(out); got != 1 {
+			t.Fatalf("run %d: expected exactly 1 figure box after NMS, got %d", run, got)
+		}
+		if run == 0 {
+			baseline = out
+			continue
+		}
+		if len(out) != len(baseline) {
+			t.Fatalf("run %d: box count changed across runs (%d vs %d)", run, len(out), len(baseline))
+		}
+		for i := range out {
+			if out[i].X0 != baseline[i].X0 || out[i].X1 != baseline[i].X1 ||
+				out[i].Top != baseline[i].Top || out[i].Bottom != baseline[i].Bottom ||
+				out[i].LayoutNo != baseline[i].LayoutNo {
+				t.Fatalf("run %d: nondeterministic output (box %d differs from run 0)", run, i)
+			}
+		}
+	}
+	// Lower-index tie-break keeps region A.
+	if baseline[0].X0 != 0 || baseline[0].X1 != 100 {
+		t.Errorf("expected the lower-index region A (x0=0,x1=100) to survive, got x0=%v,x1=%v", baseline[0].X0, baseline[0].X1)
+	}
+}
+
+// TestAnnotateBoxLayouts_CleanupEqualScoreKeepsLater pins that when two
+// same-type regions overlap beyond cleanup's 0.7 threshold with EQUAL
+// confidence, Go keeps the LATER one (j) — matching Python layouts_cleanup
+// (pop(i) on equal scores). Before the fix Go kept the earlier region.
+//
+// NMS (IoU 0.45) must not pre-remove either: A sits fully inside B, so their
+// +1 IoU is tiny (<0.45) while their overlap ratio (inter/area of B) exceeds
+// 0.7, so only cleanup is exercised.
+func TestAnnotateBoxLayouts_CleanupEqualScoreKeepsLater(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 400, Y1: 400, Confidence: 0.9, Label: pdf.LayoutTypeFigure},     // B: large, on top (Y0=0)
+		{X0: 100, Y0: 200, X1: 200, Y1: 300, Confidence: 0.9, Label: pdf.LayoutTypeFigure}, // A: small, inside B, lower (Y0=200)
+	}
+	// No text box overlaps -> both unvisited -> cleanup collapses to one synthetic.
+	out := AnnotateBoxLayouts([]pdf.TextBox{}, regions, 1.0, 100.0)
+	if got := countFigureBoxes(out); got != 1 {
+		t.Fatalf("expected 1 figure box after cleanup merge, got %d", got)
+	}
+	// Y-sort puts B (Y0=0) first, A (Y0=200) second; equal score -> keep later (A).
+	if out[0].X0 != 100 || out[0].X1 != 200 || out[0].Top != 200 || out[0].Bottom != 300 {
+		t.Errorf("cleanup equal-score: expected later region A (x0=100,x1=200,top=200,bottom=300) to survive, got x0=%v,x1=%v,top=%v,bottom=%v",
+			out[0].X0, out[0].X1, out[0].Top, out[0].Bottom)
+	}
+}
+
+// TestAnnotateBoxLayouts_SyntheticVisitedInterleaved pins that an unmatched
+// figure region is numbered by its index in the per-type list that ALSO
+// includes already-visited figure regions (Python's enumerate over the full
+// type-filtered list). Before the fix Go used a separate unvisited-only
+// counter, so the unmatched figure became figure-0 instead of figure-1.
+func TestAnnotateBoxLayouts_SyntheticVisitedInterleaved(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "caption for A"},
+	}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure},   // A: matched to text box -> visited
+		{X0: 200, Y0: 0, X1: 300, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure}, // B: unmatched -> synthetic
+	}
+	out := AnnotateBoxLayouts(boxes, regions, 1.0, 100.0)
+
+	var annotated, synthetic *pdf.TextBox
+	for i := range out {
+		if out[i].Text == "caption for A" {
+			annotated = &out[i]
+		}
+		if out[i].LayoutType == pdf.LayoutTypeFigure && out[i].Text == "" {
+			synthetic = &out[i]
+		}
+	}
+	if annotated == nil {
+		t.Fatal("visited figure A: text box was not annotated as figure")
+	}
+	if annotated.LayoutNo != "figure-0" {
+		t.Errorf("visited figure A: expected LayoutNo figure-0, got %q", annotated.LayoutNo)
+	}
+	if synthetic == nil {
+		t.Fatal("expected a synthetic figure box for unmatched B")
+	}
+	// B is the 2nd figure in Y order (after visited A), so Python numbers it figure-1.
+	if synthetic.LayoutNo != "figure-1" {
+		t.Errorf("unmatched figure B: expected figure-1 (index in full per-type list), got %q", synthetic.LayoutNo)
+	}
+	if synthetic.X0 != 200 || synthetic.X1 != 300 {
+		t.Errorf("unmatched figure B: expected x0=200,x1=300, got x0=%v,x1=%v", synthetic.X0, synthetic.X1)
+	}
+}

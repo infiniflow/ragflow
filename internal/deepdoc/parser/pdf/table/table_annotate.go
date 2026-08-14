@@ -161,10 +161,14 @@ func cleanupLayouts(regs []annRegion, boxes []pdf.TextBox) []annRegion {
 			i++
 			continue
 		}
-		// Collapse the pair, keeping the more confident (or more covered) region.
+		// Collapse the pair. Python layouts_cleanup keeps the HIGHER-score
+		// region; on equal scores it keeps the later one (j) via pop(i).
+		// Match that exactly so equal-confidence pairs converge with Python.
 		drop := j
 		if regs[i].score > 0 && regs[j].score > 0 {
-			if regs[i].score <= regs[j].score {
+			if regs[i].score > regs[j].score {
+				drop = j
+			} else {
 				drop = i
 			}
 		} else {
@@ -208,9 +212,16 @@ func nmsDLARegions(regions []pdf.DLARegion, iouThresh float64) []pdf.DLARegion {
 	}
 	suppressed := make([]bool, len(regions))
 	for _, idxs := range byLabel {
-		// Highest confidence first (greedy NMS keeps the top box).
-		sort.Slice(idxs, func(a, b int) bool {
-			return regions[idxs[a]].Confidence > regions[idxs[b]].Confidence
+		// Highest confidence first (greedy NMS keeps the top box). On equal
+		// confidence, break the tie by original index so the result is
+		// deterministic for identical inputs — otherwise the same PDF could
+		// keep a different region (and emit different LayoutNo) on each run.
+		sort.SliceStable(idxs, func(a, b int) bool {
+			ca, cb := regions[idxs[a]].Confidence, regions[idxs[b]].Confidence
+			if ca != cb {
+				return ca > cb
+			}
+			return idxs[a] < idxs[b]
 		})
 		for k := 0; k < len(idxs); k++ {
 			i := idxs[k]
@@ -436,9 +447,12 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	boxes = compacted
 
 	// Synthetic figure boxes for unmatched figure/equation regions (Python:
-	// layout_recognizer.py:145-155).  Python uses SEPARATE per-type counters
-	// so figure-N and equation-N never collide; Go mirrors that.
-	figSynth, eqSynth := 0, 0
+	// layout_recognizer.py:145-155).  Python numbers each unmatched region with
+	// its index WITHIN the per-type list that also includes already-visited
+	// regions (enumerate([lt for lt in lts if lt["type"] == ty])), so we reuse
+	// the per-type typeIndex computed above rather than a separate
+	// unvisited-only counter. Python keeps figure-N / equation-N in SEPARATE
+	// namespaces, so the typeIndex is keyed by the original type label.
 	for j := range cands {
 		if cands[j].visited {
 			continue
@@ -446,29 +460,15 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 		if cands[j].label != pdf.LayoutTypeFigure && cands[j].label != pdf.LayoutTypeEquation {
 			continue
 		}
-		if cands[j].label == pdf.LayoutTypeEquation {
-			boxes = append(boxes, pdf.TextBox{
-				X0:         cands[j].x0,
-				X1:         cands[j].x1,
-				Top:        cands[j].y0,
-				Bottom:     cands[j].y1,
-				Text:       "",
-				LayoutType: pdf.LayoutTypeFigure,
-				LayoutNo:   fmt.Sprintf("equation-%d", eqSynth),
-			})
-			eqSynth++
-		} else {
-			boxes = append(boxes, pdf.TextBox{
-				X0:         cands[j].x0,
-				X1:         cands[j].x1,
-				Top:        cands[j].y0,
-				Bottom:     cands[j].y1,
-				Text:       "",
-				LayoutType: pdf.LayoutTypeFigure,
-				LayoutNo:   fmt.Sprintf("figure-%d", figSynth),
-			})
-			figSynth++
-		}
+		boxes = append(boxes, pdf.TextBox{
+			X0:         cands[j].x0,
+			X1:         cands[j].x1,
+			Top:        cands[j].y0,
+			Bottom:     cands[j].y1,
+			Text:       "",
+			LayoutType: pdf.LayoutTypeFigure,
+			LayoutNo:   fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
+		})
 	}
 
 	return boxes
