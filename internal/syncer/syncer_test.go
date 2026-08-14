@@ -794,7 +794,10 @@ func TestHash128MatchesPythonGolden(t *testing.T) {
 func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
+		"status":             dao.SyncStatusRunning,
+		"total_docs_indexed": int64(1),
+	}).Error
 	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
 	legacyID := service.Hash128("conn-1:source-1")
 	store := fakeStore{ids: map[string]struct{}{legacyID: {}}, fingerprints: map[string]string{legacyID: "fp-1"}}
@@ -807,6 +810,20 @@ func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	}
 	if sink.callCount() != 0 {
 		t.Fatalf("sink calls = %d, want 0", sink.callCount())
+	}
+	var completed entity.SyncLogs
+	if err := db.First(&completed, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load completed task: %v", err)
+	}
+	if completed.NewDocsIndexed != 0 || completed.TotalDocsIndexed != 0 {
+		t.Fatalf("completed stats new/total = %d/%d, want 0/0", completed.NewDocsIndexed, completed.TotalDocsIndexed)
+	}
+	var next entity.SyncLogs
+	if err := db.Where("id <> ? AND connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", "task-1", "conn-1", "kb-1", dao.TaskTypeSync, dao.SyncStatusSchedule).First(&next).Error; err != nil {
+		t.Fatalf("load next scheduled task: %v", err)
+	}
+	if next.TotalDocsIndexed != 1 {
+		t.Fatalf("next scheduled total docs indexed = %d, want 1", next.TotalDocsIndexed)
 	}
 }
 

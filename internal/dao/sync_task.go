@@ -326,17 +326,16 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 }
 
 // CompleteSyncTask marks SYNC done and creates the next schedule task.
-func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTaskContext, pollRangeEnd time.Time, newDocs, updatedDocs, totalDocs, errorCount int64, errorMsg string) (string, error) {
+func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTaskContext, pollRangeEnd time.Time, newDocs, totalDocs, errorCount int64, errorMsg string) (string, error) {
 	var nextTaskID string
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&entity.SyncLogs{}).Where("id = ? AND status = ?", taskContext.Task.ID, SyncStatusRunning).Updates(map[string]any{
-			"status":               SyncStatusDone,
-			"poll_range_end":       entity.FlexibleTime(pollRangeEnd),
-			"new_docs_indexed":     newDocs,
-			"updated_docs_indexed": updatedDocs,
-			"total_docs_indexed":   totalDocs,
-			"error_msg":            errorMsg,
-			"error_count":          errorCount,
+			"status":             SyncStatusDone,
+			"poll_range_end":     entity.FlexibleTime(pollRangeEnd),
+			"new_docs_indexed":   newDocs,
+			"total_docs_indexed": totalDocs,
+			"error_msg":          errorMsg,
+			"error_count":        errorCount,
 		})
 		if result.Error != nil {
 			return result.Error
