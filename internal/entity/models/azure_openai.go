@@ -177,12 +177,12 @@ type azureEmbeddingResponse struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -199,7 +199,7 @@ func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, texts [
 
 	// As with chat, the deployment is in the URL path, so no "model" field.
 	reqBody := map[string]interface{}{
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -214,7 +214,7 @@ func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, texts [
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	embeddings := make([]EmbeddingData, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
 	for _, d := range parsed.Data {
 		if d.Index < 0 || d.Index >= len(embeddings) {
 			return nil, fmt.Errorf("embedding index %d out of range [0,%d)", d.Index, len(embeddings))
@@ -271,7 +271,7 @@ func (a *AzureOpenAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (m
 }
 
 // Rerank is not exposed by the Azure OpenAI API.
-func (a *AzureOpenAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AzureOpenAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 

@@ -10,11 +10,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
+	"gorm.io/gorm"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -468,8 +470,12 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 		if err != nil {
 			return nil, nil, err
 		}
-		var entities []StructureGraphNode
-		var relations []StructureGraphRelation
+		// Initialize as empty (non-nil) slices so a bucket with entities but no
+		// relations serializes "relations": [] instead of null — the frontend
+		// adapters (adaptKnowledgeGraphToForceGraph et al.) call .filter() on
+		// relations without a null guard (mirror Python, which always returns []).
+		entities := make([]StructureGraphNode, 0)
+		relations := make([]StructureGraphRelation, 0)
 		for _, row := range fieldMap {
 			if !rowHasEnabledSource(row, excludedDocIDs) {
 				continue
@@ -530,7 +536,7 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 	}
 	aNameTerms = sortedUnique(aNameTerms)
 
-	var relations []StructureGraphRelation
+	relations := make([]StructureGraphRelation, 0)
 	targetNamesLower := map[string]bool{}
 	if len(aNameTerms) > 0 {
 		cond := copyFilter(scope)
@@ -611,6 +617,59 @@ func compilationTemplateKind(kind string) string {
 		return "raptor"
 	}
 	return k
+}
+
+// ErrInvalidStructureKind is returned when the request kind does not resolve to a
+// supported dataset-structure kind. Handlers use errors.Is to map it to
+// CodeArgumentError (400) while treating every other service error as a server
+// fault (500).
+var ErrInvalidStructureKind = errors.New("invalid structure kind")
+
+// datasetStructureSupported mirrors the writer's engine guard: only Infinity and
+// Elasticsearch resolve the dataset-structure filter keys (scope_kwd +
+// knowledge_graph_kwd). The writer keeps a private copy in the knowledge_compile
+// package; this service-side copy keeps the API delete path in agreement without
+// exporting an ingestion-internal helper across package boundaries.
+func datasetStructureSupported() bool {
+	switch engine.GetEngineType() {
+	case "infinity", "elasticsearch", "":
+		return true
+	default:
+		return false
+	}
+}
+
+// errDatasetStructureUnsupported returns a visible error naming the engine.
+func errDatasetStructureUnsupported() error {
+	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engine.GetEngineType())
+}
+
+// resolveDatasetStructureKind maps a user-facing dataset-structure kind to the
+// stored top-level kind (mirror Python _DATASET_STRUCTURE_KIND_ALIASES). It is
+// DELIBERATELY separate from compilationTemplateKind: that helper folds
+// knowledge_graph→timeline, which would merge distinct dataset kinds, and it
+// lacks the graph→knowledge_graph / mindmap→mind_map aliases (Python's
+// dataset_api_service.py L1803-1805 documents exactly why it does not reuse the
+// general normalizer). Returns "" for an invalid kind (caller maps that to
+// 400 ARGUMENT_ERROR, never "return all").
+func resolveDatasetStructureKind(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(kind, "-", "_")))
+	switch k {
+	case "graph", "knowledge_graph":
+		return "knowledge_graph"
+	case "mindmap", "mind_map":
+		// Align with Python _DATASET_STRUCTURE_KIND_ALIASES: resolve the
+		// user-facing "mindmap" to the stored compilation_template_kind_kwd value
+		// "mind_map" (the template kind, which is what read/delete paths match on).
+		return "mind_map"
+	case "timeline":
+		return "timeline"
+	case "session_essence":
+		return "session_essence"
+	case "session_graph":
+		return "session_graph"
+	}
+	return ""
 }
 
 // structureKindForBucket returns the normalized kind used for tree/page_index
@@ -720,8 +779,10 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		return resp, nil
 	}
 
-	// normal mode: discover buckets from per-doc graph blob rows.
-	metaFields := []string{"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
+	// normal mode: discover buckets from per-doc graph blob rows. "id" is
+	// required for the same reason as dataset discovery (Infinity only projects
+	// listed fields; graphRowSearch keys by id).
+	metaFields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
 	metaRows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
 		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"graph"}}, nil, 0, 1000, nil)
 	if err != nil {
@@ -787,6 +848,197 @@ func containsStr(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// DatasetStructureGraphInput is the parsed request for the dataset-scope
+// structure graph endpoint (GET/DELETE /datasets/:id/artifacts/structure).
+// Kind is REQUIRED (mirrors Python dataset_api.py:715): missing or invalid →
+// 400 ARGUMENT_ERROR. Wipe applies to DELETE: true deletes the dataset rows,
+// false only cancels the task (rows are left for the next rebuild to clean).
+type DatasetStructureGraphInput struct {
+	TenantID  string
+	DatasetID string
+	Kind      string
+	Wipe      bool
+}
+
+// DatasetStructureGraphResponse mirrors Python get_dataset_structure's
+// {"kind": ..., "templates": [...]}.
+type DatasetStructureGraphResponse struct {
+	Kind      string                           `json:"kind"`
+	Templates []DocumentStructureGraphTemplate `json:"templates"`
+}
+
+// GetDatasetStructure returns the dataset-scope structure graph for a resolved
+// kind, mirroring Python get_dataset_structure (dataset_api_service.py). Discovery
+// scans knowledge_graph_kwd=["entity"] dataset rows (scope_kwd="dataset") and
+// matches the resolved kind against the stamped compilation_template_kind_kwd —
+// NOT compile_kwd (compile_kwd holds the autotype "hypergraph"/"list"/"mindmap",
+// which is never the kind discriminator; Python _discover_scope_templates matches
+// _resolve_dataset_structure_kind against compilation_template_kind_kwd the same
+// way). It collects distinct template ids, then reads each template's dataset
+// entity/relation rows via buildBucket. It does NOT read kg_build_meta (write/
+// delete-side only).
+func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in DatasetStructureGraphInput) (*DatasetStructureGraphResponse, error) {
+	resolved := resolveDatasetStructureKind(in.Kind)
+	if resolved == "" {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidStructureKind, in.Kind)
+	}
+	if !datasetStructureSupported() {
+		return nil, errDatasetStructureUnsupported()
+	}
+	resp := &DatasetStructureGraphResponse{Kind: resolved, Templates: []DocumentStructureGraphTemplate{}}
+
+	// Discover distinct template ids whose stamped template kind resolves to the
+	// requested kind, scanning dataset-scope entity rows only. scope_kwd="dataset"
+	// is required here (unlike the legacy doc_graph fallback) because dataset rows
+	// are the only ones carrying compilation_template_kind_kwd we can trust for the
+	// dataset-scope kind match.
+	templateIDs := map[string]struct{}{}
+	// "id" must be projected: graphRowSearch keys its result map by the row id,
+	// and Infinity only returns fields listed in SelectFields (it does not
+	// synthesize id), so omitting it silently drops every row (review Major).
+	// The resolved kind is pushed into the filter so the engine applies the
+	// predicate instead of scanning all entity rows and discarding them in Go.
+	metaFields := []string{"id", "compilation_template_kind_kwd", "compilation_template_ids"}
+	for offset := 0; ; offset += 1000 {
+		rows, total, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
+			map[string]interface{}{
+				"knowledge_graph_kwd":           []string{"entity"},
+				"scope_kwd":                     []string{"dataset"},
+				"compilation_template_kind_kwd": []string{resolved},
+			}, nil, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			tkind := firstStringValue(row["compilation_template_kind_kwd"])
+			if tkind == "" || resolveDatasetStructureKind(tkind) != resolved {
+				continue
+			}
+			tid := rowTemplateID(row)
+			if tid != "" {
+				templateIDs[tid] = struct{}{}
+			}
+		}
+		if int64(offset+1000) >= total || len(rows) == 0 {
+			break
+		}
+	}
+
+	// Read each template's dataset entity/relation rows.
+	for tid := range templateIDs {
+		scope := map[string]interface{}{
+			"scope_kwd":                     []string{"dataset"},
+			"compilation_template_ids":      []string{tid},
+			"compilation_template_kind_kwd": []string{resolved},
+		}
+		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, scope, nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(entities) == 0 && len(relations) == 0 {
+			continue
+		}
+		resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
+			TemplateID:   tid,
+			TemplateName: tid,
+			Kind:         resolved,
+			Entities:     entities,
+			Relations:    relations,
+		})
+	}
+	return resp, nil
+}
+
+// DeleteDatasetStructure handles DELETE /datasets/:id/artifacts/structure?kind=&wipe=.
+// It validates kind like GET. wipe=false cancels the kind's task (via the task-id
+// field) without deleting rows; wipe=true deletes the kind's kg_build_meta marker
+// + dataset entity/relation rows (document-scope rows are never touched).
+func (s *DatasetArtifactService) DeleteDatasetStructure(ctx context.Context, in DatasetStructureGraphInput) (int, error) {
+	resolved := resolveDatasetStructureKind(in.Kind)
+	if resolved == "" {
+		return 0, fmt.Errorf("%w: %q", ErrInvalidStructureKind, in.Kind)
+	}
+	if !in.Wipe {
+		// Cancel the task without deleting rows. Task cancellation is task-id
+		// granular (mirrors Python delete_index REDIS set "{task_id}-cancel"); the
+		// actual row cleanup happens on the next rebuild. Rows are preserved.
+		return s.cancelDatasetStructureTask(ctx, in.TenantID, in.DatasetID, resolved)
+	}
+	if !datasetStructureSupported() {
+		return 0, errDatasetStructureUnsupported()
+	}
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return 0, fmt.Errorf("document engine is not initialized")
+	}
+	indexName := fmt.Sprintf("ragflow_%s", in.TenantID)
+	cond := map[string]interface{}{
+		"kb_id":                         in.DatasetID,
+		"scope_kwd":                     "dataset",
+		"compilation_template_kind_kwd": resolved,
+		"knowledge_graph_kwd":           []string{"entity", "relation", "kg_build_meta"},
+	}
+	n, err := docEngine.DeleteChunks(ctx, cond, indexName, in.DatasetID)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+// cancelDatasetStructureTask cancels the running dataset-structure task for a
+// resolved kind by clearing both its per-index task-id and finish-at fields.
+// This mirrors Python delete_index (dataset_api_service.py), which clears
+// {task_id_field: "", task_finish_at_field: None} so the task state is fully
+// reset (a stale finish-at would otherwise leave the kind looking "done" after
+// cancel). The row cleanup itself is driven by the next rebuild; Go executes the
+// merge synchronously inside the ingestor (no independent task/marker), so there
+// is no Redis "{task_id}-cancel" marker to publish here.
+func (s *DatasetArtifactService) cancelDatasetStructureTask(ctx context.Context, tenantID, datasetID, resolvedKind string) (int, error) {
+	field := datasetStructureTaskIDField(resolvedKind)
+	if field == "" {
+		return 0, nil
+	}
+	updates := map[string]interface{}{
+		field: "",
+		// gorm.Updates ignores nil values, so use an explicit NULL expression to
+		// actually clear the finish-at timestamp (mirrors Python None).
+		datasetStructureTaskFinishAtField(field): gorm.Expr("NULL"),
+	}
+	if err := dao.NewKnowledgebaseDAO().UpdateByID(ctx, dao.DB, datasetID, updates); err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
+// datasetStructureTaskFinishAtField maps a task-id field to its sibling finish-at
+// field, mirroring Python f"{task_id_field.replace('_task_id', '_task_finish_at')}".
+func datasetStructureTaskFinishAtField(taskIDField string) string {
+	return strings.Replace(taskIDField, "_task_id", "_task_finish_at", 1)
+}
+
+// datasetStructureTaskIDField maps a resolved dataset-structure kind to its kb
+// task-id field name. It mirrors Python _INDEX_TYPE_TO_TASK_ID_FIELD: each
+// dataset-merge kind carries its own "<index_type>_task_id" field (structure_graph,
+// structure_mindmap, timeline, session_graph, session_essence), NOT the legacy
+// doc-level graphrag_task_id/mindmap_task_id. Empty means "no task-id field".
+func datasetStructureTaskIDField(resolvedKind string) string {
+	switch resolvedKind {
+	case "knowledge_graph":
+		// "graph" is already normalized to "knowledge_graph" by
+		// resolveDatasetStructureKind, so no separate "graph" case is needed.
+		return "structure_graph_task_id"
+	case "mindmap", "mind_map":
+		return "structure_mindmap_task_id"
+	case "timeline":
+		return "timeline_task_id"
+	case "session_graph":
+		return "session_graph_task_id"
+	case "session_essence":
+		return "session_essence_task_id"
+	}
+	return ""
 }
 
 // resolveGraphBucket mirrors Python _resolve_bucket.
@@ -866,7 +1118,7 @@ func rowTemplateID(row map[string]interface{}) string {
 }
 
 func (s *DatasetArtifactService) appendRaptorBlob(ctx context.Context, tenantID, datasetID, documentID string, grouped map[string]DocumentStructureGraphTemplate) {
-	rows, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"content_with_weight", "compile_kwd"},
+	rows, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "content_with_weight", "compile_kwd"},
 		map[string]interface{}{"doc_id": []string{documentID}, "compile_kwd": []string{"raptor_graph"}}, nil, 0, 16, nil)
 	if err != nil {
 		return

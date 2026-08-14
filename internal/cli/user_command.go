@@ -3467,6 +3467,76 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "list ingestion tasks")
 }
 
+// APIListSyncLogsCommand lists sync logs (user mode).
+// LIST SYNC_LOGS; lists the sync logs of all datasets.
+// LIST SYNC_LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC_LOGS;
+// restrict the listing to one dataset.
+func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetID := ""
+	if rawID, ok := cmd.Params["dataset_id"].(string); ok {
+		datasetID = strings.TrimSpace(rawID)
+	}
+	if datasetName, ok := cmd.Params["dataset_name"].(string); ok && datasetName != "" {
+		id, err := c.getDatasetID(datasetName)
+		if err != nil {
+			return nil, err
+		}
+		datasetID = id
+	}
+
+	url := "/connectors/sync_logs"
+	query := netUrl.Values{}
+	if datasetID != "" {
+		query.Set("dataset_id", datasetID)
+	}
+	page, hasPage := cmd.Params["page"].(int)
+	pageSize, hasPageSize := cmd.Params["page_size"].(int)
+	switch {
+	case hasPage && hasPageSize:
+		query.Set("page", fmt.Sprintf("%d", page))
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	case hasPage:
+		query.Set("page", fmt.Sprintf("%d", page))
+	case hasPageSize:
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	default:
+		// No pagination requested: ask the API for every matching row.
+		query.Set("page_size", "0")
+	}
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sync logs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list sync logs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSyncLogsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list sync logs failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 // APIShowLogLevelCommand sets the log level for the system.
 func (c *CLI) APIShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {

@@ -52,7 +52,7 @@ export const isConfigMetaKey = (key: string) =>
     'instruction',
     'synthesis',
     'use_blueprint',
-    'plan',
+    'mode',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -109,10 +109,10 @@ export const buildConfigFromBuiltin = (
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts &&
       (instruction.length > 0 || example.length > 0),
-    plan:
-      typeof builtinTemplate.config?.plan === 'boolean'
-        ? builtinTemplate.config.plan
-        : true,
+    mode:
+      typeof builtinTemplate.config?.mode === 'string'
+        ? builtinTemplate.config.mode
+        : '',
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -180,7 +180,7 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && hasBlueprintContent,
-    plan: typeof config.plan === 'boolean' ? config.plan : true,
+    mode: typeof config.mode === 'string' ? config.mode : '',
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
@@ -263,7 +263,7 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }
-    if (key === 'plan') {
+    if (key === 'mode') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }

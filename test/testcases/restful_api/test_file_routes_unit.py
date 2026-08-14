@@ -999,3 +999,48 @@ def test_get_file_content_checks_permission(monkeypatch):
     ok, file = module.get_file_content("tenant1", "file1")
     assert ok is True
     assert file.id == "file1"
+
+
+@pytest.mark.p2
+def test_move_folder_to_its_current_parent_does_not_delete_it(monkeypatch):
+    """Moving a folder into its current parent (i.e. to its current location)
+    must not delete the folder: _move_entry_recursive used to reuse the source
+    folder itself as the target and then delete it, making the folder vanish."""
+    module = _load_file_api_service(monkeypatch)
+    deleted = []
+
+    src = _DummyFile("folder-a", module.FileType.FOLDER.value, name="A", parent_id="parent")
+    dest = SimpleNamespace(id="parent", name="parent")
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [src])
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, dest))
+    # The folder already sits in the destination folder under the same name.
+    monkeypatch.setattr(module.FileService, "query", lambda **_kwargs: [src])
+    monkeypatch.setattr(
+        module.FileService,
+        "delete_by_id",
+        lambda file_id: deleted.append(file_id) or True,
+    )
+
+    ok, message = _run(module.move_files("tenant1", ["folder-a"], "parent"))
+    assert ok is False
+    assert message == "The folder is already in the target location. There is no need to move it."
+    assert deleted == []
+
+
+@pytest.mark.p2
+def test_move_folder_to_itself_is_rejected(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    src = _DummyFile("folder-a", module.FileType.FOLDER.value, name="A", parent_id="parent")
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [src])
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda _file_id: (True, SimpleNamespace(id="folder-a")),
+    )
+    monkeypatch.setattr(module.FileService, "get_all_parent_folders", lambda _file_id: [])
+
+    ok, message = _run(module.move_files("tenant1", ["folder-a"], "folder-a"))
+    assert ok is False
+    assert message == "Cannot move a folder to itself."
