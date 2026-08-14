@@ -882,6 +882,14 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
     res = []
     contexts = []
     for (img, tb), poss in tabls:
+        # MinerU is expected to provide page_idx and bbox, but production
+        # fallbacks may still yield media without positions. Preserve it.
+        if not poss:
+            res.append(((img, tb), poss))
+            if return_context:
+                contexts.append(("", ""))
+            continue
+
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
         if isinstance(tb, list):

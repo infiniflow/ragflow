@@ -257,6 +257,17 @@ def test_tokenize_table_uses_payload_type_instead_of_html_content():
 
 
 @pytest.mark.p1
+def test_media_context_preserves_media_without_positions():
+    from rag.nlp import append_context2table_image4pdf
+
+    image = object()
+    media = [((None, "table"), []), ((image, ["figure"]), [])]
+
+    assert append_context2table_image4pdf([], media, 1) == media
+    assert append_context2table_image4pdf([], media, 1, return_context=True) == [("", ""), ("", "")]
+
+
+@pytest.mark.p1
 @pytest.mark.parametrize("parse_method", ["naive", "manual", "paper"])
 def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_method):
     module = _load_mineru_parser(monkeypatch)
