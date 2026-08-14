@@ -78,12 +78,12 @@ type bboxesResponse struct {
 
 // DLA analyzes a full page image and returns labeled regions.
 func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegion, error) {
-	data, err := util.EncodeJPEG(pageImage)
+	data, err := util.EncodePNG(pageImage)
 	if err != nil {
 		return nil, fmt.Errorf("dla: encode: %w", err)
 	}
 	var resp bboxesResponse
-	if err := c.post(ctx, "/predict/dla", data, "dla.jpeg", &resp); err != nil {
+	if err := c.post(ctx, "/predict/dla", data, "dla.png", &resp); err != nil {
 		return nil, fmt.Errorf("dla: %w", err)
 	}
 	regions := make([]pdf.DLARegion, 0, len(resp.BBoxes))
@@ -107,12 +107,12 @@ func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegio
 
 // TSR recognises table structure from a cropped image.
 func (c *Client) TSR(ctx context.Context, cropped image.Image) ([]pdf.TSRCell, error) {
-	data, err := util.EncodeJPEG(cropped)
+	data, err := util.EncodePNG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("tsr: encode: %w", err)
 	}
 	var resp bboxesResponse
-	if err := c.post(ctx, "/predict/tsr", data, "tsr.jpeg", &resp); err != nil {
+	if err := c.post(ctx, "/predict/tsr", data, "tsr.png", &resp); err != nil {
 		return nil, fmt.Errorf("tsr: %w", err)
 	}
 	cells := make([]pdf.TSRCell, 0, len(resp.BBoxes))
@@ -152,7 +152,7 @@ type ocrRecognizeResponse struct {
 // OCRDetect detects text regions (bounding boxes) in an image.
 // DeepDoc /predict/ocr with operator=det returns quad boxes: [[[x0,y0],[x1,y1],[x2,y2],[x3,y3]], ...]
 func (c *Client) OCRDetect(ctx context.Context, cropped image.Image) ([]pdf.OCRBox, error) {
-	data, err := util.EncodeJPEG(cropped)
+	data, err := util.EncodePNG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr detect: encode: %w", err)
 	}
@@ -161,7 +161,7 @@ func (c *Client) OCRDetect(ctx context.Context, cropped image.Image) ([]pdf.OCRB
 	var rawEnvelope struct {
 		Output json.RawMessage `json:"output"`
 	}
-	if err := c.post(ctx, "/predict/ocr", data, "ocr_detect.jpeg", &rawEnvelope, "operator", "det"); err != nil {
+	if err := c.post(ctx, "/predict/ocr", data, "ocr_detect.png", &rawEnvelope, "operator", "det"); err != nil {
 		return nil, fmt.Errorf("ocr detect: %w", err)
 	}
 
@@ -197,12 +197,12 @@ func (c *Client) OCRDetect(ctx context.Context, cropped image.Image) ([]pdf.OCRB
 // OCRRecognize recognizes text in a cropped image region.
 // DeepDoc /predict/ocr with operator=rec returns [[["text", confidence], ...]]
 func (c *Client) OCRRecognize(ctx context.Context, cropped image.Image) ([]pdf.OCRText, error) {
-	data, err := util.EncodeJPEG(cropped)
+	data, err := util.EncodePNG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr rec: encode: %w", err)
 	}
 	var result ocrRecognizeResponse
-	if err := c.post(ctx, "/predict/ocr", data, "ocr_rec.jpeg", &result, "operator", "rec"); err != nil {
+	if err := c.post(ctx, "/predict/ocr", data, "ocr_rec.png", &result, "operator", "rec"); err != nil {
 		return nil, fmt.Errorf("ocr rec: %w", err)
 	}
 	var texts []pdf.OCRText
