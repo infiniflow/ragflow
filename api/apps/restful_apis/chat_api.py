@@ -1151,6 +1151,8 @@ async def transcription():
             os.remove(temp_audio_path)
         except Exception as e:
             logging.error(f"Failed to remove temp audio file: {str(e)}")
+        if "**ERROR**" in text:
+            return get_data_error_result(message=text)
         return get_json_result(data={"text": text})
 
     async def event_stream():

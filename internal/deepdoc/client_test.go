@@ -17,7 +17,6 @@
 package deepdoc
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -119,44 +118,49 @@ func TestOptions_Override(t *testing.T) {
 }
 
 func TestClient_DLAWithoutURL(t *testing.T) {
+	ctx := t.Context()
 	c := NewClientWithURL("")
-	_, err := c.DLA(context.Background(), [][]byte{[]byte("jpg")})
+	_, err := c.DLA(ctx, [][]byte{[]byte("jpg")})
 	if !errors.Is(err, ErrNoURL) {
 		t.Errorf("DLA() error=%v, want ErrNoURL", err)
 	}
 }
 
 func TestClient_OCRReturnsNoRemoteEndpoint(t *testing.T) {
+	ctx := t.Context()
 	c := NewClientWithURL("http://x:1")
-	_, err := c.OCR(context.Background(), [][]byte{[]byte("jpg")})
+	_, err := c.OCR(ctx, [][]byte{[]byte("jpg")})
 	if !errors.Is(err, ErrNoRemoteEndpoint) {
 		t.Errorf("OCR() error=%v, want ErrNoRemoteEndpoint", err)
 	}
 }
 
 func TestClient_OCRNoRemoteEndpointEvenWithUnsetURL(t *testing.T) {
+	ctx := t.Context()
 	c := NewClientWithURL("")
-	_, err := c.OCR(context.Background(), nil)
+	_, err := c.OCR(ctx, nil)
 	if !errors.Is(err, ErrNoRemoteEndpoint) {
 		t.Errorf("OCR() error=%v, want ErrNoRemoteEndpoint (call should not fall through to ErrNoURL)", err)
 	}
 }
 
 func TestClient_TSRReturnsNoRemoteEndpoint(t *testing.T) {
+	ctx := t.Context()
 	c := NewClientWithURL("http://x:1")
-	_, err := c.TSR(context.Background(), [][]byte{[]byte("jpg")})
+	_, err := c.TSR(ctx, [][]byte{[]byte("jpg")})
 	if !errors.Is(err, ErrNoRemoteEndpoint) {
 		t.Errorf("TSR() error=%v, want ErrNoRemoteEndpoint", err)
 	}
 }
 
 func TestClient_DLAEmptyInput(t *testing.T) {
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("DLA() with empty input should not hit the server")
 	}))
 	defer srv.Close()
 	c := NewClientWithURL(srv.URL)
-	res, err := c.DLA(context.Background(), nil)
+	res, err := c.DLA(ctx, nil)
 	if err != nil {
 		t.Errorf("DLA(nil) error=%v, want nil", err)
 	}
