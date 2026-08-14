@@ -20,9 +20,9 @@ func newTestXLSX(t *testing.T, fill func(f *excelize.File)) []byte {
 	return buf.Bytes()
 }
 
-// TestRecordsToHTMLTableChunks_Alignment asserts the chunked output matches the
-// Python deepdoc / Go-CSV contract: <caption>, first row as <th>, data as <td>,
-// repeated header per 256-row chunk, and NO <thead>/<tbody> wrapper.
+// TestRecordsToHTMLTableChunks_Alignment asserts the chunked output uses the
+// shared schema: <caption>, first row as <th>, data as <td>, repeated header
+// per 256-row chunk, and NO <thead>/<tbody> wrapper.
 func TestRecordsToHTMLTableChunks_Alignment(t *testing.T) {
 	records := [][]string{{"Name", "Age"}, {"Alice", "30"}, {"Bob", "25"}}
 	out := recordsToHTMLTableChunks(records, 256, "Sheet1")
@@ -46,7 +46,7 @@ func TestRecordsToHTMLTableChunks_Alignment(t *testing.T) {
 }
 
 // TestRecordsToHTMLTableChunks_Chunking asserts 256-row chunking with a repeated
-// header, matching Python's ceil(n_data / chunk_rows) behaviour.
+// header (ceil(n_data / chunk_rows) chunks).
 func TestRecordsToHTMLTableChunks_Chunking(t *testing.T) {
 	const dataRows = 300
 	records := make([][]string, 0, dataRows+1)
@@ -94,8 +94,8 @@ func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 }
 
 // TestXLSXParser_MergedHeaderInheritance asserts a horizontally merged header
-// cell's slave columns inherit the master text, fixing the empty-<th> defect
-// that the Python deepdoc path suffers from.
+// cell's slave columns inherit the master text, so a wide merged title does not
+// render as a row of blank <th> cells.
 func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		// Row 1 is the header; A1:C1 merged into one wide label "Sales Report".
@@ -178,8 +178,7 @@ func TestDetectHeaderRow_Lightweight(t *testing.T) {
 }
 
 // TestXLSXParser_CommonCaseNoRegression asserts the dominant case (header on
-// row 1, no merges, no ListObject) is byte-compatible with the Python/CSV path:
-// row 1 becomes <th> unchanged.
+// row 1, no merges, no ListObject) renders row 1 as <th> unchanged.
 func TestXLSXParser_CommonCaseNoRegression(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		f.SetCellValue("Sheet1", "A1", "col_a")
@@ -199,9 +198,8 @@ func TestXLSXParser_CommonCaseNoRegression(t *testing.T) {
 
 // TestDetectHeaderRow_BoldSubtotalNotHeader asserts that a bold "Total"-style
 // subtotal row sitting directly under a numeric row 1 is NOT promoted to the
-// header. The body-brake (the row directly below the candidate must contain a
-// text cell) blocks the override so the numeric row 1 stays the header —
-// matching Python's "first row is the header" default.
+// header. The subtotal-label check blocks the override so the numeric row 1
+// stays the header.
 func TestDetectHeaderRow_BoldSubtotalNotHeader(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		// Row 1: numeric year header (Python default header row).
@@ -262,6 +260,37 @@ func TestDetectHeaderRow_StyledHeaderPastFarMerge(t *testing.T) {
 	}
 	if strings.Contains(res.HTML, "<th>Sales Report</th>") {
 		t.Fatalf("wide merged title must not be the header:\n%s", res.HTML)
+	}
+}
+
+// TestDetectHeaderRow_StyledTextHeaderOverNumeric asserts that a styled text
+// header sitting directly above a purely-numeric data row is still detected as
+// the header (not refused by the body-brake), while a bold "Total"/"Summary"
+// subtotal over numeric data is not.
+func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		// Row 1: a single-cell title stub (fewer than 2 columns → skipped).
+		f.SetCellValue("Sheet1", "A1", "Report Title")
+		// Row 2: the real, bold text header over numeric-only data below.
+		hdrStyle := &excelize.Style{Font: &excelize.Font{Bold: true}}
+		hidx, _ := f.NewStyle(hdrStyle)
+		f.SetCellValue("Sheet1", "A2", "Product")
+		f.SetCellValue("Sheet1", "B2", "Units")
+		f.SetCellStyle("Sheet1", "A2", "B2", hidx)
+		// Row 3: purely numeric continuation.
+		f.SetCellValue("Sheet1", "A3", "5")
+		f.SetCellValue("Sheet1", "B3", "10")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if !strings.Contains(res.HTML, "<tr><th>Product</th><th>Units</th></tr>") {
+		t.Fatalf("styled text header over numeric data must be detected:\n%s", res.HTML)
+	}
+	if strings.Contains(res.HTML, "<th>Report Title</th>") {
+		t.Fatalf("title stub must not be the header:\n%s", res.HTML)
 	}
 }
 

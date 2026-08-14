@@ -26,8 +26,8 @@ import (
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
-// TAB/LF/CR) with a single space, mirroring Python's ILLEGAL_CHARACTERS_RE in
-// deepdoc/parser/excel_parser.py.
+// TAB/LF/CR) with a single space. The pattern matches all C0 control chars
+// except TAB (0x09), LF (0x0A) and CR (0x0D).
 var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`)
 
 // numericCellRe recognises number-like cell text (integers, decimals, comma
@@ -69,12 +69,10 @@ func buildHeaderRow(row []string) string {
 // split into chunks of chunkRows, each chunk being a complete <table> with
 // <caption> and a repeated header row. Chunks are joined with newlines.
 //
-// The tag schema deliberately mirrors Python's
-// deepdoc/parser/excel_parser.py:RAGFlowExcelParser.html() (and the Go
-// CSVParser): <table><caption>{caption}</caption><tr><th>…</th></tr>
-// <tr><td>…</td></tr>…</table>. It does NOT wrap rows in <thead>/<tbody> so the
-// produced markup is byte-compatible with the established spreadsheet-HTML
-// contract that downstream chunkers already consume atomically per <table>.
+// The tag schema is <table><caption>{caption}</caption><tr><th>…</th></tr>
+// <tr><td>…</td></tr>…</table>. Rows are intentionally NOT wrapped in
+// <thead>/<tbody>, so every <table> is one atomic chunk that downstream
+// chunkers can consume independently.
 func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string) string {
 	if len(records) == 0 {
 		return "<table><caption>" + html.EscapeString(caption) + "</caption></table>"
@@ -176,25 +174,53 @@ func cellAxis(row, col int) string {
 
 // ──────────────────────────────────────────────────────────── merge inheritance
 
-// mergeMasterMap builds a map from every merged slave cell to its master cell
-// for the given sheet, using excelize's GetMergeCells.
-func mergeMasterMap(f *excelize.File, sheet string) map[[2]int][2]int {
-	mm := map[[2]int][2]int{}
+// mergeRange is an excelize merged-cell rectangle, 1-based inclusive.
+type mergeRange struct {
+	sr, sc, er, ec int
+}
+
+// mergeRanges returns the merged-cell rectangles of a sheet.
+func mergeRanges(f *excelize.File, sheet string) []mergeRange {
+	var out []mergeRange
 	cells, err := f.GetMergeCells(sheet)
 	if err != nil {
-		return mm
+		return out
 	}
 	for _, mc := range cells {
-		start, end := mc.GetStartAxis(), mc.GetEndAxis()
-		sr, sc := axisToRC(start)
-		er, ec := axisToRC(end)
+		sr, sc := axisToRC(mc.GetStartAxis())
+		er, ec := axisToRC(mc.GetEndAxis())
 		if sr == 0 || sc == 0 || er == 0 || ec == 0 {
 			continue
 		}
-		for r := sr; r <= er; r++ {
-			for c := sc; c <= ec; c++ {
-				mm[[2]int{r, c}] = [2]int{sr, sc}
-			}
+		out = append(out, mergeRange{sr, sc, er, ec})
+	}
+	return out
+}
+
+// mergeMaxCol returns the furthest merged column across all ranges, or 0 if
+// there are none.
+func mergeMaxCol(ranges []mergeRange) int {
+	m := 0
+	for _, r := range ranges {
+		if r.ec > m {
+			m = r.ec
+		}
+	}
+	return m
+}
+
+// mergeMasterForRow materialises the slave→master map for a single row only.
+// A large merged block (e.g. A1:Z100) would otherwise expand to every one of
+// its cells; we only ever need the header row's slaves, so expanding per row
+// keeps the map O(cols) instead of O(rows×cols).
+func mergeMasterForRow(ranges []mergeRange, row int) map[[2]int][2]int {
+	mm := map[[2]int][2]int{}
+	for _, r := range ranges {
+		if row < r.sr || row > r.er {
+			continue
+		}
+		for c := r.sc; c <= r.ec; c++ {
+			mm[[2]int{row, c}] = [2]int{r.sr, r.sc}
 		}
 	}
 	return mm
@@ -202,8 +228,7 @@ func mergeMasterMap(f *excelize.File, sheet string) map[[2]int][2]int {
 
 // inheritMergedHeader fills empty cells in the header row with the value of
 // their merge master (typically a wide horizontally-merged title cell). This
-// fixes the "merged header cell renders empty" defect that the Python deepdoc
-// path suffers from, without changing the HTML tag schema.
+// keeps a wide merged title from rendering as a row of blank <th> cells.
 func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]int) {
 	if headerRowIdx < 1 || headerRowIdx > len(records) {
 		return
@@ -233,17 +258,15 @@ func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]
 // cannot inherit its master's text. Padding with empty strings before
 // inheritMergedHeader restores those slots without affecting sheets that have
 // no merges (where maxCol equals the longest data row).
-func padRecordsToWidth(records [][]string, mm map[[2]int][2]int) {
+func padRecordsToWidth(records [][]string, maxMergeCol int) {
 	maxCol := 0
 	for _, row := range records {
 		if len(row) > maxCol {
 			maxCol = len(row)
 		}
 	}
-	for rc := range mm {
-		if rc[1] > maxCol {
-			maxCol = rc[1]
-		}
+	if maxMergeCol > maxCol {
+		maxCol = maxMergeCol
 	}
 	if maxCol == 0 {
 		return
@@ -287,10 +310,8 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 }
 
 // detectHeaderRow returns the 1-based row that should be treated as the column
-// header of a sheet, defaulting to 1 (matching Python deepdoc's assumption
-// that the first row is the header). It layers two "better-than-Python" signals
-// on top of that default so it only diverges from row 1 when there is high
-// confidence that row 1 is not the header:
+// header of a sheet, defaulting to 1. It only diverges from row 1 when there is
+// high confidence that row 1 is not the header:
 //
 //  1. ListObject first: if the sheet defines Excel tables (ListObjects) whose
 //     top row is > 1, that row is the header. This is the cheapest, most
@@ -300,7 +321,7 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //     text labels over numeric data columns below (contrast ≥ 2 columns). A
 //     candidate that looks like a data row (majority numeric) is skipped. The
 //     override only applies when the anchor is not already row 1, so the common
-//     header-on-row-1 sheet stays byte-identical to Python.
+//     header-on-row-1 sheet is left unchanged.
 func detectHeaderRow(f *excelize.File, sheet string, records [][]string) int {
 	n := len(records)
 	if n == 0 {
@@ -386,13 +407,15 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string) int {
 			if k == 0 {
 				return 1 // row 1 is already the header
 			}
-			// Body-brake: a genuine header sits directly above a data row
-			// that contains at least one text cell (a name/category/ID
-			// column). A bold "Total"/"Summary" subtotal sitting over a
-			// purely-numeric continuation looks identical locally, so we
-			// refuse to override unless the row below proves it is a real
-			// header row over data — keeping row 1 (Python's default).
-			if rowHasTextCell(records[k+1]) {
+			below := records[k+1]
+			// Accept the candidate as the header when the row directly below
+			// is a genuine data row (it contains at least one text cell), or
+			// when that row is purely numeric but the candidate is not a
+			// subtotal label. The second clause lets a styled text header
+			// sitting above numeric-only data win; a bold "Total"/"Summary"
+			// subtotal looks identical locally, but its label matches a
+			// subtotal keyword so it is still refused and row 1 is kept.
+			if rowHasTextCell(below) || (isPurelyNumeric(below) && !isSubtotalRow(row)) {
 				return k + 1
 			}
 		}
@@ -410,4 +433,102 @@ func rowHasTextCell(row []string) bool {
 		}
 	}
 	return false
+}
+
+// isPurelyNumeric reports whether every non-empty cell of a row reads as a
+// number-like string. It is used to recognise a numeric continuation row below
+// a candidate header.
+func isPurelyNumeric(row []string) bool {
+	nonEmpty := 0
+	for _, v := range row {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		nonEmpty++
+		if !isNumericCell(v) {
+			return false
+		}
+	}
+	return nonEmpty > 0
+}
+
+// subtotalWordRe matches labels that mark a totals/subtotals row. A candidate
+// header sitting above a purely-numeric row is refused when any of its cells
+// matches, so bold "Total"/"Summary" subtotals are not promoted to the header.
+var subtotalWordRe = regexp.MustCompile(`^(total|totals|sum|summary|subtotal|subtotals|grand total|合计|总计|小计|汇总|总额)$`)
+
+// isSubtotalRow reports whether any non-empty cell of a row is a subtotal label
+// (case-insensitive, tolerating a trailing colon).
+func isSubtotalRow(row []string) bool {
+	for _, v := range row {
+		v = strings.ToLower(strings.TrimSpace(v))
+		v = strings.TrimRight(v, ":：")
+		if v != "" && subtotalWordRe.MatchString(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// decodeChunkRows reads the "chunk_rows" setup knob, returning the default when
+// it is absent or non-positive.
+func decodeChunkRows(setup map[string]any) int {
+	if setup == nil {
+		return defaultTableChunkRows
+	}
+	v, ok := setup["chunk_rows"]
+	if !ok {
+		return defaultTableChunkRows
+	}
+	switch n := v.(type) {
+	case float64:
+		rows := int(n)
+		if rows <= 0 {
+			return defaultTableChunkRows
+		}
+		return rows
+	case int:
+		if n <= 0 {
+			return defaultTableChunkRows
+		}
+		return n
+	case int64:
+		rows := int(n)
+		if rows <= 0 {
+			return defaultTableChunkRows
+		}
+		return rows
+	}
+	return defaultTableChunkRows
+}
+
+// renderSheetTables renders a single workbook sheet into one or more
+// self-contained <table> chunks using the shared spreadsheet-HTML contract:
+// detect the header row, inherit merged-master text into the header, and split
+// data into chunkRows-sized atomic tables each repeating the header. An empty
+// or unreadable sheet yields an empty string.
+func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
+	rows, err := f.GetRows(sheet)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	rows = cleanIllegalControlChars(rows)
+
+	ranges := mergeRanges(f, sheet)
+	headerRow := detectHeaderRow(f, sheet, rows)
+	padRecordsToWidth(rows, mergeMaxCol(ranges))
+	mm := mergeMasterForRow(ranges, headerRow)
+	inheritMergedHeader(rows, headerRow, mm)
+
+	// Reorder so the detected header row becomes records[0]; every other row is
+	// data. For the common case (header on row 1) this is a no-op.
+	records := make([][]string, 0, len(rows))
+	records = append(records, rows[headerRow-1])
+	for i, r := range rows {
+		if i == headerRow-1 {
+			continue
+		}
+		records = append(records, r)
+	}
+	return recordsToHTMLTableChunks(records, chunkRows, sheet)
 }

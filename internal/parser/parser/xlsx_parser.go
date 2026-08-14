@@ -62,19 +62,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["chunk_rows"]; ok {
-		switch n := v.(type) {
-		case float64:
-			p.ChunkRows = int(n)
-		case int:
-			p.ChunkRows = n
-		case int64:
-			p.ChunkRows = int(n)
-		}
-		if p.ChunkRows <= 0 {
-			p.ChunkRows = defaultTableChunkRows
-		}
-	}
+	p.ChunkRows = decodeChunkRows(setup)
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -139,37 +127,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	var html strings.Builder
 	for _, sheet := range sheets {
-		rows, err := f.GetRows(sheet)
-		if err != nil || len(rows) == 0 {
-			continue
-		}
-		rows = cleanIllegalControlChars(rows)
-
-		// Detect the column header row (default row 1, aligning with Python
-		// deepdoc; ListObject / lightweight signals may shift it only when
-		// confident). Run detection on the unpadded rows so a far/wide merge
-		// (e.g. A1:Z1 title) does not widen every row and dilute the
-		// styled-majority signal of a narrow header row. Padding happens
-		// afterwards, before merged-master inheritance restores the slave
-		// slots that GetRows truncated.
-		mm := mergeMasterMap(f, sheet)
-		headerRow := detectHeaderRow(f, sheet, rows)
-		padRecordsToWidth(rows, mm)
-		inheritMergedHeader(rows, headerRow, mm)
-
-		// Reorder so the detected header row becomes records[0]; every other
-		// row is data. For the common case (header on row 1) this is a no-op
-		// and the output is byte-identical to the Python/CSV contract.
-		records := make([][]string, 0, len(rows))
-		records = append(records, rows[headerRow-1])
-		for i, r := range rows {
-			if i == headerRow-1 {
-				continue
-			}
-			records = append(records, r)
-		}
-
-		html.WriteString(recordsToHTMLTableChunks(records, chunkRows, sheet))
+		html.WriteString(renderSheetTables(f, sheet, chunkRows))
 	}
 
 	return ParseResult{
