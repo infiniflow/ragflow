@@ -180,6 +180,20 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 	}, nil
 }
 
+func benchmarkResponseSucceeded(resp *Response) bool {
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	result, err := resp.JSON()
+	if err != nil {
+		// Some successful endpoints, such as ping, return plain text.
+		return true
+	}
+	code, hasCode := result["code"].(float64)
+	return !hasCode || code == 0
+}
+
 // RequestWithIterations makes multiple HTTP requests for benchmarking
 // Returns a map with "duration" (total time in seconds) and "response_list"
 func (c *HTTPClient) RequestWithIterations(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (*BenchmarkResponse, error) {
@@ -195,7 +209,7 @@ func (c *HTTPClient) RequestWithIterations(method, path string, authKind string,
 
 		response.Code = resp.StatusCode
 		response.Duration = totalDuration
-		if response.Code == 0 {
+		if benchmarkResponseSucceeded(resp) {
 			response.SuccessCount = 1
 		} else {
 			response.FailureCount = 1
@@ -264,7 +278,7 @@ func (c *HTTPClient) RequestWithIterations(method, path string, authKind string,
 	response.Code = 0
 	response.Duration = totalDuration
 	for _, resp := range responseList {
-		if resp.StatusCode == 200 {
+		if benchmarkResponseSucceeded(resp) {
 			response.SuccessCount++
 		} else {
 			response.FailureCount++
