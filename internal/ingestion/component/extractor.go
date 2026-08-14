@@ -714,7 +714,11 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			if callErr != nil {
 				return fmt.Errorf("chunk %d: %w", i, callErr)
 			}
-			ck[in.fieldName] = ans
+			if in.fieldName == "metadata" {
+				mergeExtractionIntoMetadata(ck, ans)
+			} else {
+				ck[in.fieldName] = ans
+			}
 		}
 		return nil
 	}); err != nil {
@@ -728,6 +732,29 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		"chunks":        in.chunks,
 		"output_format": "chunks",
 	}, nil
+}
+
+// mergeExtractionIntoMetadata merges the field_name="metadata" extraction
+// result into the chunk's metadata map (enable_metadata's output) instead of
+// overwriting it. ck["metadata"] stays a map[string]any — the unified contract
+// for document metadata produced by this component. A non-JSON / empty result
+// is ignored (no string fallback), so it can never clobber or corrupt the
+// metadata map. On overlapping keys the field_name result wins (it runs later).
+func mergeExtractionIntoMetadata(ck map[string]any, ans string) {
+	parsed, ok := tryParseJSONObject(ans)
+	if !ok {
+		return
+	}
+	existing, _ := ck["metadata"].(map[string]any)
+	if existing == nil {
+		existing = make(map[string]any, len(parsed))
+	}
+	for k, v := range parsed {
+		if v != nil {
+			existing[k] = v
+		}
+	}
+	ck["metadata"] = existing
 }
 
 // runAutoKeywords extracts keywords for the current chunk and stores
