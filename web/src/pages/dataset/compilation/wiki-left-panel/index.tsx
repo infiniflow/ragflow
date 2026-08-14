@@ -49,6 +49,7 @@ export function WikiLeftPanel({
     hasChanges,
     newlyUploaded,
     removed,
+    changed,
     handleUpdate,
     loading: updateLoading,
   } = useWikiUpdate();
@@ -72,12 +73,14 @@ export function WikiLeftPanel({
           hasChanges={hasChanges}
           newlyUploaded={newlyUploaded}
           removed={removed}
+          changed={changed}
           loading={updateLoading}
           tooltip={t('knowledgeDetails.updateTooltip', {
             newlyUploaded,
             removed,
+            changed,
             defaultValue:
-              '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
+              '{{newlyUploaded}} new, {{removed}} removed, {{changed}} changed documents found. Click to compile and merge into current Wiki.',
           })}
           onClick={handleUpdateClick}
         />
