@@ -3361,6 +3361,10 @@ async def wiki_compile_incremental(
         # concept / claim / relation / topic lists are NOT separate columns, so
         # they must be parsed out of that blob to rebuild the map_result shape
         # that _extract_raw_entities and REDUCE expect.
+        from api.db.services.document_service import DocumentService
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_doc_ids
+
+        disabled_doc_ids = _wiki_doc_ids(await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id))
         select_fields = ["content_with_weight", "doc_id"]
         offset = 0
         page_size = 1000
@@ -3383,6 +3387,9 @@ async def wiki_compile_incremental(
                 logging.exception("wiki: failed to load MAP results for kb=%s", kb_id)
                 break
             for row in field_map.values():
+                row_doc_ids = _wiki_doc_ids(row.get("doc_id"))
+                if row_doc_ids & disabled_doc_ids:
+                    continue
                 raw = row.get("content_with_weight")
                 if isinstance(raw, str) and raw:
                     try:
@@ -3395,7 +3402,7 @@ async def wiki_compile_incremental(
                     extract = None
                 if not isinstance(extract, dict):
                     continue
-                extract["doc_id"] = row.get("doc_id", "")
+                extract["doc_id"] = next(iter(row_doc_ids), "")
                 map_results.append(extract)
             if len(field_map) < page_size:
                 break

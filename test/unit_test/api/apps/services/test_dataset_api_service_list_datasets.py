@@ -181,6 +181,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "rag.advanced_rag.knowlege_compile.wiki",
         WIKI_PAGE_COMPILE_KWD="wiki",
+        _chunk_hash=lambda content: "stub-hash",
     )
 
     repo_root = Path(__file__).resolve().parents[5]

@@ -225,7 +225,8 @@ export const APIMapUrl = {
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
+  [LLMFactory.TongYiQianWen]:
+    'https://bailian.console.aliyun.com/?tab=model#/api-key',
   [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',

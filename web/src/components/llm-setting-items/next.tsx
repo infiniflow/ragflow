@@ -246,7 +246,7 @@ export function LlmSettingFieldItems({
         <SliderInputSwitchFormField
           name={getFieldWithPrefix('max_tokens')}
           checkName="maxTokensEnabled"
-          numberInputClassName="w-20"
+          numberInputClassName="w-24 shrink-0"
           label="maxTokens"
           max={128000}
           min={0}

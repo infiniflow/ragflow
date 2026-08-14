@@ -164,6 +164,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         monkeypatch,
         "rag.advanced_rag.knowlege_compile.wiki",
         WIKI_PAGE_COMPILE_KWD="wiki",
+        _chunk_hash=lambda content: "stub-hash",
     )
     _stub(
         monkeypatch,
