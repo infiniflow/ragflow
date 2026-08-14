@@ -33,9 +33,11 @@ the fast non-tool-calling path.
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, List
+from typing import Any
 
 import json_repair
+
+from api.db.db_models import Document, Knowledgebase
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -44,6 +46,7 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _split_think_stream
+from rag.advanced_rag.harness.stats import CountingChatModel, LLMUsageStats, in_phase, using_stats
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -55,9 +58,7 @@ from rag.prompts.generator import (
     multi_queries_gen,
     sufficiency_select,
 )
-from api.db.db_models import Document, Knowledgebase
 from rag.utils.web_search_conn import WebSearchProvider
-
 
 # Tokens held back from the model's context when fitting retrieved evidence
 # into the sufficiency / follow-up prompts. The evidence sits in the MIDDLE of
@@ -87,9 +88,65 @@ _RAG_CACHE_MIN_SHARED = 2
 # Lightweight stopwords for the cross-`rag`-call dedup only. Never reused for
 # retrieval/answer quality.
 _RAG_CACHE_STOPWORDS = frozenset(
-    "the a an is was were what which when where who how of in to for and or but on at by be as it that this"
-    " about with their its have has had been being from over under do does did not no yes can could should would"
-    " also only very much more most some any".split()
+    [
+        "the",
+        "a",
+        "an",
+        "is",
+        "was",
+        "were",
+        "what",
+        "which",
+        "when",
+        "where",
+        "who",
+        "how",
+        "of",
+        "in",
+        "to",
+        "for",
+        "and",
+        "or",
+        "but",
+        "on",
+        "at",
+        "by",
+        "be",
+        "as",
+        "it",
+        "that",
+        "this",
+        "about",
+        "with",
+        "their",
+        "its",
+        "have",
+        "has",
+        "had",
+        "been",
+        "being",
+        "from",
+        "over",
+        "under",
+        "do",
+        "does",
+        "did",
+        "not",
+        "no",
+        "yes",
+        "can",
+        "could",
+        "should",
+        "would",
+        "also",
+        "only",
+        "very",
+        "much",
+        "more",
+        "most",
+        "some",
+        "any",
+    ]
 )
 
 
@@ -141,11 +198,11 @@ class RAGTools:
         tenant_ids: list[str],
         chat_mdl: LLMBundle,
         embed_mdl: LLMBundle | None = None,
-        kb_ids: List[str] | None = None,
+        kb_ids: list[str] | None = None,
         kbs: list[Knowledgebase] | None = None,
         web_search: WebSearchProvider | None = None,
         meta_data_filter: dict | None = None,
-        doc_scope: List[str] | None = None,
+        doc_scope: list[str] | None = None,
         user_defined_prompts: dict | None = None,
         empty_response: str = "",
         do_refer: bool | None = True,
@@ -153,7 +210,11 @@ class RAGTools:
         text_attachments_content: str = "",
     ):
         self.tenant_ids = tenant_ids
-        self.chat_mdl = chat_mdl.clone()
+        # P0 instrumentation: count LLM calls / token usage per harness phase.
+        # The wrapper proxies every ``async_chat*`` entry point (and ``clone``)
+        # of the bundle, keeping the rest of the harness untouched.
+        self.llm_stats = LLMUsageStats()
+        self.chat_mdl = CountingChatModel(chat_mdl.clone(), self.llm_stats)
         self.embed_mdl = embed_mdl
         self.thinking_mode = thinking_mode
         self.field_map = {}
@@ -228,7 +289,7 @@ class RAGTools:
     def has_llm(self) -> bool:
         return self.chat_mdl is not None
 
-    def scoped_doc_ids(self, doc_scope: List[str] | None = None) -> List[str] | None:
+    def scoped_doc_ids(self, doc_scope: list[str] | None = None) -> list[str] | None:
         if self.doc_scope is None:
             return doc_scope
         if not doc_scope:
@@ -274,7 +335,8 @@ class RAGTools:
     # ------------------------------------------------------------------ #
     # Graph node helpers (plain async methods — never exposed as tools)
     # ------------------------------------------------------------------ #
-    async def formalize(self, messages: List[Any]) -> tuple[str, str]:
+    @in_phase("formalize")
+    async def formalize(self, messages: list[Any]) -> tuple[str, str]:
         """Rewrite the latest user message into a standalone question AND derive
         its search keywords (each with close synonyms), in one LLM call.
 
@@ -347,7 +409,7 @@ class RAGTools:
         keywords = str(keywords).strip()
         return question, keywords
 
-    async def pick_documents(self, question: str) -> List[str] | None:
+    async def pick_documents(self, question: str) -> list[str] | None:
         """Narrow the search to a document subset for ``question``.
 
         Uses document metadata when the bound KBs carry any (mirrors the old
@@ -367,7 +429,7 @@ class RAGTools:
         ids = await self._select_by_titles(question)
         return ids or None
 
-    async def _filter_by_metadata(self, question: str, metas: dict) -> List[str]:
+    async def _filter_by_metadata(self, question: str, metas: dict) -> list[str]:
         filters = await gen_meta_filter(self.chat_mdl, metas, question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         conditions = filters.get("conditions") or []
@@ -386,7 +448,7 @@ class RAGTools:
             return []
         return doc_ids or []
 
-    async def _select_by_titles(self, question: str, max_docs: int = 512) -> List[str]:
+    async def _select_by_titles(self, question: str, max_docs: int = 512) -> list[str]:
         docs = await thread_pool_exec(self._collect_doc_titles, max_docs)
         if not docs:
             return []
@@ -448,7 +510,7 @@ class RAGTools:
         self,
         question: str,
         keywords: str | list = "",
-        doc_scope: List[str] | None = None,
+        doc_scope: list[str] | None = None,
         top_n: int = 6,
         similarity_threshold: float = 0.2,
         using_embedding: bool = False,
@@ -565,6 +627,7 @@ class RAGTools:
         _, msg = message_fit_in(form_message(question, evidence_md), budget)
         return msg[-1]["content"]
 
+    @in_phase("sufficiency")
     async def judge_sufficiency(self, question: str, evidence_md: str) -> dict:
         """Judge whether ``evidence_md`` answers ``question`` and pick useful chunks.
 
@@ -580,7 +643,8 @@ class RAGTools:
             logging.exception("judge_sufficiency failed")
             return {}
 
-    async def gen_followups(self, question: str, query: str, missing: List[str], evidence_md: str) -> List[dict]:
+    @in_phase("sufficiency")
+    async def gen_followups(self, question: str, query: str, missing: list[str], evidence_md: str) -> list[dict]:
         """Generate complementary follow-up (question, query) pairs for gaps."""
         evidence_md = self._fit_evidence(question, evidence_md)
         try:
@@ -653,36 +717,40 @@ class RAGTools:
 
         if self.tool_started_sink is not None:
             self.tool_started_sink()
-        # P0: reuse a near-identical question's cached answer instead of re-running
-        # the whole agentic graph. Significant-keyword overlap (>= min_overlap AND
-        # >=2 shared words, and matching numbers) collapses the re-ask pattern
-        # while leaving genuinely different questions untouched. Attachments bypass
-        # the cache (their content is appended to the question message below).
-        if question and not self.text_attachments_content:
-            qk = _question_keywords(question)
-            if self._rag_cache:
-                for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
-                    if cached_gram and _cache_similar(qk, cached_gram):
-                        shared = len(qk[0] & cached_gram[0])
-                        _LOG.info("[rag] Reusing cached answer for near-identical question %r (%d shared words); skipping re-research.", question, shared)
-                        return cached_answer
+        # Per-call instrumentation: each `rag` invocation gets its own stats
+        # object (bound through the per-task ContextVar), so parallel calls
+        # report independent usage instead of one shared cumulative sink.
+        with using_stats(LLMUsageStats()) as call_stats:
+            # P0: reuse a near-identical question's cached answer instead of re-running
+            # the whole agentic graph. Significant-keyword overlap (>= min_overlap AND
+            # >=2 shared words, and matching numbers) collapses the re-ask pattern
+            # while leaving genuinely different questions untouched. Attachments bypass
+            # the cache (their content is appended to the question message below).
+            if question and not self.text_attachments_content:
+                qk = _question_keywords(question)
+                if self._rag_cache:
+                    for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
+                        if cached_gram and _cache_similar(qk, cached_gram):
+                            shared = len(qk[0] & cached_gram[0])
+                            _LOG.info("[Agentic RAG] Cache hit — reused prior answer for near-identical question %r (%d shared words); skipped research.", question, shared)
+                            return cached_answer
 
-        messages = [{"role": "user", "content": question}] if question else []
-        if self.text_attachments_content and messages:
-            messages[-1]["content"] += self.text_attachments_content
-        final = ""
-        async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
-            if kind == "answer":
-                final += delta
-            if self.answer_sink is not None:
-                self.answer_sink(delta, kind == "think")
-        for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
-            final = re.sub(p, r, final)
+            messages = [{"role": "user", "content": question}] if question else []
+            if self.text_attachments_content and messages:
+                messages[-1]["content"] += self.text_attachments_content
+            final = ""
+            async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
+                if kind == "answer":
+                    final += delta
+                if self.answer_sink is not None:
+                    self.answer_sink(delta, kind == "think")
+            final = re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", final)
 
-        # Cache the freshly produced answer for later near-identical questions.
-        if question and final and not self.text_attachments_content:
-            self._rag_cache[question] = (final, _question_keywords(question))
-        return final
+            # Cache the freshly produced answer for later near-identical questions.
+            if question and final and not self.text_attachments_content:
+                self._rag_cache[question] = (final, _question_keywords(question))
+            call_stats.log()
+            return final
 
     @tool
     async def summarize_document(self, doc_id: str) -> list[str]:

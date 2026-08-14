@@ -401,7 +401,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 		kbs = append(kbs, kb)
 	}
 
-	if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+	if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 		return nil, err
 	}
 	return normalizedIDs, nil
@@ -774,21 +774,6 @@ const (
 	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
 )
 
-// splitModelNameAndFactory extracts the base model name by stripping
-// provider and instance suffixes, matching Python's rsplit("@", 2)[0].
-func (s *ChatService) splitModelNameAndFactory(embeddingModelID string) string {
-	if idx := strings.LastIndex(embeddingModelID, "@"); idx > 0 {
-		// Strip the provider segment.
-		base := embeddingModelID[:idx]
-		// Strip the instance segment (second-to-last @).
-		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
-			return base[:idx2]
-		}
-		return base
-	}
-	return embeddingModelID
-}
-
 func (s *ChatService) getOwnedValidChat(ctx context.Context, userID, chatID string) (*entity.Chat, error) {
 	chat, err := s.chatDAO.GetByIDAndStatus(ctx, dao.DB, chatID, string(entity.StatusValid))
 	if err != nil {
@@ -1067,9 +1052,10 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 
 	embeddingModelIDs := make([]string, 0, len(kbs))
 	seenEmbedIDs := make(map[string]struct{})
+	embdNameCache := make(map[string]string)
 	for _, kb := range kbs {
 		embeddingModelIDs = append(embeddingModelIDs, kb.EmbdID)
-		seenEmbedIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
+		seenEmbedIDs[s.kbDAO.EmbeddingBaseName(ctx, dao.DB, kb, embdNameCache)] = struct{}{}
 	}
 	if len(seenEmbedIDs) > 1 {
 		return nil, fmt.Errorf("datasets use different embedding models: %v", embeddingModelIDs)
@@ -1112,7 +1098,7 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 	if rerankID == "" {
 		return "", nil
 	}
-	baseName := s.splitModelNameAndFactory(rerankID)
+	baseName := common.BaseModelName(rerankID)
 	if _, ok := defaultRerankModels[baseName]; ok {
 		return "", nil
 	}

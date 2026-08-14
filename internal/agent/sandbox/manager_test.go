@@ -80,7 +80,7 @@ func (s *stubProvider) SupportedLanguages() []string                            
 func TestProviderManager_BuildProvider_KnownTypes(t *testing.T) {
 	t.Parallel()
 
-	for _, ptype := range []ProviderType{ProviderSelfManaged, ProviderAliyun, ProviderE2B, ProviderLocal, ProviderSSH} {
+	for _, ptype := range []ProviderType{ProviderSelfManaged, ProviderAliyun, ProviderE2B, ProviderLocal, ProviderSSH, ProviderUCloudAgentSandbox} {
 		t.Run(string(ptype), func(t *testing.T) {
 			p, err := buildProvider(ptype)
 			if err != nil {
@@ -129,8 +129,9 @@ func TestAliyun_Initialize_MissingCreds(t *testing.T) {
 	for _, k := range []string{"AGENTRUN_ACCESS_KEY_ID", "AGENTRUN_ACCESS_KEY_SECRET", "AGENTRUN_ACCOUNT_ID"} {
 		t.Setenv(k, "")
 	}
+	ctx := t.Context()
 	p := newAliyunProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with missing creds: got nil error, want one")
 	}
 }
@@ -153,19 +154,19 @@ func TestSelfManaged_EndToEnd_FullLoop(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-
+	ctx := t.Context()
 	p := newSelfManagedForTest(srv.URL)
-	if err := p.Initialize(context.Background()); err != nil {
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
 	if inst.Provider != ProviderSelfManaged {
 		t.Errorf("provider = %q, want %q", inst.Provider, ProviderSelfManaged)
 	}
-	result, err := p.ExecuteCode(context.Background(), inst, "def main(): return 1", "python", 5, nil)
+	result, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
@@ -178,7 +179,7 @@ func TestSelfManaged_EndToEnd_FullLoop(t *testing.T) {
 	if result.ExitCode != 0 {
 		t.Errorf("exit_code = %d, want 0", result.ExitCode)
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err != nil {
+	if err = p.DestroyInstance(ctx, inst); err != nil {
 		t.Errorf("DestroyInstance: %v", err)
 	}
 }
@@ -425,6 +426,7 @@ func TestLoadFromSettingsWithReader_HappyPath(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	// Drive the mock server by setting the SANDBOX_EXECUTOR_MANAGER_URL
 	// env var; then have the settings config return a matching
@@ -443,7 +445,7 @@ func TestLoadFromSettingsWithReader_HappyPath(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader: %v", err)
 	}
 	if !m.IsConfigured() {
@@ -485,10 +487,11 @@ func TestLoadFromSettingsWithReader_EmptyFallback(t *testing.T) {
 	t.Setenv("SANDBOX_PROVIDER_TYPE", "")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_URL", srv.URL)
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "5s")
+	ctx := t.Context()
 
 	r := &fakeSettingsReader{rows: map[string][]entity.SystemSettings{}}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader: %v", err)
 	}
 	if !m.IsConfigured() {
@@ -515,10 +518,11 @@ func TestLoadFromSettingsWithReader_DAOErrorFallback(t *testing.T) {
 	t.Setenv("SANDBOX_PROVIDER_TYPE", "")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_URL", srv.URL)
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "5s")
+	ctx := t.Context()
 
 	r := &fakeSettingsReader{fakeErr: errors.New("db is down")}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader (DAO error fallback): %v", err)
 	}
 	if got := m.Provider().ProviderType(); got != ProviderSelfManaged {
@@ -542,6 +546,7 @@ func TestLoadFromSettingsWithReader_MalformedJSONFallback(t *testing.T) {
 	t.Setenv("SANDBOX_PROVIDER_TYPE", "")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_URL", srv.URL)
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "5s")
+	ctx := t.Context()
 
 	r := &fakeSettingsReader{
 		rows: map[string][]entity.SystemSettings{
@@ -550,7 +555,7 @@ func TestLoadFromSettingsWithReader_MalformedJSONFallback(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader (malformed JSON fallback): %v", err)
 	}
 	sm, ok := m.Provider().(*SelfManagedProvider)
@@ -582,6 +587,7 @@ func TestLoadFromSettingsWithReader_UnknownProviderType(t *testing.T) {
 	t.Setenv("SANDBOX_PROVIDER_TYPE", "")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_URL", srv.URL)
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "5s")
+	ctx := t.Context()
 
 	r := &fakeSettingsReader{
 		rows: map[string][]entity.SystemSettings{
@@ -589,7 +595,7 @@ func TestLoadFromSettingsWithReader_UnknownProviderType(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader (unknown type fallback): %v", err)
 	}
 	// Falls back to env-driven self_managed, NOT the unknown type.
@@ -607,13 +613,14 @@ func TestLoadFromSettingsWithReader_AlreadyLoaded_NoOp(t *testing.T) {
 	m := &ProviderManager{}
 	m.SetProvider(newSelfManagedProviderFromEnv())
 	original := m.Provider()
+	ctx := t.Context()
 
 	r := &fakeSettingsReader{
 		rows: map[string][]entity.SystemSettings{
 			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "local"}},
 		},
 	}
-	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader: %v", err)
 	}
 	if m.Provider() != original {
@@ -636,6 +643,7 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	r := &fakeSettingsReader{
 		rows: map[string][]entity.SystemSettings{
@@ -647,7 +655,7 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.ReloadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
+	if err := m.ReloadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
 		t.Fatalf("ReloadFromSettingsWithReader: %v", err)
 	}
 	if got := m.Provider().ProviderType(); got != ProviderSelfManaged {

@@ -191,7 +191,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 //
 //  1. inputs["file_type"] — explicit family hint from the upstream
 //     File component. We accept either the extension ("md", "docx")
-//     or the python family name ("markdown"); both are normalised
+//     or the python family name ("markdown"); both are normalized
 //     to the extension form via the pythonFamilyName / familyToExt
 //     lookup tables below.
 //  2. inputs["file"].name — fall back to the filename so a caller
@@ -382,7 +382,7 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 //   - output_format  string        — the dispatch's OutputFormat,
 //     or "text" for the raw-text
 //     fallback
-//   - json | markdown | text | html — the dispatched payload on
+//   - json | Markdown | text | html — the dispatched payload on
 //     the matching family key (only
 //     populated on a structured
 //     dispatch)

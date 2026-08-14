@@ -13,20 +13,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import json
-import time
-from typing import Any, List, Optional
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 import urllib.parse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
+
+from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Cryptodome.PublicKey import RSA
 from http_client import HttpClient
 from lark import Tree
 from user import encrypt_password, login_user
-
-import base64
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from Cryptodome.PublicKey import RSA
 
 try:
     from requests_toolbelt import MultipartEncoder
@@ -129,7 +129,6 @@ class RAGFlowClient:
                 print(f"Fail to get all services, code: {res_json['code']}, message: {res_json['message']}")
         else:
             print(f"Fail to get all services, code: {response.status_code}, body: {response.text}")
-        pass
 
     def show_service(self, command):
         if self.server_type != "admin":
@@ -1802,6 +1801,76 @@ class RAGFlowClient:
         else:
             print(f"Fail to set metadata, code: {response.status_code}, body: {response.text}")
 
+    def generate_nav_for_dataset(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        dataset_name = command_dict["dataset_id"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            print(f"Dataset not found: {dataset_name}")
+            return
+
+        response = self.http_client.request(
+            "POST",
+            f"/datasets/{dataset_id}/navigation",
+            json_body={},
+            use_api_base=True,
+            auth_kind="web",
+        )
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                data = res_json.get("data", {})
+                print(f"Navigation tree created: deleted={data.get('deleted', 0)}, upserted={data.get('upserted', 0)}")
+            else:
+                print(f"Fail to generate navigation, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Fail to generate navigation, code: {response.status_code}, body: {response.text}")
+
+    def navigation_search(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        query = command_dict["query"]
+        dataset_name = command_dict["dataset_id"]
+        mode = command_dict["mode"]
+        topk = command_dict.get("topk", None)
+
+        # Try name lookup; fall back to using the value directly as an ID.
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            dataset_id = dataset_name
+
+        valid_modes = {"nav_doc", "nav_cluster", "navigation_tree", "chunk", "all"}
+        if mode not in valid_modes:
+            print(f"Invalid mode: {mode}, expected one of {valid_modes}")
+            return
+
+        url = f"/datasets/{dataset_id}/navigation/search?q={query}&mode={mode}"
+        if topk is not None:
+            url += f"&top_k={topk}"
+        response = self.http_client.request(
+            "GET",
+            url,
+            use_api_base=True,
+            auth_kind="web",
+        )
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                data = res_json.get("data", {})
+                items = data.get("items", [])
+                print(f"Found {len(items)} result(s) for mode '{data.get('mode', mode)}':")
+                for i, item in enumerate(items, 1):
+                    print(f"  [{i}] doc_id: {item.get('doc_id', '')}  score: {item.get('score', 0):.4f}")
+            else:
+                print(f"Search failed, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Search failed, code: {response.status_code}, body: {response.text}")
+
     def remove_tags(self, command_dict):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
@@ -1868,7 +1937,7 @@ class RAGFlowClient:
             payload["page"] = command_dict["page"]
         if "size" in command_dict:
             payload["size"] = command_dict["size"]
-        if "keywords" in command_dict and command_dict["keywords"]:
+        if command_dict.get("keywords"):
             payload["keywords"] = command_dict["keywords"]
         if "available_int" in command_dict:
             payload["available_int"] = command_dict["available_int"]
@@ -2036,8 +2105,7 @@ class RAGFlowClient:
             max_width = get_string_width(str(col))
             for item in data:
                 value_len = get_string_width(str(item.get(col, "")))
-                if value_len > max_width:
-                    max_width = value_len
+                max_width = max(max_width, value_len)
             col_widths[col] = max(2, max_width)
 
         # Generate delimiter
@@ -2230,6 +2298,10 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             return client.update_chunk(command_dict)
         case "set_metadata":
             return client.set_metadata(command_dict)
+        case "generate_nav_for_dataset":
+            return client.generate_nav_for_dataset(command_dict)
+        case "navigation_search":
+            return client.navigation_search(command_dict)
         case "remove_tags":
             return client.remove_tags(command_dict)
         case "remove_chunks":
@@ -2291,6 +2363,8 @@ User Commands (use -t user):
 LIST DATASETS
 LIST DOCUMENTS OF DATASET <dataset>
 SEARCH <query> ON DATASETS <dataset>
+GENERATE NAVIGATION OF DATASET '<id>'
+NAVIGATION SEARCH '<query>' IN DATASET '<name or id>' MODE '<mode>' [TOP_K <n>]
 LIST METADATA OF DATASETS <dataset>[, <dataset>]*
 LIST METADATA SUMMARY OF DATASET <dataset> DOCUMENTS <doc_id>[, <doc_id>]*
 GET CHUNK <chunk_id>
@@ -2332,9 +2406,8 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
         qps = iterations / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency}, iterations: {iterations}")
         print(f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {iterations}, SUCCESS: {success_count}, FAILURE: {iterations - success_count}")
-        pass
     else:
-        results: List[Optional[dict]] = [None] * concurrency
+        results: list[dict | None] = [None] * concurrency
         mp_context = mp.get_context("spawn")
         start_time = time.perf_counter()
         with ProcessPoolExecutor(max_workers=concurrency, mp_context=mp_context) as executor:
@@ -2362,5 +2435,3 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
         qps = total_command_count / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency} , iterations: {iterations}")
         print(f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {total_command_count}, SUCCESS: {success_count}, FAILURE: {total_command_count - success_count}")
-
-    pass

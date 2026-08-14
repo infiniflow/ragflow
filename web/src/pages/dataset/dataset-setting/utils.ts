@@ -3,6 +3,12 @@ const getImageName = (prefix: string, length: number) =>
     .fill(0)
     .map((x, idx) => `chunk-method/${prefix}-0${idx + 1}`);
 
+// The Go pipeline catalog uses 'general' as the id of the parser that the
+// Python backend calls 'naive'; both share the same description.
+export const DescriptionKeyMap: Record<string, string> = {
+  general: 'naive',
+};
+
 export const ImageMap = {
   book: getImageName('book', 4),
   laws: getImageName('law', 2),

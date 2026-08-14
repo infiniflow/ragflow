@@ -101,7 +101,7 @@ func defaultDeduperFactory(tenant string) (Deduper, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.ModelContextLen), nil
+	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.ModelContextLen, deps.ModelMaxOutput), nil
 }
 
 func generateHolder() string {
@@ -123,6 +123,7 @@ func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	if db == nil {
 		return nil
 	}
+	kcDB = db
 	s := newScheduler(db, mq, generateHolder(), 2*time.Minute)
 	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
 	// startup indefinitely. The caller's ctx is also honoured (cancelled on

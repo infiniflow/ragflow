@@ -22,49 +22,43 @@ import (
 
 // Config contains runtime limits for the datasource syncer.
 type Config struct {
-	PollInterval           time.Duration
-	TaskConcurrency        int
-	TaskQueueSize          int
-	PerTaskItemConcurrency int
-	GlobalItemConcurrency  int
-	ItemRetryCount         int
-	ItemRetryBaseDelay     time.Duration
+	TaskWorkerCount    int
+	TaskQueueSize      int
+	JobWorkerCount     int
+	JobQueueSize       int
+	ItemRetryCount     int
+	ItemRetryBaseDelay time.Duration
 }
 
 // DefaultConfig returns the first-version syncer defaults.
 func DefaultConfig() Config {
 	return Config{
-		PollInterval:           3 * time.Second,
-		TaskConcurrency:        3,
-		TaskQueueSize:          32,
-		PerTaskItemConcurrency: 4,
-		GlobalItemConcurrency:  12,
-		ItemRetryCount:         3,
-		ItemRetryBaseDelay:     time.Second,
+		TaskWorkerCount:    5,
+		TaskQueueSize:      10,
+		JobWorkerCount:     400,
+		JobQueueSize:       400,
+		ItemRetryCount:     3,
+		ItemRetryBaseDelay: time.Second,
 	}
 }
 
 // Normalize fills unset or invalid config values with defaults.
 func (c Config) Normalize() Config {
 	def := DefaultConfig()
-	if c.PollInterval <= 0 {
-		c.PollInterval = def.PollInterval
-	}
-
-	if c.TaskConcurrency <= 0 {
-		c.TaskConcurrency = def.TaskConcurrency
+	if c.TaskWorkerCount <= 0 {
+		c.TaskWorkerCount = def.TaskWorkerCount
 	}
 
 	if c.TaskQueueSize <= 0 {
 		c.TaskQueueSize = def.TaskQueueSize
 	}
 
-	if c.PerTaskItemConcurrency <= 0 {
-		c.PerTaskItemConcurrency = def.PerTaskItemConcurrency
+	if c.JobWorkerCount <= 0 {
+		c.JobWorkerCount = def.JobWorkerCount
 	}
 
-	if c.GlobalItemConcurrency <= 0 {
-		c.GlobalItemConcurrency = def.GlobalItemConcurrency
+	if c.JobQueueSize <= 0 {
+		c.JobQueueSize = def.JobQueueSize
 	}
 
 	if c.ItemRetryCount <= 0 {

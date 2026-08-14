@@ -23,6 +23,7 @@ const Menus = [
     list: [
       Operator.TavilySearch,
       Operator.TavilyExtract,
+      Operator.QueritContents,
       Operator.QueritSearch,
       Operator.Google,
       // Operator.Bing,

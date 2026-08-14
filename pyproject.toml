@@ -36,7 +36,6 @@ dependencies = [
     "discord-py==2.3.2",
     "dropbox==12.0.2",
     "duckduckgo-search>=7.2.0,<8.0.0",
-    "editdistance==0.8.1",
     "elasticsearch-dsl==8.12.0",
     "exceptiongroup>=1.3.0,<2.0.0",
     "feedparser>=6.0.11,<7.0.0",
@@ -57,7 +56,7 @@ dependencies = [
     "groq>=0.30.0,<1.0.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.7.2",
+    "infinity-sdk==0.7.3",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.60.1",
@@ -105,6 +104,7 @@ dependencies = [
     # fixed in >=3.1.7. Pin so uv.lock cannot resolve back to the buggy release.
     "werkzeug>=3.1.7,<4",
     "ranx==0.3.20",
+    "rapidfuzz==3.14.5",
     "readability-lxml>=0.8.4,<1.0.0",
     "replicate==0.31.0",
     "reportlab>=4.4.1",
@@ -130,6 +130,7 @@ dependencies = [
     "tavily-python==0.5.1",
     "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
+    "ucloud-sandbox>=1.4.2,<2.0.0",
     "valkey==6.0.2",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
@@ -256,6 +257,9 @@ constraint-dependencies = [
     # CVE-2026-21226: azure-core < 1.38.0 vulnerable; pulled in transitively via
     # azure-identity, azure-storage-blob, azure-storage-file-datalake
     "azure-core>=1.38.0",
+    # CVE-2026-33752: curl_cffi < 0.15.0 vulnerable; pulled in transitively via
+    # akshare, yfinance
+    "curl_cffi>=0.15.0"
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

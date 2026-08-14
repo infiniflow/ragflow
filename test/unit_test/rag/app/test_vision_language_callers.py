@@ -98,3 +98,57 @@ def test_markdown_chunk_forwards_language_to_model_and_figure_parser(monkeypatch
     assert parser_factory.call_args.kwargs["vision_model"] is vision_model
     assert parser_factory.call_args.kwargs["lang"] == "Japanese"
     parser_instance.assert_called_once()
+
+
+@pytest.mark.p1
+def test_mistral_ocr_forwards_language_to_parser(monkeypatch):
+    parser = Mock()
+    parser.parse_pdf.return_value = (["section"], [])
+    ocr_model = Mock(mdl=parser)
+    monkeypatch.setattr(naive, "resolve_model_config", Mock(return_value={"llm_name": "mistral-ocr"}))
+    monkeypatch.setattr(naive, "LLMBundle", Mock(return_value=ocr_model))
+
+    sections, tables, returned_parser = naive.by_mistral_ocr(
+        "document.pdf",
+        binary=b"pdf",
+        from_page=2,
+        to_page=5,
+        lang="Japanese",
+        callback=lambda *_args, **_kwargs: None,
+        parse_method="raw",
+        mistral_ocr_llm_name="mistral-ocr",
+        tenant_id="tenant-id",
+        vision_model=object(),
+    )
+
+    assert sections == ["section"]
+    assert tables == []
+    assert returned_parser is parser
+    assert parser.parse_pdf.call_args.kwargs["lang"] == "Japanese"
+
+
+@pytest.mark.p1
+def test_mineru_forwards_dataset_language_to_parser(monkeypatch):
+    parser = Mock()
+    parser.parse_pdf.return_value = (["section"], [])
+    ocr_model = Mock(mdl=parser)
+    monkeypatch.setattr(naive, "resolve_model_config", Mock(return_value={"llm_name": "mineru"}))
+    monkeypatch.setattr(naive, "LLMBundle", Mock(return_value=ocr_model))
+
+    sections, tables, returned_parser = naive.by_mineru(
+        "document.pdf",
+        binary=b"pdf",
+        from_page=2,
+        to_page=5,
+        lang="Japanese",
+        callback=lambda *_args, **_kwargs: None,
+        parse_method="raw",
+        mineru_llm_name="mineru",
+        tenant_id="tenant-id",
+        vision_model=object(),
+    )
+
+    assert sections == ["section"]
+    assert tables == []
+    assert returned_parser is parser
+    assert parser.parse_pdf.call_args.kwargs["lang"] == "Japanese"

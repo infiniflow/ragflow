@@ -191,7 +191,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 					case <-ctx.Done():
 						return
 					}
-					llmTagChunk(ctx, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN)
+					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN)
 				}(i)
 			}
 			wg.Wait()
@@ -652,6 +652,7 @@ func roundInt(f float64) int {
 
 func llmTagChunk(
 	ctx context.Context,
+	db *gorm.DB,
 	inv extractorChatInvoker,
 	chunk map[string]any,
 	allTags map[string]float64,
@@ -687,6 +688,17 @@ func llmTagChunk(
 		{Role: eschema.System, Content: prompt},
 		{Role: eschema.User, Content: "Output:"},
 	}
+	// Trim the prompt to the model's context window before sending. The
+	// system prompt embeds the full chunk text, the entire tag set and up
+	// to two full examples, so oversized chunks or tag files would
+	// otherwise be rejected by the provider (context length exceeded).
+	// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
+	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
+	if fitErr != nil {
+		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))
+		return
+	}
+	msgs = fitted
 
 	temperature := 0.5
 	var result map[string]int
@@ -727,10 +739,7 @@ func buildTaggerPrompt(topN int, tagSetStr string, examples []schema.TaggedChunk
 }
 
 func parseTaggerResponse(raw string, topN int) map[string]int {
-	raw = strings.TrimSpace(raw)
-	if idx := strings.LastIndex(raw, "</think>"); idx >= 0 {
-		raw = strings.TrimSpace(raw[idx+len("</think>"):])
-	}
+	raw = strings.TrimSpace(common.StripThinkTrailing(raw))
 	if strings.Contains(raw, "**ERROR**") {
 		common.Warn("extractor tags: LLM returned **ERROR**")
 		return nil

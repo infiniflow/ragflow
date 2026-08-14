@@ -550,13 +550,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen3-tts-instruct-flash",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "kimi-k2.7-code",
                     "max_tokens": 262144,
                     "model_type": [
@@ -663,13 +656,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen3-tts-instruct-flash-realtime",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen3-omni-flash-2025-09-15",
                     "max_tokens": 49152,
                     "model_type": [
@@ -689,25 +675,10 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "qwen3-tts-vc-2026-01-22",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "deepseek-r1-distill-qwen-7b",
                     "max_tokens": 131072,
                     "model_type": [
                         "chat"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen3-livetranslate-flash-2025-12-01",
-                    "max_tokens": 49152,
-                    "model_type": [
-                        "speech2text"
                     ],
                     "is_tools": false
                 },
@@ -734,13 +705,6 @@
                         "chat"
                     ],
                     "is_tools": true
-                },
-                {
-                    "llm_name": "qwen3-tts-vd-realtime-2026-01-15",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
                 },
                 {
                     "llm_name": "qwen3.6-flash-2026-04-16",
@@ -784,13 +748,6 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "qwen3-tts-flash-2025-11-27",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen3-vl-flash",
                     "max_tokens": 262144,
                     "model_type": [
@@ -798,13 +755,6 @@
                         "image2text"
                     ],
                     "is_tools": true
-                },
-                {
-                    "llm_name": "qwen3-tts-instruct-flash-realtime-2026-01-22",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
                 },
                 {
                     "llm_name": "qwen3.7-max",
@@ -829,13 +779,6 @@
                         "chat"
                     ],
                     "is_tools": true
-                },
-                {
-                    "llm_name": "qwen3-tts-flash-2025-09-18",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
                 },
                 {
                     "llm_name": "qwen-vl-ocr-2025-11-20",
@@ -883,13 +826,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen3-tts-flash-realtime-2025-11-27",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen3-coder-plus-2025-07-22",
                     "max_tokens": 1000000,
                     "model_type": [
@@ -923,14 +859,6 @@
                         "chat",
                         "speech2text",
                         "image2text"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen3-livetranslate-flash-realtime",
-                    "max_tokens": 49152,
-                    "model_type": [
-                        "speech2text"
                     ],
                     "is_tools": false
                 },
@@ -970,13 +898,6 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "qwen3-tts-vc-realtime-2025-11-27",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen-plus-2025-09-11",
                     "max_tokens": 1048576,
                     "model_type": [
@@ -1009,20 +930,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen3-tts-instruct-flash-2026-01-26",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen3-tts-vd-realtime-2025-12-16",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen-mt-lite",
                     "max_tokens": 8192,
                     "model_type": [
@@ -1037,13 +944,6 @@
                         "chat",
                         "speech2text",
                         "image2text"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen3-tts-vd-2026-01-26",
-                    "model_type": [
-                        "tts"
                     ],
                     "is_tools": false
                 },
@@ -1207,13 +1107,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen3-tts-flash-realtime-2025-09-18",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen3.5-omni-plus-2026-03-15",
                     "max_tokens": 262144,
                     "model_type": [
@@ -1227,24 +1120,6 @@
                     "llm_name": "qwen3-tts-flash-realtime",
                     "model_type": [
                         "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen-omni-turbo",
-                    "max_tokens": 32768,
-                    "model_type": [
-                        "chat",
-                        "speech2text",
-                        "image2text"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen3-livetranslate-flash-realtime-2025-09-22",
-                    "max_tokens": 49152,
-                    "model_type": [
-                        "speech2text"
                     ],
                     "is_tools": false
                 },
@@ -1295,25 +1170,10 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen-tts-2025-05-22",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
-                },
-                {
                     "llm_name": "qwen3-coder-plus-2025-09-23",
                     "max_tokens": 1000000,
                     "model_type": [
                         "chat"
-                    ],
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "qwen3-livetranslate-flash",
-                    "max_tokens": 49152,
-                    "model_type": [
-                        "speech2text"
                     ],
                     "is_tools": false
                 },
@@ -1334,13 +1194,6 @@
                         "image2text"
                     ],
                     "is_tools": true
-                },
-                {
-                    "llm_name": "qwen3-tts-vc-realtime-2026-01-15",
-                    "model_type": [
-                        "tts"
-                    ],
-                    "is_tools": false
                 },
                 {
                     "llm_name": "qwen3.5-omni-flash",
@@ -1943,6 +1796,14 @@
             "status": "1",
             "llm": [],
             "rank": "985"
+        },
+        {
+            "name": "MWS",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
+            "status": "1",
+            "llm": [],
+            "rank": "984"
         },
         {
             "name": "VLLM",
@@ -3398,6 +3259,27 @@
             "url": "https://api.siliconflow.cn/v1",
             "llm": [
                 {
+                    "llm_name": "BAAI/bge-m3",
+                    "tags": "TEXT EMBEDDING,8k",
+                    "max_tokens": 8192,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "BAAI/bge-large-en-v1.5",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "BAAI/bge-large-zh-v1.5",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-V4-Pro",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
@@ -3867,27 +3749,6 @@
                     "llm_name": "Qwen/Qwen3-Embedding-0.6B",
                     "tags": "TEXT EMBEDDING,32k",
                     "max_tokens": 32000,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-m3",
-                    "tags": "TEXT EMBEDDING,8k",
-                    "max_tokens": 8192,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-large-en-v1.5",
-                    "tags": "TEXT EMBEDDING,512",
-                    "max_tokens": 512,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-large-zh-v1.5",
-                    "tags": "TEXT EMBEDDING,512",
-                    "max_tokens": 512,
                     "model_type": "embedding",
                     "is_tools": false
                 },

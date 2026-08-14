@@ -65,6 +65,9 @@ func TestRSSConnectorOpenSyncFullAndIncremental(t *testing.T) {
 	if doc.Metadata["link"] != "https://example.com/new" {
 		t.Fatalf("link metadata = %v", doc.Metadata["link"])
 	}
+	if doc.Fingerprint == "" {
+		t.Fatalf("fingerprint is empty")
+	}
 }
 
 // TestRSSConnectorOpenPrune verifies complete slim snapshot generation.

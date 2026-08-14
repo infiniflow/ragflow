@@ -743,7 +743,7 @@ func TestLongCatEmbedReturnsNoSuchMethod(t *testing.T) {
 	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: want 'no such method', got %v", err)
 	}
@@ -754,7 +754,7 @@ func TestLongCatRerankReturnsNoSuchMethod(t *testing.T) {
 	ctx := t.Context()
 	m := newLongCatForTest("http://unused")
 	model := "x"
-	_, err := m.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
+	_, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: want 'no such method', got %v", err)
 	}

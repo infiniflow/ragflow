@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
@@ -421,7 +437,13 @@ export const useScrollToBottom = (
     const container = containerRef.current;
 
     const handleScroll = () => {
-      setIsAtBottom(checkIfUserAtBottom());
+      // Write the ref here rather than relying on the effect that mirrors
+      // `isAtBottom`: that effect only runs after the next render, and while the
+      // main thread is busy rendering a streaming answer an already scheduled
+      // auto-scroll would still see the stale `true`.
+      const atBottom = checkIfUserAtBottom();
+      isAtBottomRef.current = atBottom;
+      setIsAtBottom(atBottom);
     };
 
     container.addEventListener('scroll', handleScroll);
@@ -440,16 +462,22 @@ export const useScrollToBottom = (
     }
   }, [containerRef]);
 
+  // Streaming replaces `messages` many times a second. The previous
+  // rAF + setTimeout(100) chain always had several scrolls queued, and they read
+  // `isAtBottomRef` long after the user had scrolled up — yanking the view back
+  // down. One cancellable frame per change, gated on the latest position, keeps
+  // auto-follow without fighting the user.
   useEffect(() => {
     if (!messages) return;
     if (!containerRef?.current) return;
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        if (isAtBottomRef.current) {
-          scrollToBottom();
-        }
-      }, 100);
+    if (!isAtBottomRef.current) return;
+
+    const frame = requestAnimationFrame(() => {
+      if (isAtBottomRef.current) {
+        scrollToBottom();
+      }
     });
+    return () => cancelAnimationFrame(frame);
   }, [messages, containerRef, scrollToBottom]);
 
   return { scrollRef: ref, isAtBottom, scrollToBottom };

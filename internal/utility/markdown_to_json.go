@@ -104,7 +104,7 @@ const (
 	otherBlock
 )
 
-// mdBlock is one markdown block in dictify terms: heading (level+text), list
+// mdBlock is one Markdown block in dictify terms: heading (level+text), list
 // (flattened items), paragraph/fenced/other (text).
 type mdBlock struct {
 	typ   blockType
@@ -117,7 +117,7 @@ type mdBlock struct {
 // lines (``` or ```lang) are removed before parsing.
 var fenceStripRE = regexp.MustCompile("```[^\\n]*")
 
-// StripFences removes markdown code-fence marker lines from an LLM reply.
+// StripFences removes Markdown code-fence marker lines from an LLM reply.
 func StripFences(s string) string {
 	return fenceStripRE.ReplaceAllString(s, "")
 }
@@ -422,7 +422,7 @@ func toBlock(n ast.Node, src []byte) mdBlock {
 }
 
 // headingRawText renders the heading's raw source line without the ATX
-// markers, keeping inline markdown (e.g. asterisks) intact like CommonMark's
+// markers, keeping inline Markdown (e.g. asterisks) intact like CommonMark's
 // block.strings (goldmark's inline text would strip emphasis). Both leading
 // and trailing '#' runs are removed (deviation #1 fixed: Python's CommonMark
 // strips the closing '#' sequence too).

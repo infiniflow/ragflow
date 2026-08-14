@@ -1016,9 +1016,8 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
 		return
 	}
-
+	ctx := c.Request.Context()
 	if req.Email == nil && req.Status == nil {
-		ctx := c.Request.Context()
 		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
@@ -1027,7 +1026,7 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 
 		common.SuccessWithData(c, tasks, "Remove tasks successfully")
 	} else {
-		tasks, err := h.service.RemoveIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
+		tasks, err := h.service.RemoveIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
 			return
@@ -1048,9 +1047,8 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
 		return
 	}
-
+	ctx := c.Request.Context()
 	if req.Email == nil && req.Status == nil {
-		ctx := c.Request.Context()
 		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
@@ -1066,7 +1064,7 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 
 		common.SuccessWithData(c, result, "Stop tasks successfully")
 	} else {
-		tasks, err := h.service.StopIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
+		tasks, err := h.service.StopIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return

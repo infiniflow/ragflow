@@ -63,8 +63,9 @@ func TestMCPToolAdapter_InfoReturnsMCPDescriptor(t *testing.T) {
 // mcpclient is discovery-only; InvokableRun must return a clear error
 // until tools/call lands.
 func TestMCPToolAdapter_InvokableRunNotYetImplemented(t *testing.T) {
+	ctx := t.Context()
 	a := NewMCPToolAdapter(mcpclient.Tool{Name: "x"})
-	out, err := a.InvokableRun(context.Background(), `{"q":"hi"}`)
+	out, err := a.InvokableRun(ctx, `{"q":"hi"}`)
 	if err == nil {
 		t.Fatal("expected error from unimplemented tools/call")
 	}
@@ -162,6 +163,7 @@ func TestMarshalArguments_ValidJSON(t *testing.T) {
 // envelope (string result) and the session lifecycle
 // (initialize → tools/call).
 func TestMCPToolAdapter_InvokableRunDispatchesCallTool(t *testing.T) {
+	ctx := t.Context()
 	defer mcpLoopbackOverride(t)()
 	var sawCall bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +187,7 @@ func TestMCPToolAdapter_InvokableRunDispatchesCallTool(t *testing.T) {
 	defer srv.Close()
 
 	a := NewMCPToolAdapterFull(mcpclient.Tool{Name: "echo"}, srv.URL, nil, 2*time.Second, srv.Client())
-	out, err := a.InvokableRun(context.Background(), `{"msg":"hi"}`)
+	out, err := a.InvokableRun(ctx, `{"msg":"hi"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -200,6 +202,7 @@ func TestMCPToolAdapter_InvokableRunDispatchesCallTool(t *testing.T) {
 // TestMCPToolAdapter_InvokableRunIsError: a tools/call response
 // with isError=true surfaces as a Go error.
 func TestMCPToolAdapter_InvokableRunIsError(t *testing.T) {
+	ctx := t.Context()
 	defer mcpLoopbackOverride(t)()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -220,7 +223,7 @@ func TestMCPToolAdapter_InvokableRunIsError(t *testing.T) {
 	defer srv.Close()
 
 	a := NewMCPToolAdapterFull(mcpclient.Tool{Name: "echo"}, srv.URL, nil, 2*time.Second, srv.Client())
-	_, err := a.InvokableRun(context.Background(), `{}`)
+	_, err := a.InvokableRun(ctx, `{}`)
 	if err == nil {
 		t.Fatalf("expected error for isError response")
 	}

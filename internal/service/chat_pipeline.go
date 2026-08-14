@@ -1971,7 +1971,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 		if kbs[0].EmbdID != "" {
@@ -2658,7 +2658,7 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, texts, e.embModel.APIConfig, config, nil)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2895,10 +2895,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2966,8 +2966,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3142,6 +3142,23 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
+//
+// StructuredQuery is the exported narrow entrypoint for the agentic-search
+// structured_query tool: translate a natural-language question to SQL over the
+// given tabular KBs and return the answer + reference chunks. It forwards to the
+// internal useSQL with quote=false (the agent tool returns the answer directly,
+// not a cited natural-language response).
+func (s *ChatPipelineService) StructuredQuery(
+	ctx context.Context,
+	chat *entity.Chat,
+	kbs []*entity.Knowledgebase,
+	question string,
+	chatModel *modelModule.ChatModel,
+	fieldMap map[string]interface{},
+) (ans map[string]interface{}, err error) {
+	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
+}
+
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,

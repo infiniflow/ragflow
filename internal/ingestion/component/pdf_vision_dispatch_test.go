@@ -15,7 +15,67 @@
 
 package component
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
+)
+
+func TestMaybeDispatchPDFVisionEnhancementForwardsDatasetLanguage(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	origInvoker := visionChatInvoker
+	origPrompt := figureVisionPromptBuilder
+	t.Cleanup(func() {
+		resolveTenantModelByType = origResolver
+		visionChatInvoker = origInvoker
+		figureVisionPromptBuilder = origPrompt
+	})
+
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &docxVisionFakeDriver{}, "pdf-vision-model", &modelModule.APIConfig{}, 0, nil
+	}
+	invoker := &docxVisionCaptureInvoker{}
+	visionChatInvoker = invoker.invoke
+	capturedLanguage := ""
+	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
+		capturedLanguage = language
+		return "describe the figure", nil
+	}
+
+	dispatched := parserDispatchResult{
+		OutputFormat: "json",
+		DocType:      "pdf",
+		JSON: []map[string]any{
+			{"text": "caption", "image": "data:image/png;base64,aW1hZ2U=", "doc_type_kwd": "image"},
+		},
+	}
+
+	res, modified, err := maybeDispatchPDFVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1", "lang": "Dutch"},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchPDFVisionEnhancement: %v", err)
+	}
+	if !modified {
+		t.Fatal("modified = false, want true")
+	}
+	if capturedLanguage != "Dutch" {
+		t.Fatalf("figure prompt language = %q, want Dutch", capturedLanguage)
+	}
+	if got := res.JSON[0]["text"]; got != "caption\na diagram of a pipeline" {
+		t.Fatalf("enhanced text = %q", got)
+	}
+}
 
 // TestIsNamedPDFParseMethodWhitelistAligned verifies that the runtime
 // "named parse_method" classifier agrees with (*ParserComponent).Check()'s

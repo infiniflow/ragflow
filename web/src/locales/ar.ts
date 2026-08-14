@@ -1285,7 +1285,7 @@ export default {
         chat: 'محادثة',
         embedding: 'التضمين',
         rerank: 'إعادة الترتيب',
-        sequence2text: 'تسلسل2نص',
+        sequence2text: 'ASR',
         tts: 'تحويل النص إلى كلام',
         image2text: 'التعرف الضوئي على الحروف',
         speech2text: 'ASR',

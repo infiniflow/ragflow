@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
@@ -6,7 +22,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import DOMPurify from 'dompurify';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
@@ -41,8 +57,57 @@ import {
   HoverCardTrigger,
 } from '../ui/hover-card';
 import styles from './index.module.less';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import { SafeImg } from '@/components/safe-img';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
+
+// Wraps every text node so citation markers can be replaced by React elements.
+// Defined at module scope: react-markdown rebuilds its whole processor whenever
+// a plugin's identity changes, and while an answer streams this component
+// re-renders many times a second.
+const rehypeWrapReference = () => {
+  return function wrapTextTransform(tree: any) {
+    visitParents(tree, 'text', (node, ancestors) => {
+      const latestAncestor = ancestors.at(-1);
+      if (
+        latestAncestor.tagName !== 'custom-typography' &&
+        latestAncestor.tagName !== 'code'
+      ) {
+        node.type = 'element';
+        node.tagName = 'custom-typography';
+        node.properties = {};
+        node.children = [{ type: 'text', value: node.value }];
+      }
+    });
+  };
+};
+
+const MarkdownRehypePlugins = [rehypeRaw, rehypeWrapReference, rehypeKatex];
+
+const MarkdownParagraph = ({ children, ...props }: any) => (
+  <p {...props}>{children}</p>
+);
+
+const MarkdownCode = (props: any) => {
+  const { children, className, ...rest } = props;
+  const restProps = omit(rest, 'node');
+  const match = /language-(\w+)/.exec(className || '');
+  return match ? (
+    <SyntaxHighlighter
+      {...restProps}
+      PreTag="div"
+      language={match[1]}
+      wrapLongLines
+    >
+      {String(children).replace(/\n$/, '')}
+    </SyntaxHighlighter>
+  ) : (
+    <code {...restProps} className={classNames(className, 'text-wrap')}>
+      {children}
+    </code>
+  );
+};
 
 const formatMetadataValue = (value: unknown) => {
   if (Array.isArray(value)) return value.join(', ');
@@ -93,10 +158,18 @@ const MarkdownContent = ({
     );
   }, [content, loading, t]);
 
-  useEffect(() => {
+  const documentIds = useMemo(() => {
     const docAggs = reference?.doc_aggs;
-    setDocumentIds(Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : []);
-  }, [reference, setDocumentIds]);
+    return Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : [];
+  }, [reference?.doc_aggs]);
+
+  // Skipping the empty case matters: this component is mounted once per message,
+  // and setting a fresh empty array would re-render (and re-parse the markdown
+  // of) every message that carries no reference at all.
+  useEffect(() => {
+    if (documentIds.length === 0) return;
+    setDocumentIds(documentIds);
+  }, [documentIds, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
     (
@@ -118,23 +191,6 @@ const MarkdownContent = ({
       },
     [clickDocumentButton],
   );
-
-  const rehypeWrapReference = () => {
-    return function wrapTextTransform(tree: any) {
-      visitParents(tree, 'text', (node, ancestors) => {
-        const latestAncestor = ancestors.at(-1);
-        if (
-          latestAncestor.tagName !== 'custom-typography' &&
-          latestAncestor.tagName !== 'code'
-        ) {
-          node.type = 'element';
-          node.tagName = 'custom-typography';
-          node.properties = {};
-          node.children = [{ type: 'text', value: node.value }];
-        }
-      });
-    };
-  };
 
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
@@ -195,7 +251,7 @@ const MarkdownContent = ({
           <div className={'space-y-2 max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+                __html: sanitizeHtmlWithImagesAsText(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText)}
               dir="auto"
@@ -277,40 +333,24 @@ const MarkdownContent = ({
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
+  const markdownComponents = useMemo(
+    () =>
+      ({
+        p: MarkdownParagraph,
+        'custom-typography': ({ children }: { children: string }) =>
+          renderReference(children),
+        img: SafeImg,
+        code: MarkdownCode,
+      }) as any,
+    [renderReference],
+  );
+
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={MarkdownRehypePlugins}
         remarkPlugins={MarkdownRemarkPlugins}
-        components={
-          {
-            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-            'custom-typography': ({ children }: { children: string }) =>
-              renderReference(children),
-            code(props: any) {
-              const { children, className, ...rest } = props;
-              const restProps = omit(rest, 'node');
-              const match = /language-(\w+)/.exec(className || '');
-              return match ? (
-                <SyntaxHighlighter
-                  {...restProps}
-                  PreTag="div"
-                  language={match[1]}
-                  wrapLongLines
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              ) : (
-                <code
-                  {...restProps}
-                  className={classNames(className, 'text-wrap')}
-                >
-                  {children}
-                </code>
-              );
-            },
-          } as any
-        }
+        components={markdownComponents}
       >
         {contentWithCursor}
       </Markdown>
@@ -321,4 +361,4 @@ const MarkdownContent = ({
   );
 };
 
-export default MarkdownContent;
+export default memo(MarkdownContent);
