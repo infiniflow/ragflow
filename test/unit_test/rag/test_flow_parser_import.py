@@ -35,9 +35,10 @@ def test_parser_imports_with_partial_pdf_parser_stub(pdf_parser_stub):
     assert parser_module.Parser.component_name == "Parser"
 
 
-def test_source_blob_loader_resolves_services_at_runtime(pdf_parser_stub, monkeypatch):
+def test_source_blob_loader_resolves_services_at_runtime(pdf_parser_stub, monkeypatch, caplog):
     parser_module = importlib.import_module("rag.flow.parser.parser")
     calls = []
+    caplog.set_level(logging.DEBUG, logger=parser_module.__name__)
 
     class RuntimeFileService:
         @staticmethod
@@ -56,6 +57,7 @@ def test_source_blob_loader_resolves_services_at_runtime(pdf_parser_stub, monkey
 
     assert parser_module._fetch_source_blob(upstream, canvas) == b"file-blob"
     assert calls == [("tenant-1", "file-1")]
+    assert "Loading parser source from upstream file storage." in caplog.messages
 
     class RuntimeFile2DocumentService:
         @staticmethod
@@ -79,6 +81,9 @@ def test_source_blob_loader_resolves_services_at_runtime(pdf_parser_stub, monkey
 
     assert parser_module._fetch_source_blob(upstream, canvas) == b"document-blob"
     assert calls[-2:] == [("doc", "doc-1"), ("bucket-1", "object-1")]
+    assert "Loading parser source from canvas document storage." in caplog.messages
+    for sensitive_value in ("tenant-1", "file-1", "doc-1", "bucket-1", "object-1"):
+        assert sensitive_value not in caplog.text
 
 
 def test_pdf_branch_loads_concrete_parser_at_runtime(pdf_parser_stub, monkeypatch):

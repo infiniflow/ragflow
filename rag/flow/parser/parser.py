@@ -110,11 +110,13 @@ def _fetch_source_blob(from_upstream, canvas):
     if canvas._doc_id:
         from api.db.services.file2document_service import File2DocumentService
 
+        _LOGGER.debug("Loading parser source from canvas document storage.")
         bucket, name = File2DocumentService.get_storage_address(doc_id=canvas._doc_id)
         return settings.STORAGE_IMPL.get(bucket, name)
 
     from api.db.services.file_service import FileService
 
+    _LOGGER.debug("Loading parser source from upstream file storage.")
     return FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
 
 
