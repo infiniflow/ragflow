@@ -355,6 +355,9 @@ export const initialExtractorValues = {
   auto_questions: 0,
   auto_tags: 1,
   tag_file_id: '',
+  enable_metadata: 0,
+  metadata: [],
+  built_in_metadata: [],
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
