@@ -23,7 +23,11 @@ Pipeline
               quads.json and the cv2 reference crops (py_warp_*.png).
 2. (Go)     : TestWarpAlignGo pass 2 reads quads.json and writes go_warp_*.png
               (WarpCrop) and go_fastcrop_*.png (FastCrop, the old behavior).
-3. compare  : pixel-MSE Go-WarpCrop vs cv2 and Go-FastCrop vs cv2, aggregated.
+3. compare  : pixel-MSE Go-WarpCrop vs cv2 and Go-FastCrop vs cv2, aggregated
+              (layer-1 geometry; no model weights needed).
+4. rec      : run recognize_batch (the actual Go->service path, NO layer-2
+              rotation) on all three crops and compare the recognized text
+              (layer-1 + recognizer; needs the deepdoc ONNX weights).
 
 All outputs go under --out-dir (default /tmp/render_diff/align); the worktree
 is never touched and nothing is committed.
@@ -35,9 +39,12 @@ Run
         --pdf test/benchmark/test_docs/Doc1.pdf --go-page-png /tmp/render_diff/align/page0.png
     bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestWarpAlignGo
     .venv/bin/python tools/render_diff/warp_align.py compare
+    # (needs HF weights in rag/res/deepdoc)
+    .venv/bin/python tools/render_diff/warp_align.py rec
 """
 
 import argparse
+import difflib
 import json
 import math
 import os
@@ -48,6 +55,11 @@ import pdfplumber
 
 # Go renders the page at exactly 3x (216 DPI); pdfplumber coords are in points.
 SCALE = 3.0
+
+
+def _sim(a, b):
+    """Normalized similarity in [0,1] between two recognized strings."""
+    return difflib.SequenceMatcher(None, a or "", b or "").ratio()
 
 
 def _quad_from_word(w, angle_deg, W, H, margin):
@@ -169,6 +181,94 @@ def cmd_compare(args):
             print(f"    angle {ang:+6.1f}deg : n={len(vals):3d}  meanMSE={sum(vals) / len(vals):.2f}")
 
 
+def cmd_rec(args):
+    """Recognition-level alignment (the decisive "no regression" evidence).
+
+    The Go->Python OCR service feeds cropped image BYTES (no box) to the
+    recognizer via recognize_batch(), which does NOT perform layer-2 rotation
+    selection. So the apples-to-apples comparison is recognize_batch() on each
+    of the three crops already on disk:
+
+      go_warp_*.png     : Go util.WarpCrop  (new behavior, layer-1 only)
+      go_fastcrop_*.png : Go util.FastCrop  (old behavior, axis-aligned bbox)
+      py_warp_*.png     : cv2.getPerspectiveTransform + warpPerspective
+                          (what Python's de-skew produces before recognition)
+
+    If go_warp matches py_warp at the text level and both beat go_fastcrop,
+    WarpCrop is a faithful, strictly-better replacement of the old FastCrop.
+    """
+    from deepdoc.vision.ocr import OCR
+
+    ocr = OCR()
+    limit = args.limit if args.limit and args.limit > 0 else 10**9
+    n = 0
+    warp_eq_py = 0  # WarpCrop text == cv2 text (exact)
+    fc_eq_py = 0  # FastCrop text == cv2 text (exact)
+    warp_sim_total = 0.0
+    fc_sim_total = 0.0
+    warp_closer = 0  # WarpCrop text closer to cv2 than FastCrop text
+    by_angle = {}
+    worst = []  # (sim_warp, i, text_warp, text_py, text_fc)
+
+    # Per-box rotation angle, if the genquads metadata is present.
+    meta = []
+    meta_path = os.path.join(args.out_dir, "quads_meta.json")
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            meta = json.load(f)
+
+    for i in range(limit):
+        gw = os.path.join(args.out_dir, f"go_warp_{i}.png")
+        gf = os.path.join(args.out_dir, f"go_fastcrop_{i}.png")
+        pw = os.path.join(args.out_dir, f"py_warp_{i}.png")
+        if not (os.path.exists(gw) and os.path.exists(gf) and os.path.exists(pw)):
+            break
+        img_w = cv2.imread(gw)
+        img_f = cv2.imread(gf)
+        img_p = cv2.imread(pw)
+        tw = ocr.recognize_batch([img_w])[0]
+        tf = ocr.recognize_batch([img_f])[0]
+        tp = ocr.recognize_batch([img_p])[0]
+
+        sw = _sim(tw, tp)
+        sf = _sim(tf, tp)
+        warp_sim_total += sw
+        fc_sim_total += sf
+        if tw == tp:
+            warp_eq_py += 1
+        if tf == tp:
+            fc_eq_py += 1
+        if sw >= sf:
+            warp_closer += 1
+        # per-angle bucket
+        ang = meta[i].get("angle", 0.0) if i < len(meta) else 0.0
+        by_angle.setdefault(ang, []).append(sw)
+        worst.append((sw, i, tw, tp, tf))
+        n += 1
+
+    if n == 0:
+        print("[rec] no crops found; run genquads + TestWarpAlignGo pass 2 first")
+        return
+
+    print(f"\n[rec] {n} boxes  (recognize_batch, no layer-2 rotation)")
+    print(f"  exact text match  WarpCrop vs cv2 : {warp_eq_py}/{n} ({100 * warp_eq_py / n:.1f}%)")
+    print(f"  exact text match  FastCrop vs cv2 : {fc_eq_py}/{n} ({100 * fc_eq_py / n:.1f}%)")
+    print(f"  mean text similarity WarpCrop vs cv2 : {warp_sim_total / n:.3f}")
+    print(f"  mean text similarity FastCrop vs cv2 : {fc_sim_total / n:.3f}")
+    print(f"  WarpCrop text closer to cv2 than FastCrop : {warp_closer}/{n} ({100 * warp_closer / n:.1f}%)")
+
+    if by_angle:
+        print("\n  -- mean text similarity(WarpCrop vs cv2) by rotation angle --")
+        for ang in sorted(by_angle):
+            vals = by_angle[ang]
+            print(f"    angle {ang:+6.1f}deg : n={len(vals):3d}  sim={sum(vals) / len(vals):.3f}")
+
+    print("\n  -- 8 worst WarpCrop-vs-cv2 cases --")
+    worst.sort(key=lambda x: x[0])
+    for sw, i, tw, tp, tf in worst[:8]:
+        print(f"    #{i:3d} sim={sw:.2f} | warp={tw!r} py={tp!r} fastcrop={tf!r}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -186,10 +286,16 @@ def main():
     c.add_argument("--out-dir", default="/tmp/render_diff/align")
     c.add_argument("--limit", type=int, default=0, help="max boxes to compare (0 = all)")
 
+    r = sub.add_parser("rec", help="recognition-level alignment (needs deepdoc weights)")
+    r.add_argument("--out-dir", default="/tmp/render_diff/align")
+    r.add_argument("--limit", type=int, default=0, help="max boxes to recognize (0 = all)")
+
     args = ap.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
     if args.cmd == "genquads":
         cmd_genquads(args)
+    elif args.cmd == "rec":
+        cmd_rec(args)
     else:
         cmd_compare(args)
 
