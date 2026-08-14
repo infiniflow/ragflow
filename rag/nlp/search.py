@@ -16,7 +16,6 @@
 import json
 import logging
 import re
-import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
@@ -552,31 +551,6 @@ class Dealer:
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd, ins_embd, rag_tokenizer.tokenize(ans).split(), rag_tokenizer.tokenize(inst).split())
 
-    @staticmethod
-    def _rerank_window(page_size: int, top: int = 0) -> int:
-        """Candidate-window size shared by retrieval's block fetch and slice.
-
-        ``retrieval`` reuses this value BOTH as the backend block size and as
-        the modulus for extracting a single page from a (re)ranked block::
-
-            req["page"] = global_offset // window   # which block to fetch
-            begin       = global_offset %  window   # where the page starts
-
-        For those two to agree the window MUST be an exact multiple of
-        ``page_size``; otherwise blocks and pages drift apart and deep
-        pagination silently drops results and returns short pages.
-
-        The window targets a provider-friendly pool of ~64 candidates, bounded
-        by ``top`` when given (i.e. when an external reranker is active), and is
-        always rounded UP to a whole number of pages to preserve the invariant.
-        """
-        if page_size <= 1:
-            return min(30, top) if top > 0 else 30
-        window = math.ceil(64 / page_size) * page_size
-        if top > 0:
-            window = min(window, math.ceil(top / page_size) * page_size)
-        return window
-
     async def retrieval(
         self,
         question,
@@ -595,24 +569,29 @@ class Dealer:
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
         must_not: dict | None = None,
+        rerank_top_k=64,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
 
-        # Candidate window for block-based pagination. It MUST stay a multiple
-        # of page_size so the block fetched (global_offset // RERANK_LIMIT) and
-        # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
-        # see _rerank_window. When an external reranker is active the pool is
-        # also bounded by top.
-        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
         page = max(page, 1)
-        global_offset = (page - 1) * page_size
+        offset = (page - 1) * page_size
+
+        retrieval_page = page
+        retrieval_page_size = page_size
+        # When rerank_mdl enabled, the offset should be within the top-k candidates, or else no result will return
+        if rerank_mdl:
+            if offset >= rerank_top_k:
+                raise Exception(f"Retrieval: offset {offset} exceeds rerank top-k {rerank_top_k} when rerank model is enabled.")
+            retrieval_page = 1
+            retrieval_page_size = rerank_top_k
+
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
-            "page": global_offset // RERANK_LIMIT + 1,
-            "size": RERANK_LIMIT,
+            "page": retrieval_page,
+            "size": retrieval_page_size,
             "question": question,
             "vector": True,
             "topk": top,
@@ -622,7 +601,7 @@ class Dealer:
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
-        logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
+        logging.info(f"[Search] page={page}, page_size={page_size}, retrieval_page={retrieval_page}, retrieval_page_size={retrieval_page_size}, rerank_top_k={rerank_top_k}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -716,7 +695,7 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        begin = global_offset % RERANK_LIMIT
+        begin = offset
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
