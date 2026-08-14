@@ -32,7 +32,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 pytestmark = pytest.mark.p2
 
 
@@ -97,6 +96,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
         PipelineTaskType=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )
     _stub(
@@ -175,10 +175,13 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         thread_pool_exec=MagicMock(),
         thread_pool_exec_long_time=MagicMock(),
     )
+    _stub(monkeypatch, "rag.advanced_rag", __path__=[])
+    _stub(monkeypatch, "rag.advanced_rag.knowlege_compile", __path__=[])
     _stub(
         monkeypatch,
         "rag.advanced_rag.knowlege_compile.wiki",
         WIKI_PAGE_COMPILE_KWD="wiki",
+        _chunk_hash=lambda content: "stub-hash",
     )
 
     repo_root = Path(__file__).resolve().parents[5]

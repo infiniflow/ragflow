@@ -1,10 +1,10 @@
 """Dual-mode wiki incremental compilation.
 
-Mode A (no-plan, plan=no):
+Entity mode:
   MAP → REDUCE → REFINE per-concept (generate/modify/re-synthesize) → FINALIZE
   1 concept = 1 page (WeKnora style). Entities enrich concept pages via source chunks.
 
-Mode B (with-plan, plan=yes):
+Topic mode:
   MAP → REDUCE → PLAN (LLM grouping) → REFINE per-page → FINALIZE
   Incremental: embeddings retrieve page candidates; the LLM makes final routes.
 
@@ -3321,7 +3321,7 @@ async def wiki_compile_incremental(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    plan: bool = False,  # True = Mode B, False = Mode A
+    mode: str,
     incremental: bool = False,  # True = incremental run
     map_results: list[dict] | None = None,  # from MAP phase
     deleted_doc_ids: set[str] | None = None,
@@ -3330,7 +3330,7 @@ async def wiki_compile_incremental(
     """Main entry point for dual-mode wiki compilation.
 
     Args:
-        plan: True=Mode B (with PLAN), False=Mode A (no-plan, WeKnora style)
+        mode: ``entity`` for Mode A, or ``topic`` for Mode B.
         incremental: True=incremental update, False=full build
         map_results: MAP outputs. If None, loads from ES.
         deleted_doc_ids: Documents that were removed.
@@ -3361,6 +3361,10 @@ async def wiki_compile_incremental(
         # concept / claim / relation / topic lists are NOT separate columns, so
         # they must be parsed out of that blob to rebuild the map_result shape
         # that _extract_raw_entities and REDUCE expect.
+        from api.db.services.document_service import DocumentService
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_doc_ids
+
+        disabled_doc_ids = _wiki_doc_ids(await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id))
         select_fields = ["content_with_weight", "doc_id"]
         offset = 0
         page_size = 1000
@@ -3383,6 +3387,9 @@ async def wiki_compile_incremental(
                 logging.exception("wiki: failed to load MAP results for kb=%s", kb_id)
                 break
             for row in field_map.values():
+                row_doc_ids = _wiki_doc_ids(row.get("doc_id"))
+                if row_doc_ids & disabled_doc_ids:
+                    continue
                 raw = row.get("content_with_weight")
                 if isinstance(raw, str) and raw:
                     try:
@@ -3395,7 +3402,7 @@ async def wiki_compile_incremental(
                     extract = None
                 if not isinstance(extract, dict):
                     continue
-                extract["doc_id"] = row.get("doc_id", "")
+                extract["doc_id"] = next(iter(row_doc_ids), "")
                 map_results.append(extract)
             if len(field_map) < page_size:
                 break
@@ -3489,7 +3496,7 @@ async def wiki_compile_incremental(
         kb_id=kb_id,
         incremental=incremental,
     )
-    if plan and incremental:
+    if mode == "topic" and incremental:
         try:
             from api.db.services.document_service import DocumentService
 
@@ -3677,7 +3684,7 @@ async def wiki_compile_incremental(
     topic_pool = {
         _normalize_key(topic): topic for page in existing_pages.values() for topic in _as_str_list(page.get("topic_kwd")) if topic and _normalize_key(topic) != _normalize_key(WIKI_TOPIC_FALLBACK)
     }
-    if plan and existing_pages:
+    if mode == "topic" and existing_pages:
         plan_members = await _wiki_load_plan_group_members(tenant_id, kb_id)
         for page_id, names in plan_members.items():
             if page_id in existing_pages and names:
@@ -3728,7 +3735,7 @@ async def wiki_compile_incremental(
 
     topic_embeddings = await _wiki_prepare_topic_embeddings(doc_topics, embd_mdl, list(topic_pool.values()))
     topic_pool_lock = asyncio.Lock()
-    if plan:
+    if mode == "topic":
         summary = await _wiki_mode_b_run(
             deltas=deltas,
             existing_pages=existing_pages,
@@ -4633,12 +4640,12 @@ async def wiki_handle_document_deleted(
     doc_id: str,
     chat_mdl,
     embd_mdl,
-    plan: bool = False,
+    mode: str,
 ) -> dict:
     """Clean up wiki pages + canonical entities when a document is deleted.
 
     Args:
-        plan: True=Mode B (update plan_group), False=Mode A
+        mode: ``topic`` updates plan groups; ``entity`` does not.
 
     Returns: {pages_modified, pages_deleted, errors}
     """
@@ -4706,7 +4713,7 @@ async def wiki_handle_document_deleted(
             if doc_id in source_doc_ids:
                 source_doc_ids.remove(doc_id)
 
-            page_type = existing.get("page_type_kwd", "concept" if not plan else "entity")
+            page_type = existing.get("page_type_kwd", "concept" if mode == "entity" else "entity")
 
             if not source_doc_ids:
                 await _wiki_refine_page(
@@ -4757,7 +4764,7 @@ async def wiki_handle_document_deleted(
                 )
                 summary["pages_modified"] += 1
 
-            if plan:
+            if mode == "topic":
                 plan_condition = {
                     "compile_kwd": [WIKI_PLAN_GROUP_COMPILE_KWD],
                     "page_id": [page_id],

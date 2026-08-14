@@ -193,8 +193,8 @@ opensearch:
 minio:
   enabled: true
   image:
-    repository: pgsty/minio
-    tag: RELEASE.2026-03-25T00-00-00Z
+    repository: pgsty/silo
+    tag: RELEASE.2026-08-06T00-00-00Z
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:

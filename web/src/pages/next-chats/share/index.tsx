@@ -14,7 +14,8 @@ import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
 } from '../hooks/use-send-shared-message';
-import { buildMessageItemReference } from '../utils';
+import { useMessageReferences } from '../hooks/use-message-references';
+import { EmptyReference } from '../utils';
 
 const ChatContainer = () => {
   const {
@@ -41,6 +42,8 @@ const ChatContainer = () => {
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
+
+  const messageReferences = useMessageReferences(derivedMessages, undefined);
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
@@ -78,13 +81,7 @@ const ChatContainer = () => {
                     avatarDialog={avatarDialogSrc}
                     item={message}
                     nickname="You"
-                    reference={buildMessageItemReference(
-                      {
-                        messages: derivedMessages,
-                        reference: [],
-                      },
-                      message,
-                    )}
+                    reference={messageReferences.get(message) ?? EmptyReference}
                     loading={
                       message.role === MessageType.Assistant &&
                       sendLoading &&

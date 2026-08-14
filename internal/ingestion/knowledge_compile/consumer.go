@@ -1026,16 +1026,39 @@ func pageIndexSummary(graphJSON string) string {
 // dataset_structure_merger._merge_bucket but is a self-contained from-scratch
 // path (B3: the legacy unified merge never aggregated structure by name/type).
 func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
-	// Bucket by (lower(name), type) for entities and (lower(from), lower(to))
-	// for relations — relations have no "name" and must not be silently dropped
-	// (review issue 3).
-	type ekey struct{ name, typ string }
-	type rkey struct{ from, to string }
+	common.Info("knowledge_compile: mergeStructureDataset entry",
+		zap.String("kb_id", kb),
+		zap.Int("products", len(products)))
+	// Bucket by (lower(name), type, compile kind) for entities and
+	// (lower(from), lower(type), lower(to), compile kind) for relations —
+	// relations have no "name" and must not be silently dropped (review issue 3),
+	// and the relation type + compile kind keep distinct structure kinds and
+	// distinct relation types from collapsing into one dataset row.
+	type ekey struct{ name, typ, ckwd string }
+	type rkey struct{ from, typ, to, ckwd string }
 	entByKey := make(map[ekey]*StructureBucket, 16)
 	relByKey := make(map[rkey]*StructureBucket, 16)
+	// The authoritative Python (dataset_structure_merger._do_build) merges EVERY
+	// structure-kind doc row unconditionally — dataset scope is driven by the
+	// task type (structure_graph/timeline/structure_mindmap), NOT by a template
+	// Config["dataset_merge"] flag (that was a stale runner.py concept). So
+	// structure/mindmap entity/relation products always enter the dataset merge.
 	for _, p := range products {
-		if p.Variant != kccommon.VariantStructure {
+		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
 			continue
+		}
+		// Dataset rows carry the SAME compile_kwd as the doc rows (the inferred
+		// compile type / autotype: "hypergraph"/"timeline"/"mindmap"/"list"/…),
+		// mirroring Python dataset_structure_merger._do_build which passes the doc
+		// row's compile_kwd through verbatim. The template kind (p.Kind, restored
+		// from compilation_template_kind_kwd) is stored on the SEPARATE
+		// compilation_template_kind_kwd field and is what read/delete paths match
+		// on — NOT compile_kwd. Do not rewrite compile_kwd to the template kind:
+		// that would diverge from Python (which never does) and split doc vs
+		// dataset rows.
+		ckwd := metaString(p.Meta, "compile_kwd")
+		if ckwd == "" {
+			ckwd = compileKwdForVariant(p.Variant)
 		}
 		kind := metaString(p.Meta, "kind")
 		from := metaString(p.Meta, "from")
@@ -1047,10 +1070,17 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if from == "" || to == "" {
 				continue
 			}
-			k := rkey{from: strings.ToLower(from), to: strings.ToLower(to)}
+			relType := metaString(p.Meta, "relation_type")
+			if relType == "" {
+				relType = metaString(p.Meta, "type")
+			}
+			if relType == "" {
+				relType = "related"
+			}
+			k := rkey{from: strings.ToLower(from), typ: strings.ToLower(relType), to: strings.ToLower(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
-				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to}
+				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
 				relByKey[k] = b
 			}
 			appendBucket(b, p)
@@ -1065,10 +1095,10 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		if name == "" {
 			continue
 		}
-		k := ekey{name: strings.ToLower(name), typ: typ}
+		k := ekey{name: strings.ToLower(name), typ: typ, ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
-			b = &StructureBucket{Name: name, Type: typ}
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
 		}
 		appendBucket(b, p)
@@ -1080,6 +1110,11 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 	for _, b := range relByKey {
 		buckets = append(buckets, *b)
 	}
+	common.Info("knowledge_compile: mergeStructureDataset buckets",
+		zap.String("kb_id", kb),
+		zap.Int("entities", len(entByKey)),
+		zap.Int("relations", len(relByKey)),
+		zap.Int("total_buckets", len(buckets)))
 	if len(buckets) == 0 {
 		return nil
 	}
@@ -1097,14 +1132,28 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 // element-wise running mean (review issue 13). VecCount tracks how many vectors
 // have been folded so the mean is order-independent.
 func appendBucket(b *StructureBucket, p kccommon.Product) {
-	if strings.TrimSpace(p.Content) != "" {
+	// The product's Content is the doc row's full content_with_weight JSON
+	// (e.g. {"category":"Person","description":"…","name":"…","type":"entity"}),
+	// NOT the plain-text description. Extract the "description" field so the
+	// dataset row's description stays a plain-text string (mirror Python
+	// _struct_merge_graph_entities, which folds the entity description, not the
+	// whole payload). Fall back to Content only when it is not a JSON object.
+	if desc := structureProductDescription(p.Content); desc != "" {
 		if b.Description != "" {
 			b.Description += "\n"
 		}
-		b.Description += strings.TrimSpace(p.Content)
+		b.Description += desc
 	}
 	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
 	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
+	// mention_count_int: sum the per-entity mention counts (Python
+	// _struct_merge_graph_entities sums mention_count across the merged entities).
+	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
+	// mindmap entities carry none, so they contribute a default of 0 and are
+	// simply not stamped (mention_count_int is omitted when 0).
+	if mc, ok := metaInt(p.Meta, "mention_count"); ok && mc > 0 {
+		b.MentionCount += int(mc)
+	}
 	if len(p.Vector) > 0 {
 		b.VecCount++
 		if len(b.Vector) == 0 {
@@ -1120,6 +1169,33 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 			}
 		}
 	}
+}
+
+// structureProductDescription extracts the plain-text description from a structure
+// product's Content. In production Content is the doc row's content_with_weight
+// JSON ({"description":"…","name":"…","type":"…"}), so we parse it and return the
+// "description" field — the whole payload must NOT leak into the dataset row's
+// description (that is the bug: projectEntity then renders the raw JSON object).
+// When Content is NOT a JSON object (plain text, legacy/unit-test rows), it is
+// returned verbatim so existing folded-description behavior is preserved.
+func structureProductDescription(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	if content[0] == '{' {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(content), &m); err == nil {
+			if d, ok := m["description"].(string); ok {
+				if s := strings.TrimSpace(d); s != "" {
+					return s
+				}
+			}
+			// JSON object without a plain-text description: nothing to fold.
+			return ""
+		}
+	}
+	return content
 }
 
 // appendUnique appends only values not already present, preserving order.

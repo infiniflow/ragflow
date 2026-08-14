@@ -114,16 +114,101 @@ func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 	}
 }
 
+// TestMergeStructureDataset_DescriptionIsPlainText covers the description bug:
+// the product Content is the doc row's content_with_weight JSON, so the dataset
+// row's folded description must be the plain-text "description" field, NOT the raw
+// JSON object (which would leak the whole entity payload into the rendered graph).
+func TestMergeStructureDataset_DescriptionIsPlainText(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1",
+			Content: `{"category":"Person","description":"汉桓帝，禁锢善类","name":"桓帝","type":"entity"}`,
+			Meta:    map[string]any{"name": "桓帝", "entity_type": "Person", "compile_kwd": "list", "source_chunk_ids": []string{"c1"}}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	got := fw.buckets[0].Description
+	if got != "汉桓帝，禁锢善类" {
+		t.Errorf("description = %q, want plain-text \"汉桓帝，禁锢善类\" (not the raw JSON payload)", got)
+	}
+	if strings.Contains(got, "{") || strings.Contains(got, "category") {
+		t.Errorf("description leaked the JSON payload: %q", got)
+	}
+}
+
+// TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind covers the
+// option-A alignment: the dataset row's compile_kwd is the doc row's inferred
+// compile type (autotype, e.g. "hypergraph"/"mindmap"), NOT the template kind.
+// The template kind travels on the separate TemplateKind field (stamped to
+// compilation_template_kind_kwd by WriteMergedStructure), which is what read/
+// delete paths match on. This mirrors Python _do_build (compile_kwd passes
+// through verbatim) + get_dataset_structure (matches template kind).
+func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1", Kind: "knowledge_graph", TemplateID: "tpl-graph",
+			Content: "Engine desc",
+			Meta:    map[string]any{"name": "Engine", "entity_type": "component", "compile_kwd": "hypergraph", "source_chunk_ids": []string{"c1"}}},
+		{Variant: kccommon.VariantMindmap, DocID: "d2", Kind: "mind_map", TemplateID: "tpl-mindmap",
+			Content: "Fuel desc",
+			Meta:    map[string]any{"name": "Fuel", "entity_type": "substance", "compile_kwd": "mindmap", "source_chunk_ids": []string{"c2"}}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 2 {
+		t.Fatalf("want 2 buckets, got %d", len(fw.buckets))
+	}
+	for i := range fw.buckets {
+		b := fw.buckets[i]
+		switch b.Name {
+		case "Engine":
+			if b.CompileKwd != "hypergraph" {
+				t.Errorf("Engine compile_kwd = %q, want autotype \"hypergraph\" (not template kind)", b.CompileKwd)
+			}
+			if b.TemplateKind != "knowledge_graph" {
+				t.Errorf("Engine TemplateKind = %q, want \"knowledge_graph\"", b.TemplateKind)
+			}
+			if b.TemplateID != "tpl-graph" {
+				t.Errorf("Engine TemplateID = %q, want \"tpl-graph\"", b.TemplateID)
+			}
+		case "Fuel":
+			if b.CompileKwd != "mindmap" {
+				t.Errorf("Fuel compile_kwd = %q, want autotype \"mindmap\" (not template kind)", b.CompileKwd)
+			}
+			if b.TemplateKind != "mind_map" {
+				t.Errorf("Fuel TemplateKind = %q, want \"mind_map\"", b.TemplateKind)
+			}
+			if b.TemplateID != "tpl-mindmap" {
+				t.Errorf("Fuel TemplateID = %q, want \"tpl-mindmap\"", b.TemplateID)
+			}
+		}
+	}
+}
+
 // TestDatasetLevelStructureID_StableAndCaseInsensitive covers G1: the id is
 // deterministic and case-insensitive on name so merges hit the same row.
 func TestDatasetLevelStructureID_StableAndCaseInsensitive(t *testing.T) {
-	a := datasetLevelStructureID("t1", "kb1", "Engine", "component")
-	b := datasetLevelStructureID("t1", "kb1", "engine", "component")
+	a := datasetLevelStructureID("t1", "kb1", "Engine", "component", "timeline", "")
+	b := datasetLevelStructureID("t1", "kb1", "engine", "component", "timeline", "")
 	if a != b {
 		t.Errorf("structure id should be case-insensitive on name: %q vs %q", a, b)
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "Fuel", "component") {
+	if a == datasetLevelStructureID("t1", "kb1", "Fuel", "component", "timeline", "") {
 		t.Errorf("different names must yield different ids")
+	}
+	if a == datasetLevelStructureID("t1", "kb1", "Engine", "component", "mindmap", "") {
+		t.Errorf("different compile kinds must yield different ids")
+	}
+	if datasetLevelStructureID("t1", "kb1", "A -> B", "relation", "graph", "causes") ==
+		datasetLevelStructureID("t1", "kb1", "A -> B", "relation", "graph", "contradicts") {
+		t.Errorf("different relation types between the same endpoints must yield different ids")
 	}
 }
 
@@ -181,6 +266,11 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 	}
 	if kind, _ := sp.Meta["kind"].(string); kind != "graph" {
 		t.Errorf("structure Meta.kind = %q, want graph (so nav dispatch can pick it)", kind)
+	}
+	// Round-trip: the raw compile_kwd (autotype) must be preserved in Meta so the
+	// dataset merge stamps the SAME value on the dataset row as the doc row.
+	if ckwd, _ := sp.Meta["compile_kwd"].(string); ckwd != "list" {
+		t.Errorf("structure Meta.compile_kwd = %q, want autotype \"list\" (not \"structure\")", ckwd)
 	}
 
 	// tree root product: kind stored in raptor_kwd.

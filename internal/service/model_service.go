@@ -1196,10 +1196,14 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					err = validateEmbeddingModel(model, requestedDimension, 1)
 				}
 				if err == nil {
-					_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
+					_, err = driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: []string{"test"}}, apiConfig, nil, nil)
 				}
 			case "rerank":
-				_, err = driver.Rerank(ctx, &modelName, "test", []string{"test"}, apiConfig, &modelModule.RerankConfig{}, nil)
+				rerankRequest := modelModule.RerankRequest{
+					Query:     "test",
+					Documents: []string{"test"},
+				}
+				_, err = driver.Rerank(ctx, &modelName, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
 				_, err = driver.AudioSpeech(ctx, &modelName, &content, apiConfig, nil, nil)
@@ -2988,7 +2992,7 @@ func (m *ModelProviderService) EmbedText(ctx context.Context, providerName, inst
 	}
 
 	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(ctx, &resolvedModelName, texts, info.APIConfig, modelConfig, nil)
+	response, err = modelDriver.Embed(ctx, &resolvedModelName, modelModule.EmbedRequest{Texts: texts}, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3049,8 +3053,13 @@ func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName,
 		}
 	}
 
+	rerankRequest := modelModule.RerankRequest{
+		Query:     query,
+		Documents: documents,
+	}
+
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(ctx, &resolvedModelName, query, documents, info.APIConfig, modelConfig, nil)
+	response, err = modelDriver.Rerank(ctx, &resolvedModelName, rerankRequest, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
