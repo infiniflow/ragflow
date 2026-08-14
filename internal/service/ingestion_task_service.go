@@ -325,6 +325,38 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 	return task, nil
 }
 
+// ListStaleCreated returns IDs of CREATED tasks whose wake-up message was lost
+// before a worker claimed them. Used by the reconciliation sweeper.
+func (s *IngestionTaskService) ListStaleCreated(ctx context.Context, olderThan time.Time, limit int) ([]string, error) {
+	return s.ingestionTaskDAO.ListStaleCreated(ctx, dao.DB, olderThan, limit)
+}
+
+// ListRunningWithoutProgress returns IDs of RUNNING tasks with no component
+// progress row — their message was lost before the pipeline started. Used by
+// the reconciliation sweeper to re-enqueue safely.
+func (s *IngestionTaskService) ListRunningWithoutProgress(ctx context.Context, olderThan time.Time, limit int) ([]string, error) {
+	return s.ingestionTaskDAO.ListRunningWithoutProgress(ctx, dao.DB, olderThan, limit)
+}
+
+// ListHungRunning returns IDs of RUNNING tasks whose worker went silent
+// mid-run (stale component progress). Used by the reconciliation sweeper to
+// mark them FAILED rather than re-run (avoiding duplicate chunk writes).
+func (s *IngestionTaskService) ListHungRunning(ctx context.Context, olderThan time.Time, limit int) ([]string, error) {
+	return s.ingestionTaskDAO.ListHungRunning(ctx, dao.DB, olderThan, limit)
+}
+
+// Requeue republishes a task's wake-up message so a worker can pick it up.
+// The message is a best-effort kick; the DB task row is the source of truth.
+func (s *IngestionTaskService) Requeue(ctx context.Context, taskID string) error {
+	return s.enqueueTask(taskID)
+}
+
+// Touch advances a task's staleness watermark so the reconciliation sweeper
+// does not re-select a freshly-requeued task for a while (durable backoff).
+func (s *IngestionTaskService) Touch(ctx context.Context, taskID string) error {
+	return s.ingestionTaskDAO.Touch(ctx, dao.DB, taskID)
+}
+
 func validateTransition(from, to string) error {
 	switch from {
 	case common.CREATED:

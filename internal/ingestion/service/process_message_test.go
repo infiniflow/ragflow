@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -309,10 +310,13 @@ func TestProcessMessage_ClaimSucceedsEnqueues(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_ChannelFullNacks: when the task channel is at capacity
-// backpressure rejects the task with Nack, releases the claim, and returns nil
-// so the message is redelivered and a future attempt can re-claim it.
-func TestProcessMessage_ChannelFullNacks(t *testing.T) {
+// TestProcessMessage_ChannelFullBlocks: when the task channel is at capacity,
+// backpressure waits for a worker to free a slot instead of Nacking. A Nack
+// would redeliver the message and repeated redelivery exhausts MaxDeliver,
+// orphaning the message until the consumer is recreated — leaving the task
+// stuck RUNNING. The block is released once a slot frees, and the claim stays
+// with the enqueued task (executeTask owns it).
+func TestProcessMessage_ChannelFullBlocks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -323,24 +327,54 @@ func TestProcessMessage_ChannelFullNacks(t *testing.T) {
 	for i := 0; i < cap(ingestor.taskChan); i++ {
 		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
 	}
+	// Even on assertion failure, drain the channel so the blocked goroutine
+	// never leaks beyond the test.
+	t.Cleanup(func() {
+		for i := 0; i < cap(ingestor.taskChan); i++ {
+			select {
+			case <-ingestor.taskChan:
+			default:
+				return
+			}
+		}
+	})
 
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
-	ingestor.processMessage(handle)
-	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
-		t.Fatalf("channel-full: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	done := make(chan struct{})
+	go func() {
+		ingestor.processMessage(handle)
+		close(done)
+	}()
+
+	// Backpressure must block, not Nack.
+	select {
+	case <-done:
+		t.Fatal("processMessage returned on a full channel; expected it to block")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("waiting on full channel: expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 
-	// Claim must be released so a future redelivery can re-claim it.
-	if !ingestor.claimTask(taskID) {
-		t.Fatal("claim was not released on channel-full — task would be stuck forever")
+	// Free one slot: the blocked enqueue completes.
+	<-ingestor.taskChan
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processMessage did not resume after a slot was freed")
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("enqueued after slot freed: expected 0 Ack/0 Nack (settlement deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+
+	// The claim must be retained by the enqueued task (claimedTaskID cleared,
+	// executeTask owns the release), so a second claim attempt fails.
+	if ingestor.claimTask(taskID) {
+		t.Fatal("claim was released; expected the enqueued task to own it")
 	}
 	ingestor.releaseTask(taskID)
-
-	// Drain the fillers.
-	for i := 0; i < cap(ingestor.taskChan); i++ {
-		<-ingestor.taskChan
-	}
 }
 
 // TestProcessMessage_StartRunningErrorNacks: when StartRunning returns a

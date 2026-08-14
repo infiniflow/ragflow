@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -193,6 +195,66 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 		return nil, nil
 	}
 	return tasks[0], nil
+}
+
+// ListStaleCreated returns IDs of CREATED tasks whose status row has not
+// changed since olderThan — their wake-up message was lost before a worker
+// claimed them. Re-enqueueing is safe: the pipeline never started.
+func (dao *IngestionTaskDAO) ListStaleCreated(ctx context.Context, db *gorm.DB, olderThan time.Time, limit int) ([]string, error) {
+	var ids []string
+	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("status = ? AND update_date < ?", common.CREATED, olderThan).
+		Order("update_date ASC").
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+// ListRunningWithoutProgress returns IDs of RUNNING tasks that have no
+// component-progress row and no status change since olderThan — StartRunning
+// ran but the pipeline never started (the message was lost before the worker
+// ran it). Re-enqueueing is safe: no chunks were written.
+func (dao *IngestionTaskDAO) ListRunningWithoutProgress(ctx context.Context, db *gorm.DB, olderThan time.Time, limit int) ([]string, error) {
+	var ids []string
+	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where(`status = ? AND update_date < ? AND NOT EXISTS (
+			SELECT 1 FROM ingestion_task_log l WHERE l.task_id = ingestion_task.id
+		)`, common.RUNNING, olderThan).
+		Order("update_date ASC").
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+// ListHungRunning returns IDs of RUNNING tasks that have started the pipeline
+// (at least one component-progress row) but whose most recent progress row AND
+// status change are both older than olderThan — the worker went silent mid-run
+// (hung native parse, process crash). These are marked FAILED rather than
+// requeued, to avoid duplicate chunk writes. The EXISTS(log) precondition makes
+// this mutually exclusive with ListRunningWithoutProgress, and the update_date
+// bound keeps a freshly-restarted task (recent status change, stale rows from a
+// previous run) out of scope.
+func (dao *IngestionTaskDAO) ListHungRunning(ctx context.Context, db *gorm.DB, olderThan time.Time, limit int) ([]string, error) {
+	var ids []string
+	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where(`status = ? AND update_date < ? AND EXISTS (
+			SELECT 1 FROM ingestion_task_log l WHERE l.task_id = ingestion_task.id
+		) AND (SELECT MAX(l.create_date) FROM ingestion_task_log l WHERE l.task_id = ingestion_task.id) < ?`,
+			common.RUNNING, olderThan, olderThan).
+		Order("update_date ASC").
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+// Touch advances the task row's staleness watermark (update_date/update_time via
+// the BaseModel BeforeUpdate hook) so staleness-based reconciliation does not
+// re-select a freshly-requeued task for a while. This is a durable backoff that
+// survives restarts, with no in-memory state.
+func (dao *IngestionTaskDAO) Touch(ctx context.Context, db *gorm.DB, taskID string) error {
+	return db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("id = ?", taskID).
+		Update("update_date", time.Now()).Error
 }
 
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a

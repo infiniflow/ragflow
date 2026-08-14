@@ -44,6 +44,18 @@ import (
 
 const defaultHeartbeatInterval = 10 * time.Second
 
+// Task-reconciliation constants: the sweeper periodically re-enqueues tasks
+// whose wake-up message was orphaned in NATS (MaxDeliver exhausted) and fails
+// tasks whose worker went silent, so message loss / process crashes self-heal
+// instead of wedging a document in "parsing" forever.
+const (
+	defaultReconcileInterval    = 60 * time.Second
+	staleCreatedRequeueAfter    = 5 * time.Minute  // CREATED too old → wake-up lost before a worker claimed it
+	staleRunningNoProgressAfter = 5 * time.Minute  // RUNNING with no progress row → lost before the pipeline started
+	hungRunningAfter            = 10 * time.Minute // RUNNING with stale progress → worker hung/crashed mid-run
+	reconcileBatchLimit         = 100
+)
+
 type Ingestor struct {
 	id     string
 	name   string
@@ -95,6 +107,10 @@ type Ingestor struct {
 
 	compileWg sync.WaitGroup
 
+	// reconcileWg joins the stuck-task reconciliation sweeper goroutine.
+	reconcileWg       sync.WaitGroup
+	reconcileInterval time.Duration
+
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
 	// the full downstream stack.
@@ -128,6 +144,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
 		docState:          newDocStateUpdater(),
 		heartbeatInterval: defaultHeartbeatInterval,
+		reconcileInterval: defaultReconcileInterval,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
@@ -169,6 +186,7 @@ func (e *Ingestor) start() error {
 	// these off rather than blocking on the consume loop itself.
 	e.startWorkerPool()
 	e.startDatasetKnowledgeCompile()
+	e.startTaskReconcile()
 
 	// Run the main tasks.RAGFLOW consume loop off the caller's goroutine so
 	// Start returns promptly; it is joined by Stop via workerWg.
@@ -193,7 +211,18 @@ func (e *Ingestor) consumeLoop() {
 		if err := e.ctx.Err(); err != nil {
 			return
 		}
-		taskHandles, err := msgQueueEngine.GetMessages(4)
+		// Fetch only as many messages as the worker channel can currently absorb.
+		// Fetching a fixed count larger than the channel capacity would make
+		// processMessage Nack the overflow; repeated Nacks exhaust the broker's
+		// MaxDeliver and orphan the message until the consumer is recreated,
+		// leaving the task stuck RUNNING. The consume loop is the channel's only
+		// producer and workers only drain it, so the free-slot count only grows
+		// during the fetch — fetching freeSlots can never overflow the channel.
+		freeSlots := cap(e.taskChan) - len(e.taskChan)
+		if freeSlots < 1 {
+			freeSlots = 1 // channel momentarily full: fetch one, queueTaskCtx blocks
+		}
+		taskHandles, err := msgQueueEngine.GetMessages(freeSlots)
 		if err != nil {
 			common.Error("error consuming message", err)
 			select {
@@ -332,11 +361,10 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			return
 		}
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
-		select {
-		case e.taskChan <- taskCtx:
+		if e.queueTaskCtx(taskCtx) {
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
-		default:
-			common.Info(fmt.Sprintf("No available slot for memory task %s, nack", taskMessage.TaskID))
+		} else {
+			common.Info(fmt.Sprintf("Memory task %s dropped at shutdown, nack", taskMessage.TaskID))
 			if nackErr := handle.Nack(); nackErr != nil {
 				common.Error(fmt.Sprintf("error nack memory task %s", taskMessage.TaskID), nackErr)
 			}
@@ -414,18 +442,193 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
 
-	// Push to task channel; if full, reject the task (backpressure).
-	select {
-	case e.taskChan <- taskCtx:
+	// Push to task channel. If no slot is free, wait for a worker to drain one
+	// (heartbeating the message) instead of Nacking: a Nack triggers ~1s
+	// redelivery and repeated redelivery exhausts MaxDeliver, orphaning the
+	// message until the consumer is recreated — the task stays RUNNING forever.
+	// Only graceful shutdown aborts the wait; the deferred claim release runs,
+	// and the Nack redelivers the message so a future worker re-claims it.
+	if e.queueTaskCtx(taskCtx) {
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
-	default:
-		common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-		// claimedTaskID is still set; defer will call releaseTask.
+	} else {
+		common.Info(fmt.Sprintf("Task %s dropped at shutdown, nack", task.ID))
 		if nackErr := handle.Nack(); nackErr != nil {
 			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
 		}
 	}
+}
+
+// queueTaskCtx enqueues a task context to the worker pool. When the channel is
+// full it keeps the message's broker AckWait fresh with a heartbeat while
+// waiting for a worker to drain a slot, instead of Nacking: a Nack triggers
+// ~1s redelivery and repeated redelivery exhausts MaxDeliver and orphans the
+// message until the consumer is recreated, leaving the task stuck RUNNING.
+// Returns false only on graceful shutdown, in which case the caller Nacks so
+// the message redelivers after restart.
+func (e *Ingestor) queueTaskCtx(taskCtx *taskpkg.TaskContext) bool {
+	select {
+	case e.taskChan <- taskCtx:
+		return true
+	default:
+	}
+	stop := e.startHeartbeat(taskCtx) // keep AckWait fresh while blocked
+	defer stop()
+	select {
+	case e.taskChan <- taskCtx:
+		return true
+	case <-e.ctx.Done():
+		return false
+	}
+}
+
+// startTaskReconcile launches the stuck-task reconciliation sweeper, owned by
+// the ingestor and joined by Stop via reconcileWg. It periodically re-enqueues
+// tasks whose wake-up message was orphaned in NATS and fails tasks whose worker
+// went silent, so message drops / process crashes self-heal instead of wedging
+// a document in "parsing" forever.
+func (e *Ingestor) startTaskReconcile() {
+	e.reconcileWg.Add(1)
+	go e.reconcileLoop()
+}
+
+func (e *Ingestor) reconcileLoop() {
+	defer e.reconcileWg.Done()
+	ticker := time.NewTicker(e.reconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			e.reconcileOnce()
+		}
+	}
+}
+
+// reconcileOnce runs one reconciliation pass. A panic here must never crash the
+// ingestor — it is logged and the loop keeps ticking on the next round.
+func (e *Ingestor) reconcileOnce() {
+	defer func() {
+		if r := recover(); r != nil {
+			common.Error(fmt.Sprintf("reconcile pass panicked: %v", r), fmt.Errorf("%v", r))
+		}
+	}()
+	if dao.DB == nil {
+		return
+	}
+	ctx, now := e.ctx, time.Now()
+
+	// 1) CREATED but stale: the wake-up message was lost before a worker
+	// claimed the task → re-enqueue (safe: the pipeline never started).
+	if ids, err := e.ingestionTaskSvc.ListStaleCreated(ctx, now.Add(-staleCreatedRequeueAfter), reconcileBatchLimit); err != nil {
+		common.Error("reconcile: list stale CREATED", err)
+	} else {
+		for _, id := range ids {
+			e.requeueTask(ctx, id, "stale CREATED")
+		}
+	}
+
+	// 2) RUNNING but never started (no progress rows): the message was lost
+	// after StartRunning but before the worker ran the pipeline → re-enqueue
+	// (safe: no chunks were written).
+	if ids, err := e.ingestionTaskSvc.ListRunningWithoutProgress(ctx, now.Add(-staleRunningNoProgressAfter), reconcileBatchLimit); err != nil {
+		common.Error("reconcile: list RUNNING without progress", err)
+	} else {
+		for _, id := range ids {
+			e.requeueTask(ctx, id, "RUNNING without progress")
+		}
+	}
+
+	// 3) RUNNING but hung (stale progress): the worker crashed or a native
+	// parse hung mid-run → mark FAILED and mirror to the document, rather than
+	// re-run (would duplicate chunk writes).
+	if ids, err := e.ingestionTaskSvc.ListHungRunning(ctx, now.Add(-hungRunningAfter), reconcileBatchLimit); err != nil {
+		common.Error("reconcile: list hung RUNNING", err)
+	} else {
+		for _, id := range ids {
+			e.failHungTask(ctx, id)
+		}
+	}
+
+	// 4) Documents left RUNNING with no ingestion_task row (normal flows avoid
+	// this, but crashed/aborted flows can leave it) → reset to unstart.
+	if ids, err := dao.NewDocumentDAO().ListRunningWithoutIngestionTask(ctx, dao.DB, reconcileBatchLimit); err != nil {
+		common.Error("reconcile: list documents running without task", err)
+	} else {
+		for _, id := range ids {
+			if err := dao.DB.Model(&entity.Document{}).Where("id = ?", id).
+				Updates(map[string]interface{}{"run": string(entity.TaskStatusUnstart), "progress": 0}).Error; err != nil {
+				common.Error(fmt.Sprintf("reconcile: reset document %s run", id), err)
+				continue
+			}
+			common.Warn(fmt.Sprintf("reconcile: reset document %s to unstart (no ingestion task)", id))
+		}
+	}
+}
+
+// requeueTask republishes a task's wake-up message. Tasks claimed by an
+// in-process worker are skipped (a redelivery would only be ack-skipped), and
+// the task's staleness watermark is advanced so a message lost again is not
+// re-published on the very next tick — a durable, natural backoff.
+func (e *Ingestor) requeueTask(ctx context.Context, taskID, reason string) {
+	if e.isClaimed(taskID) {
+		return
+	}
+	if err := e.ingestionTaskSvc.Requeue(ctx, taskID); err != nil {
+		common.Error(fmt.Sprintf("reconcile: requeue %s task %s failed", reason, taskID), err)
+		return
+	}
+	if err := e.ingestionTaskSvc.Touch(ctx, taskID); err != nil {
+		common.Error(fmt.Sprintf("reconcile: touch task %s after requeue", taskID), err)
+	}
+	common.Warn(fmt.Sprintf("reconcile: re-enqueued %s task %s", reason, taskID))
+}
+
+// failHungTask marks a hung RUNNING task FAILED and mirrors that to the
+// document. It skips tasks claimed by an in-process worker — a long single
+// component (OCR/LLM call) legitimately writes no progress row for minutes and
+// must not be killed. MarkFailed is idempotent on terminal states and returns
+// nil, so the document is mirrored only after confirming the task actually
+// transitioned RUNNING → FAILED (a task that completed meanwhile is untouched).
+func (e *Ingestor) failHungTask(ctx context.Context, taskID string) {
+	if e.isClaimed(taskID) {
+		return
+	}
+	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
+	if err != nil {
+		common.Error(fmt.Sprintf("reconcile: load hung task %s", taskID), err)
+		return
+	}
+	if task.Status != common.RUNNING {
+		return
+	}
+	if err := e.ingestionTaskSvc.MarkFailed(ctx, taskID); err != nil {
+		common.Error(fmt.Sprintf("reconcile: fail hung task %s", taskID), err)
+		return
+	}
+	after, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
+	if err != nil {
+		common.Error(fmt.Sprintf("reconcile: reload task %s after fail", taskID), err)
+		return
+	}
+	if after.Status != common.FAILED {
+		common.Info(fmt.Sprintf("reconcile: task %s ended as %s, skip doc mirror", taskID, after.Status))
+		return
+	}
+	msg := fmt.Sprintf("\n%s Task auto-failed by reconciliation: no progress for %v.", time.Now().Format("15:04:05"), hungRunningAfter)
+	if err := documentpkg.NewDocumentService().UpdateRunProgress(ctx, task.DocumentID, -1, string(entity.TaskStatusFail), msg); err != nil {
+		common.Error(fmt.Sprintf("reconcile: mirror FAIL to document %s for task %s", task.DocumentID, taskID), err)
+	}
+	common.Warn(fmt.Sprintf("reconcile: marked hung task %s FAILED (doc %s)", taskID, task.DocumentID))
+}
+
+// isClaimed reports whether an in-process worker holds the task claim.
+func (e *Ingestor) isClaimed(taskID string) bool {
+	e.tasksMu.RLock()
+	_, ok := e.currentTasks[taskID]
+	e.tasksMu.RUnlock()
+	return ok
 }
 
 func (e *Ingestor) startWorkerPool() {
@@ -980,6 +1183,7 @@ func (e *Ingestor) Stop(ctx context.Context) {
 	go func() {
 		e.workerWg.Wait()
 		e.compileWg.Wait()
+		e.reconcileWg.Wait()
 		close(waitDone)
 	}()
 
