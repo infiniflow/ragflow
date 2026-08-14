@@ -1249,6 +1249,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyTip:
         'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
+      webSearch: 'Web search',
       webSearchProvider: 'Web search provider',
       webSearchProviderTip:
         'Select the service used when Internet search is enabled.',
