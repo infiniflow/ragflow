@@ -60,8 +60,32 @@ func (n *NvidiaModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewNvidiaModel(baseURL, n.baseModel.URLSuffix)
 }
 
-func (n NvidiaModel) Name() string {
+func (n *NvidiaModel) Name() string {
 	return "nvidia"
+}
+
+// resolveEndpoint returns the endpoint URL for modelName. When the
+// model's preset config in conf/models/nvidia.json carries an explicit
+// url, that full endpoint is used as-is because it does not follow the
+// standard baseURL + suffix assembly; otherwise the usual assembly
+// applies. Every endpoint (chat, embedding, rerank, models list) goes
+// through this path so the override is honored uniformly.
+func (n *NvidiaModel) resolveEndpoint(modelName string, apiConfig *APIConfig, suffix string) (string, error) {
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if provider := pm.FindProvider("NVIDIA"); provider != nil {
+				if model := pm.FindModel(provider, modelName); model != nil && model.URL != "" {
+					return strings.TrimSuffix(model.URL, "/"), nil
+				}
+			}
+		}
+	}
+
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(suffix, "/")), nil
 }
 
 func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -73,11 +97,10 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(modelName, apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -90,7 +113,7 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 	}
 
-	body, err := n.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	body, err := n.baseModel.doRequest(ctx, baseURL, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +131,10 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(modelName, apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
@@ -127,7 +149,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	return n.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+	return n.baseModel.doStreamRequest(ctx, baseURL, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
 }
@@ -139,12 +161,12 @@ type nvidiaEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-func (n NvidiaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -152,16 +174,14 @@ func (n NvidiaModel) Embed(ctx context.Context, modelName *string, texts []strin
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(*modelName, apiConfig, n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Embedding)
-
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"input":           texts,
+		"input":           request.Texts,
 		"input_type":      "query",
 		"encoding_format": "float",
 		"truncate":        "END",
@@ -178,7 +198,7 @@ func (n NvidiaModel) Embed(ctx context.Context, modelName *string, texts []strin
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -252,11 +272,12 @@ type nvidiaRerankResponse struct {
 // RerankResult entries are in the API's ranking order; callers that
 // need original-input order should sort by Index. Same return-shape
 // contract as the Aliyun and ZhipuAI Rerank drivers.
-func (n NvidiaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -264,12 +285,10 @@ func (n NvidiaModel) Rerank(ctx context.Context, modelName *string, query string
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(*modelName, apiConfig, n.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -297,7 +316,7 @@ func (n NvidiaModel) Rerank(ctx context.Context, modelName *string, query string
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -358,12 +377,12 @@ func (n *NvidiaModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 }
 
 // OCRFile OCR file
-func (n *NvidiaModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (n *NvidiaModel) OCRFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ParseFile parse file
-func (n *NvidiaModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (n *NvidiaModel) ParseFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
@@ -371,21 +390,20 @@ func (n *NvidiaModel) ParseFile(ctx context.Context, modelName *string, content 
 // and returns the list of available model ids. The endpoint is
 // OpenAI-compatible, so the parsing follows the same shape used by
 // the moonshot, xai, and openai drivers.
-func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (n *NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint("", apiConfig, n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(n.baseModel.URLSuffix.Models, "/"))
 
 	modelListCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(modelListCtx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(modelListCtx, "GET", baseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -422,7 +440,7 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		provider = pm.FindProvider("NVIDIA")
 	}
 	models := parseNvidiaModelList(modelList, provider)
-	if n.usesHostedCatalog(resolvedBaseURL) {
+	if n.usesHostedCatalog(baseURL) {
 		catalogCtx, catalogCancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 		catalog, catalogErr := n.fetchHostedCatalog(catalogCtx)
 		catalogCancel()
@@ -465,12 +483,12 @@ type nvidiaCatalogResponse struct {
 	Results []nvidiaCatalogGroup `json:"results"`
 }
 
-func (n NvidiaModel) usesHostedCatalog(baseURL string) bool {
+func (n *NvidiaModel) usesHostedCatalog(baseURL string) bool {
 	parsed, err := url.Parse(baseURL)
 	return err == nil && strings.EqualFold(parsed.Hostname(), n.hostedAPIHost)
 }
 
-func (n NvidiaModel) fetchHostedCatalog(ctx context.Context) (*nvidiaCatalogResponse, error) {
+func (n *NvidiaModel) fetchHostedCatalog(ctx context.Context) (*nvidiaCatalogResponse, error) {
 	parsed, err := url.Parse(n.catalogURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Nvidia endpoint catalog URL: %w", err)
@@ -538,7 +556,7 @@ func (n NvidiaModel) fetchHostedCatalog(ctx context.Context) (*nvidiaCatalogResp
 	return merged, nil
 }
 
-func (n NvidiaModel) fetchHostedCatalogPage(ctx context.Context, pageURL string) (*nvidiaCatalogResponse, error) {
+func (n *NvidiaModel) fetchHostedCatalogPage(ctx context.Context, pageURL string) (*nvidiaCatalogResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Nvidia endpoint catalog request: %w", err)
@@ -694,6 +712,7 @@ func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelRe
 			response.ModelTypes = append([]string(nil), preset.ModelTypes...)
 			response.Thinking = preset.Thinking
 			response.MaxDimension = preset.MaxDimension
+			response.MaxBatchSize = preset.MaxBatchSize
 			response.Dimensions = append([]int(nil), preset.Dimensions...)
 		} else {
 			maxTokens := defaultMaxTokens
@@ -713,7 +732,7 @@ func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelRe
 	return models
 }
 
-func (n NvidiaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+func (n *NvidiaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
@@ -721,7 +740,7 @@ func (n NvidiaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[str
 // is reachable and that the API key is accepted, by issuing a
 // lightweight ListModels call. Mirrors the pattern used by the xai,
 // moonshot, deepseek, aliyun, and gitee drivers.
-func (n NvidiaModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+func (n *NvidiaModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	_, err := n.ListModels(ctx, apiConfig)
 	return err
 }

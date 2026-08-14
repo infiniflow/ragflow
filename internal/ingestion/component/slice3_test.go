@@ -26,7 +26,7 @@ import (
 )
 
 // TestSubstitutePromptPlaceholders_ReplacesAtChunks pins the
-// resume-template pattern `{TitleChunker:FlatMiceFix@chunks}`.
+// `{ComponentName:ParamName@chunks}` placeholder substitution.
 // The substitute is the joined chunk text.
 func TestSubstitutePromptPlaceholders_ReplacesAtChunks(t *testing.T) {
 	prompt := "Extract metadata from: {TitleChunker:FlatMiceFix@chunks}"

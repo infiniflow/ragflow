@@ -154,12 +154,12 @@ type openaiUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
-func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -176,7 +176,7 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -296,7 +296,7 @@ func (o *OpenAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 
 // Rerank calculates similarity scores between query and documents. OpenAI does
 // not expose a rerank API, so this is left unimplemented.
-func (o *OpenAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (o *OpenAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", o.Name())
 }
 
@@ -728,48 +728,4 @@ func (o *OpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 
 func (o *OpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
-}
-
-// extractUsageFromMap reads the "usage" key from an OpenAI-style API
-// response and returns (prompt_tokens, completion_tokens, total_tokens).
-// All return values are zero when the response carries no usage block.
-func extractUsageFromMap(raw map[string]interface{}) (int, int, int) {
-	if raw == nil {
-		return 0, 0, 0
-	}
-	ru, ok := raw["usage"]
-	if !ok {
-		return 0, 0, 0
-	}
-	usage, ok := ru.(map[string]interface{})
-	if !ok {
-		return 0, 0, 0
-	}
-	get := func(keys ...string) int {
-		for _, k := range keys {
-			v, ok := usage[k]
-			if !ok {
-				continue
-			}
-			switch val := v.(type) {
-			case float64:
-				return int(val)
-			case int:
-				return val
-			case json.Number:
-				n, err := val.Int64()
-				if err == nil {
-					return int(n)
-				}
-			}
-		}
-		return 0
-	}
-	pt := get("prompt_tokens", "input_tokens")
-	ct := get("completion_tokens", "output_tokens")
-	tt := get("total_tokens")
-	if tt == 0 {
-		tt = pt + ct
-	}
-	return pt, ct, tt
 }

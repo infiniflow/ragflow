@@ -1,8 +1,7 @@
 """Tool selection gating: phase-based filtering and fallback chain."""
 
-from rag.advanced_rag.harness.types import OrchestratorContext
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
-
+from rag.advanced_rag.harness.types import OrchestratorContext
 
 # Search phase definitions
 
@@ -10,7 +9,7 @@ SEARCH_PHASES = {
     "locate": {
         "goal": "Locate documents or regions that may contain the answer.",
         "tools_priority": [
-            "dataset_navigation_by_tree",
+            "dataset_navigation_search",
             "ontology_navigate",
             "mindmap_navigate",
             "hybrid_search",
@@ -77,7 +76,7 @@ def tool_fits_context(tool_name: str, context: OrchestratorContext, has_routed_s
         return False
     if tool_name in {"ontology_navigate", "mindmap_navigate"} and not has_routed_scope:
         return False
-    if tool_name == "dataset_navigation_by_tree" and not context.current_claim:
+    if tool_name == "dataset_navigation_search" and not context.current_claim:
         return False
     if tool_name == "graph_explore" and not context.last_entity:
         return False
@@ -111,10 +110,13 @@ def get_gated_tools(
         sorted_tools.append(tool_name)
 
     selected = sorted_tools[: phase_config["max_returned"]]
-    defs = [TOOL_REGISTRY[n]["function_schema"] for n in selected if n in TOOL_REGISTRY]
-    for d in defs:
-        d["x_phase"] = phase
-        d["x_phase_hint"] = phase_config["tool_hint"]
+    # Copy the registry schemas before annotating — the registry dicts are
+    # shared process-wide, mutating them would leak phase hints across
+    # concurrent requests.
+    defs = []
+    for n in selected:
+        if n in TOOL_REGISTRY:
+            defs.append({**TOOL_REGISTRY[n]["function_schema"], "x_phase": phase, "x_phase_hint": phase_config["tool_hint"]})
     return defs
 
 

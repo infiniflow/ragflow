@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Button } from '@/components/ui/button';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { Settings } from 'lucide-react';
@@ -34,10 +50,10 @@ export default function SearchPage() {
 
   return (
     <section
-      className="size-full flex-1 relative px-5 pb-5 flex pt-4"
+      className="size-full flex-1 relative px-5 pb-5 flex pt-4 overflow-x-auto"
       data-testid="search-detail"
     >
-      <div className="flex gap-3 w-full bg-bg-base border-0.5 border-border-button">
+      <div className="flex gap-3 w-full bg-bg-base border-0.5 border-border-button min-w-[1280px] ">
         <div className="flex-1 min-w-0">
           {!isSearching && (
             <div className="animate-fade-in-down">

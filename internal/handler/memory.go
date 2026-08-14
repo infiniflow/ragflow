@@ -82,7 +82,7 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	// Check if API timing is enabled
 	// If RAGFLOW_API_TIMING environment variable is set, request processing time will be logged
-	timingEnabled := common.GetEnv(common.EnvRAGFlowApiTiming)
+	timingEnabled := common.GetEnv(common.EnvRAGFlowAPITiming)
 	var tStart time.Time
 	if timingEnabled != "" {
 		tStart = time.Now()

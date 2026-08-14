@@ -132,13 +132,28 @@ def _generate_report_schema() -> dict:
                         "items": {"type": "string"},
                         "description": "Information that was not found.",
                     },
+                    "grounded": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The KEY factual assertions in the report that ARE directly supported by the cited evidence chunks (evidence_ids). List each atomic fact you saw in the evidence, verbatim enough to be matched. This must include the answer-critical facts — e.g. 'hometown is Ithaca', 'first solo album was 1970'. Facts you inferred from prior knowledge but did NOT see in the evidence must be omitted from this list (and instead placed in gaps). Leaving a key asserted fact out of grounded, or listing a fact not actually in the evidence, will be caught and the claim marked unverified.",
+                    },
+                    "numbers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "For numerical / multi-hop questions, list each number you used in the final answer together with its exact figure and source. Format each as '<figure> from <source/context>', e.g. '2,161,000 from Wikipedia Demographics of Paris 2019 table', '9,508 from Brown County 2020 census'. This makes the numeric口径 transparent and verifiable. If the evidence contained multiple conflicting values for the same quantity, list ALL of them and say which one you chose and why. Do NOT silently pick one of several conflicting figures; disclose the conflict.",
+                    },
                     "discovered_claims": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "New research directions discovered during research.",
                     },
                 },
-                "required": ["report", "is_verified", "confidence"],
+                # grounded and numbers are required: the agent must explicitly
+                # declare which facts are evidence-backed (grounded) and which
+                # figures+source it used (numbers, [] for non-numeric). These feed
+                # the cross-check's grounded-fact and numeric-conflict detection,
+                # so silently omitting them would bypass verification.
+                "required": ["report", "is_verified", "confidence", "grounded", "numbers"],
             },
         },
     }

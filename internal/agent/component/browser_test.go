@@ -84,7 +84,7 @@ func stateWith(t *testing.T, sys map[string]any) context.Context {
 	t.Helper()
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys = sys
-	return canvas.WithState(context.Background(), state)
+	return canvas.WithState(t.Context(), state)
 }
 
 // TestBrowser_AcceptsPythonSchema: the v1 fixture's param surface
@@ -282,7 +282,7 @@ func TestBrowser_MissingTenant(t *testing.T) {
 	})
 	// state with no tenant_id
 	state := canvas.NewCanvasState("run-1", "task-1")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "tenant_id") {

@@ -2,10 +2,7 @@ import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
-import {
-  ITraceInfo,
-  useGenerateStatus,
-} from '@/hooks/use-dataset-generate';
+import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
@@ -52,6 +49,7 @@ export function WikiLeftPanel({
     hasChanges,
     newlyUploaded,
     removed,
+    changed,
     handleUpdate,
     loading: updateLoading,
   } = useWikiUpdate();
@@ -75,12 +73,14 @@ export function WikiLeftPanel({
           hasChanges={hasChanges}
           newlyUploaded={newlyUploaded}
           removed={removed}
+          changed={changed}
           loading={updateLoading}
           tooltip={t('knowledgeDetails.updateTooltip', {
             newlyUploaded,
             removed,
+            changed,
             defaultValue:
-              '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
+              '{{newlyUploaded}} new, {{removed}} removed, {{changed}} changed documents found. Click to compile and merge into current Wiki.',
           })}
           onClick={handleUpdateClick}
         />

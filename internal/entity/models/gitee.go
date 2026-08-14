@@ -152,12 +152,12 @@ type GiteeEmbeddingResponse struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (g *GiteeModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (g *GiteeModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -175,7 +175,7 @@ func (g *GiteeModel) Embed(ctx context.Context, modelName *string, texts []strin
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -260,11 +260,12 @@ type GiteeRerankResponse struct {
 }
 
 // Rerank calculates similarity scores between query and documents
-func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -394,12 +395,12 @@ func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []b
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if imageURL != nil {
-		if err := writer.WriteField("image", *imageURL); err != nil {
+		if err = writer.WriteField("image", *imageURL); err != nil {
 			return nil, fmt.Errorf("failed to write image URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
@@ -491,12 +492,12 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if documentURL != nil {
-		if err := writer.WriteField("file", *documentURL); err != nil {
+		if err = writer.WriteField("file", *documentURL); err != nil {
 			return nil, fmt.Errorf("failed to write file URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
@@ -853,7 +854,7 @@ func (g *GiteeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	taskListResp := []ListTaskStatus{}
+	var taskListResp []ListTaskStatus
 	for _, item := range giteeTaskList.Items {
 		taskListResp = append(taskListResp, ListTaskStatus{
 			TaskID: item.TaskID,

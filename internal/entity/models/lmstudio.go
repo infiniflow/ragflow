@@ -32,7 +32,6 @@ type LmStudioModel struct {
 	baseModel BaseModel
 }
 
-// NewLmStudioModel
 func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioModel {
 	return &LmStudioModel{
 		baseModel: BaseModel{
@@ -140,12 +139,12 @@ func (l *LmStudioModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	})
 }
 
-func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -169,7 +168,7 @@ func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, texts []st
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -224,7 +223,7 @@ func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, texts []st
 	return embeddings, nil
 }
 
-func (l *LmStudioModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (l *LmStudioModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

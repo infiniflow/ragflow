@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/utility"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
@@ -263,7 +265,13 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// (available_int=1). The notification is sent only after a successful persist
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, 0); err != nil {
+	//
+	// The variants passed to PublishCompleted are the compile types this document
+	// produced, derived from the authoritative `compilation_template_kind_kwd` the
+	// KnowledgeCompiler component stamps on each compiled product (the resolved
+	// template's kind → KindToVariant, O2a whitelist). This is the compiler's
+	// runtime inference surfaced here, NOT a re-derivation from `compile_kwd`.
+	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, compiledVariants(chunks)); err != nil {
 		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 	}
 
@@ -312,6 +320,74 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 		}
 		ck["available_int"] = 0
 	}
+}
+
+// compiledVariants returns the sorted, de-duplicated set of compile types a
+// document's compiled products carry. It reads the authoritative
+// `compilation_template_kind_kwd` the KnowledgeCompiler component stamps on each
+// compiled product (the resolved template's kind) and maps it through
+// common.KindToVariant (O2a whitelist: unknown kinds are skipped). Products
+// without an authoritative kind fall back to their `compile_kwd`-derived variant.
+// This surfaces the compiler's runtime variant inference to PublishCompleted so
+// the consumer can route the dataset-level re-compile per compile type.
+func compiledVariants(chunks []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		var v kccommon.Variant
+		if kind, ok := ck["compilation_template_kind_kwd"].(string); ok && kind != "" {
+			mapped, err := kccommon.KindToVariant(kind)
+			if err != nil {
+				continue // unknown template kind (O2a): skip, do not mis-route
+			}
+			v = mapped
+		} else {
+			// Fallback on compile_kwd via the shared knowledge_compile mapping
+			// (which folds the inferred structure kinds list/set/hypergraph into
+			// VariantStructure before the KindToVariant whitelist lookup).
+			mapped, err := knowledge_compile.KwdToVariant(asCompiledKwd(ck))
+			if err != nil {
+				continue
+			}
+			v = mapped
+		}
+		if _, dup := seen[string(v)]; dup {
+			continue
+		}
+		seen[string(v)] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// asCompiledKwd extracts the compile_kwd keyword value from a chunk map,
+// tolerating both a bare string and a list-wrapped keyword column from the
+// engine. It returns "" when absent.
+func asCompiledKwd(c map[string]any) string {
+	switch v := c["compile_kwd"].(type) {
+	case string:
+		return v
+	case []string:
+		if len(v) > 0 {
+			return v[0]
+		}
+	case []any:
+		if len(v) > 0 {
+			if s, ok := v[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
@@ -374,7 +450,22 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 	if len(parserConfig) == 0 {
 		return
 	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams([]byte(dsl))
+	// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
+	// production, so it must be unwrapped before ExtractAllComponentParams
+	// runs (that helper expects the inner DSL). The previous direct call
+	// passed the enveloped DSL, whose "components" key is nested under "dsl",
+	// so it silently returned an error and made this guard a no-op.
+	inner, err := pipelinepkg.UnwrapCanvasDSL([]byte(dsl))
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
+		return
+	}
+	innerJSON, err := json.Marshal(inner)
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot re-encode DSL: %v", err))
+		return
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams(innerJSON)
 	if err != nil {
 		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
 		return
@@ -403,14 +494,6 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
-	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
-	// When the dataset enables auto-metadata, ensure the Extractor node(s)
-	// carry the enable_metadata mode + field schema so the LLM extraction fires
-	// (mirrors Python task_executor.py:519 enabling gen_metadata_task). The
-	// dataset flag is authoritative: a node that already has enable_metadata
-	// turned on keeps its own config, but a shipped DSL defaulting it to 0 is
-	// still overridden so auto-metadata can activate.
-	common.InjectExtractorEnableMetadata(parserConfig)
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;
@@ -472,9 +555,12 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// and the document's filetype family. It is NOT passed through pipeline
 	// inputs: the parser selects pages from ParserConfig[cpnID][family]
 	// ["pages"] (a list of 1-indexed inclusive ranges), exactly mirroring
-	// NormalizeParserConfigPages / pdf_pages_test.go. See injectDebugPageCap.
+	// NormalizeParserConfigPages / pdf_pages_test.go. The DSL/parser-family
+	// knowledge now lives in pipeline.BuildParserPageCapOverride.
 	if debug {
-		injectDebugPageCap(dsl, parserConfig, s.taskCtx.Doc.Type)
+		parserConfig = pipelinepkg.BuildParserPageCapOverride(
+			parserConfig, []byte(dsl), s.taskCtx.Doc.Type,
+			debugPageCapPages, component.ComponentNameParser, component.ParserFileFamily)
 	}
 
 	// Component params from Doc.ParserConfig — including the tenant LLM id
@@ -511,79 +597,3 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
-
-// injectDebugPageCap wires the canvas-debug page cap into parserConfig using
-// the SAME channel the production ParserConfig travels through: Run's
-// override_params (the 3rd argument), keyed by the Parser component's cpnID
-// and the document's filetype family. It must NOT be passed as a pipeline
-// input — the parser selects pages from ParserConfig[cpnID][family]["pages"],
-// which the deepdoc/pdf parser consumes as a list of page ranges.
-//
-// dsl is the raw pipeline DSL (used only to discover the Parser component's
-// cpnID); docType is the uploaded file's extension (e.g. "pdf"). When no
-// Parser component can be found, or the docType yields no known family, the
-// call is a no-op (the run parses everything, which is safe).
-//
-// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
-// production (loadDSLFromCanvas marshals canvas.DSL), so it is unwrapped the
-// same way NewPipelineFromDSL does before ExtractAllComponentParams runs.
-// An explicit page cap already present in parserConfig (keyed by cpnID +
-// family) is respected and left untouched — the debug default is only a
-// fallback, so a debug run can honour a narrower or wider caller-supplied cap.
-func injectDebugPageCap(dsl string, parserConfig map[string]any, docType string) {
-	// Unwrap the canvas envelope to the inner components map.
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(dsl), &raw); err != nil {
-		return
-	}
-	if env, ok := raw["dsl"].(map[string]any); ok && len(env) > 0 {
-		raw = env
-	}
-	inner, err := json.Marshal(raw)
-	if err != nil {
-		return
-	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams(inner)
-	if err != nil {
-		return
-	}
-	var parserCpnID string
-	for _, s := range schemas {
-		if s.ComponentName == component.ComponentNameParser {
-			parserCpnID = s.CpnID
-			break
-		}
-	}
-	if parserCpnID == "" {
-		return
-	}
-	family := component.ParserFileFamily(docType)
-	if family == "" {
-		return
-	}
-	// Respect an explicit page cap already present under cpnID + family.
-	if cpnEntry, ok := parserConfig[parserCpnID].(map[string]any); ok {
-		if famEntry, ok := cpnEntry[family].(map[string]any); ok {
-			if _, has := famEntry["pages"]; has {
-				return
-			}
-		}
-	}
-	cpnEntry, ok := parserConfig[parserCpnID].(map[string]any)
-	if !ok {
-		cpnEntry = map[string]any{}
-		parserConfig[parserCpnID] = cpnEntry
-	}
-	famEntry, ok := cpnEntry[family].(map[string]any)
-	if !ok {
-		famEntry = map[string]any{}
-		cpnEntry[family] = famEntry
-	}
-	// pages is delivered as a JSON-decoded map — the very shape a ParserConfig
-	// arrives in from the API/storage JSON round-trip: a []any of [from,to]
-	// pairs. The deepdoc/pdf parser's NormalizePDFPages requires this
-	// []any-of-[]any form (not a Go [][]int), so it is built explicitly here.
-	// The shallow override_params merge in applyOverrideParams preserves this
-	// shape all the way to ConfigureFromSetup, so the cap is honoured.
-	famEntry["pages"] = []any{[]any{1, debugPageCapPages}}
-}

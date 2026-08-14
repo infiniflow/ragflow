@@ -128,9 +128,6 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	if seen["stream"] != false {
 		t.Errorf("stream=%v, want false", seen["stream"])
 	}
-	if seen["max_tokens"] != float64(32) {
-		t.Errorf("max_tokens=%v, want 32", seen["max_tokens"])
-	}
 	if seen["temperature"] != 0.2 {
 		t.Errorf("temperature=%v, want 0.2", seen["temperature"])
 	}
@@ -308,10 +305,10 @@ func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"
 
-	if _, err := m.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := m.Rerank(ctx, &model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

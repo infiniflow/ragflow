@@ -1045,6 +1045,7 @@ def _call_llm(prompt: str, tenant_id, lang: str) -> Optional[dict]:
 
     Args:
         prompt: User prompt
+        tenant_id: Tenant ID used to build the LLMBundle that serves the request
         lang: Language
     Returns:
         Parsed dictionary, or None on failure
@@ -1295,6 +1296,7 @@ def parse_with_llm(indexed_text: str, lines: list[str], tenant_id, lang: str) ->
     Args:
         indexed_text: Line-indexed resume text
         lines: List of original line texts (for index-based extraction)
+        tenant_id: Tenant ID used to resolve the chat model for each subtask
         lang: Language
     Returns:
         Merged structured resume dictionary, or None on failure
@@ -2072,6 +2074,7 @@ def parse_resume(filename: str, binary: bytes, tenant_id, lang: str = "Chinese")
     Args:
         filename: File name
         binary: File binary content
+        tenant_id: Tenant ID forwarded to the LLM extraction stage
         lang: Language, default "Chinese"
     Returns:
         (resume, lines, line_positions) tuple:

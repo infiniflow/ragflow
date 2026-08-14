@@ -49,7 +49,7 @@ var builtinCompilationTemplateKinds = []struct {
 	{Kind: "timeline", Name: "Timeline"},
 }
 
-func strptr(s string) *string { return &s }
+func strPTR(s string) *string { return &s }
 
 // builtinTemplateID derives a deterministic, <=32-byte id for a built-in
 // compilation template from "<builtin-group-id>-<kind>". A plain concatenation
@@ -92,7 +92,7 @@ func SeedBuiltinCompilationTemplatesForTenant(ctx context.Context, db *gorm.DB, 
 			ID:       BuiltinCompilationTemplateGroupID,
 			TenantID: "", // global built-in catalogue
 			Name:     "Built-in templates",
-			Status:   strptr(valid),
+			Status:   &valid,
 		}
 		if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
@@ -105,11 +105,11 @@ func SeedBuiltinCompilationTemplatesForTenant(ctx context.Context, db *gorm.DB, 
 			tmpl := &entity.CompilationTemplate{
 				ID:       builtinTemplateID(t.Kind),
 				TenantID: nil, // global built-in catalogue
-				GroupID:  strptr(BuiltinCompilationTemplateGroupID),
+				GroupID:  strPTR(BuiltinCompilationTemplateGroupID),
 				Name:     t.Name,
 				Kind:     t.Kind,
 				Config:   entity.JSONMap{"kind": t.Kind},
-				Status:   strptr(valid),
+				Status:   &valid,
 			}
 			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "id"}},

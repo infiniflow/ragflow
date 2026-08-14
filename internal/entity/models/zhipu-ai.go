@@ -55,7 +55,7 @@ func (z *ZhipuAIModel) Name() string {
 	return "zhipu"
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
+// ChatWithMessages sends multiple messages with roles and returns response.
 func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -155,12 +155,12 @@ type zhipuUsage struct {
 }
 
 // Embed embeddings a list of texts into embeddings
-func (z *ZhipuAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (z *ZhipuAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -177,7 +177,7 @@ func (z *ZhipuAIModel) Embed(ctx context.Context, modelName *string, texts []str
 
 	reqBody := map[string]interface{}{}
 	reqBody["model"] = modelName
-	reqBody["input"] = texts
+	reqBody["input"] = request.Texts
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
@@ -358,10 +358,12 @@ type zhipuOCRResponse struct {
 // Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
 // score per input text, in the same order the documents were given.
-func (z *ZhipuAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (z *ZhipuAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil

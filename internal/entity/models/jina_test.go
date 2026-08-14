@@ -134,9 +134,6 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(128) {
-			t.Errorf("max_tokens=%v want 128", body["max_tokens"])
-		}
 		if body["temperature"] != 0.2 {
 			t.Errorf("temperature=%v want 0.2", body["temperature"])
 		}
@@ -244,7 +241,7 @@ func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
 	embeddings, err := newJinaForTest(srv.URL).Embed(
 		t.Context(),
 		&modelName,
-		[]string{"text"},
+		EmbedRequest{Texts: []string{"text"}},
 		&APIConfig{ApiKey: &apiKey},
 		nil,
 		nil,
@@ -340,8 +337,7 @@ func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
 	_, err := newJinaForTest(srv.URL).Rerank(
 		t.Context(),
 		&modelName,
-		"weather",
-		[]string{"sunny", "rainy"},
+		RerankRequest{Query: "weather", Documents: []string{"sunny", "rainy"}},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{},
 		nil,

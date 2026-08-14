@@ -315,13 +315,13 @@ func TestDeepCopyStrip_StripsVectorsFromMapSlice(t *testing.T) {
 		{"text": "second", "feature": []float64{0.4}},
 	}
 
-	got := deepCopyStrip(src)
+	got := deepCopy(src, true)
 
 	// Returned slice must be a deep copy (new []any holding new maps), not the
 	// original slice/map identity.
 	cp, ok := got.([]any)
 	if !ok {
-		t.Fatalf("deepCopyStrip returned %T, want []any", got)
+		t.Fatalf("deepCopy(src, true) returned %T, want []any", got)
 	}
 	if len(cp) != 2 {
 		t.Fatalf("len=%d want 2", len(cp))
@@ -378,7 +378,7 @@ func TestDeepCopyStrip_StripsVectorsFromMapSlice(t *testing.T) {
 // (structure preservation, no vector-strip concern for plain deepCopy).
 func TestDeepCopy_MapSliceIsDeep(t *testing.T) {
 	src := []map[string]any{{"text": "a", "n": map[string]any{"v": 1}}}
-	got := deepCopy(src)
+	got := deepCopy(src, false)
 	cp, ok := got.([]any)
 	if !ok {
 		t.Fatalf("deepCopy returned %T, want []any", got)
@@ -401,7 +401,7 @@ func TestDeepCopy_MapSliceIsDeep(t *testing.T) {
 }
 
 // TestDetectFormat_Priority locks the format selection order
-// (chunks > json > text > html > markdown) used to pick a component's payload
+// (chunks > json > text > html > Markdown) used to pick a component's payload
 // key. A component that emits multiple recognized keys must surface the
 // highest-priority one, matching NormalizeChunks and the front-end tab render.
 func TestDetectFormat_Priority(t *testing.T) {

@@ -101,7 +101,10 @@ func sanitizeProcessed(chunks []map[string]any) []map[string]any {
 		delete(cp, "create_time")
 		delete(cp, "create_timestamp_flt")
 		for k := range cp {
-			if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+			// Use the production stripping rule so the golden compare never
+			// disagrees with the debug payload: fixed legacy keys
+			// (vector/embedding/feature/q_vec) AND q_<dim>_vec are all dropped.
+			if task.IsVectorKey(k) {
 				delete(cp, k)
 			}
 		}

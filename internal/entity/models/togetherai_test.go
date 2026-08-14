@@ -288,7 +288,7 @@ func TestTogetherAIUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with nil documents it short-circuits to empty response (no error).
 	// It should NOT be blocked by APIConfigCheck.
-	if _, err := m.Rerank(ctx, nil, "", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
 		t.Errorf("Rerank error=%v (expected no error for empty documents)", err)
 	}
 	// Balance IS a stub → "no such method"

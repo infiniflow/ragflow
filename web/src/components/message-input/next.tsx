@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 'use client';
 
 import {
@@ -14,6 +30,11 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -131,32 +152,29 @@ export function NextMessageInput({
     };
   }, [isResizing]);
 
-  const thinkingOptions = useMemo(
-    () => [
-      {
-        label: t('chat.thinkingLevelUltra'),
-        value: '4',
-        description: t('chat.thinkingLevelUltraDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelHigh'),
-        value: '3',
-        description: t('chat.thinkingLevelHighDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelMedium'),
-        value: '2',
-        description: t('chat.thinkingLevelMediumDescription'),
-      },
-      {
-        label: t('chat.thinkingLevelLow'),
-        value: '1',
-        description: t('chat.thinkingLevelLowDescription'),
-      },
-      { label: t('chat.thinkingLevelNone'), value: '0' },
-    ],
-    [t],
-  );
+  const thinkingOptions = [
+    {
+      label: t('chat.thinkingLevelUltra'),
+      value: '4',
+      description: t('chat.thinkingLevelUltraDescription'),
+    },
+    {
+      label: t('chat.thinkingLevelHigh'),
+      value: '3',
+      description: t('chat.thinkingLevelHighDescription'),
+    },
+    {
+      label: t('chat.thinkingLevelMedium'),
+      value: '2',
+      description: t('chat.thinkingLevelMediumDescription'),
+    },
+    {
+      label: t('chat.thinkingLevelLow'),
+      value: '1',
+      description: t('chat.thinkingLevelLowDescription'),
+    },
+    { label: t('chat.thinkingLevelNone'), value: '0' },
+  ];
 
   const handleThinkingChange = useCallback((value: string) => {
     setEnableThinking(value);
@@ -344,16 +362,24 @@ export function NextMessageInput({
             )}
 
             {showInternet && (
-              <Button
-                type="button"
-                variant={enableInternet ? 'accent' : 'transparent'}
-                size="icon-xs"
-                className="border-0"
-                onClick={handleInternetToggle}
-                data-testid="chat-detail-internet-toggle"
-              >
-                <Globe />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={enableInternet ? 'accent' : 'transparent'}
+                    size="icon-xs"
+                    className="border-0"
+                    onClick={handleInternetToggle}
+                    data-testid="chat-detail-internet-toggle"
+                  >
+                    <Globe />
+                    <span className="sr-only">{t('chat.webSearch')}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t('chat.webSearch')}</p>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 

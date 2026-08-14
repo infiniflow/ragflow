@@ -830,7 +830,7 @@ func TestStripISOTimestamps(t *testing.T) {
 		{"multiple", "x T01:02:03|y T04:05:06|z", "x |y |z"},
 		{"no space before T", "abcT13:24:55|def", "abc|def"},
 		{"empty", "", ""},
-		// Realistic markdown cell: |2024-01-15T13:24:55| → |2024-01-15|
+		// Realistic Markdown cell: |2024-01-15T13:24:55| → |2024-01-15|
 		{"realistic cell", "|2024-01-15T13:24:55|", "|2024-01-15|"},
 	}
 	for _, tc := range cases {
@@ -1111,6 +1111,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	}
 	if got := expectedDocNameColumn("oceanbase"); got != "docnm_kwd" {
 		t.Errorf("oceanbase = %q, want docnm_kwd", got)
+	}
+	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
+		t.Errorf("seekdb = %q, want docnm_kwd", got)
 	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)

@@ -6,7 +6,7 @@ import { IArtifactTopic } from '@/interfaces/database/dataset';
 import { useDebounce } from 'ahooks';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-export type WikiPageType = 'concept' | 'entity';
+export type WikiPageType = 'concept' | 'entity' | 'topic';
 
 export function useWikiNavigation() {
   const scrollRef = useRef<HTMLDivElement>(null);

@@ -266,7 +266,7 @@ def build_skill_md(node: "SkillNode") -> str:
     return "\n".join(lines)
 
 
-def skill_node_es_row(ctx: TaskContext, node: "SkillNode") -> Dict:
+def skill_node_es_row(ctx: TaskContext, node: "SkillNode", parent_kwd: str = "") -> Dict:
     """Build the ES row for one tree node. Stable id from
     (kb_id, folder_name) so re-runs upsert cleanly."""
     kb_id_str = str(ctx.kb_id)
@@ -279,12 +279,21 @@ def skill_node_es_row(ctx: TaskContext, node: "SkillNode") -> Dict:
         "doc_id": kb_id_str,  # KB-scoped sentinel
         "compile_kwd": "skill",
         "skill_kwd": node.folder_name,
+        "parent_kwd": parent_kwd,
         "depth_int": int(node.level),
         "children_kwd": [c.folder_name for c in node.children],
         "source_doc_ids": list(node.doc_ids),
         "md_with_weight": build_skill_md(node),
         "available_int": 1,
     }
+
+
+def _collect_skill_rows(ctx: TaskContext, node: "SkillNode", parent_kwd: str, out: list[dict]) -> None:
+    """Depth-first traversal: build one ``skill`` row per node, passing
+    ``parent_kwd`` down so every non-root node records its parent."""
+    out.append(skill_node_es_row(ctx, node, parent_kwd))
+    for child in node.children:
+        _collect_skill_rows(ctx, child, node.folder_name, out)
 
 
 def skill_tree_md_snippet(node: "SkillNode") -> str:
@@ -366,9 +375,10 @@ async def run_corpus2skill(
         llm_model=chat_mdl,
         embd_model=embedding_model,
         prompt="Please write a concise summary of the following texts:\n{cluster_content}",
-        max_token=256,
-        threshold=0.1,
+        max_token=512,
         max_errors=3,
+        clustering_threshold=0.3,
+        clustering_ratio=0.5,
     )
 
     # ---- Phase 1: per-doc summaries.
@@ -565,7 +575,9 @@ async def run_corpus2skill(
     except Exception:
         logging.debug("skill: prior delete failed; relying on id-upsert")
 
-    rows = [skill_node_es_row(ctx, n) for n in all_nodes]
+    rows: list[dict] = []
+    for r in roots:
+        _collect_skill_rows(ctx, r, "", rows)
     rows.append(skill_all_es_row(ctx, roots))
     if not rows:
         progress(1.0, "skill: nothing to persist")

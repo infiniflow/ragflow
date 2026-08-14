@@ -157,19 +157,16 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	// Compose the canvas user input from req.UserInput (the `inputs`
-	// dict body field) plus the top-level `question`. Files remain a
-	// separate RunAgent argument so they can populate sys.files. The
-	// Python canvas_service.completion reads the same three fields
-	// separately; the previous code dropped question/files, so a body like
-	// `{"question":"hi"}` reached the canvas with empty inputs.
-	userInput := make(map[string]any, len(req.UserInput)+1)
-	for k, v := range req.UserInput {
-		userInput[k] = v
-	}
-	if req.Question != "" {
-		userInput["question"] = req.Question
-	}
+	// Compose the canvas user input the same way Python's
+	// canvas_service.completion does: `query` first (falling back to
+	// `question`), with the begin-form `inputs` dict only as a
+	// last resort when no free-text question is present. Passing the
+	// `inputs` map itself as the user input breaks the run — the
+	// canvas seeds sys.query / Begin's `query` output with it, and
+	// downstream Retrieval nodes then fail to unmarshal an object
+	// into a string field. Files remain a separate RunAgent argument
+	// so they can populate sys.files.
+	userInput := agentbotUserInput(req)
 	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
 		req.SessionID, "", userInput, req.Files)
 	if err != nil {
@@ -208,10 +205,59 @@ type AgentbotCompletionRequest struct {
 	SessionID string `json:"session_id"`
 	UserID    string `json:"user_id"`
 	Stream    bool   `json:"stream"`
-	// UserInput is the dict-shaped root input the canvas run expects.
+	// Query is the free-text chat question. The shared/embedded chat
+	// page sends `query` (the Python completion reads it before
+	// `question`).
+	Query string `json:"query"`
+	// UserInput carries the begin-form field values the canvas run
+	// expects when the flow starts from a form instead of free text.
 	UserInput map[string]any           `json:"inputs"`
 	Question  string                   `json:"question"`
 	Files     []map[string]interface{} `json:"files"`
+}
+
+// agentbotUserInput derives the single user-input value RunAgent
+// expects from an AgentbotCompletionRequest. Mirrors the Python
+// `query = kwargs.get("query", "") or kwargs.get("question", "")`
+// precedence in canvas_service.completion, and the in-app chat
+// handler's form-input fallback (handler/agent.go
+// extractUserInputFromFormInputs): when neither query field is set,
+// the begin-form `inputs` map supplies the value — a single field
+// lifts its `value` entry, multiple fields collapse to a
+// name→value map.
+func agentbotUserInput(req AgentbotCompletionRequest) any {
+	query := req.Query
+	if query == "" {
+		query = req.Question
+	}
+	if query != "" {
+		return query
+	}
+	inputs := req.UserInput
+	if len(inputs) == 0 {
+		return nil
+	}
+	if len(inputs) == 1 {
+		for _, raw := range inputs {
+			if field, ok := raw.(map[string]any); ok {
+				if v, ok := field["value"]; ok {
+					return v
+				}
+			}
+			return raw
+		}
+	}
+	out := make(map[string]any, len(inputs))
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]any); ok {
+			if v, ok := field["value"]; ok {
+				out[name] = v
+				continue
+			}
+		}
+		out[name] = raw
+	}
+	return out
 }
 
 // ChatbotCompletionRequest is the request body for

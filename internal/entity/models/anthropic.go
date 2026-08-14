@@ -81,9 +81,8 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -396,9 +395,8 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -469,9 +467,8 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return err
@@ -586,11 +583,11 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	return sender(&endOfStream, nil)
 }
 
-func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AnthropicModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AnthropicModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 

@@ -158,6 +158,7 @@
                         "auto_questions": 0,
                         "llm_id": "",
                         "auto_tags": 0,
+                        "tag_file_id": "",
                         "enable_metadata": 0,
                         "metadata": []
                     }

@@ -46,7 +46,18 @@ type AgenticState struct {
 //   - medium+ (decompose_and_search / agentic_research / deep_research):
 //     pre_search grounds the planner, then decompose-and-search runs until a
 //     sufficiency verdict stops it.
+//
+// RunAgenticRAG drives the agentic-search graph. It computes the route itself
+// and delegates to RunAgenticRAGWithRoute so production runners that need a
+// route-aware search strategy (e.g. prefer wiki_query on a wiki suggestion) can
+// reuse the same flow with a pre-computed route.
 func RunAgenticRAG(ctx context.Context, db *gorm.DB, question, keywords, modeLabel string, search SearchFn) AnswerResult {
+	return RunAgenticRAGWithRoute(ctx, db, question, keywords, modeLabel, RouteNode(ctx, db, question, modeLabel), search)
+}
+
+// RunAgenticRAGWithRoute is the route-aware core of RunAgenticRAG. It performs
+// pre_search → planner → orchestrator → formalize_answer with the given route.
+func RunAgenticRAGWithRoute(ctx context.Context, db *gorm.DB, question, keywords, modeLabel string, route RouteDecision, search SearchFn) AnswerResult {
 	state := &AgenticState{
 		Question: strings.TrimSpace(question),
 		Keywords: keywords,
@@ -56,8 +67,8 @@ func RunAgenticRAG(ctx context.Context, db *gorm.DB, question, keywords, modeLab
 		return AnswerResult{FinalAnswer: emptyResultMessage, Empty: true}
 	}
 
-	// ── route ──
-	state.Route = RouteNode(ctx, db, state.Question, modeLabel)
+	// ── route (pre-computed by the caller) ──
+	state.Route = route
 
 	// ── pre_search (decomposition modes only) ──
 	if state.Route.RequiresDecomposition {
@@ -88,7 +99,7 @@ func RunAgenticRAG(ctx context.Context, db *gorm.DB, question, keywords, modeLab
 	}
 
 	// ── formalize_answer ──
-	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult)
+	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult, orch.Caveat, orch.ForceLLM)
 	// Log only the question length, never its content, to avoid persisting user
 	// input in logs.
 	log.Printf("agentic_rag: finished (qlen=%d, strategy=%s, chunks=%d, partial=%v, abstain=%v)",

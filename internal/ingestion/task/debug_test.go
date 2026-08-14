@@ -23,9 +23,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/pipeline"
@@ -37,8 +41,8 @@ import (
 // the debug signal used across the pipeline). The parser page cap is no longer
 // stored as a flat ParserConfig key here — flat keys are dropped by the
 // override_params merge and never reach the parser. It is injected at run time
-// by injectDebugPageCap via Run's override_params channel (see
-// TestInjectDebugPageCap).
+// by pipeline.BuildParserPageCapOverride via Run's override_params channel
+// (see TestInjectDebugPageCap).
 func TestNewDebugTaskContext_InjectsDebugID(t *testing.T) {
 	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
 
@@ -127,6 +131,10 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 // storage JSON round-trip and the shape the deepdoc pdf parser consumes
 // (NormalizePDFPages requires []any, not a Go [][]int).
 //
+// The DSL/parser-family knowledge now lives in pipeline.BuildParserPageCapOverride
+// (debug-agnostic); this test drives that helper directly to pin the behavior
+// the executor relies on.
+//
 // It also pins the regression: a flat top-level "pages" key would be dropped
 // by the override_params merge and never reach the parser, so the cap must be
 // nested under the cpnID.
@@ -159,9 +167,15 @@ func TestInjectDebugPageCap(t *testing.T) {
 		t.Fatal("template has no Parser component")
 	}
 
+	apply := func(cfg map[string]any, dslArg string, docType string) map[string]any {
+		return pipeline.BuildParserPageCapOverride(
+			cfg, []byte(dslArg), docType, debugPageCapPages,
+			component.ComponentNameParser, component.ParserFileFamily)
+	}
+
 	t.Run("pdf injects [1,2] under cpnID+family", func(t *testing.T) {
 		parserConfig := map[string]any{}
-		injectDebugPageCap(dsl, parserConfig, "pdf")
+		apply(parserConfig, dsl, "pdf")
 		famEntry, ok := parserConfig[parserCpnID].(map[string]any)
 		if !ok {
 			t.Fatalf("parserConfig[%q] = %T, want map[string]any", parserCpnID, parserConfig[parserCpnID])
@@ -177,7 +191,7 @@ func TestInjectDebugPageCap(t *testing.T) {
 
 	t.Run("docx injects under docx family", func(t *testing.T) {
 		parserConfig := map[string]any{}
-		injectDebugPageCap(dsl, parserConfig, "docx")
+		apply(parserConfig, dsl, "docx")
 		famEntry, ok := parserConfig[parserCpnID].(map[string]any)
 		if !ok {
 			t.Fatalf("parserConfig[%q] = %T, want map[string]any", parserCpnID, parserConfig[parserCpnID])
@@ -193,7 +207,7 @@ func TestInjectDebugPageCap(t *testing.T) {
 
 	t.Run("empty docType is a no-op", func(t *testing.T) {
 		parserConfig := map[string]any{}
-		injectDebugPageCap(dsl, parserConfig, "")
+		apply(parserConfig, dsl, "")
 		if len(parserConfig) != 0 {
 			t.Errorf("parserConfig = %v, want empty (no family derivable from empty docType)", parserConfig)
 		}
@@ -205,7 +219,7 @@ func TestInjectDebugPageCap(t *testing.T) {
 				"pdf": map[string]any{"parse_method": "deepdoc"},
 			},
 		}
-		injectDebugPageCap(dsl, parserConfig, "pdf")
+		apply(parserConfig, dsl, "pdf")
 		famEntry := parserConfig[parserCpnID].(map[string]any)
 		pdf := famEntry["pdf"].(map[string]any)
 		if pdf["parse_method"] != "deepdoc" {
@@ -218,11 +232,11 @@ func TestInjectDebugPageCap(t *testing.T) {
 
 	t.Run("envelope dsl form (production shape)", func(t *testing.T) {
 		// In production dsl is the canvas envelope {"dsl": {"components": ...}},
-		// not the bare components map. injectDebugPageCap must still find the
-		// Parser cpnID after unwrapping.
+		// not the bare components map. The helper must still find the Parser
+		// cpnID after unwrapping.
 		wrapped := fmt.Sprintf(`{"dsl":%s}`, string(envelope.DSL))
 		parserConfig := map[string]any{}
-		injectDebugPageCap(wrapped, parserConfig, "pdf")
+		apply(parserConfig, wrapped, "pdf")
 		famEntry, ok := parserConfig[parserCpnID].(map[string]any)
 		if !ok {
 			t.Fatalf("parserConfig[%q] = %T, want map[string]any (envelope dsl must unwrap)", parserCpnID, parserConfig[parserCpnID])
@@ -244,11 +258,90 @@ func TestInjectDebugPageCap(t *testing.T) {
 				"pdf": map[string]any{"pages": []any{[]any{1, 1000000}}},
 			},
 		}
-		injectDebugPageCap(dsl, parserConfig, "pdf")
+		apply(parserConfig, dsl, "pdf")
 		famEntry := parserConfig[parserCpnID].(map[string]any)
 		pdf := famEntry["pdf"].(map[string]any)
 		if !reflect.DeepEqual(pdf["pages"], []any{[]any{1, 1000000}}) {
 			t.Errorf("parserConfig[%q][\"pdf\"][\"pages\"] = %v, want [[1, 1000000]] (explicit cap must be respected, not overridden by debug default)", parserCpnID, pdf["pages"])
 		}
 	})
+}
+
+// TestWarnUnknownComponentParamsDetectsUnknownCPNFromEnvelope pins the fix for
+// the enveloped-DSL no-op bug: warnUnknownComponentParams previously passed the
+// raw (enveloped) DSL straight to ExtractAllComponentParams, whose "components"
+// key is nested under "dsl", so it errored and silently returned — never
+// detecting unknown cpnIDs in production. The helper now unwraps the envelope
+// first, so an unknown cpnID in parserConfig is actually surfaced.
+func TestWarnUnknownComponentParamsDetectsUnknownCPNFromEnvelope(t *testing.T) {
+	core, recorded := observer.New(zap.NewAtomicLevelAt(zap.DebugLevel))
+	old := common.Logger
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = old }()
+
+	// Enveloped DSL (production shape) carrying only a Parser component.
+	dsl := `{"dsl": {"components": {"Parser:Abc": {"obj": {"component_name": "Parser", "params": {}}}}}}`
+	// parserConfig references a cpnID NOT present in the DSL -> must be warned.
+	parserConfig := map[string]any{
+		"Parser:Unknown": map[string]any{"pdf": map[string]any{}},
+	}
+
+	warnUnknownComponentParams(dsl, parserConfig)
+
+	found := false
+	for _, e := range recorded.All() {
+		if strings.Contains(e.Message, "Parser:Unknown") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a warning about unknown cpnID Parser:Unknown (envelope DSL must be unwrapped); got logs: %v", recorded.All())
+	}
+}
+
+// TestBuildDebugResultDSL_Envelope pins that BuildDebugResultDSL unwraps the
+// canvas envelope before reading "components" — the same shared
+// pipeline.UnwrapCanvasDSL the cap override and warnUnknownComponentParams
+// use. An enveloped DSL (production shape {"dsl": {...}}) must resolve the
+// components map exactly like the equivalent raw (non-enveloped) DSL.
+func TestBuildDebugResultDSL_Envelope(t *testing.T) {
+	const compID = "Parser:Abc"
+	rawDSL := `{"components": {"` + compID + `": {"obj": {"component_name": "Parser", "params": {"parse_method": "deepdoc"}}}}}`
+	output := map[string]any{
+		"state": map[string]any{
+			compID: map[string]any{"chunks": []any{map[string]any{"text": "hi"}}},
+		},
+	}
+
+	// Raw (non-enveloped) DSL.
+	rawRes, err := BuildDebugResultDSL(rawDSL, output)
+	if err != nil {
+		t.Fatalf("raw DSL: %v", err)
+	}
+	rawComps, ok := rawRes["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw DSL: components missing: %#v", rawRes)
+	}
+	if _, ok := rawComps[compID]; !ok {
+		t.Fatalf("raw DSL: components missing %q: %#v", compID, rawComps)
+	}
+
+	// Enveloped DSL (production shape) must unwrap to the same result.
+	envDSL := `{"dsl": ` + rawDSL + `}`
+	envRes, err := BuildDebugResultDSL(envDSL, output)
+	if err != nil {
+		t.Fatalf("enveloped DSL: %v", err)
+	}
+	envComps, ok := envRes["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("enveloped DSL: components missing (envelope not unwrapped?): %#v", envRes)
+	}
+	if _, ok := envComps[compID]; !ok {
+		t.Fatalf("enveloped DSL: components missing %q (envelope not unwrapped?): %#v", compID, envComps)
+	}
+
+	// The two shapes must yield an identical component output.
+	if !reflect.DeepEqual(rawComps[compID], envComps[compID]) {
+		t.Fatalf("enveloped and raw DSL produced different results:\nraw=%#v\nenv=%#v", rawComps[compID], envComps[compID])
+	}
 }
