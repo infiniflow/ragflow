@@ -222,7 +222,7 @@ func (s *rssSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	if checkpoint.UpdatedAt == nil {
 		return
 	}
-	for s.index < len(s.documents) && !s.documents[s.index].UpdatedAt.After(*checkpoint.UpdatedAt) {
+	for s.index < len(s.documents) && s.documents[s.index].UpdatedAt.Before(*checkpoint.UpdatedAt) {
 		s.index++
 	}
 }
