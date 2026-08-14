@@ -38,7 +38,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 			continue
 		}
 		cropped := util.FastCrop(pageImg, x0, y0, x1, y1)
-		texts, recErr := p.inferOCRRecognize(ctx, doc, cropped)
+		texts, recErr := p.ocrRecognizeWithRotation(ctx, doc, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
 			continue
@@ -77,6 +77,61 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		}
 	}
 	return result
+}
+
+// ocrRecognizeWithRotation recognizes a single cropped text region, applying
+// layer-2 rotation selection (PaddleOCR-style) for tall, narrow crops.
+//
+// Layer 2 (rotation selection): when a crop's height is at least 1.5x its
+// width, the text is most likely a vertical line. PaddleOCR's recognizer is
+// trained on horizontal text, so a vertical line only reads cleanly after a
+// 90° rotation. We recognize the crop at 0°, CW90°, and CCW90° and keep the
+// orientation with the highest recognition score. The crop is emitted with its
+// ORIGINAL bounding box; only the recognized text is effectively rotated. This
+// matches Python's get_rotate_crop_image → _rotate_select behavior on the
+// in-process __ocr path, which also selects by recognition score.
+//
+// The DeepDoc rec service now surfaces the real recognition score (previously
+// a constant 1.0), so Go can pick the orientation by score exactly like
+// Python. (Layer 1, the perspective de-skew, is a separate concern handled at
+// crop time.)
+func (p *Parser) ocrRecognizeWithRotation(ctx context.Context, doc pdf.DocAnalyzer, cropped image.Image) ([]pdf.OCRText, error) {
+	b := cropped.Bounds()
+	// Short / wide crops are already horizontal — no rotation needed.
+	if float64(b.Dy()) < 1.5*float64(b.Dx()) {
+		return p.inferOCRRecognize(ctx, doc, cropped)
+	}
+	candidates := []image.Image{
+		cropped,
+		util.RotateImageCW(cropped, 90),  // CW90°
+		util.RotateImageCW(cropped, 270), // CCW90°
+	}
+	var best []pdf.OCRText
+	bestScore := -1.0
+	for _, c := range candidates {
+		texts, err := p.inferOCRRecognize(ctx, doc, c)
+		if err != nil {
+			return nil, err
+		}
+		if s := ocrBestScore(texts); s > bestScore {
+			bestScore = s
+			best = texts
+		}
+	}
+	return best, nil
+}
+
+// ocrBestScore is the layer-2 orientation score: the highest recognition
+// confidence among recognized items. The correctly oriented line reads with a
+// high confidence; a mis-rotated line reads with a low one.
+func ocrBestScore(texts []pdf.OCRText) float64 {
+	best := 0.0
+	for _, t := range texts {
+		if t.Confidence > best {
+			best = t.Confidence
+		}
+	}
+	return best
 }
 
 // ocrMergeChars runs full-page detect on a page that has embedded chars,
