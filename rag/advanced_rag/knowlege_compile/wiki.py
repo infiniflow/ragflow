@@ -95,7 +95,23 @@ async def _wiki_disabled_doc_ids(kb_id: str) -> set[str]:
     from api.db.services.document_service import DocumentService
 
     disabled = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
-    return {str(doc_id) for doc_id in (disabled or set())}
+    return _wiki_doc_ids(disabled)
+
+
+def _wiki_doc_ids(value) -> set[str]:
+    """Normalize a scalar or list-valued document-id field."""
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        value = value.strip()
+        return {value} if value else set()
+    if isinstance(value, (list, tuple, set)):
+        result: set[str] = set()
+        for item in value:
+            result.update(_wiki_doc_ids(item))
+        return result
+    value = str(value).strip()
+    return {value} if value else set()
 
 
 WIKI_MAP_SYSTEM = (
@@ -1222,7 +1238,7 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
             break
 
         for row in field_map.values():
-            if str(row.get("doc_id") or "") in disabled_doc_ids:
+            if _wiki_doc_ids(row.get("doc_id")) & disabled_doc_ids:
                 continue
             content = row.get("content_with_weight")
             if not isinstance(content, str) or not content:
@@ -1294,10 +1310,8 @@ async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
         if not field_map:
             break
         for row in field_map.values():
-            raw = row.get("doc_id")
-            candidates = raw if isinstance(raw, list) else [raw]
-            for d in candidates:
-                if isinstance(d, str) and d and d not in disabled_doc_ids and d not in seen:
+            for d in _wiki_doc_ids(row.get("doc_id")):
+                if d not in disabled_doc_ids and d not in seen:
                     seen.add(d)
                     doc_ids.append(d)
         if len(field_map) < PAGE_SIZE:
@@ -1365,7 +1379,7 @@ async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
         if not field_map:
             break
         for row in field_map.values():
-            if str(row.get("doc_id") or "") in disabled_doc_ids:
+            if _wiki_doc_ids(row.get("doc_id")) & disabled_doc_ids:
                 continue
             hh = row.get("chunk_hash_kwd")
             if not isinstance(hh, str):

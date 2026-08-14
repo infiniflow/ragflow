@@ -57,6 +57,7 @@ from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile.wiki import (
+    _wiki_doc_ids,
     wiki_map_from_chunks,
     wiki_plan_from_reduction,
     wiki_reduce_from_extracts,
@@ -340,7 +341,7 @@ async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
         return set()
 
     doc_ids: set[str] = set()
-    disabled_doc_ids = {str(doc_id) for doc_id in (await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id) or set())}
+    disabled_doc_ids = _wiki_doc_ids(await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id))
     select_fields = ["id", "doc_id"]
     offset = 0
     page_size = 1000
@@ -365,9 +366,7 @@ async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
         if not field_map:
             break
         for row in field_map.values():
-            doc_id = row.get("doc_id")
-            if isinstance(doc_id, str) and doc_id and doc_id not in disabled_doc_ids:
-                doc_ids.add(doc_id)
+            doc_ids.update(_wiki_doc_ids(row.get("doc_id")) - disabled_doc_ids)
         if len(field_map) < page_size:
             break
         offset += page_size

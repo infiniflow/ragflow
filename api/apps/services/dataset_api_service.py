@@ -2269,9 +2269,9 @@ async def _wiki_chunk_alteration(
                     [dataset_id],
                 )
                 rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight"]) or {}
-            except Exception:
+            except Exception as exc:
                 logging.exception("alteration: failed to load source chunks for doc=%s", doc_id)
-                return empty
+                raise RuntimeError(f"Failed to load source chunks for Wiki alteration (kb={dataset_id}, doc={doc_id})") from exc
             if not rows:
                 break
             for row in rows.values():
@@ -2304,15 +2304,17 @@ async def _wiki_chunk_alteration(
                 [dataset_id],
             )
             rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"]) or {}
-        except Exception:
+        except Exception as exc:
             logging.exception("alteration: failed to load Wiki MAP hashes for kb=%s", dataset_id)
-            return empty
+            raise RuntimeError(f"Failed to load Wiki MAP hashes for alteration (kb={dataset_id})") from exc
         if not rows:
             break
         for row in rows.values():
-            doc_id = str(row.get("doc_id") or "")
-            if doc_id not in active_doc_ids and doc_id not in disabled_doc_ids:
+            row_doc_ids = _flatten_provenance_doc_ids(row.get("doc_id"))
+            matching_doc_ids = row_doc_ids & (active_doc_ids | disabled_doc_ids)
+            if not matching_doc_ids:
                 continue
+            doc_id = next(iter(matching_doc_ids))
             chunk_ids = row.get("source_chunk_ids") or []
             if isinstance(chunk_ids, str):
                 chunk_ids = [chunk_ids]
