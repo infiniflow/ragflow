@@ -425,9 +425,9 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
-	chunkerState, ok := state["TitleChunker:NineInsectsFind"]
+	chunkerState, ok := state["ManualChunker:NineInsectsFind"]
 	if !ok {
-		t.Fatal("missing TitleChunker:NineInsectsFind state")
+		t.Fatal("missing ManualChunker:NineInsectsFind state")
 	}
 	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
