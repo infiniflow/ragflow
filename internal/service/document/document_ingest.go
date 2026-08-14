@@ -83,9 +83,8 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		doc := vd.doc
 		kb := vd.kb
 
-		// Start parsing: delegates to the shared start-parse flow. The
-		// document run status is set by service.IngestionTaskService.StartRunning
-		// when the task transitions from CREATED, not here.
+		// Start parsing: delegates to the shared start-parse flow, which
+		// mirrors the document run status on enqueue acceptance.
 		if run == string(entity.TaskStatusRunning) {
 			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
 				ApplyKB:         req.ApplyKB,

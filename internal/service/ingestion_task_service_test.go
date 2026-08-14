@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -55,6 +56,40 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.UserID != "user-1" {
 		t.Fatalf("unexpected task: %+v", task)
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsMirrorsRunningToDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("progress", 0.42).Error; err != nil {
+		t.Fatalf("set progress: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	ctx := t.Context()
+	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if len(resp) != 1 || !strings.HasPrefix(resp[0].Result, "task_id:") {
+		t.Fatalf("unexpected responses: %+v", resp)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
+		t.Fatalf("document run = %v, want %q", doc.Run, entity.TaskStatusRunning)
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("document progress = %v, want 0 after enqueue mirror", doc.Progress)
 	}
 }
 

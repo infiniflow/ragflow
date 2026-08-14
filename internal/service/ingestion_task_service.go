@@ -114,6 +114,17 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			continue
 		}
 
+		// The queue accepted the task: mirror RUNNING to the document so
+		// list views flip on the next refetch instead of waiting for the
+		// worker pickup. Best-effort like the StartRunning mirror — a DB
+		// blip must not turn an accepted enqueue into an API error.
+		if err := s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
+			"run":      string(entity.TaskStatusRunning),
+			"progress": float64(0),
+		}); err != nil {
+			common.Warn(fmt.Sprintf("CreateForDocuments: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
+		}
+
 		responses = append(responses, &ParseDocumentResponse{
 			DocumentID: docID,
 			Result:     fmt.Sprintf("task_id: %s", task.ID),
