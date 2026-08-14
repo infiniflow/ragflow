@@ -36,6 +36,11 @@ type ToolResult struct {
 	Docs   []string // doc ids produced by a routing tool (dataset_navigation_*)
 	Answer string   // direct answer (ontology_navigate / structured_query)
 	Error  string
+	// EvidenceIndices holds the GLOBAL indices of Chunks after they were merged
+	// into the shared kbinfos (populated by Execute, under mu). Consumers must
+	// use these rather than re-indexing the shared slice, which is mutated
+	// concurrently by parallel claim research.
+	EvidenceIndices []int
 }
 
 // docScopeConsumers are the tools that retrieve *within* a document set. When a
@@ -94,7 +99,22 @@ func NewPipeline(db *gorm.DB, tenantID string, datasetIDs []string, runner *Prod
 // HasRoutedScope mirrors Python gating.py tool_fits_context has_routed_scope
 // (agent.py:167 uses bool(pipeline._routed_docs)). ontology/mindmap/graph tools
 // are only callable once a routing tool has produced a doc set.
-func (p *Pipeline) HasRoutedScope() bool { return len(p.routedDocs) > 0 }
+func (p *Pipeline) HasRoutedScope() bool { return len(p.scope()) > 0 }
+
+// scope returns a snapshot of the routed docs under mu (mirrors Python
+// pipeline._routed_docs; the parallel claim research mutates it concurrently).
+func (p *Pipeline) scope() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.routedDocs...)
+}
+
+// chunksSnapshot returns a snapshot of the accumulated evidence chunks under mu.
+func (p *Pipeline) chunksSnapshot() []map[string]interface{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]map[string]interface{}(nil), p.kbinfos.Chunks...)
+}
 
 // noteEntity records the most recently discovered entity (mirrors
 // OrchestratorContext.note_entity). Ignores empty values so a fruitless round
@@ -104,14 +124,21 @@ func (p *Pipeline) noteEntity(name string) {
 		return
 	}
 	if name = strings.TrimSpace(name); name != "" {
+		p.mu.Lock()
 		p.lastEntity = name
+		p.mu.Unlock()
 	}
 }
 
 // HasDiscoveredEntity reports whether graph_explore is eligible (mirrors
 // gating.py:81 `graph_explore and not context.last_entity`).
 func (p *Pipeline) HasDiscoveredEntity() bool {
-	return p != nil && p.lastEntity != ""
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastEntity != ""
 }
 
 // Kbinfos returns the shared evidence store.
@@ -130,7 +157,7 @@ func (p *Pipeline) Execute(ctx context.Context, toolName string, args map[string
 		p.routedDocs = res.Docs
 	}
 	if len(res.Chunks) > 0 {
-		p.kbinfos.Merge(res.Chunks, nil)
+		res.EvidenceIndices = p.kbinfos.Merge(res.Chunks, nil)
 	}
 	p.trace = append(p.trace, toolName)
 	return res
@@ -144,9 +171,11 @@ func (p *Pipeline) executeTool(ctx context.Context, toolName string, args map[st
 	}
 	// doc_scope inheritance: within-document tools take the routed docs unless
 	// the caller passed an explicit doc_scope.
-	if docScopeConsumers[toolName] && len(p.routedDocs) > 0 {
-		if _, has := args["doc_scope"]; !has {
-			args["doc_scope"] = p.routedDocs
+	if docScopeConsumers[toolName] {
+		if scope := p.scope(); len(scope) > 0 {
+			if _, has := args["doc_scope"]; !has {
+				args["doc_scope"] = scope
+			}
 		}
 	}
 
@@ -284,7 +313,7 @@ func (p *Pipeline) runGraphExploreTool(ctx context.Context, args map[string]inte
 		}
 	}
 	if len(scope) == 0 {
-		scope = p.routedDocs
+		scope = p.scope()
 	}
 	out, err := ExploreGraph(ctx, p.tenantID, p.datasetIDs, topic, keywords, scope)
 	if err != nil {
@@ -303,7 +332,7 @@ func (p *Pipeline) runSQLTool(ctx context.Context, args map[string]interface{}) 
 
 // runInspectorTool dispatches the four inspector tools over the shared kbinfos.
 func (p *Pipeline) runInspectorTool(toolName string, args map[string]interface{}) ToolResult {
-	chunks := p.kbinfos.Chunks
+	chunks := p.chunksSnapshot()
 	switch toolName {
 	case "inspector_open_context":
 		return ToolResult{Chunks: InspectorOpenContext(chunks, stringValue(args["chunk_id"]))}
@@ -362,7 +391,7 @@ func (p *Pipeline) runStructureTool(ctx context.Context, toolName string, args m
 		}
 	}
 	if len(scope) == 0 {
-		scope = p.routedDocs
+		scope = p.scope()
 	}
 	raw, err := NavigateStructure(ctx, p.tenantID, toolName, structureNavArgs{
 		Topic: topic, Keywords: keywords, DocScope: scope,
@@ -382,10 +411,11 @@ func (p *Pipeline) runStructureTool(ctx context.Context, toolName string, args m
 // GetChunks retrieves raw chunks by global evidence id (mirrors Python
 // Pipeline.get_chunks).
 func (p *Pipeline) GetChunks(evidenceIDs []int) map[int]map[string]interface{} {
+	chunks := p.chunksSnapshot()
 	out := map[int]map[string]interface{}{}
 	for _, eid := range evidenceIDs {
-		if eid >= 0 && eid < len(p.kbinfos.Chunks) {
-			out[eid] = p.kbinfos.Chunks[eid]
+		if eid >= 0 && eid < len(chunks) {
+			out[eid] = chunks[eid]
 		}
 	}
 	return out

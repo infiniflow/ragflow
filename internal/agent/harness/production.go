@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
@@ -57,8 +58,10 @@ type ProductionRunner struct {
 	// fieldMap is the merged field_map across the tabular KBs (mirrors
 	// RAGTools.field_map).
 	fieldMap map[string]interface{}
-	// chatPipeline drives structured_query (useSQL). Lazily constructed.
-	chatPipeline *service.ChatPipelineService
+	// chatPipeline drives structured_query (useSQL). Lazily constructed, guarded
+	// by chatPipelineOnce against concurrent runSQLTool calls.
+	chatPipeline     *service.ChatPipelineService
+	chatPipelineOnce sync.Once
 }
 
 // NewProductionRunner builds a ProductionRunner backed by the real tools. The
@@ -67,7 +70,7 @@ type ProductionRunner struct {
 // API key is present), the runner also wires the web fallback tool so
 // high/ultra modes can fill an empty KB result from the web; otherwise no web
 // tool is attached and no web call is ever attempted (P8/R2).
-func NewProductionRunner(db *gorm.DB, tenantID string, datasetIDs []string) (*ProductionRunner, error) {
+func NewProductionRunner(ctx context.Context, db *gorm.DB, tenantID string, datasetIDs []string) (*ProductionRunner, error) {
 	searchBase, err := tool.BuildByName("hybrid_search", nil)
 	if err != nil {
 		return nil, err
@@ -81,8 +84,9 @@ func NewProductionRunner(db *gorm.DB, tenantID string, datasetIDs []string) (*Pr
 		r.webTool = tool.NewTavilyTool()
 	}
 	// Partition the bound KBs into tabular (field_map-bearing) vs general,
-	// mirroring Python RAGTools._exclude_sql_kb.
-	r.loadSQLKBs(context.Background())
+	// mirroring Python RAGTools._exclude_sql_kb. Runs under the caller's context
+	// so request deadlines/cancellation propagate to the lookup.
+	r.loadSQLKBs(ctx)
 	return r, nil
 }
 
@@ -94,6 +98,9 @@ func (r *ProductionRunner) loadSQLKBs(ctx context.Context) {
 	}
 	kbs, err := dao.NewKnowledgebaseDAO().GetByIDs(ctx, r.db, r.datasetIDs)
 	if err != nil {
+		// Distinguish a database failure from "no tabular KBs": structured_query
+		// silently reporting no tabular KBs would otherwise mask this.
+		log.Printf("agentic_rag: loadSQLKBs lookup failed for %v: %v", r.datasetIDs, err)
 		return
 	}
 	r.fieldMap = map[string]interface{}{}
@@ -128,9 +135,9 @@ func (r *ProductionRunner) runSQLTool(ctx context.Context, args map[string]inter
 		return ToolResult{}
 	}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	if r.chatPipeline == nil {
+	r.chatPipelineOnce.Do(func() {
 		r.chatPipeline = service.NewChatPipelineService()
-	}
+	})
 	ans, err := r.chatPipeline.StructuredQuery(ctx, &entity.Chat{TenantID: r.tenantID}, r.sqlKBs, query, chatModel, r.fieldMap)
 	if err != nil || ans == nil {
 		return ToolResult{}
@@ -220,7 +227,7 @@ func (r *ProductionRunner) runAgentic(ctx context.Context, question, keywords, m
 
 	orch := AgenticResearch(ctx, r.db, pipeline, question, claims, mode)
 
-	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult)
+	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult, orch.Caveat)
 }
 
 // buildCompilationMap reports which compiled artifacts each bound KB carries,
@@ -477,7 +484,7 @@ func normalizeWebResults(raw []byte) []map[string]interface{} {
 		src = res.Results
 	}
 	out := make([]map[string]interface{}, 0, len(src))
-	for _, c := range src {
+	for i, c := range src {
 		url := firstNonEmpty(stringValue(c["url"]), stringValue(c["link"]), stringValue(c["source"]))
 		if url == "" {
 			continue
@@ -488,10 +495,14 @@ func normalizeWebResults(raw []byte) []map[string]interface{} {
 		}
 		docID := stringValue(c["doc_id"])
 		if docID == "" {
-			docID = url + "|" + stringValue(c["source"])
+			docID = url
 		}
+		// doc_id stays the source URL; chunk_id must be UNIQUE per snippet so
+		// Kbinfos.Merge (dedup by chunkKey) does not collapse several snippets
+		// from the same URL, or the same URL across two retrieval rounds.
+		chunkID := fmt.Sprintf("%s#%d", docID, i)
 		out = append(out, map[string]interface{}{
-			"chunk_id": docID, "content_with_weight": content,
+			"chunk_id": chunkID, "content_with_weight": content,
 			"doc_id": docID, "docnm_kwd": firstNonEmpty(stringValue(c["title"]), stringValue(c["source"])),
 			"dataset_id": stringValue(c["dataset_id"]), "url": url, "source": "web",
 		})

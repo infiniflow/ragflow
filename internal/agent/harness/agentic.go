@@ -128,16 +128,10 @@ func AgenticResearch(ctx context.Context, db *gorm.DB, pipeline *Pipeline, quest
 
 		// LLM groundedness review (draft review): ungrounded claims merge into
 		// hard_violations.
-		var reports []struct {
-			ClaimID string
-			Report  string
-		}
+		var reports []ClaimReport
 		for _, r := range agentResults {
 			if r.Report != "" {
-				reports = append(reports, struct {
-					ClaimID string
-					Report  string
-				}{ClaimID: r.ClaimID, Report: r.Report})
+				reports = append(reports, ClaimReport{ClaimID: r.ClaimID, Report: r.Report})
 			}
 		}
 		grounded := LLMGroundedVerify(ctx, db, question, reports, kbinfos, citedIDs)
@@ -182,29 +176,6 @@ func AgenticResearch(ctx context.Context, db *gorm.DB, pipeline *Pipeline, quest
 		case "FALLBACK_LLM":
 			finalizeAgentResults(kbinfos, claims)
 			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Kbinfos: kbinfos}
-		case "REPLAN":
-			// Ultra: re-plan, keeping verified claims (their evidence is still valid).
-			verified := []*ClaimTarget{}
-			for _, c := range claims {
-				if c.IsVerified {
-					verified = append(verified, c)
-				}
-			}
-			newPlan := PlannerNode(ctx, db, RouteDecision{
-				Question: question, ThinkingMode: mode.Label,
-				RequiresDecomposition: true, ExecutionStrategy: mode.Strategy,
-			}, extractChunkTexts(kbinfos.Chunks))
-			seen := map[string]bool{}
-			for _, c := range verified {
-				seen[c.Description] = true
-			}
-			for i := range newPlan.Claims {
-				if !seen[newPlan.Claims[i].Description] {
-					cp := newPlan.Claims[i]
-					verified = append(verified, &cp)
-				}
-			}
-			claims = verified
 		}
 	}
 

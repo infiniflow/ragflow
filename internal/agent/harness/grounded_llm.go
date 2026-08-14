@@ -82,6 +82,12 @@ type GroundedVerdict struct {
 	Ungrounded []string
 }
 
+// ClaimReport is one claim's draft report submitted for grounded review.
+type ClaimReport struct {
+	ClaimID string
+	Report  string
+}
+
 type groundedClaimResult struct {
 	ClaimID              string `json:"claim_id"`
 	Grounded             bool   `json:"grounded"`
@@ -99,10 +105,7 @@ type groundedReviewResult struct {
 // decide whether it is semantically grounded in the cited evidence. Returns an
 // empty map when the LLM review is unavailable (no model, no evidence, or a
 // failure) — callers treat that as "no new signal".
-func LLMGroundedVerify(ctx context.Context, db *gorm.DB, question string, reports []struct {
-	ClaimID string
-	Report  string
-}, kb *Kbinfos, evidenceIDs []int) map[string]GroundedVerdict {
+func LLMGroundedVerify(ctx context.Context, db *gorm.DB, question string, reports []ClaimReport, kb *Kbinfos, evidenceIDs []int) map[string]GroundedVerdict {
 	if len(reports) == 0 {
 		return nil
 	}

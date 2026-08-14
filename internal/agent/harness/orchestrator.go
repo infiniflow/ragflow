@@ -132,6 +132,9 @@ type OrchestratorResult struct {
 	Abstain       bool
 	EmptyResult   bool
 	Kbinfos       *Kbinfos
+	// Caveat is the decision-ladder explanation for a partial answer (e.g.
+	// "evidence partially supports the answer"), surfaced in the final answer.
+	Caveat string
 }
 
 // DirectSearch is the low-mode orchestrator: one hybrid search → merge.
@@ -209,16 +212,19 @@ func DecomposeAndSearch(ctx context.Context, search SearchFn, question, keywords
 			}
 		}
 		verdict := ComputeFusionScore(agentResults, crossResults, mode, question, claimTargets, allChunks)
-		action, _, _ := RouteSufficiencyVerdict(verdict, modeLabel, cycle, mode.MaxOrchestratorCycles, nil)
+		action, _, caveat := RouteSufficiencyVerdict(verdict, modeLabel, cycle, mode.MaxOrchestratorCycles, nil)
 
 		switch action {
-		case "ANSWER", "ANSWER_PARTIAL":
-			return OrchestratorResult{Verdict: &verdict, PartialAnswer: action == "ANSWER_PARTIAL", Kbinfos: kbinfos}
+		case "ANSWER":
+			return OrchestratorResult{Verdict: &verdict, Kbinfos: kbinfos}
+		case "ANSWER_PARTIAL":
+			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, Kbinfos: kbinfos}
+		case "FALLBACK_LLM":
+			// ultra route: no grounded answer, hand off to the direct LLM.
+			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, Kbinfos: kbinfos}
 		case "ABSTAIN":
 			kbinfos.Chunks = nil
 			return OrchestratorResult{Verdict: &verdict, Abstain: true, Kbinfos: kbinfos}
-		case "REPLAN":
-			// Reset unverified for another cycle (simplified: continue loop).
 		case "CONTINUE":
 			// fallthrough to next cycle
 		}

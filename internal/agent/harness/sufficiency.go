@@ -44,6 +44,10 @@ import (
 
 var reNumber = regexp.MustCompile(`\d+\.?\d*`)
 
+// reCJKRun matches a run of CJK characters (RE2 requires \x{...} escapes; the
+// Python-style \u escapes would panic at compile time).
+var reCJKRun = regexp.MustCompile(`[\x{4e00}-\x{9fff}]+`)
+
 // extractNumbers returns numeric values found in text (mirrors Python
 // extract_numbers).
 func extractNumbers(text string) []float64 {
@@ -109,10 +113,9 @@ func extractNamedEntities(text string) []string {
 // This is intentionally coarse (no NER): it only preserves the substring-match
 // path for CJK evidence that the union matcher below can still use.
 func extractCJKSubstrings(text string) []string {
-	re := regexp.MustCompile(`[\u4e00-\u9fff]+`)
 	seen := map[string]bool{}
 	var out []string
-	for _, m := range re.FindAllString(text, -1) {
+	for _, m := range reCJKRun.FindAllString(text, -1) {
 		// Skip single-char connective tissue noise; keep meaningful runs.
 		if len([]rune(m)) < 2 || seen[m] {
 			continue

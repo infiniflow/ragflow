@@ -36,6 +36,15 @@ import (
 // parses and routes to the harness Pipeline. generate_report is captured (not
 // executed) and returned as the claim result.
 
+// Tool-call extraction patterns, compiled once at package scope. The (?s) flag
+// makes `.` match newlines so a multi-line JSON body (as the prompt shows for
+// generate_report) still parses.
+var (
+	reToolCallTag   = regexp.MustCompile(`(?s)<tool_call>(.*?)</tool_call>`)
+	reToolCallFence = regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\})\\s*```")
+	reToolCallBare  = regexp.MustCompile(`\{\s*"name"\s*:`)
+)
+
 // researchAgentTextPrompt mirrors rag/prompts/research_agent_prompt.py
 // RESEARCH_AGENT_TEXT_PROMPT.
 const researchAgentTextPrompt = `You are a research assistant. For the given research task, use the available tools to search for information.
@@ -119,27 +128,20 @@ func (s *researchSession) runTool(ctx context.Context, db *gorm.DB, name string,
 	if res.Error != "" {
 		return "[tool error] " + res.Error, false
 	}
-	// Record the global indices of returned chunks so evidence_ids are stable.
-	if len(res.Chunks) > 0 {
-		s.recordEvidence(res.Chunks)
+	// Record the GLOBAL indices Execute captured under mu, so evidence_ids stay
+	// stable across concurrent claims (re-indexing the shared slice after the
+	// lock is released would race with other goroutines' merges).
+	if len(res.EvidenceIndices) > 0 {
+		s.recordEvidence(res.EvidenceIndices)
 	}
 	return formatToolResult(res), len(res.Chunks) > 0
 }
 
-// recordEvidence maps returned chunks to their global indices in kbinfos via the
-// chunk key (chunk_id or id). Chunks without either key cannot be traced back to
-// the shared pool and are skipped — the Python `id(chunk)` identity fallback has
-// no Go equivalent (maps are not comparable), and the keyed index already covers
-// every chunk the pipeline actually produces.
-func (s *researchSession) recordEvidence(chunks []map[string]interface{}) {
-	all := s.pipeline.kbinfos.Chunks
-	indexByKey := map[string]int{}
-	for i, c := range all {
-		indexByKey[chunkKey(c)] = i
-	}
-	for _, c := range chunks {
-		idx, ok := indexByKey[chunkKey(c)]
-		if !ok || s.seenIDs[idx] {
+// recordEvidence records the global evidence indices Execute already resolved,
+// de-duplicating against this session's seen set.
+func (s *researchSession) recordEvidence(indices []int) {
+	for _, idx := range indices {
+		if s.seenIDs[idx] {
 			continue
 		}
 		s.seenIDs[idx] = true
@@ -216,6 +218,9 @@ func ResearchAgentLoop(ctx context.Context, db *gorm.DB, pipeline *Pipeline, cla
 	session := &researchSession{pipeline: pipeline, seenIDs: map[int]bool{}}
 
 	for cycle := 0; cycle < mode.MaxAgentCycles; cycle++ {
+		if err := ctx.Err(); err != nil {
+			return AgentResult{ClaimID: claim.ClaimID, IsVerified: false, Confidence: 0, Gaps: []string{"research cancelled: " + err.Error()}}
+		}
 		msgs := make([]schema.Message, 0, len(history)+1)
 		msgs = append(msgs, schema.Message{Role: schema.System, Content: system})
 		msgs = append(msgs, history...)
@@ -224,6 +229,9 @@ func ResearchAgentLoop(ctx context.Context, db *gorm.DB, pipeline *Pipeline, cla
 			Temperature: floatPtr(0.3),
 		})
 		if err != nil {
+			if ctx.Err() != nil {
+				return AgentResult{ClaimID: claim.ClaimID, IsVerified: false, Confidence: 0, Gaps: []string{"research cancelled: " + ctx.Err().Error()}}
+			}
 			continue
 		}
 		ans := resp.Content
@@ -262,6 +270,9 @@ func ResearchAgentLoop(ctx context.Context, db *gorm.DB, pipeline *Pipeline, cla
 
 // forceGenerateReport mirrors Python _force_generate_report.
 func forceGenerateReport(ctx context.Context, db *gorm.DB, inv chat.Invoker, claimID string, history []schema.Message, session *researchSession) AgentResult {
+	if err := ctx.Err(); err != nil {
+		return AgentResult{ClaimID: claimID, IsVerified: false, Confidence: 0, Gaps: []string{"research cancelled: " + err.Error()}}
+	}
 	resp, err := inv.Invoke(ctx, db, chat.Request{
 		Messages: append(append([]schema.Message{}, history...),
 			schema.Message{Role: schema.User, Content: "We've reached the research limit. Please output a final report as JSON."}),
@@ -307,19 +318,19 @@ func reportToAgentResult(claimID string, args map[string]interface{}, sessionEvi
 // _parse_tool_call): <tool_call>…</tool_call>, ```json … ```, or bare {"name":…}.
 func parseToolCall(text string) map[string]interface{} {
 	// <tool_call>…</tool_call>
-	if m := regexp.MustCompile(`<tool_call>(.*?)</tool_call>`).FindStringSubmatch(text); m != nil {
+	if m := reToolCallTag.FindStringSubmatch(text); m != nil {
 		if v := tryJSON(m[1]); v != nil {
 			return v
 		}
 	}
 	// ```json … ```
-	if m := regexp.MustCompile("```(?:json)?\\s*(\\{.*?\\})\\s*```").FindStringSubmatch(text); m != nil {
+	if m := reToolCallFence.FindStringSubmatch(text); m != nil {
 		if v := tryJSON(m[1]); v != nil {
 			return v
 		}
 	}
 	// bare {"name": …}
-	if m := regexp.MustCompile(`\{\s*"name"\s*:`).FindStringIndex(text); m != nil {
+	if m := reToolCallBare.FindStringIndex(text); m != nil {
 		if v := tryJSON(text[m[0]:]); v != nil {
 			return v
 		}

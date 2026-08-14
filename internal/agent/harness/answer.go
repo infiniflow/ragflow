@@ -59,7 +59,7 @@ type AnswerResult struct {
 // FormalizeAnswer generates the final answer from the gathered kbinfos. Mirrors
 // Python's formalize_answer node: abstain/empty short-circuits, otherwise builds
 // system+user and calls the chat invoker.
-func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool) AnswerResult {
+func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool, caveat string) AnswerResult {
 	if abstain {
 		return AnswerResult{FinalAnswer: abstainMessage, Abstained: true}
 	}
@@ -75,7 +75,11 @@ func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbin
 		b.WriteString("\nResearch Summary:\n" + kb.PreSummary + "\n")
 	}
 	if partial {
-		b.WriteString(partialAnswerPreamble + "\n")
+		preamble := partialAnswerPreamble
+		if caveat != "" {
+			preamble = partialAnswerPreamble + " " + caveat
+		}
+		b.WriteString(preamble + "\n")
 	}
 	b.WriteString("\nEvidence:\n")
 	for i, c := range kb.Chunks {

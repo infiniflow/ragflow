@@ -114,11 +114,16 @@ func ExploreGraph(ctx context.Context, tenantID string, datasetIDs []string, que
 		return added
 	}
 
+	// Encode the seed text ONCE (not per dataset): a single embedding request
+	// serves every KB. A nil vector means the embedding model is unavailable and
+	// the seed search falls back to keyword match.
+	seedVec := encodeSeedVector(ctx, tenantID, text)
+
 	for _, kbID := range datasetIDs {
 		// (1) Seeds: dense KNN (similarity>=_KG_SEED_SIM) over the scoped entity
 		// rows, re-ranked by mention_count_int desc; falls back to keyword match
 		// when the embedding model is unavailable.
-		seedRows := kgSeedSearch(ctx, de, tenantID, kbID, docScope, text, scopeKwd)
+		seedRows := kgSeedSearch(ctx, de, tenantID, kbID, docScope, text, scopeKwd, seedVec)
 		var seeds []kgEntity
 		for _, r := range seedRows {
 			if e, ok := kgParseEntity(r); ok {
@@ -215,32 +220,40 @@ func ExploreGraph(ctx context.Context, tenantID string, datasetIDs []string, que
 	return ExploreResult{Chunks: chunks}, nil
 }
 
+// encodeSeedVector encodes the seed text once for the whole ExploreGraph call.
+// Returns nil when the tenant embedding model is unavailable (or encoding fails).
+func encodeSeedVector(ctx context.Context, tenantID, text string) []float64 {
+	embedder := service.NewNavEmbedder(service.NewModelProviderService(), "")
+	vecs, err := embedder.Encode(ctx, tenantID, []string{text})
+	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
+		return nil
+	}
+	vec := make([]float64, len(vecs[0]))
+	for i, v := range vecs[0] {
+		vec[i] = float64(v)
+	}
+	return vec
+}
+
 // kgSeedSearch searches the compiled KG entity rows for seeds (mirrors Python
 // _kg_search dense branch): dense KNN over name_kwd with similarity>=0.8,
 // re-ranked by mention_count_int desc, top kgSeeds. Falls back to keyword match
-// when the tenant embedding model is unavailable.
-func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, text, scopeKwd string) []map[string]interface{} {
-	// Dense branch.
-	embedder := service.NewNavEmbedder(service.NewModelProviderService(), "")
-	if vecs, err := embedder.Encode(ctx, tenantID, []string{text}); err == nil && len(vecs) > 0 && len(vecs[0]) > 0 {
-		vec := make([]float64, len(vecs[0]))
-		for i, v := range vecs[0] {
-			vec[i] = float64(v)
-		}
+// when seedVec is nil (embedding model unavailable).
+func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, text, scopeKwd string, seedVec []float64) []map[string]interface{} {
+	if seedVec != nil {
 		dense := &types.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
-			EmbeddingData:     vec,
+			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(seedVec)),
+			EmbeddingData:     seedVec,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
 			TopN:              kgSeedPool,
 			ExtraOptions:      map[string]interface{}{"similarity": kgSeedSim},
 		}
-		rows := kgSearchRaw(ctx, de, tenantID, kbID, docIDs, "entity", scopeKwd, []interface{}{dense}, "mention_count_int", kgSeedPool)
+		rows := kgSearchRaw(ctx, de, tenantID, kbID, docIDs, "entity", scopeKwd, nil, []interface{}{dense}, "mention_count_int", kgSeedPool)
 		return topMentionCount(rows, kgSeeds)
 	}
 	// Text fallback (mirrors Python _kg_search `embed_mdl is None` path).
-	rows := kgSearch(ctx, de, tenantID, kbID, docIDs, "entity", text, kgSeeds, scopeKwd, nil, "mention_count_int", kgSeedPool)
-	return rows
+	return kgSearch(ctx, de, tenantID, kbID, docIDs, "entity", text, kgSeeds, scopeKwd, nil, "mention_count_int", kgSeedPool)
 }
 
 // topMentionCount re-ranks rows by mention_count_int desc and returns topN.
@@ -268,8 +281,9 @@ func mentionCount(row map[string]interface{}) int {
 	return 0
 }
 
-// kgSearchRaw is the low-level KG row search with explicit match exprs.
-func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, scopeKwd string, matchExprs []interface{}, orderDesc string, limit int) []map[string]interface{} {
+// kgSearchRaw is the low-level KG row search with explicit match exprs and any
+// extra filter keys (e.g. from_entity_kwd/to_entity_kwd/name_kwd).
+func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, scopeKwd string, extra map[string]interface{}, matchExprs []interface{}, orderDesc string, limit int) []map[string]interface{} {
 	idx := fmt.Sprintf("ragflow_%s", tenantID)
 	condition := map[string]interface{}{"knowledge_graph_kwd": kind}
 	if scopeKwd != "" {
@@ -277,6 +291,9 @@ func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string
 	}
 	if len(docIDs) > 0 {
 		condition["doc_id"] = docIDs
+	}
+	for k, v := range extra {
+		condition[k] = v
 	}
 	fields := []string{"content_with_weight", "source_chunk_ids", "doc_id", "docnm_kwd", "name_kwd", "mention_count_int", "from_entity_kwd", "to_entity_kwd"}
 	req := &types.SearchRequest{
@@ -299,50 +316,22 @@ func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string
 }
 
 // kgSearch searches the compiled KG rows of one KB (mirrors Python _kg_search),
-// using keyword match.
+// using keyword match. It only builds the MatchTextExpr (with the pool-based
+// TopN) and delegates the request construction to kgSearchRaw.
 func kgSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, text string, topN int, scopeKwd string, extra map[string]interface{}, orderDesc string, pool int) []map[string]interface{} {
-	idx := fmt.Sprintf("ragflow_%s", tenantID)
-	condition := map[string]interface{}{"knowledge_graph_kwd": kind}
-	if scopeKwd != "" {
-		condition["scope_kwd"] = scopeKwd
-	}
-	if len(docIDs) > 0 {
-		condition["doc_id"] = docIDs
-	}
-	for k, v := range extra {
-		condition[k] = v
-	}
-
-	fields := []string{"content_with_weight", "source_chunk_ids", "doc_id", "docnm_kwd", "name_kwd", "mention_count_int", "from_entity_kwd", "to_entity_kwd"}
-
-	req := &types.SearchRequest{
-		IndexNames:   []string{idx},
-		KbIDs:        []string{kbID},
-		SelectFields: fields,
-		Filter:       condition,
-		Limit:        topN,
-	}
+	var matchExprs []interface{}
 	if text != "" {
 		knnTopN := topN
 		if pool > knnTopN {
 			knnTopN = pool
 		}
-		req.MatchExprs = []interface{}{&types.MatchTextExpr{
+		matchExprs = []interface{}{&types.MatchTextExpr{
 			Fields:       []string{"content_ltks", "content_sm_ltks"},
 			MatchingText: text,
 			TopN:         knnTopN,
 		}}
 	}
-	if orderDesc != "" {
-		req.OrderBy = &types.OrderByExpr{}
-		req.OrderBy.Desc(orderDesc)
-	}
-
-	res, err := de.Search(ctx, req)
-	if err != nil {
-		return nil
-	}
-	return res.Chunks
+	return kgSearchRaw(ctx, de, tenantID, kbID, docIDs, kind, scopeKwd, extra, matchExprs, orderDesc, topN)
 }
 
 func kgParseEntity(row map[string]interface{}) (kgEntity, bool) {

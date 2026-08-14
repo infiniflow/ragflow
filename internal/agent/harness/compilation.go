@@ -107,13 +107,16 @@ func buildCompilationMap(ctx context.Context, db *gorm.DB, tenantID string, data
 // mirroring _compilation_kind_for_agentic_map + the comps accumulation in
 // _add_template_group_compilations.
 func addCompilationKind(comps map[string]bool, rawKind string) {
+	// normalizeCompilationKind has already collapsed page_index/pageindex to
+	// "timeline", so those tokens never reach the switch (mirrors Python, where
+	// the same collapse makes its page_index/pageindex elif branch unreachable).
 	norm := normalizeCompilationKind(rawKind)
 	switch norm {
 	case "knowledge_graph":
 		comps["knowledge_graph"] = true
 	case "tree":
 		comps["tree"] = true
-	case "timeline", "page_index", "pageindex":
+	case "timeline":
 		comps["page_index"] = true
 	case "mindmap", "mind_map":
 		comps["mindmap"] = true
