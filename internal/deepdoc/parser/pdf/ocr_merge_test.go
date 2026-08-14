@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"image/png"
 	"os"
 	"ragflow/internal/common"
@@ -64,8 +63,8 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	}
 
 	p := NewParser(pdftype.ParserConfig{})
-
-	boxes := p.ocrMergeChars(context.Background(), img, chars, dd, 0)
+	ctx := t.Context()
+	boxes := p.ocrMergeChars(ctx, img, chars, dd, 0)
 	t.Logf("ocrMergeChars boxes: %d", len(boxes))
 	for i, b := range boxes {
 		// Save go render for comparison
@@ -78,7 +77,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 			i, b.X0, b.Top, b.X1, b.Bottom, b.Text[:end])
 	}
 
-	scanBoxes := p.ocrDetectAndRecognize(context.Background(), img, dd, 0, "scan page")
+	scanBoxes := p.ocrDetectAndRecognize(ctx, img, dd, 0, "scan page")
 	t.Logf("ocrScanPage boxes (no chars): %d", len(scanBoxes))
 	for i, b := range scanBoxes {
 		end := min(120, len(b.Text))

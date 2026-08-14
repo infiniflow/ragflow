@@ -142,7 +142,7 @@ const MarkdownContent = ({
     });
 
     // let text = content;
-    if (text === '') {
+    if (text === '' && loading) {
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);

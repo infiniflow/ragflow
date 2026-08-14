@@ -49,6 +49,7 @@ export default {
       s: '秒',
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
+      modelUnavailable: '之前选择的模型已被删除，请重新选择',
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
@@ -1137,6 +1138,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      webSearch: '网络搜索',
       webSearchProvider: '网络搜索服务',
       webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
       webSearchProviderPlaceholder: '请选择网络搜索服务',
@@ -1992,9 +1994,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       selectModelBeforeVerify: '请至少选择一个模型后再验证。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
-      batchAddModels: '批量添加模型',
-      batchRemoveModels: '批量移除模型',
-      batchVerifyModels: '批量验证',
+      batchAddModels: '添加全部模型',
+      batchRemoveModels: '移除全部模型',
+      batchVerifyModels: '验证全部模型',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大 Token 数',
       modelTypes: {

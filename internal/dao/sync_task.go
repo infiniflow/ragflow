@@ -333,7 +333,7 @@ func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTask
 			"status":             SyncStatusDone,
 			"poll_range_end":     entity.FlexibleTime(pollRangeEnd),
 			"new_docs_indexed":   newDocs,
-			"total_docs_indexed": gorm.Expr("total_docs_indexed + ?", totalDocs),
+			"total_docs_indexed": totalDocs,
 			"error_msg":          errorMsg,
 			"error_count":        errorCount,
 		})

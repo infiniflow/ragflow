@@ -60,6 +60,8 @@ export default {
       s: 'S',
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
+      modelUnavailable:
+        'The previously selected model has been deleted, please select another one',
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
@@ -1249,6 +1251,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyTip:
         'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
+      webSearch: 'Web search',
       webSearchProvider: 'Web search provider',
       webSearchProviderTip:
         'Select the service used when Internet search is enabled.',
@@ -2359,7 +2362,7 @@ Example: Virtual Hosted Style`,
       addCustomModelTitle: 'Add custom model',
       batchAddModels: 'Add all models',
       batchRemoveModels: 'Remove all models',
-      batchVerifyModels: 'Batch verify',
+      batchVerifyModels: 'Verify all models',
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max tokens',
       modelFeatures: 'Model features',
