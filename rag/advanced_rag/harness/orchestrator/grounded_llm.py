@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 
+from rag.advanced_rag.harness.stats import in_phase
 from rag.prompts.generator import PROMPT_JINJA_ENV, gen_json
 from rag.prompts.template import load_prompt
 
@@ -43,6 +44,7 @@ def _render_reports(reports: list[tuple[str, str]]) -> str:
     return "\n".join(f"Claim {cid}: {rpt}" for cid, rpt in reports if rpt)
 
 
+@in_phase("grounded")
 async def llm_grounded_verify(
     tools,
     question: str,

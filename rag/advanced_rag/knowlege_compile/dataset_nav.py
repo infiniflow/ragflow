@@ -599,6 +599,24 @@ def _matches_condition(row: dict, condition: dict) -> bool:
     return True
 
 
+def _in_nav_scope(row: dict, allowed_docs: set[str] | None) -> bool:
+    """Whether a nav row belongs to the given doc scope.
+
+    A ``nav_doc`` leaf belongs when its ``doc_id`` is in the set; a
+    ``nav_cluster`` row belongs when it covers at least one scoped document
+    (its ``doc_ids_kwd`` intersects the set).  An empty/None scope allows
+    everything, preserving the existing unscoped behavior.
+    """
+    if not allowed_docs:
+        return True
+    # A cluster row carries doc_id == kb_id (not a document) but lists the
+    # documents it covers in doc_ids_kwd, so a non-empty doc_ids_kwd is the
+    # reliable discriminator.  A nav_doc leaf never sets doc_ids_kwd.
+    if row.get("doc_ids_kwd"):
+        return bool(set(_as_str_list(row.get("doc_ids_kwd"))) & allowed_docs)
+    return str(row.get("doc_id") or "").strip() in allowed_docs
+
+
 # ---------------------------------------------------------------------------
 # Incremental clustering core
 # ---------------------------------------------------------------------------
@@ -1223,6 +1241,7 @@ async def search_dataset_nav(
     *,
     type_kwd: str = "",
     compile_kwd: str = _COMPILE_KWD,
+    doc_scope: list[str] | None = None,
 ) -> list[dict]:
     """Find the nav-tree nodes most relevant to ``query`` for one KB.
 
@@ -1235,6 +1254,11 @@ async def search_dataset_nav(
             leaves, ``"nav_cluster"`` to restrict to clusters, or ``""`` for all.
         compile_kwd: Which compile partition to search within
             (default ``_COMPILE_KWD`` = ``"dataset_nav"``).
+        doc_scope: Optional set of documents to restrict results to.  Applied
+            as a query-time store filter on the type-specific key (``doc_id``
+            for ``nav_doc`` leaves, ``doc_ids_kwd`` for ``nav_cluster`` rows)
+            and re-checked in memory before the ``top_k`` truncation, so
+            scoped rows are never dropped by unscoped ones.
 
     Returns items shaped as::
 
@@ -1250,10 +1274,26 @@ async def search_dataset_nav(
     query = (query or "").strip()
     if not query:
         return []
+    allowed_docs = {str(d).strip() for d in (doc_scope or []) if str(d).strip()}
+    logging.debug(
+        "search_dataset_nav: flat-search scope normalized for kb=%s, scoped_docs=%d",
+        kb_id,
+        len(allowed_docs),
+    )
 
     condition: dict = {"compile_kwd": [compile_kwd]}
     if type_kwd:
         condition["type_kwd"] = type_kwd
+    if allowed_docs:
+        # Type-specific scope filter: nav_doc leaves match on doc_id, cluster
+        # rows on doc_ids_kwd.  Only set when type_kwd pins a single type —
+        # a mixed query can't express both under `_matches_condition`'s
+        # AND-across-fields semantics, so mixed scoping relies on the
+        # in-memory `_in_nav_scope` check below instead.
+        if type_kwd == "nav_doc":
+            condition["doc_id"] = sorted(allowed_docs)
+        elif type_kwd == "nav_cluster":
+            condition["doc_ids_kwd"] = sorted(allowed_docs)
     # name -> [row, fused_score]; `name` uniquely identifies a nav node, so it
     # is the dedup key when the dense and lexical legs return the same node.
     fused: dict[str, list] = {}
@@ -1280,8 +1320,23 @@ async def search_dataset_nav(
 
     # ── Lexical leg: engine BM25 over the tokenized fields ──
     text_w = 1.0 - dense_w
+    text_filter = None
+    if allowed_docs:
+        if type_kwd == "nav_doc":
+            text_filter = {"doc_id": sorted(allowed_docs)}
+        elif type_kwd == "nav_cluster":
+            text_filter = {"doc_ids_kwd": sorted(allowed_docs)}
     try:
-        text_rows = await _store_text_search(tenant_id, kb_id, query, _NAV_SEARCH_FIELDS, limit=max((top_k or 0) * 3, 20) if top_k else 10000, compile_kwd=compile_kwd, type_kwd=type_kwd)
+        text_rows = await _store_text_search(
+            tenant_id,
+            kb_id,
+            query,
+            _NAV_SEARCH_FIELDS,
+            limit=max((top_k or 0) * 3, 20) if top_k else 10000,
+            compile_kwd=compile_kwd,
+            type_kwd=type_kwd,
+            extra_filter=text_filter,
+        )
     except Exception:
         logging.exception("search_dataset_nav: text search failed for kb=%s", kb_id)
         text_rows = []
@@ -1294,7 +1349,7 @@ async def search_dataset_nav(
             continue
         fused.setdefault(rk, [r, 0.0])[1] += text_w * ts
 
-    rows_with_scores = [(r, s) for r, s in fused.values() if s > 0]
+    rows_with_scores = [(r, s) for r, s in fused.values() if s > 0 and _in_nav_scope(r, allowed_docs)]
     rows_with_scores.sort(key=lambda item: item[1], reverse=True)
     if top_k is not None:
         rows_with_scores = rows_with_scores[:top_k]
@@ -1310,6 +1365,16 @@ async def search_dataset_nav(
         if typ == "nav_cluster":
             doc_id = None
             doc_ids = _as_str_list(r.get("doc_ids_kwd"))
+            if allowed_docs:
+                # A scoped search must only surface in-scope documents: cut the
+                # cluster's coverage list down to the scoped set so no out-of-
+                # scope doc appears under a cluster that merely overlaps the
+                # scope.
+                doc_ids = [d for d in doc_ids if d in allowed_docs]
+            # Once the coverage list is scope-filtered, the reported count must
+            # match the returned doc_ids (the raw doc_count_int would otherwise
+            # include documents excluded by the scope).
+            scoped_cluster = bool(allowed_docs)
         else:
             # Leaf: ``name`` == the document id (see ``_make_nav_doc_row``).
             doc_id = r.get("doc_id") or name
@@ -1326,7 +1391,7 @@ async def search_dataset_nav(
                 "graph_content": payload.get("graph_content") or "",
                 "doc_title": payload.get("doc_title") or "",
                 "source_type": payload.get("source_type") or "",
-                "doc_count": int(r.get("doc_count_int") or len(doc_ids) or 0),
+                "doc_count": len(doc_ids) if (typ == "nav_cluster" and scoped_cluster) else int(r.get("doc_count_int") or len(doc_ids) or 0),
                 "score": float(score or 0.0),
             }
         )
@@ -1339,6 +1404,7 @@ async def search_nav_tree_descent(
     query: str,
     embd_mdl,
     top_k: int | None = None,
+    doc_scope: list[str] | None = None,
 ) -> list[dict]:
     """Tree-structured hybrid search: descend from root into the most relevant branches.
 
@@ -1354,18 +1420,38 @@ async def search_nav_tree_descent(
     The search uses BFS with beam pruning — at each depth, only the
     *beam_width* most similar clusters are expanded further.
 
+    ``doc_scope`` restricts the search to a specific set of documents: both
+    the KNN legs (exact if the engine misses the terms filter, ``_store_knn``
+    falls back to a full in-memory match) and the text legs apply the scope
+    as a query-time filter, so the top-N truncation never discards scoped
+    documents that rank behind unscoped ones.
+
     Returns items shaped as ``{"doc_id": str, "score": float}``.
     """
     query = (query or "").strip()
     if not query:
         return []
+    allowed_docs = {str(d).strip() for d in (doc_scope or []) if str(d).strip()}
+    logging.debug(
+        "search_nav_tree_descent: tree-search scope normalized for kb=%s, scoped_docs=%d",
+        kb_id,
+        len(allowed_docs),
+    )
     if embd_mdl is None:
         logging.warning(
             "search_nav_tree_descent: embd_mdl is None — falling back to text-only flat search for kb=%s query=%.80s",
             kb_id,
             query,
         )
-        raw = await search_dataset_nav(tenant_id, kb_id, query, embd_mdl=None, top_k=top_k, type_kwd="nav_doc")
+        raw = await search_dataset_nav(
+            tenant_id,
+            kb_id,
+            query,
+            embd_mdl=None,
+            top_k=top_k,
+            type_kwd="nav_doc",
+            doc_scope=list(allowed_docs) or None,
+        )
         return [{"doc_id": r.get("doc_id", ""), "score": r.get("score", 0.0)} for r in raw if r.get("doc_id")]
 
     vec = await _embed(embd_mdl, query)
@@ -1406,18 +1492,25 @@ async def search_nav_tree_descent(
         "type_kwd": ["nav_cluster"],
         "depth_int": [0],
     }
+    if allowed_docs:
+        root_cond["doc_ids_kwd"] = sorted(allowed_docs)
     roots_knn = await _store_knn(tenant_id, kb_id, vec, vec_dim, root_cond, top_k=beam_width * 3)
+    roots_knn = [r for r in roots_knn if _in_nav_scope(r, allowed_docs)]
 
-    # If no root cluster (depth=0) exists — the dataset may have been
-    # compiled without one — scan all nav_clusters to find the lowest
-    # available depth and start beam search there.
+    # If no root cluster (depth=0) exists — or none overlaps ``doc_scope`` —
+    # the dataset may have been compiled without a root, so scan all
+    # nav_clusters to find the lowest available depth and start beam search
+    # there.
     if not roots_knn:
         all_cond = {
             "kb_id": [kb_id],
             "compile_kwd": [_COMPILE_KWD],
             "type_kwd": ["nav_cluster"],
         }
+        if allowed_docs:
+            all_cond["doc_ids_kwd"] = sorted(allowed_docs)
         all_clusters = await _store_search(tenant_id, kb_id, all_cond, fields, limit=10000)
+        all_clusters = [r for r in all_clusters if _in_nav_scope(r, allowed_docs)]
         if not all_clusters:
             return []
 
@@ -1460,15 +1553,52 @@ async def search_nav_tree_descent(
                 "compile_kwd": [_COMPILE_KWD],
                 "parent_kwd": [node_name],
             }
-            children_knn = await _store_knn(tenant_id, kb_id, vec, vec_dim, child_cond, top_k=beam_width * 3)
-            children_text = await _store_text_search(
-                tenant_id,
-                kb_id,
-                query,
-                fields,
-                limit=beam_width * 3,
-                extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id]},
-            )
+            if allowed_docs:
+                # Children are a mix of nav_doc leaves and nav_cluster rows,
+                # which scope on different keys, so fetch each type with its
+                # own store filter and merge.  Rows are re-checked with
+                # `_in_nav_scope` so a doc filter the engine ignores can't
+                # let an unscoped row crowd out a scoped one in the fuse.
+                child_doc_cond = {
+                    **child_cond,
+                    "type_kwd": ["nav_doc"],
+                    "doc_id": sorted(allowed_docs),
+                }
+                child_cluster_cond = {
+                    **child_cond,
+                    "type_kwd": ["nav_cluster"],
+                    "doc_ids_kwd": sorted(allowed_docs),
+                }
+                children_knn = await _store_knn(tenant_id, kb_id, vec, vec_dim, child_doc_cond, top_k=beam_width * 3)
+                children_knn += await _store_knn(tenant_id, kb_id, vec, vec_dim, child_cluster_cond, top_k=beam_width * 3)
+                children_knn = [r for r in children_knn if _in_nav_scope(r, allowed_docs)]
+                children_text = await _store_text_search(
+                    tenant_id,
+                    kb_id,
+                    query,
+                    fields,
+                    limit=beam_width * 3,
+                    extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id], "doc_id": sorted(allowed_docs)},
+                )
+                children_text += await _store_text_search(
+                    tenant_id,
+                    kb_id,
+                    query,
+                    fields,
+                    limit=beam_width * 3,
+                    extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id], "doc_ids_kwd": sorted(allowed_docs)},
+                )
+                children_text = [r for r in children_text if _in_nav_scope(r, allowed_docs)]
+            else:
+                children_knn = await _store_knn(tenant_id, kb_id, vec, vec_dim, child_cond, top_k=beam_width * 3)
+                children_text = await _store_text_search(
+                    tenant_id,
+                    kb_id,
+                    query,
+                    fields,
+                    limit=beam_width * 3,
+                    extra_filter={"parent_kwd": [node_name], "kb_id": [kb_id]},
+                )
             candidates = _hybrid_fuse(vec, vf, query, children_knn, children_text, dense_w, beam_width)
 
             for c in candidates:
@@ -1476,9 +1606,12 @@ async def search_nav_tree_descent(
                     break
                 if c.get("type_kwd") == "nav_doc":
                     doc_id = (c.get("doc_id") or "").strip()
-                    if doc_id and doc_id not in seen_docs:
-                        seen_docs.add(doc_id)
-                        collected.append({"doc_id": doc_id, "score": round(c["_score"] or parent_score, 4)})
+                    if not doc_id or doc_id in seen_docs:
+                        continue
+                    if allowed_docs and doc_id not in allowed_docs:
+                        continue
+                    seen_docs.add(doc_id)
+                    collected.append({"doc_id": doc_id, "score": round(c["_score"] or parent_score, 4)})
                 else:
                     next_level.append(c)
 
@@ -1496,11 +1629,14 @@ async def search_nav_tree_descent(
         for node in current_level:
             for did in node.get("doc_ids_kwd") or []:
                 did_str = str(did).strip()
-                if did_str and did_str not in seen_docs:
-                    seen_docs.add(did_str)
-                    collected.append({"doc_id": did_str, "score": round(node.get("_score", 0.0), 4)})
-                    if top_k is not None and len(collected) >= top_k:
-                        break
+                if not did_str or did_str in seen_docs:
+                    continue
+                if allowed_docs and did_str not in allowed_docs:
+                    continue
+                seen_docs.add(did_str)
+                collected.append({"doc_id": did_str, "score": round(node.get("_score", 0.0), 4)})
+                if top_k is not None and len(collected) >= top_k:
+                    break
             if top_k is not None and len(collected) >= top_k:
                 break
 

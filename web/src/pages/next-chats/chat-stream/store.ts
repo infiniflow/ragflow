@@ -44,7 +44,6 @@ export type ChatStreamState = {
   failStream(conversationId: string, pendingInput: string): void;
   consumePendingInput(conversationId: string): void;
   removeMessageById(conversationId: string, messageId: string): void;
-  truncateAfterMessage(conversationId: string, messageId: string): void;
   endStream(conversationId: string): void;
   stopStream(conversationId: string): void;
   removeSessions(conversationIds: string[]): void;
@@ -241,6 +240,12 @@ export const useChatStreamStore = create<ChatStreamState>()(
           (state) => {
             const previous = state.sessions[conversationId];
             if (!previous) return state;
+            // A session that is no longer streaming has no trailing placeholder
+            // to fill in. The reader's final flush runs before endStream, so
+            // this also guards the case where the in-flight question (and its
+            // placeholder) were just deleted: without it, the flush would slice
+            // off whatever message is now last.
+            if (!previous.isStreaming) return state;
             return {
               sessions: {
                 ...state.sessions,
@@ -305,6 +310,20 @@ export const useChatStreamStore = create<ChatStreamState>()(
 
       removeMessageById: (conversationId, messageId) => {
         if (!conversationId) return;
+
+        // Deleting the question that is currently being answered has to stop
+        // that answer too: the stream lives at module level, so it would
+        // otherwise keep producing tokens for a question that is gone. The
+        // question and its assistant placeholder are appended as a pair (and
+        // share an id), so the in-flight question sits second to last.
+        const session = get().sessions[conversationId];
+        const removingStreamedQuestion = Boolean(
+          session?.isStreaming && session.messages.at(-2)?.id === messageId,
+        );
+        if (removingStreamedQuestion) {
+          session?.abortController?.abort();
+        }
+
         set(
           (state) => {
             const previous = state.sessions[conversationId];
@@ -315,50 +334,21 @@ export const useChatStreamStore = create<ChatStreamState>()(
                 [conversationId]: {
                   ...previous,
                   messages: previous.messages.filter((x) => x.id !== messageId),
+                  // Close the session right here instead of waiting for the
+                  // reader's endStream, so the abort's trailing flush can't
+                  // write the deleted answer back into the list.
+                  isStreaming: removingStreamedQuestion
+                    ? false
+                    : previous.isStreaming,
+                  abortController: removingStreamedQuestion
+                    ? undefined
+                    : previous.abortController,
                 },
               },
             };
           },
           false,
           'removeMessageById',
-        );
-      },
-
-      truncateAfterMessage: (conversationId, messageId) => {
-        if (!conversationId) return;
-        set(
-          (state) => {
-            const previous = state.sessions[conversationId];
-            if (!previous) return state;
-
-            const index = previous.messages.findIndex(
-              (x) => x.id === messageId,
-            );
-            if (index === -1) return state;
-
-            const kept = previous.messages.slice(0, index + 2);
-            const latest = kept.at(-1);
-            const messages = latest
-              ? [
-                  ...kept.slice(0, -1),
-                  {
-                    ...latest,
-                    content: '',
-                    reference: undefined,
-                    prompt: undefined,
-                  },
-                ]
-              : kept;
-
-            return {
-              sessions: {
-                ...state.sessions,
-                [conversationId]: { ...previous, messages },
-              },
-            };
-          },
-          false,
-          'truncateAfterMessage',
         );
       },
 

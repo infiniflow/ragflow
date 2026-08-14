@@ -372,7 +372,7 @@ func TestNvidiaEmbedUsesModelSpecificURL(t *testing.T) {
 	got, err := driver.Embed(
 		context.Background(),
 		&namePtr,
-		[]string{"hello"},
+		EmbedRequest{Texts: []string{"hello"}},
 		&APIConfig{ApiKey: ptr(apiKey)},
 		nil,
 		nil,

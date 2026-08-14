@@ -191,7 +191,7 @@ class Dealer:
                 highlightFields = highlight
             matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
             if emb_mdl is None:
-                matchExprs = [matchText]
+                matchExprs = [matchText] if matchText else []
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
@@ -208,7 +208,7 @@ class Dealer:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
-                matchExprs = [matchText, matchDense, fusionExpr]
+                matchExprs = [matchText, matchDense, fusionExpr] if matchText else [matchDense]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
@@ -223,7 +223,17 @@ class Dealer:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
                         matchDense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
-                            self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature
+                            self.dataStore.search,
+                            src,
+                            highlightFields,
+                            filters,
+                            [matchText, matchDense, fusionExpr] if matchText else [matchDense],
+                            orderBy,
+                            offset,
+                            limit,
+                            idx_names,
+                            kb_ids,
+                            rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))

@@ -39,17 +39,7 @@ function InnerToolNode({
         type="target"
         position={Position.Top}
         isConnectable={isConnectable}
-        className="!bg-accent-primary !size-2"
-      />
-      {/* v1 ExeSQL and similar "tool" components route their result
-          downstream, so they need a source handle too. Without this,
-          any edge where the toolNode is the source silently fails to
-          render. */}
-      <Handle
-        id={NodeHandleId.Start}
-        type="source"
-        position={Position.Right}
-        isConnectable={isConnectable}
+        isConnectableStart={false}
         className="!bg-accent-primary !size-2"
       />
 

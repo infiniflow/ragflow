@@ -29,10 +29,12 @@ import (
 	"net/http"
 	"net/url"
 	"ragflow/internal/engine/redis"
+	syncerconnector "ragflow/internal/syncer/connector"
 	"ragflow/internal/utility"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -91,9 +93,31 @@ type syncTaskPublisher interface {
 	PublishSyncerTask(taskID string) error
 }
 
+type syncTaskWakeupPublisher interface {
+	PublishSyncerTaskWakeup(taskID string) error
+}
+
+type syncCheckpointLoader interface {
+	LoadSyncCheckpoint(ctx context.Context, taskID string) (*syncerconnector.SyncCheckpointState, error)
+}
+
+type syncCheckpointDeleter interface {
+	DeleteSyncCheckpoint(ctx context.Context, taskID string) error
+}
+
 var getSyncerTaskPublisher = func() (syncTaskPublisher, bool) {
 	publisher, ok := engine.GetMessageQueueEngine().(syncTaskPublisher)
 	return publisher, ok
+}
+
+var getSyncCheckpointLoader = func() (syncCheckpointLoader, bool) {
+	loader, ok := engine.GetMessageQueueEngine().(syncCheckpointLoader)
+	return loader, ok
+}
+
+var getSyncCheckpointDeleter = func() (syncCheckpointDeleter, bool) {
+	deleter, ok := engine.GetMessageQueueEngine().(syncCheckpointDeleter)
+	return deleter, ok
 }
 
 // NewConnectorService create connector service
@@ -122,6 +146,12 @@ type CreateConnectorRequest struct {
 // RebuildConnectorRequest rebuild connector request.
 type RebuildConnectorRequest struct {
 	KbID string `json:"kb_id"`
+}
+
+// ResumeFailedSyncRequest resumes a failed connector sync task from checkpoint.
+type ResumeFailedSyncRequest struct {
+	KbID   string `json:"kb_id"`
+	TaskID string `json:"task_id"`
 }
 
 type StartGoogleWebOAuthRequest struct {
@@ -934,9 +964,7 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
-			if err = publishSyncerTasks(taskIDs); err != nil {
-				return nil, common.CodeServerError, err
-			}
+			publishSyncerTasks(taskIDs)
 		} else if isConnectorCancelStatus(req.Status) {
 			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
 				return nil, common.CodeServerError, err
@@ -946,9 +974,7 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
-			if err = publishSyncerTasks(taskIDs); err != nil {
-				return nil, common.CodeServerError, err
-			}
+			publishSyncerTasks(taskIDs)
 		}
 	}
 
@@ -1006,29 +1032,127 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	s.deleteConnectorDocumentChunks(ctx, connector.TenantID, kbID, documents)
 
-	taskIDs, err := s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents)
+	taskIDs, oldSyncTaskIDs, err := s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
-	if err = publishSyncerTasks(taskIDs); err != nil {
+
+	if err = deleteSyncCheckpoints(ctx, oldSyncTaskIDs); err != nil {
+		common.Warn("delete sync checkpoints failed during rebuild",
+			zap.String("connector_id", connectorID), zap.Error(err))
+	}
+
+	publishSyncerTasks(taskIDs)
+	return true, common.CodeSuccess, nil
+}
+
+// ResumeFailedSync schedules a failed sync task to continue from its saved checkpoint.
+func (s *ConnectorService) ResumeFailedSync(ctx context.Context, connectorID, userID string, req *ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
+	if connectorID == "" {
+		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+	if req == nil {
+		return false, common.CodeArgumentError, fmt.Errorf("request is required")
+	}
+	// check KBid and TaskID
+	req.KbID = strings.TrimSpace(req.KbID)
+	req.TaskID = strings.TrimSpace(req.TaskID)
+	if req.KbID == "" {
+		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
+	}
+	if req.TaskID == "" {
+		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: task_id")
+	}
+	// get connector
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
+		}
+		return false, common.CodeServerError, err
+	}
+	// check access
+	canAccess, err := s.canAccessConnector(ctx, connector, userID)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if !canAccess {
+		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+
+	// load the checkpoint
+	loader, ok := getSyncCheckpointLoader()
+	if !ok {
+		return false, common.CodeServerError, fmt.Errorf("sync checkpoint store is not configured")
+	}
+
+	checkpoint, err := loader.LoadSyncCheckpoint(ctx, req.TaskID)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if checkpoint == nil || checkpoint.Checkpoint == nil {
+		return false, common.CodeDataError, fmt.Errorf("checkpoint not found, cannot resume failed sync task")
+	}
+	if checkpoint.TaskID != req.TaskID || checkpoint.ConnectorID != connectorID || checkpoint.KBID != req.KbID {
+		return false, common.CodeDataError, fmt.Errorf("checkpoint does not match connector, knowledge base, and task")
+	}
+	// resume the task
+	if err = s.connectorDAO.ResumeFailedSyncTask(ctx, dao.DB, connectorID, req.KbID, req.TaskID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, common.CodeDataError, fmt.Errorf("failed sync task not found")
+		}
+		return false, common.CodeServerError, err
+	}
+	if err = publishSyncerTaskWakeup(req.TaskID); err != nil {
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func publishSyncerTasks(taskIDs []string) error {
+func publishSyncerTasks(taskIDs []string) {
 	if len(taskIDs) == 0 {
-		return nil
+		return
 	}
 	publisher, ok := getSyncerTaskPublisher()
 	if !ok {
-		return fmt.Errorf("syncer task publisher is not configured")
+		common.Warn("syncer task publisher is not configured")
+		return
 	}
 	for _, taskID := range taskIDs {
 		if taskID == "" {
 			continue
 		}
 		if err := publisher.PublishSyncerTask(taskID); err != nil {
+			common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
+		}
+	}
+}
+
+// publishSyncerTaskWakeup publish syncer task wakeup message to nats
+func publishSyncerTaskWakeup(taskID string) error {
+	publisher, ok := getSyncerTaskPublisher()
+	if !ok {
+		return fmt.Errorf("syncer task publisher is not configured")
+	}
+	if wakeupPublisher, ok := publisher.(syncTaskWakeupPublisher); ok {
+		return wakeupPublisher.PublishSyncerTaskWakeup(taskID)
+	}
+	return publisher.PublishSyncerTask(taskID)
+}
+
+func deleteSyncCheckpoints(ctx context.Context, taskIDs []string) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	deleter, ok := getSyncCheckpointDeleter()
+	if !ok {
+		return fmt.Errorf("sync checkpoint store is not configured")
+	}
+	for _, taskID := range taskIDs {
+		if taskID == "" {
+			continue
+		}
+		if err := deleter.DeleteSyncCheckpoint(ctx, taskID); err != nil {
 			return err
 		}
 	}
@@ -1079,6 +1203,44 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 	logs, total, err := s.connectorDAO.ListLogsByConnectorID(ctx, dao.DB, connectorID, offset, pageSize)
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+	return logs, total, common.CodeSuccess, nil
+}
+
+// ListLogs lists sync logs for the current user with pagination.
+// When datasetID is non-empty, only logs of that dataset are returned.
+func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, 0, common.CodeDataError, fmt.Errorf("user_id is required")
+	}
+
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, 0, common.CodeServerError, err
+	}
+	tenantIDs = append(tenantIDs, userID)
+
+	offset, limit := 0, pageSize
+	if pageSize <= 0 {
+		// pageSize == 0 means no pagination: return every matching row.
+		limit = 0
+	} else {
+		if page < 1 {
+			page = 1
+		}
+		if pageSize > 100 {
+			limit = 15
+		}
+		offset = (page - 1) * limit
+	}
+
+	logs, total, err := s.connectorDAO.ListLogs(ctx, dao.DB, tenantIDs, datasetID, offset, limit)
+	if err != nil {
+		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch sync logs: %w", err)
 	}
 	if logs == nil {
 		logs = []*entity.ConnectorSyncLog{}

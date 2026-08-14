@@ -171,12 +171,12 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	})
 }
 
-func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
 	model, err := validateJieKouAIModelName(modelName)
@@ -193,7 +193,7 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 
 	reqBody := map[string]interface{}{
 		"model": model,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -253,11 +253,12 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 	return embeddings, nil
 }
 
-func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
