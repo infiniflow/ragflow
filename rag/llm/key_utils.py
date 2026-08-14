@@ -70,7 +70,7 @@ def _resolve_volcengine_credentials(key):
     - JSON-string-encoded object            -> parsed dict
     - JSON non-object (list, int, ...)      -> :class:`ModelException`
     """
-    if not key:
+    if key is None or key == "":
         return {"ark_api_key": "", "model_name": None}
     if isinstance(key, dict):
         return {
@@ -121,7 +121,7 @@ def _resolve_openrouter_credentials(key):
     - JSON-string-encoded object            -> parsed dict
     - JSON non-object (list, int, ...)      -> :class:`ModelException`
     """
-    if not key:
+    if key is None or key == "":
         return {"api_key": "", "provider_order": ""}
     if isinstance(key, dict):
         return {
