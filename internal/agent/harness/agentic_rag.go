@@ -99,7 +99,7 @@ func RunAgenticRAGWithRoute(ctx context.Context, db *gorm.DB, question, keywords
 	}
 
 	// ── formalize_answer ──
-	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult)
+	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult, orch.Caveat, orch.ForceLLM)
 	// Log only the question length, never its content, to avoid persisting user
 	// input in logs.
 	log.Printf("agentic_rag: finished (qlen=%d, strategy=%s, chunks=%d, partial=%v, abstain=%v)",

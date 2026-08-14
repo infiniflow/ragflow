@@ -422,7 +422,7 @@ export default {
         '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
       update: '更新',
       updateTooltip:
-        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
+        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档，{{changed}} 个已变更文档。点击编译并合并到当前 Wiki。',
       updateSheetTitle: '更新 Wiki',
       updateStructureSheetTitle: '更新{{name}}',
       updateStructureTooltip:
@@ -2007,11 +2007,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       selectModelBeforeVerify: '请至少选择一个模型后再验证。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
-      batchAddModels: '批量添加当前模型',
-      batchRemoveModels: '批量移除当前模型',
+      batchAddModels: '批量添加模型',
+      batchRemoveModels: '批量移除模型',
       batchVerifyModels: '批量验证',
-      selectAllFiltered: '全选',
-      batchVerifySelected: '验证 {{count}} 个模型',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大 Token 数',
       modelTypes: {

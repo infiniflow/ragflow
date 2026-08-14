@@ -76,6 +76,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
@@ -372,6 +373,23 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 // it would diverge from Python's chunk boundaries.
 var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
 
+// overlapCut returns the visible-text rune offset where the overlap prefix
+// begins, mirroring the cut computed inside computeOverlapPrefix. It is split
+// out so the coordinate-carrying path reuses the exact same cut as the text
+// path (#18148).
+func overlapCut(prevText string, overlappedPct float64) int {
+	visible := removeTag(prevText)
+	runes := []rune(visible)
+	cut := int(float64(len(runes)) * (100.0 - overlappedPct) / 100.0)
+	if cut < 0 {
+		cut = 0
+	}
+	if cut >= len(runes) {
+		return len(runes)
+	}
+	return cut
+}
+
 // computeOverlapPrefix returns (overlapText, overlapTokenCount) carved from
 // the tail of prevText after stripping parser tags. overlappedPct is a
 // percentage in [0, 100]. Mirrors Python rag/nlp._compute_overlap_prefix.
@@ -381,10 +399,7 @@ func computeOverlapPrefix(prevText string, overlappedPct float64) (string, int) 
 		return "", 0
 	}
 	runes := []rune(visible)
-	cut := int(float64(len(runes)) * (100 - overlappedPct) / 100.0)
-	if cut < 0 {
-		cut = 0
-	}
+	cut := overlapCut(prevText, overlappedPct)
 	if cut >= len(runes) {
 		return "", 0
 	}
@@ -837,6 +852,49 @@ func takeFromStart(text string, tokens int) string {
 // joined string), matching Python's tk_nums += current["tk_nums"] (#17948).
 // Non-text units pass through unchanged and reset the merge run. joinSep is
 // "\n" for the JSON path and "" for the text path.
+// mergeItem records one source unit that contributed to a merged chunk: its
+// visible text and its coordinate box groups. Tracking items (not just the
+// flattened position list) lets the overlap path map a visible-text offset
+// range back to the exact boxes that belong to it, so the overlap prefix
+// carries only the previous chunk's tail coordinates (#18148).
+type mergeItem struct {
+	Text         string
+	PDFPositions json.RawMessage
+	Positions    json.RawMessage
+}
+
+// overlapTailPositions returns the coordinate boxes of the previous chunk's
+// source items whose visible span intersects the overlap tail
+// [overlapStart, total). PDF positions are per-item (coarse), so an item is
+// included wholesale once any part of it falls in the overlap tail. This keeps
+// the overlap prefix highlighted without over-inflating the box set with the
+// previous chunk's non-overlap (head) coordinates (#18148). Offsets are in
+// rune units to match computeOverlapPrefix's visible-text indexing.
+func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep string) (json.RawMessage, json.RawMessage) {
+	if len(prevItems) == 0 {
+		return nil, nil
+	}
+	// Items are concatenated with joinSep (a single "\n" for the JSON path),
+	// matching the merge join at mergeUnits.
+	total := 0
+	for _, it := range prevItems {
+		total += utf8.RuneCountInString(it.Text) + utf8.RuneCountInString(joinSep)
+	}
+	total -= utf8.RuneCountInString(joinSep)
+	var pdfAcc, posAcc json.RawMessage
+	offset := 0
+	for _, it := range prevItems {
+		start := offset
+		end := offset + utf8.RuneCountInString(it.Text)
+		if start < total && end > overlapStart {
+			pdfAcc = extendRawJSONArray(pdfAcc, it.PDFPositions)
+			posAcc = extendRawJSONArray(posAcc, it.Positions)
+		}
+		offset = end + utf8.RuneCountInString(joinSep)
+	}
+	return pdfAcc, posAcc
+}
+
 func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strategy schema.MergeStrategy, joinSep string) []schema.ChunkDoc {
 	if overlapPct < 0 {
 		overlapPct = 0
@@ -847,11 +905,18 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strateg
 	threshold := float64(target) * (100.0 - overlapPct) / 100.0
 
 	merged := make([]schema.ChunkDoc, 0, len(units))
+	// mergedItems parallels merged: for each merged chunk, the source items it
+	// was built from. Tracking items (not just the flattened position list)
+	// lets the overlap path map a visible-text offset range back to the exact
+	// boxes that belong to it, so the overlap prefix carries only the previous
+	// chunk's tail coordinates (#18148).
+	mergedItems := make([][]mergeItem, 0, len(units))
 	prevIdx := -1
 	for i := range units {
 		ck := units[i]
 		if ck.CKType != "text" {
 			merged = append(merged, cloneChunkDoc(ck))
+			mergedItems = append(mergedItems, nil)
 			prevIdx = -1
 			continue
 		}
@@ -859,12 +924,14 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strateg
 		if tk <= 0 {
 			tk = tokenizeStr(ck.Text)
 		}
+		cur := mergeItem{Text: ck.Text, PDFPositions: ck.PDFPositions, Positions: ck.Positions}
 		if prevIdx < 0 {
 			// First text chunk (or first after a non-text chunk): no prior
 			// text to overlap with.
 			cp := cloneChunkDoc(ck)
 			cp.TKNums = intPtr(tk)
 			merged = append(merged, cp)
+			mergedItems = append(mergedItems, []mergeItem{cur})
 			prevIdx = len(merged) - 1
 			continue
 		}
@@ -878,12 +945,21 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strateg
 			cp := cloneChunkDoc(ck)
 			if overlapPct > 0 && merged[prevIdx].Text != "" {
 				overlap, _ := computeOverlapPrefix(merged[prevIdx].Text, overlapPct)
+				// Carry the previous chunk's tail coordinates so the overlap
+				// prefix is highlighted, not just the cur span (#18148).
+				pdfTail, posTail := overlapTailPositions(mergedItems[prevIdx], overlapCut(merged[prevIdx].Text, overlapPct), joinSep)
 				cp.Text = overlap + cp.Text
+				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
+				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
-			} else {
-				cp.TKNums = intPtr(tk)
+				merged = append(merged, cp)
+				mergedItems = append(mergedItems, []mergeItem{{Text: cp.Text, PDFPositions: cp.PDFPositions, Positions: cp.Positions}})
+				prevIdx = len(merged) - 1
+				continue
 			}
+			cp.TKNums = intPtr(tk)
 			merged = append(merged, cp)
+			mergedItems = append(mergedItems, []mergeItem{cur})
 			prevIdx = len(merged) - 1
 			continue
 		}
@@ -896,15 +972,23 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strateg
 			cp := cloneChunkDoc(ck)
 			if overlapPct > 0 && prev.Text != "" {
 				// Unconditional overlap prefix (mirrors Python JSON). The
-				// prefix is a duplicate of prev's tail, so it carries no new
-				// coordinates — only cur's positions are kept.
+				// prefix is a duplicate of prev's tail; carry prev's tail
+				// coordinates so the overlap region is highlighted (#18148),
+				// then keep only cur's coordinates for the non-overlap part.
 				overlap, _ := computeOverlapPrefix(prev.Text, overlapPct)
+				pdfTail, posTail := overlapTailPositions(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct), joinSep)
 				cp.Text = overlap + cp.Text
+				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
+				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
-			} else {
-				cp.TKNums = intPtr(tk)
+				merged = append(merged, cp)
+				mergedItems = append(mergedItems, []mergeItem{{Text: cp.Text, PDFPositions: cp.PDFPositions, Positions: cp.Positions}})
+				prevIdx = len(merged) - 1
+				continue
 			}
+			cp.TKNums = intPtr(tk)
 			merged = append(merged, cp)
+			mergedItems = append(mergedItems, []mergeItem{cur})
 			prevIdx = len(merged) - 1
 			continue
 		}
@@ -917,6 +1001,7 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, strateg
 		prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
 		prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
 		prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
+		mergedItems[prevIdx] = append(mergedItems[prevIdx], cur)
 	}
 	return merged
 }

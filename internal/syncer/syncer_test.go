@@ -1209,8 +1209,8 @@ func TestSyncRunnerClampsWaterlineToWindowEnd(t *testing.T) {
 	if task.PollRangeEnd == nil {
 		t.Fatalf("poll_range_end is nil")
 	}
-	if task.PollRangeEnd.Equal(future) || task.PollRangeEnd.After(after) || task.PollRangeEnd.Before(before.Add(-time.Second)) {
-		t.Fatalf("poll_range_end = %s, want clamped to run window around %s - %s", task.PollRangeEnd, before, after)
+	if task.PollRangeEnd.Time().Equal(future) || task.PollRangeEnd.Time().After(after) || task.PollRangeEnd.Time().Before(before.Add(-time.Second)) {
+		t.Fatalf("poll_range_end = %s, want clamped to run window around %s - %s", task.PollRangeEnd.Time(), before, after)
 	}
 }
 
@@ -1243,8 +1243,8 @@ func TestFullSyncWaterlineUsesWindowEnd(t *testing.T) {
 	if task.PollRangeEnd == nil {
 		t.Fatalf("poll_range_end is nil")
 	}
-	if task.PollRangeEnd.Equal(oldSourceTime) || task.PollRangeEnd.Before(before.Add(-time.Second)) || task.PollRangeEnd.After(after) {
-		t.Fatalf("poll_range_end = %s, want run window around %s - %s", task.PollRangeEnd, before, after)
+	if task.PollRangeEnd.Time().Equal(oldSourceTime) || task.PollRangeEnd.Time().Before(before.Add(-time.Second)) || task.PollRangeEnd.Time().After(after) {
+		t.Fatalf("poll_range_end = %s, want run window around %s - %s", task.PollRangeEnd.Time(), before, after)
 	}
 }
 

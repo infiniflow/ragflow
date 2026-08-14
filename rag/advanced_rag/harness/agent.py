@@ -27,6 +27,7 @@ from rag.advanced_rag.harness.prompts.research_agent_prompt import (
     RESEARCH_AGENT_PROMPT,
     RESEARCH_AGENT_TEXT_PROMPT,
 )
+from rag.advanced_rag.harness.stats import in_phase
 
 _LOG = logging.getLogger(__name__)
 
@@ -138,6 +139,7 @@ def _build_tool_schemas(gated_defs: list[dict]) -> list[dict]:
     return schemas
 
 
+@in_phase("claim_research")
 async def research_agent_loop(
     claim: ClaimTarget,
     tools,
