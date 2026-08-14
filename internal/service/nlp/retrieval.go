@@ -214,6 +214,11 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	common.Info("Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
 		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)), zap.Float64("postThreshold", postThreshold))
 
+
+	//searchTotal > len(searchResult.IDs): The total number reported by the engine exceeds the number actually retrieved this time,
+	//indicating that there are still unretrieved chunks in the candidate set; the current count may be an underestimate
+	//*req.Top > rerankLimit: The Top value requested by the caller exceeds the re-ranking limit, indicating that we have indeed
+	//‘only examined a portion’ rather than having covered all target results
 	total := int64(len(validIdx))
 	if searchTotal > int64(len(searchResult.IDs)) && *req.Top > rerankLimit {
 		total, err = s.countThresholdValidMatches(ctx, req, *req.Top, postThreshold)
