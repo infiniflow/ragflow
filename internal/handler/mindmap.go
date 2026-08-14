@@ -86,7 +86,7 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 		sb.WriteString(delta)
 	}
 	fullText := sb.String()
-	if fullText == "" {
+	if strings.TrimSpace(fullText) == "" {
 		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil
 	}
 	return parseMindMapMarkdown(fullText), nil
