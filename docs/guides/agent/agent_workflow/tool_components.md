@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
 title: Tool Components
 sidebar_label: Tool Components
 slug: /tool_components
