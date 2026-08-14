@@ -137,27 +137,24 @@ services:
               capabilities: [gpu]
 
 
-  # executor:
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   image: ${RAGFLOW_IMAGE}
-  #   volumes:
-  #     - ./ragflow-logs:/ragflow/logs
-  #     - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
-  #   env_file: .env
-  #   entrypoint: "/ragflow/entrypoint_task_executor.sh 1 3"
-  #   networks:
-  #     - ragflow
-  #   restart: unless-stopped
-  #   # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
-  #   # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
+#  executor-1:
+#    depends_on:
+#      mysql:
+#        condition: service_healthy
+#    profiles:
+#      - cpu
+#    image: ${RAGFLOW_IMAGE}
+#    # Task-only worker container: no web server, no data sync, consumers [1, 4).
+#    command:
+#      - --disable-webserver
+#      - --disable-datasync
+#      - --consumer-no-beg=1
+#      - --consumer-no-end=4
+#    env_file: .env
+#    volumes:
+#      - ./ragflow-logs:/ragflow/logs
+#      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+#      - ./entrypoint.sh:/ragflow/entrypoint.sh
+#    networks:
+#      - ragflow
+#    restart: unless-stopped
