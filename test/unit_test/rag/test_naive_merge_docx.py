@@ -108,7 +108,10 @@ def test_naive_merge_docx_near_budget_units_do_not_double_budget():
     chunks, _ = naive_merge_docx(sections, chunk_token_num=100)
     texts = _nonempty_chunks(chunks)
 
+    assert len(texts) > 1
     assert all(c["tk_nums"] <= 100 for c in texts), [c["tk_nums"] for c in texts]
+    # Content is preserved regardless of how it was split.
+    assert sum(c["tk_nums"] for c in texts) == 21 * 95
 
 
 @pytest.mark.p2
@@ -178,3 +181,5 @@ def test_merge_cks_image_entries_are_never_merged_into():
     assert image_idxs == [1]
     assert merged[1]["ck_type"] == "image"
     assert merged[1]["text"] == ""
+    # The text on both sides of the image survives the pass.
+    assert sum(m["tk_nums"] for m in merged if m["ck_type"] == "text") == 20
