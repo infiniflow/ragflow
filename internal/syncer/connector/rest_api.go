@@ -256,6 +256,9 @@ func parseRestAPIConfig(config map[string]any) (*restAPIConfig, error) {
 		cfg.BatchSize = restAPIDefaultBatchSize
 	}
 	if v, ok := restAPIConfigInt(config["max_pages"]); ok {
+		if v <= 0 {
+			return nil, &ConnectorValidationError{Message: fmt.Sprintf("Invalid REST API config: max_pages must be a positive integer, got %d", v)}
+		}
 		cfg.MaxPages = v
 	}
 	if v := restAPIConfigFloat(config["request_delay"]); v >= 0 {
@@ -746,7 +749,29 @@ func (c *RestAPIConnector) doRequest(
 	if auth != nil {
 		req.SetBasicAuth(auth.username, auth.password)
 	}
-	return client.Do(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		transport.CloseIdleConnections()
+		return nil, err
+	}
+	resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
+	return resp, nil
+}
+
+// restAPICloseIdleBody closes the underlying response body and then releases
+// the pinned transport's idle connections, so the per-request transports do
+// not leak keep-alive sockets during long paginated syncs.
+type restAPICloseIdleBody struct {
+	body      io.ReadCloser
+	transport *http.Transport
+}
+
+func (b *restAPICloseIdleBody) Read(p []byte) (int, error) { return b.body.Read(p) }
+
+func (b *restAPICloseIdleBody) Close() error {
+	err := b.body.Close()
+	b.transport.CloseIdleConnections()
+	return err
 }
 
 func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {

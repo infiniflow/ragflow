@@ -109,6 +109,27 @@ func TestNewRestAPIConnectorClampsNonPositiveBatchSize(t *testing.T) {
 	}
 }
 
+type restAPITestReadCloser struct {
+	reader   io.Reader
+	closeErr error
+}
+
+func (b *restAPITestReadCloser) Read(p []byte) (int, error) { return b.reader.Read(p) }
+func (b *restAPITestReadCloser) Close() error               { return b.closeErr }
+
+func TestRestAPICloseIdleBodyPreservesBodyAndCloseError(t *testing.T) {
+	closeErr := errors.New("close boom")
+	body := &restAPITestReadCloser{reader: strings.NewReader("hello"), closeErr: closeErr}
+	wrapped := &restAPICloseIdleBody{body: body, transport: &http.Transport{}}
+	got, err := io.ReadAll(wrapped)
+	if err != nil || string(got) != "hello" {
+		t.Fatalf("read data=%q err=%v", got, err)
+	}
+	if err := wrapped.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("close err=%v want %v", err, closeErr)
+	}
+}
+
 func TestNewRestAPIConnectorValidationErrors(t *testing.T) {
 	withRestAPITestHooks(t)
 	tests := []struct {
@@ -121,6 +142,8 @@ func TestNewRestAPIConnectorValidationErrors(t *testing.T) {
 		{name: "unsupported auth", config: map[string]any{"url": "https://example.com", "auth_type": "jwt", "content_fields": "title"}, want: "Unsupported auth_type 'jwt'."},
 		{name: "unsupported pagination", config: map[string]any{"url": "https://example.com", "pagination_type": "bad", "content_fields": "title"}, want: "Unsupported pagination_type 'bad'."},
 		{name: "missing content fields", config: map[string]any{"url": "https://example.com"}, want: "At least one content field must be configured (content_fields)."},
+		{name: "zero max_pages", config: map[string]any{"url": "https://example.com", "max_pages": 0, "content_fields": "title"}, want: "max_pages must be a positive integer"},
+		{name: "negative max_pages", config: map[string]any{"url": "https://example.com", "max_pages": -1, "content_fields": "title"}, want: "max_pages must be a positive integer"},
 		{name: "bad scheme", config: map[string]any{"url": "ftp://example.com/x", "content_fields": "title"}, want: "Unsupported URL scheme"},
 		{name: "localhost", config: map[string]any{"url": "http://localhost/x", "content_fields": "title"}, want: "localhost is blocked"},
 	}
@@ -391,13 +414,16 @@ func TestRestAPIFetchPageIntegration(t *testing.T) {
 	withRestAPITestHooks(t)
 
 	var requests atomic.Int32
+	var mu sync.Mutex
 	var gotPath, gotAuth string
 	var gotMethod string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		mu.Lock()
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		gotMethod = r.Method
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"items": [{"id": "1"}]}`))
 	}))
@@ -413,14 +439,17 @@ func TestRestAPIFetchPageIntegration(t *testing.T) {
 	if _, err := c.fetchPage(context.Background(), map[string]any{"page": 1}); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
-	if gotPath != "/items/abc" {
-		t.Fatalf("path=%q want /items/abc", gotPath)
+	mu.Lock()
+	path, auth, method := gotPath, gotAuth, gotMethod
+	mu.Unlock()
+	if path != "/items/abc" {
+		t.Fatalf("path=%q want /items/abc", path)
 	}
-	if gotAuth != "Bearer tok" {
-		t.Fatalf("auth=%q", gotAuth)
+	if auth != "Bearer tok" {
+		t.Fatalf("auth=%q", auth)
 	}
-	if gotMethod != "GET" {
-		t.Fatalf("method=%q", gotMethod)
+	if method != "GET" {
+		t.Fatalf("method=%q", method)
 	}
 	if requests.Load() != 1 {
 		t.Fatalf("requests=%d", requests.Load())
@@ -429,12 +458,15 @@ func TestRestAPIFetchPageIntegration(t *testing.T) {
 
 func TestRestAPIFetchPagePOST(t *testing.T) {
 	withRestAPITestHooks(t)
+	var mu sync.Mutex
 	var gotMethod, gotBody, gotContentType string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		gotMethod = r.Method
 		gotContentType = r.Header.Get("Content-Type")
 		body, _ := io.ReadAll(r.Body)
 		gotBody = string(body)
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{}`))
 	}))
@@ -449,14 +481,17 @@ func TestRestAPIFetchPagePOST(t *testing.T) {
 	if _, err := c.fetchPage(context.Background(), nil); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
-	if gotMethod != "POST" {
-		t.Fatalf("method=%q", gotMethod)
+	mu.Lock()
+	method, contentType, body := gotMethod, gotContentType, gotBody
+	mu.Unlock()
+	if method != "POST" {
+		t.Fatalf("method=%q", method)
 	}
-	if gotContentType != "application/json" {
-		t.Fatalf("content-type=%q", gotContentType)
+	if contentType != "application/json" {
+		t.Fatalf("content-type=%q", contentType)
 	}
-	if !strings.Contains(gotBody, `"q":"x"`) {
-		t.Fatalf("body=%q", gotBody)
+	if !strings.Contains(body, `"q":"x"`) {
+		t.Fatalf("body=%q", body)
 	}
 }
 
@@ -558,10 +593,13 @@ func TestRestAPIFetchPage429RetryAfter(t *testing.T) {
 
 func TestRestAPIFetchPageRedirectStripsAuth(t *testing.T) {
 	withRestAPITestHooks(t)
+	var mu sync.Mutex
 	var gotAuth, gotMethod string
 	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		gotAuth = r.Header.Get("Authorization")
 		gotMethod = r.Method
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{}`))
 	}))
@@ -581,11 +619,14 @@ func TestRestAPIFetchPageRedirectStripsAuth(t *testing.T) {
 	if _, err := c.fetchPage(context.Background(), nil); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
-	if gotAuth != "" {
-		t.Fatalf("cross-origin auth=%q want stripped", gotAuth)
+	mu.Lock()
+	auth, method := gotAuth, gotMethod
+	mu.Unlock()
+	if auth != "" {
+		t.Fatalf("cross-origin auth=%q want stripped", auth)
 	}
-	if gotMethod != "GET" {
-		t.Fatalf("redirect method=%q want GET", gotMethod)
+	if method != "GET" {
+		t.Fatalf("redirect method=%q want GET", method)
 	}
 }
 
