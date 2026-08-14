@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import logging
 import sys
 import types
 from pathlib import Path
@@ -70,10 +71,13 @@ def capture(name: str) -> dict:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
     for name in ("en", "zh"):
         path = GOLDEN_DIR / f"python.{name}.golden.json"
-        path.write_text(json.dumps(capture(name), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        result = capture(name)
+        path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        logging.info("wrote %s (%d chunks)", path.relative_to(ROOT), len(result["chunks"]))
 
 
 if __name__ == "__main__":
