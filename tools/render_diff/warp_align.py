@@ -156,7 +156,7 @@ def pixel_mse(a_path, b_path):
     A = np.asarray(cv2.imread(a_path), dtype=np.float64)
     B = np.asarray(cv2.imread(b_path), dtype=np.float64)
     if A.shape != B.shape:
-        raise ValueError(f"shape mismatch for {os.path.basename(a_path)} vs " f"{os.path.basename(b_path)}: {A.shape} != {B.shape} " f"(dimensions are part of the parity contract)")
+        raise ValueError(f"shape mismatch for {os.path.basename(a_path)} vs {os.path.basename(b_path)}: {A.shape} != {B.shape} (dimensions are part of the parity contract)")
     diff = A - B
     return float((diff**2).mean())
 
