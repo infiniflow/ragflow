@@ -477,15 +477,15 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
     for (img, rows), poss in tbls:
         if not rows:
             continue
+        # Media producers use strings for tables and lists for figures. Keep
+        # that contract explicit instead of guessing the type from HTML tags.
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
             tokenize(d, rows, eng, language=language)
             d["content_with_weight"] = rows
             d["doc_type_kwd"] = "table"
-            if img:
+            if img is not None:
                 d["image"] = img
-                if d["content_with_weight"].find("<tr>") < 0:
-                    d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -496,11 +496,9 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
             d = copy.deepcopy(doc)
             r = de.join(rows[i : i + batch_size])
             tokenize(d, r, eng, language=language)
-            d["doc_type_kwd"] = "table"
-            if img:
+            d["doc_type_kwd"] = "image"
+            if img is not None:
                 d["image"] = img
-                if d["content_with_weight"].find("<tr>") < 0:
-                    d["doc_type_kwd"] = "image"
             add_positions(d, poss)
             res.append(d)
     return res

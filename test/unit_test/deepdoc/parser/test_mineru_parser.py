@@ -242,6 +242,21 @@ def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
 
 
 @pytest.mark.p1
+def test_tokenize_table_uses_payload_type_instead_of_html_content():
+    from PIL import Image
+
+    from rag.nlp import tokenize_table
+
+    image = Image.new("RGB", (1, 1))
+    media = [((image, "plain table"), []), ((image, ["caption with <tr> text"]), [])]
+
+    chunks = tokenize_table(media, {}, False)
+
+    assert [chunk["doc_type_kwd"] for chunk in chunks] == ["table", "image"]
+    assert [chunk["image"] for chunk in chunks] == [image, image]
+
+
+@pytest.mark.p1
 @pytest.mark.parametrize("parse_method", ["naive", "manual", "paper"])
 def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_method):
     module = _load_mineru_parser(monkeypatch)
