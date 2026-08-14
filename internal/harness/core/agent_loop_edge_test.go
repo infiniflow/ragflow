@@ -20,7 +20,7 @@ func TestTurnLoop_UnhandledItemsOnStop(t *testing.T) {
 	loop := newTurnLoop("unhandled", "")
 	loop.Push(schema.UserMessage("item1"))
 	loop.Push(schema.UserMessage("item2"))
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 	loop.Stop()
 	state := loop.Wait()
 	_ = state
@@ -45,7 +45,7 @@ func TestTurnLoop_PrepareAgentError_RecoverItems(t *testing.T) {
 		},
 	})
 	loop.Push(schema.UserMessage("prepare_recover"))
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 	loop.Stop()
 	_ = loop.Wait()
 }
@@ -63,7 +63,7 @@ func TestTurnLoop_GetAgentError_RecoverConsumed(t *testing.T) {
 		},
 	})
 	loop.Push(schema.UserMessage("recover_consumed"))
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 	loop.Stop()
 	state := loop.Wait()
 	_ = state
@@ -73,7 +73,7 @@ func TestTurnLoop_GetAgentError_RecoverConsumed(t *testing.T) {
 func TestTurnLoop_BareStop_AgentRunsToCompletion(t *testing.T) {
 	loop := newTurnLoop("bare_stop", "bare result")
 	loop.Push(schema.UserMessage("bare"))
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 	time.Sleep(30 * time.Millisecond)
 	loop.Stop()
 	_ = loop.Wait()
@@ -83,7 +83,7 @@ func TestTurnLoop_BareStop_AgentRunsToCompletion(t *testing.T) {
 func TestTurnLoop_StopAfterReceive_RecoverItem(t *testing.T) {
 	loop := newTurnLoop("stop_recv", "result")
 	loop.Push(schema.UserMessage("stop_after_recv"))
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 	time.Sleep(10 * time.Millisecond)
 	loop.Stop()
 	state := loop.Wait()
@@ -99,7 +99,7 @@ func TestFailover_StreamFailover(t *testing.T) {
 	fallback := &mockModel{}
 	fallback.addResp("fallback")
 	wrapped := WithModelFailover(primary, fallback)
-	ctx := context.Background()
+	ctx := t.Context()
 	sr, err := wrapped.Stream(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -117,7 +117,7 @@ func TestFailover_AllModelsFail_Stream(t *testing.T) {
 	primary := &alwaysFailModel{}
 	fallback := &alwaysFailModel{}
 	wrapped := WithModelFailover(primary, fallback)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Stream(ctx, []Message{schema.UserMessage("")})
 	if err == nil {
 		t.Error("expected error when all models fail in stream")

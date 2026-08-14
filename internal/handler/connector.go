@@ -434,7 +434,7 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 	common.SuccessWithData(c, ok, "success")
 }
 
-// ResumeFailedSync resumes a failed connector sync task from checkpoint.
+// ResumeFailedSync resumes a failed connector sync task from checkpoint. (when network outage)
 // @Summary Resume Failed Connector Sync
 // @Description Resume a failed connector sync task from its saved checkpoint
 // @Tags connector

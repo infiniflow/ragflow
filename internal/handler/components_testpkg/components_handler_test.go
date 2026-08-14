@@ -146,7 +146,7 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
 		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
@@ -172,7 +172,7 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
 		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
@@ -273,7 +273,7 @@ func TestComponentsHandler_CaseInsensitive(t *testing.T) {
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 	wantNames := []string{
-		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
 		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}

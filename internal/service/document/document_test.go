@@ -1331,6 +1331,9 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	if !ok || len(errors) == 0 {
 		t.Fatal("expected errors in result")
 	}
+	if errors[0] != "Can't stop parsing document that has not started or already completed" {
+		t.Fatalf("unexpected error message: %q", errors[0])
+	}
 }
 
 func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
@@ -2975,6 +2978,116 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 	remaining, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
 	if remaining == nil {
 		t.Fatal("ingestion task must NOT be deleted by cancel")
+	}
+}
+
+// TestIngest_CancelUnstartedDocument mirrors the Python /documents/ingest
+// behavior: canceling a document whose parse never started (run=UNSTART, no
+// ingestion task) must be rejected with code 102 and the Python message, not
+// an internal "no ingestion task found" error.
+func TestIngest_CancelUnstartedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling an un-started document")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected code %v, got %v", common.CodeDataError, code)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("unexpected error message: %q", err.Error())
+	}
+}
+
+// TestIngest_CancelCompletedDocument: canceling an already finished parse
+// (run=DONE, ingestion task COMPLETED) is rejected with the same Python
+// message as the un-started case.
+func TestIngest_CancelCompletedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling a completed document")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected code %v, got %v", common.CodeDataError, code)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("unexpected error message: %q", err.Error())
+	}
+}
+
+// TestIngest_CancelUnstartedWithInFlightTask: run=UNSTART but an ingestion
+// task was just enqueued (CREATED) — cancel is allowed, matching the Python
+// has_unfinished_task branch.
+func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(cancel) with in-flight task: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if doc == nil || doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
+		t.Fatalf("expected doc run=CANCEL, got %v", doc.Run)
+	}
+}
+
+// TestIngest_CancelAgainWithoutTask: re-canceling a document already in
+// CANCEL state is accepted even when its ingestion task is gone — Python
+// treats run=CANCEL as cancelable and cancel_all_task_of is a no-op.
+func TestIngest_CancelAgainWithoutTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(re-cancel) without task: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
 	}
 }
 
