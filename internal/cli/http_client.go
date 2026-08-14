@@ -22,8 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	ce "ragflow/internal/cli/filesystem"
+	"strings"
 	"time"
 )
 
@@ -180,6 +182,11 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 	}, nil
 }
 
+func isJSONMediaType(contentType string) bool {
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
 func benchmarkResponseSucceeded(resp *Response) bool {
 	if resp.StatusCode != http.StatusOK {
 		return false
@@ -188,7 +195,7 @@ func benchmarkResponseSucceeded(resp *Response) bool {
 	result, err := resp.JSON()
 	if err != nil {
 		// Some successful endpoints, such as ping, return plain text.
-		return true
+		return !isJSONMediaType(resp.Headers.Get("Content-Type"))
 	}
 	code, hasCode := result["code"].(float64)
 	return !hasCode || code == 0

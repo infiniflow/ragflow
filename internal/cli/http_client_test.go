@@ -25,11 +25,10 @@ import (
 	"testing"
 )
 
-func TestRequestWithIterationsCountsApplicationErrorsAsFailures(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"code": 100, "message": "request failed"}`))
-	}))
+func newTestHTTPClient(t *testing.T, handler http.Handler) *HTTPClient {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
 	serverURL, err := url.Parse(server.URL)
@@ -49,6 +48,14 @@ func TestRequestWithIterationsCountsApplicationErrorsAsFailures(t *testing.T) {
 	client.Host = host
 	client.Port = port
 	client.client = server.Client()
+	return client
+}
+
+func TestRequestWithIterationsCountsApplicationErrorsAsFailures(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code": 100, "message": "request failed"}`))
+	}))
 
 	result, err := client.RequestWithIterations(http.MethodGet, "/failure", "web", nil, nil, 3)
 	if err != nil {
@@ -56,5 +63,42 @@ func TestRequestWithIterationsCountsApplicationErrorsAsFailures(t *testing.T) {
 	}
 	if result.SuccessCount != 0 || result.FailureCount != 3 {
 		t.Fatalf("successes = %d, failures = %d; want 0 successes and 3 failures", result.SuccessCount, result.FailureCount)
+	}
+}
+
+func TestRequestWithIterationsCountsMalformedJSONAsFailures(t *testing.T) {
+	for _, contentType := range []string{
+		"application/json",
+		"application/problem+json; charset=utf-8",
+	} {
+		t.Run(contentType, func(t *testing.T) {
+			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", contentType)
+				_, _ = w.Write([]byte(`{"code":`))
+			}))
+
+			result, err := client.RequestWithIterations(http.MethodGet, "/malformed", "web", nil, nil, 3)
+			if err != nil {
+				t.Fatalf("RequestWithIterations() error = %v", err)
+			}
+			if result.SuccessCount != 0 || result.FailureCount != 3 {
+				t.Fatalf("successes = %d, failures = %d; want 0 successes and 3 failures", result.SuccessCount, result.FailureCount)
+			}
+		})
+	}
+}
+
+func TestRequestWithIterationsPreservesPlainTextSuccess(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("pong"))
+	}))
+
+	result, err := client.RequestWithIterations(http.MethodGet, "/ping", "none", nil, nil, 3)
+	if err != nil {
+		t.Fatalf("RequestWithIterations() error = %v", err)
+	}
+	if result.SuccessCount != 3 || result.FailureCount != 0 {
+		t.Fatalf("successes = %d, failures = %d; want 3 successes and 0 failures", result.SuccessCount, result.FailureCount)
 	}
 }
