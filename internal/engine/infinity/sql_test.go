@@ -400,4 +400,3 @@ func TestBuildFilterFromCondition_UnconstrainedFilter(t *testing.T) {
 		t.Errorf("non-empty condition with blank values: got %q, want '1=1'", got)
 	}
 }
-

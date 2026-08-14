@@ -709,9 +709,7 @@ class DocMetadataService:
                 return {}
 
             # Extract fields
-            doc_obj = doc
             tenant_id = doc.knowledgebase.tenant_id
-            kb_id = doc_obj.kb_id
             index_name = cls._get_doc_meta_index_name(tenant_id)
 
             # Try to get metadata from ES/Infinity. Doc-meta tables are
