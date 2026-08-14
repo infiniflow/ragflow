@@ -40,8 +40,8 @@ func manualChunkerInput(name string, items ...map[string]any) map[string]any {
 // schema.ChunkDoc.PDFPositions).
 func posItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
-		"text":         text,
-		"doc_type_kwd": "text",
+		"text":           text,
+		"doc_type_kwd":   "text",
 		"_pdf_positions": [][]float64{{page, left, right, top, bottom}},
 	}
 }
@@ -322,10 +322,10 @@ func TestHasPdfPositions(t *testing.T) {
 // after the chunksFromInputs JSON round-trip.
 func parserShapedItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
-		"text":          text,
-		"doc_type_kwd":  "text",
-		"layout":        "text",
-		"page_number":   int(page),
+		"text":           text,
+		"doc_type_kwd":   "text",
+		"layout":         "text",
+		"page_number":    int(page),
 		"_pdf_positions": [][]any{{page, left, right, top, bottom}},
 	}
 }
