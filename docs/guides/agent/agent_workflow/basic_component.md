@@ -1,14 +1,14 @@
 ---
 sidebar_position: 1
-title: Basic Component Configuration
-sidebar_label: Basic Component Configuration
-slug: /basic_component_configuration
+title: Basic Component
+sidebar_label: Basic Component
+slug: /basic_component
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Basic Component Configuration
+# Basic Component
 
 ## Begin Component
 
@@ -58,14 +58,15 @@ Variable types:
 | File upload | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to knowledge bases, and are used only in the current workflow. |
 | Number | Used to enter numeric values, such as quantity, threshold, `Top K`, and maximum returned items. |
 | Boolean | Provides a switch (`True`/`False`) or yes/no option, used to control whether a feature is enabled or whether a branch is executed. |
+| JSON object | Used to enter structured JSON data, such as parameters, configurations, or other complex data containing multiple fields. |
+
+![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_2.jpg)
 
 :::tip NOTE
 
 Files uploaded through the `Begin` component are used only as input for the current workflow. They are not automatically saved to knowledge bases, and they do not use knowledge base parsing, OCR, or chunking capabilities. File content can be passed to subsequent components as variables, and is limited by the model context length.
 
 :::
-
-![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_2.jpg)
 
 ## Agent Component
 
@@ -145,7 +146,7 @@ For structured output, after enabling **Structured output**, click **Configurati
 
 ![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_4.jpg)
 
-## Knowledge Retrieval Component
+## Retrieval Component
 
 The knowledge retrieval component is used to retrieve relevant content from specified knowledge bases or memories. It can be used as a regular workflow component, or as a tool for the Agent component.
 
@@ -190,28 +191,3 @@ Retrieval parameters directly affect answer coverage, accuracy, and response tim
 | Similarity threshold | 0.5 | General Q&A | Default starting value. |
 | Similarity threshold | 0.8 | Strict precise matching | Scenarios that require exact terminology matching. |
 
-## Reply Message Component
-
-The message is used to output static or dynamic messages to users, and is usually used as the final component of a workflow. It can directly write fixed text, or insert upstream variables.
-
-### Configuration Method
-
-Write the output content in the message. Type `/` or click the variable button to insert component outputs.
-
-If multiple messages are added, the system randomly selects one of them to send. When the `Begin` component selects `Webhook` and the response method is `Final response`, the reply message component can set an HTTP status code in the range of 200 to 399.
-
-![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_1.jpg)
-
-### Save to Memory
-
-The reply message component can choose to save to memory, storing the conversation in the specified memory. After enabling **User ID**, conversations can be associated with user IDs, and subsequent knowledge retrieval can query related memories by user ID.
-
-### Applicable Scenarios
-
-This component is suitable for outputting final answers, branch hints, fallback replies, or displaying intermediate processing results to users.
-
-### Output Result
-
-The message outputs the configured text or variable content to the conversation window, webhook response, or embedded page.
-
-![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_2.jpg)
