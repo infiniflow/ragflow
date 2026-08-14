@@ -133,6 +133,66 @@ func min4(a, b, c, d float64) float64 {
 	return m
 }
 
+// TestOCRMergeChars_WarpsEmptyBoxCrop locks that the char-merge path
+// (buildTextBoxes) also de-skews the boxes it re-recognizes, matching the
+// ocrDetectAndRecognize path, and that for the axis-aligned boxes this path
+// actually produces (the WarpCrop is behavior-equivalent to the old FastCrop,
+// so this doubles as a no-regression guard for the wiring change).
+func TestOCRMergeChars_WarpsEmptyBoxCrop(t *testing.T) {
+	p := newTestParser()
+	page := image.NewRGBA(image.Rect(0, 0, 200, 140))
+
+	// Axis-aligned detection box (pixel space). Char boxes are axis-aligned,
+	// so the merge path only ever sees rectangles like this.
+	quad := [4]util.Pt{{X: 40, Y: 40}, {X: 140, Y: 40}, {X: 140, Y: 100}, {X: 40, Y: 100}}
+	box := pdf.OCRBox{
+		X0: quad[0].X, Y0: quad[0].Y,
+		X1: quad[1].X, Y1: quad[1].Y,
+		X2: quad[2].X, Y2: quad[2].Y,
+		X3: quad[3].X, Y3: quad[3].Y,
+	}
+
+	// A single space char inside the box -> matched, but its text trims to
+	// empty, so the box is pushed to the need-OCR path.
+	chars := []pdf.TextChar{{
+		Text:       " ",
+		X0:         45,
+		X1:         135,
+		Top:        45,
+		Bottom:     95,
+		PageNumber: 0,
+	}}
+
+	cap := &captureAnalyzer{
+		healthy: true,
+		boxes:   []pdf.OCRBox{box},
+		texts:   []pdf.OCRText{{Text: "x", Confidence: 0.9}},
+	}
+	got := p.ocrMergeChars(context.Background(), page, chars, cap, 0)
+	if len(got) == 0 {
+		t.Fatal("expected at least one text box from the merge path")
+	}
+	if cap.recImage == nil {
+		t.Fatal("OCRRecognize was not called with a crop on the merge path")
+	}
+	rec, ok := cap.recImage.(*image.RGBA)
+	if !ok {
+		t.Fatalf("rec crop is %T, want *image.RGBA", cap.recImage)
+	}
+
+	// Axis-aligned box: WarpCrop must equal FastCrop (no behavioral change),
+	// and the crop fed to recognition must be exactly the warped rectangle.
+	wantWarp := util.WarpCrop(page, quad)
+	wantFast := util.FastCrop(page, 40, 40, 140, 100)
+	if !sameImage(rec, wantWarp) {
+		t.Errorf("merge-path rec crop is not the WarpCrop output (size got=%v want=%v)",
+			cap.recImage.Bounds(), wantWarp.Bounds())
+	}
+	if !sameImage(rec, wantFast) {
+		t.Errorf("merge-path crop diverged from the old FastCrop behavior; regression risk")
+	}
+}
+
 func max4(a, b, c, d float64) float64 {
 	m := a
 	if b > m {

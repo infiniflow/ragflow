@@ -33,25 +33,43 @@ type Pt struct {
 // If the quad is degenerate (collinear / non-invertible homography), WarpCrop
 // falls back to an axis-aligned crop of the quad's bounding box so callers
 // stay safe.
+// maxWarpDim bounds the allocated crop so a (clamped) quad can never drive an
+// unbounded image.NewRGBA. Detector boxes arrive from a remote DocAnalyzer /
+// DEEPDOC_URL and are treated as untrusted; this ceiling is a last line of
+// defence against an unexpectedly large source image even after clamping.
+const maxWarpDim = 1 << 16
+
 func WarpCrop(src image.Image, points [4]Pt) *image.RGBA {
-	w := int(math.Max(dist(points[0], points[1]), dist(points[2], points[3])))
-	h := int(math.Max(dist(points[0], points[3]), dist(points[1], points[2])))
-	if w <= 0 || h <= 0 {
-		return axisFallback(src, points)
+	// Detection boxes come from a remote DocAnalyzer / DEEPDOC_URL and are
+	// effectively untrusted. FastCrop clamps its rectangle to the source
+	// bounds before allocating; this path must do the same on its four
+	// corners and must reject non-finite coordinates, so a malformed or
+	// out-of-range response cannot drive an unbounded image.NewRGBA (panic /
+	// OOM). On a normal in-bounds quad the clamp is a no-op, so detection
+	// accuracy is unchanged.
+	if !pointsFinite(points) {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1))
+	}
+	rgba := toRGBA(src)
+	b := rgba.Bounds()
+	pts := clampQuad(points, b)
+
+	w := int(math.Max(dist(pts[0], pts[1]), dist(pts[2], pts[3])))
+	h := int(math.Max(dist(pts[0], pts[3]), dist(pts[1], pts[2])))
+	if w <= 0 || h <= 0 || w > maxWarpDim || h > maxWarpDim {
+		return axisFallback(src, pts)
 	}
 
 	dst := [4]Pt{{0, 0}, {float64(w), 0}, {float64(w), float64(h)}, {0, float64(h)}}
-	hMat, ok := perspectiveTransform(points, dst)
+	hMat, ok := perspectiveTransform(pts, dst)
 	if !ok {
-		return axisFallback(src, points)
+		return axisFallback(src, pts)
 	}
 	inv, ok := invert3x3(hMat)
 	if !ok {
-		return axisFallback(src, points)
+		return axisFallback(src, pts)
 	}
 
-	rgba := toRGBA(src)
-	b := rgba.Bounds()
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -261,4 +279,40 @@ func axisFallback(src image.Image, points [4]Pt) *image.RGBA {
 
 func dist(a, b Pt) float64 {
 	return math.Hypot(a.X-b.X, a.Y-b.Y)
+}
+
+// pointsFinite reports whether all four corner coordinates are finite. A
+// non-finite value from a malformed detector response must be rejected before
+// any dimension derivation or allocation.
+func pointsFinite(p [4]Pt) bool {
+	for _, q := range p {
+		if math.IsNaN(q.X) || math.IsNaN(q.Y) || math.IsInf(q.X, 0) || math.IsInf(q.Y, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// clampQuad clamps every corner to the source image bounds. FastCrop performs
+// the equivalent clamp on its axis-aligned rectangle; WarpCrop must do the same
+// on its four corners so an out-of-range detector box cannot produce an
+// out-of-bounds or unbounded crop. Corners already inside the bounds are
+// returned unchanged, so a well-formed detection box is unaffected.
+func clampQuad(p [4]Pt, b image.Rectangle) [4]Pt {
+	out := p
+	minX, minY := float64(b.Min.X), float64(b.Min.Y)
+	maxX, maxY := float64(b.Max.X), float64(b.Max.Y)
+	for i := range out {
+		if out[i].X < minX {
+			out[i].X = minX
+		} else if out[i].X > maxX {
+			out[i].X = maxX
+		}
+		if out[i].Y < minY {
+			out[i].Y = minY
+		} else if out[i].Y > maxY {
+			out[i].Y = maxY
+		}
+	}
+	return out
 }

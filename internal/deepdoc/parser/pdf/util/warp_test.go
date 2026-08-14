@@ -226,3 +226,53 @@ func TestWarpCropRespectsNonZeroOrigin(t *testing.T) {
 		t.Errorf("WarpCrop ignored the source image origin: MSE between sub- and flat-frame warps = %v", mse)
 	}
 }
+
+// TestWarpCropRejectsMalformedQuad guards against a process-crashing panic /
+// OOM on an out-of-range or non-finite detector quad. The old FastCrop path
+// clamped coordinates to the source bounds before allocating; WarpCrop must be
+// equally safe. A finite but absurd coordinate (e.g. 3e18) would otherwise
+// reach image.NewRGBA and panic with "huge or negative dimensions", and a
+// non-finite coordinate would drive an undefined-size allocation.
+//
+// This is a regression guard for the untrusted-boundary contract: OCRDetect
+// accepts coordinates from a configured DocAnalyzer / DEEPDOC_URL, and the
+// first-party Python detector clips its points, but that invariant is not
+// enforced at this Go boundary.
+func TestWarpCropRejectsMalformedQuad(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 10, 10))
+
+	cases := []struct {
+		name string
+		pts  [4]Pt
+	}{
+		{"huge x", [4]Pt{{0, 0}, {3e18, 0}, {3e18, 2}, {0, 2}}},
+		{"huge negative", [4]Pt{{-3e18, 0}, {0, 0}, {0, 2}, {-3e18, 2}}},
+		{"nan", [4]Pt{{0, 0}, {math.NaN(), 0}, {10, 10}, {0, 10}}},
+		{"inf", [4]Pt{{0, 0}, {math.Inf(1), 0}, {10, 10}, {0, 10}}},
+		{"outside bounds", [4]Pt{{-100, -100}, {200, -100}, {200, 200}, {-100, 200}}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got *image.RGBA
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("WarpCrop panicked on %q: %v", tc.name, r)
+					}
+				}()
+				got = WarpCrop(src, tc.pts)
+			}()
+			if got == nil {
+				t.Fatalf("WarpCrop returned nil on %q", tc.name)
+			}
+			w, h := got.Bounds().Dx(), got.Bounds().Dy()
+			if w <= 0 || h <= 0 {
+				t.Errorf("WarpCrop returned an empty crop on %q: %dx%d", tc.name, w, h)
+			}
+			if w > maxWarpDim || h > maxWarpDim {
+				t.Errorf("WarpCrop returned an unbounded crop on %q: %dx%d", tc.name, w, h)
+			}
+		})
+	}
+}

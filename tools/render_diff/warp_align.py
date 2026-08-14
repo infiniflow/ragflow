@@ -22,7 +22,7 @@ Pipeline
               rotate each by a sweep of angles to build skewed quads, write
               quads.json and the reference crops (py_warp_*.png).
 2. (Go)     : TestWarpAlignGo pass 2 reads quads.json and writes go_warp_*.png
-              (WarpCrop) and go_fastcrop_*.png (FastCrop, the old behavior).
+              (WarpCrop, de-skewed) and go_fastcrop_*.png (FastCrop, axis-aligned bbox).
 3. compare  : pixel-MSE Go-WarpCrop vs reference and Go-FastCrop vs reference,
               aggregated (layer-1 geometry; no model weights needed).
 4. rec      : run recognize_batch (the actual Go->service path, NO layer-2
@@ -68,9 +68,17 @@ def _sim(a, b):
     return difflib.SequenceMatcher(None, a or "", b or "").ratio()
 
 
-def _quad_from_word(w, angle_deg, W, H, margin):
+def _quad_from_word(w, angle_deg, W, H, margin, perturb=4.0):
     """Return [x0,y0,x1,y1,x2,y2,x3,y3] (TL,TR,BR,BL) rotated by angle_deg, or
-    None if the rotated quad leaves the page."""
+    None if the rotated quad leaves the page.
+
+    A small deterministic perturbation is applied to the bottom-left corner so
+    the quad is a genuine trapezoid rather than a parallelogram. A plain
+    rotated rectangle maps to a parallelogram, whose getPerspectiveTransform has
+    no projective term -- the 8-DOF (true perspective) path in WarpCrop would
+    then go untested against cv2. The perturbation makes the cv2 reference
+    exercise the full homography the Go code implements.
+    """
     x0, top, x1, bottom = w["x0"], w["top"], w["x1"], w["bottom"]
     pts = [
         (x0 * SCALE, top * SCALE),
@@ -86,6 +94,9 @@ def _quad_from_word(w, angle_deg, W, H, margin):
     for x, y in pts:
         dx, dy = x - cx, y - cy
         rot.append((cx + dx * ca - dy * sa, cy + dx * sa + dy * ca))
+    # Break the parallelogram so cv2 exercises the non-zero projective terms.
+    bx, by = rot[3]
+    rot[3] = (bx + perturb, by - perturb)
     # in-bounds check
     for x, y in rot:
         if not (margin <= x <= W - margin and margin <= y <= H - margin):
@@ -116,6 +127,8 @@ def cmd_genquads(args):
         if w["bottom"] - w["top"] < 6:  # skip tiny fragments
             continue
         for ang in angles:
+            if len(boxes) >= args.max_quads:
+                break
             q = _quad_from_word(w, ang, W, H, args.margin)
             if q is None:
                 continue
@@ -132,6 +145,29 @@ def cmd_genquads(args):
 
 
 def pixel_mse(a_path, b_path):
+    """Pixel MSE between two crops that MUST share identical dimensions.
+
+    Width/height are part of the WarpCrop <-> cv2 parity contract: a 1px
+    dimension difference (e.g. float64 vs float32 truncation in the norm) is a
+    real divergence and must surface, not be hidden by resizing. Callers that
+    compare the de-skewed WarpCrop crop against the cv2 reference use this and
+    treat a shape mismatch as a contract failure.
+    """
+    A = np.asarray(cv2.imread(a_path), dtype=np.float64)
+    B = np.asarray(cv2.imread(b_path), dtype=np.float64)
+    if A.shape != B.shape:
+        raise ValueError(f"shape mismatch for {os.path.basename(a_path)} vs " f"{os.path.basename(b_path)}: {A.shape} != {B.shape} " f"(dimensions are part of the parity contract)")
+    diff = A - B
+    return float((diff**2).mean())
+
+
+def pixel_mse_baseline(a_path, b_path):
+    """Pixel MSE for the FastCrop baseline vs cv2.
+
+    FastCrop is axis-aligned while cv2 de-skews, so the two crops legitimately
+    differ in size. Resize to a common size to obtain a scalar divergence
+    estimate (the baseline is known-wrong; only its magnitude matters).
+    """
     A = np.asarray(cv2.imread(a_path), dtype=np.float64)
     B = np.asarray(cv2.imread(b_path), dtype=np.float64)
     if A.shape != B.shape:
@@ -151,17 +187,27 @@ def cmd_compare(args):
 
     limit = args.limit if args.limit and args.limit > 0 else len(boxes)
     mse_warp, mse_fc = [], []
+    warp_results = []  # (box_index, mw) so the per-angle summary stays aligned
     better = 0  # cases where WarpCrop is closer to cv2 than FastCrop
+    warp_dim_mismatch = 0  # WarpCrop vs cv2 dimension contract failures
     for i in range(min(limit, len(boxes))):
         gw = os.path.join(args.out_dir, f"go_warp_{i}.png")
         gf = os.path.join(args.out_dir, f"go_fastcrop_{i}.png")
         pw = os.path.join(args.out_dir, f"py_warp_{i}.png")
         if not (os.path.exists(gw) and os.path.exists(gf) and os.path.exists(pw)):
             continue
-        mw = pixel_mse(gw, pw)
-        mf = pixel_mse(gf, pw)
+        # WarpCrop must match cv2 exactly in size; a mismatch is a contract
+        # failure (previously hidden by resizing) and is not counted as "closer".
+        try:
+            mw = pixel_mse(gw, pw)
+        except ValueError as e:
+            warp_dim_mismatch += 1
+            logging.warning("[compare] box %d: %s", i, e)
+            continue
+        mf = pixel_mse_baseline(gf, pw)
         mse_warp.append(mw)
         mse_fc.append(mf)
+        warp_results.append((i, mw))
         if mw < mf:
             better += 1
 
@@ -175,11 +221,14 @@ def cmd_compare(args):
     logging.info("  pixel MSE  WarpCrop vs cv2 : mean=%.2f  max=%.2f", mean_w, max(mse_warp))
     logging.info("  pixel MSE  FastCrop vs cv2 : mean=%.2f  max=%.2f", mean_f, max(mse_fc))
     logging.info("  WarpCrop closer to cv2 than FastCrop : %d/%d", better, n)
-    # show per-angle summary if meta present
+    if warp_dim_mismatch:
+        logging.info("  WarpCrop vs cv2 DIMENSION MISMATCH (contract fail) : %d", warp_dim_mismatch)
+    # show per-angle summary if meta present; pair each MSE with its box index
+    # so a skipped/missing crop cannot misalign the angle buckets.
     by_angle = {}
-    for i, m in enumerate(meta[:n]):
-        ang = m.get("angle", 0)
-        by_angle.setdefault(ang, []).append(mse_warp[i])
+    for idx, mw in warp_results:
+        ang = meta[idx].get("angle", 0) if idx < len(meta) else 0
+        by_angle.setdefault(ang, []).append(mw)
     if by_angle:
         logging.info("\n  -- mean MSE(WarpCrop vs cv2) by rotation angle --")
         for ang in sorted(by_angle):
@@ -195,13 +244,13 @@ def cmd_rec(args):
     selection. So the apples-to-apples comparison is recognize_batch() on each
     of the three crops already on disk:
 
-      go_warp_*.png     : Go util.WarpCrop  (new behavior, layer-1 only)
-      go_fastcrop_*.png : Go util.FastCrop  (old behavior, axis-aligned bbox)
+      go_warp_*.png     : Go util.WarpCrop  (de-skewed, layer-1 only)
+      go_fastcrop_*.png : Go util.FastCrop  (axis-aligned bounding box)
       py_warp_*.png     : cv2.getPerspectiveTransform + warpPerspective
-                          (what Python's de-skew produces before recognition)
+                          (the de-skewed crop Python produces before recognition)
 
     If go_warp matches py_warp at the text level and both beat go_fastcrop,
-    WarpCrop is a faithful, strictly-better replacement of the old FastCrop.
+    WarpCrop reproduces the de-skewed crop geometry that FastCrop misses.
     """
     from deepdoc.vision.ocr import OCR
 
@@ -244,7 +293,7 @@ def cmd_rec(args):
             warp_eq_py += 1
         if tf == tp:
             fc_eq_py += 1
-        if sw >= sf:
+        if sw > sf:
             warp_closer += 1
         # per-angle bucket
         ang = meta[i].get("angle", 0.0) if i < len(meta) else 0.0
@@ -261,7 +310,7 @@ def cmd_rec(args):
     logging.info("  exact text match  FastCrop vs cv2 : %d/%d (%.1f%%)", fc_eq_py, n, 100 * fc_eq_py / n)
     logging.info("  mean text similarity WarpCrop vs cv2 : %.3f", warp_sim_total / n)
     logging.info("  mean text similarity FastCrop vs cv2 : %.3f", fc_sim_total / n)
-    logging.info("  WarpCrop text closer to cv2 than FastCrop : %d/%d (%.1f%%)", warp_closer, n, 100 * warp_closer / n)
+    logging.info("  WarpCrop text strictly closer to cv2 than FastCrop : %d/%d (%.1f%%)", warp_closer, n, 100 * warp_closer / n)
 
     if by_angle:
         logging.info("\n  -- mean text similarity(WarpCrop vs cv2) by rotation angle --")

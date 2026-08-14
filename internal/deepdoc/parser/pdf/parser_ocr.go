@@ -241,7 +241,15 @@ func (p *Parser) ocrTableCells(ctx context.Context, cells []pdf.TSRCell, tableIm
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		cropped := util.FastCrop(tableImg, x0, y0, x1, y1)
+		// De-skew the cell the same way the other OCR paths do. Table cells
+		// are axis-aligned, so this matches FastCrop, and it also inherits
+		// WarpCrop's bounds-clamp / non-finite guard on the cell geometry.
+		cropped := util.WarpCrop(tableImg, [4]util.Pt{
+			{X: float64(x0), Y: float64(y0)},
+			{X: float64(x1), Y: float64(y0)},
+			{X: float64(x1), Y: float64(y1)},
+			{X: float64(x0), Y: float64(y1)},
+		})
 		texts, err := p.inferOCRRecognize(ctx, doc, cropped)
 		if err != nil {
 			slog.Warn("table cell OCR failed", "err", err)
@@ -300,9 +308,17 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 	}
 	if len(needOCR) > 0 && doc != nil && doc.Health() {
 		for _, idx := range needOCR {
-			cropped := util.FastCrop(pageImg,
-				int(boxes[idx].x0*scale), int(boxes[idx].y0*scale),
-				int(boxes[idx].x1*scale), int(boxes[idx].y1*scale))
+			// De-skew the box the same way ocrDetectAndRecognize does, so
+			// both Go OCR paths feed the recognizer an identical geometry.
+			// Char/table-derived boxes are axis-aligned, so this is
+			// equivalent to FastCrop here, but it also inherits WarpCrop's
+			// bounds-clamp / non-finite guard on the untrusted detector box.
+			cropped := util.WarpCrop(pageImg, [4]util.Pt{
+				{X: boxes[idx].x0 * scale, Y: boxes[idx].y0 * scale},
+				{X: boxes[idx].x1 * scale, Y: boxes[idx].y0 * scale},
+				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
+				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
+			})
 			texts, err := p.inferOCRRecognize(ctx, doc, cropped)
 			if err != nil {
 				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
