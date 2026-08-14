@@ -367,16 +367,13 @@ def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: 
 
 def _merge_agent_results(ctx: OrchestratorContext, tools):
     """Merge agent result reports into kbinfos as a pre_summary."""
-    combined = []
+    from rag.advanced_rag.harness.orchestrator.decompose import _build_pre_summary
+
     seen_evidence = set()
 
-    for c in ctx.claims:
-        if c.agent_result and c.agent_result.report:
-            status = "✅" if c.is_verified else "❌"
-            combined.append(f"【{c.claim_id}】{status} {c.agent_result.report[:500]}")
-
-    if combined:
-        tools.kbinfos["pre_summary"] = "\n\n".join(combined)
+    pre_summary = _build_pre_summary(ctx)
+    if pre_summary:
+        tools.kbinfos["pre_summary"] = pre_summary
 
     # Collect the chunks the agents actually cited across all claims. These
     # indices share the same positional space as kb_prompt's ``[ID:n]`` markers

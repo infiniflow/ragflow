@@ -18,8 +18,38 @@ from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
 
-_MAX_EVIDENCE_SNIPPETS = 6
 _MAX_NEXT_QUERIES = 3
+
+# ── Evidence compaction for per-claim analysis ──────────────────────────────
+# A single claim analysis historically sent ALL retrieved chunks in full
+# (top_n=12 × untruncated content_with_weight) in one LLM call — benchmark logs
+# showed ~56K prompt tokens for one claim, and 370K-757K for a full question.
+# The dominant cost is the same chunk being re-sent verbatim across many claims
+# and many rounds (evidence_ids overlap heavily between claims and repeat across
+# consecutive rounds). To cut tokens WITHOUT dropping any content we deduplicate
+# the evidence — a chunk already analysed for this claim (or an identical chunk
+# already analysed this round) is not sent again — and only apply a hard length
+# ceiling as a safety valve. We deliberately do NOT sentence-level narrow: that
+# risks dropping the answer sentence (e.g. English-numbered aggregate answers
+# like "two children" that the fact-dense heuristic misses).
+# We cap the per-chunk length and the total, but we do NOT drop whole chunks or
+# sentence-level-narrow: benchmark data shows the answer sentence can sit in a
+# low-ranked chunk or be phrased with an English number ("two children") that a
+# fact-dense heuristic misses. Capping only the tail of an over-long chunk (the
+# least likely place for the retrieved, similarity-ranked answer) and the total
+# is the information-preserving choice.
+_EVIDENCE_MAX_CHUNKS = 8  # keep only the top-N most similar retrieved chunks
+_EVIDENCE_MAX_CHARS_PER_CHUNK = 2000  # hard per-chunk cap (tail-only, preserves the head)
+_EVIDENCE_MAX_TOTAL_CHARS = 16_000  # global ceiling for the concatenated evidence
+# Cross-round evidence dedup: benchmark logs show consecutive rounds for the same
+# claim re-search and re-send nearly identical chunk sets (avg 56% overlap, 18%
+# byte-identical). Sending the same full chunks every round is the dominant token
+# waste. We track per-claim already-analysed evidence IDs and, on later rounds,
+# only send the NEW chunks plus the previous round's report (so the model judges
+# with the full picture, not a degraded subset).
+_EVIDENCE_DEDUP = True
+# Cap for the previous-round report injected into the analysis prompt.
+_EVIDENCE_PREV_REPORT_CAP = 1200
 
 _EVIDENCE_ANALYSIS_SYSTEM = """You are controlling a multi-hop RAG retrieval loop.
 Judge whether the retrieved passages verify the claim using only the provided evidence.
@@ -48,14 +78,14 @@ Return JSON:
 {{
   "is_verified": true,
   "confidence": 0.0,
-  "report": "Short evidence-backed finding, or what was learned so far.",
+  "report": "A precise, self-contained evidence-backed finding for this claim. MUST preserve every exact number, year, percentage, proper noun (person/place/org/product), and specific relationship verbatim from the evidence — do not paraphrase away or generalize away the concrete values. This report is the primary material for the final answer, so it must carry the answerable fact (e.g. '1,429,475 residents of Markazi in the 2016 census', 'the 1978 Academy Award for Best Picture went to The Deer Hunter'). If the evidence is incomplete, say what is known so far and what is still missing.",
   "gaps": ["specific missing fact or relationship"],
   "intermediate": "ONE bridge entity or relationship that must be retrieved BEFORE the claim can be answered, e.g. for 'company that Brian Bergstein is employed by violates which law' the intermediate is 'Who is Brian Bergstein's employer?'. Empty string if none / not a multi-hop bridge.",
   "next_queries": ["standalone follow-up search query"],
-  "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match"],
+  "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match; keep the exact numbers and entity names"],
   "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"]
 }}
-Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one."""
+Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one. The report must be long enough to carry the full answerable fact — prefer completeness over brevity."""
 
 
 @in_phase("decompose")
@@ -72,6 +102,9 @@ async def decompose_and_search(state: dict, tools) -> dict:
     claims = [ClaimTarget(**c) if isinstance(c, dict) else c for c in claims_raw]
     ctx = OrchestratorContext(question=question, claims=claims, mode=mode_label)
     attempted_queries: dict[str, set[str]] = {c.claim_id: set() for c in ctx.claims}
+    # Cross-round evidence dedup state: which evidence IDs each claim has already
+    # had analysed. Later rounds only send NEW evidence IDs plus the prior report.
+    attempted_evidence: dict[str, set[int]] = {c.claim_id: set() for c in ctx.claims}
     pending_queries: dict[str, list[str]] = {c.claim_id: [] for c in ctx.claims}
     completed_cycles = 0
 
@@ -146,6 +179,9 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 continue
             attempted_queries[c.claim_id].add(_normalize_query(query))
             searched_claims.append((c, query))
+            # NOTE: top_n deliberately NOT adjusted per claim-type. All claims
+            # share the default hybrid_search top-k; an aggregate claim's breadth
+            # comes from its enumeration-variant queries, not a wider top-k.
             tasks.append(hybrid_search(tools, query=query, keywords=keywords, use_compiled=True))
 
         if not tasks:
@@ -162,7 +198,11 @@ async def decompose_and_search(state: dict, tools) -> dict:
             chunks = result.get("chunks", []) or []
             _merge_kbinfos(tools, result)
             evidence_ids = _evidence_ids(tools, chunks)
-            analysis_inputs.append((c, query, result, evidence_ids))
+            seen_ids = attempted_evidence.setdefault(c.claim_id, set())
+            # Prior report from this claim's last round (if any) — used as the
+            # context anchor when cross-round dedup drops already-analysed chunks.
+            prev_report = (c.agent_result.report if c.agent_result else "") or ""
+            analysis_inputs.append((c, query, result, evidence_ids, prev_report, seen_ids))
 
         analyses = await asyncio.gather(
             *[
@@ -172,16 +212,18 @@ async def decompose_and_search(state: dict, tools) -> dict:
                     query=query,
                     result=result,
                     evidence_ids=evidence_ids,
+                    prev_report=prev_report,
+                    seen_evidence_ids=seen_ids,
                     cycle=cycle,
                     max_cycles=max_cycles,
                     tools=tools,
                 )
-                for c, query, result, evidence_ids in analysis_inputs
+                for c, query, result, evidence_ids, prev_report, seen_ids in analysis_inputs
             ],
             return_exceptions=True,
         )
 
-        for (c, query, result, evidence_ids), analysis in zip(analysis_inputs, analyses):
+        for (c, query, result, evidence_ids, prev_report, seen_ids), analysis in zip(analysis_inputs, analyses):
             if isinstance(analysis, Exception):
                 _LOG.exception("[Decompose search] Evidence analysis failed for claim %s.", c.claim_id, exc_info=analysis)
                 analysis = _fallback_analysis(result, cycle, max_cycles)
@@ -218,6 +260,9 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 "verified" if c.is_verified else "still incomplete",
                 c.confidence * 100,
             )
+            # Record this round's evidence as analysed so future rounds skip
+            # re-sending it verbatim (cross-round dedup).
+            attempted_evidence.setdefault(c.claim_id, set()).update(evidence_ids)
 
         completed_cycles = cycle + 1
 
@@ -408,6 +453,8 @@ async def _analyze_claim_evidence(
     query: str,
     result: dict,
     evidence_ids: list[int],
+    prev_report: str = "",
+    seen_evidence_ids: set[int] | None = None,
     cycle: int,
     max_cycles: int,
     tools,
@@ -422,15 +469,164 @@ async def _analyze_claim_evidence(
             "next_queries": _fallback_queries(question, claim),
         }
 
+    # Single-pass evidence analysis: send the compacted retrieved evidence to the
+    # model in ONE call. No per-chunk batching, no accumulated summary — the model
+    # sees the relevant evidence at once and returns one analysis (report/gaps/
+    # next_queries) covering everything. This trades a single larger LLM call for
+    # many small round-trips (faster in wall-clock terms) while compaction keeps
+    # that single call from ballooning (see _build_compact_evidence).
     try:
-        user = _EVIDENCE_ANALYSIS_USER.format(
-            question=question,
-            claim=claim.description,
-            query=query,
-            cycle=cycle + 1,
-            max_cycles=max_cycles,
-            evidence=_format_evidence(chunks),
+        # Cross-round dedup: if this claim already had some evidence IDs analysed
+        # in a previous round, only send the NEW chunks. The previous round's
+        # report is injected as context so the model still judges with the full
+        # picture (known facts + new evidence), not a degraded subset.
+        if _EVIDENCE_DEDUP and seen_evidence_ids:
+            seen = set(seen_evidence_ids)
+            new_ids = [i for i in evidence_ids if i not in seen]
+            new_chunks = []
+            all_chunks = tools.kbinfos.get("chunks", [])
+            for i in new_ids:
+                if 0 <= i < len(all_chunks):
+                    new_chunks.append(all_chunks[i])
+            evidence = _build_compact_evidence(new_chunks) if new_chunks else ""
+            if evidence:
+                _LOG.info(
+                    "[Decompose search] Claim %s: sending %d new chunk(s) (deduped %d previously-analysed).",
+                    claim.claim_id,
+                    len(new_chunks),
+                    len(seen) - len(seen.intersection(evidence_ids)),
+                )
+            else:
+                # All evidence was already analysed — still call the model with a
+                # minimal re-check driven by the prior report (cheap, keeps the
+                # verdict fresh without re-sending full evidence).
+                evidence = ""
+            return await _analyze_from_summary(
+                question,
+                claim,
+                query,
+                cycle,
+                max_cycles,
+                evidence,
+                result,
+                evidence_ids,
+                tools,
+                prev_report=prev_report,
+                all_deduped=(not evidence),
+            )
+        evidence = _build_compact_evidence(chunks)
+        if not evidence:
+            return {
+                "is_verified": False,
+                "confidence": 0.0,
+                "report": "",
+                "gaps": ["no evidence found"],
+                "next_queries": _fallback_queries(question, claim),
+            }
+        return await _analyze_from_summary(question, claim, query, cycle, max_cycles, evidence, result, evidence_ids, tools, prev_report=prev_report)
+    except Exception:
+        _LOG.exception("[Decompose search] Evidence analysis LLM call failed.")
+        return _fallback_analysis(result, cycle, max_cycles, question, claim)
+
+
+def _chunk_text(chunk) -> str:
+    """Extract the full text of a chunk without truncation."""
+    if isinstance(chunk, dict):
+        return str(chunk.get("content_with_weight") or chunk.get("content") or chunk.get("text") or "")
+    return str(chunk or "")
+
+
+def _build_compact_evidence(chunks: list[dict]) -> str:
+    """Compile the per-claim evidence for the analysis LLM call.
+
+    Reduces the token cost of a single analysis while preserving answer accuracy.
+    The compaction is deliberately conservative — it never drops a whole chunk and
+    never does sentence-level narrowing (benchmark data shows the answer sentence
+    can sit in a low-ranked chunk or be phrased with an English number like "two
+    children" that a fact-dense heuristic misses):
+
+      1. Keep only the top ``_EVIDENCE_MAX_CHUNKS`` chunks by retrieval
+         similarity — hybrid_search already ranks, and the answer sentence lives
+         with high probability in the higher-ranked passages. Chunks beyond the
+         cap are the least likely to carry the answer.
+      2. Cap each kept chunk's length at ``_EVIDENCE_MAX_CHARS_PER_CHUNK`` — tail
+         only (preserving the head where the similarity-ranked content lives).
+      3. Cap the concatenated total at ``_EVIDENCE_MAX_TOTAL_CHARS``.
+
+    Returns ``""`` when nothing usable remains (caller then treats it as no
+    evidence found, which is safe: it only happens when every chunk was empty).
+    """
+    if not chunks:
+        return ""
+    ordered = sorted(
+        (c for c in chunks if _chunk_text(c)),
+        key=lambda c: float(c.get("similarity") or 0.0),
+        reverse=True,
+    )[:_EVIDENCE_MAX_CHUNKS]
+    parts: list[str] = []
+    used = 0
+    for c in ordered:
+        text = _chunk_text(c)
+        if len(text) > _EVIDENCE_MAX_CHARS_PER_CHUNK:
+            text = text[:_EVIDENCE_MAX_CHARS_PER_CHUNK]
+        if not text.strip():
+            continue
+        if used + len(text) > _EVIDENCE_MAX_TOTAL_CHARS:
+            room = _EVIDENCE_MAX_TOTAL_CHARS - used
+            if room >= 200:
+                parts.append(text[:room])
+            break
+        parts.append(text)
+        used += len(text)
+    return "\n\n---\n\n".join(parts)
+
+
+async def _analyze_from_summary(
+    question: str,
+    claim: ClaimTarget,
+    query: str,
+    cycle: int,
+    max_cycles: int,
+    summary: str,
+    result: dict,
+    evidence_ids: list[int],
+    tools,
+    prev_report: str = "",
+    all_deduped: bool = False,
+) -> dict:
+    """Final analysis when no single passage was judged sufficient on its own.
+
+    The ``summary`` argument here is the FULL concatenated text of all retrieved
+    chunks (no per-chunk context was accumulated during the batched independent
+    check), so the model still gets a complete best-effort evidence review
+    instead of an empty report.
+
+    When cross-round dedup drops already-analysed evidence, ``prev_report`` (the
+    claim's conclusion from earlier rounds) is injected so the model re-judges
+    with the known facts as context; ``all_deduped`` marks the degenerate case
+    where every evidence ID was already analysed and only the prior report is
+    available this round.
+    """
+    prev_section = ""
+    if prev_report:
+        prev_section = (
+            "\n\nEvidence analysed in a previous round:\n"
+            + prev_report[:_EVIDENCE_PREV_REPORT_CAP]
+            + ("\n(No new evidence this round — re-confirm or refine the finding above using the retrieved evidence list; if still incomplete, say so.)" if all_deduped else "")
         )
+    user = _EVIDENCE_ANALYSIS_USER.format(
+        question=question,
+        claim=claim.description,
+        query=query,
+        cycle=cycle + 1,
+        max_cycles=max_cycles,
+        evidence=summary or "(no usable evidence accumulated)",
+    )
+    if prev_section:
+        # Append the prior-round context after the JSON spec block. We inject it
+        # via the closing instruction so it does not disturb the JSON template.
+        user = user + prev_section
+    try:
         msg = await tools._fit_messages(_EVIDENCE_ANALYSIS_SYSTEM, user)
         ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.1})
         if isinstance(ans, tuple):
@@ -438,7 +634,7 @@ async def _analyze_claim_evidence(
         parsed = _extract_json(ans)
         return _normalize_analysis(parsed, result, evidence_ids, question, claim, cycle, max_cycles)
     except Exception:
-        _LOG.exception("[Decompose search] Evidence analysis LLM call failed.")
+        _LOG.exception("[Decompose search] Final summary analysis LLM call failed.")
         return _fallback_analysis(result, cycle, max_cycles, question, claim)
 
 
@@ -464,13 +660,24 @@ def _extract_json(text: str) -> dict:
     try:
         import json_repair
 
-        return json_repair.loads(text)
+        parsed = json_repair.loads(text)
     except Exception:
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except Exception:
             _LOG.warning("[Decompose search] Failed to parse evidence analysis output: %s", text[:200])
             return {}
+    if not isinstance(parsed, dict):
+        # json_repair can return a bare string / list / primitive when the LLM
+        # emits non-object JSON. Coerce to {} so ``_normalize_analysis`` and
+        # callers can safely use ``parsed.get(...)`` without AttributeError.
+        _LOG.warning(
+            "[Decompose search] LLM returned non-object JSON (%s), coercing to {}: %s",
+            type(parsed).__name__,
+            str(parsed)[:200],
+        )
+        return {}
+    return parsed
 
 
 def _normalize_analysis(
@@ -607,10 +814,25 @@ def _pick_next_query(
             return prereq
 
     # 1. claim-specific pending follow-ups (from _analyze_claim_evidence).
+    #    Multi-hop strengthening: when the pending query is a BRIDGE query (the
+    #    analyzer emitted an ``intermediate`` entity/relationship), combine it with
+    #    the claim description so the retrieval hits the "bridge entity -> final
+    #    target" relationship in one pass (e.g. for "Glyn Harper wrote which
+    #    children's book", the bridge "Glyn Harper" combines with "children's book"
+    #    to retrieve the title, instead of stopping at the bridge).
     while pending:
         query = (pending.pop(0) or "").strip()
         normalized = _normalize_query(query)
         if normalized and normalized not in attempted:
+            # If the pending query looks like a bare bridge entity (short, no
+            # relationship verb), prepend the claim description so the search is
+            # relation-aware. This keeps a multi-hop chain advancing past the
+            # intermediate node toward the final answer.
+            desc = (claim.description or "").strip()
+            if desc and _is_bridge_query(query, desc):
+                combined = f"{query} {desc}"
+                if _normalize_query(combined) not in attempted:
+                    return combined
             return query
 
     # 2. AutoRater follow-ups (missing-information queries) — a global pool for the
@@ -627,6 +849,15 @@ def _pick_next_query(
     candidates = []
     if not attempted:
         candidates.append(claim.description)
+    # Structure-aware query expansion:
+    #   aggregate — enumerate the full target set (e.g. "every MLB stadium with a
+    #               retractable roof"), not just the claim's summary phrasing, so
+    #               exhaustive retrieval actually covers all members.
+    #   temporal  — keep the year/period explicit so the search is time-anchored.
+    if claim.claim_type == "aggregate" and claim.target:
+        candidates.append(claim.target)
+        candidates.append(f"list of {claim.target}")
+        candidates.append(claim.description)
     candidates.extend(_fallback_queries(question, claim))
 
     for query in candidates:
@@ -635,6 +866,81 @@ def _pick_next_query(
         if normalized and normalized not in attempted:
             return query
     return ""
+
+
+_RELATION_VERBS = (
+    "founded",
+    "founded by",
+    "created",
+    "created by",
+    "directed",
+    "directed by",
+    "written by",
+    "wrote",
+    "wrote the",
+    "starring",
+    "starred in",
+    "played",
+    "played for",
+    "part of",
+    "member of",
+    "located in",
+    "in",
+    "of the",
+    "employer",
+    "spouse",
+    "wife",
+    "husband",
+    "married to",
+    "sister",
+    "brother",
+    "daughter",
+    "son of",
+    "child of",
+    "won",
+    "winner of",
+    "had",
+    "has",
+    "was the",
+    "is the",
+    "occurred in",
+    "took place",
+    "opened",
+    "built",
+    "owned by",
+    "also known as",
+    "was released in",
+)
+
+
+def _is_bridge_query(query: str, claim_desc: str) -> bool:
+    """True when ``query`` is a bare bridge entity (a short intermediate node
+    that names a person/place/thing but no relationship), so it should be
+    combined with the claim description to keep the multi-hop chain moving.
+
+    A bridge query typically has few words, shares little vocabulary with the
+    claim description, and carries no relationship verb. Combining it with the
+    claim description yields a relation-aware search (e.g. ``Glyn Harper
+    children's book``) that reaches the final answer instead of stalling on the
+    intermediate entity.
+    """
+    q = query.strip().lower()
+    if not q:
+        return False
+    # Contains a relationship verb -> already relation-aware, no need to merge.
+    if any(v in q for v in _RELATION_VERBS):
+        return False
+    words_q = set(_normalize_query(q).split())
+    if not words_q:
+        return False
+    # A short bare entity (1-4 tokens) with no relationship verb is a bridge
+    # node: it names a person/place/thing but not the relationship to the final
+    # answer. Merging it with the claim description makes the search relation-
+    # aware (e.g. "Glyn Harper" + "children's book" -> the book title). This
+    # holds even when the entity also appears in the claim description (a common
+    # case: the claim's subject IS the bridge, and the missing piece is what
+    # that subject did / who it relates to).
+    return len(words_q) <= 4
 
 
 def _fallback_queries(question: str, claim: ClaimTarget) -> list[str]:
@@ -674,15 +980,6 @@ def _normalize_query(query: str) -> str:
     return " ".join((query or "").lower().split())
 
 
-def _format_evidence(chunks: list[dict]) -> str:
-    snippets = []
-    for i, chunk in enumerate(chunks[:_MAX_EVIDENCE_SNIPPETS], start=1):
-        text = chunk.get("content_with_weight") or chunk.get("content") or chunk.get("text") or ""
-        source = chunk.get("docnm_kwd") or chunk.get("doc_name") or chunk.get("doc_id") or "source"
-        snippets.append(f"[{i}] {source}: {_snip(text, 900)}")
-    return "\n\n".join(snippets) or "(no evidence)"
-
-
 def _string_list(value) -> list[str]:
     if isinstance(value, str):
         return [value.strip()] if value.strip() else []
@@ -710,14 +1007,44 @@ def _evidence_ids(tools, chunks: list[dict]) -> list[int]:
     return ids
 
 
-def _finalize(ctx: OrchestratorContext, tools, partial: bool, loop: int) -> dict:
+_PRE_SUMMARY_REPORT_CAP = 900
+_PRE_SUMMARY_FACTS_CAP = 400
+
+
+def _build_pre_summary(ctx: OrchestratorContext) -> str | None:
+    """Build a compact but fact-preserving ``pre_summary`` from per-claim results.
+
+    This is the primary evidence source for ``formalize_answer``. Unlike the old
+    ``report[:500]`` concatenation (which could truncate mid-information and drop
+    the exact answerable value), it keeps each claim's report AND its grounded
+    facts and figures — the fields that carry the precise numbers / proper nouns
+    the answer hinges on. ``numbers``/``grounded`` are placed right after the
+    report so a downstream ``_compact_text`` truncation still keeps the critical
+    facts. Length is capped per claim to bound the prompt, but the cap is applied
+    to the tail of each block, so leading facts survive.
+    """
     combined = []
     for claim in ctx.claims:
-        if claim.agent_result and claim.agent_result.report:
-            status = "verified" if claim.is_verified else "incomplete"
-            combined.append(f"[{claim.claim_id}] {status} ({claim.description}): {claim.agent_result.report[:500]}")
-    if combined:
-        tools.kbinfos["pre_summary"] = "Research findings. These may include bridge entities; the final answer must still satisfy the original question's requested role.\n\n" + "\n\n".join(combined)
+        if not claim.agent_result or not claim.agent_result.report:
+            continue
+        status = "verified" if claim.is_verified else "incomplete"
+        block = f"[{claim.claim_id}] {status} ({claim.description}): {claim.agent_result.report}"
+        if claim.agent_result.numbers:
+            block += "\n   figures: " + "; ".join(claim.agent_result.numbers)
+        if claim.agent_result.grounded:
+            block += "\n   facts: " + "; ".join(claim.agent_result.grounded)
+        if len(block) > _PRE_SUMMARY_REPORT_CAP + _PRE_SUMMARY_FACTS_CAP:
+            block = block[: _PRE_SUMMARY_REPORT_CAP + _PRE_SUMMARY_FACTS_CAP] + "…"
+        combined.append(block)
+    if not combined:
+        return None
+    return "Research findings. These may include bridge entities; the final answer must still satisfy the original question's requested role.\n\n" + "\n\n".join(combined)
+
+
+def _finalize(ctx: OrchestratorContext, tools, partial: bool, loop: int) -> dict:
+    pre_summary = _build_pre_summary(ctx)
+    if pre_summary:
+        tools.kbinfos["pre_summary"] = pre_summary
 
     return {
         "verdict": ctx.verdict.__dict__ if ctx.verdict else None,

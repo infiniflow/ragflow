@@ -24,6 +24,14 @@ _LOG = logging.getLogger(__name__)
 # trial "LLM draft instead of NER".
 _ENABLE_NER_GROUNDED = False
 
+# Enumeration-completeness floor for aggregate claims. An aggregate (count/sum/
+# average/max/min over ALL members) must be derived from MORE than a couple of
+# evidence passages — a single or pair of chunks cannot cover "every member" and
+# the aggregate would silently under-count. A self-verified aggregate claim whose
+# cited evidence falls below this floor is treated as an incomplete enumeration
+# (hard veto), not averaged away by stronger siblings.
+_AGGREGATE_MIN_EVIDENCE = 3
+
 
 # ═══════════════════════════════════════════════════════════════
 # Cross-check: code-only
@@ -594,6 +602,56 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
 # ═══════════════════════════════════════════════════════════════
 
 
+def _incomplete_aggregates(
+    claims: list | None,
+    agent_results: list[AgentResult],
+    all_chunks: dict | None,
+) -> list[str]:
+    """Find aggregate claims whose enumeration is likely incomplete.
+
+    An aggregate claim must enumerate ALL members before combining them. We
+    judge completeness at the code level with zero LLM cost: a self-verified
+    aggregate that cites fewer than ``_AGGREGATE_MIN_EVIDENCE`` passages cannot
+    have covered a full member set, so its aggregate value risks under-counting.
+    Claims that are not self-verified are already handled by the agent-confidence
+    gate, so we only flag verified-but-thin aggregates.
+
+    Returns the claim IDs to hard-veto.
+    """
+    if not claims or not all_chunks:
+        return []
+    agg_by_id: dict[str, object] = {}
+    for c in claims:
+        cid = getattr(c, "claim_id", None)
+        if cid and getattr(c, "claim_type", "") == "aggregate":
+            agg_by_id[cid] = c
+    if not agg_by_id:
+        return []
+    # Map each claim's cited evidence IDs to the number of distinct passages.
+    evidence_count: dict[str, int] = {}
+    for r in agent_results:
+        eid = getattr(r, "claim_id", None)
+        if eid in agg_by_id:
+            ids = getattr(r, "evidence_ids", None) or []
+            evidence_count[eid] = sum(1 for i in ids if i in all_chunks)
+    incomplete: list[str] = []
+    for cid, c in agg_by_id.items():
+        # A claim the agent itself did not verify is already vetoed by the
+        # agent-confidence gate; only flag verified-but-thin aggregates.
+        if not getattr(c, "is_verified", False):
+            continue
+        n = evidence_count.get(cid, 0)
+        if n < _AGGREGATE_MIN_EVIDENCE:
+            _LOG.warning(
+                "[Sufficiency] Aggregate claim %s cites only %d evidence passage(s) (< %d) — enumeration likely incomplete; vetoing.",
+                cid,
+                n,
+                _AGGREGATE_MIN_EVIDENCE,
+            )
+            incomplete.append(cid)
+    return incomplete
+
+
 def compute_fusion_score(
     agent_results: list[AgentResult],
     cross_check_results: list[ClaimCrossCheckResult],
@@ -716,9 +774,17 @@ def compute_fusion_score(
     # alone missed: c2/c3 self-verified with score 0.83/0.80 (padded by Mike
     # Tyson's digits) yet Tyson Fury's entities were absent from every chunk.
     weak += [cid for cid in gapped_ids if cid not in weak]
+
+    # ── Aggregate enumeration completeness (hard veto) ──
+    # An aggregate claim (count/sum/average/max/min over ALL members) is only
+    # sufficient when the enumeration actually covered the member set. A
+    # self-verified aggregate backed by too little evidence (fewer than
+    # ``_AGGREGATE_MIN_EVIDENCE`` passages) is an incomplete enumeration that
+    # would under-count — veto it rather than averaging it away.
+    weak += [cid for cid in _incomplete_aggregates(claims, agent_results, all_chunks) if cid not in weak]
     if weak:
         _LOG.info(
-            "[Sufficiency] Hard-veto: %d self-verified claim(s) below floor %.2f OR missing a required entity: %s",
+            "[Sufficiency] Hard-veto: %d self-verified claim(s) below floor %.2f OR missing a required entity OR incomplete aggregate enumeration: %s",
             len(weak),
             min_cross_floor,
             weak,
@@ -779,12 +845,24 @@ def compute_fusion_score(
 
 
 def _build_feedback(missing: list[str], results: list[ClaimCrossCheckResult]) -> str:
+    """Build replan feedback that names the SPECIFIC missing evidence.
+
+    A generic "claim c1: N mismatches" cannot drive a better plan — the replanner
+    needs to know *what* is missing (which entity / number / grounded fact) so it
+    can emit a targeted new claim. We surface the first few concrete mismatch
+    strings per failed claim (they already carry the useful detail, e.g. "entity
+    'Glyn Harper' not found in any evidence chunk").
+    """
     if not missing:
         return "all claims verified"
     hints = []
     for r in results:
         if not r.cross_check_passed:
-            hints.append(f"claim {r.claim_id}: {len(r.mismatches)} mismatch(es)")
+            detail = "; ".join(r.mismatches[:4])
+            if detail:
+                hints.append(f"claim {r.claim_id}: {detail}")
+            else:
+                hints.append(f"claim {r.claim_id}: cross-check failed")
     return "missing: " + "; ".join(hints)
 
 

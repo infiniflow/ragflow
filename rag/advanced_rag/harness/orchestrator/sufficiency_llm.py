@@ -76,8 +76,10 @@ def _clamp(value) -> float:
 # A chunk with this many sentences or fewer is never narrowed — there is little
 # to save and a real risk of losing the answer sentence.
 _NARROW_MIN_SENTENCES = 3
-# Number of neighbours kept around each keyword-bearing sentence.
-_NARROW_NEIGHBOURS = 1
+# Number of neighbours kept around each keyword-bearing sentence. Kept modest
+# (2) so the snippet stays compact; fact-dense sentences are additionally kept
+# regardless of distance (see `_narrow_snippet_safe`).
+_NARROW_NEIGHBOURS = 2
 
 
 def _narrow_snippet_safe(content: str, kw_list: list[str]) -> str | None:
@@ -105,7 +107,7 @@ def _narrow_snippet_safe(content: str, kw_list: list[str]) -> str | None:
 
     Returns the narrowed plain text, or ``None`` to keep the chunk whole.
     """
-    from rag.advanced_rag.harness.tools.search import _split_sentences
+    from rag.advanced_rag.harness.tools.search import _split_sentences, _is_fact_dense_sentence
 
     sents = _split_sentences(content or "")
     if len(sents) <= _NARROW_MIN_SENTENCES:
@@ -123,6 +125,16 @@ def _narrow_snippet_safe(content: str, kw_list: list[str]) -> str | None:
     for i in hit_idx:
         for j in range(max(0, i - _NARROW_NEIGHBOURS), min(len(sents), i + _NARROW_NEIGHBOURS + 1)):
             keep_idx.add(j)
+    # Keep fact-dense sentences (numbers / years / percentages / proper nouns)
+    # even when they sit outside the keyword window, so a numeric or named-entity
+    # answer that is phrased without the exact keyword is never dropped. Bounded
+    # to +-1 around each fact sentence to avoid over-narrowing.
+    for i, s in enumerate(sents):
+        if i in keep_idx:
+            continue
+        if _is_fact_dense_sentence(s):
+            for j in range(max(0, i - 1), min(len(sents), i + 2)):
+                keep_idx.add(j)
     return " ".join(sents[i] for i in sorted(keep_idx)).strip()
 
 

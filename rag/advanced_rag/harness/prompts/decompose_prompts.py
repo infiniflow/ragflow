@@ -1,60 +1,41 @@
-"""Planner decompose prompts: one per question type.
+"""Planner decompose prompt — a single structure-aware template.
 
-Each prompt is grounded in a preliminary hybrid search: ``{retrieved}`` carries
-the (keyword-narrowed) chunks retrieved for the user's question, so the
-decomposition reflects what the corpus actually contains rather than guessing.
+The decomposition is grounded in a preliminary hybrid search: ``{retrieved}``
+carries the chunks retrieved for the user's question, so the decomposition
+reflects what the corpus actually contains rather than guessing.
 """
 
-DECOMPOSE_FACTUAL = """This is a factual question. List all atomic facts that need to be retrieved.
-If there are multiple facts, list them one by one. If there is only one fact, output exactly one item.
-Base the decomposition on BOTH the question and the preliminary retrieved context below.
+# ═══════════════════════════════════════════════════════════════
+# Unified structure-aware decomposition.
+#
+# Instead of routing by a brittle regex to a per-type template, ONE prompt asks
+# the LLM to judge the question's reasoning STRUCTURE and emit typed claims.
+# This covers the four shapes that matter for the failure cases observed in the
+# FRAMES benchmark (aggregate, temporal, chain, flat), none of which a keyword
+# regex could reliably detect:
+#   • chain      — answer needs an intermediate entity/relationship (Glyn Harper
+#                  → the book he wrote → the book's award).
+#   • aggregate  — answer is a combination (average/count/sum/max/min) over ALL
+#                  members of a set (e.g. average left-field distance across
+#                  every retractable-roof MLB stadium), requiring an ENUMERATION
+#                  claim + a combine claim, not independent per-member claims.
+#   • temporal   — answer depends on a specific year/period or a cross-time link
+#                  (e.g. "in 1978 ... Best Picture the same year").
+#   • flat       — independent single-hop facts.
+# ═══════════════════════════════════════════════════════════════
+DECOMPOSE_UNIFIED = """Decompose the question into research claims, choosing each claim's reasoning structure yourself. Base the decomposition on BOTH the question and the preliminary retrieved context below.
+
+Judge which structure(s) apply to the question and use them:
+
+1. flat — independent single-hop facts. Default for most questions.
+2. chain — the answer depends on resolving an intermediate entity/relationship first, then using it to reach the final fact (e.g. "Which children's book did Glyn Harper write?" needs "Glyn Harper" first, then his book; "Which law did the company that employs Brian Bergstein violate?" needs his employer first, then the law). For each chained claim, set "prerequisite" to the OPEN query for the intermediate that must be resolved first.
+3. aggregate — the answer is a combination (average / count / sum / maximum / minimum) over ALL members of a set. Emit ONE enumeration claim that asks for the values of EVERY member (e.g. "What is the left-field distance of every MLB stadium with a retractable roof?"), and ONE combine claim that asks for the aggregate (e.g. "What is the average of those left-field distances?"). Do NOT split into one claim per member — that can never be aggregated. Mark the enumeration claim's "claim_type" as "aggregate" and set "target" to the full set.
+4. temporal — the answer depends on a specific year/period or a cross-time link between events (e.g. "the film that won Best Picture the same year Argentina won the 1978 World Cup"). Make the year/period explicit in the claim description.
 
 Relevance rules (strict):
-- Every claim MUST be directly necessary to answer the question. Do NOT add
-  background, biographical, or tangential facts about entities merely mentioned
-  in the corpus (e.g. an unrelated person's birthplace) unless the question
-  explicitly asks for them.
-- Prefer fewer, atomic claims over many overlapping ones: merge facts about the
-  same entity/measure into one claim when they can be researched together.
-- Each claim must be verifiable from the corpus; do not invent facts.
-- OPEN QUERY (CRITICAL): Each claim's description must be an OPEN research target
-  (what/which/when/how many/what is X), NOT a pre-answered assertion. Never bake a
-  guessed value into the description. WRONG: "Dustin Brown's hometown is Ithaca".
-  RIGHT: "What is Dustin Brown's hometown?". The researcher verifies the OPEN target;
-  a pre-answered assertion biases it to merely confirm the guess and skips the real
-  answer. When a fact is genuinely unknown (e.g. a person's hometown), phrase the
-  claim as a question, never as "X is <guessed value>".
-
-Question: {question}
-Maximum number of claims: {max_claims}
-Detail level: {detail_level}
-
-Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
-{retrieved}
-
-Output format (JSON):
-{{
-    "claims": [
-        {{
-            "claim_id": "c1",
-            "description": "What year did Apple acquire Beats?",
-            "priority": 1
-        }}
-    ]
-}}
-"""
-
-
-DECOMPOSE_MULTIHOP = """This question requires a chain of reasoning: the answer depends on resolving an intermediate entity/relationship first, then using it to reach the final fact. Examples:
-- "Which law did the company that employs Brian Bergstein violate?" → need "Who is Brian Bergstein's employer?" first, then "which antitrust law did that employer violate".
-- "The sister of the 2003 Pan Am women's sailing medalist's brother's keelboat partner — who is she?" → resolve each hop in order.
-
-Decompose this into a DEPENDENCY CHAIN of claims. Each claim may carry a "prerequisite": an OPEN query for the intermediate entity/relationship that must be retrieved BEFORE this claim can be answered (leave empty for the first claim). The prerequisite of a later claim may reference the result of an earlier one.
-
-Relevance rules (strict):
-- Every claim MUST be one hop needed to reach the final answer. Do NOT add tangential facts.
-- If the question is NOT actually a multi-hop chain (you judge the reasoning is flat), output ordinary independent claims WITHOUT prerequisite.
-- OPEN QUERY (CRITICAL): each claim and prerequisite must be an OPEN research target (who/what/which/when/how), NOT a pre-answered assertion. Never bake a guessed value.
+- Every claim MUST be directly needed to answer the question. Do NOT add background or tangential facts.
+- Prefer fewer, well-scoped claims over many overlapping ones.
+- OPEN QUERY (CRITICAL): each claim's description must be an OPEN research target (what/which/when/how many/what is X), NOT a pre-answered assertion. Never bake a guessed value into the description.
 
 Question: {question}
 Maximum number of claims: {max_claims}
@@ -68,134 +49,17 @@ Output format (JSON):
     "claims": [
         {{
             "claim_id": "c1",
-            "description": "Who is the employer of Brian Bergstein?",
+            "description": "What is the left-field distance of every MLB stadium with a retractable roof?",
+            "claim_type": "aggregate",
             "prerequisite": "",
+            "target": "all MLB stadiums with a retractable roof",
             "priority": 1
         }},
         {{
             "claim_id": "c2",
-            "description": "Which federal law was found violated by Brian Bergstein's employer?",
-            "prerequisite": "Who is Brian Bergstein's employer?",
-            "priority": 1
-        }}
-    ]
-}}
-"""
-
-
-DECOMPOSE_COMPARATIVE = """This is a comparative question. It needs to be decomposed into:
-1. Information about entity A for the comparison dimension.
-2. Information about entity B for the comparison dimension.
-3. Optional information that directly compares the two entities.
-Base the decomposition on BOTH the question and the preliminary retrieved context below.
-
-Relevance rules (strict):
-- Every claim MUST be directly needed to answer the comparison. Do NOT add
-  tangential background about the entities (e.g. a third party's unrelated
-  details) unless the question explicitly asks for them.
-- Merge overlapping facts about the same entity into one claim.
-- OPEN QUERY (CRITICAL): Each claim's description must be an OPEN research target
-  (what/which/when/how many/what is X), NOT a pre-answered assertion. Never bake a
-  guessed value into the description. RIGHT: "What is the distance from Hangzhou to
-  Beijing?". WRONG: "The distance from Hangzhou to Beijing is 1,200 km". The
-  researcher verifies the OPEN target; an assertion only biases it to confirm the guess.
-
-Question: {question}
-Maximum number of claims: {max_claims}
-Detail level: {detail_level}
-
-Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
-{retrieved}
-
-Output format (JSON):
-{{
-    "claims": [
-        {{
-            "claim_id": "c1",
-            "description": "What is the distance from Hangzhou to Beijing?",
-            "priority": 1
-        }},
-        {{
-            "claim_id": "c2",
-            "description": "What is the distance from Shanghai to Beijing?",
-            "priority": 1
-        }},
-        {{
-            "claim_id": "c3",
-            "description": "Which city is closer to Beijing?",
-            "priority": 2
-        }}
-    ]
-}}
-"""
-
-
-DECOMPOSE_PROCEDURAL = """This is a procedural question. Decompose it into the information needed for each step required to complete the operation.
-Base the decomposition on BOTH the question and the preliminary retrieved context below.
-
-Relevance rules (strict):
-- Every claim MUST be information directly needed by one of the procedure's
-  steps. Skip any fact that is not required to carry out the operation.
-- OPEN QUERY (CRITICAL): Each claim's description must be an OPEN research target
-  (what/which/when/how/what is X), NOT a pre-answered assertion. Never bake a
-  guessed value into the description. RIGHT: "What is the input format for step 2?".
-  WRONG: "The input format for step 2 is CSV".
-
-Question: {question}
-Maximum number of claims: {max_claims}
-Detail level: {detail_level}
-
-Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
-{retrieved}
-
-Output format (JSON):
-{{
-    "claims": [
-        {{
-            "claim_id": "c1",
-            "description": "What information is needed for the first step?",
-            "priority": 1
-        }},
-        {{
-            "claim_id": "c2",
-            "description": "What information is needed for the second step?",
-            "priority": 2
-        }}
-    ]
-}}
-"""
-
-
-DECOMPOSE_EXPLORATORY = """This is an analytical or exploratory question. Decompose it into the main aspects or dimensions that need to be researched.
-Base the decomposition on BOTH the question and the preliminary retrieved context below.
-
-Relevance rules (strict):
-- Every aspect/claim MUST be directly relevant to the question's core. Do NOT
-  list tangential or background aspects just because the corpus mentions them.
-- Prefer fewer, well-scoped aspects over many overlapping ones.
-- OPEN QUERY (CRITICAL): Each claim's description must be an OPEN research target
-  (what/which/when/how/what is X), NOT a pre-answered assertion. Never bake a
-  guessed value into the description. RIGHT: "What were the main factors behind X?".
-  WRONG: "The main factor behind X was Y".
-
-Question: {question}
-Maximum number of claims: {max_claims}
-Detail level: {detail_level}
-
-Preliminary retrieved context for this question (use it to ground each aspect in what the corpus actually contains; do not invent aspects it cannot support):
-{retrieved}
-
-Output format (JSON):
-{{
-    "claims": [
-        {{
-            "claim_id": "c1",
-            "description": "What is the first aspect that needs to be researched?",
-            "priority": 1
-        }},
-        {{
-            "claim_id": "c2",
-            "description": "What is the second aspect that needs to be researched?",
+            "description": "What is the average of those left-field distances?",
+            "claim_type": "flat",
+            "prerequisite": "",
             "priority": 2
         }}
     ]

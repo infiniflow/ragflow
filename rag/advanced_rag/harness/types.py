@@ -77,6 +77,17 @@ class ClaimTarget:
     # employer?"). decompose resolves the prerequisite first, then uses the found
     # entity to target this claim. Empty when not multi-hop.
     prerequisite: str = ""
+    # Reasoning structure the planner assigned to this claim:
+    #   flat       — single-hop fact, independent
+    #   chain      — depends on a prerequisite (bridge entity/relationship)
+    #   aggregate  — requires enumerating all members of a set and combining
+    #                them (count/sum/average/max/min)
+    #   temporal   — answer depends on a specific year/period or cross-time link
+    #   comparative/procedural — retained for compatibility
+    claim_type: str = "flat"
+    # For aggregate claims: the full set of members to enumerate (e.g. "all MLB
+    # stadiums with a retractable roof"), used to guide exhaustive retrieval.
+    target: str = ""
 
 
 @dataclass

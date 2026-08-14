@@ -366,50 +366,33 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
             token_queue.put_nowait(tools.empty_response)
             return {"final_answer": tools.empty_response}
 
-        # Build evidence — narrow the gathered chunks to keyword-bearing
-        # snippets BEFORE feeding the answer model, instead of dumping every
-        # full chunk into the prompt. The retriever already narrows per-query,
-        # but multi-search accumulation and the "keep-all-on-no-match" fallback
-        # can still leave many full passages here (one run produced a 46-passage
-        # / 70K-token call). Re-narrowing on the final question keeps each
-        # passage a snippet and bounds the prompt, while preserving originals if
-        # nothing matches (so we never answer with empty evidence).
+        # Primary evidence is the fact-preserving ``pre_summary`` built from the
+        # per-claim agent results (their reports + grounded facts + figures carry
+        # the exact answerable numbers / entities). This replaces the old
+        # keyword-narrowed chunk snippets, which could drop the numeric/entity
+        # answer sentence (the answer value rarely contains the query keyword).
+        # A small set of the highest-scoring chunks is still included as a
+        # citation reference (and fallback detail), ranked by similarity so we
+        # never need a hard keyword narrow that can lose the answer.
         #
-        # IMPORTANT: narrowing runs on a COPY of the chunk list — we never mutate
-        # ``kbinfos["chunks"]`` because that pool is also the main-agent citation
-        # reference; in-place narrowing there would shrink what the agent can cite
-        # and make it re-ask (more sub-questions). Also, a chunk whose original
-        # carried a number but whose narrowed snippet lost every digit is kept
-        # whole (a numeric answer sentence often lacks the keyword itself).
-        kw = state.get("keywords") or ""
-        from rag.advanced_rag.harness.orchestrator.sufficiency_llm import _narrow_snippet_safe
-
-        kw_list = [k for k in re.split(r"[,\s]+", kw or "") if k]
-        evidence_chunks = []
-        for c in kbinfos.get("chunks") or []:
-            if not kw_list:
-                evidence_chunks.append(c)
-                continue
-            raw = c.get("content_with_weight") or c.get("text") or ""
-            # General informative-sentence guard (same policy as `_evidence_md`):
-            # keep the narrowed snippet, but fall back to the whole chunk when
-            # narrowing would drop every fact-bearing sentence (numbers / proper
-            # nouns / quotes) — the answer may be far from any keyword. Bounds
-            # the prompt while never losing critical evidence.
-            narrowed = _narrow_snippet_safe(raw, kw_list)
-            if narrowed:
-                evidence_chunks.append({**c, "content_with_weight": narrowed})
-            else:
-                evidence_chunks.append(c)
-        evidence_kbinfos = dict(kbinfos, chunks=evidence_chunks)
-        # Bounded evidence budget: the raw model context (``max_length``) is far
-        # too large — with a big pool it lets evidence fill the whole window
-        # (observed 141K tokens in one call). Use a fixed, modest budget so the
-        # answer model sees only a compact evidence set.
+        # We rank by similarity (a field every retrieved chunk carries) and cap
+        # the count, so the prompt stays bounded without mechanically trimming
+        # sentences that may carry the answer.
+        pre_summary = kbinfos.get("pre_summary")
+        all_chunks = kbinfos.get("chunks") or []
+        ranked = sorted(
+            (c for c in all_chunks),
+            key=lambda c: float(c.get("similarity", 0.0) or 0.0),
+            reverse=True,
+        )
         from rag.advanced_rag.agentic_rag import _EVIDENCE_BUDGET_TOKENS
 
+        _CITE_CHUNK_CAP = 6
+        cite_chunks = ranked[:_CITE_CHUNK_CAP] or all_chunks
+        evidence_kbinfos = dict(kbinfos, chunks=cite_chunks)
         evidence_blocks = kb_prompt(evidence_kbinfos, min(tools.chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS))
         evidence = "\n".join(evidence_blocks) if isinstance(evidence_blocks, list) else str(evidence_blocks)
+
         parts = [f"Question:\n{question}\n"]
 
         answer_target = await _answer_target_contract(tools, question, kbinfos, evidence)
@@ -419,10 +402,9 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         if no_evidence:
             parts.append("No supporting evidence was retrieved. State clearly that the available sources are insufficient, and do not answer from general knowledge.\n")
 
-        # Include pre_summary from agent results if available
-        pre_summary = kbinfos.get("pre_summary")
+        # Fact-preserving research summary is the PRIMARY evidence for the answer.
         if pre_summary:
-            parts.append(f"Research Summary:\n{pre_summary}\n")
+            parts.append(f"Research Summary (primary evidence):\n{pre_summary}\n")
 
         if partial:
             from rag.advanced_rag.harness.prompts.report_prompt import PARTIAL_ANSWER_PREAMBLE
@@ -437,6 +419,17 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         parts.append(f"Evidence:\n{evidence}")
         user_content = "\n".join(parts)
+
+        # Debug: record the exact pre_summary handed to the final answer model,
+        # so we can verify whether it carries the precise numbers/relations the
+        # question needs (inference correctness) or is an over-compressed summary.
+        _LOG.info(
+            "[Formalize][pre_summary] question=%r pre_summary_len=%d evidence_len=%d\npre_summary=%r",
+            question[:160],
+            len(pre_summary or ""),
+            len(evidence or ""),
+            (pre_summary or "")[:3000],
+        )
 
         # Same bounded budget for the final message fit — never fill the whole
         # model context with evidence.

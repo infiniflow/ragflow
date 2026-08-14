@@ -383,11 +383,16 @@ class RAGTools:
             "2. Extract keywords ONLY from the wording of the STANDALONE QUESTION itself — the "
             "salient content words and phrases that literally appear in it (key nouns, named "
             "entities, domain terms). Do NOT answer the question, and do NOT include any term that "
-            "would be part of the answer or is not present in the question. Then, for each extracted "
-            "term, you MAY add 1-2 close synonyms or alternative phrasings OF THAT SAME TERM. Output "
+            "would be part of the answer or is not present in the question. Then, for EACH extracted "
+            "term, add 2-3 close synonyms, abbreviations, aliases, plural/singular forms or "
+            "alternative phrasings OF THAT SAME TERM (e.g. for a person include full name, last "
+            "name and common nickname; for an acronym include the expansion; for a concept include "
+            "near-synonyms). The goal is to maximize recall in a keyword search, so be generous "
+            "with valid alternative spellings. Output "
             "them all together as one comma-separated list, in the SAME language as the question.\n"
             '   Example — question "In which year did Apple acquire Beats?": keywords = '
-            '"Apple, Apple Inc., acquire, acquisition, Beats" (terms from the question + synonyms; '
+            '"Apple, Apple Inc., AAPL, acquire, acquisition, acquired, takeover, Beats, '
+            'Beats Electronics" (terms from the question + synonyms; '
             "the year is the ANSWER, so it must NOT appear).\n\n"
             "Output ONLY JSON, no prose, no code fences: "
             '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
@@ -498,11 +503,14 @@ class RAGTools:
             return ""
         system = (
             "Extract the search terms for a knowledge-base query from the "
-            "question below. Output 3-8 of the most important content terms, "
-            "plus 1-2 close synonyms or alternative phrasings for any ambiguous "
-            "term. Single words or short noun phrases, space-separated, in the "
-            "SAME language as the question. Output ONLY the terms — no labels, "
-            "no punctuation lists, no explanation."
+            "question below. Output 3-10 of the most important content terms, "
+            "plus 2-3 close synonyms, abbreviations, aliases or alternative "
+            "phrasings for each (e.g. a person's full name and last name, an "
+            "acronym and its expansion, near-synonyms of a concept). The goal "
+            "is to maximize recall in a keyword search, so include valid "
+            "alternative spellings. Single words or short noun phrases, "
+            "space-separated, in the SAME language as the question. Output "
+            "ONLY the terms — no labels, no punctuation lists, no explanation."
         )
         try:
             _, msg = message_fit_in(form_message(system, question), self.chat_mdl.max_length)

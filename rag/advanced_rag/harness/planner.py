@@ -7,13 +7,7 @@ import re
 from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _snip
 from rag.advanced_rag.harness.config import get_mode
-from rag.advanced_rag.harness.prompts.decompose_prompts import (
-    DECOMPOSE_COMPARATIVE,
-    DECOMPOSE_EXPLORATORY,
-    DECOMPOSE_FACTUAL,
-    DECOMPOSE_MULTIHOP,
-    DECOMPOSE_PROCEDURAL,
-)
+from rag.advanced_rag.harness.prompts.decompose_prompts import DECOMPOSE_UNIFIED
 from rag.advanced_rag.harness.stats import in_phase
 from rag.advanced_rag.harness.types import ClaimTarget, RouteDecision, WorkflowPlan
 
@@ -26,13 +20,26 @@ def _extract_json(text: str) -> dict:
     try:
         import json_repair
 
-        return json_repair.loads(text)
+        parsed = json_repair.loads(text)
     except Exception:
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except Exception:
             _LOG.warning("planner: failed to parse LLM output: %s", text[:200])
             return {}
+    if not isinstance(parsed, dict):
+        # json_repair can return a bare string / list / primitive when the LLM
+        # emits non-object JSON. Coerce to {} so callers can safely use
+        # ``result.get("claims")`` — otherwise ``planner_node`` crashes with
+        # AttributeError and the whole agentic graph dies (rag tool returns
+        # "internal error"), producing 0-score answers. Mirrors route.py.
+        _LOG.warning(
+            "planner: LLM returned non-object JSON (%s), coercing to {}: %s",
+            type(parsed).__name__,
+            str(parsed)[:200],
+        )
+        return {}
+    return parsed
 
 
 @in_phase("planner")
@@ -48,23 +55,13 @@ async def planner_node(state: dict, tools) -> dict:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
 
-    # Select decompose prompt by question type. Multi-hop questions (an answer
-    # chained through intermediate entities/relationships) use a dedicated
-    # dependency-chain template; a conservative regex gate avoids touching other
-    # questions (no regression).
-    if _is_multihop(route.question):
-        _LOG.info("[Planner] Detected multi-hop chain; using dependency-chain decomposition.")
-        decompose_prompt = DECOMPOSE_MULTIHOP
-    else:
-        prompt_map = {
-            "factual": DECOMPOSE_FACTUAL,
-            "comparative": DECOMPOSE_COMPARATIVE,
-            "procedural": DECOMPOSE_PROCEDURAL,
-            "analytical": DECOMPOSE_EXPLORATORY,
-            "exploratory": DECOMPOSE_EXPLORATORY,
-        }
-        decompose_prompt = prompt_map.get(route.question_type, DECOMPOSE_FACTUAL)
-
+    # Unified structure-aware decomposition: ONE prompt asks the LLM to judge the
+    # question's reasoning structure (flat / chain / aggregate / temporal) and
+    # emit typed claims, instead of a brittle regex picking a per-type template.
+    # This covers aggregate (Q90: average across all members), temporal (Q678:
+    # cross-year link), chain (Q309: bridge entity) and flat — none of which a
+    # keyword regex could reliably detect.
+    decompose_prompt = DECOMPOSE_UNIFIED
     mode = get_mode(route.thinking_mode)
     max_claims = _get_max_claims(mode.label)
     detail_level = _get_detail_level(mode.label)
@@ -116,11 +113,18 @@ async def planner_node(state: dict, tools) -> dict:
                     priority=c.get("priority", 0),
                     suggested_tools=c.get("suggested_tools", []),
                     prerequisite=str(c.get("prerequisite") or "").strip(),
+                    claim_type=str(c.get("claim_type") or "flat").strip().lower() or "flat",
+                    target=str(c.get("target") or "").strip(),
                 )
             )
 
     if not claims:
         return _direct_plan(route.question)
+
+    # Post-validation: guarantee aggregate questions carry an enumeration +
+    # combine structure (the LLM may split aggregation into per-member claims or
+    # emit the enumeration without the combine step). Back-fills missing claims.
+    claims = _ensure_aggregate_structure(route.question, claims)
 
     plan = WorkflowPlan(
         plan_type=plan_type,
@@ -155,6 +159,107 @@ def _format_seed_chunks(seed_chunks, tools) -> str:
         return "(no preliminary results)"
 
 
+# ═══════════════════════════════════════════════════════════════
+# Aggregate structure enforcement (planner post-validation)
+#
+# The unified decompose prompt asks the LLM to emit an aggregate claim (a single
+# ENUMERATION over ALL members) PLUS a combine claim (the count/sum/average/
+# max/min over the enumerated values). The LLM does not always honour this:
+# it may split into independent per-member claims (which can never be
+# aggregated), emit the enumeration without the combine step, or miss the
+# aggregate shape entirely. This post-validation guarantees an aggregate+
+# combine structure whenever the question signals aggregation, so exhaustive
+# enumeration is actually performed and then combined.
+# ═══════════════════════════════════════════════════════════════
+
+_AGGREGATE_RE = re.compile(
+    r"\b(how many|how much|average|mean|sum|total|count|every|all|most|"
+    r"maximum|minimum|max|min|combined|overall|each|per)\b"
+    r"|aggregate|合计|平均|总共|所有|每个|一共",
+    re.IGNORECASE,
+)
+
+
+def _is_aggregate_question(question: str) -> bool:
+    return bool(_AGGREGATE_RE.search(question or ""))
+
+
+def _ensure_aggregate_structure(question: str, claims: list) -> list:
+    """Guarantee an aggregate claim + a combine claim for aggregate questions.
+
+    If the question signals aggregation but the plan lacks an ``aggregate``
+    enumeration claim (with a non-empty ``target``), back-fill one whose
+    description is the question itself and whose target is the full member set.
+    If an enumeration claim exists but no combine claim follows it, back-fill a
+    combine claim that asks for the aggregate over the enumerated values. The
+    fallback claims are appended with a stable ``claim_id`` so existing claim
+    references never break.
+    """
+    if not _is_aggregate_question(question):
+        return claims
+    existing_desc = {c.description.strip().lower() for c in claims if getattr(c, "description", None)}
+    existing_ids = {c.claim_id for c in claims if getattr(c, "claim_id", None)}
+    next_id = 0
+    while f"c{next_id}" in existing_ids:
+        next_id += 1
+
+    def _new_claim_id() -> str:
+        nonlocal next_id
+        cid = f"c{next_id}"
+        next_id += 1
+        return cid
+
+    enumerator = next((c for c in claims if getattr(c, "claim_type", "") == "aggregate"), None)
+
+    if enumerator is None:
+        # No enumeration claim — add one covering the full member set so an
+        # aggregate question actually enumerates all members instead of being
+        # answered from a single chunk.
+        desc = (question or "").strip()
+        enumerator = ClaimTarget(
+            claim_id=_new_claim_id(),
+            description=desc,
+            claim_type="aggregate",
+            target=desc or "all relevant members",
+            priority=1,
+        )
+        claims.append(enumerator)
+        existing_desc.add(desc.lower())
+        _LOG.info("[Planner] Post-validation: back-filled aggregate enumeration claim %s (target=%r)", enumerator.claim_id, enumerator.target)
+    elif not (enumerator.target or "").strip():
+        # Enumeration claim exists but has no member set — default it so the
+        # exhaustive-retrieval path knows what to enumerate.
+        enumerator.target = (question or "").strip() or "all relevant members"
+        _LOG.info("[Planner] Post-validation: set aggregate claim %s target=%r", enumerator.claim_id, enumerator.target)
+
+    # A combine claim must follow the enumeration: the aggregate value is
+    # computed over the enumerated member values. Detect by a claim that is
+    # distinct from the enumerator and whose description mentions an aggregate
+    # operation OR a combining word over "those/every/all/them/each".
+    def _looks_like_combine(c) -> bool:
+        desc = (getattr(c, "description", "") or "").strip().lower()
+        return bool(re.search(r"\b(average|mean|sum|total|count|maximum|minimum|max|min|combined|overall)\b", desc))
+
+    has_combine = any(
+        c.claim_id != enumerator.claim_id
+        and _looks_like_combine(c)
+        and any(w in (getattr(c, "description", "") or "").lower() for w in ("those", "every", "all", "them", "each", "listed", "above", "these"))
+        for c in claims
+    )
+    if not has_combine:
+        combine_desc = f"Combine the enumerated values from {enumerator.claim_id} into the final aggregate answer."
+        claims.append(
+            ClaimTarget(
+                claim_id=_new_claim_id(),
+                description=combine_desc,
+                claim_type="flat",
+                priority=2,
+            )
+        )
+        _LOG.info("[Planner] Post-validation: back-filled combine claim over enumeration claim %s", enumerator.claim_id)
+    return claims
+
+
 def _direct_plan(question: str) -> dict:
     """Single-claim plan for non-decomposed mode."""
     plan = WorkflowPlan(
@@ -171,23 +276,6 @@ def _default_plan(question: str) -> dict:
 
 def _get_max_claims(mode_label: str) -> int:
     return {"low": 1, "medium": 3, "high": 5, "ultra": 8}.get(mode_label, 3)
-
-
-# Conservative heuristic for "answer needs a chained intermediate entity/relationship".
-# Only explicit bridge-relationship phrases route to the multi-hop template, so
-# ordinary questions (e.g. "Who is the CEO of Apple?") are NOT touched — high
-# precision over recall, to avoid regression. The MULTIHOP template additionally asks
-# the LLM to fall back to flat claims if the question is not genuinely a chain.
-_MULTIHOP_RE = re.compile(
-    r"(employer of|employed by|works for|company that .{0,30} employ"
-    r"|partner of|teammate of|brother of|sister of|father of|mother of|son of|daughter of"
-    r"|spouse of|wife of|husband of|the .{0,20} (of|for) the .{0,20} (of|for))"
-)
-
-
-def _is_multihop(question: str) -> bool:
-    q = (question or "").lower()
-    return bool(_MULTIHOP_RE.search(q))
 
 
 def _get_detail_level(mode_label: str) -> str:
