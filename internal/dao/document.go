@@ -20,6 +20,7 @@ import (
 	"context"
 	"ragflow/internal/entity"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -486,14 +487,18 @@ func (dao *DocumentDAO) ListNamesByKbID(ctx context.Context, db *gorm.DB, kbID s
 }
 
 // ListRunningWithoutIngestionTask returns IDs of documents whose run status is
-// RUNNING ("1") but have no ingestion_task row. Normal flows avoid this state,
-// but a crashed/aborted flow can leave it; the reconciliation sweeper resets
-// these to unstart so they do not stay wedged in "parsing" forever.
-func (dao *DocumentDAO) ListRunningWithoutIngestionTask(ctx context.Context, db *gorm.DB, limit int) ([]string, error) {
+// RUNNING ("1"), have no ingestion_task row, and whose status row has not
+// changed since olderThan. Normal flows avoid this state, but a
+// crashed/aborted flow can leave it; the reconciliation sweeper resets these to
+// unstart so they do not stay wedged in "parsing" forever. The age bound keeps
+// a freshly-started document (run flipped before its task row lands) out of
+// scope, and oldest-first ordering drains a backlog deterministically.
+func (dao *DocumentDAO) ListRunningWithoutIngestionTask(ctx context.Context, db *gorm.DB, olderThan time.Time, limit int) ([]string, error) {
 	var ids []string
 	err := db.WithContext(ctx).Model(&entity.Document{}).
 		Joins("LEFT JOIN ingestion_task t ON t.document_id = document.id").
-		Where("document.run = ? AND t.id IS NULL", string(entity.TaskStatusRunning)).
+		Where("document.run = ? AND t.id IS NULL AND document.update_date < ?", string(entity.TaskStatusRunning), olderThan).
+		Order("document.update_date ASC").
 		Limit(limit).
 		Pluck("document.id", &ids).Error
 	return ids, err

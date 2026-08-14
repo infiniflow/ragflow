@@ -9,6 +9,8 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
+
+	"gorm.io/gorm"
 )
 
 // recordingPublisher captures published task messages so reconcile tests can
@@ -25,17 +27,27 @@ func (p *recordingPublisher) PublishTaskMessage(subject string, msg common.TaskM
 // Compile-time check that recordingPublisher satisfies the service contract.
 var _ servicepkg.TaskPublisher = (*recordingPublisher)(nil)
 
+// mustAffectRows asserts a setup write succeeded and affected exactly want rows,
+// so a broken test precondition reports its own cause instead of surfacing later
+// as a reconciliation behavior failure.
+func mustAffectRows(t *testing.T, res *gorm.DB, want int64) {
+	t.Helper()
+	if res.Error != nil || res.RowsAffected != want {
+		t.Fatalf("setup write: err=%v rows=%d want=%d", res.Error, res.RowsAffected, want)
+	}
+}
+
 func TestReconcile_RequeuesStaleCreated(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
 	_, _, _, _ = testutil.SeedTestData(t, db, testutil.WithTaskID("stale-created"))
-	db.Model(&entity.IngestionTask{}).Where("id = ?", "stale-created").
+	mustAffectRows(t, db.Model(&entity.IngestionTask{}).Where("id = ?", "stale-created").
 		Updates(map[string]interface{}{
 			"status":      common.CREATED,
 			"update_date": time.Now().Add(-10 * time.Minute),
-		})
+		}), 1)
 
 	pub := &recordingPublisher{}
 	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
@@ -69,8 +81,8 @@ func TestReconcile_RequeuesRunningWithoutProgress(t *testing.T) {
 	// only the "no progress" query matches (the task has no log rows); the hung
 	// query requires EXISTS(log) and must not fire.
 	_, _, _, _ = testutil.SeedTestData(t, db, testutil.WithTaskID("no-progress"))
-	db.Model(&entity.IngestionTask{}).Where("id = ?", "no-progress").
-		Updates(map[string]interface{}{"update_date": time.Now().Add(-6 * time.Minute)})
+	mustAffectRows(t, db.Model(&entity.IngestionTask{}).Where("id = ?", "no-progress").
+		Updates(map[string]interface{}{"update_date": time.Now().Add(-6 * time.Minute)}), 1)
 
 	pub := &recordingPublisher{}
 	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
@@ -104,10 +116,10 @@ func TestReconcile_FailsHungRunning(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create log row: %v", err)
 	}
-	db.Model(&entity.IngestionTaskLog{}).Where("task_id = ?", "hung-task").
-		Update("create_date", time.Now().Add(-20*time.Minute))
-	db.Model(&entity.IngestionTask{}).Where("id = ?", "hung-task").
-		Updates(map[string]interface{}{"update_date": time.Now().Add(-20 * time.Minute)})
+	mustAffectRows(t, db.Model(&entity.IngestionTaskLog{}).Where("task_id = ?", "hung-task").
+		Update("create_date", time.Now().Add(-20*time.Minute)), 1)
+	mustAffectRows(t, db.Model(&entity.IngestionTask{}).Where("id = ?", "hung-task").
+		Updates(map[string]interface{}{"update_date": time.Now().Add(-20 * time.Minute)}), 1)
 
 	pub := &recordingPublisher{}
 	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
@@ -143,8 +155,8 @@ func TestReconcile_SkipsHealthyTasks(t *testing.T) {
 	// Fresh CREATED task.
 	_, _, _, _ = testutil.SeedTestData(t, db,
 		testutil.WithTaskID("healthy-created"), testutil.WithDocID("hc-doc"), testutil.WithKBID("hc-kb"), testutil.WithTenantID("hc-tenant"))
-	db.Model(&entity.IngestionTask{}).Where("id = ?", "healthy-created").
-		Update("status", common.CREATED)
+	mustAffectRows(t, db.Model(&entity.IngestionTask{}).Where("id = ?", "healthy-created").
+		Update("status", common.CREATED), 1)
 
 	// Fresh RUNNING task with a recent progress row.
 	_, _, _, _ = testutil.SeedTestData(t, db,
@@ -176,38 +188,39 @@ func TestReconcile_SkipsHealthyTasks(t *testing.T) {
 	}
 }
 
-func TestReconcile_SkipsClaimedTask(t *testing.T) {
+func TestReconcile_SkipsHeartbeatedTask(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	// Pipeline started then went quiet → a hung candidate, but an in-process
-	// worker still owns the claim, so it must not be failed.
+	// Pipeline started then went quiet → a hung candidate by progress rows, but
+	// the worker's durable heartbeat keeps update_date fresh (e.g. a long single
+	// component writing no progress rows for minutes), so it must not be failed.
 	_, _, _, _ = testutil.SeedTestData(t, db,
-		testutil.WithTaskID("claimed-task"), testutil.WithDocID("cl-doc"), testutil.WithKBID("cl-kb"), testutil.WithTenantID("cl-tenant"))
+		testutil.WithTaskID("heartbeated-task"), testutil.WithDocID("hb-doc"), testutil.WithKBID("hb-kb"), testutil.WithTenantID("hb-tenant"))
 	if err := db.Create(&entity.IngestionTaskLog{
-		TaskID: "claimed-task", Checkpoint: entity.JSONMap{}, Phase: 0, Component: "File", Message: "",
+		TaskID: "heartbeated-task", Checkpoint: entity.JSONMap{}, Phase: 0, Component: "File", Message: "",
 	}).Error; err != nil {
 		t.Fatalf("create log row: %v", err)
 	}
-	db.Model(&entity.IngestionTaskLog{}).Where("task_id = ?", "claimed-task").
-		Update("create_date", time.Now().Add(-20*time.Minute))
-	db.Model(&entity.IngestionTask{}).Where("id = ?", "claimed-task").
-		Updates(map[string]interface{}{"update_date": time.Now().Add(-20 * time.Minute)})
+	mustAffectRows(t, db.Model(&entity.IngestionTaskLog{}).Where("task_id = ?", "heartbeated-task").
+		Update("create_date", time.Now().Add(-20*time.Minute)), 1)
+	// Fresh durable watermark: the executing worker's heartbeat Touch keeps the
+	// task row's update_date current even though no progress row was written.
+	mustAffectRows(t, db.Model(&entity.IngestionTask{}).Where("id = ?", "heartbeated-task").
+		Update("update_date", time.Now()), 1)
 
 	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
 	ing.ingestionTaskSvc.SetTaskPublisher(&recordingPublisher{})
-	ing.claimTask("claimed-task") // in-process worker owns it
-	defer ing.releaseTask("claimed-task")
 
 	ing.reconcileOnce()
 
 	var task entity.IngestionTask
-	if err := db.First(&task, "id = ?", "claimed-task").Error; err != nil {
+	if err := db.First(&task, "id = ?", "heartbeated-task").Error; err != nil {
 		t.Fatalf("load task: %v", err)
 	}
 	if task.Status != common.RUNNING {
-		t.Fatalf("claimed task was failed: status = %s, want RUNNING", task.Status)
+		t.Fatalf("heartbeated task was failed: status = %s, want RUNNING", task.Status)
 	}
 }
 
@@ -218,10 +231,10 @@ func TestReconcile_DoesNotTouchCompletedDoc(t *testing.T) {
 
 	_, _, docID, _ := testutil.SeedTestData(t, db,
 		testutil.WithTaskID("done-task"), testutil.WithDocID("done-doc"), testutil.WithKBID("done-kb"))
-	db.Model(&entity.IngestionTask{}).Where("id = ?", "done-task").
-		Update("status", common.COMPLETED)
-	db.Model(&entity.Document{}).Where("id = ?", docID).
-		Updates(map[string]interface{}{"run": string(entity.TaskStatusDone), "progress": float64(1)})
+	mustAffectRows(t, db.Model(&entity.IngestionTask{}).Where("id = ?", "done-task").
+		Update("status", common.COMPLETED), 1)
+	mustAffectRows(t, db.Model(&entity.Document{}).Where("id = ?", docID).
+		Updates(map[string]interface{}{"run": string(entity.TaskStatusDone), "progress": float64(1)}), 1)
 
 	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
 	// failHungTask on a non-RUNNING task must early-return and leave the
@@ -234,5 +247,74 @@ func TestReconcile_DoesNotTouchCompletedDoc(t *testing.T) {
 	}
 	if doc.Run == nil || *doc.Run != string(entity.TaskStatusDone) {
 		t.Fatalf("doc run = %v, want DONE (not overwritten)", doc.Run)
+	}
+}
+
+// TestReconcile_ResetsStaleRunningDocWithoutTask: a document left RUNNING with
+// no ingestion_task row and a stale update_date (crashed/aborted flow) is reset
+// to unstart with progress cleared so it does not stay wedged in "parsing".
+func TestReconcile_ResetsStaleRunningDocWithoutTask(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	running := string(entity.TaskStatusRunning)
+	name := "orphan.pdf"
+	loc := "doc_store/orphan-doc"
+	doc := &entity.Document{
+		ID: "orphan-doc", KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+		CreatedBy: "u1", Name: &name, Location: &loc, Status: testutil.StrPtr("1"),
+		Type: "pdf", Suffix: "pdf", Run: &running, Progress: 0.5,
+	}
+	if err := db.Create(doc).Error; err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+	mustAffectRows(t, db.Model(&entity.Document{}).Where("id = ?", "orphan-doc").
+		Update("update_date", time.Now().Add(-10*time.Minute)), 1)
+
+	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
+	ing.reconcileOnce()
+
+	var got entity.Document
+	if err := db.First(&got, "id = ?", "orphan-doc").Error; err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+	if got.Run == nil || *got.Run != string(entity.TaskStatusUnstart) {
+		t.Fatalf("doc run = %v, want UNSTART", got.Run)
+	}
+	if got.Progress != 0 {
+		t.Fatalf("doc progress = %v, want 0", got.Progress)
+	}
+}
+
+// TestReconcile_KeepsFreshRunningDocWithoutTask: a RUNNING document with no task
+// row but a fresh update_date (run flipped just before its task row lands) must
+// NOT be reset — the staleness bound protects the enqueue window.
+func TestReconcile_KeepsFreshRunningDocWithoutTask(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	running := string(entity.TaskStatusRunning)
+	name := "fresh.pdf"
+	loc := "doc_store/fresh-doc"
+	doc := &entity.Document{
+		ID: "fresh-doc", KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+		CreatedBy: "u1", Name: &name, Location: &loc, Status: testutil.StrPtr("1"),
+		Type: "pdf", Suffix: "pdf", Run: &running, Progress: 0.25,
+	}
+	if err := db.Create(doc).Error; err != nil {
+		t.Fatalf("create doc: %v", err)
+	}
+
+	ing := NewIngestor("reconcile-test", 1, []string{"pdf"})
+	ing.reconcileOnce()
+
+	var got entity.Document
+	if err := db.First(&got, "id = ?", "fresh-doc").Error; err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+	if got.Run == nil || *got.Run != string(entity.TaskStatusRunning) {
+		t.Fatalf("fresh doc run = %v, want RUNNING (not reset)", got.Run)
 	}
 }

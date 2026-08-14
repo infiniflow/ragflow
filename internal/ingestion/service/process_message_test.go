@@ -324,6 +324,7 @@ func TestProcessMessage_ChannelFullBlocks(t *testing.T) {
 
 	// maxConcurrency=2 → channel cap=4. Fill it completely.
 	ingestor := NewIngestor("test", 2, []string{"pdf"})
+	ingestor.heartbeatInterval = 20 * time.Millisecond // observe the blocked-wait heartbeat
 	for i := 0; i < cap(ingestor.taskChan); i++ {
 		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
 	}
@@ -356,6 +357,11 @@ func TestProcessMessage_ChannelFullBlocks(t *testing.T) {
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("waiting on full channel: expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
+	// The blocked enqueue must heartbeat the message so the broker AckWait stays
+	// fresh during the wait; otherwise the message expires mid-backpressure.
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected the blocked enqueue to heartbeat the message")
+	}
 
 	// Free one slot: the blocked enqueue completes.
 	<-ingestor.taskChan
@@ -375,6 +381,76 @@ func TestProcessMessage_ChannelFullBlocks(t *testing.T) {
 		t.Fatal("claim was released; expected the enqueued task to own it")
 	}
 	ingestor.releaseTask(taskID)
+}
+
+// TestProcessMessage_MemoryTaskChannelFullBlocks: a memory task blocked on a
+// full channel must heartbeat its message without dereferencing the nil
+// IngestionTask of a memory context (regression: startHeartbeat used
+// taskCtx.IngestionTask.ID, which panics for memory tasks) and must resume once
+// a slot frees.
+func TestProcessMessage_MemoryTaskChannelFullBlocks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.heartbeatInterval = 20 * time.Millisecond
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	// maxConcurrency=1 → channel cap=2. Fill it completely so queueTaskCtx
+	// blocks for the memory task.
+	for i := 0; i < cap(ingestor.taskChan); i++ {
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
+	}
+	t.Cleanup(func() {
+		for i := 0; i < cap(ingestor.taskChan); i++ {
+			select {
+			case <-ingestor.taskChan:
+			default:
+				return
+			}
+		}
+	})
+
+	payload, err := json.Marshal(map[string]any{
+		"id": "mem-task-blocked", "task_type": "memory", "memory_id": "mem-1",
+		"source_id": 1, "message_dict": map[string]any{"user_id": "u1"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-task-blocked", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	done := make(chan struct{})
+	go func() {
+		ingestor.processMessage(handle)
+		close(done)
+	}()
+
+	// Backpressure must block (and heartbeat), not Nack — and must not panic.
+	select {
+	case <-done:
+		t.Fatal("processMessage returned on a full channel; expected it to block")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("waiting on full channel: expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected the blocked memory enqueue to heartbeat the message")
+	}
+
+	// Free one slot: the blocked enqueue completes.
+	<-ingestor.taskChan
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processMessage did not resume after a slot was freed")
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("enqueued after slot freed: expected 0 Ack/0 Nack (worker owns settlement), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
 }
 
 // TestProcessMessage_StartRunningErrorNacks: when StartRunning returns a

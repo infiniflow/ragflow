@@ -230,16 +230,15 @@ func (dao *IngestionTaskDAO) ListRunningWithoutProgress(ctx context.Context, db 
 // (at least one component-progress row) but whose most recent progress row AND
 // status change are both older than olderThan — the worker went silent mid-run
 // (hung native parse, process crash). These are marked FAILED rather than
-// requeued, to avoid duplicate chunk writes. The EXISTS(log) precondition makes
-// this mutually exclusive with ListRunningWithoutProgress, and the update_date
-// bound keeps a freshly-restarted task (recent status change, stale rows from a
-// previous run) out of scope.
+// requeued, to avoid duplicate chunk writes. The MAX(create_date) condition is
+// NULL (unknown) for tasks without log rows, so those rows are excluded here —
+// this is what makes the query mutually exclusive with ListRunningWithoutProgress
+// — and the update_date bound keeps a freshly-restarted task (recent status
+// change, stale rows from a previous run) out of scope.
 func (dao *IngestionTaskDAO) ListHungRunning(ctx context.Context, db *gorm.DB, olderThan time.Time, limit int) ([]string, error) {
 	var ids []string
 	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where(`status = ? AND update_date < ? AND EXISTS (
-			SELECT 1 FROM ingestion_task_log l WHERE l.task_id = ingestion_task.id
-		) AND (SELECT MAX(l.create_date) FROM ingestion_task_log l WHERE l.task_id = ingestion_task.id) < ?`,
+		Where(`status = ? AND update_date < ? AND (SELECT MAX(l.create_date) FROM ingestion_task_log l WHERE l.task_id = ingestion_task.id) < ?`,
 			common.RUNNING, olderThan, olderThan).
 		Order("update_date ASC").
 		Limit(limit).

@@ -53,6 +53,7 @@ const (
 	staleCreatedRequeueAfter    = 5 * time.Minute  // CREATED too old → wake-up lost before a worker claimed it
 	staleRunningNoProgressAfter = 5 * time.Minute  // RUNNING with no progress row → lost before the pipeline started
 	hungRunningAfter            = 10 * time.Minute // RUNNING with stale progress → worker hung/crashed mid-run
+	orphanedDocumentResetAfter  = 5 * time.Minute  // document RUNNING with no task row → reset to unstart
 	reconcileBatchLimit         = 100
 )
 
@@ -494,7 +495,13 @@ func (e *Ingestor) startTaskReconcile() {
 
 func (e *Ingestor) reconcileLoop() {
 	defer e.reconcileWg.Done()
-	ticker := time.NewTicker(e.reconcileInterval)
+	// Guard against a malformed Ingestor (non-positive interval): time.NewTicker
+	// panics on such values. Fall back to the default so the sweeper still runs.
+	interval := e.reconcileInterval
+	if interval <= 0 {
+		interval = defaultReconcileInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -553,7 +560,7 @@ func (e *Ingestor) reconcileOnce() {
 
 	// 4) Documents left RUNNING with no ingestion_task row (normal flows avoid
 	// this, but crashed/aborted flows can leave it) → reset to unstart.
-	if ids, err := dao.NewDocumentDAO().ListRunningWithoutIngestionTask(ctx, dao.DB, reconcileBatchLimit); err != nil {
+	if ids, err := dao.NewDocumentDAO().ListRunningWithoutIngestionTask(ctx, dao.DB, now.Add(-orphanedDocumentResetAfter), reconcileBatchLimit); err != nil {
 		common.Error("reconcile: list documents running without task", err)
 	} else {
 		for _, id := range ids {
@@ -586,15 +593,15 @@ func (e *Ingestor) requeueTask(ctx context.Context, taskID, reason string) {
 }
 
 // failHungTask marks a hung RUNNING task FAILED and mirrors that to the
-// document. It skips tasks claimed by an in-process worker — a long single
-// component (OCR/LLM call) legitimately writes no progress row for minutes and
-// must not be killed. MarkFailed is idempotent on terminal states and returns
-// nil, so the document is mirrored only after confirming the task actually
-// transitioned RUNNING → FAILED (a task that completed meanwhile is untouched).
+// document. Liveness is durable, not in-process: the executing worker Touches
+// the task row on every heartbeat tick, so only tasks whose durable watermark
+// went stale are candidates — a long single component (OCR/LLM call) that
+// writes no progress row for minutes keeps its update_date fresh and is never
+// selected, on any replica. MarkFailed is idempotent on terminal states and
+// returns nil, so the document is mirrored only after confirming the task
+// actually transitioned RUNNING → FAILED (a task that completed meanwhile is
+// untouched).
 func (e *Ingestor) failHungTask(ctx context.Context, taskID string) {
-	if e.isClaimed(taskID) {
-		return
-	}
 	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
 	if err != nil {
 		common.Error(fmt.Sprintf("reconcile: load hung task %s", taskID), err)
@@ -1080,6 +1087,12 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 	if taskCtx.Handle == nil || e.heartbeatInterval <= 0 {
 		return func() {}
 	}
+	// Memory-task contexts leave IngestionTask nil, so fall back to the broker
+	// message's TaskID — the heartbeat must never dereference a nil task.
+	taskID := taskCtx.Handle.GetMessage().TaskID
+	if taskCtx.IngestionTask != nil {
+		taskID = taskCtx.IngestionTask.ID
+	}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	done := make(chan struct{})
@@ -1091,7 +1104,16 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 			select {
 			case <-ticker.C:
 				if err := taskCtx.Handle.InProgress(); err != nil {
-					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
+					common.Error(fmt.Sprintf("heartbeat task %s", taskID), err)
+				}
+				// Durable liveness: advance the task row's staleness watermark so
+				// reconciliation never fails a task a worker is actively running
+				// (across replicas too, where the in-process claim set is not
+				// shared). Memory tasks have no ingestion_task row; skip.
+				if taskCtx.IngestionTask != nil && dao.DB != nil {
+					if err := e.ingestionTaskSvc.Touch(taskCtx.Ctx, taskID); err != nil {
+						common.Error(fmt.Sprintf("heartbeat touch task %s", taskID), err)
+					}
 				}
 			case <-done:
 				return

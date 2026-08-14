@@ -68,6 +68,11 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
 	}
 
+	// Add composite indexes backing the stuck-task reconciliation sweeper scans.
+	if err := migrateIngestionTaskReconcileIndexes(ctx, db); err != nil {
+		return fmt.Errorf("failed to add ingestion_task reconciliation indexes: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
@@ -675,5 +680,47 @@ func migrateSkillSpaceIndex(ctx context.Context, db *gorm.DB) error {
 		}
 	}
 
+	return nil
+}
+
+// migrateIngestionTaskReconcileIndexes adds the composite indexes the stuck-task
+// reconciliation sweeper scans on every pass: ingestion_task(status, update_date)
+// and ingestion_task_log(task_id, create_date). Without them each 60s sweep does
+// a full table scan of ingestion_task plus a per-row MAX(create_date) subquery
+// against ingestion_task_log.
+func migrateIngestionTaskReconcileIndexes(ctx context.Context, db *gorm.DB) error {
+	if !db.WithContext(ctx).Migrator().HasTable("ingestion_task") {
+		return nil
+	}
+
+	indexes := []struct {
+		table string
+		name  string
+		cols  string
+	}{
+		{"ingestion_task", "idx_ingestion_task_status_update_date", "(status, update_date)"},
+		{"ingestion_task_log", "idx_ingestion_task_log_task_create_date", "(task_id, create_date)"},
+	}
+	for _, idx := range indexes {
+		var exists int64
+		if err := db.WithContext(ctx).Raw(`
+			SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+		`, idx.table, idx.name).Scan(&exists).Error; err != nil {
+			return err
+		}
+		if exists > 0 {
+			continue
+		}
+		common.Info("Adding index " + idx.name + " to " + idx.table + "...")
+		if err := db.WithContext(ctx).Exec("ALTER TABLE " + idx.table + " ADD INDEX " + idx.name + " " + idx.cols).Error; err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+				common.Info("Index already exists, skipping", zap.String("error", errStr))
+				continue
+			}
+			return fmt.Errorf("failed to add index %s on %s: %w", idx.name, idx.table, err)
+		}
+	}
 	return nil
 }
