@@ -21,6 +21,7 @@ type CompilationUpdateButtonProps = {
   hasChanges: boolean;
   newlyUploaded: number;
   removed: number;
+  changed?: number;
   loading: boolean;
   tooltip: string;
   onClick: () => void;
@@ -32,6 +33,7 @@ export function CompilationUpdateButton({
   hasChanges,
   newlyUploaded,
   removed,
+  changed = 0,
   loading,
   tooltip,
   onClick,
@@ -73,6 +75,11 @@ export function CompilationUpdateButton({
                 {removed > 0 && (
                   <Badge variant="destructive" className="ml-1">
                     {removed}
+                  </Badge>
+                )}
+                {changed > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {changed}
                   </Badge>
                 )}
                 <WandSparkles />

@@ -10,6 +10,7 @@ import {
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import {
+  ArtifactAlterationKeys,
   ArtifactKeys,
   ArtifactTopicKeys,
   useFetchArtifactTopicList,
@@ -46,6 +47,9 @@ export function LlmWikiView() {
   const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
   const handleRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ArtifactAlterationKeys.detail(id!, 'wiki'),
+    });
     queryClient.invalidateQueries({
       queryKey: ArtifactKeys.listByDataset(id!),
     });
