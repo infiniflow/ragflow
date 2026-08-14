@@ -1265,6 +1265,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         'Salesforce REST API 版本（例如 v59.0），请使用您组织所支持的版本。',
       azure_blobDescription:
         '将 Azure Blob 存储容器中的文件索引到知识库。支持账户密钥、连接字符串和 SAS 令牌三种认证方式，通过 ETag 指纹跳过未变更的文件。',
+      obsidianDescription:
+        '从本地 Obsidian 知识库索引 Markdown 笔记。解析 YAML frontmatter 与 [[双向链接]] 作为可检索的元数据。',
       azureBlobAuthModeTip:
         '选择认证方式。账户密钥和连接字符串需填写容器名称；SAS 令牌方式需填写容器 URL 和 SAS 令牌。',
       azureBlobAccountNameTip:
@@ -1326,6 +1328,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldContainerName: '容器名称',
       dataSourceFieldPrefixOptional: '前缀（可选）',
       dataSourceFieldFeedUrl: '订阅源 URL',
+      dataSourceFieldVaultPath: '知识库路径',
       dataSourceFieldGcsAccessKeyId: 'GCS 访问密钥 ID',
       dataSourceFieldGcsSecretAccessKey: 'GCS 访问密钥',
       dataSourceFieldBucketName: '存储桶名称',
