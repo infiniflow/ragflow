@@ -59,18 +59,33 @@ type AnswerResult struct {
 // FormalizeAnswer generates the final answer from the gathered kbinfos. Mirrors
 // Python's formalize_answer node: abstain/empty short-circuits, otherwise builds
 // system+user and calls the chat invoker.
-func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool) AnswerResult {
+//
+// forceLLM forces the direct-LLM path even when there is no evidence: used by the
+// FALLBACK_LLM verdict (FallbackToDirectLLM), where the mode is unanswerable but
+// we still want the model to attempt an answer or plainly state it cannot — not
+// a canned "no evidence" string. Mirrors Python, which only short-circuits on
+// empty evidence when an explicit empty_response is configured.
+func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool, caveat string, forceLLM bool) AnswerResult {
 	if abstain {
 		return AnswerResult{FinalAnswer: abstainMessage, Abstained: true}
 	}
-	if empty || kb == nil || len(kb.Chunks) == 0 {
+	if !forceLLM && (empty || kb == nil || len(kb.Chunks) == 0) {
 		return AnswerResult{FinalAnswer: emptyResultMessage, Empty: true}
 	}
 
 	var b strings.Builder
 	b.WriteString("Question:\n" + question + "\n")
+	// Research summary (merged claim reports from the high/ultra loop) precedes
+	// the raw evidence, mirroring Python formalize_answer.
+	if kb.PreSummary != "" {
+		b.WriteString("\nResearch Summary:\n" + kb.PreSummary + "\n")
+	}
 	if partial {
-		b.WriteString(partialAnswerPreamble + "\n")
+		preamble := partialAnswerPreamble
+		if caveat != "" {
+			preamble = partialAnswerPreamble + " " + caveat
+		}
+		b.WriteString(preamble + "\n")
 	}
 	b.WriteString("\nEvidence:\n")
 	for i, c := range kb.Chunks {
@@ -108,6 +123,11 @@ func chunkText(c map[string]interface{}) string {
 		return t
 	}
 	if t, ok := c["content"].(string); ok {
+		return t
+	}
+	// "text" is the fallback used by the AutoRater evidence renderer (Python
+	// _evidence_md: content_with_weight or text).
+	if t, ok := c["text"].(string); ok {
 		return t
 	}
 	return ""

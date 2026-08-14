@@ -482,10 +482,10 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 	m := newAnthropicForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "claude"
-	if _, err := m.Embed(ctx, &modelName, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &modelName, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: got %v", err)
 	}
-	if _, err := m.Rerank(ctx, &modelName, "q", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: got %v", err)
 	}
 	if _, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {

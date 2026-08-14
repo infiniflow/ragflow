@@ -30,9 +30,9 @@ from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common import settings
-from common.constants import PAGERANK_FLD, FileSource, LLMType, StatusEnum
+from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum
 from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
-from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
+from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD, _chunk_hash
 
 # KB-wide structure-graph merge index types. Each (re)builds the ``dataset_graph``
 # rows for one structure kind via ``rebuild_dataset_structure_graph_json``; the
@@ -2227,6 +2227,125 @@ def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc
     }
 
 
+async def _wiki_chunk_alteration(
+    index_nm,
+    dataset_id: str,
+    active_doc_ids: set[str],
+    disabled_doc_ids: set[str],
+) -> dict:
+    """Compare active source chunks with the hashes used by Wiki MAP.
+
+    Document-level provenance cannot detect an edited, added, or removed
+    chunk.  The MAP resume rows already contain the exact chunk hash used by
+    compilation, so they are the authoritative compiled-side snapshot.
+    A document is changed when a chunk is added, removed, or has a different
+    hash. A disabled document with retained MAP rows is also changed because
+    those rows must no longer participate in the next Wiki build.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    empty = {
+        "changed": 0,
+        "changed_doc_ids": [],
+    }
+    if not active_doc_ids and not disabled_doc_ids:
+        return empty
+
+    current: dict[str, dict] = {}
+    for doc_id in active_doc_ids:
+        offset = 0
+        while True:
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    ["id", "doc_id", "content_with_weight"],
+                    [],
+                    {"doc_id": [doc_id], "available_int": 1, "must_not": {"exists": "compile_kwd"}},
+                    [],
+                    OrderByExpr(),
+                    offset,
+                    1000,
+                    index_nm,
+                    [dataset_id],
+                )
+                rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight"]) or {}
+            except Exception as exc:
+                logging.exception("alteration: failed to load source chunks for doc=%s", doc_id)
+                raise RuntimeError(f"Failed to load source chunks for Wiki alteration (kb={dataset_id}, doc={doc_id})") from exc
+            if not rows:
+                break
+            for row in rows.values():
+                chunk_id = str(row.get("id") or "")
+                if not chunk_id:
+                    continue
+                current[chunk_id] = {
+                    "id": chunk_id,
+                    "doc_id": doc_id,
+                    "hash": _chunk_hash(row.get("content_with_weight") or ""),
+                }
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+    compiled: dict[str, dict] = {}
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"],
+                [],
+                {"compile_kwd": ["wiki_map_extract"]},
+                [],
+                OrderByExpr(),
+                offset,
+                1000,
+                index_nm,
+                [dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"]) or {}
+        except Exception as exc:
+            logging.exception("alteration: failed to load Wiki MAP hashes for kb=%s", dataset_id)
+            raise RuntimeError(f"Failed to load Wiki MAP hashes for alteration (kb={dataset_id})") from exc
+        if not rows:
+            break
+        for row in rows.values():
+            row_doc_ids = _flatten_provenance_doc_ids(row.get("doc_id"))
+            matching_doc_ids = row_doc_ids & (active_doc_ids | disabled_doc_ids)
+            if not matching_doc_ids:
+                continue
+            doc_id = next(iter(matching_doc_ids))
+            chunk_ids = row.get("source_chunk_ids") or []
+            if isinstance(chunk_ids, str):
+                chunk_ids = [chunk_ids]
+            saved_hash = row.get("chunk_hash_kwd")
+            saved_hash = saved_hash if isinstance(saved_hash, str) else ""
+            for chunk_id in chunk_ids:
+                chunk_id = str(chunk_id or "")
+                if chunk_id:
+                    compiled.setdefault(chunk_id, {"id": chunk_id, "doc_id": doc_id, "hash": saved_hash})
+        if len(rows) < 1000:
+            break
+        offset += 1000
+
+    changed_doc_ids: set[str] = set()
+    for chunk_id, item in current.items():
+        old = compiled.get(chunk_id)
+        if old is None or old["hash"] != item["hash"]:
+            changed_doc_ids.add(item["doc_id"])
+
+    # A missing current chunk means it was removed from an active document.
+    # For a disabled document, all retained MAP chunks are stale by definition.
+    for chunk_id, item in compiled.items():
+        if item["doc_id"] in disabled_doc_ids or (item["doc_id"] in active_doc_ids and chunk_id not in current):
+            changed_doc_ids.add(item["doc_id"])
+
+    return {
+        "changed": len(changed_doc_ids),
+        "changed_doc_ids": sorted(changed_doc_ids),
+    }
+
+
 def _flatten_provenance_doc_ids(value) -> set[str]:
     """Normalize source_doc_ids stored as JSON strings, lists, or scalars."""
     if value is None:
@@ -2368,15 +2487,27 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
         return False, "Invalid Dataset ID"
 
     docs, current_doc_ids = await _current_dataset_docs(dataset_id)
+    eligible_doc_ids = _eligible_doc_ids_for_kind(docs, kb.tenant_id, kind)
 
     involved_doc_ids: set[str] = set()
+    chunk_changes = None
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is not None:
         index_nm, _ = pack
         involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
+        if kind == "wiki":
+            disabled_doc_ids = await _disabled_dataset_doc_ids(dataset_id)
+            chunk_changes = await _wiki_chunk_alteration(
+                index_nm,
+                dataset_id,
+                eligible_doc_ids,
+                disabled_doc_ids,
+            )
 
-    eligible_doc_ids = _eligible_doc_ids_for_kind(docs, kb.tenant_id, kind)
-    return True, _alteration_result(current_doc_ids, involved_doc_ids, eligible_doc_ids)
+    result = _alteration_result(current_doc_ids, involved_doc_ids, eligible_doc_ids)
+    if chunk_changes is not None:
+        result.update(chunk_changes)
+    return True, result
 
 
 async def get_wiki_alteration(dataset_id: str, tenant_id: str):
@@ -3630,6 +3761,7 @@ async def search_dataset_layers(
     mode: str,
     *,
     top_k: int | None = None,
+    doc_scope: list[str] | None = None,
 ) -> tuple[bool, dict]:
     """Unified search across different knowledge layers of a dataset.
 
@@ -3640,15 +3772,20 @@ async def search_dataset_layers(
             - nav_cluster: navigation tree cluster nodes
             - navigation_tree: tree-structured BFS beam descent
             - all: union of all modes, deduplicated by doc_id with best score
+        doc_scope: Optional set of documents to restrict the search to.  None or
+            empty means all documents of the dataset.  Forwarded to every mode:
+            nav modes filter the compiled nav rows by doc, ``chunk`` restricts
+            the retriever via ``doc_ids``.  Applied query-time so scoped rows
+            are never dropped by the ``top_k`` truncation.
 
         Items are shaped as ``{"doc_id": str, "score": float}``.
     """
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_dataset_nav
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "no authorization"
+        return False, {"error": "no authorization", "code": RetCode.PERMISSION_ERROR}
     if mode not in _LAYERS_HANDLERS:
-        return False, f"unknown mode: {mode}, expected one of {list(_LAYERS_HANDLERS.keys())}"
+        return False, {"error": f"unknown mode: {mode}, expected one of {list(_LAYERS_HANDLERS.keys())}", "code": RetCode.ARGUMENT_ERROR}
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     try:
@@ -3670,21 +3807,27 @@ async def search_dataset_layers(
         logging.exception("Full traceback for LLMBundle(EMBEDDING) failure")
         embd_mdl = None
 
+    logging.debug(
+        "search_dataset_layers: dispatching scoped mode=%s for dataset=%s, scoped_docs=%d",
+        mode,
+        dataset_id,
+        len([d for d in (doc_scope or []) if str(d).strip()]),
+    )
     if mode == "nav_doc":
-        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
+        return await _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "nav_cluster":
-        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
+        return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav)
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope)
     elif mode == "chunk":
-        return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb)
+        return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
-        return await _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_dataset_nav)
+        return await _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_dataset_nav, doc_scope=doc_scope)
     else:
-        return False, f"unknown mode: {mode}"
+        return False, {"error": f"unknown mode: {mode}", "code": RetCode.ARGUMENT_ERROR}
 
 
-async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
+async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None):
     items = await _nav_search_result(
         tenant_id,
         dataset_id,
@@ -3693,11 +3836,12 @@ async def _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl,
         embd_mdl,
         search_fn,
         type_kwd="nav_doc",
+        doc_scope=doc_scope,
     )
     return True, {"mode": "nav_doc", "total": len(items), "items": items}
 
 
-async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
+async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, *, doc_scope=None):
     items = await _nav_search_result(
         tenant_id,
         dataset_id,
@@ -3706,11 +3850,12 @@ async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_
         embd_mdl,
         search_fn,
         type_kwd="nav_cluster",
+        doc_scope=doc_scope,
     )
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn):
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, *, doc_scope=None):
     from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
 
     items = await search_nav_tree_descent(
@@ -3719,32 +3864,48 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
         query,
         embd_mdl,
         top_k=top_k,
+        doc_scope=doc_scope,
     )
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
 
 async def _nav_search_result(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, **kwargs):
+    doc_scope = kwargs.pop("doc_scope", None)
     results = await search_fn(
         tenant_id,
         dataset_id,
         query,
         embd_mdl=embd_mdl,
         top_k=top_k,
+        doc_scope=doc_scope,
         **kwargs,
     )
+    scope_set = {str(d).strip() for d in doc_scope if str(d).strip()} if doc_scope else None
     items: list[dict] = []
     for r in results:
-        doc_id = (r.get("doc_id") or "").strip() if isinstance(r.get("doc_id"), str) else (r.get("doc_ids") or [None])[0]
+        raw_doc_id = r.get("doc_id")
+        if isinstance(raw_doc_id, str) and raw_doc_id.strip():
+            doc_id = raw_doc_id.strip()
+        else:
+            # Cluster row: pick the first doc_id that's in scope (if a scope
+            # is set) so we never leak an out-of-scope doc_id into the results.
+            doc_ids = r.get("doc_ids") or []
+            if scope_set:
+                doc_id = next((str(d).strip() for d in doc_ids if str(d).strip() in scope_set), "")
+            else:
+                doc_id = str(doc_ids[0]).strip() if doc_ids else ""
+        if not doc_id:
+            continue
         items.append(
             {
-                "doc_id": str(doc_id) if doc_id else "",
+                "doc_id": doc_id,
                 "score": round(float(r.get("score", 0.0)), 4),
             }
         )
     return items
 
 
-async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb):
+async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, *, doc_scope=None):
     from common import settings
 
     tenant_ids = [tenant_id]
@@ -3752,6 +3913,8 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
     kwargs = {}
     if top_k is not None:
         kwargs["top"] = top_k
+    if doc_scope:
+        kwargs["doc_ids"] = [str(d) for d in doc_scope if str(d).strip()]
 
     fetch_k = max(top_k, 10) * 3 if top_k is not None else 1024
     try:
@@ -3767,7 +3930,7 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
             **kwargs,
         )
     except Exception:
-        return False, "chunk retrieval failed"
+        return False, {"error": "chunk retrieval failed", "code": RetCode.SERVER_ERROR}
 
     doc_scores: dict[str, float] = {}
     for c in ranks.get("chunks", []):
@@ -3787,15 +3950,15 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
     return True, {"mode": "chunk", "total": len(items), "items": items}
 
 
-async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_fn):
+async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, search_fn, *, doc_scope=None):
     """Run all modes and return the union of doc_ids, with best score per doc."""
     import asyncio as _asyncio
 
     result_lists = await _asyncio.gather(
-        _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn),
-        _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn),
-        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn),
-        _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb),
+        _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
+        _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
+        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope),
+        _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope),
         return_exceptions=True,
     )
 

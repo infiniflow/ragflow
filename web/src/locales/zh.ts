@@ -192,7 +192,8 @@ export default {
           '无效的 Skills：未找到 SKILL.md 文件。请确保 Skills 文件目录包含有效的 SKILL.md 文件。',
         invalid_frontmatter:
           '无效的 Skills：SKILL.md 必须包含有效的 frontmatter（以 --- 开头和结尾）。',
-        missing_name: '无效的 Skills：SKILL.md frontmatter 必须包含 "name" 字段。',
+        missing_name:
+          '无效的 Skills：SKILL.md frontmatter 必须包含 "name" 字段。',
         invalid_name_format:
           '无效的 Skills："name" 必须是小写且 URL 安全的（仅字母、数字、连字符）。',
         invalid_version:
@@ -420,7 +421,7 @@ export default {
         '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
       update: '更新',
       updateTooltip:
-        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
+        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档，{{changed}} 个已变更文档。点击编译并合并到当前 Wiki。',
       updateSheetTitle: '更新 Wiki',
       updateStructureSheetTitle: '更新{{name}}',
       updateStructureTooltip:
@@ -873,6 +874,7 @@ export default {
       maxClusterTip: '最多可创建的聚类数。',
       entityTypes: 'Entity 类型',
       compilationTemplate: '算子',
+      compilationTemplateRequired: '请选择算子',
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
@@ -1114,7 +1116,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       regenerate: '重新生成',
       read: '朗读内容',
       tts: '文本转语音',
-      ttsTip: '是否用语音转换播放语音，请先在设置里面选择 TTS（语音转换模型）。',
+      ttsTip:
+        '是否用语音转换播放语音，请先在设置里面选择 TTS（语音转换模型）。',
       relatedQuestion: '相关问题',
       answerTitle: '智能回答',
       multiTurn: '多轮对话优化',
@@ -1599,8 +1602,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       instruction: 'Instruction',
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
-      plan: 'Plan',
-      planTip: '关闭：每个 Entity 或 Concept 对应一个 Wiki 页面。开启：让 LLM 决定将某些 Entity/Concept 组合到单个 Wiki 页面。',
+      wikiMode: 'Wiki 模式',
+      entityMode: '实体模式',
+      topicMode: '主题模式',
+      wikiModeRequired: '请选择 Wiki 模式',
+      wikiModeTip:
+        '实体模式：每个实体或概念对应一个 Wiki 页面。主题模式：让 LLM 按主题将相关实体或概念组合到同一个 Wiki 页面。',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
       maxToken: '最大 token 数',
@@ -2000,11 +2007,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       selectModelBeforeVerify: '请至少选择一个模型后再验证。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
-      batchAddModels: '批量添加当前模型',
-      batchRemoveModels: '批量移除当前模型',
+      batchAddModels: '批量添加模型',
+      batchRemoveModels: '批量移除模型',
       batchVerifyModels: '批量验证',
-      selectAllFiltered: '全选',
-      batchVerifySelected: '验证 {{count}} 个模型',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大 Token 数',
       modelTypes: {

@@ -74,11 +74,11 @@ func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 		call func() error
 	}{
 		{"Embed", func() error {
-			_, err := driver.Embed(ctx, &modelName, []string{text}, &APIConfig{}, nil, nil)
+			_, err := driver.Embed(ctx, &modelName, EmbedRequest{Texts: []string{text}}, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"Rerank", func() error {
-			_, err := driver.Rerank(ctx, &modelName, text, []string{text}, &APIConfig{}, nil, nil)
+			_, err := driver.Rerank(ctx, &modelName, RerankRequest{Query: text, Documents: []string{text}}, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"TranscribeAudio", func() error {

@@ -49,11 +49,10 @@ type Syncer struct {
 }
 
 // NewSyncer creates a server-compatible syncer with default dependencies.
-func NewSyncer(taskWorkerCount int, pollInterval time.Duration) *Syncer {
+func NewSyncer(taskWorkerCount int) *Syncer {
 	// init the config
 	config := DefaultConfig()
 	config.TaskWorkerCount = taskWorkerCount
-	config.PollInterval = pollInterval
 
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()
@@ -78,15 +77,20 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 	})
 	taskService := service.NewSyncTaskService(taskDAO)
 	idResolver := service.NewDocumentIDResolver(service.NewGormDocumentStore())
+	checkpoints := SyncCheckpointStore(newMemorySyncCheckpointStore())
+	messageQueue := engine.GetMessageQueueEngine()
+	if store, ok := messageQueue.(SyncCheckpointStore); ok {
+		checkpoints = store
+	}
 
 	coordinator := NewTaskCoordinator(TaskCoordinatorConfig{
 		ItemRetryCount:     config.ItemRetryCount,
 		ItemRetryBaseDelay: config.ItemRetryBaseDelay,
-	}, taskService, registry, sink, pruneService, idResolver, executor)
+	}, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
 
-	scheduler := NewScheduler(config.PollInterval, queue, taskService)
-	if broker, ok := engine.GetMessageQueueEngine().(SyncTaskBroker); ok {
-		scheduler = NewNATSScheduler(config.PollInterval, queue, taskService, broker)
+	scheduler := NewScheduler(queue, taskService)
+	if broker, ok := messageQueue.(SyncTaskBroker); ok {
+		scheduler = NewNATSScheduler(queue, taskService, broker)
 	}
 
 	return &Syncer{
@@ -94,7 +98,7 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 		config:     config,
 		queue:      queue,
 		scheduler:  scheduler,
-		worker:     NewTaskWorker(queue, taskService, coordinator, locker),
+		worker:     NewTaskWorker(queue, taskService, coordinator, locker).WithScheduler(scheduler),
 		executor:   executor,
 		ShutdownCh: make(chan struct{}),
 	}
@@ -106,11 +110,6 @@ func (s *Syncer) ID() string {
 		return ""
 	}
 	return s.id
-}
-
-// Start launches the scheduler and task workers with a background context.
-func (s *Syncer) Start() error {
-	return s.StartContext(context.Background())
 }
 
 // StartContext launches the scheduler and task workers.
@@ -176,6 +175,8 @@ func registerBuiltInConnectors(registry *syncerconnector.Registry) {
 	registerDAOConnector(registry, "gmail", syncerconnector.NewGmailConnector)
 	registerDAOConnector(registry, "google-drive", syncerconnector.NewGoogleDriveConnector)
 	registerDAOConnector(registry, "google_drive", syncerconnector.NewGoogleDriveConnector)
+	registerDAOConnector(registry, "mysql", syncerconnector.NewMySQLConnector)
+	registerDAOConnector(registry, "postgresql", syncerconnector.NewPostgreSQLConnector)
 }
 
 func registerDAOConnector[T syncerconnector.Connector](registry *syncerconnector.Registry, source string, factory func(map[string]any) (T, error)) {

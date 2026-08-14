@@ -5,6 +5,7 @@ import {
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { buildMessageListWithUuid } from '@/utils/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
 import { trim } from 'lodash';
@@ -19,6 +20,7 @@ import {
   useChatStreamStore,
   useIsChatStreaming,
 } from '../chat-stream/store';
+import { resolveResendOptions } from '../utils';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
@@ -87,6 +89,11 @@ export const useSendMessage = () => {
   );
   const stopStream = useChatStreamStore((state) => state.stopStream);
 
+  // The regenerate button lives in the transcript, which has no access to the
+  // input box's thinking / internet toggles. Remember what the last send used
+  // so a retry keeps the same options instead of silently dropping them.
+  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
+
   const sendMessage = useCallback(
     async ({
       message,
@@ -100,6 +107,8 @@ export const useSendMessage = () => {
       messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
+
+      lastSendOptionsRef.current = { enableInternet, enableThinking };
 
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
@@ -156,7 +165,10 @@ export const useSendMessage = () => {
       };
 
       appendQuestion(conversationId, questionMessage);
-      sendMessage({ message: questionMessage });
+      sendMessage({
+        message: questionMessage,
+        ...resolveResendOptions(lastSendOptionsRef.current),
+      });
     },
     [conversationId, isStreaming, appendQuestion, sendMessage],
   );
@@ -201,14 +213,28 @@ export const useSendMessage = () => {
         conversationId: targetConversationId,
       };
 
+      // A brand new conversation is persisted under a server-generated id, so
+      // the prologue seeded on the temporary id doesn't carry over. Seed the
+      // real session from the server's list (which holds just the prologue)
+      // BEFORE appending the question — hydrating afterwards would pass the
+      // authority check (not streaming yet) and wipe the question and
+      // placeholder that were just appended.
+      if (currentMessages.length > 0) {
+        hydrateFromServer(
+          targetConversationId,
+          buildMessageListWithUuid(currentMessages),
+        );
+      }
+
       // Route the question to the conversation it was asked in, not whichever
       // is currently displayed.
       //
-      // Do NOT hydrate from currentMessages here. For a freshly created
-      // conversation the server only returns the seeded prologue, which
-      // seedPrologue has already put in the store — and hydrating now would
-      // pass the authority check (not streaming yet) and wipe the question and
-      // placeholder that were just appended.
+      // Snapshot the history before appendQuestion writes the question and its
+      // assistant placeholder into the store.
+      const history =
+        useChatStreamStore.getState().sessions[targetConversationId]
+          ?.messages ?? [];
+
       appendQuestion(targetConversationId, questionMessage);
 
       setValue('');
@@ -216,7 +242,7 @@ export const useSendMessage = () => {
         currentConversationId: targetConversationId,
         // For an existing conversation currentMessages is empty; fall back to
         // the store's message list instead of sending an empty history.
-        messages: currentMessages.length > 0 ? currentMessages : undefined,
+        messages: currentMessages.length > 0 ? currentMessages : history,
         message: {
           id,
           content: value.trim(),
@@ -246,6 +272,7 @@ export const useSendMessage = () => {
       isStreaming,
       createConversationBeforeSendMessage,
       appendQuestion,
+      hydrateFromServer,
       files,
       clearFiles,
       setValue,

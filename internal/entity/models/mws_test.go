@@ -219,7 +219,7 @@ func TestMWSEmbedSendsOnlyDocumentedFieldsAndOrdersVectors(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	embeddings, err := driver.Embed(context.Background(), &modelName, []string{"first", "second"}, apiConfig, &EmbeddingConfig{Dimension: 256}, nil)
+	embeddings, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"first", "second"}}, apiConfig, &EmbeddingConfig{Dimension: 256}, nil)
 	if err != nil {
 		t.Fatalf("embed: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestMWSRerankUsesCohereEndpointAndOriginalIndexOrder(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-reranker-v2-m3"
-	result, err := driver.Rerank(context.Background(), &modelName, "query", []string{"first", "second"}, apiConfig, &RerankConfig{TopN: 1}, nil)
+	result, err := driver.Rerank(context.Background(), &modelName, RerankRequest{Query: "query", Documents: []string{"first", "second"}}, apiConfig, &RerankConfig{TopN: 1}, nil)
 	if err != nil {
 		t.Fatalf("rerank: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestMWSRejectsEmptyTokenWithoutRequest(t *testing.T) {
 	empty := "  "
 	apiConfig.ApiKey = &empty
 	modelName := "bge-m3"
-	_, err := driver.Embed(context.Background(), &modelName, []string{"text"}, apiConfig, nil, nil)
+	_, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected an API key error, got %v", err)
 	}
@@ -288,11 +288,11 @@ func TestMWSEmptyInputsDoNotSendRequests(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	embeddings, err := driver.Embed(context.Background(), &modelName, []string{}, apiConfig, nil, nil)
+	embeddings, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{}}, apiConfig, nil, nil)
 	if err != nil || len(embeddings) != 0 {
 		t.Fatalf("empty embedding input: data=%#v err=%v", embeddings, err)
 	}
-	ranked, err := driver.Rerank(context.Background(), &modelName, "query", []string{}, apiConfig, nil, nil)
+	ranked, err := driver.Rerank(context.Background(), &modelName, RerankRequest{Query: "query", Documents: []string{}}, apiConfig, nil, nil)
 	if err != nil || len(ranked.Data) != 0 {
 		t.Fatalf("empty rerank input: data=%#v err=%v", ranked, err)
 	}
@@ -309,7 +309,7 @@ func TestMWSErrorResponseIsReturned(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	_, err := driver.Embed(context.Background(), &modelName, []string{"text"}, apiConfig, nil, nil)
+	_, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 503") || !strings.Contains(err.Error(), "MWS unavailable") {
 		t.Fatalf("unexpected MWS error: %v", err)
 	}
