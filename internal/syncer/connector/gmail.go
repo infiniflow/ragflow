@@ -90,6 +90,13 @@ func (c *GmailConnector) Validate(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates Gmail settings from an unsaved config.
+func (c *GmailConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
+}
+
 // OpenSync opens one Gmail sync session.
 func (c *GmailConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	users, err := c.getUserEmails(ctx)

@@ -517,7 +517,6 @@ export const RenderField = ({
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
-            console.log('multi select value', fieldProps);
             const finalFieldProps = {
               ...fieldProps,
               onValueChange: (value: string[]) => {
@@ -532,10 +531,6 @@ export const RenderField = ({
                 variant="inverted"
                 maxCount={100}
                 {...finalFieldProps}
-                // onValueChange={(data) => {
-                //   console.log(data);
-                //   field.onChange?.(data);
-                // }}
                 options={field.options as MultiSelectOptionType[]}
                 disabled={field.disabled}
               />
@@ -762,7 +757,6 @@ const DynamicForm = {
               combinedErrors[key] = combinedErrors[key][0];
             }
           }
-          console.log('combinedErrors', combinedErrors);
           return {
             values: Object.keys(combinedErrors).length ? {} : data,
             errors: combinedErrors,
@@ -987,30 +981,17 @@ const DynamicForm = {
           (async () => {
             try {
               const beValid = await form.trigger();
-              console.log('form valid', beValid, form);
-              // if (beValid) {
-              //   form.handleSubmit(async (values) => {
-              //     console.log('form values', values);
-              //     submitFunc?.(values);
-              //   })();
-              // }
 
               if (beValid && submitFunc) {
                 form.handleSubmit(async (values) => {
                   const filteredValues = (form as any).filterActiveValues
                     ? (form as any).filterActiveValues(values)
                     : values;
-                  console.log(
-                    'filtered form values in saving button',
-                    filteredValues,
-                  );
                   submitFunc(filteredValues);
                 })();
               }
             } catch (e) {
               console.error(e);
-            } finally {
-              console.log('form submit3');
             }
           })();
         }}

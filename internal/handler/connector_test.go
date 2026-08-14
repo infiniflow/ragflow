@@ -37,7 +37,7 @@ func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.
 	return &service.ListConnectorsResponse{}, nil
 }
 
-func (s fakeConnectorService) TestConnector(context.Context, string, string) error {
+func (s fakeConnectorService) TestConnector(context.Context, string, string, entity.JSONMap) error {
 	return s.err
 }
 
