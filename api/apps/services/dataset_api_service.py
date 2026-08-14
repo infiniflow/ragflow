@@ -2228,7 +2228,6 @@ def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc
 
 
 async def _wiki_chunk_alteration(
-    index_nm,
     tenant_id: str,
     dataset_id: str,
     eligible_doc_ids: set[str],
@@ -2257,7 +2256,6 @@ async def _wiki_chunk_alteration(
         _wiki_scan_current_chunk_state,
     )
 
-    del index_nm  # the shared scanner resolves the tenant index consistently
     try:
         current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
         previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
@@ -2431,7 +2429,6 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
         involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
         if kind == "wiki":
             chunk_changes = await _wiki_chunk_alteration(
-                index_nm,
                 kb.tenant_id,
                 dataset_id,
                 eligible_doc_ids,

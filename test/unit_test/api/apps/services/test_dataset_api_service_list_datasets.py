@@ -469,7 +469,6 @@ async def test_wiki_chunk_alteration_uses_full_successful_state(monkeypatch):
     )
 
     result = await module._wiki_chunk_alteration(
-        "unused-index",
         "tenant-1",
         "kb-1",
         {"doc-existing", "doc-new"},

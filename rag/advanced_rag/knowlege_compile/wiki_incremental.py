@@ -3338,12 +3338,11 @@ async def wiki_compile_incremental(
     tenant_id: str,
     kb_id: str,
     mode: str,
+    chunk_delta: dict[str, set[str]],
+    previous_chunk_state: dict[str, dict],
+    current_chunk_state: dict[str, dict],
     incremental: bool = False,  # True = incremental run
-    map_results: list[dict] | None = None,  # from MAP phase
     deleted_doc_ids: set[str] | None = None,
-    chunk_delta: dict[str, set[str]] | None = None,
-    previous_chunk_state: dict[str, dict] | None = None,
-    current_chunk_state: dict[str, dict] | None = None,
     callback: Callable | None = None,
 ) -> dict:
     """Main entry point for dual-mode wiki compilation.
@@ -3351,7 +3350,6 @@ async def wiki_compile_incremental(
     Args:
         mode: ``entity`` for Mode A, or ``topic`` for Mode B.
         incremental: True=incremental update, False=full build
-        map_results: MAP outputs. If None, loads from ES.
         deleted_doc_ids: Documents that were removed.
         callback: Progress callback.
 
@@ -3369,47 +3367,31 @@ async def wiki_compile_incremental(
             except Exception:
                 pass
 
-    invalidated_chunk_ids = set((chunk_delta or {}).get("changed_chunk_ids") or set()) | set((chunk_delta or {}).get("deleted_chunk_ids") or set())
-    delta_current_chunk_ids = set((chunk_delta or {}).get("new_chunk_ids") or set()) | set((chunk_delta or {}).get("changed_chunk_ids") or set())
+    invalidated_chunk_ids = set(chunk_delta.get("changed_chunk_ids") or set()) | set(chunk_delta.get("deleted_chunk_ids") or set())
+    delta_current_chunk_ids = set(chunk_delta.get("new_chunk_ids") or set()) | set(chunk_delta.get("changed_chunk_ids") or set())
     delta_before_results: list[dict] = []
     delta_after_results: list[dict] = []
 
     # Versioned MAP storage contains historical rows.  Incremental compilation
     # must select exactly the versions referenced by the candidate current
     # state, never every historical row in the index.
-    if chunk_delta is not None and current_chunk_state is not None:
-        from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_map_extracts_for_state
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_map_extracts_for_state
 
-        map_results = await _wiki_load_map_extracts_for_state(tenant_id, kb_id, current_chunk_state)
-        if delta_current_chunk_ids:
-            delta_after_results = await _wiki_load_map_extracts_for_state(
-                tenant_id,
-                kb_id,
-                current_chunk_state,
-                delta_current_chunk_ids,
-            )
-        if previous_chunk_state is not None and invalidated_chunk_ids:
-            delta_before_results = await _wiki_load_map_extracts_for_state(
-                tenant_id,
-                kb_id,
-                previous_chunk_state,
-                invalidated_chunk_ids,
-            )
-
-    # ----- Phase 1: Load MAP results if not provided -----
-    if chunk_delta is None and not map_results:
-        _progress("Loading MAP results from doc store ...")
-        from api.db.services.document_service import DocumentService
-        from rag.advanced_rag.knowlege_compile.wiki import (
-            _wiki_doc_ids,
-            _wiki_load_active_map_state,
-            _wiki_load_map_extracts_for_state,
+    map_results = await _wiki_load_map_extracts_for_state(tenant_id, kb_id, current_chunk_state)
+    if delta_current_chunk_ids:
+        delta_after_results = await _wiki_load_map_extracts_for_state(
+            tenant_id,
+            kb_id,
+            current_chunk_state,
+            delta_current_chunk_ids,
         )
-
-        disabled_doc_ids = _wiki_doc_ids(await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id))
-        active_state = await _wiki_load_active_map_state(tenant_id, kb_id)
-        active_state = {chunk_id: item for chunk_id, item in active_state.items() if str(item.get("doc_id") or "") not in disabled_doc_ids}
-        map_results = await _wiki_load_map_extracts_for_state(tenant_id, kb_id, active_state)
+    if invalidated_chunk_ids:
+        delta_before_results = await _wiki_load_map_extracts_for_state(
+            tenant_id,
+            kb_id,
+            previous_chunk_state,
+            invalidated_chunk_ids,
+        )
 
     if not map_results and not delta_before_results:
         _progress("No MAP results found. Skipping wiki compilation.")
@@ -3504,16 +3486,6 @@ async def wiki_compile_incremental(
         kb_id=kb_id,
         incremental=incremental,
     )
-    if mode == "topic" and incremental and chunk_delta is None:
-        try:
-            from api.db.services.document_service import DocumentService
-
-            disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
-            historical_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=disabled_doc_ids)
-            raw_relations.extend(historical_relations)
-        except Exception:
-            logging.exception("wiki: failed to load historical relations for incremental routing")
-
     canonical_resolution = dict(name_resolution)
     for canonical_name, canonical_entry in canonical_entities.items():
         canonical_resolution.setdefault(canonical_name, canonical_name)
@@ -3540,21 +3512,20 @@ async def wiki_compile_incremental(
     # ``map_results`` is the complete current snapshot when chunk deltas are
     # supplied.  Replace provenance accumulated in the canonical cache with
     # that snapshot so changed/deleted chunk ids do not survive indefinitely.
-    if chunk_delta is not None:
-        current_evidence: dict[str, dict[str, set[str] | int]] = {}
-        for entry in raw_entities:
-            cname = name_resolution.get(entry["name"], entry["name"])
-            evidence = current_evidence.setdefault(cname, {"docs": set(), "chunks": set(), "claims": 0})
-            evidence["docs"].update(entry.get("source_doc_ids") or [])
-            evidence["chunks"].update(entry.get("source_chunk_ids") or [])
-            evidence["claims"] += int(entry.get("claim_count") or 0)
-        for cname, centry in canonical_map.items():
-            evidence = current_evidence.get(cname)
-            if evidence is None:
-                continue
-            centry["source_doc_ids"] = sorted(evidence["docs"])
-            centry["source_chunk_ids"] = sorted(evidence["chunks"])
-            centry["claim_count"] = evidence["claims"]
+    current_evidence: dict[str, dict[str, set[str] | int]] = {}
+    for entry in raw_entities:
+        cname = name_resolution.get(entry["name"], entry["name"])
+        evidence = current_evidence.setdefault(cname, {"docs": set(), "chunks": set(), "claims": 0})
+        evidence["docs"].update(entry.get("source_doc_ids") or [])
+        evidence["chunks"].update(entry.get("source_chunk_ids") or [])
+        evidence["claims"] += int(entry.get("claim_count") or 0)
+    for cname, centry in canonical_map.items():
+        evidence = current_evidence.get(cname)
+        if evidence is None:
+            continue
+        centry["source_doc_ids"] = sorted(evidence["docs"])
+        centry["source_chunk_ids"] = sorted(evidence["chunks"])
+        centry["claim_count"] = evidence["claims"]
 
     # raw_entities (lightweight) no longer needed after matching.
     del raw_entities
@@ -3685,7 +3656,7 @@ async def wiki_compile_incremental(
     # Use canonical names (from Entity Matching) instead of raw MAP names
     canonical_names: set[str] = set(canonical_map.keys())
 
-    if incremental and chunk_delta is not None:
+    if incremental:
         # Resolve names from both sides of the chunk delta.  Deleted names may
         # no longer exist in the current canonical map, but their old pages
         # still need retraction/deletion.
@@ -3697,28 +3668,6 @@ async def wiki_compile_incremental(
                     existing_aliases[_normalize_key(alias)] = cname
         affected_names = {name_resolution.get(raw_name) or existing_aliases.get(_normalize_key(raw_name)) or raw_name for raw_name in before_raw_names | after_raw_names}
         affected_names.discard("")
-    elif incremental:
-        # Affected doc ids are the docs contributing to this batch's canonical
-        # entities, plus any deleted docs.  Derived from canonical_map (which
-        # carries source_doc_ids) — no need to re-read the released map_results.
-        affected_doc_ids = set()
-        for centry in canonical_map.values():
-            affected_doc_ids.update(centry.get("source_doc_ids", []))
-        affected_doc_ids = affected_doc_ids | (deleted_doc_ids or set())
-
-        # Map doc_page_source entity_names (raw) through name_resolution -> canonical
-        affected_names: set[str] = set()
-        if affected_doc_ids:
-            dps_tasks = [_wiki_load_doc_page_source(tenant_id, kb_id, did) for did in affected_doc_ids]
-            dps_results = await asyncio.gather(*dps_tasks)
-            for dps in dps_results:
-                if dps:
-                    for raw_name in dps.get("entity_names", []):
-                        cname = name_resolution.get(raw_name, raw_name)
-                        if cname in canonical_names:
-                            affected_names.add(cname)
-        if not affected_names:
-            affected_names = canonical_names
     else:
         affected_names = canonical_names
 

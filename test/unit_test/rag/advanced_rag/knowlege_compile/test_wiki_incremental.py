@@ -83,10 +83,10 @@ def make_doc_store(search_results: list[dict] | None = None):
     """Create a mock settings.docStoreConn."""
     conn = MagicMock()
     conn.index_exist = MagicMock(return_value=True)
-    conn.search = AsyncMock(return_value={"hits": {"total": {"value": len(search_results or [])}, "hits": search_results or []}})
-    conn.insert = AsyncMock(return_value=None)
-    conn.update = AsyncMock(return_value=None)
-    conn.delete = AsyncMock(return_value=None)
+    conn.search = MagicMock(return_value={"hits": {"total": {"value": len(search_results or [])}, "hits": search_results or []}})
+    conn.insert = MagicMock(return_value=None)
+    conn.update = MagicMock(return_value=None)
+    conn.delete = MagicMock(return_value=None)
     conn.refresh_idx = MagicMock(return_value=True)
 
     def _get_fields(res, fields):
@@ -1270,6 +1270,8 @@ async def test_finalize_links_via_map_relations():
                 "_source": {
                     "doc_id": "map1",
                     "compile_kwd": "wiki_map_extract",
+                    "source_chunk_ids": ["chunk-1"],
+                    "chunk_hash_kwd": "hash-1",
                     "content_with_weight": json.dumps(
                         {
                             "entities": [{"name": "肖亮", "type": "person"}, {"name": "肖立", "type": "person"}],
@@ -1286,7 +1288,12 @@ async def test_finalize_links_via_map_relations():
         patch("common.settings.docStoreConn", doc_store),
         patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
     ):
-        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+        await _wiki._wiki_finalize(
+            tenant_id="t1",
+            kb_id="kb1",
+            embd_mdl=None,
+            chunk_state={"chunk-1": {"doc_id": "map1", "hash": "hash-1"}},
+        )
 
     update_calls = doc_store.update.call_args_list
     xiaoliang_upd = None
