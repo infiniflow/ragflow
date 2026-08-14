@@ -1,7 +1,6 @@
 <#
 .SYNOPSIS
-    Builds a local RAGFlow Docker image from the current working tree and
-    optionally recreates the running app container so the new image applies.
+    Builds a local RAGFlow Docker image from the current working tree.
 
 .DESCRIPTION
     Follows the official build path (root Dockerfile, base image pulled from
@@ -9,8 +8,12 @@
     repeated builds after source changes are fast. Place this script in the
     repository root next to the Dockerfile.
 
+    Only builds the image; it never recreates the running app container. To
+    use a freshly built image, set RAGFLOW_IMAGE in docker/.env to the new tag
+    and start the app yourself.
+
 .PARAMETER Tag
-    Image name and tag. Default: infiniflow/ragflow:nightly
+    Image name and tag. Default: citysense/ragflow:<date-time> (e.g. citysense/ragflow:20260814-153000)
 
 .PARAMETER NoCache
     Force a full rebuild, ignoring BuildKit cache.
@@ -18,34 +21,18 @@
 .PARAMETER UseMirror
     Pass NEED_MIRROR=1 so the build uses Aliyun mirrors (restricted networks).
 
-.PARAMETER RestartStack
-    After a successful build, recreate the ragflow-cpu app container with the
-    new image. Base services (ES/MySQL/Redis/MinIO) are started first.
-
-.PARAMETER SkipBaseCheck
-    With -RestartStack, skip starting/verifying the base compose services.
-
-.PARAMETER KeepRunning
-    Do NOT stop the running ragflow-cpu container before recreating it.
-
 .EXAMPLE
     .\build-ragflow-image.ps1
 
 .EXAMPLE
-    .\build-ragflow-image.ps1 -RestartStack
-
-.EXAMPLE
-    .\build-ragflow-image.ps1 -Tag myrepo/ragflow:v1 -NoCache -RestartStack
+    .\build-ragflow-image.ps1 -Tag myrepo/ragflow:v1 -NoCache
 #>
 
 [CmdletBinding()]
 param(
-    [string]$Tag = "infiniflow/ragflow:nightly",
+    [string]$Tag = "citysense/ragflow:$(Get-Date -Format 'yyyyMMdd-HHmmss')",
     [switch]$NoCache,
-    [switch]$UseMirror,
-    [switch]$RestartStack,
-    [switch]$SkipBaseCheck,
-    [switch]$KeepRunning
+    [switch]$UseMirror
 )
 
 $ErrorActionPreference = "Stop"
@@ -109,39 +96,6 @@ Write-Host ""
 Write-Host "  Build finished in $([math]::Round($sw.Elapsed.TotalMinutes, 1)) min" -ForegroundColor Green
 docker images $Tag --format "  {{.Repository}}:{{.Tag}}   ID={{.ID}}   Size={{.Size}}"
 
-# ---------------------------------------------------------------------------
-# 3. Optional: recreate the running app container with the new image
-# ---------------------------------------------------------------------------
-if ($RestartStack) {
-    $ComposeDir = Join-Path $RepoRoot "docker"
-
-    if (-not $SkipBaseCheck) {
-        Write-Step "Ensuring base services are up (ES / MySQL / Redis / MinIO)"
-        Push-Location $ComposeDir
-        try {
-            docker compose -f docker-compose-base.yml up -d
-            Assert-ExitOk "docker compose base services"
-        } finally {
-            Pop-Location
-        }
-    }
-
-    Write-Step "Recreating ragflow-cpu with $Tag"
-    if (-not $KeepRunning) {
-        Write-Host "  Stopping old app container first..."
-        docker stop docker-ragflow-cpu-1 2>$null | Out-Null
-        docker rm docker-ragflow-cpu-1 2>$null | Out-Null
-    }
-    Push-Location $ComposeDir
-    try {
-        docker compose -f docker-compose.yml up -d --force-recreate ragflow-cpu
-        Assert-ExitOk "docker compose app container"
-    } finally {
-        Pop-Location
-    }
-
-    Write-Host ""
-    Write-Host "  App container recreated." -ForegroundColor Green
-    Write-Host "  Follow startup:      docker logs -f docker-ragflow-cpu-1"
-    Write-Host "  Check data sync:     Get-Content docker\ragflow-logs\data_sync_0.log -Tail 50"
-}
+Write-Host ""
+Write-Host "  To run the app with this image, set RAGFLOW_IMAGE=$Tag in docker\.env and run:" -ForegroundColor Yellow
+Write-Host "    docker compose -f docker\docker-compose.yml up -d ragflow-cpu" -ForegroundColor Yellow
