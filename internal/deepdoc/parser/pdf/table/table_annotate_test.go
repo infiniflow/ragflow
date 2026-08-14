@@ -278,8 +278,11 @@ func TestAnnotateBoxLayouts_SyntheticFigure(t *testing.T) {
 		if b.LayoutType == "figure" && b.Text == "" {
 			if b.LayoutNo == "figure-0" {
 				foundFig0 = true
-				if b.X0 != 100 || b.X1 != 200 {
-					t.Errorf("synthetic figure-0: expected x0=100,x1=200 (300/3,600/3), got x0=%v,x1=%v", b.X0, b.X1)
+				// After sort_Y_firstly, the top figure region (Y0=0 -> PDF
+				// y0=0, x0=200 from 600/3, x1=300 from 900/3) is figure-0,
+				// matching Python's top-to-bottom numbering.
+				if b.X0 != 200 || b.X1 != 300 {
+					t.Errorf("synthetic figure-0: expected x0=200,x1=300 (top region after Y-sort), got x0=%v,x1=%v", b.X0, b.X1)
 				}
 			}
 			if b.LayoutNo == "figure-1" {

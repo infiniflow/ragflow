@@ -1,0 +1,191 @@
+// Red tests pinning the Python-equivalent behavior of AnnotateBoxLayouts.
+//
+// These assert the layout-annotation semantics that Python's
+// LayoutRecognizer.__call__ (deepdoc/vision/layout_recognizer.py:68) produces
+// and that the current Go implementation does NOT yet replicate. They are
+// intended to be RED until the missing steps are implemented:
+//
+//   - #1 layouts_cleanup: Python de-dupes overlapping same-type regions
+//     (recognizer.py:124-160, called at layout_recognizer.py:100) BEFORE
+//     annotation. Go currently keeps both, which yields extra synthetic
+//     figure/equation boxes.
+//   - #2 sort_Y_firstly: Python sorts regions top-to-bottom (recognizer.py:54,
+//     layout_recognizer.py:99) before numbering them, so layoutno indices
+//     follow reading order. Go numbers in wire-return order.
+//   - #3 synthetic namespace: Python numbers unmatched figure/equation regions
+//     in SEPARATE counters -> "figure-N" / "equation-N"
+//     (layout_recognizer.py:145-155). Go shares one counter and labels all
+//     "figure-N" (table_annotate.go:198-218).
+//
+// These are pure-Go unit tests (no model server, no external service): they
+// feed crafted pdf.DLARegion slices and assert the annotated pdf.TextBox
+// output. Coordinates use scale=1 so region pixels == PDF space.
+
+package table
+
+import (
+	"testing"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+)
+
+// countFigureBoxes returns the number of boxes whose LayoutType is "figure".
+func countFigureBoxes(boxes []pdf.TextBox) int {
+	n := 0
+	for _, b := range boxes {
+		if b.LayoutType == pdf.LayoutTypeFigure {
+			n++
+		}
+	}
+	return n
+}
+
+// countSyntheticFigures returns the number of figure boxes with no text
+// (the synthetic placeholders AnnotateBoxLayouts appends for unvisited
+// figure/equation regions).
+func countSyntheticFigures(boxes []pdf.TextBox) int {
+	n := 0
+	for _, b := range boxes {
+		if b.LayoutType == pdf.LayoutTypeFigure && b.Text == "" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged pins #1: two heavily
+// overlapping same-type (figure) regions must be treated as ONE, so only one
+// figure box (the annotated text box) results and NO synthetic figure box is
+// produced. Python merges via layouts_cleanup; Go currently keeps both and
+// emits an extra synthetic figure box.
+func TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged(t *testing.T) {
+	box := pdf.TextBox{X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "Some caption text", PageNumber: 0}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure},
+		{X0: 0, Y0: 0, X1: 100, Y1: 50, Confidence: 0.8, Label: pdf.LayoutTypeFigure}, // identical -> IoU 1.0
+	}
+
+	out := AnnotateBoxLayouts([]pdf.TextBox{box}, regions, 1.0, 100.0)
+
+	if got := countFigureBoxes(out); got != 1 {
+		t.Errorf("#1 layouts_cleanup: expected 1 figure box after de-duplicating overlapping figure regions, got %d", got)
+	}
+	if got := countSyntheticFigures(out); got != 0 {
+		t.Errorf("#1 layouts_cleanup: expected 0 synthetic figure boxes (duplicate region must be merged), got %d", got)
+	}
+}
+
+// TestAnnotateBoxLayouts_SameTypeOutOfYOrder_LayoutNoFollowsY pins #2: when
+// same-type regions arrive in non-reading order (here the bottom region is
+// first in the wire list), the layoutno index must still follow top-to-bottom
+// order, exactly like Python's sort_Y_firstly. The box unambiguously overlaps
+// only the bottom region, so the winner is the same in both languages; only
+// the assigned index differs.
+func TestAnnotateBoxLayouts_SameTypeOutOfYOrder_LayoutNoFollowsY(t *testing.T) {
+	// Wire order: bottom region first (NOT top-to-bottom).
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 30, X1: 100, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeTitle}, // bottom strip
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Confidence: 0.9, Label: pdf.LayoutTypeTitle},  // top strip
+	}
+	// Box overlaps only the bottom region -> unambiguous winner = bottom region.
+	box := pdf.TextBox{X0: 0, X1: 100, Top: 30, Bottom: 50, Text: "Title text", PageNumber: 0}
+
+	out := AnnotateBoxLayouts([]pdf.TextBox{box}, regions, 1.0, 100.0)
+
+	var annotated *pdf.TextBox
+	for i := range out {
+		if out[i].Text == "Title text" {
+			annotated = &out[i]
+		}
+	}
+	if annotated == nil {
+		t.Fatal("#2 sort_Y_firstly: text box was not annotated as title")
+	}
+	// Python Y-sorts -> [top(ii=0), bottom(ii=1)] -> winner bottom => "title-1".
+	if annotated.LayoutNo != "title-1" {
+		t.Errorf("#2 sort_Y_firstly: expected layoutno \"title-1\" (top-to-bottom numbering), got %q", annotated.LayoutNo)
+	}
+}
+
+// TestAnnotateBoxLayouts_SyntheticFigureEquation_SeparateNamespaces pins #3:
+// an unmatched figure region and an unmatched equation region must yield
+// distinct synthetic layoutnos "figure-0" and "equation-0". Go currently
+// shares one counter and labels both "figure-N".
+func TestAnnotateBoxLayouts_SyntheticFigureEquation_SeparateNamespaces(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 50, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure},
+		{X0: 60, Y0: 0, X1: 110, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeEquation},
+	}
+
+	out := AnnotateBoxLayouts([]pdf.TextBox{}, regions, 1.0, 100.0)
+
+	layoutNos := map[string]bool{}
+	for _, b := range out {
+		layoutNos[b.LayoutNo] = true
+	}
+	if !layoutNos["figure-0"] {
+		t.Errorf("#3 synthetic namespace: expected a synthetic box with layoutno \"figure-0\"")
+	}
+	if !layoutNos["equation-0"] {
+		t.Errorf("#3 synthetic namespace: expected a synthetic box with layoutno \"equation-0\" (separate counter from figure); Go currently folds equation into the shared figure counter")
+	}
+}
+
+// TestAnnotateBoxLayouts_TieBreakRegionCoverage pins #4: when two same-type
+// regions cover the box by the SAME fraction (ov tie), Python's
+// find_overlapped_with_threshold (recognizer.py:255-269) breaks the tie by the
+// region-coverage ratio (_ov = box∩region / region area), preferring the region
+// the box sits more "inside" of. Go must mirror the (ov, _ov) tuple comparison
+// rather than its current Y-order-first pick.
+//
+// Layout: wide top region A and narrow bottom region B. The box spans both
+// vertically with EQUAL absolute intersection, so ov_A == ov_B. B is smaller,
+// so _ov_B > _ov_A and Python picks B. In Y-sorted order [A, B], B is per-type
+// index 1, so the expected layoutno is "table-1".
+func TestAnnotateBoxLayouts_TieBreakRegionCoverage(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 200, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeTable},  // A: wide, top
+		{X0: 0, Y0: 60, X1: 50, Y1: 110, Confidence: 0.9, Label: pdf.LayoutTypeTable}, // B: narrow, bottom
+	}
+	box := pdf.TextBox{X0: 0, X1: 50, Top: 0, Bottom: 110, Text: "tbl", PageNumber: 0}
+
+	out := AnnotateBoxLayouts([]pdf.TextBox{box}, regions, 1.0, 0)
+
+	var annotated *pdf.TextBox
+	for i := range out {
+		if out[i].Text == "tbl" {
+			annotated = &out[i]
+		}
+	}
+	if annotated == nil {
+		t.Fatal("#4 tie-break: box not annotated as table")
+	}
+	if annotated.LayoutNo != "table-1" {
+		t.Errorf("#4 tie-break: expected layoutno \"table-1\" (smaller region B wins the _ov tie), got %q", annotated.LayoutNo)
+	}
+}
+
+// TestAnnotateBoxLayouts_NMSDedupOverlappingRegions pins #6: Python's layout
+// model postprocess applies per-class NMS with IoU 0.45 (layout_recognizer.py:246,
+// operators.py:667) on the RAW detections BEFORE annotation. Go must do the same
+// on the raw regions; otherwise same-label detections overlapping between 0.45
+// and 0.7 survive (cleanupLayouts only merges at thr=0.7) and emit extra
+// synthetic figure boxes.
+//
+// Two same-label figure regions with IoU ~0.54: >0.45 so NMS suppresses the
+// lower-score one; <0.7 so cleanupLayouts would NOT merge them. With NMS there
+// is exactly one figure region -> one synthetic figure box.
+func TestAnnotateBoxLayouts_NMSDedupOverlappingRegions(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Confidence: 0.9, Label: pdf.LayoutTypeFigure},  // A
+		{X0: 35, Y0: 0, X1: 135, Y1: 100, Confidence: 0.8, Label: pdf.LayoutTypeFigure}, // B overlaps A (shift 35)
+	}
+	// No text box overlaps -> without NMS both become synthetic figures.
+	// Overlap is ~0.65 (no-+1 IoU) so cleanupLayouts (thr=0.7) does NOT merge,
+	// but Python's NMS uses +1 IoU (~0.50) > 0.45 and suppresses the lower-score B.
+	out := AnnotateBoxLayouts([]pdf.TextBox{}, regions, 1.0, 100.0)
+
+	if got := countFigureBoxes(out); got != 1 {
+		t.Errorf("#6 NMS: expected 1 figure box after per-class NMS merges overlapping detections (IoU ~0.5), got %d", got)
+	}
+}
