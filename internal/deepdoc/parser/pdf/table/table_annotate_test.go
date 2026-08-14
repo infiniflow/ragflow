@@ -154,6 +154,34 @@ func TestAnnotateBoxLayouts_ConfidenceFilter(t *testing.T) {
 	}
 }
 
+// TestFilteredDLARegions pins the post-filter region set the parity harness
+// dumps for comparison with Python's page_layout. The confidence filter keeps
+// a region when score >= 0.4 OR its type is not garbage — so a low-confidence
+// *non-garbage* region (e.g. text at 0.1) is KEPT, exactly matching Python's
+// `score >= 0.4 or type not in garbage_layouts` (layout_recognizer.py:97).
+// Returned regions stay in image-pixel space (no scale division).
+func TestFilteredDLARegions(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "footer", Confidence: 0.2},      // low-conf garbage → dropped
+		{X0: 0, Y0: 200, X1: 300, Y1: 350, Label: "text", Confidence: 0.1},      // low-conf non-garbage → kept
+		{X0: 0, Y0: 400, X1: 500, Y1: 460, Label: "reference", Confidence: 0.5}, // >=0.4 garbage → kept
+	}
+	got := FilteredDLARegions(regions, nil)
+	if len(got) != 2 {
+		t.Fatalf("FilteredDLARegions() = %d regions, want 2 (got %+v)", len(got), got)
+	}
+	labels := map[string]bool{}
+	for _, r := range got {
+		labels[r.Label] = true
+		if r.Confidence == 0.2 {
+			t.Errorf("low-confidence footer should have been filtered out")
+		}
+	}
+	if !labels["text"] || !labels["reference"] {
+		t.Errorf("expected text(low-conf) and reference(>=0.4) kept, got labels %v", labels)
+	}
+}
+
 func TestAnnotateBoxLayouts_GarbageFooterRejected(t *testing.T) {
 	// Footer at page bottom: Bottom(290) > 270 (90% of 300px→PDF height 100→90% of 100=90)
 	// → real footer decoration → garbage → pop (Python: bxs.pop(i)).

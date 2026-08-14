@@ -275,35 +275,64 @@ func nmsIoU(a, b pdf.DLARegion) float64 {
 // top-to-bottom (sort_Y_firstly) to match Python, and unmatched figure and
 // equation regions receive SEPARATE synthetic namespaces (figure-N /
 // equation-N) so they never collide.
-func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64, pageImgHeight float64) []pdf.TextBox {
-	// Per-class NMS on the raw detections, mirroring Python's layout model
-	// postprocess (layout_recognizer.py:246, operators.py:667). Without it,
-	// same-label duplicate detections (IoU 0.45-0.7) survive cleanupLayouts
-	// (thr=0.7) and inflate the region set fed to annotation. Idempotent with
-	// any server-side NMS.
+// FilteredDLARegions returns the DLA regions after per-class NMS, the
+// confidence filter, Y-sort, and cleanup — i.e. the exact set fed to
+// annotation. It mirrors Python's page_layout (layout_recognizer.py:84-100):
+//   - nmsDLARegions(0.45)                         == layout model postprocess (operators.py:667)
+//   - keep if score >= 0.4 OR type not garbage    == layout_recognizer.py:97
+//   - sortYFirstly                                == layout_recognizer.py:99 (sort_Y_firstly)
+//   - cleanupLayouts                              == layout_recognizer.py:100 (layouts_cleanup)
+//
+// Regions are returned in image-pixel space (no scale division) so callers
+// that only need the region set — e.g. the parity harness dumping post-filter
+// regions for comparison with Python's page_layout — get a stable comparison
+// point regardless of render DPI. cleanupLayouts only consults boxes when both
+// compared regions have score 0, which never happens for real DLA output, so
+// passing nil boxes from the harness is safe.
+func FilteredDLARegions(regions []pdf.DLARegion, boxes []pdf.TextBox) []pdf.DLARegion {
 	regions = nmsDLARegions(regions, 0.45)
 	if len(regions) == 0 {
+		return nil
+	}
+	kept := regions[:0]
+	for _, r := range regions {
+		if r.Confidence >= 0.4 || !isGarbageLayoutType(r.Label) {
+			kept = append(kept, r)
+		}
+	}
+	ars := make([]annRegion, len(kept))
+	for i, r := range kept {
+		ars[i] = annRegion{x0: r.X0, y0: r.Y0, x1: r.X1, y1: r.Y1, label: r.Label, score: r.Confidence}
+	}
+	sortYFirstly(ars)
+	ars = cleanupLayouts(ars, boxes)
+	out := make([]pdf.DLARegion, len(ars))
+	for i, a := range ars {
+		out[i] = pdf.DLARegion{X0: a.x0, Y0: a.y0, X1: a.x1, Y1: a.y1, Label: a.label, Confidence: a.score}
+	}
+	return out
+}
+
+func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64, pageImgHeight float64) []pdf.TextBox {
+	// NMS, confidence filter, Y-sort, and cleanup — the exact region set fed
+	// to annotation. This mirrors Python's layout_recognizer.py:84-100
+	// (filter + sort_Y_firstly + layouts_cleanup) and is the same pipeline the
+	// parity harness uses (via FilteredDLARegions) to dump post-filter regions
+	// comparable with Python's page_layout.
+	filtered := FilteredDLARegions(regions, boxes)
+	if len(filtered) == 0 {
 		return boxes
 	}
 
-	// Scale all regions to PDF space and keep only confidence-passing ones
-	// (matches Python's `score >= 0.4` filter at layout_recognizer.py:86-98).
-	cands := make([]annRegion, 0, len(regions))
-	for _, r := range regions {
-		if r.Confidence < 0.4 && isGarbageLayoutType(r.Label) {
-			continue
-		}
+	// Scale filtered regions from image-pixel space to PDF space.
+	cands := make([]annRegion, 0, len(filtered))
+	for _, r := range filtered {
 		cands = append(cands, annRegion{
 			x0: r.X0 / scale, y0: r.Y0 / scale,
 			x1: r.X1 / scale, y1: r.Y1 / scale,
 			label: r.Label, score: r.Confidence,
 		})
 	}
-
-	// sort_Y_firstly + layouts_cleanup, matching Python's pre-annotation order
-	// (layout_recognizer.py:99-100).
-	sortYFirstly(cands)
-	cands = cleanupLayouts(cands, boxes)
 
 	// Per-type index in the cleaned, Y-sorted list (Python: ii in lts_).
 	typeCounters := make(map[string]int)

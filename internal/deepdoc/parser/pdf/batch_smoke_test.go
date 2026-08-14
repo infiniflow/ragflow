@@ -21,6 +21,7 @@ import (
 
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	"ragflow/internal/deepdoc/parser/pdf/table"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -344,8 +345,20 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 	}
 
 	// ── DLA layout intermediates ──
+	// DLA dump: post-filter regions (NMS + confidence filter + Y-sort +
+	// cleanup), matching Python's page_layout. This makes the Go dump
+	// comparable with the Python parity dump, which also writes post-filter
+	// regions. Real DLA regions always carry a score, so cleanupLayouts'
+	// box-fallback never triggers and nil boxes are safe here.
 	if parsed.DLARegions != nil {
-		if b, _ := json.MarshalIndent(parsed.DLARegions, "", "  "); b != nil {
+		filteredPages := make([]pdf.DLAPageRegions, 0, len(parsed.DLARegions))
+		for _, pr := range parsed.DLARegions {
+			filteredPages = append(filteredPages, pdf.DLAPageRegions{
+				Page:    pr.Page,
+				Regions: table.FilteredDLARegions(pr.Regions, nil),
+			})
+		}
+		if b, _ := json.MarshalIndent(filteredPages, "", "  "); b != nil {
 			os.WriteFile(filepath.Join(dirs.dla, name+".json"), b, 0644)
 		}
 	}
