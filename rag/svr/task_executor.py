@@ -1601,7 +1601,12 @@ async def do_handle_task(task):
         # Record chunks array for content comparison (first, middle, last, random)
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
         if not chunks:
-            progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
+            # When the parser signals a hard failure via progress_callback(-1, ...),
+            # writing progress=1.0 here would overwrite the failure and mark the
+            # task as DONE. Write only the message (no prog arg) so the failure
+            # signal is preserved — ``set_progress`` only updates the progress
+            # field when ``prog`` is not None.
+            progress_callback(msg=f"No chunk built from {task_document_name}")
             return
         progress_callback(msg="Generate {} chunks".format(len(chunks)))
         start_ts = timer()
