@@ -1068,6 +1068,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
+        if name == "mineru":
+            kwargs["parse_method"] = "naive"
 
         sections, tables, pdf_parser = parser(
             filename=filename,

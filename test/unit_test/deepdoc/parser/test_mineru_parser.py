@@ -187,6 +187,91 @@ def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monke
     assert "Skip unsupported section type=sidebar" in caplog.text
 
 
+@pytest.mark.p1
+def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
+    from rag.nlp import tokenize_table
+
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    image_path = tmp_path / "figure.png"
+    module.Image.new("RGB", (2, 2), "red").save(image_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>first</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "img_path": str(image_path),
+            "image_caption": ["Figure 1"],
+            "image_footnote": ["Source"],
+            "vlm_description": "A red square",
+            "page_idx": 0,
+            "bbox": (5, 6, 7, 8),
+        },
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "second table",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 1,
+            "bbox": (9, 10, 11, 12),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Caption without image"],
+            "image_footnote": [],
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    assert len(media) == 3
+    assert media[0][0] == (None, "<table><tr><td>first</td></tr></table>")
+    assert media[2][0] == (None, "second table")
+    image, texts = media[1][0]
+    image_path.unlink()
+    assert isinstance(image, module.Image.Image)
+    assert image.getpixel((0, 0)) == (255, 0, 0)
+    assert texts == ["Figure 1", "Source", "A red square"]
+    assert [chunk["doc_type_kwd"] for chunk in tokenize_table(media, {}, False)] == ["table", "image", "table"]
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("parse_method", ["naive", "manual", "paper"])
+def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_method):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": module.MinerUContentType.TEXT, "text": "Body", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "table",
+            "table_caption": [],
+            "table_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 1, 1, 2),
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["figure"],
+            "image_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 2, 1, 3),
+        },
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method=parse_method, table_enable=True)
+
+    assert len(sections) == 1
+    assert sections[0][0].startswith("Body")
+    assert len(parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)) == 3
+
+
 class _FakeZipResponse:
     """Stand-in for the streaming response returned by requests.post.
 
