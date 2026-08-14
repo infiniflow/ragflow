@@ -42,6 +42,21 @@ export function filterAllDownstreamAgentAndToolNodeIds(
   );
 }
 
+// Get the node ids hanging below one specific bottom handle of an agent node:
+// the handle's own children, plus their whole sub-agent/tool subtree
+export function filterBottomSubtreeNodeIds(
+  edges: Edge[],
+  nodeId: string,
+  handleId: string,
+) {
+  return filterAllDownstreamNodeIds(edges, [nodeId], (edge: Edge) =>
+    edge.source === nodeId
+      ? edge.sourceHandle === handleId
+      : edge.sourceHandle === NodeHandleId.AgentBottom ||
+        edge.sourceHandle === NodeHandleId.Tool,
+  );
+}
+
 // Get all downstream agent operators of the current agent operator
 export function filterAllDownstreamAgentNodeIds(
   edges: Edge[],

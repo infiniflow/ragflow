@@ -38,6 +38,7 @@ import {
   mapEdgeMouseEvent,
 } from './utils';
 import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
+import { filterBottomSubtreeNodeIds } from './utils/filter-downstream-nodes';
 
 type IAgentTool = IAgentForm['tools'][number];
 
@@ -142,6 +143,8 @@ export type RFState = {
   edges: Edge[];
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
+  // Collapsed bottom handles per node: nodeId -> collapsed handle ids
+  collapsedBottomHandles: Record<string, string[]>;
   clickedNodeId: string; // currently selected node
   clickedToolId: string; // currently selected tool id
   onNodesChange: OnNodesChange<RAGFlowNodeType>;
@@ -200,6 +203,7 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
+  toggleBottomCollapse: (nodeId: string, handleId: NodeHandleId) => void;
   hasDownstreamNode: (nodeId: string) => boolean;
   hasUpstreamNode: (nodeId: string) => boolean;
 };
@@ -212,6 +216,7 @@ const useGraphStore = create<RFState>()(
       edges: [] as Edge[],
       selectedNodeIds: [] as string[],
       selectedEdgeIds: [] as string[],
+      collapsedBottomHandles: {} as Record<string, string[]>,
       clickedNodeId: '',
       clickedToolId: '',
       onNodesChange: (changes) => {
@@ -736,6 +741,70 @@ const useGraphStore = create<RFState>()(
             selected: nodeIds.includes(node.id),
           })),
         );
+      },
+      toggleBottomCollapse: (nodeId, handleId) => {
+        const {
+          nodes,
+          edges,
+          collapsedBottomHandles,
+          selectedNodeIds,
+          selectedEdgeIds,
+        } = get();
+        if (filterBottomSubtreeNodeIds(edges, nodeId, handleId).length === 0) {
+          return;
+        }
+        const handleIds = collapsedBottomHandles[nodeId] ?? [];
+        const collapsing = !handleIds.includes(handleId);
+        const nextHandleIds = collapsing
+          ? handleIds.concat(handleId)
+          : handleIds.filter((x) => x !== handleId);
+        const nextCollapsed = { ...collapsedBottomHandles };
+        if (nextHandleIds.length > 0) {
+          nextCollapsed[nodeId] = nextHandleIds;
+        } else {
+          delete nextCollapsed[nodeId];
+        }
+
+        // Hide the union of all collapsed subtrees, so expanding one handle
+        // keeps nodes hidden by another (e.g. nested) collapse hidden
+        const hiddenNodeIdSet = new Set<string>();
+        Object.entries(nextCollapsed).forEach(([id, handles]) => {
+          handles.forEach((handle) => {
+            filterBottomSubtreeNodeIds(edges, id, handle).forEach((x) =>
+              hiddenNodeIdSet.add(x),
+            );
+          });
+        });
+        const hiddenEdgeIdSet = new Set(
+          edges
+            .filter(
+              (x) =>
+                hiddenNodeIdSet.has(x.source) || hiddenNodeIdSet.has(x.target),
+            )
+            .map((x) => x.id),
+        );
+
+        set({
+          collapsedBottomHandles: nextCollapsed,
+          nodes: nodes.map((x) => {
+            if (hiddenNodeIdSet.has(x.id)) {
+              return { ...x, hidden: true, selected: false };
+            }
+            return x.hidden ? { ...x, hidden: false } : x;
+          }),
+          edges: edges.map((x) => {
+            if (hiddenEdgeIdSet.has(x.id)) {
+              return { ...x, hidden: true, selected: false };
+            }
+            return x.hidden ? { ...x, hidden: false } : x;
+          }),
+          selectedNodeIds: selectedNodeIds.filter(
+            (x) => !hiddenNodeIdSet.has(x),
+          ),
+          selectedEdgeIds: selectedEdgeIds.filter(
+            (x) => !hiddenEdgeIdSet.has(x),
+          ),
+        });
       },
       hasDownstreamNode: (nodeId) => {
         const { edges } = get();
