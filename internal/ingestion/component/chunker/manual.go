@@ -61,8 +61,16 @@ type ManualChunkerComponent struct {
 // params as TitleChunker (method is pinned to "group"); the position resort is
 // automatic based on whether the upstream payload carries coordinates.
 func NewManualChunker(params map[string]any) (runtime.Component, error) {
+	// method is pinned to "group": ManualChunker's entire value-add is the
+	// physical-position resort, which only fires inside the group path.
+	// A caller must not downgrade it to "naive"/"title" (that would skip the
+	// resort and silently diverge from Python's manual.py), so method is
+	// deliberately ignored here even if passed in params.
 	conf := map[string]any{"method": "group"}
 	for k, v := range params {
+		if k == "method" {
+			continue
+		}
 		conf[k] = v
 	}
 	p := defaultsTitle()
@@ -123,14 +131,45 @@ func hasPdfPositions(records []lineRecord) bool {
 
 // sortRecordsByPosition re-orders records into physical reading order
 // (page, then top, then left) using a stable sort, so records that share a
-// key keep their original relative order. Records without coordinates keep
-// their input order (they are not re-ranked against positioned records in the
-// common case where the whole payload is coordinate-free — see hasPdfPositions
-// gate above).
+// key keep their original relative order. Records without coordinates act as
+// immovable barriers: they keep their original relative order and are never
+// compared against positioned records.
+//
+// The slice is split into maximal contiguous runs of positioned records and
+// each run is sorted independently. This is required because a single
+// sort.SliceStable over a MIXED slice (some records with coordinates, some
+// without) is not a strict weak ordering: a coordinate-free record B sits
+// incomparable between two positioned records A and C, yet A and C remain
+// comparable — breaking equivalence-class transitivity and making the sort
+// undefined behaviour. Segmenting on coordinate-free records keeps each sort
+// a valid strict weak ordering while preserving the documented behaviour that
+// coordinate-free records keep their input order (see hasPdfPositions gate).
 func sortRecordsByPosition(records []lineRecord) {
-	sort.SliceStable(records, func(i, j int) bool {
-		return positionLess(records[i], records[j])
-	})
+	runStart := -1
+	flush := func(end int) {
+		if runStart < 0 {
+			return
+		}
+		sort.SliceStable(records[runStart:end], func(i, j int) bool {
+			ar, _ := firstPositionRow(records[runStart+i])
+			br, _ := firstPositionRow(records[runStart+j])
+			return pdfPosRowLess(ar, br)
+		})
+		runStart = -1
+	}
+	for i := 0; i <= len(records); i++ {
+		positioned := i < len(records)
+		if positioned {
+			_, positioned = firstPositionRow(records[i])
+		}
+		if positioned {
+			if runStart < 0 {
+				runStart = i
+			}
+		} else {
+			flush(i)
+		}
+	}
 }
 
 // firstPositionRow returns the first PDF coordinate 5-tuple
@@ -158,19 +197,6 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 		return nil, false
 	}
 	return row, true
-}
-
-// positionLess implements the (page, top, left) ordering for two records,
-// delegating to the shared pdfPosRowLess comparator. A record without a
-// parseable position never sorts before another, preserving stable order for
-// coordinate-free records.
-func positionLess(a, b lineRecord) bool {
-	ar, aok := firstPositionRow(a)
-	br, bok := firstPositionRow(b)
-	if !aok || !bok {
-		return false
-	}
-	return pdfPosRowLess(ar, br)
 }
 
 // init registers ManualChunker under CategoryIngestion.

@@ -269,11 +269,14 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 			t.Fatalf("_pdf_positions missing or wrong type %T on merged group chunk", ck["_pdf_positions"])
 		}
 		if len(pos) != 2 {
-			t.Errorf("merged _pdf_positions = %d rows, want 2 (both records)", len(pos))
+			// Hard fail: the page/top/left checks below would index out of
+			// range if the merged matrix does not have exactly two rows.
+			t.Fatalf("merged _pdf_positions = %d rows, want 2 (both records)", len(pos))
 		}
-		// Merged matrix must itself be sorted by (page, top, left).
-		if pos[0][0] > pos[1][0] {
-			t.Errorf("merged _pdf_positions not sorted by page: %v", pos)
+		// Merged matrix must itself be sorted by (page, top, left) — the
+		// same key pdfPosRowLess uses when merging.
+		if pdfPosRowLess(pos[1], pos[0]) {
+			t.Errorf("merged _pdf_positions not sorted by (page, top, left): %v", pos)
 		}
 	}
 	if !found {

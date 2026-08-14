@@ -80,14 +80,16 @@ func TestManualChunker_RealPDFResort(t *testing.T) {
 
 	// After the resort, the physical (page, top, left) order must be
 	// non-decreasing. pdfPosRowLess(cur, prev) being true would mean a record
-	// physically precedes its predecessor — a resort violation.
-	prev, _ := firstPositionRow(records[0])
-	for i := 1; i < len(records); i++ {
+	// physically precedes its predecessor — a resort violation. A coordinate-free
+	// record (no firstPositionRow) is skipped and never becomes prev, so prev may
+	// be nil until the first positioned record; guard against that.
+	var prev []float64
+	for i := 0; i < len(records); i++ {
 		cur, ok := firstPositionRow(records[i])
 		if !ok {
 			continue
 		}
-		if pdfPosRowLess(cur, prev) {
+		if prev != nil && pdfPosRowLess(cur, prev) {
 			t.Fatalf("resort produced out-of-order records at %d: row %v precedes %v", i, cur, prev)
 		}
 		prev = cur
