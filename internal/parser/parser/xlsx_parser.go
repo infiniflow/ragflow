@@ -29,6 +29,7 @@ type XLSXParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
+	ChunkRows                      int
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -41,6 +42,7 @@ func NewXLSXParser(libType string) (*XLSXParser, error) {
 	}
 	return &XLSXParser{
 		libType:                        libType,
+		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -59,6 +61,19 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
+	}
+	if v, ok := setup["chunk_rows"]; ok {
+		switch n := v.(type) {
+		case float64:
+			p.ChunkRows = int(n)
+		case int:
+			p.ChunkRows = n
+		case int64:
+			p.ChunkRows = int(n)
+		}
+		if p.ChunkRows <= 0 {
+			p.ChunkRows = defaultTableChunkRows
+		}
 	}
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -117,29 +132,45 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	defer f.Close()
 
 	sheets := f.GetSheetList()
+	chunkRows := p.ChunkRows
+	if chunkRows <= 0 {
+		chunkRows = defaultTableChunkRows
+	}
+
 	var html strings.Builder
-	html.WriteString("<html><body>")
 	for _, sheet := range sheets {
-		html.WriteString("<h3>")
-		html.WriteString(sheet)
-		html.WriteString("</h3>")
 		rows, err := f.GetRows(sheet)
-		if err != nil {
+		if err != nil || len(rows) == 0 {
 			continue
 		}
-		html.WriteString("<table>")
-		for _, row := range rows {
-			html.WriteString("<tr>")
-			for _, cell := range row {
-				html.WriteString("<td>")
-				html.WriteString(htmlEscape(cell))
-				html.WriteString("</td>")
+		rows = cleanIllegalControlChars(rows)
+
+		// Detect the column header row (default row 1, aligning with Python
+		// deepdoc; ListObject / lightweight signals may shift it only when
+		// confident). Run detection on the unpadded rows so a far/wide merge
+		// (e.g. A1:Z1 title) does not widen every row and dilute the
+		// styled-majority signal of a narrow header row. Padding happens
+		// afterwards, before merged-master inheritance restores the slave
+		// slots that GetRows truncated.
+		mm := mergeMasterMap(f, sheet)
+		headerRow := detectHeaderRow(f, sheet, rows)
+		padRecordsToWidth(rows, mm)
+		inheritMergedHeader(rows, headerRow, mm)
+
+		// Reorder so the detected header row becomes records[0]; every other
+		// row is data. For the common case (header on row 1) this is a no-op
+		// and the output is byte-identical to the Python/CSV contract.
+		records := make([][]string, 0, len(rows))
+		records = append(records, rows[headerRow-1])
+		for i, r := range rows {
+			if i == headerRow-1 {
+				continue
 			}
-			html.WriteString("</tr>")
+			records = append(records, r)
 		}
-		html.WriteString("</table>")
+
+		html.WriteString(recordsToHTMLTableChunks(records, chunkRows, sheet))
 	}
-	html.WriteString("</body></html>")
 
 	return ParseResult{
 		OutputFormat: "html",

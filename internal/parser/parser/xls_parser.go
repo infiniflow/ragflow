@@ -29,6 +29,7 @@ type XLSParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
+	ChunkRows                      int
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -41,6 +42,7 @@ func NewXLSParser(libType string) (*XLSParser, error) {
 	}
 	return &XLSParser{
 		libType:                        libType,
+		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -59,6 +61,19 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
+	}
+	if v, ok := setup["chunk_rows"]; ok {
+		switch n := v.(type) {
+		case float64:
+			p.ChunkRows = int(n)
+		case int:
+			p.ChunkRows = n
+		case int64:
+			p.ChunkRows = int(n)
+		}
+		if p.ChunkRows <= 0 {
+			p.ChunkRows = defaultTableChunkRows
+		}
 	}
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -98,26 +113,40 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	defer f.Close()
 
-	var html strings.Builder
-	html.WriteString("<html><body>")
-	for _, sheet := range f.GetSheetList() {
-		html.WriteString("<h3>")
-		html.WriteString(sheet)
-		html.WriteString("</h3>")
-		rows, _ := f.GetRows(sheet)
-		html.WriteString("<table>")
-		for _, row := range rows {
-			html.WriteString("<tr>")
-			for _, cell := range row {
-				html.WriteString("<td>")
-				html.WriteString(htmlEscape(cell))
-				html.WriteString("</td>")
-			}
-			html.WriteString("</tr>")
-		}
-		html.WriteString("</table>")
+	sheets := f.GetSheetList()
+	chunkRows := p.ChunkRows
+	if chunkRows <= 0 {
+		chunkRows = defaultTableChunkRows
 	}
-	html.WriteString("</body></html>")
+
+	var html strings.Builder
+	for _, sheet := range sheets {
+		rows, err := f.GetRows(sheet)
+		if err != nil || len(rows) == 0 {
+			continue
+		}
+		rows = cleanIllegalControlChars(rows)
+
+		// Same header detection + merge inheritance as the XLSX parser so both
+		// spreadsheet engines emit the identical <table>/<th>/<caption> contract.
+		// Detect on unpadded rows (see xlsx_parser.go for why padding is deferred
+		// until after detection).
+		mm := mergeMasterMap(f, sheet)
+		headerRow := detectHeaderRow(f, sheet, rows)
+		padRecordsToWidth(rows, mm)
+		inheritMergedHeader(rows, headerRow, mm)
+
+		records := make([][]string, 0, len(rows))
+		records = append(records, rows[headerRow-1])
+		for i, r := range rows {
+			if i == headerRow-1 {
+				continue
+			}
+			records = append(records, r)
+		}
+
+		html.WriteString(recordsToHTMLTableChunks(records, chunkRows, sheet))
+	}
 
 	return ParseResult{
 		OutputFormat: "html",
