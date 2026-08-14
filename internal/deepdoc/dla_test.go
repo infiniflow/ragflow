@@ -116,7 +116,7 @@ func TestDLA_SuccessfulResponse(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff())
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("jpg-bytes")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("jpg-bytes")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestDLA_MultipartFieldNameAndContentType(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff())
-	if _, err := c.DLA(context.Background(), [][]byte{[]byte("PAYLOAD")}); err != nil {
+	if _, err := c.DLA(t.Context(), [][]byte{[]byte("PAYLOAD")}); err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
 	if gotBody != "PAYLOAD" {
@@ -194,7 +194,7 @@ func TestDLA_PartContentType(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff())
-	if _, err := c.DLA(context.Background(), [][]byte{[]byte("img")}); err != nil {
+	if _, err := c.DLA(t.Context(), [][]byte{[]byte("img")}); err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
 	if gotCT != "image/jpeg" {
@@ -211,7 +211,7 @@ func TestDLA_TrimsTrailingSlash(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL+"/", fastBackoff())
-	if _, err := c.DLA(context.Background(), [][]byte{[]byte("img")}); err != nil {
+	if _, err := c.DLA(t.Context(), [][]byte{[]byte("img")}); err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
 	if hit != "/predict" {
@@ -232,7 +232,7 @@ func TestDLA_RetriesOn5xxThenSucceeds(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff(), WithMaxAttempts(3))
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestDLA_ExhaustsRetriesOnPersistent5xx(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff(), WithMaxAttempts(3))
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA error=%v, want nil (per-image failures map to empty slot)", err)
 	}
@@ -271,7 +271,7 @@ func TestDLA_4xxReturnsEmpty(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff(), WithMaxAttempts(5))
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA error=%v, want nil", err)
 	}
@@ -297,7 +297,7 @@ func TestDLA_RetriesOnMalformedJSON(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff(), WithMaxAttempts(3))
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestDLA_RetriesOnMissingBBoxes(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff(), WithMaxAttempts(3))
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestDLA_PerImageIsolation(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff(), WithMaxAttempts(2))
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("a"), []byte("b")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("a"), []byte("b")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestDLA_SkipsShortBBoxes(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff())
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestDLA_OutOfRangeTypeIdxMapsToEmptyString(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClientWithURL(srv.URL, fastBackoff())
-	res, err := c.DLA(context.Background(), [][]byte{[]byte("img")})
+	res, err := c.DLA(t.Context(), [][]byte{[]byte("img")})
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestDLA_ContextCancelDuringBackoff(t *testing.T) {
 	//  2. The server is hit exactly once — no second retry attempt
 	//     starts after ctx cancellation lands during the first backoff.
 	c := NewClientWithURL(srv.URL, WithBackoff(5*time.Second), WithMaxAttempts(5))
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()

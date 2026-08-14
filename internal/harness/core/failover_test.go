@@ -19,7 +19,7 @@ func TestWithModelFailover_SingleModel(t *testing.T) {
 	}
 	// Verify it still works (delegates to underlying model)
 	model.addResp("ok")
-	ctx := context.Background()
+	ctx := t.Context()
 	msgs := []Message{schema.UserMessage("hi")}
 	resp, err := wrapped.Generate(ctx, msgs)
 	if err != nil {
@@ -38,7 +38,7 @@ func TestWithModelFailover_PrimarySucceeds(t *testing.T) {
 	fallback.addResp("from fallback")
 
 	wrapped := WithModelFailover(primary, fallback)
-	ctx := context.Background()
+	ctx := t.Context()
 	msgs := []Message{schema.UserMessage("hi")}
 
 	resp, err := wrapped.Generate(ctx, msgs)
@@ -56,7 +56,7 @@ func TestWithModelFailover_FallsBack(t *testing.T) {
 	fallback.addResp("fallback result")
 
 	wrapped := WithModelFailover(primary, fallback)
-	ctx := context.Background()
+	ctx := t.Context()
 	msgs := []Message{schema.UserMessage("failover test")}
 
 	resp, err := wrapped.Generate(ctx, msgs)
@@ -73,7 +73,7 @@ func TestWithModelFailover_AllFail(t *testing.T) {
 	secondary := &alwaysFailModel{}
 
 	wrapped := WithModelFailover(primary, secondary)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Generate(ctx, []Message{schema.UserMessage("")})
 	if err == nil {
 		t.Error("expected error when all models fail")
@@ -110,7 +110,7 @@ func TestFailover_WithShouldFailoverCallback(t *testing.T) {
 		},
 	}
 	model := newFailoverModel([]Model[*schema.Message]{primary, secondary}, cfg)
-	resp, err := model.Generate(context.Background(), []*schema.Message{{Content: "hi"}})
+	resp, err := model.Generate(t.Context(), []*schema.Message{{Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestFailover_ShouldFailoverSkipsSecondary(t *testing.T) {
 	model := newFailoverModel([]Model[*schema.Message]{primary, secondary}, cfg)
 
 	// Primary fails, shouldFailover returns false, so we expect an error, not fallback
-	_, err := model.Generate(context.Background(), []*schema.Message{{Content: "hi"}})
+	_, err := model.Generate(t.Context(), []*schema.Message{{Content: "hi"}})
 	if err == nil {
 		t.Error("expected error since ShouldFailover returns false")
 	}
