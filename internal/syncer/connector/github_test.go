@@ -240,14 +240,14 @@ func cloneGitHubCheckpointWithMissingSourceID(t *testing.T, checkpoint *SyncChec
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
 		t.Fatalf("decode checkpoint cursor: %v", err)
 	}
-	cursor.SourceID = "https://github.com/openai/ragflow/pull/missing"
+	cursor.SourceID = ""
 	data, err := json.Marshal(cursor)
 	if err != nil {
 		t.Fatalf("encode checkpoint cursor: %v", err)
 	}
 	clone := *checkpoint
 	clone.Cursor = string(data)
-	clone.SourceID = cursor.SourceID
+	clone.SourceID = ""
 	return &clone
 }
 
