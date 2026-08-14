@@ -389,12 +389,8 @@ func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID s
 }
 
 // TestConnector validates a connector's stored configuration.
-// Equivalent to Python's test_connector. Per-connector credential validation
-// lives in the Python common.data_source package and is not yet available in
-// Go; for now this verifies access, that the connector exists, that the source
-// is REST_API (the only source Python currently tests), and that credentials
-// are present in the stored config. It returns ErrConnectorTestUnsupported for
-// other sources.
+// For the REST API source it performs live validation of the connector
+// settings. Other sources return ErrConnectorTestUnsupported.
 func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
 	ok, err := s.accessible(ctx, connectorID, userID)
 	if err != nil && errors.Is(err, ErrConnectorNotFound) {
@@ -416,15 +412,11 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 		return ErrConnectorTestUnsupported
 	}
 
-	config := conn.Config
-	if config == nil {
-		return fmt.Errorf("connector configuration is missing")
+	restConnector, err := syncerconnector.NewRestAPIConnector(conn.Config)
+	if err != nil {
+		return err
 	}
-	creds, ok := config["credentials"].(map[string]interface{})
-	if !ok || len(creds) == 0 {
-		return fmt.Errorf("connector credentials are missing")
-	}
-	return nil
+	return restConnector.ValidateLive(ctx)
 }
 
 func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
