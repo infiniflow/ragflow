@@ -671,7 +671,13 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			if callErr != nil {
 				return callErr
 			}
-			in.chunks = []map[string]any{{in.fieldName: ans}}
+			ck := map[string]any{}
+			if in.fieldName == "metadata" {
+				mergeExtractionIntoMetadata(ck, ans)
+			} else {
+				ck[in.fieldName] = ans
+			}
+			in.chunks = []map[string]any{ck}
 			return nil
 		}
 		// Auto keyword / question / metadata extraction runs with

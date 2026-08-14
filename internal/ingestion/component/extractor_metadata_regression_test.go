@@ -170,3 +170,33 @@ func TestRepro_FieldNameNonJSON_KeepsEnableMetadata(t *testing.T) {
 		t.Errorf("category = %v, want finance (enable_metadata map preserved)", meta["category"])
 	}
 }
+
+// TestRepro_NoChunksMetadata_RoutesThroughMap guards the zero-chunk fast path:
+// field_name="metadata" with no input chunks must route through the same
+// parse-and-merge as the chunked path, writing a map (not a raw string) so the
+// strict aggregation layer does not drop the document metadata.
+func TestRepro_NoChunksMetadata_RoutesThroughMap(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: `{"category":"finance","region":"east"}`},
+	)
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "metadata",
+		LLMID:     "gpt-4o-mini",
+		Prompt:    "Extract metadata as JSON:",
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks len = %d, want 1", len(chunks))
+	}
+	meta, ok := chunks[0]["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("chunk[0].metadata = %T, want map[string]any (zero-chunk path must not write a raw string)", chunks[0]["metadata"])
+	}
+	if meta["category"] != "finance" || meta["region"] != "east" {
+		t.Errorf("metadata = %v, want category=finance region=east", meta)
+	}
+}
