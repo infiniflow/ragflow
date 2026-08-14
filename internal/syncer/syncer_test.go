@@ -794,10 +794,12 @@ func TestHash128MatchesPythonGolden(t *testing.T) {
 func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
 		"status":             dao.SyncStatusRunning,
 		"total_docs_indexed": int64(1),
-	}).Error
+	}).Error; err != nil {
+		t.Fatalf("set running task: %v", err)
+	}
 	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
 	legacyID := service.Hash128("conn-1:source-1")
 	store := fakeStore{ids: map[string]struct{}{legacyID: {}}, fingerprints: map[string]string{legacyID: "fp-1"}}
