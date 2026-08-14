@@ -1116,6 +1116,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
         - **Always consider** the entire conversation history.`,
       systemMessage: 'Please input!',
+      knowledgePlaceholderMessage:
+        'Datasets are selected but the {knowledge} placeholder is missing from the system prompt, so retrieved content cannot be injected. Add {knowledge} to the system prompt or remove the datasets.',
       systemTip:
         'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
       topN: 'Top N',
