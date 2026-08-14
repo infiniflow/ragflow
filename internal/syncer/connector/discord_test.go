@@ -382,24 +382,240 @@ func TestDiscordOpenSyncChannelsAndThreads(t *testing.T) {
 	}
 	defer session.Close()
 
+	var blobs []string
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		blobs = append(blobs, string(batch.Documents[0].Blob))
+	}
+	want := []string{"channel msg", "archived thread msg", "active thread msg"}
+	if len(blobs) != len(want) {
+		t.Fatalf("documents = %v, want %v", blobs, want)
+	}
+	for i := range want {
+		if blobs[i] != want[i] {
+			t.Fatalf("document %d = %q, want %q", i, blobs[i], want[i])
+		}
+	}
+}
+
+func TestDiscordResumeSameTarget(t *testing.T) {
+	fixture := newDiscordFixture()
+	base := mustTime(t, "2026-08-14T10:00:00Z")
+	fixture.setMessages("ch-1",
+		fixtureMessage("m1", "one", "alice", base),
+		fixtureMessage("m2", "two", "bob", base.Add(-time.Minute)),
+		fixtureMessage("m3", "three", "carol", base.Add(-2*time.Minute)),
+		fixtureMessage("m4", "four", "dave", base.Add(-3*time.Minute)),
+	)
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	newConnector := func() *DiscordConnector {
+		connector := newDiscordTestConnector(t, map[string]any{
+			"credentials": map[string]any{"discord_bot_token": "token"},
+			"batch_size":  2,
+		})
+		connector.baseURL = server.URL
+		return connector
+	}
+
+	session, err := newConnector().OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
 	batch, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch: %v", err)
 	}
-	if len(batch.Documents) != 1 {
-		t.Fatalf("documents = %d, want 1", len(batch.Documents))
+	session.Close()
+	if batch.Checkpoint == nil {
+		t.Fatalf("batch checkpoint is nil")
 	}
-	blob := string(batch.Documents[0].Blob)
-	for _, want := range []string{"channel msg", "active thread msg", "archived thread msg"} {
-		if !strings.Contains(blob, want) {
-			t.Fatalf("blob %q missing %q", blob, want)
-		}
+	var cursor discordSyncCursor
+	if err := json.Unmarshal([]byte(batch.Checkpoint.Cursor), &cursor); err != nil {
+		t.Fatalf("cursor unmarshal: %v", err)
 	}
-	if strings.Contains(blob, "mod-only") {
-		t.Fatalf("forbidden channel messages were synced")
+	if cursor.Target != "ch-1" || cursor.Message != "m2" || cursor.Targets == "" {
+		t.Fatalf("cursor = %+v, want target ch-1 message m2", cursor)
 	}
-	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("NextBatch EOF = %v, want io.EOF", err)
+
+	resumed, err := newConnector().OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        batch.Checkpoint,
+	})
+	if err != nil {
+		t.Fatalf("resumed OpenSync: %v", err)
+	}
+	defer resumed.Close()
+
+	first, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resumed NextBatch: %v", err)
+	}
+	if first.Documents[0].SourceID != "DISCORD_m3" || string(first.Documents[0].Blob) != "three\n\nfour" {
+		t.Fatalf("resumed doc = %q %q, want DISCORD_m3 three+four", first.Documents[0].SourceID, first.Documents[0].Blob)
+	}
+	if _, err := resumed.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("resumed NextBatch EOF = %v, want io.EOF", err)
+	}
+}
+
+func TestDiscordResumeAcrossTargets(t *testing.T) {
+	fixture := newDiscordFixture()
+	base := mustTime(t, "2026-08-14T10:00:00Z")
+	fixture.setMessages("ch-1",
+		fixtureMessage("m1", "one", "alice", base),
+		fixtureMessage("m2", "two", "bob", base.Add(-time.Minute)),
+		fixtureMessage("m3", "three", "carol", base.Add(-2*time.Minute)),
+		fixtureMessage("m4", "four", "dave", base.Add(-3*time.Minute)),
+	)
+	fixture.setMessages("thread-a",
+		fixtureMessage("t1", "thread one", "eve", base.Add(-4*time.Minute)),
+		fixtureMessage("t2", "thread two", "frank", base.Add(-5*time.Minute)),
+	)
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	newConnector := func() *DiscordConnector {
+		connector := newDiscordTestConnector(t, map[string]any{
+			"server_ids":  []any{"1001"},
+			"channels":    []any{"general"},
+			"credentials": map[string]any{"discord_bot_token": "token"},
+			"batch_size":  3,
+		})
+		connector.baseURL = server.URL
+		return connector
+	}
+
+	session, err := newConnector().OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	session.Close()
+	if batch.Checkpoint == nil {
+		t.Fatalf("batch checkpoint is nil")
+	}
+
+	resumed, err := newConnector().OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        batch.Checkpoint,
+	})
+	if err != nil {
+		t.Fatalf("resumed OpenSync: %v", err)
+	}
+	defer resumed.Close()
+
+	first, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resumed NextBatch: %v", err)
+	}
+	if first.Documents[0].SourceID != "DISCORD_m4" || string(first.Documents[0].Blob) != "four" {
+		t.Fatalf("resumed doc = %q %q, want DISCORD_m4", first.Documents[0].SourceID, first.Documents[0].Blob)
+	}
+
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resumed second NextBatch: %v", err)
+	}
+	if second.Documents[0].SourceID != "DISCORD_t1" || string(second.Documents[0].Blob) != "thread one\n\nthread two" {
+		t.Fatalf("resumed second doc = %q %q", second.Documents[0].SourceID, second.Documents[0].Blob)
+	}
+	if _, err := resumed.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("resumed NextBatch EOF = %v, want io.EOF", err)
+	}
+}
+
+func TestDiscordResumeFingerprintMismatch(t *testing.T) {
+	fixture := newDiscordFixture()
+	base := mustTime(t, "2026-08-14T10:00:00Z")
+	fixture.setMessages("ch-1",
+		fixtureMessage("m1", "one", "alice", base),
+		fixtureMessage("m2", "two", "bob", base.Add(-time.Minute)),
+	)
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	// Run 1 enumerates all text channels of the guild.
+	firstConnector := newDiscordTestConnector(t, map[string]any{
+		"server_ids":  []any{"1001"},
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"batch_size":  2,
+	})
+	firstConnector.baseURL = server.URL
+	session, err := firstConnector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	session.Close()
+
+	// Run 2 filters to one channel, changing the enumeration: resume is ignored.
+	secondConnector := newDiscordTestConnector(t, map[string]any{
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"general"},
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"batch_size":  2,
+	})
+	secondConnector.baseURL = server.URL
+	resumed, err := secondConnector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        batch.Checkpoint,
+	})
+	if err != nil {
+		t.Fatalf("resumed OpenSync: %v", err)
+	}
+	defer resumed.Close()
+
+	first, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resumed NextBatch: %v", err)
+	}
+	if first.Documents[0].SourceID != "DISCORD_m1" {
+		t.Fatalf("resumed doc = %q, want full re-scan from DISCORD_m1", first.Documents[0].SourceID)
+	}
+}
+
+func TestDiscordResumeInvalidCursor(t *testing.T) {
+	fixture := newDiscordFixture()
+	base := mustTime(t, "2026-08-14T10:00:00Z")
+	fixture.setMessages("ch-1", fixtureMessage("m1", "one", "alice", base))
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"batch_size":  2,
+	})
+	connector.baseURL = server.URL
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: "not-json"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	defer session.Close()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if batch.Documents[0].SourceID != "DISCORD_m1" {
+		t.Fatalf("doc = %q, want full re-scan from DISCORD_m1", batch.Documents[0].SourceID)
 	}
 }
 

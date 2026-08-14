@@ -253,10 +253,63 @@ func (c *DiscordConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		upperBound = request.WindowEnd
 	}
 
+	resumeTarget, resumeBefore := discordResumePosition(targets, request.Resume)
 	return &discordSyncSession{
-		connector: c,
-		iter:      newDiscordMessageIterator(c, targets, lowerBound, upperBound),
+		connector:          c,
+		iter:               newDiscordMessageIterator(c, targets, lowerBound, upperBound, resumeTarget, resumeBefore),
+		targetsFingerprint: discordCursorFingerprint(targets),
 	}, nil
+}
+
+// discordResumePosition returns the target and before cursor to continue from,
+// or empty values when the checkpoint does not match the current enumeration.
+func discordResumePosition(targets []discordTarget, checkpoint *SyncCheckpoint) (string, string) {
+	if checkpoint == nil || checkpoint.Cursor == "" {
+		return "", ""
+	}
+	var cursor discordSyncCursor
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return "", ""
+	}
+	if cursor.Target == "" || cursor.Message == "" {
+		return "", ""
+	}
+	if cursor.Targets != "" && cursor.Targets != discordCursorFingerprint(targets) {
+		return "", ""
+	}
+	for _, target := range targets {
+		if target.channelID == cursor.Target {
+			return cursor.Target, cursor.Message
+		}
+	}
+	return "", ""
+}
+
+// discordSyncCursor is the resume position serialized into SyncCheckpoint.Cursor.
+// Target is the channel/thread of the last committed group and Message is the
+// oldest message ID of that group, i.e. the next `before` cursor for it.
+type discordSyncCursor struct {
+	Targets string `json:"targets"`
+	Target  string `json:"target"`
+	Message string `json:"message"`
+}
+
+// discordCursorFingerprint summarizes the ordered target list so a resume can
+// detect enumeration changes and fall back to a full re-scan.
+func discordCursorFingerprint(targets []discordTarget) string {
+	ids := make([]string, 0, len(targets))
+	for _, target := range targets {
+		ids = append(ids, target.channelID)
+	}
+	return stableFingerprint(ids)
+}
+
+func encodeDiscordCursor(fingerprint, target, message string) string {
+	raw, err := json.Marshal(discordSyncCursor{Targets: fingerprint, Target: target, Message: message})
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 // OpenPrune opens one complete slim snapshot session.
@@ -267,7 +320,7 @@ func (c *DiscordConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 	}
 	return &discordPruneSession{
 		connector: c,
-		iter:      newDiscordMessageIterator(c, targets, c.startDate, time.Time{}),
+		iter:      newDiscordMessageIterator(c, targets, c.startDate, time.Time{}, "", ""),
 	}, nil
 }
 
@@ -489,13 +542,23 @@ type discordMessageIterator struct {
 	targetDone  bool
 }
 
-func newDiscordMessageIterator(c *DiscordConnector, targets []discordTarget, lowerBound, upperBound time.Time) *discordMessageIterator {
-	return &discordMessageIterator{
+func newDiscordMessageIterator(c *DiscordConnector, targets []discordTarget, lowerBound, upperBound time.Time, resumeTarget, resumeBefore string) *discordMessageIterator {
+	it := &discordMessageIterator{
 		connector:  c,
 		targets:    targets,
 		lowerBound: lowerBound,
 		upperBound: upperBound,
 	}
+	if resumeTarget != "" {
+		for i, target := range targets {
+			if target.channelID == resumeTarget {
+				it.targetIndex = i
+				it.before = resumeBefore
+				break
+			}
+		}
+	}
+	return it
 }
 
 // next returns the next in-window message, or io.EOF when exhausted.
@@ -576,38 +639,58 @@ func discordMessageUpdatedAt(msg discordMessage) time.Time {
 
 // discordSyncSession streams merged documents for one sync window.
 type discordSyncSession struct {
-	connector *DiscordConnector
-	iter      *discordMessageIterator
-	pending   []discordMessageWithTarget
+	connector          *DiscordConnector
+	iter               *discordMessageIterator
+	targetsFingerprint string
+	pending            []discordMessageWithTarget
+	currentTarget      string
+	carry              *discordMessageWithTarget
 }
 
 // NextBatch returns one merged document per call until io.EOF.
 func (s *discordSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	for len(s.pending) < s.connector.batchSize {
-		item, err := s.iter.next(ctx)
-		if errors.Is(err, io.EOF) {
+		var item discordMessageWithTarget
+		if s.carry != nil {
+			item = *s.carry
+			s.carry = nil
+		} else {
+			next, err := s.iter.next(ctx)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return SyncBatch{}, err
+			}
+			item = next
+		}
+		if s.currentTarget != "" && item.target.channelID != s.currentTarget {
+			s.carry = &item
 			break
 		}
-		if err != nil {
-			return SyncBatch{}, err
-		}
+		s.currentTarget = item.target.channelID
 		s.pending = append(s.pending, item)
 	}
 	if len(s.pending) == 0 {
 		return SyncBatch{}, io.EOF
 	}
 
-	n := s.connector.batchSize
-	if n > len(s.pending) {
-		n = len(s.pending)
-	}
-	docs := make([]SourceDocument, 0, n)
-	for _, item := range s.pending[:n] {
+	docs := make([]SourceDocument, 0, len(s.pending))
+	for _, item := range s.pending {
 		docs = append(docs, discordMessageDocument(item))
 	}
-	s.pending = s.pending[n:]
+	merged := mergeDiscordDocuments(docs)
+	oldest := s.pending[len(s.pending)-1]
+	s.pending = nil
+	if s.carry != nil {
+		s.currentTarget = ""
+	}
 
-	return SyncBatch{Documents: []SourceDocument{mergeDiscordDocuments(docs)}}, nil
+	batch := SyncBatch{Documents: []SourceDocument{merged}}
+	if cursor := encodeDiscordCursor(s.targetsFingerprint, oldest.target.channelID, oldest.message.ID); cursor != "" {
+		batch.Checkpoint = &SyncCheckpoint{Cursor: cursor}
+	}
+	return batch, nil
 }
 
 // Close releases the sync session.
