@@ -111,6 +111,7 @@ type SyncLogs struct {
 	Status               string        `gorm:"column:status;size:128;not null;index" json:"status"`
 	FromBeginning        *string       `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
 	NewDocsIndexed       int64         `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
+	UpdatedDocsIndexed   int64         `gorm:"column:updated_docs_indexed;default:0" json:"updated_docs_indexed"`
 	TotalDocsIndexed     int64         `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
 	DocsRemovedFromIndex int64         `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
 	ErrorMsg             string        `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
@@ -136,6 +137,7 @@ type ConnectorSyncLog struct {
 	KbID                 string     `gorm:"column:kb_id" json:"kb_id"`
 	UpdateDate           *time.Time `gorm:"column:update_date" json:"update_date,omitempty"`
 	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed" json:"new_docs_indexed"`
+	UpdatedDocsIndexed   int64      `gorm:"column:updated_docs_indexed" json:"updated_docs_indexed"`
 	TotalDocsIndexed     int64      `gorm:"column:total_docs_indexed" json:"total_docs_indexed"`
 	DocsRemovedFromIndex int64      `gorm:"column:docs_removed_from_index" json:"docs_removed_from_index"`
 	ErrorMsg             string     `gorm:"column:error_msg" json:"error_msg"`
@@ -156,6 +158,7 @@ func (c ConnectorSyncLog) MarshalJSON() ([]byte, error) {
 		KbID                 string  `json:"kb_id"`
 		UpdateDate           *string `json:"update_date,omitempty"`
 		NewDocsIndexed       int64   `json:"new_docs_indexed"`
+		UpdatedDocsIndexed   int64   `json:"updated_docs_indexed"`
 		TotalDocsIndexed     int64   `json:"total_docs_indexed"`
 		DocsRemovedFromIndex int64   `json:"docs_removed_from_index"`
 		ErrorMsg             string  `json:"error_msg"`
@@ -174,6 +177,7 @@ func (c ConnectorSyncLog) MarshalJSON() ([]byte, error) {
 		KbID:                 c.KbID,
 		UpdateDate:           formatConnectorLogTime(c.UpdateDate),
 		NewDocsIndexed:       c.NewDocsIndexed,
+		UpdatedDocsIndexed:   c.UpdatedDocsIndexed,
 		TotalDocsIndexed:     c.TotalDocsIndexed,
 		DocsRemovedFromIndex: c.DocsRemovedFromIndex,
 		ErrorMsg:             c.ErrorMsg,

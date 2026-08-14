@@ -25,7 +25,7 @@ import (
 // Factory creates a connector for a task context.
 type Factory func(ctx context.Context, taskContext any) (Connector, error)
 
-// Registry maps Python connector source names to Go connector factories.
+// Registry connector source names to Go connector factories.
 type Registry struct {
 	mu        sync.RWMutex
 	factories map[string]Factory
