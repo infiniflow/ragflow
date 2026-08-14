@@ -128,8 +128,7 @@ def cmd_genquads(args):
         json.dump({"boxes": [{"quad": b["quad"]} for b in boxes]}, f, indent=2)
     with open(os.path.join(args.out_dir, "quads_meta.json"), "w") as f:
         json.dump(boxes, f, indent=2)
-    logging.info("[genquads] %d quads (from %d words, angles=%s) -> quads.json + py_warp_*.png",
-                  len(boxes), len(words), angles)
+    logging.info("[genquads] %d quads (from %d words, angles=%s) -> quads.json + py_warp_*.png", len(boxes), len(words), angles)
 
 
 def pixel_mse(a_path, b_path):
@@ -258,17 +257,17 @@ def cmd_rec(args):
         return
 
     logging.info("\n[rec] %d boxes  (recognize_batch, no layer-2 rotation)", n)
-    logging.info("  exact text match  WarpCrop vs cv2 : %d/%d (%.1f%%)", warp_eq_py, n, 100*warp_eq_py/n)
-    logging.info("  exact text match  FastCrop vs cv2 : %d/%d (%.1f%%)", fc_eq_py, n, 100*fc_eq_py/n)
-    logging.info("  mean text similarity WarpCrop vs cv2 : %.3f", warp_sim_total/n)
-    logging.info("  mean text similarity FastCrop vs cv2 : %.3f", fc_sim_total/n)
-    logging.info("  WarpCrop text closer to cv2 than FastCrop : %d/%d (%.1f%%)", warp_closer, n, 100*warp_closer/n)
+    logging.info("  exact text match  WarpCrop vs cv2 : %d/%d (%.1f%%)", warp_eq_py, n, 100 * warp_eq_py / n)
+    logging.info("  exact text match  FastCrop vs cv2 : %d/%d (%.1f%%)", fc_eq_py, n, 100 * fc_eq_py / n)
+    logging.info("  mean text similarity WarpCrop vs cv2 : %.3f", warp_sim_total / n)
+    logging.info("  mean text similarity FastCrop vs cv2 : %.3f", fc_sim_total / n)
+    logging.info("  WarpCrop text closer to cv2 than FastCrop : %d/%d (%.1f%%)", warp_closer, n, 100 * warp_closer / n)
 
     if by_angle:
         logging.info("\n  -- mean text similarity(WarpCrop vs cv2) by rotation angle --")
         for ang in sorted(by_angle):
             vals = by_angle[ang]
-            logging.info("    angle %+6.1fdeg : n=%3d  sim=%.3f", ang, len(vals), sum(vals)/len(vals))
+            logging.info("    angle %+6.1fdeg : n=%3d  sim=%.3f", ang, len(vals), sum(vals) / len(vals))
 
     logging.info("\n  -- 8 worst WarpCrop-vs-cv2 cases --")
     worst.sort(key=lambda x: x[0])
