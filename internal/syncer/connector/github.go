@@ -568,7 +568,7 @@ func (s *githubSyncSession) filterResumedDocuments(repo, stage string, page int,
 	}
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
-		if candidate.offset >= s.resumeOffset {
+		if candidate.offset > s.resumeOffset {
 			filtered = append(filtered, candidate)
 		}
 	}
