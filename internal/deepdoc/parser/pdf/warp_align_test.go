@@ -24,13 +24,15 @@ import (
 //
 // Run (two passes):
 //
-//	# pass 1: only render the page
+//	# pass 1: render the page (WARP_PDF is required by the Go test)
+//	WARP_PDF=test/benchmark/test_docs/Doc1.pdf \
 //	bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ \
 //	    -run TestWarpAlignGo
-//	WARP_PDF=test/benchmark/test_docs/Doc1.pdf \
-//	.venv/bin/python tools/render_diff/warp_align.py detect \
-//	    --go-page-png /tmp/render_diff/align/page0.png
+//	# derive quads + reference crops from the rendered page
+//	.venv/bin/python tools/render_diff/warp_align.py genquads \
+//	    --pdf test/benchmark/test_docs/Doc1.pdf --go-page-png /tmp/render_diff/align/page0.png
 //	# pass 2: now quads.json exists -> write the Go crops
+//	WARP_PDF=test/benchmark/test_docs/Doc1.pdf \
 //	bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ \
 //	    -run TestWarpAlignGo
 //	.venv/bin/python tools/render_diff/warp_align.py compare

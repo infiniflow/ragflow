@@ -13,16 +13,7 @@ type Pt struct {
 }
 
 // WarpCrop de-skews a quadrilateral region from src using a perspective
-// transform. It mirrors the warp step of Python's
-// deepdoc/vision/ocr.py get_rotate_crop_image:
-//
-//	cv2.getPerspectiveTransform(points, pts_std)
-//	cv2.warpPerspective(img, M, (w, h),
-//	                    borderMode=cv2.BORDER_REPLICATE,
-//	                    flags=cv2.INTER_CUBIC)
-//
-// It performs NO rotation selection (the h/w >= 1.5 branch) — that belongs to
-// the caller / layer 2.
+// transform, producing the rectangular crop fed to text recognition.
 //
 // points must be the 4 corners in order: top-left, top-right, bottom-right,
 // bottom-left (the DBNet quad order emitted by the OCR detector). The output
@@ -31,10 +22,16 @@ type Pt struct {
 //	W = int(max(|p0-p1|, |p2-p3|))
 //	H = int(max(|p0-p3|, |p1-p2|))
 //
-// matching Python exactly.
+// Each destination pixel is mapped back to the source via the inverse
+// homography and sampled with Catmull-Rom (bicubic) interpolation. Out-of-
+// bounds source coordinates use BORDER_REPLICATE semantics (edge pixels
+// repeated).
+//
+// WarpCrop performs NO rotation selection (the h/w >= 1.5 branch) — that
+// belongs to the caller / layer 2.
 //
 // If the quad is degenerate (collinear / non-invertible homography), WarpCrop
-// falls back to an axis-aligned FastCrop of the quad's bounding box so callers
+// falls back to an axis-aligned crop of the quad's bounding box so callers
 // stay safe.
 func WarpCrop(src image.Image, points [4]Pt) *image.RGBA {
 	w := int(math.Max(dist(points[0], points[1]), dist(points[2], points[3])))
@@ -54,7 +51,7 @@ func WarpCrop(src image.Image, points [4]Pt) *image.RGBA {
 	}
 
 	rgba := toRGBA(src)
-	sw, sh := float64(rgba.Bounds().Dx()), float64(rgba.Bounds().Dy())
+	b := rgba.Bounds()
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -65,16 +62,16 @@ func WarpCrop(src image.Image, points [4]Pt) *image.RGBA {
 			}
 			sx := (inv[0]*float64(x) + inv[1]*float64(y) + inv[2]) / den
 			sy := (inv[3]*float64(x) + inv[4]*float64(y) + inv[5]) / den
-			out.SetRGBA(x, y, sampleBicubic(rgba, sx, sy, sw, sh))
+			out.SetRGBA(x, y, sampleBicubic(rgba, sx, sy, b))
 		}
 	}
 	return out
 }
 
 // perspectiveTransform solves the 8-DOF homography H (row-major 3x3 with
-// H[8]=1) such that dst_i = H * src_i in homogeneous coordinates. It matches
-// cv2.getPerspectiveTransform's normalization (bottom-right element fixed to
-// 1). Returns ok=false if the linear system is singular.
+// H[8]=1) such that dst_i = H * src_i in homogeneous coordinates. It fixes the
+// bottom-right homography element to 1 (the 8-DOF normalization). Returns
+// ok=false if the linear system is singular.
 func perspectiveTransform(src, dst [4]Pt) ([9]float64, bool) {
 	var A [8][9]float64
 	for i := 0; i < 4; i++ {
@@ -164,22 +161,24 @@ func invert3x3(m [9]float64) ([9]float64, bool) {
 
 // sampleBicubic returns the bicubic-interpolated (Catmull-Rom) color at the
 // (possibly sub-pixel, out-of-bounds) location (x, y). Out-of-bounds
-// coordinates use BORDER_REPLICATE semantics (edge pixels repeated), matching
-// cv2.warpPerspective's borderMode=cv2.BORDER_REPLICATE.
-func sampleBicubic(img *image.RGBA, x, y, w, h float64) color.RGBA {
-	x0 := int(math.Floor(x))
-	y0 := int(math.Floor(y))
-	tx := x - float64(x0)
-	ty := y - float64(y0)
-	maxX, maxY := int(w)-1, int(h)-1
+// coordinates use BORDER_REPLICATE semantics (edge pixels repeated). b is the
+// source image bounds; sampling indices are offset by b.Min so a non-zero
+// origin image samples correctly.
+func sampleBicubic(img *image.RGBA, x, y float64, b image.Rectangle) color.RGBA {
+	ox, oy := float64(b.Min.X), float64(b.Min.Y)
+	x0 := int(math.Floor(x - ox))
+	y0 := int(math.Floor(y - oy))
+	tx := x - ox - float64(x0)
+	ty := y - oy - float64(y0)
+	maxX, maxY := b.Dx()-1, b.Dy()-1
 
 	// Interpolate each of the 4 source rows horizontally, then combine
 	// the 4 results vertically.
 	colX := func(cy int) (uint8, uint8, uint8, uint8) {
-		r0, g0, b0, a0 := pxAt(img, clampIdx(x0-1, maxX), clampIdx(cy, maxY))
-		r1, g1, b1, a1 := pxAt(img, clampIdx(x0, maxX), clampIdx(cy, maxY))
-		r2, g2, b2, a2 := pxAt(img, clampIdx(x0+1, maxX), clampIdx(cy, maxY))
-		r3, g3, b3, a3 := pxAt(img, clampIdx(x0+2, maxX), clampIdx(cy, maxY))
+		r0, g0, b0, a0 := pxAt(img, b.Min.X+clampIdx(x0-1, maxX), b.Min.Y+clampIdx(cy, maxY))
+		r1, g1, b1, a1 := pxAt(img, b.Min.X+clampIdx(x0, maxX), b.Min.Y+clampIdx(cy, maxY))
+		r2, g2, b2, a2 := pxAt(img, b.Min.X+clampIdx(x0+1, maxX), b.Min.Y+clampIdx(cy, maxY))
+		r3, g3, b3, a3 := pxAt(img, b.Min.X+clampIdx(x0+2, maxX), b.Min.Y+clampIdx(cy, maxY))
 		return uint8(clampByte(cubic(tx, [4]float64{float64(r0), float64(r1), float64(r2), float64(r3)}))),
 			uint8(clampByte(cubic(tx, [4]float64{float64(g0), float64(g1), float64(g2), float64(g3)}))),
 			uint8(clampByte(cubic(tx, [4]float64{float64(b0), float64(b1), float64(b2), float64(b3)}))),

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""WarpCrop (Go) vs cv2.get_rotate_crop_image (Python) pixel alignment on REAL
-document text, with no model weights required.
+"""WarpCrop (Go) vs an independent perspective-crop reference (cv2) pixel
+alignment on REAL document text, with no model weights required.
 
-This is the layer-1 (perspective de-skew) half of Step 4. It answers the
-geometric part of the regression question: for real text regions on a real PDF
-page, does Go's util.WarpCrop reproduce the exact crop Python's OCR pipeline
-feeds to the recognizer?
+This exercises the perspective de-skew step (layer 1 of the OCR warp work). It
+answers the geometric part of the regression question: for real text regions on
+a real PDF page, does Go's util.WarpCrop reproduce the same crop geometry as an
+independent perspective transform?
 
 Detection and recognition need the deepdoc ONNX weights (downloaded from
 HuggingFace, unavailable offline). They are intentionally NOT used here:
   - quads come from pdfplumber word boxes (rotated to simulate skew) -- no model
-  - the cv2 reference crop is pure geometry (getPerspectiveTransform +
+  - the reference crop is pure geometry (getPerspectiveTransform +
     warpPerspective with BORDER_REPLICATE + INTER_CUBIC) -- no model
 
 So this runs fully offline and isolates the warp geometry, which is the part
@@ -20,11 +20,11 @@ Pipeline
 --------
 1. genquads : from the Go-rendered page, derive real word boxes (pdfplumber),
               rotate each by a sweep of angles to build skewed quads, write
-              quads.json and the cv2 reference crops (py_warp_*.png).
+              quads.json and the reference crops (py_warp_*.png).
 2. (Go)     : TestWarpAlignGo pass 2 reads quads.json and writes go_warp_*.png
               (WarpCrop) and go_fastcrop_*.png (FastCrop, the old behavior).
-3. compare  : pixel-MSE Go-WarpCrop vs cv2 and Go-FastCrop vs cv2, aggregated
-              (layer-1 geometry; no model weights needed).
+3. compare  : pixel-MSE Go-WarpCrop vs reference and Go-FastCrop vs reference,
+              aggregated (layer-1 geometry; no model weights needed).
 4. rec      : run recognize_batch (the actual Go->service path, NO layer-2
               rotation) on all three crops and compare the recognized text
               (layer-1 + recognizer; needs the deepdoc ONNX weights).
@@ -34,10 +34,12 @@ is never touched and nothing is committed.
 
 Run
 ---
-    bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestWarpAlignGo
+    WARP_PDF=test/benchmark/test_docs/Doc1.pdf \
+        bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestWarpAlignGo
     .venv/bin/python tools/render_diff/warp_align.py genquads \
         --pdf test/benchmark/test_docs/Doc1.pdf --go-page-png /tmp/render_diff/align/page0.png
-    bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestWarpAlignGo
+    WARP_PDF=test/benchmark/test_docs/Doc1.pdf \
+        bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestWarpAlignGo
     .venv/bin/python tools/render_diff/warp_align.py compare
     # (needs HF weights in rag/res/deepdoc)
     .venv/bin/python tools/render_diff/warp_align.py rec
@@ -46,12 +48,16 @@ Run
 import argparse
 import difflib
 import json
+import logging
 import math
 import os
+import sys
 
 import cv2
 import numpy as np
 import pdfplumber
+
+logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
 # Go renders the page at exactly 3x (216 DPI); pdfplumber coords are in points.
 SCALE = 3.0
@@ -122,7 +128,8 @@ def cmd_genquads(args):
         json.dump({"boxes": [{"quad": b["quad"]} for b in boxes]}, f, indent=2)
     with open(os.path.join(args.out_dir, "quads_meta.json"), "w") as f:
         json.dump(boxes, f, indent=2)
-    print(f"[genquads] {len(boxes)} quads (from {len(words)} words, angles={angles}) -> quads.json + py_warp_*.png")
+    logging.info("[genquads] %d quads (from %d words, angles=%s) -> quads.json + py_warp_*.png",
+                  len(boxes), len(words), angles)
 
 
 def pixel_mse(a_path, b_path):
@@ -161,24 +168,24 @@ def cmd_compare(args):
 
     n = len(mse_warp)
     if n == 0:
-        print("[compare] no go crops found; run TestWarpAlignGo pass 2 first")
+        logging.info("[compare] no go crops found; run TestWarpAlignGo pass 2 first")
         return
     mean_w = sum(mse_warp) / n
     mean_f = sum(mse_fc) / n
-    print(f"\n[compare] {n} boxes (limit={limit})")
-    print(f"  pixel MSE  WarpCrop vs cv2 : mean={mean_w:.2f}  max={max(mse_warp):.2f}")
-    print(f"  pixel MSE  FastCrop vs cv2 : mean={mean_f:.2f}  max={max(mse_fc):.2f}")
-    print(f"  WarpCrop closer to cv2 than FastCrop : {better}/{n}")
+    logging.info("\n[compare] %d boxes (limit=%s)", n, limit)
+    logging.info("  pixel MSE  WarpCrop vs cv2 : mean=%.2f  max=%.2f", mean_w, max(mse_warp))
+    logging.info("  pixel MSE  FastCrop vs cv2 : mean=%.2f  max=%.2f", mean_f, max(mse_fc))
+    logging.info("  WarpCrop closer to cv2 than FastCrop : %d/%d", better, n)
     # show per-angle summary if meta present
     by_angle = {}
     for i, m in enumerate(meta[:n]):
         ang = m.get("angle", 0)
         by_angle.setdefault(ang, []).append(mse_warp[i])
     if by_angle:
-        print("\n  -- mean MSE(WarpCrop vs cv2) by rotation angle --")
+        logging.info("\n  -- mean MSE(WarpCrop vs cv2) by rotation angle --")
         for ang in sorted(by_angle):
             vals = by_angle[ang]
-            print(f"    angle {ang:+6.1f}deg : n={len(vals):3d}  meanMSE={sum(vals) / len(vals):.2f}")
+            logging.info("    angle %+6.1fdeg : n=%3d  meanMSE=%.2f", ang, len(vals), sum(vals) / len(vals))
 
 
 def cmd_rec(args):
@@ -247,26 +254,26 @@ def cmd_rec(args):
         n += 1
 
     if n == 0:
-        print("[rec] no crops found; run genquads + TestWarpAlignGo pass 2 first")
+        logging.info("[rec] no crops found; run genquads + TestWarpAlignGo pass 2 first")
         return
 
-    print(f"\n[rec] {n} boxes  (recognize_batch, no layer-2 rotation)")
-    print(f"  exact text match  WarpCrop vs cv2 : {warp_eq_py}/{n} ({100 * warp_eq_py / n:.1f}%)")
-    print(f"  exact text match  FastCrop vs cv2 : {fc_eq_py}/{n} ({100 * fc_eq_py / n:.1f}%)")
-    print(f"  mean text similarity WarpCrop vs cv2 : {warp_sim_total / n:.3f}")
-    print(f"  mean text similarity FastCrop vs cv2 : {fc_sim_total / n:.3f}")
-    print(f"  WarpCrop text closer to cv2 than FastCrop : {warp_closer}/{n} ({100 * warp_closer / n:.1f}%)")
+    logging.info("\n[rec] %d boxes  (recognize_batch, no layer-2 rotation)", n)
+    logging.info("  exact text match  WarpCrop vs cv2 : %d/%d (%.1f%%)", warp_eq_py, n, 100*warp_eq_py/n)
+    logging.info("  exact text match  FastCrop vs cv2 : %d/%d (%.1f%%)", fc_eq_py, n, 100*fc_eq_py/n)
+    logging.info("  mean text similarity WarpCrop vs cv2 : %.3f", warp_sim_total/n)
+    logging.info("  mean text similarity FastCrop vs cv2 : %.3f", fc_sim_total/n)
+    logging.info("  WarpCrop text closer to cv2 than FastCrop : %d/%d (%.1f%%)", warp_closer, n, 100*warp_closer/n)
 
     if by_angle:
-        print("\n  -- mean text similarity(WarpCrop vs cv2) by rotation angle --")
+        logging.info("\n  -- mean text similarity(WarpCrop vs cv2) by rotation angle --")
         for ang in sorted(by_angle):
             vals = by_angle[ang]
-            print(f"    angle {ang:+6.1f}deg : n={len(vals):3d}  sim={sum(vals) / len(vals):.3f}")
+            logging.info("    angle %+6.1fdeg : n=%3d  sim=%.3f", ang, len(vals), sum(vals)/len(vals))
 
-    print("\n  -- 8 worst WarpCrop-vs-cv2 cases --")
+    logging.info("\n  -- 8 worst WarpCrop-vs-cv2 cases --")
     worst.sort(key=lambda x: x[0])
     for sw, i, tw, tp, tf in worst[:8]:
-        print(f"    #{i:3d} sim={sw:.2f} | warp={tw!r} py={tp!r} fastcrop={tf!r}")
+        logging.info("    #%3d sim=%.2f | warp=%r py=%r fastcrop=%r", i, sw, tw, tp, tf)
 
 
 def main():

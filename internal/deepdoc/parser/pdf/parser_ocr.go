@@ -37,10 +37,11 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		// Perspective de-skew the quad before recognition, matching
-		// Python's get_rotate_crop_image warp step (Step 4 / layer 1). The
-		// emitted box bounds below still use the axis-aligned detection
-		// bbox (x0..y1), exactly as Python emits the original detection box.
+		// De-skew the quad with a perspective transform before recognition so
+		// the recognizer receives a rectangular, axis-aligned crop instead of
+		// the slanted detection region. The emitted box bounds below still use
+		// the axis-aligned detection bbox (x0..y1); only the crop fed to
+		// recognition is transformed.
 		cropped := util.WarpCrop(pageImg, [4]util.Pt{
 			{X: b.X0, Y: b.Y0},
 			{X: b.X1, Y: b.Y1},

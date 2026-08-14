@@ -3,6 +3,7 @@ package pdf
 import (
 	"context"
 	"image"
+	"math"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -59,7 +60,7 @@ func TestOCRDetectAndRecognize_WarpsCrop(t *testing.T) {
 	page := image.NewRGBA(image.Rect(0, 0, 200, 140))
 
 	// A clearly skewed (perspective) quad: TL, TR, BR, BL.
-	quad := [4]util.Pt{{50, 40}, {150, 30}, {160, 90}, {40, 100}}
+	quad := [4]util.Pt{{X: 50, Y: 40}, {X: 150, Y: 30}, {X: 160, Y: 90}, {X: 40, Y: 100}}
 	box := pdf.OCRBox{
 		X0: quad[0].X, Y0: quad[0].Y,
 		X1: quad[1].X, Y1: quad[1].Y,
@@ -100,6 +101,21 @@ func TestOCRDetectAndRecognize_WarpsCrop(t *testing.T) {
 	bboxCrop := util.FastCrop(page, minX, minY, maxX, maxY)
 	if sameImage(rec, bboxCrop) {
 		t.Errorf("rec crop equals the axis-aligned bbox crop; warp was not applied")
+	}
+
+	// Safety property: the emitted TextBox must stay the axis-aligned
+	// detection bbox — only the crop fed to recognition is de-skewed, the box
+	// geometry itself is never transformed. If warp ever leaked into the
+	// emitted coordinates this would drift from the original detection bbox.
+	got0 := got[0]
+	if math.Abs(got0.X0-float64(minX)/pdf.DlaScale) > 1e-6 ||
+		math.Abs(got0.Top-float64(minY)/pdf.DlaScale) > 1e-6 ||
+		math.Abs(got0.X1-float64(maxX)/pdf.DlaScale) > 1e-6 ||
+		math.Abs(got0.Bottom-float64(maxY)/pdf.DlaScale) > 1e-6 {
+		t.Errorf("emitted TextBox is not the axis-aligned detection bbox: got=(%.4f,%.4f,%.4f,%.4f) want=(%.4f,%.4f,%.4f,%.4f)",
+			got0.X0, got0.Top, got0.X1, got0.Bottom,
+			float64(minX)/pdf.DlaScale, float64(minY)/pdf.DlaScale,
+			float64(maxX)/pdf.DlaScale, float64(maxY)/pdf.DlaScale)
 	}
 }
 

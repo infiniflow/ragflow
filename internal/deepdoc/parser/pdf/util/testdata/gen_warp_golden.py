@@ -3,16 +3,14 @@
 Produces, under this directory:
   * warp_src.png      - a synthetic source image with high-frequency content
   * warp_expected.png - the perspective-de-skewed crop, computed with PIL's
-                        PERSPECTIVE transform (BICUBIC), matching the geometry
-                        of cv2.getPerspectiveTransform + warpPerspective used by
-                        Python deepdoc/vision/ocr.py get_rotate_crop_image.
+                        PERSPECTIVE transform (BICUBIC)
   * warp_meta.json    - the 4 source corners (TL,TR,BR,BL) and the expected
                         output size (w,h) consumed by warp_test.go.
 
-The reference uses PIL rather than cv2 (cv2 is not installed here); both
-implement the identical homogeneous perspective mapping, and any minor
-resampling-kernel difference (PIL-bicubic vs cv2-INTER_CUBIC) is absorbed by
-the MSE tolerance in the test.
+The reference perspective transform and the Go WarpCrop implementation compute
+the same homogeneous mapping (destination -> source for the backward sampler);
+any minor resampling-kernel difference (PIL-bicubic vs the Go Catmull-Rom
+sampler) is absorbed by the MSE tolerance in the test.
 """
 
 import base64
@@ -128,11 +126,9 @@ def main():
 
     w, h = out_size(SRC)
     dst = [(0, 0), (w, 0), (w, h), (0, h)]
-    # PIL's PERSPECTIVE coeffs map DESTINATION -> SOURCE directly (the inverse
-    # of cv2's getPerspectiveTransform convention, which cv2.warpPerspective
-    # inverts internally). So solve the homography dst->src to match both PIL
-    # and the Go WarpCrop implementation (which computes src->dst then uses
-    # its inverse for backward mapping).
+    # PIL's PERSPECTIVE coeffs map DESTINATION -> SOURCE directly. So solve the
+    # homography dst->src, matching the Go WarpCrop implementation (which
+    # computes src->dst, then uses its inverse for backward mapping).
     coeffs = solve_homography(dst, SRC)
 
     img = Image.open(src_path).convert("RGB")
