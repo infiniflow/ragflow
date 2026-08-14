@@ -175,7 +175,7 @@ func AgenticResearch(ctx context.Context, db *gorm.DB, pipeline *Pipeline, quest
 			return OrchestratorResult{Verdict: &verdict, Abstain: true, Kbinfos: kbinfos}
 		case "FALLBACK_LLM":
 			finalizeAgentResults(kbinfos, claims)
-			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Kbinfos: kbinfos}
+			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, ForceLLM: true, Kbinfos: kbinfos}
 		}
 	}
 

@@ -227,7 +227,7 @@ func (r *ProductionRunner) runAgentic(ctx context.Context, question, keywords, m
 
 	orch := AgenticResearch(ctx, r.db, pipeline, question, claims, mode)
 
-	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult, orch.Caveat)
+	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult, orch.Caveat, orch.ForceLLM)
 }
 
 // buildCompilationMap reports which compiled artifacts each bound KB carries,

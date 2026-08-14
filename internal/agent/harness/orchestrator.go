@@ -135,6 +135,10 @@ type OrchestratorResult struct {
 	// Caveat is the decision-ladder explanation for a partial answer (e.g.
 	// "evidence partially supports the answer"), surfaced in the final answer.
 	Caveat string
+	// ForceLLM is set by the FALLBACK_LLM verdict: even with no gathered
+	// evidence, finalization must still call the direct LLM (rather than return
+	// the canned "no evidence" string).
+	ForceLLM bool
 }
 
 // DirectSearch is the low-mode orchestrator: one hybrid search → merge.
@@ -220,8 +224,9 @@ func DecomposeAndSearch(ctx context.Context, search SearchFn, question, keywords
 		case "ANSWER_PARTIAL":
 			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, Kbinfos: kbinfos}
 		case "FALLBACK_LLM":
-			// ultra route: no grounded answer, hand off to the direct LLM.
-			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, Kbinfos: kbinfos}
+			// ultra route: no grounded answer, hand off to the direct LLM. Force
+			// finalization to call the model even with empty evidence.
+			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, ForceLLM: true, Kbinfos: kbinfos}
 		case "ABSTAIN":
 			kbinfos.Chunks = nil
 			return OrchestratorResult{Verdict: &verdict, Abstain: true, Kbinfos: kbinfos}

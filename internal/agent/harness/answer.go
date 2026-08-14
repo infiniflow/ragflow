@@ -59,11 +59,17 @@ type AnswerResult struct {
 // FormalizeAnswer generates the final answer from the gathered kbinfos. Mirrors
 // Python's formalize_answer node: abstain/empty short-circuits, otherwise builds
 // system+user and calls the chat invoker.
-func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool, caveat string) AnswerResult {
+//
+// forceLLM forces the direct-LLM path even when there is no evidence: used by the
+// FALLBACK_LLM verdict (FallbackToDirectLLM), where the mode is unanswerable but
+// we still want the model to attempt an answer or plainly state it cannot — not
+// a canned "no evidence" string. Mirrors Python, which only short-circuits on
+// empty evidence when an explicit empty_response is configured.
+func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool, caveat string, forceLLM bool) AnswerResult {
 	if abstain {
 		return AnswerResult{FinalAnswer: abstainMessage, Abstained: true}
 	}
-	if empty || kb == nil || len(kb.Chunks) == 0 {
+	if !forceLLM && (empty || kb == nil || len(kb.Chunks) == 0) {
 		return AnswerResult{FinalAnswer: emptyResultMessage, Empty: true}
 	}
 
