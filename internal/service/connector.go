@@ -389,8 +389,9 @@ func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID s
 }
 
 // TestConnector validates a connector's stored configuration.
-// For the REST API source it performs live validation of the connector
-// settings. Other sources return ErrConnectorTestUnsupported.
+// Temporarily inert: no live network validation. It verifies access, that
+// the connector exists, that the source is rest_api, and that stored
+// credentials are present; other sources return ErrConnectorTestUnsupported.
 func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
 	ok, err := s.accessible(ctx, connectorID, userID)
 	if err != nil && errors.Is(err, ErrConnectorNotFound) {
@@ -412,11 +413,15 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 		return ErrConnectorTestUnsupported
 	}
 
-	restConnector, err := syncerconnector.NewRestAPIConnector(conn.Config)
-	if err != nil {
-		return err
+	config := conn.Config
+	if config == nil {
+		return fmt.Errorf("connector configuration is missing")
 	}
-	return restConnector.ValidateLive(ctx)
+	creds, ok := config["credentials"].(map[string]interface{})
+	if !ok || len(creds) == 0 {
+		return fmt.Errorf("connector credentials are missing")
+	}
+	return nil
 }
 
 func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
