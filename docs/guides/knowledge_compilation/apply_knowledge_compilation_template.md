@@ -39,7 +39,7 @@ If CompilationTemplate is modified, completed documents are not automatically re
 
 ## View Knowledge Artifacts
 
-After knowledge compilation is complete, go to the corresponding knowledge base and select Artifacts from the left menu to view the generated knowledge artifacts.
+After knowledge compilation is complete, enter the corresponding knowledge base and select **Artifacts** from the left sidebar. In the upper-right corner of the Artifacts page, select the artifact type you want to view from the drop-down list, such as **Wiki**, **To Skills**, **Tree/Page index**, **Graph**, **Mind map**, or **Timeline**, to view the corresponding generated results.
 
 Knowledge artifacts can be divided by generation scope into document-level and knowledge-base-level artifacts:
 
