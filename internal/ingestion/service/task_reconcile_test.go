@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
@@ -316,5 +317,94 @@ func TestReconcile_KeepsFreshRunningDocWithoutTask(t *testing.T) {
 	}
 	if got.Run == nil || *got.Run != string(entity.TaskStatusRunning) {
 		t.Fatalf("fresh doc run = %v, want RUNNING (not reset)", got.Run)
+	}
+}
+
+// TestResetRunningWithoutIngestionTask_Conditional: the orphan-document reset is
+// conditional at write time — a stale candidate is only reset if it is still
+// RUNNING, still stale, and still has no ingestion_task row. A document that was
+// enqueued (task row created), completed, or is still within the enqueue window
+// after being listed is left alone.
+func TestResetRunningWithoutIngestionTask_Conditional(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	run := string(entity.TaskStatusRunning)
+	unstart := string(entity.TaskStatusUnstart)
+	done := string(entity.TaskStatusDone)
+	olderThan := time.Now().Add(-5 * time.Minute)
+
+	createDoc := func(id string, r *string, progress float64) {
+		t.Helper()
+		name := id + ".pdf"
+		loc := "doc_store/" + id
+		if err := db.Create(&entity.Document{
+			ID: id, KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+			CreatedBy: "u1", Name: &name, Location: &loc, Status: testutil.StrPtr("1"),
+			Type: "pdf", Suffix: "pdf", Run: r, Progress: progress,
+		}).Error; err != nil {
+			t.Fatalf("create doc %s: %v", id, err)
+		}
+	}
+	age := func(id string, when time.Time) {
+		t.Helper()
+		mustAffectRows(t, db.Model(&entity.Document{}).Where("id = ?", id).
+			Update("update_date", when), 1)
+	}
+	resetAndLoad := func(id string) (bool, entity.Document) {
+		t.Helper()
+		reset, err := dao.NewDocumentDAO().ResetRunningWithoutIngestionTask(context.Background(), db, id, olderThan)
+		if err != nil {
+			t.Fatalf("reset %s: %v", id, err)
+		}
+		var got entity.Document
+		if err := db.First(&got, "id = ?", id).Error; err != nil {
+			t.Fatalf("load %s: %v", id, err)
+		}
+		return reset, got
+	}
+
+	// Stale orphan → reset.
+	createDoc("orphan", &run, 0.5)
+	age("orphan", time.Now().Add(-10*time.Minute))
+	reset, got := resetAndLoad("orphan")
+	if !reset {
+		t.Fatal("expected stale orphan document to be reset")
+	}
+	if got.Run == nil || *got.Run != unstart || got.Progress != 0 {
+		t.Fatalf("orphan after reset: run=%v progress=%v, want unstart/0", got.Run, got.Progress)
+	}
+
+	// Stale RUNNING doc that gained a task row → NOT reset (enqueue won the race).
+	createDoc("has-task", &run, 0.5)
+	age("has-task", time.Now().Add(-10*time.Minute))
+	if err := db.Create(&entity.IngestionTask{
+		ID: "task-for-has-task", UserID: "u1", DocumentID: "has-task", DatasetID: "kb-1", Status: common.RUNNING,
+	}).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	reset, got = resetAndLoad("has-task")
+	if reset {
+		t.Fatal("expected document with an ingestion_task row NOT to be reset")
+	}
+	if got.Run == nil || *got.Run != run {
+		t.Fatalf("has-task run = %v, want RUNNING", got.Run)
+	}
+
+	// Fresh RUNNING doc (no task row) → NOT reset (still within the enqueue window).
+	createDoc("fresh", &run, 0.25)
+	age("fresh", time.Now())
+	reset, _ = resetAndLoad("fresh")
+	if reset {
+		t.Fatal("expected fresh RUNNING document NOT to be reset")
+	}
+
+	// Terminal doc (no task row) → NOT reset (would clobber a completed state).
+	createDoc("done", &done, 1)
+	age("done", time.Now().Add(-10*time.Minute))
+	reset, _ = resetAndLoad("done")
+	if reset {
+		t.Fatal("expected terminal document NOT to be reset")
 	}
 }

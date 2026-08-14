@@ -559,17 +559,22 @@ func (e *Ingestor) reconcileOnce() {
 	}
 
 	// 4) Documents left RUNNING with no ingestion_task row (normal flows avoid
-	// this, but crashed/aborted flows can leave it) → reset to unstart.
+	// this, but crashed/aborted flows can leave it) → reset to unstart. The reset
+	// is conditional at write time (still RUNNING, still stale, still no task
+	// row), so a candidate listed here cannot overwrite a document that was
+	// enqueued or completed between the list and the update.
 	if ids, err := dao.NewDocumentDAO().ListRunningWithoutIngestionTask(ctx, dao.DB, now.Add(-orphanedDocumentResetAfter), reconcileBatchLimit); err != nil {
 		common.Error("reconcile: list documents running without task", err)
 	} else {
 		for _, id := range ids {
-			if err := dao.DB.Model(&entity.Document{}).Where("id = ?", id).
-				Updates(map[string]interface{}{"run": string(entity.TaskStatusUnstart), "progress": 0}).Error; err != nil {
+			reset, err := dao.NewDocumentDAO().ResetRunningWithoutIngestionTask(ctx, dao.DB, id, now.Add(-orphanedDocumentResetAfter))
+			if err != nil {
 				common.Error(fmt.Sprintf("reconcile: reset document %s run", id), err)
 				continue
 			}
-			common.Warn(fmt.Sprintf("reconcile: reset document %s to unstart (no ingestion task)", id))
+			if reset {
+				common.Warn(fmt.Sprintf("reconcile: reset document %s to unstart (no ingestion task)", id))
+			}
 		}
 	}
 }

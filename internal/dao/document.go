@@ -503,3 +503,20 @@ func (dao *DocumentDAO) ListRunningWithoutIngestionTask(ctx context.Context, db 
 		Pluck("document.id", &ids).Error
 	return ids, err
 }
+
+// ResetRunningWithoutIngestionTask resets an orphaned RUNNING document (no
+// ingestion_task row, status row unchanged since olderThan) to unstart with
+// progress cleared. The reset is conditional at write time — run must still be
+// RUNNING, update_date still before olderThan, and still no task row — so a
+// candidate selected earlier cannot overwrite a document that was enqueued or
+// completed in the meantime. Returns whether a row was updated.
+func (dao *DocumentDAO) ResetRunningWithoutIngestionTask(ctx context.Context, db *gorm.DB, id string, olderThan time.Time) (bool, error) {
+	res := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("id = ? AND run = ? AND update_date < ? AND NOT EXISTS (SELECT 1 FROM ingestion_task t WHERE t.document_id = document.id)",
+			id, string(entity.TaskStatusRunning), olderThan).
+		Updates(map[string]interface{}{"run": string(entity.TaskStatusUnstart), "progress": 0})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}

@@ -326,7 +326,7 @@ func TestProcessMessage_ChannelFullBlocks(t *testing.T) {
 	ingestor := NewIngestor("test", 2, []string{"pdf"})
 	ingestor.heartbeatInterval = 20 * time.Millisecond // observe the blocked-wait heartbeat
 	for i := 0; i < cap(ingestor.taskChan); i++ {
-		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(context.Background(), &entity.IngestionTask{ID: "filler"})
 	}
 	// Even on assertion failure, drain the channel so the blocked goroutine
 	// never leaks beyond the test.
@@ -400,7 +400,7 @@ func TestProcessMessage_MemoryTaskChannelFullBlocks(t *testing.T) {
 	// maxConcurrency=1 → channel cap=2. Fill it completely so queueTaskCtx
 	// blocks for the memory task.
 	for i := 0; i < cap(ingestor.taskChan); i++ {
-		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(context.Background(), &entity.IngestionTask{ID: "filler"})
 	}
 	t.Cleanup(func() {
 		for i := 0; i < cap(ingestor.taskChan); i++ {
