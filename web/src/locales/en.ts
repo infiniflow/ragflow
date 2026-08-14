@@ -60,6 +60,8 @@ export default {
       s: 'S',
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
+      modelUnavailable:
+        'The previously selected model has been deleted, please select another one',
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',

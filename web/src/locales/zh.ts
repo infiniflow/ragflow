@@ -49,6 +49,7 @@ export default {
       s: '秒',
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
+      modelUnavailable: '之前选择的模型已被删除，请重新选择',
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',

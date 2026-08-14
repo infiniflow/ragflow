@@ -18,16 +18,8 @@
 
 import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
-import {
-  LLMIdFormField,
-  LlmSettingEnabledSchema,
-  LlmSettingFieldItems,
-  LlmSettingFieldSchema,
-} from '@/components/llm-setting-items/next';
-import {
-  MetadataFilter,
-  MetadataFilterSchema,
-} from '@/components/metadata-filter';
+import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
+import { MetadataFilter } from '@/components/metadata-filter';
 import { ModelTreeSelect } from '@/components/model-tree-select';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
@@ -52,13 +44,17 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import {
   ISearchAppDetailProps,
   IUpdateSearchProps,
   IllmSettingProps,
   useUpdateSearch,
 } from '../next-searches/hooks';
+import {
+  SearchSettingFormData,
+  useRevalidatePersistedModels,
+  useSearchSettingFormSchema,
+} from './search-setting-hooks';
 
 interface SearchSettingProps {
   open: boolean;
@@ -67,72 +63,20 @@ interface SearchSettingProps {
   data: ISearchAppDetailProps;
 }
 
-const SearchSettingFormSchema = z
-  .object({
-    search_id: z.string().optional(),
-    name: z.string().min(1, 'Name is required'),
-    avatar: z.string().optional(),
-    description: z.string().optional(),
-    search_config: z.object({
-      kb_ids: z.array(z.string()).min(1, 'At least one dataset is required'),
-      vector_similarity_weight: z.number().min(0).max(1),
-      web_search: z.boolean(),
-      similarity_threshold: z.number(),
-      use_kg: z.boolean(),
-      rerank_id: z.string(),
-      use_rerank: z.boolean(),
-      top_k: z.number(),
-      summary: z.boolean(),
-      llm_setting: z.object({ ...LlmSettingFieldSchema, ...LLMIdFormField }),
-      related_search: z.boolean(),
-      query_mindmap: z.boolean(),
-      doc_ids: z.array(z.string()),
-      chat_id: z.string(),
-      highlight: z.boolean(),
-      keyword: z.boolean(),
-      chat_settingcross_languages: z.array(z.string()),
-      reference_metadata: z
-        .object({
-          include: z.boolean().optional(),
-          fields: z.array(z.string()).optional(),
-        })
-        .optional(),
-      ...MetadataFilterSchema,
-    }),
-    ...LlmSettingEnabledSchema,
-  })
-  .superRefine((data, ctx) => {
-    if (data.search_config.use_rerank && !data.search_config.rerank_id) {
-      ctx.addIssue({
-        path: ['search_config', 'rerank_id'],
-        message: 'Rerank model is required when rerank is enabled',
-        code: z.ZodIssueCode.custom,
-      });
-    }
-
-    if (data.search_config.summary && !data.search_config.llm_setting?.llm_id) {
-      ctx.addIssue({
-        path: ['search_config', 'llm_setting', 'llm_id'],
-        message: 'Model is required when AI Summary is enabled',
-        code: z.ZodIssueCode.custom,
-      });
-    }
-  });
-type SearchSettingFormData = z.infer<typeof SearchSettingFormSchema>;
-const SearchSetting: React.FC<SearchSettingProps> = ({
+function SearchSetting({
   open = false,
   setOpen,
   className,
   data,
-}) => {
+}: SearchSettingProps) {
   const [width0, setWidth0] = useState('w-[440px]');
   const { search_config } = data || {};
   const { llm_setting } = search_config || {};
-  const formMethods = useForm<SearchSettingFormData>({
-    resolver: zodResolver(SearchSettingFormSchema),
-  });
-
   const { t } = useTranslation();
+  const { formSchema, modelsFetched } = useSearchSettingFormSchema();
+  const formMethods = useForm<SearchSettingFormData>({
+    resolver: zodResolver(formSchema),
+  });
   const descriptionDefaultValue = t('search.descriptionValue');
   const resetForm = useCallback(() => {
     formMethods.reset({
@@ -197,15 +141,14 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     }
   }, [open]);
 
-  const rerankModelDisabled = useWatch({
-    control: formMethods.control,
-    name: 'search_config.use_rerank',
-  });
+  const { rerankModelEnabled, aiSummaryEnabled } = useRevalidatePersistedModels(
+    {
+      control: formMethods.control,
+      trigger: formMethods.trigger,
+      modelsFetched,
+    },
+  );
 
-  const aiSummaryDisabled = useWatch({
-    control: formMethods.control,
-    name: 'search_config.summary',
-  });
   const selectedKbIds = useWatch({
     control: formMethods.control,
     name: 'search_config.kb_ids',
@@ -259,11 +202,11 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
   useEffect(() => {
-    if (prevRerankEnabled.current === true && rerankModelDisabled === false) {
+    if (prevRerankEnabled.current === true && rerankModelEnabled === false) {
       formMethods.setValue('search_config.top_k', 1024);
     }
-    prevRerankEnabled.current = rerankModelDisabled;
-  }, [rerankModelDisabled, formMethods]);
+    prevRerankEnabled.current = rerankModelEnabled;
+  }, [rerankModelEnabled, formMethods]);
 
   const { updateSearch } = useUpdateSearch();
   const [formSubmitLoading, setFormSubmitLoading] = useState(false);
@@ -452,7 +395,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-            {rerankModelDisabled && (
+            {rerankModelEnabled && (
               <>
                 <FormField
                   control={formMethods.control}
@@ -525,7 +468,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 </FormItem>
               )}
             />
-            {aiSummaryDisabled && (
+            {aiSummaryEnabled && (
               // <LlmSettingFieldItems
               //   prefix="search_config.llm_setting"
               //   options={aiSummeryModelOptions}
@@ -618,6 +561,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       </div>
     </div>
   );
-};
+}
 
 export { SearchSetting };
