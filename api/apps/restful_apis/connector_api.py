@@ -271,9 +271,38 @@ async def test_connector(connector_id):
 
         return get_json_result(data=True)
 
+    if conn.source == DocumentSource.OBSIDIAN:
+        from common.data_source.obsidian_connector import ObsidianConnector
+
+        def _validate_obsidian():
+            connector = ObsidianConnector(
+                vault_path=config.get("vault_path", ""),
+                batch_size=config.get("batch_size", 2),
+            )
+            connector.load_credentials(credentials)
+            connector.validate_connector_settings()
+
+        try:
+            await asyncio.to_thread(_validate_obsidian)
+        except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
+            return get_json_result(
+                code=RetCode.DATA_ERROR,
+                message=str(exc),
+                data=False,
+            )
+        except Exception as exc:
+            logging.exception("Obsidian connector validation failed: %s", exc)
+            return get_json_result(
+                code=RetCode.SERVER_ERROR,
+                message="Obsidian connector validation failed, please check logs.",
+                data=False,
+            )
+
+        return get_json_result(data=True)
+
     return get_json_result(
         code=RetCode.ARGUMENT_ERROR,
-        message="Test endpoint currently supports only REST API and BigQuery connectors.",
+        message="Test endpoint currently supports only REST API, BigQuery, and Obsidian connectors.",
         data=False,
     )
 

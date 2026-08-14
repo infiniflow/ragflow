@@ -77,6 +77,7 @@ class DocumentSource(str, Enum):
     OUTLOOK = "outlook"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
+    OBSIDIAN = "obsidian"
 
 
 class FileOrigin(str, Enum):

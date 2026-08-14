@@ -70,6 +70,7 @@ from common.data_source import (
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
+    ObsidianConnector,
 )
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
@@ -2136,6 +2137,32 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Obsidian(SyncBase):
+    SOURCE_NAME: str = FileSource.OBSIDIAN
+
+    async def _generate(self, task: dict):
+        self.connector = ObsidianConnector(
+            vault_path=self.conf["vault_path"],
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf.get("credentials") or {})
+        self.connector.validate_connector_settings()
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info("Connect to Obsidian vault: %s %s", self.conf["vault_path"], begin_info)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -2172,6 +2199,7 @@ func_factory = {
     FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.OBSIDIAN: Obsidian,
 }
 
 
