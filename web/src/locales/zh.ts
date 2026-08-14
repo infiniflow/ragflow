@@ -421,7 +421,7 @@ export default {
         '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
       update: '更新',
       updateTooltip:
-        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
+        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档，{{changed}} 个已变更文档。点击编译并合并到当前 Wiki。',
       updateSheetTitle: '更新 Wiki',
       updateStructureSheetTitle: '更新{{name}}',
       updateStructureTooltip:

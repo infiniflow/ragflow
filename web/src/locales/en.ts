@@ -467,7 +467,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Are you sure you want to clear all wiki pages in this dataset? This action cannot be undone.',
       update: 'Update',
       updateTooltip:
-        '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
+        '{{newlyUploaded}} new, {{removed}} removed, {{changed}} changed documents found. Click to compile and merge into current Wiki.',
       updateSheetTitle: 'Update Wiki',
       updateStructureSheetTitle: 'Update {{name}}',
       updateStructureTooltip:
