@@ -333,12 +333,14 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
 
 async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
     from common.doc_store.doc_store_base import OrderByExpr
+    from api.db.services.document_service import DocumentService
 
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return set()
 
     doc_ids: set[str] = set()
+    disabled_doc_ids = {str(doc_id) for doc_id in (await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id) or set())}
     select_fields = ["id", "doc_id"]
     offset = 0
     page_size = 1000
@@ -364,7 +366,7 @@ async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
             break
         for row in field_map.values():
             doc_id = row.get("doc_id")
-            if isinstance(doc_id, str) and doc_id:
+            if isinstance(doc_id, str) and doc_id and doc_id not in disabled_doc_ids:
                 doc_ids.add(doc_id)
         if len(field_map) < page_size:
             break
