@@ -134,10 +134,10 @@ var (
 	restAPI429DefaultWait = 30 * time.Second
 )
 
-// RestAPISSRFAllowLoopback is a test hook that lets unit tests exercise the
+// restAPISSRFAllowLoopback is a test hook that lets unit tests exercise the
 // real HTTP path against httptest servers bound to loopback. Production code
 // keeps it false so loopback/private endpoints stay blocked.
-var RestAPISSRFAllowLoopback bool
+var restAPISSRFAllowLoopback bool
 
 // NewRestAPIConnector parses a connector config and returns a connector. It
 // performs schema validation and the base-URL SSRF check but performs no
@@ -251,6 +251,9 @@ func parseRestAPIConfig(config map[string]any) (*restAPIConfig, error) {
 	cfg.ContentTemplate = stringConfig(config["content_template"])
 	if v, ok := restAPIConfigInt(config["batch_size"]); ok {
 		cfg.BatchSize = v
+	}
+	if cfg.BatchSize <= 0 {
+		cfg.BatchSize = restAPIDefaultBatchSize
 	}
 	if v, ok := restAPIConfigInt(config["max_pages"]); ok {
 		cfg.MaxPages = v
@@ -778,7 +781,6 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 func newRestAPIPinnedTransport(hostname string, pinIP net.IP) *http.Transport {
 	dialer := &net.Dialer{Timeout: restAPIRequestTimeout, KeepAlive: 30 * time.Second}
 	return &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			_, port, err := net.SplitHostPort(addr)
 			if err != nil {
@@ -912,7 +914,7 @@ func validateRestAPIURLForSSRF(rawURL string) error {
 	if strings.EqualFold(hostname, "localhost") {
 		return &ConnectorValidationError{Message: fmt.Sprintf("REST API connector URL hostname %q is not allowed (localhost is blocked).", hostname)}
 	}
-	if RestAPISSRFAllowLoopback {
+	if restAPISSRFAllowLoopback {
 		return nil
 	}
 	addrs, err := net.LookupIP(hostname)
@@ -946,7 +948,7 @@ func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, e
 	if hostname == "" {
 		return "", nil, fmt.Errorf("URL is missing a host.")
 	}
-	if RestAPISSRFAllowLoopback {
+	if restAPISSRFAllowLoopback {
 		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 		if err != nil {
 			return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)

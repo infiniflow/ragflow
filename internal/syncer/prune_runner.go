@@ -53,6 +53,9 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 		if errors.Is(err, syncerconnector.ErrPruneUnsupported) {
 			// Connectors without a slim snapshot interface (e.g. REST API)
 			// complete PRUNE as a no-op without deleting anything.
+			if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+				return "", err
+			}
 			common.Warn("prune unsupported by connector, completing as no-op", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
 			return r.taskService.CompletePrune(ctx, taskContext, 0)
 		}

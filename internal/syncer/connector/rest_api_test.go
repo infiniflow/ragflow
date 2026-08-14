@@ -32,7 +32,7 @@ import (
 
 func withRestAPITestHooks(t *testing.T) {
 	t.Helper()
-	origLoopback := RestAPISSRFAllowLoopback
+	origLoopback := restAPISSRFAllowLoopback
 	origTries := restAPIRetryTries
 	origBaseDelay := restAPIRetryBaseDelay
 	origMaxDelay := restAPIRetryMaxDelay
@@ -40,7 +40,7 @@ func withRestAPITestHooks(t *testing.T) {
 	origJitter := restAPIRetryJitter
 	orig429Waits := restAPI429MaxWaits
 	orig429Wait := restAPI429DefaultWait
-	RestAPISSRFAllowLoopback = true
+	restAPISSRFAllowLoopback = true
 	restAPIRetryTries = 3
 	restAPIRetryBaseDelay = time.Millisecond
 	restAPIRetryMaxDelay = 10 * time.Millisecond
@@ -49,7 +49,7 @@ func withRestAPITestHooks(t *testing.T) {
 	restAPI429MaxWaits = 3
 	restAPI429DefaultWait = time.Millisecond
 	t.Cleanup(func() {
-		RestAPISSRFAllowLoopback = origLoopback
+		restAPISSRFAllowLoopback = origLoopback
 		restAPIRetryTries = origTries
 		restAPIRetryBaseDelay = origBaseDelay
 		restAPIRetryMaxDelay = origMaxDelay
@@ -95,6 +95,20 @@ func TestNewRestAPIConnectorDefaults(t *testing.T) {
 	}
 }
 
+func TestNewRestAPIConnectorClampsNonPositiveBatchSize(t *testing.T) {
+	withRestAPITestHooks(t)
+	for _, batchSize := range []any{0, -1} {
+		c := mustRestAPIConnector(t, map[string]any{
+			"url":            "https://example.com/api",
+			"content_fields": "title",
+			"batch_size":     batchSize,
+		})
+		if c.cfg.BatchSize != restAPIDefaultBatchSize {
+			t.Fatalf("batch_size=%v parsed to %d, want %d", batchSize, c.cfg.BatchSize, restAPIDefaultBatchSize)
+		}
+	}
+}
+
 func TestNewRestAPIConnectorValidationErrors(t *testing.T) {
 	withRestAPITestHooks(t)
 	tests := []struct {
@@ -125,8 +139,8 @@ func TestNewRestAPIConnectorValidationErrors(t *testing.T) {
 }
 
 func TestNewRestAPIConnectorBlocksPrivateAddress(t *testing.T) {
-	RestAPISSRFAllowLoopback = false
-	defer func() { RestAPISSRFAllowLoopback = false }()
+	restAPISSRFAllowLoopback = false
+	defer func() { restAPISSRFAllowLoopback = false }()
 	_, err := NewRestAPIConnector(map[string]any{
 		"url":            "http://127.0.0.1:8080/api",
 		"content_fields": "title",
