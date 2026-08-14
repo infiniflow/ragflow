@@ -32,7 +32,7 @@ from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_
 from common import settings
 from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum
 from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
-from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD, _chunk_hash
+from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
 # KB-wide structure-graph merge index types. Each (re)builds the ``dataset_graph``
 # rows for one structure kind via ``rebuild_dataset_structure_graph_json``; the
@@ -2229,116 +2229,50 @@ def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc
 
 async def _wiki_chunk_alteration(
     index_nm,
+    tenant_id: str,
     dataset_id: str,
-    active_doc_ids: set[str],
-    disabled_doc_ids: set[str],
+    eligible_doc_ids: set[str],
+    involved_doc_ids: set[str],
 ) -> dict:
     """Compare active source chunks with the hashes used by Wiki MAP.
 
     Document-level provenance cannot detect an edited, added, or removed
     chunk.  The MAP resume rows already contain the exact chunk hash used by
     compilation, so they are the authoritative compiled-side snapshot.
-    A document is changed when a chunk is added, removed, or has a different
-    hash. A disabled document with retained MAP rows is also changed because
-    those rows must no longer participate in the next Wiki build.
+    A previously involved document is changed when a chunk is added, removed,
+    or has a different hash. Documents removed or disabled at document level
+    remain represented by the existing ``removed`` fields rather than being
+    duplicated in ``changed``.
     """
-    from common.doc_store.doc_store_base import OrderByExpr
-
     empty = {
         "changed": 0,
         "changed_doc_ids": [],
     }
-    if not active_doc_ids and not disabled_doc_ids:
+    if not eligible_doc_ids and not involved_doc_ids:
         return empty
 
-    current: dict[str, dict] = {}
-    for doc_id in active_doc_ids:
-        offset = 0
-        while True:
-            try:
-                res = await thread_pool_exec(
-                    settings.docStoreConn.search,
-                    ["id", "doc_id", "content_with_weight"],
-                    [],
-                    {"doc_id": [doc_id], "available_int": 1, "must_not": {"exists": "compile_kwd"}},
-                    [],
-                    OrderByExpr(),
-                    offset,
-                    1000,
-                    index_nm,
-                    [dataset_id],
-                )
-                rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight"]) or {}
-            except Exception as exc:
-                logging.exception("alteration: failed to load source chunks for doc=%s", doc_id)
-                raise RuntimeError(f"Failed to load source chunks for Wiki alteration (kb={dataset_id}, doc={doc_id})") from exc
-            if not rows:
-                break
-            for row in rows.values():
-                chunk_id = str(row.get("id") or "")
-                if not chunk_id:
-                    continue
-                current[chunk_id] = {
-                    "id": chunk_id,
-                    "doc_id": doc_id,
-                    "hash": _chunk_hash(row.get("content_with_weight") or ""),
-                }
-            if len(rows) < 1000:
-                break
-            offset += 1000
+    from rag.advanced_rag.knowlege_compile.wiki import (
+        _wiki_compare_chunk_states,
+        _wiki_load_active_map_state,
+        _wiki_scan_current_chunk_state,
+    )
 
-    compiled: dict[str, dict] = {}
-    offset = 0
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"],
-                [],
-                {"compile_kwd": ["wiki_map_extract"]},
-                [],
-                OrderByExpr(),
-                offset,
-                1000,
-                index_nm,
-                [dataset_id],
-            )
-            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"]) or {}
-        except Exception as exc:
-            logging.exception("alteration: failed to load Wiki MAP hashes for kb=%s", dataset_id)
-            raise RuntimeError(f"Failed to load Wiki MAP hashes for alteration (kb={dataset_id})") from exc
-        if not rows:
-            break
-        for row in rows.values():
-            row_doc_ids = _flatten_provenance_doc_ids(row.get("doc_id"))
-            matching_doc_ids = row_doc_ids & (active_doc_ids | disabled_doc_ids)
-            if not matching_doc_ids:
-                continue
-            doc_id = next(iter(matching_doc_ids))
-            chunk_ids = row.get("source_chunk_ids") or []
-            if isinstance(chunk_ids, str):
-                chunk_ids = [chunk_ids]
-            saved_hash = row.get("chunk_hash_kwd")
-            saved_hash = saved_hash if isinstance(saved_hash, str) else ""
-            for chunk_id in chunk_ids:
-                chunk_id = str(chunk_id or "")
-                if chunk_id:
-                    compiled.setdefault(chunk_id, {"id": chunk_id, "doc_id": doc_id, "hash": saved_hash})
-        if len(rows) < 1000:
-            break
-        offset += 1000
+    del index_nm  # the shared scanner resolves the tenant index consistently
+    try:
+        current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
+        previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
+    except Exception as exc:
+        logging.exception("alteration: failed to compare Wiki chunk state for kb=%s", dataset_id)
+        raise RuntimeError(f"Failed to compare Wiki chunk state for alteration (kb={dataset_id})") from exc
 
-    changed_doc_ids: set[str] = set()
-    for chunk_id, item in current.items():
-        old = compiled.get(chunk_id)
-        if old is None or old["hash"] != item["hash"]:
-            changed_doc_ids.add(item["doc_id"])
-
-    # A missing current chunk means it was removed from an active document.
-    # For a disabled document, all retained MAP chunks are stale by definition.
-    for chunk_id, item in compiled.items():
-        if item["doc_id"] in disabled_doc_ids or (item["doc_id"] in active_doc_ids and chunk_id not in current):
-            changed_doc_ids.add(item["doc_id"])
+    delta = _wiki_compare_chunk_states(previous, current)
+    changed_doc_ids = {
+        str((current.get(chunk_id) or previous.get(chunk_id) or {}).get("doc_id") or "") for chunk_id in delta["new_chunk_ids"] | delta["changed_chunk_ids"] | delta["deleted_chunk_ids"]
+    }
+    # ``newly_uploaded`` owns eligible documents which have not contributed to
+    # the current Wiki; ``removed`` owns previously involved documents which
+    # are no longer eligible. Keep ``changed`` disjoint from both categories.
+    changed_doc_ids &= eligible_doc_ids & involved_doc_ids
 
     return {
         "changed": len(changed_doc_ids),
@@ -2496,15 +2430,19 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
         index_nm, _ = pack
         involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
         if kind == "wiki":
-            disabled_doc_ids = await _disabled_dataset_doc_ids(dataset_id)
             chunk_changes = await _wiki_chunk_alteration(
                 index_nm,
+                kb.tenant_id,
                 dataset_id,
                 eligible_doc_ids,
-                disabled_doc_ids,
+                involved_doc_ids,
             )
 
-    result = _alteration_result(current_doc_ids, involved_doc_ids, eligible_doc_ids)
+    # Wiki membership follows compilation eligibility. Disabling a document or
+    # removing its Wiki template is therefore a removal; enabling it again or
+    # restoring the template after a rebuild makes it newly uploaded.
+    alteration_current_doc_ids = eligible_doc_ids if kind == "wiki" else current_doc_ids
+    result = _alteration_result(alteration_current_doc_ids, involved_doc_ids, eligible_doc_ids)
     if chunk_changes is not None:
         result.update(chunk_changes)
     return True, result
@@ -4162,6 +4100,8 @@ async def update_wiki_page(
 # the dataset Artifact tab's graph view reads exactly this row.
 _WIKI_COMPILE_KWDS = (
     "wiki_map_extract",
+    "wiki_map_state",
+    "wiki_map_state_meta",
     "wiki_reduce_result",
     "wiki_compilation_plan",
     "wiki_page_draft",

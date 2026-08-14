@@ -1904,3 +1904,63 @@ async def test_local_split_preserves_all_members_and_original_slug():
     assert any(page_id.startswith("_new_") for page_id in split)
     assert {entity["entity_name"] for entities in split.values() for entity in entities} == set(names)
     assert "entity-0" in {entity["entity_name"] for entity in split["entity/original"]}
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_retracts_only_invalidated_chunk_claims():
+    existing_page = {
+        "claims": [
+            {"statement": "old-c1", "source_doc_id": "doc-1", "chunk_ids": ["c1"]},
+            {"statement": "keep-c2", "source_doc_id": "doc-1", "chunk_ids": ["c2"]},
+        ],
+        "source_chunk_ids": ["c1", "c2"],
+    }
+
+    delta = await _wiki._wiki_reduce_entity(
+        entity_name="Alpha",
+        new_claims=[{"statement": "new-c1", "source_doc_id": "doc-1", "chunk_ids": ["c1"]}],
+        existing_page=existing_page,
+        deleted_doc_ids=set(),
+        invalidated_chunk_ids={"c1"},
+        source_doc_ids=["doc-1"],
+        source_chunk_ids=["c1", "c2"],
+    )
+
+    assert delta["action"] == "update"
+    assert [claim["statement"] for claim in delta["retractions"]] == ["old-c1"]
+    assert [claim["statement"] for claim in delta["additions"]] == ["new-c1"]
+    assert delta["source_chunk_ids"] == ["c1", "c2"]
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_deletes_page_when_last_chunk_is_removed():
+    delta = await _wiki._wiki_reduce_entity(
+        entity_name="Alpha",
+        new_claims=[],
+        existing_page={
+            "claims": [{"statement": "only claim", "source_doc_id": "doc-1", "chunk_ids": ["c1"]}],
+            "source_chunk_ids": ["c1"],
+        },
+        deleted_doc_ids=set(),
+        invalidated_chunk_ids={"c1"},
+    )
+
+    assert delta["action"] == "delete"
+    assert delta["source_chunk_ids"] == []
+    assert [claim["statement"] for claim in delta["retractions"]] == ["only claim"]
+
+
+def test_as_int_accepts_string_doc_store_values():
+    assert _wiki._as_int("7") == 7
+    assert _wiki._as_int(None, 3) == 3
+
+
+def test_contextual_hints_accepts_native_string_relations():
+    hints = _wiki._wiki_build_contextual_hints(
+        "entity/Alpha",
+        {"related_kb_pages_kwd": ["entity/Beta", "concept/Gamma"]},
+        {},
+    )
+
+    assert "[[entity/Beta]] — related" in hints
+    assert "[[concept/Gamma]] — related" in hints
