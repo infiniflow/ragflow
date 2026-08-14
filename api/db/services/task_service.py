@@ -143,6 +143,25 @@ def trim_header_by_lines(text: str, max_length) -> str:
     return text
 
 
+def _should_update_progress(current: float, new: float) -> bool:
+    """Decide whether ``update_progress`` should overwrite ``current`` with ``new``.
+
+    A failed task (``current == -1``) stays failed — recovery happens by
+    re-queuing a new task with progress = 0.0, not by overwriting the
+    failure marker. An in-progress task (``current >= 0``) accepts:
+    ``new == -1`` (failure transition), ``new > current`` (forward
+    progress), or ``new >= 1`` (completion — covers the case where
+    ``current == new == 1.0``, a no-op update that's still a legal
+    transition).
+
+    Closes the silent-failure bug from issue #18013 where a parser that
+    set ``-1`` was overwritten by an empty-chunk branch setting ``1.0``.
+    """
+    if current == -1:
+        return False
+    return new == -1 or new > current or new >= 1
+
+
 class TaskService(CommonService):
     """Service class for managing document processing tasks.
 
@@ -383,8 +402,13 @@ class TaskService(CommonService):
 
         Update Rules:
             - progress_msg: Always appends the new message to the existing one, and trims the result to max 3000 lines.
-            - progress: Updates when (a) new progress >= 1 (allows recovery from -1), or
-                        (b) current progress != -1 AND (new progress is -1 OR greater than existing).
+            - progress: Updates when current progress != -1 AND (new progress is -1 OR
+                        greater than existing OR new progress >= 1 for completion).
+                        A failed task (progress == -1) stays failed; ``recovery`` happens
+                        by re-queuing a new task with progress = 0.0, not by overwriting
+                        a -1 with a 1.0. This closes the silent-failure bug from #18013
+                        where a parser that set -1 was overwritten by an empty-chunk
+                        branch setting 1.0.
 
         Args:
             id (str): The unique identifier of the task to update.
@@ -407,7 +431,8 @@ class TaskService(CommonService):
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 prog = info["progress"]
-                cls.model.update(progress=prog).where((cls.model.id == id) & ((prog >= 1) | ((cls.model.progress != -1) & ((prog == -1) | (prog > cls.model.progress))))).execute()
+                if _should_update_progress(task.progress, prog):
+                    cls.model.update(progress=prog).where(cls.model.id == id).execute()
         else:
             with DB.lock("update_progress", -1):
                 if info["progress_msg"]:
@@ -415,7 +440,8 @@ class TaskService(CommonService):
                     cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
                 if "progress" in info:
                     prog = info["progress"]
-                    cls.model.update(progress=prog).where((cls.model.id == id) & ((prog >= 1) | ((cls.model.progress != -1) & ((prog == -1) | (prog > cls.model.progress))))).execute()
+                    if _should_update_progress(task.progress, prog):
+                        cls.model.update(progress=prog).where(cls.model.id == id).execute()
 
         begin_at = task.begin_at
         if begin_at is not None:
