@@ -219,6 +219,14 @@ class DocMetadataService:
         if condition is None:
             condition = {"kb_id": kb_id}
 
+        if not settings.DOC_ENGINE_INFINITY and not getattr(settings, "DOC_ENGINE_OCEANBASE", False):
+            es_client = getattr(settings.docStoreConn, "es", None)
+            if es_client is not None:
+                try:
+                    return cls._search_metadata_es(es_client, index_name, condition)
+                except Exception as e:
+                    logging.warning(f"[_search_metadata] ES stable search failed for {index_name}, falling back: {e}")
+
         # Add sort by id for ES to enable search_after on large data
         order_by = OrderByExpr()
         if not settings.DOC_ENGINE_INFINITY:
@@ -296,6 +304,113 @@ class DocMetadataService:
 
         logging.debug(f"[_search_metadata] Retrieved {len(all_results)} total results for kb_id: {kb_id}")
         return all_results
+
+    @classmethod
+    def _build_es_metadata_query(cls, condition: Dict) -> Dict:
+        bool_filter = []
+        for k, v in condition.items():
+            if not v:
+                continue
+            if k == "id":
+                values = v if isinstance(v, list) else [v]
+                bool_filter.append({
+                    "bool": {
+                        "should": [
+                            {"terms": {"id": values}},
+                            {"ids": {"values": values}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                })
+            elif isinstance(v, list):
+                bool_filter.append({"terms": {k: v}})
+            else:
+                bool_filter.append({"term": {k: v}})
+        return {"bool": {"filter": bool_filter}} if bool_filter else {"match_all": {}}
+
+    @classmethod
+    def _search_metadata_es(cls, es_client, index_name: str, condition: Dict) -> List[Dict]:
+        """Search the ES metadata index with stable pagination.
+
+        The generic ESConnection skips sorting by ``id`` because chunk indexes
+        map it as text. Metadata indexes map ``id`` as keyword, so sorting here
+        is valid and prevents offset pagination from randomly missing hits.
+        """
+        query = cls._build_es_metadata_query(condition)
+        page_size = 1000
+        search_after = None
+        all_results = []
+
+        while True:
+            body = {
+                "query": query,
+                "size": page_size,
+                "_source": ["id", "kb_id", "meta_fields"],
+                "sort": [{"id": {"order": "asc", "unmapped_type": "keyword"}}],
+            }
+            if search_after is not None:
+                body["search_after"] = search_after
+
+            results = es_client.search(index=index_name, body=body, track_total_hits=False, timeout="60s")
+            hits = results.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+
+            for hit in hits:
+                doc = hit.get("_source", {}) or {}
+                doc["id"] = doc.get("id") or hit.get("_id", "")
+                all_results.append(doc)
+
+            next_search_after = hits[-1].get("sort")
+            if len(hits) < page_size or not next_search_after or next_search_after == search_after:
+                break
+            search_after = next_search_after
+
+        logging.debug(f"[_search_metadata_es] Retrieved {len(all_results)} total results from {index_name}")
+        return all_results
+
+    @classmethod
+    def _get_metadata_for_documents_es(cls, doc_ids: List[str], kb_id: str) -> Optional[Dict[str, Dict]]:
+        if settings.DOC_ENGINE_INFINITY or getattr(settings, "DOC_ENGINE_OCEANBASE", False):
+            return None
+
+        es_client = getattr(settings.docStoreConn, "es", None)
+        if es_client is None:
+            return None
+
+        kb = Knowledgebase.get_by_id(kb_id)
+        if not kb:
+            return {}
+
+        index_name = cls._get_doc_meta_index_name(kb.tenant_id)
+        if not settings.docStoreConn.index_exist(index_name, ""):
+            return {}
+
+        unique_doc_ids = list(dict.fromkeys(doc_ids))
+        meta_mapping = {}
+        batch_size = 1000
+        for i in range(0, len(unique_doc_ids), batch_size):
+            batch = unique_doc_ids[i:i + batch_size]
+            body = {
+                "query": cls._build_es_metadata_query({"kb_id": kb_id, "id": batch}),
+                "size": len(batch),
+                "_source": ["id", "kb_id", "meta_fields"],
+            }
+            try:
+                results = es_client.search(index=index_name, body=body, track_total_hits=False, timeout="60s")
+            except Exception as e:
+                logging.warning(f"[get_metadata_for_documents] ES direct lookup failed for {index_name}, falling back: {e}")
+                return None
+            for hit in results.get("hits", {}).get("hits", []):
+                doc = hit.get("_source", {}) or {}
+                doc_id = doc.get("id") or hit.get("_id", "")
+                if not doc_id:
+                    continue
+                doc_meta = cls._extract_metadata(doc)
+                if doc_meta:
+                    meta_mapping[doc_id] = doc_meta
+
+        return meta_mapping
 
     @classmethod
     def _split_combined_values(cls, meta_fields: Dict) -> Dict:
@@ -1013,6 +1128,15 @@ class DocMetadataService:
             Dictionary mapping doc_id to meta_fields dict
         """
         try:
+            if doc_ids:
+                es_metadata = cls._get_metadata_for_documents_es(doc_ids, kb_id)
+                if es_metadata is not None:
+                    logging.debug(
+                        f"[get_metadata_for_documents] Found metadata for {len(es_metadata)}/{len(doc_ids)} "
+                        "documents using ES direct lookup"
+                    )
+                    return es_metadata
+
             condition = {"kb_id": kb_id}
             if doc_ids:
                 condition["id"] = doc_ids
