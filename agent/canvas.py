@@ -390,9 +390,12 @@ class Canvas(Graph):
         return super().__str__()
 
     def clear_history(self):
+        """Clear conversation and execution state before starting a new session."""
         self.history = []
         if isinstance(self.globals.get("sys.history"), list):
             self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas history and execution path reset")
 
     def reset(self, mem=False):
         super().reset()
