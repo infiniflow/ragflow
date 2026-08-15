@@ -73,8 +73,13 @@ class MCPToolCallSession(ToolCallSession):
         for h, v in raw_headers.items():
             nh = Template(h).safe_substitute(self._server_variables)
             nv = Template(v).safe_substitute(self._server_variables)
-            if nh.strip() and nv.strip().strip("Bearer"):
+            stripped_name = nh.strip()
+            stripped_value = nv.strip()
+            empty_authorization = stripped_name.lower() == "authorization" and stripped_value.lower() == "bearer"
+            if stripped_name and stripped_value and not empty_authorization:
                 headers[nh] = nv
+            else:
+                logging.debug("Rejected MCP header during validation")
 
         for h, v in custom_header.items():
             nh = Template(h).safe_substitute(custom_header)
