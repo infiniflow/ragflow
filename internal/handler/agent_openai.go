@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -118,7 +117,7 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 	}
 
 	completionID := req.SessionID
-	promptTokens := tokenizer.NumTokensFromString(question)
+	promptTokens := countOpenAICompatPromptTokens(req.Messages)
 	if req.Stream {
 		h.streamOpenAICompat(c, events, completionID, req.AgentID, promptTokens)
 		return
@@ -312,26 +311,14 @@ func openAICompatErrorResponse(code common.ErrorCode, err error) (int, string) {
 	}
 }
 
-func openAICompatMessageContent(value any) string {
-	switch content := value.(type) {
-	case string:
-		return content
-	case []any:
-		parts := make([]string, 0, len(content))
-		for _, rawPart := range content {
-			part, ok := rawPart.(map[string]any)
-			if !ok {
-				continue
-			}
-			if partType, _ := part["type"].(string); partType != "" && partType != "text" {
-				continue
-			}
-			if text, _ := part["text"].(string); text != "" {
-				parts = append(parts, text)
-			}
+func countOpenAICompatPromptTokens(messages []map[string]interface{}) int {
+	total := 0
+	for _, message := range messages {
+		content, err := service.NormalizeOpenAIMessageContent(message["content"])
+		if err != nil {
+			continue
 		}
-		return strings.Join(parts, "\n")
-	default:
-		return ""
+		total += tokenizer.NumTokensFromString(content)
 	}
+	return total
 }

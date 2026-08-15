@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/tokenizer"
 )
 
 // setupHandlerAgentsTestDB sets up SQLite in-memory DB with tables needed for agent handler tests.
@@ -1007,7 +1008,12 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"model":"m","messages":[{"role":"user","content":"hi"}]}`))
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"model":"m","messages":[
+			{"role":"system","content":"Be concise."},
+			{"role":"user","content":"What is 1+1?"},
+			{"role":"assistant","content":"2"},
+			{"role":"user","content":"hi"}
+		]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
@@ -1064,6 +1070,13 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	usage, ok := resp["usage"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("usage = %#v, want object", resp["usage"])
+	}
+	wantPromptTokens := tokenizer.NumTokensFromString("Be concise.") +
+		tokenizer.NumTokensFromString("What is 1+1?") +
+		tokenizer.NumTokensFromString("2") +
+		tokenizer.NumTokensFromString("hi")
+	if got := int(usage["prompt_tokens"].(float64)); got != wantPromptTokens {
+		t.Errorf("prompt_tokens = %d, want all message content counted as %d", got, wantPromptTokens)
 	}
 	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
 		t.Errorf("usage totals do not add up: %v", usage)

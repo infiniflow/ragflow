@@ -1125,7 +1125,8 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 		if role != "user" {
 			continue
 		}
-		if content := openAICompatMessageContent(messages[i]["content"]); content != "" {
+		content, err := service.NormalizeOpenAIMessageContent(messages[i]["content"])
+		if err == nil && content != "" {
 			return content
 		}
 	}

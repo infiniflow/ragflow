@@ -2537,8 +2537,8 @@ func openAICompatPriorHistory(messages []map[string]interface{}) []map[string]an
 	history := make([]map[string]any, 0, lastUser)
 	for _, message := range messages[:lastUser] {
 		role, _ := message["role"].(string)
-		content := openAICompatHistoryContent(message["content"])
-		if role == "" || content == "" {
+		content, err := NormalizeOpenAIMessageContent(message["content"])
+		if err != nil || role == "" || content == "" {
 			continue
 		}
 		history = append(history, map[string]any{
@@ -2548,31 +2548,6 @@ func openAICompatPriorHistory(messages []map[string]interface{}) []map[string]an
 	}
 	return history
 }
-
-func openAICompatHistoryContent(value any) string {
-	switch content := value.(type) {
-	case string:
-		return content
-	case []any:
-		parts := make([]string, 0, len(content))
-		for _, rawPart := range content {
-			part, ok := rawPart.(map[string]any)
-			if !ok {
-				continue
-			}
-			if partType, _ := part["type"].(string); partType != "" && partType != "text" {
-				continue
-			}
-			if text, _ := part["text"].(string); text != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.Join(parts, "\n")
-	default:
-		return ""
-	}
-}
-
 func pythonHistoryRepr(value any) string {
 	switch item := value.(type) {
 	case nil:
