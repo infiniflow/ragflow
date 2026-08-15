@@ -170,6 +170,7 @@ class AgenticState(TypedDict, total=False):
     loop: int
     max_loops: int
     feedback: str  # replanning feedback
+    plan_seen: list  # chunk keys already grounded to the planner (cross-round dedup)
 
 
 # ── Think tag helpers ──

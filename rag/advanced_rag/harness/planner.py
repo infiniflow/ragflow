@@ -13,6 +13,54 @@ from rag.advanced_rag.harness.types import ClaimTarget, RouteDecision, WorkflowP
 
 _LOG = logging.getLogger(__name__)
 
+# Grounding budget for the planner. The planner decomposes the question into
+# claims — for most questions that is a pure structural reasoning task that does
+# NOT need the full preliminary corpus. Benchmark logs show planner grounding was
+# the single largest token sink (~5.2K-113K tokens/call, ~54% of all prompt
+# tokens) because REPLAN fed it EVERY accumulated chunk and it grew each round.
+# We bound it to the top-N most-relevant chunks AND dedupe across rounds so it
+# stays small without dropping the facts (coordinates/names/years) that a few
+# questions genuinely need. Claim research is untouched — it searches on its own.
+_PLAN_GROUNDING_TOP_N = 5
+
+
+def _plan_chunk_key(ck: dict) -> str:
+    return ck.get("chunk_id") or ck.get("id") or str(id(ck))
+
+
+def _select_plan_grounding(seed_chunks, state: dict) -> list[dict]:
+    """Return the top-N most-relevant chunks not yet grounded this conversation.
+
+    - Cross-round dedup: chunks already shown to the planner in an earlier round
+      are skipped, so REPLAN does not re-bill the same grounding verbatim.
+    - Top-N: among the fresh chunks keep only the ``_PLAN_GROUNDING_TOP_N`` with
+      the highest similarity, so grounding never balloons as kbinfos grows.
+
+    The set of seen keys is stored on ``state["plan_seen"]`` and carried across
+    rounds by the orchestrator (the same state dict is reused for REPLAN).
+    """
+    seen = set(state.get("plan_seen") or [])
+    fresh = []
+    for c in seed_chunks:
+        k = _plan_chunk_key(c)
+        if k not in seen:
+            fresh.append(c)
+    # Top-N by similarity (highest relevance first). kbinfos chunks carry a
+    # similarity from their originating search; ties keep insertion order.
+    if len(fresh) > _PLAN_GROUNDING_TOP_N:
+        fresh.sort(key=lambda c: float(c.get("similarity") or 0.0), reverse=True)
+        fresh = fresh[:_PLAN_GROUNDING_TOP_N]
+    # Safety net: if every chunk was already grounded (corpus unchanged between
+    # rounds), fall back to the single most-relevant seen chunk so the planner
+    # never gets an empty grounding — an empty context can silently degrade a
+    # REPLAN that still needs the top passage as a reference point.
+    if not fresh and seen:
+        best = max(seed_chunks, key=lambda c: float(c.get("similarity") or 0.0))
+        fresh = [best]
+    # Record what we are about to show so later rounds skip it.
+    state["plan_seen"] = sorted(seen | {_plan_chunk_key(c) for c in fresh})
+    return fresh
+
 
 def _extract_json(text: str) -> dict:
     text = re.sub(r"^.*</think>", "", text, flags=re.DOTALL).strip()
@@ -65,7 +113,10 @@ async def planner_node(state: dict, tools) -> dict:
     mode = get_mode(route.thinking_mode)
     max_claims = _get_max_claims(mode.label)
     detail_level = _get_detail_level(mode.label)
-    retrieved = _format_seed_chunks(state.get("seed_chunks"), tools)
+    # Bound grounding: top-N most-relevant chunks, deduped across rounds.
+    # Claim research is NOT affected — it searches on its own per claim.
+    grounding_chunks = _select_plan_grounding(state.get("seed_chunks") or [], state)
+    retrieved = _format_seed_chunks(grounding_chunks, tools)
 
     try:
         prompt = decompose_prompt.format(
