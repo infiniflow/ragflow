@@ -716,11 +716,15 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 // event, trailing `data:[DONE]\n\n`) without standing up the eino
 // runner or a live DB.
 type stubChatRunner struct {
-	events []canvas.RunEvent
-	err    error
+	events    []canvas.RunEvent
+	err       error
+	sessionID string
+	userInput any
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	s.sessionID = sessionID
+	s.userInput = userInput
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -995,10 +999,10 @@ func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userI
 	return ch, nil
 }
 
-// TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices covers
-// the openai-compatible non-stream branch — the test contract requires
-// "choices" at the top level (not inside data).
-func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T) {
+// TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion verifies
+// the non-stream branch returns the direct OpenAI completion object and that
+// Agent events are converted into one final assistant message.
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1008,18 +1012,93 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T)
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"content":"hello "}`},
+		{Type: "message", Data: `{"content":"world"}`},
+		{Type: "message_end", Data: `{"reference":{"chunks":[]}}`},
+		{Type: "workflow_finished", Data: `{"outputs":"hello world"}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
+	if runner.userInput != "hi" {
+		t.Errorf("runner userInput = %v, want hi", runner.userInput)
+	}
+	if runner.sessionID == "" {
+		t.Error("runner sessionID should be generated for a new OpenAI-compatible request")
+	}
 
 	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	data, _ := resp["data"].(map[string]interface{})
-	if data == nil {
-		t.Fatalf("response should contain 'data', got keys: %v", resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
 	}
-	if _, ok := data["choices"]; !ok {
-		t.Errorf("response data should contain 'choices', got keys: %v", data)
+	if resp["object"] != "chat.completion" {
+		t.Fatalf("object = %v, want chat.completion; response=%v", resp["object"], resp)
+	}
+	if _, wrapped := resp["code"]; wrapped {
+		t.Fatalf("OpenAI response must not use the RAGFlow REST envelope: %v", resp)
+	}
+	choices, ok := resp["choices"].([]interface{})
+	if !ok || len(choices) != 1 {
+		t.Fatalf("choices = %#v, want one choice", resp["choices"])
+	}
+	choice := choices[0].(map[string]interface{})
+	message := choice["message"].(map[string]interface{})
+	if message["content"] != "hello world" {
+		t.Errorf("content = %v, want hello world", message["content"])
+	}
+	if message["role"] != "assistant" {
+		t.Errorf("role = %v, want assistant", message["role"])
+	}
+	if choice["finish_reason"] != "stop" {
+		t.Errorf("finish_reason = %v, want stop", choice["finish_reason"])
+	}
+	if _, ok := message["reference"]; !ok {
+		t.Errorf("message should include reference, got %v", message)
+	}
+	usage, ok := resp["usage"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("usage = %#v, want object", resp["usage"])
+	}
+	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
+		t.Errorf("usage totals do not add up: %v", usage)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamUsesOpenAIChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"content":"hello"}`},
+		{Type: "message_end", Data: `{"reference":{"chunks":[]}}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `"code":0`) || strings.Contains(body, `"data":{"choices"`) {
+		t.Fatalf("OpenAI stream must not use the RAGFlow REST envelope: %s", body)
+	}
+	if !strings.Contains(body, `"object":"chat.completion.chunk"`) {
+		t.Errorf("stream should contain OpenAI chunk objects: %s", body)
+	}
+	if !strings.Contains(body, `"content":"hello"`) {
+		t.Errorf("stream should contain the Agent message delta: %s", body)
+	}
+	if !strings.Contains(body, `"finish_reason":"stop"`) {
+		t.Errorf("stream should contain a final stop chunk: %s", body)
+	}
+	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
+		t.Errorf("stream should end with [DONE], got %q", body)
 	}
 }
 
