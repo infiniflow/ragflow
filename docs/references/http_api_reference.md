@@ -5509,14 +5509,14 @@ Failure:
 
 ### List agents
 
-**GET** `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id}`
+**GET** `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}`
 
 Lists agents.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id}`
+- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -5524,7 +5524,7 @@ Lists agents.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id} \
+     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5540,10 +5540,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`
-  The ID of the agent to retrieve.
-- `title`: (*Filter parameter*), `string`
-  The name of the agent to retrieve.
+- `keywords`: (*Filter parameter*), `string`
+  Filters agent titles using a case-insensitive substring. When compilation template groups are included in the response, it also filters their names.
 
 #### Response
 
