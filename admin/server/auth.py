@@ -36,6 +36,7 @@ from common.time_utils import current_timestamp, datetime_format, get_format_tim
 from common.connection_utils import sync_construct_response
 from common import settings
 
+
 # The admin server reports DEFAULT_SUPERUSER_EMAIL via
 # `services.EnvironmentsMgr.get_all()` and the admin CLI's "list envs"
 # output, so operators reasonably expect the env value to drive the
@@ -59,15 +60,11 @@ def _required_env(name, default):
     value = os.getenv(name, default)
     if not value:
         logging.error(
-            "admin server: %s is set but empty; either unset it (the "
-            "default %r will be used) or provide a real value",
+            "admin server: %s is set but empty; either unset it (the default %r will be used) or provide a real value",
             name,
             default,
         )
-        raise RuntimeError(
-            f"admin server: {name} is set but empty; either unset it "
-            f"(the default {default!r} will be used) or provide a real value"
-        )
+        raise RuntimeError(f"admin server: {name} is set but empty; either unset it (the default {default!r} will be used) or provide a real value")
     return value
 
 
@@ -151,12 +148,7 @@ def init_default_admin():
         # would skip a real active admin with a different email, and
         # the "no matching active admin" error below would never
         # surface.
-        default_admin_rows = [
-            u
-            for u in users
-            if u.email == DEFAULT_SUPERUSER_EMAIL
-            and u.is_active == ActiveEnum.ACTIVE.value
-        ]
+        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL and u.is_active == ActiveEnum.ACTIVE.value]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
@@ -192,7 +184,6 @@ def init_default_admin():
 
 
 def add_tenant_for_admin(user_info: dict, role: str):
-
     tenant = {
         "id": user_info["id"],
         "name": user_info["nickname"] + "‘s Kingdom",
