@@ -26,7 +26,7 @@ from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
 from common import settings
 from common.constants import FileSource
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 
 
 async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
@@ -450,7 +450,7 @@ async def delete_files(uid: str, file_ids: list, auth_header: str = ""):
             return False, {"success_count": success_count, "errors": errors}
         return True, {"success_count": success_count}
 
-    return await thread_pool_exec(_rm_sync)
+    return await thread_pool_exec_long_time(_rm_sync)
 
 
 async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new_name: str = None):
