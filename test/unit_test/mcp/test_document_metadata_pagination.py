@@ -16,7 +16,6 @@
 
 import importlib.util
 import re
-from collections import OrderedDict
 from pathlib import Path
 
 import pytest
@@ -55,11 +54,21 @@ def mcp_server():
 
 def _fresh_connector(mcp_server):
     connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
-    # The metadata caches are class-level OrderedDicts shared across instances;
-    # shadow them per test so cases don't pollute one another.
-    connector._dataset_metadata_cache = OrderedDict()
-    connector._document_metadata_cache = OrderedDict()
     return connector
+
+
+def test_connector_instances_do_not_share_metadata_caches(mcp_server):
+    first = mcp_server.RAGFlowConnector(base_url="https://first.example")
+    second = mcp_server.RAGFlowConnector(base_url="https://second.example")
+
+    first._set_cached_dataset_metadata("same-id", {"name": "first"})
+    first._set_cached_document_metadata_by_dataset(
+        "same-id",
+        [("doc-1", {"name": "first document"})],
+    )
+
+    assert second._get_cached_dataset_metadata("same-id") is None
+    assert second._get_cached_document_metadata_by_dataset("same-id") is None
 
 
 def _stub_get(monkeypatch, connector, total, *, code=0, page_size=30, guard=100):

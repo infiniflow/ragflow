@@ -61,14 +61,13 @@ class RAGFlowConnector:
     # Keep in sync with api.utils.pagination_utils.REST_API_MAX_PAGE_SIZE.
     _REST_API_MAX_PAGE_SIZE = 100
 
-    _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
-    _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
-
     def __init__(self, base_url: str, version="v1"):
         self.base_url = base_url
         self.version = version
         self.api_url = f"{self.base_url}/api/{self.version}"
         self._async_client = None
+        self._dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()
+        self._document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()
 
     async def _get_client(self):
         if self._async_client is None:
