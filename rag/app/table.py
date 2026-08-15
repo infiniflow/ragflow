@@ -545,7 +545,16 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [i for i in range(len(clmns)) if column_roles.get(clmns[i], "both") in ("metadata", "both")]
         if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
-            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in stored_indices}
+            # Regression for #18287: the Infinity/OceanBase path stores
+            # chunk_data keyed by the original column name (see line 609:
+            # `stored[str(col_name)] = row[col_name]`), and the SQL prompt
+            # examples reference those exact keys via
+            # `json_extract_string(chunk_data, '$.FieldName')`. Keys must
+            # therefore be the original column names — not the pinyin
+            # form (`py_clmns[i].lower()`), which silently breaks
+            # non-ASCII columns because the LLM is told `xing_ming` but
+            # `chunk_data` is keyed by `姓名`.
+            field_map = {str(clmns[i]).replace("_", " "): str(clmns[i]).replace("_", " ") for i in stored_indices}
         else:
             field_map = {clmns_map[i][0]: clmns_map[i][1] for i in stored_indices}
         logging.debug(f"Field map (sheet): {field_map}")
