@@ -93,6 +93,8 @@ func (s *AgentService) RunAgentWithWebhook(
 
 type agentSessionIDContextKey struct{}
 
+type openAICompatMessagesContextKey struct{}
+
 // WithAgentSessionID lets an HTTP boundary allocate the session identity while
 // keeping session-record persistence inside AgentService.RunAgent.
 func WithAgentSessionID(ctx context.Context, sessionID string) context.Context {
@@ -106,6 +108,33 @@ func AgentSessionIDFromContext(ctx context.Context) string {
 	}
 	sessionID, _ := ctx.Value(agentSessionIDContextKey{}).(string)
 	return sessionID
+}
+
+// WithOpenAICompatMessages attaches the complete OpenAI messages list to an
+// agent run without changing RunAgent's public argument list. The latest user
+// message remains the run input; the service uses the earlier messages to seed
+// the workflow history.
+func WithOpenAICompatMessages(ctx context.Context, messages []map[string]interface{}) context.Context {
+	if len(messages) == 0 {
+		return ctx
+	}
+
+	copied := make([]map[string]interface{}, len(messages))
+	for i, message := range messages {
+		copied[i] = make(map[string]interface{}, len(message))
+		for key, value := range message {
+			copied[i][key] = value
+		}
+	}
+	return context.WithValue(ctx, openAICompatMessagesContextKey{}, copied)
+}
+
+func openAICompatMessagesFromContext(ctx context.Context) []map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+	messages, _ := ctx.Value(openAICompatMessagesContextKey{}).([]map[string]interface{})
+	return messages
 }
 
 func emitAgentMessageEvents(emit func(string, string), answer, thinking string, reference any) {
@@ -1660,6 +1689,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if userInput != nil {
 		root["user_input"] = userInput
 	}
+	if messages := openAICompatMessagesFromContext(ctx); len(messages) > 0 {
+		root["openai_messages"] = messages
+	}
 	if len(files) > 0 {
 		root["files"] = files
 	}
@@ -1931,6 +1963,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		state.SetHistory(c.History)
+		if messages, ok := root["openai_messages"].([]map[string]interface{}); ok && len(messages) > 1 {
+			state.SetHistory(openAICompatPriorHistory(messages))
+		}
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		state.Sys["query"] = userInput
@@ -2485,6 +2520,56 @@ func renderUserHistoryValue(value any) string {
 		return strings.TrimSuffix(buf.String(), "\n")
 	default:
 		return pythonHistoryRepr(value)
+	}
+}
+
+func openAICompatPriorHistory(messages []map[string]interface{}) []map[string]any {
+	lastUser := -1
+	for i, message := range messages {
+		if role, _ := message["role"].(string); role == "user" {
+			lastUser = i
+		}
+	}
+	if lastUser <= 0 {
+		return nil
+	}
+
+	history := make([]map[string]any, 0, lastUser)
+	for _, message := range messages[:lastUser] {
+		role, _ := message["role"].(string)
+		content := openAICompatHistoryContent(message["content"])
+		if role == "" || content == "" {
+			continue
+		}
+		history = append(history, map[string]any{
+			"role":    role,
+			"content": content,
+		})
+	}
+	return history
+}
+
+func openAICompatHistoryContent(value any) string {
+	switch content := value.(type) {
+	case string:
+		return content
+	case []any:
+		parts := make([]string, 0, len(content))
+		for _, rawPart := range content {
+			part, ok := rawPart.(map[string]any)
+			if !ok {
+				continue
+			}
+			if partType, _ := part["type"].(string); partType != "" && partType != "text" {
+				continue
+			}
+			if text, _ := part["text"].(string); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return ""
 	}
 }
 

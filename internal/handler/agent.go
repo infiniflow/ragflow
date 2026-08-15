@@ -1125,8 +1125,8 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 		if role != "user" {
 			continue
 		}
-		if c, _ := messages[i]["content"].(string); c != "" {
-			return c
+		if content := openAICompatMessageContent(messages[i]["content"]); content != "" {
+			return content
 		}
 	}
 	return ""

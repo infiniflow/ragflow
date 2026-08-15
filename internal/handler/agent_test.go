@@ -713,7 +713,7 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 // SSE tests. It emits a pre-configured sequence of canvas.RunEvent
 // values on its RunAgent channel and then closes — enough to verify
 // the SSE wire format (Content-Type, one `data: {...}\n\n` frame per
-// event, trailing `data:[DONE]\n\n`) without standing up the eino
+// event, trailing `data: [DONE]\n\n`) without standing up the eino
 // runner or a live DB.
 type stubChatRunner struct {
 	events    []canvas.RunEvent
@@ -738,7 +738,7 @@ func (s *stubChatRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, 
 
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
 // path: the handler streams canvas.RunEvent frames as
-// `data: {...}\n\n` with a trailing `data:[DONE]\n\n` terminator.
+// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator.
 // The frame shape is the Python agent-canvas envelope
 // {event,message_id,task_id,session_id,data:{content}}. task_id is a wire alias
 // for session_id. See
@@ -1034,6 +1034,12 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	if resp["object"] != "chat.completion" {
 		t.Fatalf("object = %v, want chat.completion; response=%v", resp["object"], resp)
 	}
+	if resp["id"] != runner.sessionID {
+		t.Errorf("id = %v, want generated session id %q", resp["id"], runner.sessionID)
+	}
+	if resp["model"] != "a1" {
+		t.Errorf("model = %v, want agent id a1", resp["model"])
+	}
 	if _, wrapped := resp["code"]; wrapped {
 		t.Fatalf("OpenAI response must not use the RAGFlow REST envelope: %v", resp)
 	}
@@ -1064,6 +1070,77 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	}
 }
 
+func TestAgentChatCompletions_OpenAICompat_MapsErrors(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		status      int
+		errorType   string
+		wantMessage string
+	}{
+		{
+			name:        "session busy",
+			err:         service.ErrAgentSessionBusy,
+			status:      http.StatusConflict,
+			errorType:   "invalid_request_error",
+			wantMessage: "already running",
+		},
+		{
+			name:        "operating error",
+			err:         service.ErrAgentNotOwner,
+			status:      http.StatusForbidden,
+			errorType:   "permission_error",
+			wantMessage: "Only the owner",
+		},
+		{
+			name:        "data error",
+			err:         errors.New("invalid workflow input"),
+			status:      http.StatusBadRequest,
+			errorType:   "invalid_request_error",
+			wantMessage: "invalid workflow input",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions", strings.NewReader(`{
+				"agent_id":"a1",
+				"openai-compatible":true,
+				"messages":[{"role":"user","content":"hi"}]
+			}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("user", &entity.User{ID: "u1"})
+			c.Set("user_id", "u1")
+
+			runner := &stubChatRunner{err: tt.err}
+			h := &AgentHandler{chatRunner: runner}
+			h.AgentChatCompletions(c)
+
+			if w.Code != tt.status {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.status, w.Body.String())
+			}
+			var response struct {
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if response.Error.Type != tt.errorType {
+				t.Errorf("error.type = %q, want %q", response.Error.Type, tt.errorType)
+			}
+			if !strings.Contains(response.Error.Message, tt.wantMessage) {
+				t.Errorf("error.message = %q, want substring %q", response.Error.Message, tt.wantMessage)
+			}
+		})
+	}
+}
+
 func TestAgentChatCompletions_OpenAICompat_StreamUsesOpenAIChunks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1088,18 +1165,77 @@ func TestAgentChatCompletions_OpenAICompat_StreamUsesOpenAIChunks(t *testing.T) 
 	if strings.Contains(body, `"code":0`) || strings.Contains(body, `"data":{"choices"`) {
 		t.Fatalf("OpenAI stream must not use the RAGFlow REST envelope: %s", body)
 	}
-	if !strings.Contains(body, `"object":"chat.completion.chunk"`) {
-		t.Errorf("stream should contain OpenAI chunk objects: %s", body)
+	chunks, done := decodeOpenAICompatStream(t, body)
+	if !done {
+		t.Fatal("stream should end with [DONE]")
 	}
-	if !strings.Contains(body, `"content":"hello"`) {
-		t.Errorf("stream should contain the Agent message delta: %s", body)
+	if len(chunks) != 3 {
+		t.Fatalf("decoded %d chunks, want message, message_end, and final usage chunk", len(chunks))
 	}
-	if !strings.Contains(body, `"finish_reason":"stop"`) {
-		t.Errorf("stream should contain a final stop chunk: %s", body)
+	for i, chunk := range chunks {
+		if chunk["id"] != runner.sessionID {
+			t.Errorf("chunk[%d].id = %v, want %q", i, chunk["id"], runner.sessionID)
+		}
+		if chunk["model"] != "a1" {
+			t.Errorf("chunk[%d].model = %v, want a1", i, chunk["model"])
+		}
+		if chunk["object"] != "chat.completion.chunk" {
+			t.Errorf("chunk[%d].object = %v, want chat.completion.chunk", i, chunk["object"])
+		}
 	}
-	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
-		t.Errorf("stream should end with [DONE], got %q", body)
+	firstChoices, _ := chunks[0]["choices"].([]interface{})
+	if len(firstChoices) != 1 {
+		t.Fatalf("first choices = %#v, want one choice", chunks[0]["choices"])
 	}
+	firstDelta := firstChoices[0].(map[string]interface{})["delta"].(map[string]interface{})
+	if firstDelta["content"] != "hello" {
+		t.Errorf("first delta content = %v, want hello", firstDelta["content"])
+	}
+	messageEndChoices, _ := chunks[1]["choices"].([]interface{})
+	if len(messageEndChoices) != 1 {
+		t.Fatalf("message_end choices = %#v, want one choice", chunks[1]["choices"])
+	}
+	messageEndDelta := messageEndChoices[0].(map[string]interface{})["delta"].(map[string]interface{})
+	if _, ok := messageEndDelta["reference"]; !ok {
+		t.Errorf("message_end delta should include reference: %#v", messageEndDelta)
+	}
+	lastChoices, _ := chunks[2]["choices"].([]interface{})
+	if len(lastChoices) != 1 {
+		t.Fatalf("final choices = %#v, want one choice", chunks[2]["choices"])
+	}
+	lastChoice := lastChoices[0].(map[string]interface{})
+	if lastChoice["finish_reason"] != "stop" {
+		t.Errorf("final finish_reason = %v, want stop", lastChoice["finish_reason"])
+	}
+	usage, ok := chunks[2]["usage"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("final usage = %#v, want object", chunks[2]["usage"])
+	}
+	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
+		t.Errorf("stream usage totals do not add up: %v", usage)
+	}
+}
+
+func decodeOpenAICompatStream(t *testing.T, body string) ([]map[string]interface{}, bool) {
+	t.Helper()
+	frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
+	chunks := make([]map[string]interface{}, 0, len(frames))
+	done := false
+	for _, frame := range frames {
+		switch {
+		case frame == "data: [DONE]":
+			done = true
+		case strings.HasPrefix(frame, "data: "):
+			var chunk map[string]interface{}
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &chunk); err != nil {
+				t.Fatalf("decode SSE frame %q: %v", frame, err)
+			}
+			chunks = append(chunks, chunk)
+		default:
+			t.Fatalf("unexpected SSE frame %q", frame)
+		}
+	}
+	return chunks, done
 }
 
 // TestRerunAgent_RequiresAllFields covers the 101 branch: missing

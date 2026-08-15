@@ -18,13 +18,17 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
@@ -47,11 +51,11 @@ type openAICompatCompletionTokenDetails struct {
 }
 
 type openAICompatStreamDelta struct {
-	Content      any `json:"content"`
+	Content      any    `json:"content"`
 	Role         string `json:"role"`
-	FunctionCall any `json:"function_call"`
-	ToolCalls    any `json:"tool_calls"`
-	Reference    any `json:"reference,omitempty"`
+	FunctionCall any    `json:"function_call"`
+	ToolCalls    any    `json:"tool_calls"`
+	Reference    any    `json:"reference,omitempty"`
 }
 
 type openAICompatStreamChoice struct {
@@ -62,13 +66,13 @@ type openAICompatStreamChoice struct {
 }
 
 type openAICompatStreamChunk struct {
-	ID               string                     `json:"id"`
-	Object           string                     `json:"object"`
-	Created          int64                      `json:"created"`
-	Model            string                     `json:"model"`
+	ID                string                     `json:"id"`
+	Object            string                     `json:"object"`
+	Created           int64                      `json:"created"`
+	Model             string                     `json:"model"`
 	SystemFingerprint string                     `json:"system_fingerprint"`
-	Usage            *openAICompatUsage         `json:"usage"`
-	Choices          []openAICompatStreamChoice `json:"choices"`
+	Usage             *openAICompatUsage         `json:"usage"`
+	Choices           []openAICompatStreamChoice `json:"choices"`
 }
 
 type openAICompatMessage struct {
@@ -104,8 +108,9 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 		req.SessionID = utility.GenerateToken()
 	}
 
+	runContext := service.WithOpenAICompatMessages(c.Request.Context(), req.Messages)
 	events, err := h.chatRunner.RunAgent(
-		c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", question, req.Files,
+		runContext, user.ID, req.AgentID, req.SessionID, "", question, req.Files,
 	)
 	if err != nil {
 		writeOpenAICompatError(c, err)
@@ -276,11 +281,57 @@ func writeOpenAICompatSSE(c *gin.Context, payload any) error {
 }
 
 func writeOpenAICompatError(c *gin.Context, err error) {
-	_, message := mapAgentError(err)
-	c.JSON(http.StatusInternalServerError, gin.H{
+	code, message := mapAgentError(err)
+	status, errorType := openAICompatErrorResponse(code, err)
+	c.JSON(status, gin.H{
 		"error": gin.H{
 			"message": message,
-			"type":    "server_error",
+			"type":    errorType,
 		},
 	})
+}
+
+func openAICompatErrorResponse(code common.ErrorCode, err error) (int, string) {
+	if errors.Is(err, service.ErrAgentSessionBusy) {
+		return http.StatusConflict, "invalid_request_error"
+	}
+
+	switch code {
+	case common.CodeArgumentError, common.CodeDataError, common.CodeBadRequest, common.CodeParamError:
+		return http.StatusBadRequest, "invalid_request_error"
+	case common.CodeUnauthorized, common.CodeAuthenticationError:
+		return http.StatusUnauthorized, "authentication_error"
+	case common.CodeOperatingError, common.CodeForbidden, common.CodePermissionError:
+		return http.StatusForbidden, "permission_error"
+	case common.CodeNotFound:
+		return http.StatusNotFound, "not_found_error"
+	case common.CodeConflict:
+		return http.StatusConflict, "invalid_request_error"
+	default:
+		return http.StatusInternalServerError, "server_error"
+	}
+}
+
+func openAICompatMessageContent(value any) string {
+	switch content := value.(type) {
+	case string:
+		return content
+	case []any:
+		parts := make([]string, 0, len(content))
+		for _, rawPart := range content {
+			part, ok := rawPart.(map[string]any)
+			if !ok {
+				continue
+			}
+			if partType, _ := part["type"].(string); partType != "" && partType != "text" {
+				continue
+			}
+			if text, _ := part["text"].(string); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return ""
+	}
 }
