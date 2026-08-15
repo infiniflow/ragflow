@@ -20,6 +20,7 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -725,5 +726,61 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	}
 	if got := joined.String(); strings.Contains(got, "\n\n") {
 		t.Errorf("blank line survived in oversize path (Python drops it): got chunk text %q, want no blank line (\\n\\n)", got)
+	}
+}
+
+// TestApplyChildrenDelimText_DefaultsMomToCurrentChunk verifies that when an
+// incoming chunk has no Mom, the children fall back to the current chunk's
+// text (the historical behaviour preserved by the fix for #17876).
+func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q", i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_PreservesIncomingMom verifies that when a chunk
+// already has a non-empty Mom (e.g. set by an upstream delimiter branch),
+// applyChildrenDelimText forwards it to its children instead of clobbering
+// it with the current chunk's text. Regression for #17876.
+func TestApplyChildrenDelimText_PreservesIncomingMom(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma", Mom: "parent-segment-from-prior-branch"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		if c.Mom != "parent-segment-from-prior-branch" {
+			t.Errorf("child %d: Mom=%q, want preserved %q", i, c.Mom, "parent-segment-from-prior-branch")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_NilPatternIsNoop verifies the early return so
+// callers that pass a nil pattern don't accidentally clear Mom.
+func TestApplyChildrenDelimText_NilPatternIsNoop(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta", Mom: "kept"},
+	}
+	out := applyChildrenDelimText(docs, nil)
+	if len(out) != 1 {
+		t.Fatalf("want 1 chunk unchanged, got %d", len(out))
+	}
+	if out[0].Mom != "kept" || out[0].Text != "alpha. beta" {
+		t.Errorf("input mutated under nil pattern: %+v", out[0])
 	}
 }
