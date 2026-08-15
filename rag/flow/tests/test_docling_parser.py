@@ -37,3 +37,9 @@ def test_docling_tables_skips_malformed_entries_without_dropping_valid_ones():
     )
 
     assert bboxes == [{"layout_type": "table", "text": "<table></table>"}]
+
+
+def test_docling_figure_without_an_image_keeps_its_extracted_text():
+    bboxes = docling_tables_to_bboxes([((None, ["OCR text from the figure"]), [])])
+
+    assert bboxes == [{"layout_type": "figure", "text": "OCR text from the figure"}]
