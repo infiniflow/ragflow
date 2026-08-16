@@ -230,7 +230,13 @@ class QWenSeq2txt(Base):
         resp = dashscope.MultiModalConversation.call(model=self.model_name, messages=messages, result_format="message", asr_options={"enable_lid": True, "enable_itn": False})
 
         try:
-            text = resp["output"]["choices"][0]["message"].content[0]["text"]
+            choices = resp["output"].get("choices") or []
+            if not choices:
+                raise ValueError("no valid speech content in response")
+            content = (choices[0].get("message") or {}).get("content") or []
+            if not content or "text" not in content[0]:
+                raise ValueError("no speech text in response")
+            text = content[0]["text"]
         except Exception as e:
             text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
@@ -369,7 +375,13 @@ class QWenSeq2txt(Base):
         full = ""
         for chunk in stream:
             try:
-                piece = chunk["output"]["choices"][0]["message"].content[0]["text"]
+                choices = chunk["output"].get("choices") or []
+                if not choices:
+                    raise ValueError("no valid speech content in response")
+                content = (choices[0].get("message") or {}).get("content") or []
+                if not content or "text" not in content[0]:
+                    raise ValueError("no speech text in response")
+                piece = content[0]["text"]
                 full = piece
                 yield {"event": "delta", "text": piece}
             except Exception as e:

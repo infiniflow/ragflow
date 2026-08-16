@@ -67,7 +67,7 @@ type RetrievalRequest struct {
 type RetrievalResult struct {
 	Chunks  []map[string]interface{}
 	DocAggs []map[string]interface{} // Aggregated document counts, sorted by count desc
-	Total   int64                    // Post-pagination chunk count (matches Python's len(ranks["chunks"]))
+	Total   int64                    // Threshold-valid matches across the retrieval candidate set
 }
 
 // Retrieval performs hybrid search + reranking + pagination
@@ -150,6 +150,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
+	searchTotal := searchResult.Total
 
 	// Prune deleted chunks
 	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
@@ -160,132 +161,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
-	// sim = tkWeight*tsim + vtWeight*vsim
-	vtWeightOrig := *req.VectorSimilarityWeight
-	tkWeightOrig := 1.0 - vtWeightOrig
-	tkWeight := tkWeightOrig
-	vtWeight := vtWeightOrig
-	qb := GetQueryBuilder()
-	useInfinity := engine.GetEngineType() == "infinity"
-	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
-
-	// For ES path: call GetScores() for second-pass KNN to get clean cosine similarity
-	// For Infinity path: use _score directly (scores already normalized during fusion)
-	// For OceanBase path: extract vectors and compute locally
-	var sim []float64
-	var termSimilarity []float64
-	var vectorSimilarity []float64
-
-	if req.RerankModel != nil && searchResult.Total > 0 {
-		// External rerank model path - use RerankByModel
-		sim, termSimilarity, vectorSimilarity = RerankByModel(
-			ctx,
-			req.RerankModel,
-			searchResult.Chunks,
-			searchResult.IDs,
-			searchResult.Field,
-			req.Question,
-			tkWeight,
-			vtWeight,
-			"content_ltks",
-			qb,
-			*req.RankFeature,
-		)
-	} else if useInfinity {
-		// Infinity: scores already normalized before fusion, just extract _score
-		sim = make([]float64, len(searchResult.IDs))
-		for i, id := range searchResult.IDs {
-			if chunk, ok := searchResult.Field[id]; ok {
-				if score, ok := chunk["_score"].(float64); ok {
-					sim[i] = score
-				} else if score, ok := chunk["SCORE"].(float64); ok {
-					sim[i] = score
-				} else if score, ok := chunk["SIMILARITY"].(float64); ok {
-					sim[i] = score
-				} else {
-					sim[i] = 0.0
-				}
-			} else {
-				sim[i] = 0.0
-			}
-		}
-		termSimilarity = sim
-		vectorSimilarity = sim
-	} else if useOceanBase {
-		// OceanBase returns the selected vector column, so reranking can
-		// reproduce the Python connector's local cosine calculation.
-		sim, termSimilarity, vectorSimilarity = RerankStandard(
-			searchResult.Chunks,
-			nil,
-			searchResult.QueryVector,
-			req.Question,
-			tkWeight,
-			vtWeight,
-			"content_ltks",
-			qb,
-			*req.RankFeature,
-		)
-	} else {
-		// ES PATH: Two-pass KNN approach for clean cosine similarity scores
-		//
-		// Python's equivalent flow (rag/nlp/search.py L656-669):
-		//   1. First search returns text+vector matched chunks (hybrid BM25 + KNN fusion)
-		//   2. _knn_scores: second KNN-only query filtered by those chunk IDs
-		//      - ES computes cosine similarity between query vector and stored vectors
-		//      - Vectors stay in ES index (not shipped to application)
-		//      - Returns raw KNN result with _id -> _score mappings
-		//   3. get_scores: extracts doc_id -> score from the KNN result
-		//   4. rerank_with_knn: combines token similarity + vector similarity + rank features
-		//
-		// Go implementation mirrors this exactly:
-		//   KNNScores() -> performs second KNN query (ES-specific, on DocEngine interface)
-		//   GetScores() -> extracts doc_id -> score from result (matches Python's get_scores)
-		//   RerankWithKNN() -> combines tksim + vtsim + rank_features (matches rerank_with_knn)
-		//
-		// Why two passes?
-		//   - First search uses fusion (BM25 * vector_similarity_weight + KNN * (1-vector_similarity_weight))
-		//   - The fusion score is not a clean cosine similarity - it's a weighted combination
-		//   - Second KNN-only query gives us the pure cosine similarity for reranking
-		//   - This keeps vectors in ES (no need to extract them) while getting clean scores
-
-		// PASS 1: Second KNN query to get clean cosine similarities
-		// KNNScores() performs the ES-specific KNN search and returns raw result
-		knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
-		if err != nil {
-			common.Warn("KNNScores failed for ES, falling back to local computation", zap.Error(err))
-			// Fallback: RerankStandard computes vector similarity locally (requires shipping vectors)
-			sim, termSimilarity, vectorSimilarity = RerankStandard(
-				searchResult.Chunks,
-				nil, // keywords computed internally
-				searchResult.QueryVector,
-				req.Question,
-				tkWeight,
-				vtWeight,
-				"content_ltks",
-				qb,
-				*req.RankFeature,
-			)
-		} else {
-			// PASS 2: Extract scores from KNN result
-			// GetScores() mirrors Python's get_scores() - maps doc_id -> _score
-			knnScores := s.docEngine.GetScores(knnResult)
-
-			// RERANK: Combine token + vector + rank feature similarities
-			// Matches Python's rerank_with_knn(): sim = tkweight * tksim + vtweight * vtsim + rank_fea
-			sim, termSimilarity, vectorSimilarity = RerankWithKNN(
-				searchResult.Chunks,
-				searchResult.IDs,
-				searchResult.Field,
-				knnScores,
-				req.Question,
-				tkWeight,
-				vtWeight,
-				"content_ltks",
-				qb,
-				*req.RankFeature,
-			)
-		}
-	}
+	sim, termSimilarity, vectorSimilarity := s.scoreSearchResult(ctx, req, searchResult)
 	if len(sim) == 0 {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
@@ -307,7 +183,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 	// When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores
 	postThreshold := *req.SimilarityThreshold
-	if vtWeight <= 0 {
+	if *req.VectorSimilarityWeight <= 0 {
 		postThreshold = 0.0
 	}
 
@@ -337,6 +213,18 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}
 	common.Info("Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
 		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)), zap.Float64("postThreshold", postThreshold))
+
+	//searchTotal > len(searchResult.IDs): The total number reported by the engine exceeds the number actually retrieved this time,
+	//indicating that there are still unretrieved chunks in the candidate set; the current count may be an underestimate
+	//*req.Top > rerankLimit: The Top value requested by the caller exceeds the re-ranking limit, indicating that we have indeed
+	//‘only examined a portion’ rather than having covered all target results
+	total := int64(len(validIdx))
+	if searchTotal > int64(len(searchResult.IDs)) && *req.Top > rerankLimit {
+		total, err = s.countThresholdValidMatches(ctx, req, *req.Top, postThreshold)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Build chunks for pageIdx, transforms raw search results into the API response format
 	var filteredChunks []map[string]interface{}
@@ -531,8 +419,126 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	return &RetrievalResult{
 		Chunks:  filteredChunks,
 		DocAggs: docAggs,
-		Total:   int64(len(filteredChunks)),
+		Total:   total,
 	}, nil
+}
+
+func (s *RetrievalService) countThresholdValidMatches(ctx context.Context, req *RetrievalRequest, limit int, postThreshold float64) (int64, error) {
+	searchReq := &RetrievalSearchRequest{
+		TenantIDs:      req.TenantIDs,
+		Question:       req.Question,
+		KbIDs:          req.KbIDs,
+		DocIDs:         req.DocIDs,
+		Page:           1,
+		PageSize:       limit,
+		Top:            *req.Top,
+		RankFeature:    *req.RankFeature,
+		EmbeddingModel: req.EmbeddingModel,
+	}
+	searchResult, err := s.Search(ctx, searchReq)
+	if err != nil {
+		return 0, fmt.Errorf("search count failed: %w", err)
+	}
+	searchResult, err = s.PruneDeletedChunks(ctx, searchResult)
+	if err != nil {
+		return 0, fmt.Errorf("PruneDeletedChunks count failed: %w", err)
+	}
+	if searchResult.Total == 0 {
+		return 0, nil
+	}
+
+	sim, _, _ := s.scoreSearchResult(ctx, req, searchResult)
+	var total int64
+	for _, score := range sim {
+		if score >= postThreshold {
+			total++
+		}
+	}
+	return total, nil
+}
+
+func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64) {
+	// sim = tkWeight*tsim + vtWeight*vsim
+	vtWeight := *req.VectorSimilarityWeight
+	tkWeight := 1.0 - vtWeight
+	qb := GetQueryBuilder()
+	useInfinity := engine.GetEngineType() == "infinity"
+	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
+
+	if req.RerankModel != nil && searchResult.Total > 0 {
+		return RerankByModel(
+			ctx,
+			req.RerankModel,
+			searchResult.Chunks,
+			searchResult.IDs,
+			searchResult.Field,
+			req.Question,
+			tkWeight,
+			vtWeight,
+			"content_ltks",
+			qb,
+			*req.RankFeature,
+		)
+	}
+
+	if useInfinity {
+		sim := make([]float64, len(searchResult.IDs))
+		for i, id := range searchResult.IDs {
+			if chunk, ok := searchResult.Field[id]; ok {
+				if score, ok := chunk["_score"].(float64); ok {
+					sim[i] = score
+				} else if score, ok := chunk["SCORE"].(float64); ok {
+					sim[i] = score
+				} else if score, ok := chunk["SIMILARITY"].(float64); ok {
+					sim[i] = score
+				}
+			}
+		}
+		return sim, sim, sim
+	}
+
+	if useOceanBase {
+		return RerankStandard(
+			searchResult.Chunks,
+			nil,
+			searchResult.QueryVector,
+			req.Question,
+			tkWeight,
+			vtWeight,
+			"content_ltks",
+			qb,
+			*req.RankFeature,
+		)
+	}
+
+	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
+	if err != nil {
+		common.Warn("KNNScores failed for ES, falling back to local computation", zap.Error(err))
+		return RerankStandard(
+			searchResult.Chunks,
+			nil,
+			searchResult.QueryVector,
+			req.Question,
+			tkWeight,
+			vtWeight,
+			"content_ltks",
+			qb,
+			*req.RankFeature,
+		)
+	}
+	knnScores := s.docEngine.GetScores(knnResult)
+	return RerankWithKNN(
+		searchResult.Chunks,
+		searchResult.IDs,
+		searchResult.Field,
+		knnScores,
+		req.Question,
+		tkWeight,
+		vtWeight,
+		"content_ltks",
+		qb,
+		*req.RankFeature,
+	)
 }
 
 // RetrievalSearchRequest is the request struct for RetrievalService.Search()
@@ -789,7 +795,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, []string{txt}, embModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

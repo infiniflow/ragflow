@@ -1316,15 +1316,24 @@ class DateTimeTzField(CharField):
                 return value.replace(tzinfo=timezone.utc).isoformat()
         return value
 
-    def python_value(self, value: str | None) -> datetime | None:
-        if value is not None:
+    def python_value(self, value: str | datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            # The column is declared VARCHAR, but deployments upgraded from
+            # older schemas may hold it as native DATETIME, in which case the
+            # driver returns datetime objects instead of ISO strings.
+            return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        try:
             dt = datetime.fromisoformat(value)
-            if dt.tzinfo is None:
-                import pytz
-
-                return dt.replace(tzinfo=pytz.UTC)
-            return dt
-        return value
+        except ValueError:
+            # Zero dates (0000-00-00) and other unparseable values must not
+            # raise here: peewee counts the row before converting it, so one
+            # bad value wedges every later iteration over the table with
+            # IndexError: list index out of range.
+            logging.warning("DateTimeTzField: unparseable value %r, falling back to None", value)
+            return None
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
 class SyncLogs(DataBaseModel):

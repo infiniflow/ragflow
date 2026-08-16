@@ -266,10 +266,11 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 		}
 		batchTexts := texts[start:end]
 		jobs = append(jobs, func() error {
-			if err := ctx.Err(); err != nil {
+			if err = ctx.Err(); err != nil {
 				return err
 			}
-			embeds, err := mdl.ModelDriver.Embed(ctx, mdl.ModelName, batchTexts, mdl.APIConfig, config, nil)
+			var embeds []models.EmbeddingData
+			embeds, err = mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
 			if err != nil {
 				return fmt.Errorf("knowledge_compiler: embed: %w", err)
 			}
@@ -281,7 +282,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 			return nil
 		})
 	}
-	if err := knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
+	if err = knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
 		return nil, err
 	}
 	// Flatten in input order and derive the vector dimension from the first
