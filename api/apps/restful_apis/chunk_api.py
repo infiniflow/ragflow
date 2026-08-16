@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import base64
 import binascii
 import datetime
@@ -1111,6 +1112,9 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     return get_result(message=f"deleted {chunk_number} chunks")
 
 
+UPDATE_CHUNK_TIMEOUT_SECONDS = 60
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1187,15 +1191,25 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
         d = beAdoc(d, arr[0], arr[1], not any([rag_tokenizer.is_chinese(t) for t in q + a]))
 
-    v, _ = embd_mdl.encode(
-        [
-            doc.name,
-            d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"]),
-        ]
-    )
-    v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
-    d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
+    try:
+
+        def _update_sync():
+            v, _ = embd_mdl.encode(
+                [
+                    doc.name,
+                    d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"]),
+                ]
+            )
+            v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
+            d[f"q_{len(v)}_vec"] = v.tolist()
+            settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
+
+        await asyncio.wait_for(asyncio.to_thread(_update_sync), timeout=UPDATE_CHUNK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logging.exception("update_chunk timed out for chunk %s in dataset %s", chunk_id, dataset_id)
+        return get_error_data_result(message="Update operation timed out. The chunk may still be processing in the background. Please try again.")
+    except Exception as e:
+        return server_error_response(e)
     return get_result()
 
 
