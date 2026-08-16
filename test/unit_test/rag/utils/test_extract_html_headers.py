@@ -20,8 +20,10 @@ from rag.utils import file_utils
 class _Response:
     content = b"<html />"
     url = "https://example.test/"
-    headers = {"Content-Type": "text/html"}
     status_code = 200
+
+    def __init__(self):
+        self.headers = {"Content-Type": "text/html"}
 
     def raise_for_status(self):
         pass
