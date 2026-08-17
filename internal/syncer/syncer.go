@@ -175,8 +175,10 @@ func registerBuiltInConnectors(registry *syncerconnector.Registry) {
 	registerDAOConnector(registry, "gmail", syncerconnector.NewGmailConnector)
 	registerDAOConnector(registry, "google-drive", syncerconnector.NewGoogleDriveConnector)
 	registerDAOConnector(registry, "google_drive", syncerconnector.NewGoogleDriveConnector)
+	registerDAOConnector(registry, "rest_api", syncerconnector.NewRestAPIConnector)
 	registerDAOConnector(registry, "mysql", syncerconnector.NewMySQLConnector)
 	registerDAOConnector(registry, "postgresql", syncerconnector.NewPostgreSQLConnector)
+	registerDAOConnector(registry, "discord", syncerconnector.NewDiscordConnector)
 }
 
 func registerDAOConnector[T syncerconnector.Connector](registry *syncerconnector.Registry, source string, factory func(map[string]any) (T, error)) {
