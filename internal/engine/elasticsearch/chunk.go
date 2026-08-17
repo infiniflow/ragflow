@@ -1679,6 +1679,7 @@ func memoryMessageStatusBool(value interface{}) bool {
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
+	var mustNotClauses []interface{}
 	var filterClauses []interface{}
 	var shouldClauses []interface{}
 
@@ -1753,6 +1754,14 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			}
 			continue
 		}
+		if k == "must_not" {
+			if condition, ok := v.(map[string]interface{}); ok {
+				if field, ok := condition["exists"].(string); ok && field != "" {
+					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
+				}
+			}
+			continue
+		}
 		if k == "id" {
 			if v == nil || v == "" {
 				continue
@@ -1817,6 +1826,9 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	boolQuery := make(map[string]interface{})
 	if len(mustClauses) > 0 {
 		boolQuery["must"] = mustClauses
+	}
+	if len(mustNotClauses) > 0 {
+		boolQuery["must_not"] = mustNotClauses
 	}
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses

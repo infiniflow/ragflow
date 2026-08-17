@@ -595,6 +595,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
 		return e.markFailed(ctx, task.ID)
 	}
+	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+		return e.markFailed(ctx, task.ID)
+	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
 	// that exists now is stale — a leftover from a previous run whose

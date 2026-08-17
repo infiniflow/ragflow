@@ -1530,6 +1530,7 @@ async def search_datasets(tenant_id: str, req: dict):
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
         trace_id=search_id,
+        must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
     )
 
     if use_kg:
