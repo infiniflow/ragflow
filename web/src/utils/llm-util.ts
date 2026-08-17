@@ -174,9 +174,11 @@ const modelParamMap: ModelParamMap = {
 };
 
 // API endpoint whitelist - only these endpoints will have tenant parameters added
+// Note: /api/v1/chats is intentionally absent — the chats API normalizes the
+// model name/id pair server-side, so the frontend submits only llm_id /
+// rerank_id and must not have a stale tenant_* id injected back in here.
 const API_WHITELIST = [
   '/api/v1/users/me/models',
-  '/api/v1/chats',
   '/v1/canvas/set',
   '/v1/canvas/setting',
   '/api/v1/searches/',
