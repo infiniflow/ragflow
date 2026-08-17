@@ -49,9 +49,7 @@ type stubExtractorChatInvoker struct {
 	// as the wrap-error. tests set entries == call count they expect.
 	responses []stubResponse
 
-	// lastReq records the most recent call's request for inspection
-	// (e.g. driver / model name resolved from the llm_id).
-	lastReq  extractorChatRequest
+	// requests records every call in order. Callers read via lastRequest().
 	requests []extractorChatRequest
 	calls    atomic.Int32
 }
@@ -66,7 +64,6 @@ type stubResponse struct {
 func (s *stubExtractorChatInvoker) Chat(_ context.Context, req extractorChatRequest) (*extractorChatResponse, error) {
 	s.calls.Add(1)
 	s.mu.Lock()
-	s.lastReq = req
 	s.requests = append(s.requests, req)
 	var resp stubResponse
 	if len(s.responses) > 0 {
@@ -78,6 +75,14 @@ func (s *stubExtractorChatInvoker) Chat(_ context.Context, req extractorChatRequ
 		return nil, resp.Err
 	}
 	return &extractorChatResponse{Content: resp.Content}, nil
+}
+
+// lastRequest returns the most recent recorded request. Callers must hold s.mu.
+func (s *stubExtractorChatInvoker) lastRequest() extractorChatRequest {
+	if len(s.requests) == 0 {
+		return extractorChatRequest{}
+	}
+	return s.requests[len(s.requests)-1]
 }
 
 func (s *stubExtractorChatInvoker) Calls() int32 { return s.calls.Load() }
@@ -467,8 +472,8 @@ func TestExtractorComponent_Invoke_PerCallLLMIDOverride(t *testing.T) {
 	}
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	if stub.lastReq.ModelName != "override-llm" {
-		t.Errorf("ModelName = %q, want override-llm", stub.lastReq.ModelName)
+	if stub.lastRequest().ModelName != "override-llm" {
+		t.Errorf("ModelName = %q, want override-llm", stub.lastRequest().ModelName)
 	}
 }
 
@@ -490,11 +495,11 @@ func TestExtractorComponent_Invoke_CompositeLLMID(t *testing.T) {
 	}
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	if stub.lastReq.Driver != "openai" {
-		t.Errorf("Driver = %q, want openai", stub.lastReq.Driver)
+	if stub.lastRequest().Driver != "openai" {
+		t.Errorf("Driver = %q, want openai", stub.lastRequest().Driver)
 	}
-	if stub.lastReq.ModelName != "gpt-4o-mini" {
-		t.Errorf("ModelName = %q, want gpt-4o-mini", stub.lastReq.ModelName)
+	if stub.lastRequest().ModelName != "gpt-4o-mini" {
+		t.Errorf("ModelName = %q, want gpt-4o-mini", stub.lastRequest().ModelName)
 	}
 }
 
@@ -1169,11 +1174,11 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	if stub.lastReq.Temperature == nil {
+	if stub.lastRequest().Temperature == nil {
 		t.Fatal("Temperature is nil, want 0.2")
 	}
-	if *stub.lastReq.Temperature != 0.2 {
-		t.Errorf("Temperature = %v, want 0.2", *stub.lastReq.Temperature)
+	if *stub.lastRequest().Temperature != 0.2 {
+		t.Errorf("Temperature = %v, want 0.2", *stub.lastRequest().Temperature)
 	}
 	if stub.calls.Load() != 1 {
 		t.Errorf("expected exactly 1 LLM call (keyword), got %d", stub.calls.Load())
@@ -1202,8 +1207,8 @@ func TestExtractorComponent_Invoke_FieldNameTemperatureDefault(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	if stub.lastReq.Temperature != nil {
-		t.Errorf("Temperature = %v, want nil (field extraction uses model default)", *stub.lastReq.Temperature)
+	if stub.lastRequest().Temperature != nil {
+		t.Errorf("Temperature = %v, want nil (field extraction uses model default)", *stub.lastRequest().Temperature)
 	}
 }
 
@@ -1490,7 +1495,7 @@ func TestExtractorComponent_Invoke_ContentWithWeightPlaceholder(t *testing.T) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1532,7 +1537,7 @@ func TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText(t *testin
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1572,7 +1577,7 @@ func TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText(t *te
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1608,7 +1613,7 @@ func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1650,7 +1655,7 @@ func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1690,7 +1695,7 @@ func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1726,7 +1731,7 @@ func TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend(t *te
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var sysContent, userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		switch msg.Role {
 		case eschema.System:
 			sysContent = msg.Content
@@ -1775,7 +1780,7 @@ func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *tes
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	var userContent string
-	for _, msg := range stub.lastReq.Messages {
+	for _, msg := range stub.lastRequest().Messages {
 		if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
@@ -1867,17 +1872,21 @@ func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
 	c := &ExtractorComponent{}
 
+	// callRaw is a pure dispatcher: callers are responsible for pre-rendering
+	// the prompt. Inline a large chunk body directly into the user prompt so
+	// fitExtractorMessages has real content to trim.
+	chunkBody := strings.Repeat("chunk text with lots of tokens. ", 500)
 	_, err := c.callText(t.Context(), nil, extractorInputs{
 		systemPrompt: "extract fields",
-		prompt:       "summarize",
+		prompt:       "summarize\n\n" + chunkBody,
 		llmID:        "test@test",
-	}, strings.Repeat("chunk text with lots of tokens. ", 500))
+	}, "")
 	if err != nil {
 		t.Fatalf("callText: %v", err)
 	}
 
 	stub.mu.Lock()
-	req := stub.lastReq
+	req := stub.lastRequest()
 	stub.mu.Unlock()
 	if len(req.Messages) == 0 {
 		t.Fatal("invoker was not called")
@@ -1933,7 +1942,7 @@ func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
 	}
 
 	stub.mu.Lock()
-	req := stub.lastReq
+	req := stub.lastRequest()
 	stub.mu.Unlock()
 	if len(req.Messages) == 0 {
 		t.Fatal("invoker was not called")

@@ -667,7 +667,15 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}
 
 		if len(in.chunks) == 0 {
-			ans, callErr := c.callText(timeoutCtx, db, in, "")
+			// Render the prompt with an empty chunk map so body placeholders
+			// resolve (or fall back to appending nothing) before the LLM call.
+			// Without this, a template containing {text} would be forwarded
+			// to the model unsubstituted.
+			callIn := in
+			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(
+				in.systemPrompt, in.prompt, map[string]any{}, "",
+			)
+			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
 				return callErr
 			}
@@ -1120,17 +1128,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	if err != nil {
 		return nil, err
 	}
-	// The invoke loop pre-renders via renderExtractorPrompts and passes chunkText="".
-	// Direct callers (e.g. the message-fitting path) may pass a non-empty chunkText
-	// that has not been pre-rendered; apply renderExtractorPrompts here so those
-	// callers do not need to know about the rendering contract.
-	// Pass an empty map (not nil) so that any future write to ck inside the renderer
-	// does not panic — nil map reads are safe in Go but writes are not.
-	sys, user := in.systemPrompt, in.prompt
-	if chunkText != "" {
-		sys, user = renderExtractorPrompts(sys, user, map[string]any{}, chunkText)
-	}
-	msgs := buildExtractorMessages(sys, user)
+	msgs := buildExtractorMessages(in.systemPrompt, in.prompt)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
 	if fitErr != nil {
 		return nil, fitErr
@@ -1516,16 +1514,13 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 }
 
 // buildExtractorMessages assembles system + user messages for one extraction
-// call. Prompt rendering (placeholder substitution and chunk-text injection)
-// is performed upstream by renderExtractorPrompts; this function is a pure
-// structural assembler with no rendering logic.
+// call. Prompt rendering (placeholder substitution, chunk-text injection, and
+// empty-prompt normalization) is performed upstream by renderExtractorPrompts;
+// this function is a pure structural assembler with no rendering logic.
 func buildExtractorMessages(system, user string) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
 	if system != "" {
 		out = append(out, eschema.Message{Role: eschema.System, Content: system})
-	}
-	if strings.TrimSpace(user) == "" {
-		user = " "
 	}
 	out = append(out, eschema.Message{Role: eschema.User, Content: user})
 	return out
