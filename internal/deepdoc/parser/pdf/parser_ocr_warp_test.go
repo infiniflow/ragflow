@@ -59,7 +59,10 @@ func TestOCRDetectAndRecognize_WarpsCrop(t *testing.T) {
 	p := newTestParser()
 	page := image.NewRGBA(image.Rect(0, 0, 200, 140))
 
-	// A clearly skewed (perspective) quad: TL, TR, BR, BL.
+	// A clearly skewed (perspective) quad: TL, TR, BR, BL. It is intentionally
+	// wide (W=120, H=60 after the warp, h/w < 1.5) so layer 2 is a no-op and
+	// recognition receives the de-skewed crop unchanged; a tall quad would be
+	// rotated by ocrRecognizeWithRotation and break the equality below.
 	quad := [4]util.Pt{{X: 50, Y: 40}, {X: 150, Y: 30}, {X: 160, Y: 90}, {X: 40, Y: 100}}
 	box := pdf.OCRBox{
 		X0: quad[0].X, Y0: quad[0].Y,
@@ -81,8 +84,8 @@ func TestOCRDetectAndRecognize_WarpsCrop(t *testing.T) {
 		t.Fatal("OCRRecognize was not called with a crop")
 	}
 
-	// The crop passed to recognition must be exactly the WarpCropForOCR output.
-	want := util.WarpCropForOCR(page, quad)
+	// The crop passed to recognition must be exactly the WarpCrop output.
+	want := util.WarpCrop(page, quad)
 	rec, ok := cap.recImage.(*image.RGBA)
 	if !ok {
 		t.Fatalf("rec crop is %T, want *image.RGBA", cap.recImage)
