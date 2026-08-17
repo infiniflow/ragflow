@@ -1,4 +1,4 @@
-from common.metadata_utils import meta_filter
+from common.metadata_utils import meta_filter, normalize_condition_operators
 
 
 def test_contains():
@@ -164,6 +164,48 @@ def test_or_logic_still_unions_after_empty_first_condition():
     ]
 
     assert set(meta_filter(metas, filters, logic="or")) == {"doc2"}
+
+
+def test_normalize_ascii_comparison_operators():
+    """ASCII operators (from LLM auto/semi_auto or user input) map to the Unicode set."""
+    got = normalize_condition_operators(
+        [
+            {"key": "date", "op": ">=", "value": "2026-04-01"},
+            {"key": "date", "op": "<=", "value": "2026-04-30"},
+            {"key": "n", "op": "!=", "value": "5"},
+            {"key": "n", "op": "==", "value": "5"},
+            {"key": "n", "op": "=>", "value": "5"},
+            {"key": "n", "op": "=<", "value": "5"},
+            {"key": "n", "op": "<", "value": "5"},
+        ]
+    )
+    assert [c["op"] for c in got] == ["≥", "≤", "≠", "=", "≥", "≤", "<"]
+
+
+def test_normalize_condition_operators_edge_cases():
+    """None, empty list and non-dict items are handled by the guards."""
+    assert normalize_condition_operators(None) == []
+    assert normalize_condition_operators([]) == []
+    # non-dict items are skipped; dict items are still normalised
+    assert normalize_condition_operators(["not-a-dict", None, {"key": "d", "op": ">=", "value": "x"}]) == [{"key": "d", "op": "≥", "value": "x"}]
+
+
+def test_normalize_preserves_unicode_operators_and_fields():
+    got = normalize_condition_operators([{"key": "d", "op": "≥", "value": "2026-04-01"}])
+    assert got == [{"key": "d", "op": "≥", "value": "2026-04-01"}]
+
+
+def test_raw_ascii_ge_matches_nothing_without_normalisation():
+    """Documents the bug: a raw ASCII `>=` is not recognised and filters nothing."""
+    metas = {"date": {"2026-04-01": ["a"], "2026-04-15": ["b"]}}
+    assert meta_filter(metas, [{"key": "date", "op": ">=", "value": "2026-04-01"}], "and") == []
+
+
+def test_normalised_ge_filters_dates_in_memory():
+    """After normalisation, `>=` filters chronologically like the Unicode operator."""
+    metas = {"date": {"2026-04-01": ["a"], "2026-04-15": ["b"], "2026-03-01": ["c"]}}
+    conds = normalize_condition_operators([{"key": "date", "op": ">=", "value": "2026-04-01"}])
+    assert set(meta_filter(metas, conds, "and")) == {"a", "b"}
 
 
 def test_equal_is_case_insensitive_for_python_keyword_literals():
