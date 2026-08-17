@@ -19,7 +19,6 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { prefixName } from '@/utils/form';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { SliderInputFormField } from './slider-input-form-field';
 import {
   FormControl,
   FormField,
@@ -37,7 +36,6 @@ export const initialTopKValue = {
 };
 
 const DefaultRerankId = 'rerank_id';
-const DefaultTopK = 'top_k';
 
 interface RerankFormFieldProps {
   name?: string;
@@ -88,28 +86,12 @@ export function RerankFormFields({
   prefix = '',
   ownerTenantId,
 }: RerankFormFieldsProps) {
-  const { watch } = useFormContext();
-  const { t } = useTranslate('knowledgeDetails');
   const rerankIdName = prefixName(prefix, DefaultRerankId);
-  const topKName = prefixName(prefix, DefaultTopK);
-
-  const rerankId = watch(rerankIdName);
 
   return (
-    <>
-      <RerankFormField
-        name={rerankIdName}
-        ownerTenantId={ownerTenantId}
-      ></RerankFormField>
-      {/* {rerankId && (
-        <SliderInputFormField
-          name={topKName}
-          label={t('topK')}
-          max={2048}
-          min={1}
-          tooltip={t('topKTip')}
-        ></SliderInputFormField>
-      )} */}
-    </>
+    <RerankFormField
+      name={rerankIdName}
+      ownerTenantId={ownerTenantId}
+    ></RerankFormField>
   );
 }
