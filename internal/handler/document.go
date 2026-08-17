@@ -1107,6 +1107,13 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+	processDuration := doc.ProcessDuration
+	if doc.Run != nil && strings.TrimSpace(*doc.Run) == "1" && doc.ProcessBeginAt != nil {
+		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
+		if processDuration < 0 {
+			processDuration = 0
+		}
+	}
 	item := map[string]interface{}{
 		"id":               doc.ID,
 		"dataset_id":       doc.KbID,
@@ -1121,7 +1128,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"progress":         doc.Progress,
 		"progress_msg":     stringValue(doc.ProgressMsg),
 		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
-		"process_duration": doc.ProcessDuration,
+		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
 		"status":           stringValue(doc.Status),

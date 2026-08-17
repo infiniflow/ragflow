@@ -229,7 +229,7 @@ async def embed_and_save(memory, message_list: list[dict], task_id: str = None):
                 return False, error_msg
 
         new_msg_size = sum([MessageService.calculate_message_size(m) for m in message_list])
-        current_memory_size = get_memory_size_cache(memory.tenant_id, memory.id)
+        current_memory_size = get_memory_size_cache(memory.id, memory.tenant_id)
         if new_msg_size + current_memory_size > memory.memory_size:
             size_to_delete = current_memory_size + new_msg_size - memory.memory_size
             if memory.forgetting_policy == "FIFO":

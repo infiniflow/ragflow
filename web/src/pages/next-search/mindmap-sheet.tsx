@@ -68,7 +68,7 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
           {!loading && isEmptyMindMap && (
             <div className="bg-bg-card rounded-lg w-full h-full flex items-center justify-center">
               <p className="text-text-secondary">
-                {t('knowledgeDetails.noStructureMindmap')}
+                {t('knowledgeCompilation.noStructureMindmap')}
               </p>
             </div>
           )}
