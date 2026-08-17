@@ -1,4 +1,4 @@
-import { MessageType } from '@/constants/chat';
+import { MessageType, WebSearchProvider } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
 
 export interface IDocumentDownloadInfo {
@@ -21,6 +21,8 @@ export interface PromptConfig {
   reasoning?: boolean;
   cross_languages?: Array<string>;
   tavily_api_key?: string;
+  querit_api_key?: string;
+  web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
   reference_metadata?: {
     include?: boolean;
@@ -128,7 +130,7 @@ export interface IReferenceChunk {
   similarity: number;
   vector_similarity: number;
   term_similarity: number;
-  positions: number[];
+  positions: number[][];
   doc_type?: string;
   document_metadata?: Record<string, any>;
 }
@@ -202,6 +204,8 @@ export interface IExternalChatInfo {
   title: string;
   prologue?: string;
   has_tavily_key?: boolean;
+  has_web_search_provider?: boolean;
+  llm_id?: string;
 }
 
 export interface IMessage extends Message {

@@ -69,9 +69,7 @@ def select_business_output(outputs: Mapping[str, object]) -> tuple[str, object]:
 
     business_outputs = [(name, meta) for name, meta in outputs.items() if name not in SYSTEM_OUTPUT_KEYS]
     if len(business_outputs) != 1:
-        raise ContractError(
-            f"CodeExec contract must contain exactly one business output, got {len(business_outputs)}"
-        )
+        raise ContractError(f"CodeExec contract must contain exactly one business output, got {len(business_outputs)}")
     _validate_business_output_name(business_outputs[0][0])
     return business_outputs[0]
 
@@ -124,10 +122,7 @@ def _is_number(value) -> bool:
 def _validate_top_level_value_domain(value) -> None:
     allowed = value is None or isinstance(value, (bool, str, dict, list)) or _is_number(value)
     if not allowed:
-        raise ContractError(
-            f"CodeExec unsupported top-level result type: {type(value).__name__}. "
-            "Allowed top-level values are String, Number, Boolean, Object, Array, or Null."
-        )
+        raise ContractError(f"CodeExec unsupported top-level result type: {type(value).__name__}. Allowed top-level values are String, Number, Boolean, Object, Array, or Null.")
 
 
 def _normalize_expected_type(expected_type: str) -> str:
@@ -161,9 +156,7 @@ def _validate_expected_type(expected_type: str, value, path: str = "") -> None:
     if etype.startswith("Array<") and etype.endswith(">"):
         inner_type = etype[6:-1].strip()
         if not isinstance(value, list):
-            raise ContractError(
-                f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {infer_actual_type(value)}"
-            )
+            raise ContractError(f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {infer_actual_type(value)}")
         for index, item in enumerate(value):
             child_path = f"{path}[{index}]" if path else f"[{index}]"
             _validate_expected_type(inner_type, item, child_path)
@@ -184,9 +177,7 @@ def _validate_expected_type(expected_type: str, value, path: str = "") -> None:
         raise ContractError(f"Unsupported expected type: {expected_type}")
 
     if not valid:
-        raise ContractError(
-            f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {actual_type}"
-        )
+        raise ContractError(f"CodeExec contract mismatch at {path or 'value'}: expected type {etype}, got {actual_type}")
 
 
 def build_code_exec_contract(outputs: Mapping[str, object], raw_result) -> dict[str, object]:
@@ -361,10 +352,17 @@ class CodeExec(ToolBase, ABC):
             # Try using the new sandbox provider system first
             try:
                 from agent.sandbox.client import execute_code as sandbox_execute_code
+                from agent.sandbox.client import get_provider_info
+                from agent.sandbox.client import reload_provider
                 from agent.sandbox.providers.base import SandboxProviderConfigError
 
                 if self.check_if_canceled("CodeExec execution"):
                     return
+
+                reload_provider()
+                provider_info = get_provider_info()
+                provider_type = provider_info.get("provider_type") or "unknown"
+                logging.info(f"[CodeExec]: dispatching execution to sandbox provider '{provider_type}' (language={language}, timeout={timeout_seconds}s)")
 
                 # Execute code using the provider system
                 result = sandbox_execute_code(code=code, language=language, timeout=timeout_seconds, arguments=arguments)
@@ -376,7 +374,7 @@ class CodeExec(ToolBase, ABC):
                 return self._process_execution_result(
                     result.stdout,
                     result.stderr,
-                    "Provider system",
+                    f"Provider system ({provider_type})",
                     artifacts,
                     execution_metadata=result.metadata,
                 )
@@ -388,10 +386,8 @@ class CodeExec(ToolBase, ABC):
                 # Provider modules are unavailable, fall back to legacy HTTP sandbox.
                 logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
             except RuntimeError as provider_error:
-                if not self._should_fallback_to_http(provider_error):
-                    self.set_output("_ERROR", f"Provider system execution failed: {provider_error}")
-                    return self.output()
-                logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
+                self.set_output("_ERROR", f"Provider system execution failed: {provider_error}")
+                return self.output()
 
             # Fallback to direct HTTP request
             code_b64 = self._encode_code(code)
@@ -502,15 +498,6 @@ class CodeExec(ToolBase, ABC):
             return metadata.get("result_value"), False
         return self._deserialize_stdout(stdout), True
 
-    @staticmethod
-    def _should_fallback_to_http(provider_error: RuntimeError) -> bool:
-        message = str(provider_error).lower()
-        fallback_markers = (
-            "no sandbox provider configured",
-            "sandbox provider type not configured",
-        )
-        return any(marker in message for marker in fallback_markers)
-
     @classmethod
     def _ensure_bucket_lifecycle(cls):
         if cls._lifecycle_configured:
@@ -557,7 +544,7 @@ class CodeExec(ToolBase, ABC):
 
                 settings.STORAGE_IMPL.put(SANDBOX_ARTIFACT_BUCKET, storage_name, binary)
 
-                url = f"/api/v1/documents/artifact/{storage_name}"
+                url = f"/api/v1/documents/artifact/{storage_name}?session_id={self._canvas.task_id}"
                 uploaded.append(
                     {
                         "name": name,

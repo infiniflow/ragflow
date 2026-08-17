@@ -1,9 +1,12 @@
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
+import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
 import { useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FlattenMediaToTextFormField,
-  LargeModelFormField,
   RemoveHeaderFooterFormField,
   RmdirFormField,
 } from './common-form-fields';
@@ -11,9 +14,8 @@ import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
 export function TextMarkdownFormFields({ prefix }: CommonProps) {
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Image2text,
-  ]);
+  const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
   const flattenMediaToText = useWatch({
     name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
@@ -23,10 +25,13 @@ export function TextMarkdownFormFields({ prefix }: CommonProps) {
       <RmdirFormField prefix={prefix} />
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
-        <LargeModelFormField
-          prefix={prefix}
-          options={modelOptions}
-        ></LargeModelFormField>
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+          ownerTenantId={ownerTenantId}
+        />
       )}
     </>
   );

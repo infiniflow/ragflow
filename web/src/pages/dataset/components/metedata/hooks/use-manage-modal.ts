@@ -116,13 +116,13 @@ export const util = {
           description: item.description,
           values: item.enum || [],
           restrictDefinedValues: !!item.enum?.length,
-          valueType: DEFAULT_VALUE_TYPE,
+          valueType: item.type || DEFAULT_VALUE_TYPE,
         } as IMetaDataTableData;
       });
     }
     const properties = data.properties || {};
     return Object.entries(properties).map(([key, property]) => {
-      const valueType = 'string';
+      const valueType = property.type || 'string';
       const values = property.enum || property.items?.enum || [];
       return {
         field: key,
@@ -475,7 +475,7 @@ export const useManageMetaDataModal = (
           return handleSaveSettings(callback, builtInMetadata);
 
         case MetadataType.SingleFileSetting:
-          return handleSaveSingleFileSettings(callback);
+          return handleSaveSingleFileSettings(callback, builtInMetadata);
         default:
           handleSaveManage(callback);
           break;

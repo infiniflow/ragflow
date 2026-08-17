@@ -8,6 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
+import { getBackendLanguage, isGoBackend } from '@/utils/backend-runtime';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -21,7 +22,6 @@ import {
   omit,
   sample,
 } from 'lodash';
-import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
@@ -33,6 +33,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
 } from './constant';
@@ -163,10 +164,7 @@ function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
 }
 
 const buildOperatorParams = (operatorName: string) =>
-  pipe(
-    removeUselessDataInTheOperator(operatorName),
-    // initializeOperatorParams(operatorName), // Final processing, for guarantee
-  );
+  removeUselessDataInTheOperator(operatorName);
 
 const ExcludeOperators = [Operator.Note, Operator.Tool, Operator.Placeholder];
 
@@ -205,15 +203,16 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
-function transformParserParams(params: ParserFormSchemaType) {
+export function transformParserParams(params: ParserFormSchemaType) {
   const setups = params.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
-  >((pre, cur) => {
+  >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
+          pages: number[][];
         }
       > = {
         output_format: cur.output_format,
@@ -232,6 +231,11 @@ function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
+            ...(isGoBackend()
+              ? {
+                  pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
+                }
+              : {}),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -321,15 +325,26 @@ function transformParserParams(params: ParserFormSchemaType) {
           break;
       }
 
-      pre[cur.fileFormat] = filteredSetup;
+      pre[cur.fileFormat] = {
+        ...filteredSetup,
+        order_index: index,
+      } as any;
     }
     return pre;
   }, {});
 
+  // The Go backend expects the setups map flattened into top-level params,
+  // while the Python backend reads them from the nested `setups` object.
+  // Default to the Python shape while the language probe is unresolved.
+  if (getBackendLanguage() === 'go') {
+    return { ...omit(params, ['setups']), ...setups };
+  }
   return { ...params, setups };
 }
 
-function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
+export function transformTokenChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
@@ -352,21 +367,39 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   };
 }
 
-function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
-  const levels = params.rules.map((rule) =>
+export function transformTitleChunkerParams(
+  params: TitleChunkerFormSchemaType,
+) {
+  const activeRules =
+    (params.method === TitleChunkerMethod.Group
+      ? params.groupRules
+      : params.hierarchyRules) ?? params.rules;
+
+  const levels = (activeRules || []).map((rule) =>
     transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
+  const hierarchyValue =
+    (params.method === TitleChunkerMethod.Group
+      ? params.hierarchyGroup
+      : params.hierarchyHierarchy) ?? params.hierarchy;
+
   return {
+    ...omit(params, [
+      'hierarchyRules',
+      'groupRules',
+      'hierarchyHierarchy',
+      'hierarchyGroup',
+    ]),
     method: params.method,
-    hierarchy: Number(params.hierarchy || 0),
+    hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
     levels,
   };
 }
 
-function transformExtractorParams(params: ExtractorFormSchemaType) {
+export function transformExtractorParams(params: ExtractorFormSchemaType) {
   return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
 }
 
@@ -438,6 +471,14 @@ function transformBeginParams(params: BeginFormSchemaType) {
         ...security?.jwt,
         required_claims: security?.jwt?.required_claims.map((x) => x.value),
       };
+    }
+    if (
+      params.security?.auth_type === WebhookSecurityAuthType.None &&
+      params.security?.allow_anonymous
+    ) {
+      nextSecurity.allow_anonymous = true;
+    } else {
+      delete nextSecurity.allow_anonymous;
     }
     return {
       ...params,
@@ -548,8 +589,9 @@ export const buildDslGlobalVariables = (
   return { globals: globalVariablesResult, variables: globalVariables };
 };
 
+// TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && (res?.response.status !== 200 || res?.data?.code !== 0);
+  res && res?.response.status !== 200;
 
 // Replace the id in the object with text
 export const replaceIdWithText = (

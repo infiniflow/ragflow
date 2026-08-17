@@ -1,7 +1,20 @@
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -17,10 +30,8 @@ import { Label } from '@/components/ui/label';
 import message from '@/components/ui/message';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
-import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { SkillSearchConfig } from '@/services/skill-space-service';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -72,14 +83,6 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
   const formData = watch();
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
-
-  // Get embedding model options from user's configured LLMs
-  const llmOptions = useSelectLlmOptionsByModelType();
-  const embeddingModelOptions = useMemo(() => {
-    return llmOptions[
-      LlmModelType.Embedding
-    ] as SelectWithSearchFlagOptionType[];
-  }, [llmOptions]);
 
   useEffect(() => {
     if (open) {
@@ -166,12 +169,12 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
             {/* Embedding Model */}
             <div className="space-y-2">
               <Label htmlFor="embd_id">{t('skillSearch.embeddingModel')}</Label>
-              <SelectWithSearch
+              <ModelTreeSelect
+                modelTypes={['embedding']}
                 value={formData.embd_id}
                 onChange={(value) =>
                   setValue('embd_id', value, { shouldDirty: true })
                 }
-                options={embeddingModelOptions}
                 placeholder={t('skillSearch.embeddingModelPlaceholder')}
               />
             </div>

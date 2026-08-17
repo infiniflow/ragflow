@@ -59,7 +59,7 @@ export default {
       submit: 'Gönder',
       clear: 'Temizle',
       embedIntoSite: 'Web sayfasına göm',
-      openInNewTab: 'Yeni sekmede sohbet et',
+      openInNewTab: 'Yeni sekmede aç',
       previousPage: 'Önceki',
       nextPage: 'Sonraki',
       previous: 'Önceki',
@@ -79,6 +79,7 @@ export default {
       selected: 'Seçildi',
       seeAll: 'Tümünü gör',
       bulkOperate: 'Toplu işlem',
+      owner: 'Sahip',
     },
     login: {
       loginTitle: 'Hesabınıza giriş yapın',
@@ -208,16 +209,19 @@ export default {
           'Geçersiz beceri: "name" küçük harfli ve URL uyumlu olmalıdır (yalnızca harf, rakam ve tire).',
         invalid_version:
           'Geçersiz beceri: "version" geçerli semver olmalıdır (örn. 1.0.0).',
-        invalid_metadata: 'Geçersiz beceri: meta veriler geçersiz alanlar içeriyor.',
+        invalid_metadata:
+          'Geçersiz beceri: meta veriler geçersiz alanlar içeriyor.',
         invalid_file_type:
           'Geçersiz beceri: Yalnızca metin tabanlı dosyalara izin verilir.',
-        invalid_path: 'Geçersiz beceri: Dosya yolu geçersiz karakterler içeriyor.',
+        invalid_path:
+          'Geçersiz beceri: Dosya yolu geçersiz karakterler içeriyor.',
         file_too_large:
           'Geçersiz beceri: Tekil dosya boyutu 5MB sınırını aşıyor.',
         total_size_exceeded:
           'Geçersiz beceri: Toplam paket boyutu 50MB sınırını aşıyor.',
         no_files: 'Dosya seçilmedi. Lütfen bir beceri klasörü seçin.',
-        noValidFiles: 'Geçerli dosya bulunamadı. Lütfen seçiminizi kontrol edin.',
+        noValidFiles:
+          'Geçerli dosya bulunamadı. Lütfen seçiminizi kontrol edin.',
         junkFilesFound:
           'Geçici dosyalar algılandı (örn. .DS_Store). Lütfen yüklemeden önce bunları kaldırın.',
         read_failed: 'Geçersiz beceri: SKILL.md dosyası okunamadı.',
@@ -232,8 +236,8 @@ export default {
       upload: 'Yükle',
       importFromGit: "Git'ten içe aktar",
       gitPlatform: 'Platform',
-      repoUrl: 'Depo URL\'si',
-      repoUrlHelp: 'İsteğe bağlı yol içeren depo URL\'sini destekler',
+      repoUrl: "Depo URL'si",
+      repoUrlHelp: "İsteğe bağlı yol içeren depo URL'sini destekler",
       accessToken: 'Erişim Tokenı',
       githubTokenHelp:
         'Özel depolar veya daha yüksek hız limitleri için (5000 istek/saat)',
@@ -250,7 +254,8 @@ export default {
     },
     skillSearch: {
       configTitle: 'Beceri Arama Yapılandırması',
-      configDesc: 'Becerilerin nasıl indeksleneceğini ve aranacağını yapılandırın',
+      configDesc:
+        'Becerilerin nasıl indeksleneceğini ve aranacağını yapılandırın',
       embeddingModel: 'Embedding Modeli',
       embeddingModelPlaceholder: 'Bir embedding modeli seçin',
       vectorSimilarityWeight: 'Vektör Benzerlik Ağırlığı',
@@ -379,7 +384,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       metadata: {
         fields: 'alanlar',
         selectFiles: '{{count}} dosya seçildi',
-        type: 'Tür',
         fieldNameInvalid: 'Alan adı yalnızca harf veya alt çizgi içerebilir.',
         builtIn: 'Yerleşik',
         generation: 'Oluşturma',
@@ -409,6 +413,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         value: 'Değer',
         action: 'İşlem',
         field: 'Alan',
+        type: 'Tür',
         description: 'Açıklama',
         fieldName: 'Alan adı',
         editMetadata: 'Meta veriyi düzenle',
@@ -895,6 +900,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       size: 'Boyut',
       uploadedTime: 'Yükleme zamanı',
       chunk: 'Parça',
+      createChunk: 'Parça Oluştur',
+      editChunk: 'Parçayı Düzenle',
       bulk: 'Toplu',
       selectAll: 'Tümünü seç',
       enabledSelected: 'Seçilenleri etkinleştir',
@@ -1034,7 +1041,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       preview: 'Önizleme',
       embedded: 'Gömülü',
       serviceApiEndpoint: 'Servis API uç noktası',
-      apiKey: 'API Anahtarı',
+      apiKey: 'API ANAHTARI',
       apiReference: 'API belgeleri',
       dateRange: 'Tarih aralığı:',
       backendServiceApi: 'API sunucusu',
@@ -1088,10 +1095,10 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       locale: 'Yerel ayar',
       selectLanguage: 'Dil seçin',
       reasoning: 'Akıl yürütme',
-      reasoningTip: `Deepseek-R1 veya OpenAI o1 gibi modellerde görüldüğü şekilde soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi. Etkinleştirildiğinde, model harici bilgiye erişebilir ve karmaşık soruları düşünce zinciri akıl yürütmesi gibi tekniklerden yararlanarak adım adım ele alabilir. Bu yaklaşım, problemleri yönetilebilir adımlara bölerek modelin doğru yanıtlar sağlama yeteneğini artırır.`,
+      reasoningTip: `Deepseek-R1 gibi modellerde görüldüğü şekilde soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi. Etkinleştirildiğinde, model harici bilgiye erişebilir ve karmaşık soruları düşünce zinciri akıl yürütmesi gibi tekniklerden yararlanarak adım adım ele alabilir. Bu yaklaşım, problemleri yönetilebilir adımlara bölerek modelin doğru yanıtlar sağlama yeteneğini artırır.`,
       tavilyApiKeyTip:
         'Burada bir API anahtarı doğru şekilde ayarlanırsa, Tavily tabanlı web aramaları dataset alımını desteklemek için kullanılacaktır.',
-      tavilyApiKeyMessage: 'Lütfen Tavily API Anahtarınızı girin',
+      tavilyApiKeyMessage: 'Lütfen Tavily API ANAHTARInızı girin',
       tavilyApiKeyHelp: 'Nasıl alınır?',
       crossLanguage: 'Çapraz dil araması',
       crossLanguagePlaceholder: 'Değer seçin',
@@ -1115,6 +1122,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       tocEnhanceTip: ` Belgenin ayrıştırılması sırasında içindekiler tablosu bilgisi oluşturuldu (Genel yöntemindeki 'İçindekiler Tablosu Çıkarmayı Etkinleştir' seçeneğine bakın). Bu, büyük modelin kullanıcının sorgusuyla ilgili içindekiler öğelerini döndürmesine olanak tanır, böylece bu öğeleri kullanarak ilgili parçaları alır ve sıralama işleminde bu parçalara ağırlık uygular. Bu yaklaşım, kitaplarda insan bilgi arama davranışını taklit eder.`,
       batchDeleteSessions: 'Toplu sil',
       deleteSelectedConfirm: 'Seçilen {{count}} oturum(lar) silinsin mi?',
+      showChunkMetadata: 'Parça meta verilerini göster',
+      showChunkMetadataTip:
+        'Alınan metin parçalarının yanında belge meta verilerini (başlık, sayfa numarası, yükleme tarihi vb.) görüntüle',
+      metadataFields: 'Meta veri alanları',
+      metadataFieldsTip:
+        'Her parçayla birlikte görüntülenecek meta veri alanlarını seçin',
     },
     setting: {
       Verify: 'Doğrula',
@@ -1368,7 +1381,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       addedModels: 'Eklenen modeller',
       modelsToBeAdded: 'Eklenecek modeller',
       addTheModel: 'Ekle',
-      apiKey: 'API Anahtarı',
+      apiKey: 'API ANAHTARI',
       apiKeyMessage: 'Lütfen API anahtarını girin',
       apiKeyTip:
         'API anahtarı, ilgili LLM sağlayıcısına kaydolarak elde edilebilir.',
@@ -1411,8 +1424,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       modelNameMessage: 'Lütfen model adınızı girin!',
       modelType: 'Model türü',
       modelTypeMessage: 'Lütfen model türünüzü girin!',
-      addLlmBaseUrl: 'Temel url',
-      baseUrlNameMessage: "Lütfen temel url'nizi girin!",
+      addLlmBaseUrl: 'Temel URL',
+      baseUrlNameMessage: "Lütfen temel URL'nizi girin",
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
@@ -1433,13 +1446,13 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       endpointIDMessage: 'Lütfen modelin Model ID bilgisini girin',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: "Lütfen ARK_API_KEY'inizi girin",
-      bedrockModelNameMessage: 'Lütfen model adınızı girin!',
+      bedrockModelNameMessage: 'Lütfen model adınızı girin',
       addBedrockEngineAK: 'ERİŞİM ANAHTARI',
       bedrockAKMessage: 'Lütfen ERİŞİM ANAHTARINIZI girin',
       addBedrockSK: 'GİZLİ ANAHTAR',
       bedrockSKMessage: 'Lütfen GİZLİ ANAHTARINIZI girin',
       bedrockRegion: 'AWS bölgesi',
-      bedrockRegionMessage: 'Lütfen seçin!',
+      bedrockRegionMessage: 'Lütfen seçin',
       'us-east-2': 'ABD Doğu (Ohio)',
       'us-east-1': 'ABD Doğu (K. Virginia)',
       'us-west-1': 'ABD Batı (K. Kaliforniya)',
@@ -1486,8 +1499,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       SparkAPPIDMessage: 'lütfen APP Kimliğinizi girin',
       addSparkAPISecret: 'Spark API Gizlisi',
       SparkAPISecretMessage: 'lütfen API Gizlinizi girin',
-      addSparkAPIKey: 'Spark API Anahtarı',
-      SparkAPIKeyMessage: 'lütfen API Anahtarınızı girin',
+      addSparkAPIKey: 'Spark API ANAHTARI',
+      SparkAPIKeyMessage: 'lütfen API ANAHTARInızı girin',
       yiyanModelNameMessage: 'Lütfen model adını girin',
       addyiyanAK: 'yiyan API ANAHTARI',
       yiyanAKMessage: 'Lütfen API ANAHTARINIZI girin',
@@ -1562,7 +1575,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         chat: 'Sohbet',
         embedding: 'Embedding',
         rerank: 'Yeniden sıralama',
-        sequence2text: 'diziden metne',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -2571,7 +2584,7 @@ Temel Talimatlar:
         bodyTemplate: 'Gövde şablonu',
         basic: 'Temel',
         bearer: 'Taşıyıcı',
-        apiKey: 'Api anahtarı',
+        apiKey: 'API ANAHTARI',
         queryParameters: 'Sorgu parametreleri',
         headerParameters: 'Başlık parametreleri',
         requestBodyParameters: 'İstek gövdesi parametreleri',
@@ -2592,6 +2605,8 @@ Temel Talimatlar:
       success: 'Başarılı',
       failed: 'Başarısız',
       logTitle: 'Başlık',
+      tags: 'Etiketler',
+      canvasCategory: 'Kanvas kategorisi',
     },
     llmTools: {
       bad_calculator: {
@@ -2650,6 +2665,7 @@ Temel Talimatlar:
       okText: 'Kaydet',
       cancelText: 'İptal',
       chooseDataset: 'Lütfen önce bir dataset seçin',
+      selectLocalePlaceholder: 'Dil seçin',
     },
     language: {
       english: 'İngilizce',

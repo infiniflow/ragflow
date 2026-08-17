@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
@@ -20,7 +36,7 @@ export interface IChunkListResult {
   searchString?: string;
   handleInputChange?: React.ChangeEventHandler<HTMLInputElement>;
   pagination: PaginationProps;
-  setPagination?: (pagination: { page: number; pageSize: number }) => void;
+  setPagination?: (pagination: { page: number; pageSize?: number }) => void;
   available: number | undefined;
   handleSetAvailable: (available: number | undefined) => void;
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
@@ -122,12 +138,14 @@ export const useFetchChunk = (
 
 export const useFetchNextChunkList = (
   enabled = true,
+  options?: { chunkIds?: string[] },
 ): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
+  const chunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -147,6 +165,7 @@ export const useFetchNextChunkList = (
       pagination.pageSize,
       debouncedSearchString,
       available,
+      chunkIds,
     ],
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
@@ -156,10 +175,11 @@ export const useFetchNextChunkList = (
       const { data } = await kbService.chunkList({
         kb_id: knowledgeId,
         doc_id: documentId,
-        page: pagination.current,
-        size: pagination.pageSize,
+        page: chunkIds?.length ? 1 : pagination.current,
+        size: chunkIds?.length ? chunkIds.length : Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
+        chunk_ids: chunkIds,
       });
       if (data.code === 0) {
         const res = data.data;

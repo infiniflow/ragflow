@@ -9,7 +9,6 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
 import {
   LucideCircleX,
   LucideCylinder,
@@ -20,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { DocumentType, RunningStatus } from './constant';
 
@@ -35,7 +35,7 @@ export function useBulkOperateDataset({
     rowSelection,
     documents,
   );
-  const { knowledgeBase } = useKnowledgeBaseContext();
+  const { id } = useParams();
 
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
@@ -90,10 +90,10 @@ export function useBulkOperateDataset({
       setDocumentStatus({
         status: enabled,
         documentId: selectedRowKeys,
-        datasetId: knowledgeBase?.id,
+        datasetId: id!,
       });
     },
-    [selectedRowKeys, setDocumentStatus, knowledgeBase],
+    [selectedRowKeys, setDocumentStatus, id],
   );
 
   const handleEnableClick = useCallback(() => {
@@ -112,7 +112,9 @@ export function useBulkOperateDataset({
           .some((y) => y.id === x),
     );
     if (deletedKeys.length === 0) {
-      toast.error(t('theDocumentBeingParsedCannotBeDeleted'));
+      toast.error(
+        t('knowledgeConfiguration.theDocumentBeingParsedCannotBeDeleted'),
+      );
       return;
     }
 

@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"sort"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
@@ -56,19 +56,19 @@ func getTagsCacheKey(kbIDs []string) string {
 
 // GetTagsFromCache retrieves cached tags for given kb_ids
 // Returns nil if not found (cache miss)
-func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
+func GetTagsFromCache(ctx context.Context, kbIDs []string) (map[string]float64, error) {
 	if len(kbIDs) == 0 {
 		return nil, nil
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache lookup")
 		return nil, nil
 	}
 
 	key := getTagsCacheKey(kbIDs)
-	data, err := redisClient.Get(key)
+	data, err := redisClient.Get(ctx, key)
 	if err != nil || data == "" {
 		// Cache miss or error
 		return nil, nil
@@ -84,12 +84,12 @@ func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
 }
 
 // SetTagsToCache stores tags in cache for given kb_ids with 10 minute expiry
-func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
+func SetTagsToCache(ctx context.Context, kbIDs []string, tags map[string]float64) error {
 	if len(kbIDs) == 0 || tags == nil {
 		return nil
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache store")
 		return nil
@@ -102,7 +102,7 @@ func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
 	}
 
 	// Cache for 10 minutes (600 seconds)
-	ok := redisClient.Set(key, string(data), 10*time.Minute)
+	ok := redisClient.Set(ctx, key, string(data), 10*time.Minute)
 	if !ok {
 		common.Warn("Failed to set tags cache")
 		return fmt.Errorf("failed to set tags cache")
@@ -114,23 +114,26 @@ func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
 // Knowledgebase type alias for entity.Knowledgebase
 type Knowledgebase = entity.Knowledgebase
 
-// GetAllTagsInPortion returns the tag distribution for given KBs
-func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (map[string]float64, error) {
+// GetAllTagsInPortion returns all tag_kwd values and their occurrence counts
+// for documents belonging to the given kbIDs.
+func (s *MetadataService) GetAllTagsInPortion(ctx context.Context, tenantID string, kbIDs []string) (map[string]float64, error) {
 	if len(kbIDs) == 0 {
 		return make(map[string]float64), nil
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 
-	// Search with large limit to get all tag_kwd values
 	searchReq := &types.SearchRequest{
 		IndexNames: []string{indexName},
 		KbIDs:      kbIDs,
 		Offset:     0,
-		Limit:      10000, // Large limit to get all docs
+		// Python passes limit=0 ("unlimited") which Go SearchRequest treats
+		// as engine default (Infinity/ES: 30), so use an explicit large cap.
+		Limit:        100000,
+		SelectFields: []string{"tag_kwd"},
 	}
 
-	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +164,7 @@ func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (
 }
 
 // TagQuery returns weighted tag features for a question
-func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []string, allTags map[string]float64, topnTags int) (map[string]float64, error) {
+func (s *MetadataService) TagQuery(ctx context.Context, question string, tenantIDs []string, kbIDs []string, allTags map[string]float64, topnTags int) (map[string]float64, error) {
 	if len(kbIDs) == 0 || len(allTags) == 0 || len(tenantIDs) == 0 {
 		return make(map[string]float64), nil
 	}
@@ -192,7 +195,7 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 		MatchExprs: []interface{}{matchTextExpr},
 	}
 
-	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
@@ -258,8 +261,8 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 //  3. If cache miss, call GetAllTagsInPortion and cache the result (via SetTagsToCache)
 //  4. Get tag KBs by IDs
 //  5. Call TagQuery to get weighted tag features for the question
-func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) map[string]float64 {
-	if len(kbs) == 0 {
+func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kbs []*Knowledgebase) map[string]float64 {
+	if len(kbs) == 0 || question == "" {
 		return nil
 	}
 
@@ -287,26 +290,26 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 	common.Debug("tag_kb_ids found in parser_config", zap.Strings("tag_kb_ids", tagKBIDs))
 
 	// Get all tags from cache or compute and cache
-	allTags, err := GetTagsFromCache(tagKBIDs)
+	allTags, err := GetTagsFromCache(ctx, tagKBIDs)
 	if err != nil {
 		common.Warn("Failed to get tags from cache", zap.Error(err))
 	}
 	if allTags == nil {
 		// Cache miss - compute all_tags_in_portion
-		allTags, err = s.GetAllTagsInPortion(lastKB.TenantID, tagKBIDs)
+		allTags, err = s.GetAllTagsInPortion(ctx, lastKB.TenantID, tagKBIDs)
 		if err != nil {
 			common.Warn("Failed to get all tags in portion", zap.Error(err))
 			return nil
 		}
 		// Store in cache for future lookups
-		if err := SetTagsToCache(tagKBIDs, allTags); err != nil {
+		if err = SetTagsToCache(ctx, tagKBIDs, allTags); err != nil {
 			common.Warn("Failed to set tags cache", zap.Error(err))
 		}
 	}
 
 	// Get tag_kbs by IDs
 	kbDAO := dao.NewKnowledgebaseDAO()
-	tagKBs, err := kbDAO.GetByIDs(tagKBIDs)
+	tagKBs, err := kbDAO.GetByIDs(ctx, dao.DB, tagKBIDs)
 	if err != nil || len(tagKBs) == 0 {
 		// Return nil if no tag_kbs found
 		return nil
@@ -344,7 +347,7 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 	}
 
 	// Query tags for the question using unique tenant IDs
-	tagFeatures, err := s.TagQuery(question, uniqueTenantIDs, tagKBIDs, allTags, topnTags)
+	tagFeatures, err := s.TagQuery(ctx, question, uniqueTenantIDs, tagKBIDs, allTags, topnTags)
 	if err != nil {
 		return nil
 	}

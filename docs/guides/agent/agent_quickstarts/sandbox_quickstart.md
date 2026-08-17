@@ -1,34 +1,92 @@
 ---
 sidebar_position: 20
+title: Sandbox Quickstart
+sidebar_label: Sandbox Quickstart
 slug: /sandbox_quickstart
 sidebar_custom_props: {
   categoryIcon: LucideCodesandbox
 }
 ---
-# Sandbox quickstart
+# Sandbox Quickstart
 
-A secure, pluggable code execution backend designed for RAGFlow and other applications requiring isolated code execution environments.
+RAGFlow's `CodeExec` agent component needs a sandbox provider to run Python and JavaScript code.
 
-RAGFlow's `CodeExec` agent component depends on a sandbox provider to run Python and JavaScript code. Configure one of the providers below before using `CodeExec`.
+The simplest setup flow is:
 
-## Features: 
+1. Start the required sandbox services.
+2. Open the RAGFlow admin page.
+3. Go to **Admin > Sandbox Settings**.
+4. Choose a provider and save the configuration.
+5. Test the connection in the same page.
 
-- Seamless RAGFlow Integration — Works out-of-the-box with the code component of RAGFlow.
-- High Security — Uses gVisor for syscall-level sandboxing to isolate execution.
-- Customisable Sandboxing — Modify seccomp profiles easily to tailor syscall restrictions.
-- Pluggable Runtime Support — Extendable to support any programming language runtime.
-- Developer Friendly — Quick setup with a convenient Makefile.
+## Admin Page
 
-## Architecture
+Configure sandbox providers from the admin page:
 
-The architecture consists of isolated Docker base images for each supported language runtime, managed by the executor manager service. The executor manager orchestrates sandboxed code execution using gVisor for syscall interception and optional seccomp profiles for enhanced syscall filtering.
+- `self_managed`: Uses the executor manager service.
+- `local`: Runs code on the current machine.
+- `ssh`: Runs code on a remote machine over SSH.
+- `aliyun_codeinterpreter`, `e2b`, `tenki`, and `ucloud_agent_sandbox`: Cloud providers.
 
-## Provider options
 
-RAGFlow supports two sandbox provider types:
+## Provider Options
 
-- `self_managed`: Runs code inside Docker-managed sandbox containers. Use this for the standard RAGFlow sandbox deployment.
+
+RAGFlow supports multiple sandbox providers. Configure the active provider in
+Admin > Sandbox Settings after the services are up.
+
+- `self_managed`: Runs code inside Docker-managed sandbox containers. This is the default provider.
 - `local`: Runs code as local Python or Node.js subprocesses. Use this only in trusted development environments.
+- `ssh`: Runs code on a remote machine over SSH.
+- `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
+- `tenki`: Cloud-hosted provider that runs each execution in a disposable [Tenki](https://tenki.cloud) microVM. See [Tenki](#tenki) below.
+- `ucloud_agent_sandbox`: Cloud-hosted provider that runs each execution in a disposable [UCloud Agent Sandbox](https://astraflow.ucloud.cn/docs/agent-sandbox). See [UCloud Agent Sandbox](#ucloud-agent-sandbox) below.
+
+### Tenki
+
+`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
+
+The `tenki` SDK is an optional dependency (it requires `protobuf>=6.31`, which differs from RAGFlow's default gRPC stack), so it is not installed by default. Install it into the RAGFlow runtime before selecting this provider:
+
+```bash
+pip install tenki
+```
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): Tenki API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**.
+- `base_url` (optional): override the Tenki API endpoint.
+- `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
+- `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `false` so sandboxed code has no network access; set it to `true` when code needs the network (for example, to install packages).
+- `timeout`, `max_lifetime`, `cpu_cores`, `memory_mb`, `disk_size_gb`, and the output/artifact limits have sensible defaults and can be tuned in the same page.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- Files written to the `artifacts/` directory of the working directory are returned as run artifacts.
+- The provider uses only Tenki's create/exec/destroy operations; it does not use volumes or snapshots.
+
+### UCloud Agent Sandbox
+
+`ucloud_agent_sandbox` uses UCloud's native Sandbox SDK to create one disposable sandbox for each CodeExec run. No local sandbox service or Docker runtime is required.
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): obtain one from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys).
+- `region`: defaults to `cn-wlcb`; `us-ca` is also supported.
+- `domain` and `api_url`: optional endpoint overrides for private or custom deployments.
+- `template`: defaults to `base`, which includes Python and Node.js runtimes.
+- `allow_internet_access`: defaults to `false`; enable it only when sandboxed code needs outbound network access.
+- `timeout`, `sandbox_timeout`, and the output/artifact limits can be tuned for the workload.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- RAGFlow uses HTTPS with TLS certificate verification. The `insecure_http` option is intended only for trusted test deployments.
+- Files written to the execution workspace's `artifacts/` directory are returned as run artifacts.
+- The Python runtime dependency is installed with RAGFlow. The Go runtime uses UCloud's native Go SDK.
+
+See [UCloud Agent Sandbox prerequisites](https://astraflow.ucloud.cn/docs/agent-sandbox/product/prerequisites) and [regions](https://astraflow.ucloud.cn/docs/agent-sandbox/product/region).
 
 ## Prerequisites
 
@@ -43,11 +101,11 @@ RAGFlow supports two sandbox provider types:
 The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use.
 :::
 
-## Build Docker base images
+## Build Docker Base Images
 
 The sandbox uses isolated base images for secure containerized execution environments.
 
-### Option 1: Build from source
+### Option 1: Build from Source
 
 Build the runtime base images:
 
@@ -68,7 +126,7 @@ Build the executor manager image:
 docker build -t sandbox-executor-manager:latest ./executor_manager
 ```
 
-### Option 2: Pull base images from Docker Hub
+### Option 2: Pull Base Images from Docker Hub
 
 If you do not need to customize runtime dependencies, pull the published base images and tag them with the names used by standalone Docker Compose:
 
@@ -87,16 +145,18 @@ docker compose -f docker-compose.yml down
 docker compose -f docker-compose.yml up -d
 ```
 
-## Running with RAGFlow 
+## Running with RAGFlow
 
 1. Verify that gVisor is properly installed and operational.
 
 2. Configure the .env file located at docker/.env:
 
 - Set `SANDBOX_ENABLED=1`.
-- Set `SANDBOX_PROVIDER_TYPE=self_managed` or `SANDBOX_PROVIDER_TYPE=local`.
-- For `self_managed`, include `sandbox` in `COMPOSE_PROFILES`.
-- For `local`, uncomment and adjust the `SANDBOX_LOCAL_*` variables.
+- Include `sandbox` in `COMPOSE_PROFILES` if you want the default
+  `self_managed` executor-manager service.
+- Keep the self-managed deployment defaults in `.env` if you need to change the
+  sandbox-executor-manager image, pool size, base images, seccomp, memory, or
+  timeout.
 
 3. Add the following entry to your /etc/hosts file to resolve the executor manager service:
 
@@ -105,26 +165,30 @@ docker compose -f docker-compose.yml up -d
     ```
 
 4. Start the RAGFlow service as usual.
+5. Open **Admin > Sandbox Settings**.
+6. Select a provider.
+7. Fill in the required fields.
+8. Click **Save**.
+9. Click **Test Connection** if needed.
 
-## Environment variables
+## Environment Variables
 
 The variables in `docker/.env` are grouped by scope.
 
-### Shared variables
+### System-Level Variables
 
 These variables apply to sandbox support in general:
 
 - `SANDBOX_ENABLED`: Enables sandbox support in RAGFlow.
-- `SANDBOX_PROVIDER_TYPE`: Selects the active provider. Supported values are `self_managed` and `local`.
-- `SANDBOX_HOST`: The executor manager host used by the self-managed provider and the legacy HTTP fallback.
+- `COMPOSE_PROFILES`: Include `sandbox` to start the default self-managed executor-manager service.
 - `SANDBOX_ARTIFACT_BUCKET`: MinIO bucket used for files generated by sandbox code.
 - `SANDBOX_ARTIFACT_EXPIRE_DAYS`: Number of days before sandbox artifacts expire.
 
-### Self-managed variables
+### Self-Managed Deployment Defaults
 
-These variables apply when `SANDBOX_PROVIDER_TYPE=self_managed`:
+These variables are shown in Admin as deployment defaults for `self_managed`.
+Changing them requires restarting `sandbox-executor-manager`.
 
-- `COMPOSE_PROFILES`: Must include `sandbox` to start `sandbox-executor-manager` with RAGFlow.
 - `SANDBOX_EXECUTOR_MANAGER_IMAGE`: Docker image for the executor manager service.
 - `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE`: Number of Python and Node.js sandbox containers kept in the pool.
 - `SANDBOX_BASE_PYTHON_IMAGE`: Python runtime image used by executor-managed containers.
@@ -134,24 +198,25 @@ These variables apply when `SANDBOX_PROVIDER_TYPE=self_managed`:
 - `SANDBOX_MAX_MEMORY`: Memory limit for each sandbox runtime container.
 - `SANDBOX_TIMEOUT`: Default execution timeout.
 
-### Local variables
+### Admin-Managed Runtime Settings
 
-These variables apply when `SANDBOX_PROVIDER_TYPE=local`:
+Provider selection and runtime settings are configured in **Admin > Sandbox Settings**.
 
-- `SANDBOX_LOCAL_ENABLED`: Explicitly enables local code execution.
-- `SANDBOX_LOCAL_PYTHON_BIN`: Python executable used by local execution.
-- `SANDBOX_LOCAL_NODE_BIN`: Node.js executable used by local execution.
-- `SANDBOX_LOCAL_WORK_DIR`: Working directory for local execution files and artifacts.
-- `SANDBOX_LOCAL_TIMEOUT`: Maximum local execution time in seconds.
-- `SANDBOX_LOCAL_MAX_MEMORY_MB`: Address-space memory limit for local child processes.
-- `SANDBOX_LOCAL_MAX_OUTPUT_BYTES`: Maximum stdout and stderr size.
-- `SANDBOX_LOCAL_MAX_ARTIFACTS`: Maximum number of artifacts collected after execution.
-- `SANDBOX_LOCAL_MAX_ARTIFACT_BYTES`: Maximum size for each artifact.
-- `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `BLIS_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`: Optional native math library thread limits for local Python subprocesses.
+Examples:
 
-## Running standalone
+- Choose the active provider
+- Configure `self_managed` runtime settings
+- Configure all `local` settings
+- Configure all `ssh` settings
 
-### Manual setup
+For `self_managed`:
+
+- Runtime settings are editable in Admin
+- Deployment defaults come from `.env` and are shown as read-only values
+
+## Running Standalone
+
+### Manual Setup
 
 1. Initialize the environment variables:
 

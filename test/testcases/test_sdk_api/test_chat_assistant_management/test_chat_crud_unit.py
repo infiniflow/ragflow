@@ -15,6 +15,7 @@
 #
 
 import pytest
+from configs import HOST_ADDRESS
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.chat import Chat
 from ragflow_sdk.modules.session import Session
@@ -40,23 +41,23 @@ def set_tenant_info():
 
 @pytest.mark.p2
 def test_chat_create_session_raises_server_error_message(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat = Chat(client, {"id": "chat-1"})
 
     monkeypatch.setattr(
         chat,
         "post",
-        lambda *_args, **_kwargs: _DummyResponse({"code": 102, "message": "`name` can not be empty."}),
+        lambda *_args, **_kwargs: _DummyResponse({"code": 102, "message": "`name` can not be empty"}),
     )
 
     with pytest.raises(Exception) as exception_info:
         chat.create_session(name="")
-    assert "`name` can not be empty." in str(exception_info.value), str(exception_info.value)
+    assert "`name` can not be empty" in str(exception_info.value), str(exception_info.value)
 
 
 @pytest.mark.p2
 def test_chat_list_sessions_forwards_restful_query_params(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat = Chat(client, {"id": "chat-1"})
     calls = []
 

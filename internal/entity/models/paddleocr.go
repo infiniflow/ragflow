@@ -1,89 +1,88 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
 
 type PaddleOCRModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOCRModel {
 	return &PaddleOCRModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(false),
 		},
 	}
 }
 
-func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &PaddleOCRModel{
-		BaseURL:   baseURL,
-		URLSuffix: p.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
-		},
-	}
+func (p *PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewPaddleOCRModel(baseURL, p.baseModel.URLSuffix)
 }
 
 func (p *PaddleOCRModel) Name() string {
-	return "paddle_ocr"
+	return "paddle_ocr.net"
 }
 
-func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 type paddleSubmitResponse struct {
@@ -109,24 +108,28 @@ type paddleJsonlLine struct {
 				Text string `json:"text"`
 			} `json:"markdown"`
 		} `json:"layoutParsingResults"`
+		OcrResults []struct {
+			PrunedResult struct {
+				RecTexts []string `json:"rec_texts"`
+			} `json:"prunedResult"`
+		} `json:"ocrResults"`
 	} `json:"result"`
 }
 
-func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if (content == nil || len(content) == 0) && (fileURL == nil || *fileURL == "") {
 		return nil, fmt.Errorf("content and fileURL cannot be both empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", p.BaseURL[region], p.URLSuffix.OCR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, p.baseModel.URLSuffix.OCR)
 
 	optionalPayload := map[string]bool{
 		"useDocOrientationClassify": false,
@@ -135,8 +138,12 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	}
 	optBytes, _ := json.Marshal(optionalPayload)
 
+	// One generous deadline bounds the whole OCR operation (submit + poll +
+	// result download), so the poll loop below can no longer spin forever.
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
 	var req *http.Request
-	var err error
 
 	if fileURL != nil && strings.HasPrefix(*fileURL, "http") {
 		reqData := map[string]interface{}{
@@ -148,7 +155,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal json: %w", err)
 		}
-		req, err = http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 		req.Header.Set("Content-Type", "application/json")
 	} else {
 		body := &bytes.Buffer{}
@@ -164,13 +171,16 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		part.Write(content)
 		writer.Close()
 
-		req, err = http.NewRequest("POST", url, body)
+		req, err = http.NewRequestWithContext(ctx, "POST", url, body)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	req.Header.Set("Client-Platform", "ragflow")
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit job: %w", err)
 	}
@@ -194,13 +204,21 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	pollUrl := fmt.Sprintf("%s/%s", url, jobId)
 	var jsonlUrl string
 
+	pollInterval := 3 * time.Second
+	const pollMultiplier = 1.5
+	maxPollInterval := 15 * time.Second
+
 	for {
-		time.Sleep(3 * time.Second)
+		pollReq, err := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create poll request: %w", err)
+		}
+		if auth := BearerAuth(apiConfig); auth != "" {
+			pollReq.Header.Set("Authorization", auth)
+		}
+		pollReq.Header.Set("Client-Platform", "ragflow")
 
-		pollReq, _ := http.NewRequest("GET", pollUrl, nil)
-		pollReq.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
-
-		pollResp, err := p.httpClient.Do(pollReq)
+		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
 			return nil, fmt.Errorf("failed to poll job status: %w", err)
 		}
@@ -225,18 +243,27 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		} else if state == "failed" {
 			return nil, fmt.Errorf("ocr job failed on server: %s", pollData.Data.ErrorMsg)
 		}
+
+		// Exponential backoff
+		pollInterval = min(time.Duration(float64(pollInterval)*pollMultiplier), maxPollInterval)
+
+		select {
+		case <-time.After(pollInterval):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 
 	if jsonlUrl == "" {
 		return nil, fmt.Errorf("job done but jsonl url is empty")
 	}
 
-	resReq, err := http.NewRequest("GET", jsonlUrl, nil)
+	resReq, err := http.NewRequestWithContext(ctx, "GET", jsonlUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for jsonl: %w", err)
 	}
 
-	resResp, err := p.httpClient.Do(resReq)
+	resResp, err := p.baseModel.httpClient.Do(resReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download jsonl result: %w", err)
 	}
@@ -248,6 +275,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 
 	var fullMarkdown strings.Builder
 	scanner := bufio.NewScanner(resResp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -264,6 +292,19 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 			fullMarkdown.WriteString(layoutRes.Markdown.Text)
 			fullMarkdown.WriteString("\n\n")
 		}
+
+		// Fallback to ocrResults for models like PP-OCRv6
+		if len(lineData.Result.LayoutParsingResults) == 0 {
+			for _, ocrRes := range lineData.Result.OcrResults {
+				for _, text := range ocrRes.PrunedResult.RecTexts {
+					text = strings.TrimSpace(text)
+					if text != "" {
+						fullMarkdown.WriteString(text)
+						fullMarkdown.WriteString("\n")
+					}
+				}
+			}
+		}
 	}
 
 	if err = scanner.Err(); err != nil {
@@ -275,26 +316,26 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	return &OCRFileResponse{Text: &extractedText}, nil
 }
 
-func (p *PaddleOCRModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+func (p *PaddleOCRModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

@@ -1,4 +1,3 @@
-
 """
 Thanks to https://github.com/onyx-dot-app/onyx
 
@@ -29,6 +28,8 @@ from common.constants import FileSource
 
 from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
+from .azure_blob_connector import AzureBlobConnector
+from .bigquery_connector import BigQueryConnector
 from .bitbucket.connector import BitbucketConnector
 from .blob_connector import BlobStorageConnector
 from .box_connector import BoxConnector
@@ -53,9 +54,12 @@ from .jira.connector import JiraConnector
 from .models import BasicExpertInfo, Document, ImageSection, TextSection
 from .moodle_connector import MoodleConnector
 from .notion_connector import NotionConnector
+from .onedrive_connector import OneDriveConnector
+from .outlook_connector import OutlookConnector
 from .rdbms_connector import RDBMSConnector
 from .rest_api_connector import RestAPIConnector
 from .rss_connector import RSSConnector
+from .salesforce_connector import SalesforceConnector
 from .seafile_connector import SeaFileConnector
 from .sharepoint_connector import SharePointConnector
 from .slack_connector import SlackConnector
@@ -94,6 +98,11 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.MYSQL: RDBMSConnector,
     FileSource.POSTGRESQL: RDBMSConnector,
     FileSource.REST_API: RestAPIConnector,
+    FileSource.BIGQUERY: BigQueryConnector,
+    FileSource.ONEDRIVE: OneDriveConnector,
+    FileSource.OUTLOOK: OutlookConnector,
+    FileSource.SALESFORCE: SalesforceConnector,
+    FileSource.AZURE_BLOB: AzureBlobConnector,
 }
 
 
@@ -107,7 +116,6 @@ def build_connector_for_source(source: str, config: dict[str, Any]) -> Any:
         return connector_cls.build_connector(config, db_type=source)
     return connector_cls.build_connector(config)
 
-
 __all__ = [
     "BlobStorageConnector",
     "RSSConnector",
@@ -120,6 +128,14 @@ __all__ = [
     "GoogleDriveConnector",
     "JiraConnector",
     "SharePointConnector",
+    "GithubConnector",
+    "GitlabConnector",
+    "BitbucketConnector",
+    "BoxConnector",
+    "OneDriveConnector",
+    "OutlookConnector",
+    "SalesforceConnector",
+    "AzureBlobConnector",
     "TeamsConnector",
     "MoodleConnector",
     "BlobType",
@@ -139,6 +155,7 @@ __all__ = [
     "ZendeskConnector",
     "SeaFileConnector",
     "RDBMSConnector",
+    "BigQueryConnector",
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",

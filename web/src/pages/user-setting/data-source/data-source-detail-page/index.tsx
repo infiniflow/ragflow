@@ -1,4 +1,19 @@
-import BackButton from '@/components/back-button';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   DynamicForm,
   DynamicFormRef,
@@ -10,15 +25,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
-import { t } from 'i18next';
 import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import {
-  DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   getCommonExtraDefaultValues,
+  getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
   useDataSourceInfo,
@@ -32,6 +47,7 @@ import {
 import { DataSourceLogsTable } from './log-table';
 
 const SourceDetailPage = () => {
+  const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
   const [searchParams] = useSearchParams();
   const connectorId = searchParams.get('id')!;
@@ -46,18 +62,12 @@ const SourceDetailPage = () => {
     }
   }, [detail, dataSourceInfo]);
 
-  const [fields, setFields] = useState<FormFieldConfig[]>([]);
   const [isDirty, setIsDirty] = useState(false);
-  const [defaultValues, setDefaultValues] = useState<FieldValues>(
-    DataSourceFormDefaultValues[
-      detail?.source as keyof typeof DataSourceFormDefaultValues
-    ] as FieldValues,
-  );
 
   const customFields = useMemo(() => {
     return [
       {
-        label: 'Prune Freq',
+        label: t('setting.dataSourcePruneFreq'),
         name: 'prune_freq',
         type: FormFieldType.Number,
         required: false,
@@ -77,7 +87,7 @@ const SourceDetailPage = () => {
         },
       },
       {
-        label: 'Refresh Freq',
+        label: t('setting.dataSourceRefreshFreq'),
         name: 'refresh_freq',
         type: FormFieldType.Number,
         required: false,
@@ -94,7 +104,7 @@ const SourceDetailPage = () => {
         ),
       },
       {
-        label: 'Timeout Secs',
+        label: t('setting.dataSourceTimeoutSecs'),
         name: 'timeout_secs',
         type: FormFieldType.Number,
         required: false,
@@ -115,7 +125,39 @@ const SourceDetailPage = () => {
         ),
       },
     ];
-  }, []);
+  }, [t]);
+
+  const fields = useMemo<FormFieldConfig[]>(() => {
+    if (!detail) {
+      return [];
+    }
+    const baseFields = getDataSourceFormBaseFields(t).map((field) =>
+      field.name === 'name' ? { ...field, disabled: true } : { ...field },
+    );
+    const allFields = [
+      ...baseFields,
+      ...getDataSourceFieldsWithExtras(t, detail.source as any),
+      ...customFields,
+    ] as FormFieldConfig[];
+    return allFields.map((field) => ({
+      ...field,
+      horizontal: true,
+      onChange: undefined,
+    }));
+  }, [detail, customFields, t]);
+
+  const defaultValues = useMemo<FieldValues>(() => {
+    if (!detail) {
+      return {};
+    }
+    return mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[
+        detail.source as keyof typeof DataSourceFormDefaultValues
+      ] as FieldValues,
+      getCommonExtraDefaultValues(),
+      detail as FieldValues,
+    );
+  }, [detail]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
   const { loading: testLoading, handleTest } = useTestDataSource(
@@ -170,53 +212,14 @@ const SourceDetailPage = () => {
   }, [actionMode, onSubmit, updateStatus]);
 
   const primaryActionLabel = useMemo(() => {
-    if (actionMode === 'stop') return 'Stop';
-    if (actionMode === 'resume') return 'Resume';
-    return 'Save';
-  }, [actionMode]);
+    if (actionMode === 'stop') return t('common.stop');
+    if (actionMode === 'resume') return t('common.resume');
+    return t('common.save');
+  }, [actionMode, t]);
 
   useEffect(() => {
-    const baseFields = DataSourceFormBaseFields.map((field) => {
-      if (field.name === 'name') {
-        return {
-          ...field,
-          disabled: true,
-        };
-      } else {
-        return {
-          ...field,
-        };
-      }
-    });
-    if (detail) {
-      const fields = [
-        ...baseFields,
-        ...getDataSourceFieldsWithExtras(detail.source as any),
-        ...customFields,
-      ] as FormFieldConfig[];
-
-      const newFields = fields.map((field) => {
-        return {
-          ...field,
-          horizontal: true,
-          onChange: undefined,
-        };
-      });
-      setFields(newFields);
-
-      const defaultValueTemp = {
-        ...mergeDataSourceFormValues(
-          DataSourceFormDefaultValues[
-            detail?.source as keyof typeof DataSourceFormDefaultValues
-          ] as FieldValues,
-          getCommonExtraDefaultValues(),
-          detail as FieldValues,
-        ),
-      };
-      setDefaultValues(defaultValueTemp);
-      setIsDirty(false);
-    }
-  }, [detail, customFields, onSubmit]);
+    setIsDirty(false);
+  }, [detail]);
 
   useEffect(() => {
     const instance = formRef.current;
@@ -230,7 +233,7 @@ const SourceDetailPage = () => {
 
   return (
     <div className="px-10 py-5">
-      <BackButton />
+      {/* <BackButton /> */}
       <Card className="bg-transparent border border-border-button px-5 pt-[10px] pb-5 rounded-md mt-5">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-3">
           {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
@@ -240,7 +243,7 @@ const SourceDetailPage = () => {
           </CardTitle>
         </CardHeader>
         <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
-        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-auto">
+        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-230px)] overflow-y-auto scrollbar-auto">
           <div className="max-w-[1200px]">
             <DynamicForm.Root
               ref={formRef}

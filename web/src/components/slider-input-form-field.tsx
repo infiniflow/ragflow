@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FormLayout } from '@/constants/form';
 import { cn } from '@/lib/utils';
 import { forwardRef, ReactNode, useMemo } from 'react';
@@ -92,9 +108,11 @@ export const SliderInputFormField = forwardRef<
               <FormControl>
                 <SingleFormSlider
                   {...field}
-                  value={percentage ? field.value * 100 : field.value}
+                  value={
+                    percentage ? Math.round(field.value * 100) : field.value
+                  }
                   onChange={(value) =>
-                    field.onChange(percentage ? value / 100 : value)
+                    field.onChange(percentage ? Math.round(value) / 100 : value)
                   }
                   max={displayMax}
                   min={displayMin}
@@ -114,13 +132,13 @@ export const SliderInputFormField = forwardRef<
                   step={displayStep}
                   hideIcons
                   value={
-                    percentage ? (field.value * 100).toFixed(0) : field.value
+                    percentage ? Math.round(field.value * 100) : field.value
                   }
                   onChange={(val) => {
                     const value = Number(val || 0);
-                    if (!isNaN(value)) {
+                    if (value >= 0) {
                       field.onChange(
-                        percentage ? (value / 100).toFixed(0) : value,
+                        percentage ? Math.round(value) / 100 : value,
                       );
                     }
                   }}

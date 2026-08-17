@@ -1,11 +1,13 @@
 ---
 sidebar_position: -8
+title: Set Context Window Size
+sidebar_label: Set Context Window Size
 slug: /set_context_window
 sidebar_custom_props: {
    categoryIcon: LucideListChevronsUpDown
 }
 ---
-# Set context window size
+# Set Context Window Size
 
 Set context window size for images and tables to improve long-context RAG performances.
 
@@ -19,7 +21,7 @@ To address this, RAGFlow 0.23.0 introduces the **Image & table context window** 
 
 1. On your dataset's **Configuration** page, find the **Image & table context window** slider:
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/image_table_context_window.png)
+![Image table context window](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/image_table_context_window.png)
 
 
 2. Adjust the number of context tokens according to your needs.

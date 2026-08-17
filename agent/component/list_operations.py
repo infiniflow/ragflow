@@ -3,10 +3,12 @@ import os
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
+
 class ListOperationsParam(ComponentParamBase):
     """
     Define the List Operations component parameters.
     """
+
     def __init__(self):
         super().__init__()
         self.query = ""
@@ -14,27 +16,25 @@ class ListOperationsParam(ComponentParamBase):
         self.n = 0
         self.strict = False
         self.sort_method = "asc"
-        self.filter = {
-            "operator": "=",
-            "value": ""
-        }
-        self.outputs = {
-            "result": {
-                "value": [],
-                "type": "Array of ?"
-            },
-            "first": {
-                "value": "",
-                "type": "?"
-            },
-            "last": {
-                "value": "",
-                "type": "?"
-            }
-        }
-    
+        # Comma-separated list of map keys to sort by (primary,
+        # tiebreak, ...). Empty / unset falls back to the legacy
+        # full-hashable-key behaviour (sort by the lexicographically
+        # first field). Mirrors internal/agent/component/list_operations.go
+        # parseSortByFieldList + opSort's SortBy path.
+        self.sort_by = ""
+        self.filter = {"operator": "=", "value": ""}
+        self.outputs = {"result": {"value": [], "type": "Array of ?"}, "first": {"value": "", "type": "?"}, "last": {"value": "", "type": "?"}}
+
+    @staticmethod
+    def _normalize_operation_name(operation):
+        op = "" if operation is None else str(operation).strip()
+        if op.lower() == "topn":
+            return "head"
+        return op or "nth"
+
     def check(self):
         self.check_empty(self.query, "query")
+        self.operations = self._normalize_operation_name(self.operations)
         self.check_valid_value(
             self.operations,
             "Support operations",
@@ -43,14 +43,14 @@ class ListOperationsParam(ComponentParamBase):
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
-    
 
-class ListOperations(ComponentBase,ABC):
+
+class ListOperations(ComponentBase, ABC):
     component_name = "ListOperations"
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
-        self.input_objects=[]
+        self.input_objects = []
         inputs = getattr(self._param, "query", None)
         self.inputs = self._canvas.get_variable_value(inputs)
         if not isinstance(self.inputs, list):
@@ -69,7 +69,6 @@ class ListOperations(ComponentBase,ABC):
         elif self._param.operations == "drop_duplicates":
             self._drop_duplicates()
 
-
     def _coerce_n(self):
         try:
             return int(getattr(self._param, "n", 0))
@@ -85,12 +84,10 @@ class ListOperations(ComponentBase,ABC):
     def _set_outputs(self, outputs):
         self._param.outputs["result"]["value"] = outputs
         self._param.outputs["first"]["value"] = outputs[0] if outputs else None
-        self._param.outputs["last"]["value"]  = outputs[-1] if outputs else None
+        self._param.outputs["last"]["value"] = outputs[-1] if outputs else None
 
     def _raise_strict_range_error(self, operation, n):
-        raise ValueError(
-            f"{operation} requires n to be within the valid range in strict mode, got {n}."
-        )
+        raise ValueError(f"{operation} requires n to be within the valid range in strict mode, got {n}.")
 
     def _nth(self):
         n = self._coerce_n()
@@ -146,9 +143,9 @@ class ListOperations(ComponentBase,ABC):
         self._set_outputs(outputs)
 
     def _filter(self):
-        self._set_outputs([i for i in self.inputs if self._eval(self._norm(i),self._param.filter["operator"],self._param.filter["value"])])
+        self._set_outputs([i for i in self.inputs if self._eval(self._norm(i), self._param.filter["operator"], self._param.filter["value"])])
 
-    def _norm(self,v):
+    def _norm(self, v):
         s = "" if v is None else str(v)
         return s
 
@@ -178,11 +175,20 @@ class ListOperations(ComponentBase,ABC):
         first = items[0]
 
         if isinstance(first, dict):
-            outputs = sorted(
-                items,
-                key=lambda x: self._hashable(x),
-                reverse=reverse,
-            )
+            sort_by_raw = getattr(self._param, "sort_by", "") or ""
+            sort_by = [k.strip() for k in sort_by_raw.split(",") if k.strip()]
+            if sort_by:
+                outputs = sorted(
+                    items,
+                    key=lambda x: tuple(x.get(k) for k in sort_by),
+                    reverse=reverse,
+                )
+            else:
+                outputs = sorted(
+                    items,
+                    key=lambda x: self._hashable(x),
+                    reverse=reverse,
+                )
         else:
             outputs = sorted(items, reverse=reverse)
 
@@ -199,7 +205,7 @@ class ListOperations(ComponentBase,ABC):
             outs.append(item)
         self._set_outputs(outs)
 
-    def _hashable(self,x):
+    def _hashable(self, x):
         if isinstance(x, dict):
             return tuple(sorted((k, self._hashable(v)) for k, v in x.items()))
         if isinstance(x, (list, tuple)):
