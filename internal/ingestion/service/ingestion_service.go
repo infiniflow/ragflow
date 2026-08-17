@@ -331,15 +331,31 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
+		// Dedup claim: a memory task, like an ingestion task, must not be
+		// executed twice if the broker redelivers it while the first run is
+		// still in flight. Without this guard a redelivered memory message is
+		// dispatched to the worker again (the memory branch has no ingestion
+		// state machine to reject a second RUNNING transition), duplicating
+		// the extraction. The claim is released by executeMemoryTask when the
+		// worker settles, or by the ctx.Done branch below on shutdown.
+		if !e.claimTask(taskMessage.TaskID) {
+			common.Warn(fmt.Sprintf("memory task %s redelivered while already processing, ack skip", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack redelivered memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
 		select {
 		case e.taskChan <- taskCtx:
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
-		default:
-			common.Info(fmt.Sprintf("No available slot for memory task %s, nack", taskMessage.TaskID))
-			if nackErr := handle.Nack(); nackErr != nil {
-				common.Error(fmt.Sprintf("error nack memory task %s", taskMessage.TaskID), nackErr)
-			}
+		case <-e.ctx.Done():
+			// Shutdown won the race: release the claim and return without
+			// settling so the broker redelivers the memory task after restart
+			// rather than blocking the consume loop forever.
+			e.releaseTask(taskMessage.TaskID)
+			common.Info(fmt.Sprintf("Ingestor shutting down; memory task %s not enqueued", taskMessage.TaskID))
+			return
 		}
 		return
 	}
@@ -414,17 +430,29 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
 
-	// Push to task channel; if full, reject the task (backpressure).
+	// Push to the task channel. Use a blocking send so backpressure is
+	// applied at the consumer: the consume loop waits for a free worker slot
+	// instead of dropping the message. Dropping on backpressure is unsafe
+	// because StartRunning (above) has already flipped the task — and its
+	// document — to RUNNING in the DB, and there is no scan-and-re-enqueue
+	// path on completion. A Nack that exceeds the broker's MaxDeliver (16,
+	// with no dead-letter in nats.go) would permanently lose the task and
+	// leave the document stuck in RUNNING — the "files get stuck after the
+	// first few parse" defect.
+	//
+	// The in-flight claim (set just above) guards against a redelivery racing
+	// the blocked send: a duplicate delivery sees claimTask fail and is
+	// ack-skipped, so a blocking send cannot double-execute a task.
 	select {
 	case e.taskChan <- taskCtx:
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
-	default:
-		common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-		// claimedTaskID is still set; defer will call releaseTask.
-		if nackErr := handle.Nack(); nackErr != nil {
-			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
-		}
+	case <-e.ctx.Done():
+		// Shutdown won the race: release the claim and return without
+		// settling so the broker redelivers the message after restart
+		// rather than blocking the consume loop forever.
+		common.Info(fmt.Sprintf("Ingestor shutting down; releasing slot for task %s without ack", task.ID))
+		return
 	}
 }
 
@@ -474,6 +502,12 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	taskID, _ := taskCtx.MemoryPayload["id"].(string)
 	if taskID == "" {
 		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
+	}
+	// Release the dedup claim taken in processMessage so a future redelivery
+	// (after the broker exhausts AckWait, or after a restart) can re-claim and
+	// retry this memory task instead of being permanently skipped.
+	if taskID != "" {
+		defer e.releaseTask(taskID)
 	}
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
 	if taskCtx.Handle == nil {
