@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 from contextvars import ContextVar
@@ -236,7 +237,7 @@ def parse_accept_language(header: str | None) -> str | None:
                     q = float(param[2:])
                 except ValueError:
                     q = 0.0
-        if q <= 0 or q > 1:
+        if math.isnan(q) or q <= 0 or q > 1:
             continue
         ranges.append((-q, idx, tag))
     ranges.sort()

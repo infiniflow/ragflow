@@ -35,6 +35,8 @@ def test_parse_accept_language_q_order():
     assert parse_accept_language("fr;q=0") is None
     assert parse_accept_language("fr;q=0,en;q=0.5") == "en"
     assert parse_accept_language("en;q=1.1,ja;q=0.8") == "ja"
+    assert parse_accept_language("fr;q=NaN") is None
+    assert parse_accept_language("fr;q=NaN,en;q=0.5") == "en"
 
 
 def test_resolve_priority_header_over_user_over_lang():
@@ -108,17 +110,19 @@ def test_go_msg_file_matches_catalog():
 
 
 def test_error_code_and_argument_catalogs_are_translated():
-    set_locale("en")
-    assert t("error.code.timeout") == "Timeout"
-    assert t("error.invalid_argument_values", fields="limit={1,2}") == "required argument values: limit={1,2}"
-    for loc in ("zh-Hans", "zh-Hant", "ar", "de", "es", "fr", "id", "ja"):
-        set_locale(loc)
-        assert t("error.code.timeout") != "Timeout"
-        assert t("error.code.timeout")
-        assert t("error.invalid_argument_values", fields="x") != "required argument values: x"
-    set_locale("zh-Hans")
-    assert t("Commit not found in workspace") == "工作区中找不到该提交"
-    set_locale("zh-Hant")
-    assert t("Commit not found in workspace") == "工作區中找不到該提交"
-    set_locale("en")
+    try:
+        set_locale("en")
+        assert t("error.code.timeout") == "Timeout"
+        assert t("error.invalid_argument_values", fields="limit={1,2}") == "required argument values: limit={1,2}"
+        for loc in ("zh-Hans", "zh-Hant", "ar", "de", "es", "fr", "id", "ja"):
+            set_locale(loc)
+            assert t("error.code.timeout") != "Timeout"
+            assert t("error.code.timeout")
+            assert t("error.invalid_argument_values", fields="x") != "required argument values: x"
+        set_locale("zh-Hans")
+        assert t("Commit not found in workspace") == "工作区中找不到该提交"
+        set_locale("zh-Hant")
+        assert t("Commit not found in workspace") == "工作區中找不到該提交"
+    finally:
+        set_locale("en")
 

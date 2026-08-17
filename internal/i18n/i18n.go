@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"sort"
@@ -203,7 +204,7 @@ func ParseAcceptLanguage(header string) string {
 				}
 			}
 		}
-		if q <= 0 || q > 1 {
+		if math.IsNaN(q) || q <= 0 || q > 1 {
 			continue
 		}
 		ranges = append(ranges, ranked{q: q, index: idx, tag: tag})
