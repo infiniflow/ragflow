@@ -101,7 +101,7 @@ export function RerankFormFields({
         name={rerankIdName}
         ownerTenantId={ownerTenantId}
       ></RerankFormField>
-      {rerankId && (
+      {/* {rerankId && (
         <SliderInputFormField
           name={topKName}
           label={t('topK')}
@@ -109,7 +109,7 @@ export function RerankFormFields({
           min={1}
           tooltip={t('topKTip')}
         ></SliderInputFormField>
-      )}
+      )} */}
     </>
   );
 }

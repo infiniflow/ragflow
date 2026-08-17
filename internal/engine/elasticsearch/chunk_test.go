@@ -159,7 +159,8 @@ func TestSearchAfterPaginateSimpleFirstPage(t *testing.T) {
 		scripted:      []SearchResponse{makeResponse(5, 0, 5)},
 		scriptedTotal: 5,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 0, 5, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 0, 5, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,8 +203,9 @@ func TestSearchAfterPaginateSkipsDeepOffset(t *testing.T) {
 	// Defensive: if the loop miscounts and asks for another take
 	// batch, this would surface as a 12th fetch.
 	m.scripted = append(m.scripted, makeResponse(10, 10500, 0))
+	ctx := t.Context()
 
-	got, totalHits, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, offset, limit, m.fetch)
+	got, totalHits, err := searchAfterPaginate(ctx, map[string]interface{}{}, offset, limit, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +250,8 @@ func TestSearchAfterPaginateExhaustsIndex(t *testing.T) {
 		},
 		scriptedTotal: 500,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 400, 10, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 400, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,7 +278,8 @@ func TestSearchAfterPaginateEmptyResult(t *testing.T) {
 		scripted:      []SearchResponse{makeResponse(0, 0, 0)},
 		scriptedTotal: 0,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 50, 10, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 50, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -306,7 +310,8 @@ func TestSearchAfterPaginateStopOnUnchangedCursor(t *testing.T) {
 		scriptedTotal: 5000,
 	}
 	// offset=500, limit=10.
-	_, _, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 500, 10, m.fetch)
+	ctx := t.Context()
+	_, _, err := searchAfterPaginate(ctx, map[string]interface{}{}, 500, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -330,7 +335,8 @@ func TestSearchAfterPaginateLimitLargerThanBatchSize(t *testing.T) {
 		},
 		scriptedTotal: 10000,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 0, limit, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 0, limit, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

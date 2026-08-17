@@ -30,6 +30,11 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -357,16 +362,24 @@ export function NextMessageInput({
             )}
 
             {showInternet && (
-              <Button
-                type="button"
-                variant={enableInternet ? 'accent' : 'transparent'}
-                size="icon-xs"
-                className="border-0"
-                onClick={handleInternetToggle}
-                data-testid="chat-detail-internet-toggle"
-              >
-                <Globe />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={enableInternet ? 'accent' : 'transparent'}
+                    size="icon-xs"
+                    className="border-0"
+                    onClick={handleInternetToggle}
+                    data-testid="chat-detail-internet-toggle"
+                  >
+                    <Globe />
+                    <span className="sr-only">{t('chat.webSearch')}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t('chat.webSearch')}</p>
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 

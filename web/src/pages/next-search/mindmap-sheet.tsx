@@ -34,6 +34,10 @@ interface IProps extends IModalProps<any> {
 const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
   const { t } = useTranslation();
   const percent = usePendingMindMap();
+  // An empty tree (no children) means the backend honestly found nothing to
+  // map. Render an explicit empty state instead of a ghost "root" node.
+  const isEmptyMindMap =
+    !data || !Array.isArray(data.children) || data.children.length === 0;
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
@@ -61,7 +65,14 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
               <Progress value={percent} className="h-1 flex-1 min-w-10" />
             </div>
           )}
-          {!loading && (
+          {!loading && isEmptyMindMap && (
+            <div className="bg-bg-card rounded-lg w-full h-full flex items-center justify-center">
+              <p className="text-text-secondary">
+                {t('knowledgeDetails.noStructureMindmap')}
+              </p>
+            </div>
+          )}
+          {!loading && !isEmptyMindMap && (
             <div className="bg-bg-card rounded-lg w-full h-full">
               <IndentedTree data={data}></IndentedTree>
             </div>
