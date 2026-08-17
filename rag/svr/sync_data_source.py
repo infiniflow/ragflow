@@ -66,6 +66,7 @@ from common.data_source import (
     OneDriveConnector,
     OutlookConnector,
     AzureBlobConnector,
+    HubSpotConnector,
     SalesforceConnector,
     TeamsConnector,
     SlackConnector,
@@ -1144,6 +1145,58 @@ class Outlook(SyncBase):
         return wrapper()
 
 
+class HubSpot(SyncBase):
+    SOURCE_NAME: str = FileSource.HUBSPOT
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_objects = self.conf.get("objects")
+        if isinstance(raw_objects, str):
+            objects = [o.strip() for o in raw_objects.split(",") if o.strip()]
+        elif isinstance(raw_objects, list):
+            objects = [str(o).strip() for o in raw_objects if str(o).strip()]
+        else:
+            objects = None
+
+        self.connector = HubSpotConnector(
+            batch_size=batch_size,
+            objects=objects,
+            include_knowledge_base=bool(self.conf.get("include_knowledge_base", True)),
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Incrementality is owned by the global poll_range_start watermark.
+        # The connector fails closed (a partial object failure aborts the
+        # run), so the watermark only advances on a fully successful sync and
+        # a failed run simply retries the same window next time — no
+        # per-object checkpoint persistence is required or relied upon.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        document_batch_generator = self.connector.poll_source(start_ts, end_ts)
+
+        self.log_connection(
+            "HubSpot",
+            f"objects({','.join(self.connector.objects)}) kb={self.connector.include_knowledge_base}",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
 class Salesforce(SyncBase):
     SOURCE_NAME: str = FileSource.SALESFORCE
 
@@ -2152,6 +2205,7 @@ func_factory = {
     FileSource.ONEDRIVE: OneDrive,
     FileSource.OUTLOOK: Outlook,
     FileSource.AZURE_BLOB: AzureBlob,
+    FileSource.HUBSPOT: HubSpot,
     FileSource.SALESFORCE: Salesforce,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
