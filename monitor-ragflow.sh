@@ -11,7 +11,7 @@
 #
 set -u
 
-CONTAINER="${RAGFLOW_CONTAINER:-ragflow-cpu-1}"
+CONTAINER="${RAGFLOW_CONTAINER:-docker-ragflow-cpu-1}"
 LOG="${RAGFLOW_MONITOR_LOG:-/var/log/ragflow-monitor.log}"
 HOSTS="es01 mysql minio redis"
 
