@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -45,7 +44,7 @@ func TestDumpTextOutput(t *testing.T) {
 		}
 		name := e.Name()
 		outPath := filepath.Join(outDir, name+".txt")
-		if _, err := os.Stat(outPath); err == nil {
+		if _, err = os.Stat(outPath); err == nil {
 			data, _ := os.ReadFile(outPath)
 			n := len(data)
 			totalChars += n
@@ -68,7 +67,7 @@ func TestDumpTextOutput(t *testing.T) {
 
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+		result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 		eng.Close()
 		if err != nil {
 			t.Logf("[%d/%d] %s — parse error: %v", i+1, count, name, err)

@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -57,7 +56,7 @@ func TestPipelineParity(t *testing.T) {
 		cfg.SortByTop = true
 		mockAnalyzer := &MockDocAnalyzer{Healthy: true}
 		p := NewParser(cfg)
-		result, err := p.ParseRaw(context.Background(), engine, mockAnalyzer)
+		result, err := p.ParseRaw(t.Context(), engine, mockAnalyzer)
 		if err != nil {
 			t.Errorf("%s: Parse: %v", name, err)
 			continue
