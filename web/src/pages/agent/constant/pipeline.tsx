@@ -353,8 +353,9 @@ export const initialExtractorValues = {
   field_name: ContextGeneratorFieldName.Summary,
   auto_keywords: 0,
   auto_questions: 0,
-  auto_tags: 1,
+  auto_tags: 0,
   tag_file_id: '',
+  enable_summary: 0,
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
