@@ -122,9 +122,10 @@ class SkillNode:
 def skill_safe_name(text: str, max_len: int = 50) -> str:
     """Lowercase, hyphen-only, max-len-clamped slug. Mirrors
     Corpus2Skill ``_safe_name`` for cross-system stability of folder
-    names."""
+    names. Keeps CJK (Chinese) characters so Chinese labels survive
+    the slugification."""
     name = (text or "").lower().strip()
-    name = re.sub(r"[^a-z0-9\s-]", "", name)
+    name = re.sub(r"[^a-z0-9\s\u4e00-\u9fff-]", "", name)
     name = re.sub(r"\s+", "-", name)
     name = name.strip("-")[:max_len]
     return name
@@ -136,8 +137,8 @@ async def label_skill_node_one(
     semaphore: asyncio.Semaphore,
 ) -> str:
     """Generate a single fs-safe label: 2–5 word lowercase
-    hyphenated label, max_tokens=20, sanitized to [a-z0-9-], capped
-    at 50 chars, falls back to "cluster" on any failure.
+    hyphenated label, max_tokens=20, sanitized to [a-z0-9-\u4e00-\u9fff],
+    capped at 50 chars, falls back to "cluster" on any failure.
     """
     async with semaphore:
         try:
@@ -156,7 +157,7 @@ async def label_skill_node_one(
                 {"max_tokens": 20, "temperature": 0.0},
             )
             raw = (cnt or "").strip().lower()
-            label = re.sub(r"[^a-z0-9-]", "-", raw)
+            label = re.sub(r"[^a-z0-9\u4e00-\u9fff-]", "-", raw)
             label = re.sub(r"-+", "-", label).strip("-")[:50]
             return label or "cluster"
         except Exception:
