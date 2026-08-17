@@ -205,24 +205,14 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         except HttpError as e:
             status_code = e.resp.status if e.resp else None
             if status_code == 401:
-                raise CredentialExpiredError(
-                    "Invalid or expired Gmail credentials (401)."
-                ) from e
+                raise CredentialExpiredError("Invalid or expired Gmail credentials (401).") from e
             if status_code == 403:
-                raise InsufficientPermissionsError(
-                    "Gmail app lacks required permissions (403)."
-                ) from e
-            raise ConnectorValidationError(
-                f"Unexpected Gmail error (status={status_code}): {e}"
-            ) from e
+                raise InsufficientPermissionsError("Gmail app lacks required permissions (403).") from e
+            raise ConnectorValidationError(f"Unexpected Gmail error (status={status_code}): {e}") from e
         except Exception as e:
             if MISSING_SCOPES_ERROR_STR in str(e):
-                raise InsufficientPermissionsError(
-                    "Gmail credentials are missing required scopes."
-                ) from e
-            raise ConnectorValidationError(
-                f"Unexpected error during Gmail validation: {e}"
-            ) from e
+                raise InsufficientPermissionsError("Gmail credentials are missing required scopes.") from e
+            raise ConnectorValidationError(f"Unexpected error during Gmail validation: {e}") from e
 
     def _get_all_user_emails(self) -> list[str]:
         """Get all user emails for Google Workspace domain."""

@@ -181,7 +181,6 @@ class SeaFileConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         connector.load_credentials(config.get("credentials") or {})
         return connector
 
-
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         logger.debug("Loading credentials for SeaFile server %s", self.seafile_url)
 

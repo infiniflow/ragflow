@@ -90,9 +90,7 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             table_name_or_id=config.get("table_name_or_id"),
             batch_size=batch_size,
         )
-        connector.load_credentials(
-            {"airtable_access_token": credentials["airtable_access_token"]}
-        )
+        connector.load_credentials({"airtable_access_token": credentials["airtable_access_token"]})
         return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
@@ -106,9 +104,7 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         try:
             self.airtable_client.table(self.base_id, self.table_name_or_id).all(max_records=1)
         except Exception as e:
-            raise ConnectorValidationError(
-                f"Failed to validate Airtable connector settings: {e}"
-            ) from e
+            raise ConnectorValidationError(f"Failed to validate Airtable connector settings: {e}") from e
 
     @property
     def airtable_client(self) -> AirtableApi:

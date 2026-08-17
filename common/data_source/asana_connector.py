@@ -340,9 +340,7 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             config.get("asana_team_id"),
             batch_size=batch_size,
         )
-        connector.load_credentials(
-            {"asana_api_token_secret": credentials["asana_api_token_secret"]}
-        )
+        connector.load_credentials({"asana_api_token_secret": credentials["asana_api_token_secret"]})
         return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
@@ -363,9 +361,7 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         try:
             self.asana_client.workspaces_api.get_workspace(self.workspace_id, {})
         except Exception as e:
-            raise ConnectorValidationError(
-                f"Failed to validate Asana connector settings: {e}"
-            ) from e
+            raise ConnectorValidationError(f"Failed to validate Asana connector settings: {e}") from e
 
     def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch | None) -> GenerateDocumentsOutput:
         start_time = datetime.fromtimestamp(start, tz=timezone.utc).isoformat()

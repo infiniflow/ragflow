@@ -116,6 +116,7 @@ def build_connector_for_source(source: str, config: dict[str, Any]) -> Any:
         return connector_cls.build_connector(config, db_type=source)
     return connector_cls.build_connector(config)
 
+
 __all__ = [
     "BlobStorageConnector",
     "RSSConnector",

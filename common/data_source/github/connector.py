@@ -367,9 +367,7 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
             include_prs=config.get("include_pull_requests", True),
             include_issues=config.get("include_issues", True),
         )
-        connector.load_credentials(
-            {"github_access_token": credentials["github_access_token"]}
-        )
+        connector.load_credentials({"github_access_token": credentials["github_access_token"]})
         return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
