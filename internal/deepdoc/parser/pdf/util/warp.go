@@ -54,6 +54,20 @@ func WarpCrop(src image.Image, points [4]Pt) *image.RGBA {
 	b := rgba.Bounds()
 	pts := clampQuad(points, b)
 
+	// Axis-aligned fast path: an axis-parallel quad is just a sub-rectangle,
+	// so the perspective warp degenerates to a copy. FastCrop does exactly
+	// that with a direct Pix slice copy (no per-pixel bicubic resampling),
+	// which is far cheaper. Table cells and char-derived boxes are always
+	// axis-aligned, so this short-circuits the common OCR paths to the cheap
+	// copy — the de-skew is only paid for genuinely slanted detection quads.
+	if axisAligned(pts) {
+		minX := int(math.Min(pts[0].X, math.Min(pts[1].X, math.Min(pts[2].X, pts[3].X))))
+		minY := int(math.Min(pts[0].Y, math.Min(pts[1].Y, math.Min(pts[2].Y, pts[3].Y))))
+		maxX := int(math.Max(pts[0].X, math.Max(pts[1].X, math.Max(pts[2].X, pts[3].X))))
+		maxY := int(math.Max(pts[0].Y, math.Max(pts[1].Y, math.Max(pts[2].Y, pts[3].Y))))
+		return FastCrop(rgba, minX, minY, maxX, maxY)
+	}
+
 	w := int(math.Max(dist(pts[0], pts[1]), dist(pts[2], pts[3])))
 	h := int(math.Max(dist(pts[0], pts[3]), dist(pts[1], pts[2])))
 	if w <= 0 || h <= 0 || w > maxWarpDim || h > maxWarpDim {
@@ -315,4 +329,72 @@ func clampQuad(p [4]Pt, b image.Rectangle) [4]Pt {
 		}
 	}
 	return out
+}
+
+// axisAligned reports whether the quad is axis-parallel: its left/right edges
+// are vertical and its top/bottom edges are horizontal, within a small epsilon.
+// The OCR detector can emit sub-pixel jitter on an otherwise upright box; that
+// jitter is negligible for recognition, so the cheap FastCrop path is still
+// correct for it. A genuinely slanted detection quad fails this test and pays
+// the full perspective warp instead.
+func axisAligned(p [4]Pt) bool {
+	const eps = 1e-3
+	// Quad order is TL, TR, BR, BL.
+	// Left edge TL-BL vertical:   p0.X == p3.X
+	// Right edge TR-BR vertical:  p1.X == p2.X
+	// Top edge TL-TR horizontal:  p0.Y == p1.Y
+	// Bottom edge BL-BR horizonal: p3.Y == p2.Y
+	return approxEq(p[0].X, p[3].X, eps) &&
+		approxEq(p[1].X, p[2].X, eps) &&
+		approxEq(p[0].Y, p[1].Y, eps) &&
+		approxEq(p[3].Y, p[2].Y, eps)
+}
+
+func approxEq(a, b, eps float64) bool { return math.Abs(a-b) <= eps }
+
+// WarpCropForOCR de-skews a detection quad (layer 1, WarpCrop) and applies the
+// vertical-text rotation (layer 2, RotateIfVertical) before recognition,
+// reproducing Python deepdoc's get_rotate_crop_image contract for the Go OCR
+// paths. WarpCrop itself performs only the perspective de-skew on purpose; the
+// h/w >= 1.5 flip belongs here, at the caller, so it is applied once and only
+// to the crop actually fed to the recognizer.
+func WarpCropForOCR(src image.Image, points [4]Pt) *image.RGBA {
+	return RotateIfVertical(WarpCrop(src, points))
+}
+
+// RotateIfVertical rotates a crop 90° clockwise when it is taller than wide by
+// a factor of >= 1.5, matching the vertical-text heuristic in Python deepdoc's
+// get_rotate_crop_image. OCR recognizers expect roughly horizontal text; a
+// column of vertical text reads correctly only after this rotation. Crops
+// that are already wider than (or within 1.5x of) tall are returned unchanged.
+func RotateIfVertical(img *image.RGBA) *image.RGBA {
+	if img == nil {
+		return nil
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if h*2 >= w*3 { // h/w >= 1.5
+		return rotate90CW(img)
+	}
+	return img
+}
+
+// rotate90CW returns img rotated 90° clockwise. Rotation is a pure pixel
+// permutation (no interpolation), so it is exact. The mapping is
+// dst(x', y') = src(y', H-1-x'), i.e. source (x, y) -> dest (H-1-y, x), which
+// matches numpy's np.rot90(img, k=3) used by get_rotate_crop_image.
+func rotate90CW(img *image.RGBA) *image.RGBA {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, h, w))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			dx := h - 1 - y
+			dy := x
+			si := img.PixOffset(b.Min.X+x, b.Min.Y+y)
+			di := dst.PixOffset(dx, dy)
+			copy(dst.Pix[di:di+4], img.Pix[si:si+4])
+		}
+	}
+	return dst
 }

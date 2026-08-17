@@ -81,8 +81,8 @@ func TestOCRDetectAndRecognize_WarpsCrop(t *testing.T) {
 		t.Fatal("OCRRecognize was not called with a crop")
 	}
 
-	// The crop passed to recognition must be exactly the WarpCrop output.
-	want := util.WarpCrop(page, quad)
+	// The crop passed to recognition must be exactly the WarpCropForOCR output.
+	want := util.WarpCropForOCR(page, quad)
 	rec, ok := cap.recImage.(*image.RGBA)
 	if !ok {
 		t.Fatalf("rec crop is %T, want *image.RGBA", cap.recImage)

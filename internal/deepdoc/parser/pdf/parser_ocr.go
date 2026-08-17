@@ -37,12 +37,13 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		// De-skew the quad with a perspective transform before recognition so
-		// the recognizer receives a rectangular, axis-aligned crop instead of
-		// the slanted detection region. The emitted box bounds below still use
-		// the axis-aligned detection bbox (x0..y1); only the crop fed to
-		// recognition is transformed.
-		cropped := util.WarpCrop(pageImg, [4]util.Pt{
+		// De-skew the quad with a perspective transform and apply the
+		// vertical-text flip before recognition (WarpCropForOCR = get_rotate_crop_image
+		// parity: layer 1 de-skew + layer 2 h/w>=1.5 rotation), so the recognizer
+		// receives a rectangular, horizontal crop instead of the slanted detection
+		// region. The emitted box bounds below still use the axis-aligned detection
+		// bbox (x0..y1); only the crop fed to recognition is transformed.
+		cropped := util.WarpCropForOCR(pageImg, [4]util.Pt{
 			{X: b.X0, Y: b.Y0},
 			{X: b.X1, Y: b.Y1},
 			{X: b.X2, Y: b.Y2},
@@ -241,10 +242,11 @@ func (p *Parser) ocrTableCells(ctx context.Context, cells []pdf.TSRCell, tableIm
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		// De-skew the cell the same way the other OCR paths do. Table cells
-		// are axis-aligned, so this matches FastCrop, and it also inherits
-		// WarpCrop's bounds-clamp / non-finite guard on the cell geometry.
-		cropped := util.WarpCrop(tableImg, [4]util.Pt{
+		// De-skew the cell and apply the vertical-text flip the same way the
+		// other OCR paths do (WarpCropForOCR). Table cells are axis-aligned, so
+		// this matches FastCrop, and it also inherits WarpCrop's bounds-clamp /
+		// non-finite guard on the cell geometry.
+		cropped := util.WarpCropForOCR(tableImg, [4]util.Pt{
 			{X: float64(x0), Y: float64(y0)},
 			{X: float64(x1), Y: float64(y0)},
 			{X: float64(x1), Y: float64(y1)},
@@ -308,12 +310,13 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 	}
 	if len(needOCR) > 0 && doc != nil && doc.Health() {
 		for _, idx := range needOCR {
-			// De-skew the box the same way ocrDetectAndRecognize does, so
-			// both Go OCR paths feed the recognizer an identical geometry.
-			// Char/table-derived boxes are axis-aligned, so this is
-			// equivalent to FastCrop here, but it also inherits WarpCrop's
-			// bounds-clamp / non-finite guard on the untrusted detector box.
-			cropped := util.WarpCrop(pageImg, [4]util.Pt{
+			// De-skew the box and apply the vertical-text flip the same way
+			// ocrDetectAndRecognize does (WarpCropForOCR), so both Go OCR paths
+			// feed the recognizer an identical geometry. Char/table-derived boxes
+			// are axis-aligned, so this is equivalent to FastCrop here, but it
+			// also inherits WarpCrop's bounds-clamp / non-finite guard on the
+			// untrusted detector box.
+			cropped := util.WarpCropForOCR(pageImg, [4]util.Pt{
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y0 * scale},
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y0 * scale},
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
