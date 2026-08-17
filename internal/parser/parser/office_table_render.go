@@ -38,6 +38,14 @@ var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
 const defaultTableChunkRows = 256
 
+// maxMergeExtentCols caps how far a merged range may widen the header row.
+// excelize's GetRows truncates each row at its last valued cell, so a merged
+// slave beyond that point is absent and cannot inherit its master's text; we
+// pad the header row to the furthest merged column to recover it. A pathological
+// far merge (e.g. A1:XFD1) must not be allowed to allocate one cell per column
+// for every row, so the width is capped here.
+const maxMergeExtentCols = 1024
+
 // cleanIllegalControlChars replaces illegal control characters in all cells
 // with a single space.
 func cleanIllegalControlChars(records [][]string) [][]string {
@@ -252,33 +260,29 @@ func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]
 	}
 }
 
-// padRecordsToWidth grows every row to at least the widest of (the longest row,
-// the furthest merged column). excelize's GetRows truncates a row at its last
-// valued cell, so a merged slave beyond that point is absent from the slice and
-// cannot inherit its master's text. Padding with empty strings before
-// inheritMergedHeader restores those slots without affecting sheets that have
-// no merges (where maxCol equals the longest data row).
-func padRecordsToWidth(records [][]string, maxMergeCol int) {
-	maxCol := 0
-	for _, row := range records {
-		if len(row) > maxCol {
-			maxCol = len(row)
-		}
+// mergeExtentCol returns the furthest merged column across all ranges, capped
+// at maxMergeExtentCols so a pathological far merge cannot exhaust parser
+// memory when the header row is padded to inherit merged text.
+func mergeExtentCol(ranges []mergeRange) int {
+	m := mergeMaxCol(ranges)
+	if m > maxMergeExtentCols {
+		return maxMergeExtentCols
 	}
-	if maxMergeCol > maxCol {
-		maxCol = maxMergeCol
-	}
-	if maxCol == 0 {
+	return m
+}
+
+// padRowToWidth grows a single row to at least maxCol, padding with empty
+// strings. Only the header row is padded (see renderSheetTables): merged-master
+// text is inherited into the header alone, so data rows must not be widened —
+// widening them would emit a sea of empty <td> cells for every far merge in the
+// sheet and is the memory blow-up flagged in review.
+func padRowToWidth(row *[]string, maxCol int) {
+	if maxCol <= len(*row) {
 		return
 	}
-	for i, row := range records {
-		if len(row) >= maxCol {
-			continue
-		}
-		padded := make([]string, maxCol)
-		copy(padded, row)
-		records[i] = padded
-	}
+	padded := make([]string, maxCol)
+	copy(padded, *row)
+	*row = padded
 }
 
 // ──────────────────────────────────────────────────────────── header detection
@@ -516,8 +520,18 @@ func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
 
 	ranges := mergeRanges(f, sheet)
 	headerRow := detectHeaderRow(f, sheet, rows)
-	padRecordsToWidth(rows, mergeMaxCol(ranges))
+
+	// Inherit merged-master text into the header row. excelize's GetRows
+	// truncates each row at its last valued cell, so a merged slave beyond that
+	// point is absent and cannot inherit its master's text. We therefore pad
+	// ONLY the header row (the only row we inherit into) to the furthest merged
+	// column — capped by mergeExtentCol so a pathological far merge cannot
+	// exhaust memory. Padding runs after detection so a wide merge (e.g. A1:Z1
+	// title) does not dilute the styled-majority signal of a narrow header.
 	mm := mergeMasterForRow(ranges, headerRow)
+	if len(mm) > 0 {
+		padRowToWidth(&rows[headerRow-1], mergeExtentCol(ranges))
+	}
 	inheritMergedHeader(rows, headerRow, mm)
 
 	// Reorder so the detected header row becomes records[0]; every other row is
