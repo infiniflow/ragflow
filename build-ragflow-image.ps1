@@ -16,6 +16,9 @@
     Имя образа и тег. По умолчанию: citysense/ragflow:<дата-время>
     (например, citysense/ragflow:20260814-153000)
 
+.ПАРАМЕТР Commit
+    Коммит для сборки. По умолчанию: HEAD.
+
 .ПАРАМЕТР NoCache
     Полная пересборка без учёта кэша BuildKit.
 
@@ -28,11 +31,15 @@
 
 .ПРИМЕР
     .\build-ragflow-image.ps1 -Tag myrepo/ragflow:v1 -NoCache
+
+.ПРИМЕР
+    .\build-ragflow-image.ps1 -Commit a1b2c3d4
 #>
 
 [CmdletBinding()]
 param(
     [string]$Tag = "citysense/ragflow:$(Get-Date -Format 'yyyyMMdd-HHmmss')",
+    [string]$Commit = "HEAD",
     [switch]$NoCache,
     [switch]$UseMirror
 )
@@ -65,10 +72,17 @@ if (-not (Test-Path (Join-Path $RepoRoot "Dockerfile"))) {
 }
 
 Push-Location $RepoRoot
+if ($Commit -ne "HEAD") {
+    git rev-parse --verify "$Commit^{commit}" *> $null
+    Assert-ExitOk "Проверка коммита $Commit"
+    git checkout $Commit
+    Assert-ExitOk "Переключение на коммит $Commit"
+}
+
 try {
     $gitVersion = git describe --tags --match=v* --first-parent --always 2>$null
     if ($gitVersion) {
-        Write-Host "  Версия, которая попадёт в образ: $gitVersion" -ForegroundColor Yellow
+        Write-Host "  Версия, которая попадёт в образ: $gitVersion (коммит: $Commit)" -ForegroundColor Yellow
     }
 } catch {
     Write-Host "  (git describe недоступен; VERSION образа будет коротким хешем)" -ForegroundColor Yellow

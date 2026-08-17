@@ -15,6 +15,7 @@ set -euo pipefail
 
 REPO_URL="${RAGFLOW_REPO_URL:-https://gitlab.citysense.ru/ragflow-ecosystem/ragflow}"
 BRANCH="${RAGFLOW_BRANCH:-main}"
+COMMIT="${RAGFLOW_COMMIT:-HEAD}"
 TAG="${RAGFLOW_IMAGE_TAG:-citysense/ragflow:$(date +%Y%m%d-%H%M%S)}"
 DATA_DIR="${RAGFLOW_DATA_DIR:-$HOME/ragflow}"
 NO_CACHE=0
@@ -26,6 +27,7 @@ usage() {
 Параметры:
   --repo <url>       Git-репозиторий для клонирования (по умолчанию: \$RAGFLOW_REPO_URL или GitLab-репозиторий)
   --branch <имя>     Ветка для сборки (по умолчанию: \$RAGFLOW_BRANCH или main)
+  --commit <sha>     Коммит для сборки (по умолчанию: \$RAGFLOW_COMMIT или HEAD)
   --tag <образ:тег>  Тег итогового образа (по умолчанию: \$RAGFLOW_IMAGE_TAG или citysense/ragflow:<дата-время>)
   --data-dir <путь>  Где на сервере лежит репозиторий (по умолчанию: \$RAGFLOW_DATA_DIR или ~/ragflow)
   --no-cache         Полная пересборка без кэша BuildKit
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --repo)     REPO_URL="$2"; shift 2 ;;
     --branch)   BRANCH="$2"; shift 2 ;;
+    --commit)   COMMIT="$2"; shift 2 ;;
     --tag)      TAG="$2"; shift 2 ;;
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --no-cache) NO_CACHE=1; shift ;;
@@ -52,7 +55,7 @@ log "Проверка демона Docker"
 docker info >/dev/null 2>&1 || { echo "ОШИБКА: демон Docker не запущен." >&2; exit 1; }
 
 # --- 2. Клонирование / обновление репозитория -------------------------
-log "Репозиторий: $DATA_DIR (ветка: $BRANCH)"
+log "Репозиторий: $DATA_DIR (ветка: $BRANCH, коммит: $COMMIT)"
 if [ ! -d "$DATA_DIR/.git" ]; then
   echo "Клонирование $REPO_URL ..."
   git clone "$REPO_URL" "$DATA_DIR"
@@ -73,7 +76,12 @@ done
 
 git fetch origin "$BRANCH"
 git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" --track origin/"$BRANCH"
-git reset --hard origin/"$BRANCH"
+if [ "$COMMIT" = "HEAD" ]; then
+  git reset --hard origin/"$BRANCH"
+else
+  git rev-parse --verify "$COMMIT^{commit}" >/dev/null
+  git reset --hard "$COMMIT"
+fi
 
 # Восстанавливаем локальные конфиги и правки под Yandex SSO
 for f in docker/.env docker/service_conf.yaml.template \
