@@ -307,9 +307,14 @@ function SearchSetting({
       >
         <Form {...formMethods}>
           <form
-            onSubmit={formMethods.handleSubmit((data) => {
-              onSubmit(data as unknown as IUpdateSearchProps);
-            })}
+            onSubmit={formMethods.handleSubmit(
+              (data) => {
+                onSubmit(data as unknown as IUpdateSearchProps);
+              },
+              (error) => {
+                console.error(error, formMethods.getValues());
+              },
+            )}
             className="space-y-6"
           >
             <AvatarNameDescription avatarField="avatar" />
@@ -398,7 +403,7 @@ function SearchSetting({
             />
             {rerankModelEnabled && (
               <>
-                <RerankFormFields prefix={'search_config'}></RerankFormFields>
+                <RerankFormFields prefix={'search_config.'}></RerankFormFields>
               </>
             )}
             {/* AI Summary */}

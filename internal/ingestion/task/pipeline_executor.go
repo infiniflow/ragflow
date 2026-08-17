@@ -49,6 +49,12 @@ type PipelineResult struct {
 	ChunkCount       int
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
+	// DocName, BuiltInMetadataConfig and AutoMetadataEnabled carry what the
+	// document-state finalizer needs to apply built-in metadata
+	// (update_time / file_name), mirroring Python apply_built_in_metadata.
+	DocName               string
+	BuiltInMetadataConfig []any
+	AutoMetadataEnabled   bool
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -277,14 +283,62 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	chunkCount := countDistinctChunkIDs(chunks)
 
+	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
+		s.taskCtx.Doc.ParserConfig,
+	)
+
 	return &PipelineResult{
-		DocID:            s.taskCtx.Doc.ID,
-		KbID:             s.taskCtx.Doc.KbID,
-		Metadata:         metadata,
-		ChunkCount:       chunkCount,
-		TokenConsumption: embeddingTokenConsumption,
-		Duration:         time.Since(start).Seconds(),
+		DocID:                 s.taskCtx.Doc.ID,
+		KbID:                  s.taskCtx.Doc.KbID,
+		Metadata:              metadata,
+		ChunkCount:            chunkCount,
+		TokenConsumption:      embeddingTokenConsumption,
+		Duration:              time.Since(start).Seconds(),
+		DocName:               docNameValue(s.taskCtx.Doc.Name),
+		BuiltInMetadataConfig: builtInMetadata,
+		AutoMetadataEnabled:   autoMetaEnabled,
 	}, nil
+}
+
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled. The frontend
+// stores both on the builtin extractor node params (Extractor:AutoExtractDefault)
+// via the operator form; the top-level parser_config shape (Python dataset
+// settings) is supported as a fallback.
+func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
+	if nodeRaw, ok := parserConfig["Extractor:AutoExtractDefault"]; ok {
+		if node, ok := nodeRaw.(map[string]any); ok {
+			enabled := parserConfigBool(node["enable_metadata"])
+			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
+				return arr, enabled
+			}
+		}
+	}
+	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
+		return arr, parserConfigBool(parserConfig["enable_metadata"])
+	}
+	return nil, false
+}
+
+// parserConfigBool coerces a parser_config boolean-like value (bool / number)
+// to bool, mirroring the frontend's enable_metadata handling.
+func parserConfigBool(v any) bool {
+	switch typed := v.(type) {
+	case bool:
+		return typed
+	case float64:
+		return typed > 0
+	case int:
+		return typed > 0
+	}
+	return false
+}
+
+func docNameValue(name *string) string {
+	if name == nil {
+		return ""
+	}
+	return *name
 }
 
 // countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.

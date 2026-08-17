@@ -398,7 +398,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
    cd29bcb254bc   pgsty/silo:RELEASE.2026-08-06T00-00-00Z                "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
-2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -420,7 +420,7 @@ The status of a Docker container status does not necessarily reflect the status 
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    ```
 
-2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
 
    :::danger IMPORTANT
    The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -473,7 +473,7 @@ Yes, we do. See the Python files under the **rag/app** folder.
    cd29bcb254bc   pgsty/silo:RELEASE.2026-08-06T00-00-00Z                "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
-2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
