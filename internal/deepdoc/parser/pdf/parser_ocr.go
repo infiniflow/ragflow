@@ -37,8 +37,20 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		cropped := util.FastCrop(pageImg, x0, y0, x1, y1)
-		texts, recErr := p.inferOCRRecognize(ctx, doc, cropped)
+		// De-skew the quad with a perspective transform (WarpCrop, layer 1),
+		// then recognize via ocrRecognizeWithRotation which applies layer-2
+		// score-based 0/CW90/CCW90 selection for tall crops (get_rotate_crop_image
+		// parity), so the recognizer receives a rectangular, horizontal crop
+		// instead of the slanted detection region. The emitted box bounds below
+		// still use the axis-aligned detection bbox (x0..y1); only the crop fed
+		// to recognition is transformed.
+		cropped := util.WarpCrop(pageImg, [4]util.Pt{
+			{X: b.X0, Y: b.Y0},
+			{X: b.X1, Y: b.Y1},
+			{X: b.X2, Y: b.Y2},
+			{X: b.X3, Y: b.Y3},
+		})
+		texts, recErr := p.ocrRecognizeWithRotation(ctx, doc, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
 			continue
@@ -77,6 +89,58 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		}
 	}
 	return result
+}
+
+// ocrRecognizeWithRotation recognizes a single cropped text region, applying
+// layer-2 rotation selection for tall, narrow crops.
+//
+// When a crop's height is at least 1.5x its width, the text is most likely a
+// vertical line and the recognizer — trained on horizontal text — only reads
+// it cleanly after a 90 deg rotation. The crop is recognized at 0, CW90, and
+// CCW90 and the orientation with the highest recognition confidence is kept.
+// The emitted box bounds are unchanged; only the recognized text is
+// effectively rotated. Layer 1 (the perspective de-skew) is applied at crop
+// time by WarpCrop before this runs.
+//
+// The DeepDoc rec service surfaces the real recognition confidence, so the
+// orientation is picked by score rather than by a fixed rotation.
+func (p *Parser) ocrRecognizeWithRotation(ctx context.Context, doc pdf.DocAnalyzer, cropped image.Image) ([]pdf.OCRText, error) {
+	b := cropped.Bounds()
+	// Short / wide crops are already horizontal — recognize once at 0 deg.
+	if float64(b.Dy()) < 1.5*float64(b.Dx()) {
+		return p.inferOCRRecognize(ctx, doc, cropped)
+	}
+	candidates := []image.Image{
+		cropped,
+		util.RotateImageCW(cropped, 90),  // CW90
+		util.RotateImageCW(cropped, 270), // CCW90
+	}
+	var best []pdf.OCRText
+	bestScore := -1.0
+	for _, c := range candidates {
+		texts, err := p.inferOCRRecognize(ctx, doc, c)
+		if err != nil {
+			return nil, err
+		}
+		if s := ocrBestScore(texts); s > bestScore {
+			bestScore = s
+			best = texts
+		}
+	}
+	return best, nil
+}
+
+// ocrBestScore is the layer-2 orientation score: the highest recognition
+// confidence among the recognized items. A correctly oriented line reads with
+// high confidence; a mis-rotated line reads with low confidence.
+func ocrBestScore(texts []pdf.OCRText) float64 {
+	best := 0.0
+	for _, t := range texts {
+		if t.Confidence > best {
+			best = t.Confidence
+		}
+	}
+	return best
 }
 
 // ocrMergeChars runs full-page detect on a page that has embedded chars,
@@ -231,8 +295,17 @@ func (p *Parser) ocrTableCells(ctx context.Context, cells []pdf.TSRCell, tableIm
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		cropped := util.FastCrop(tableImg, x0, y0, x1, y1)
-		texts, err := p.inferOCRRecognize(ctx, doc, cropped)
+		// De-skew via WarpCrop and recognize via ocrRecognizeWithRotation like
+		// the other OCR paths. Table cells are axis-aligned, so WarpCrop
+		// early-exits to FastCrop and ocrRecognizeWithRotation recognizes once
+		// at 0 deg; the bounds-clamp / non-finite guard is still inherited.
+		cropped := util.WarpCrop(tableImg, [4]util.Pt{
+			{X: float64(x0), Y: float64(y0)},
+			{X: float64(x1), Y: float64(y0)},
+			{X: float64(x1), Y: float64(y1)},
+			{X: float64(x0), Y: float64(y1)},
+		})
+		texts, err := p.ocrRecognizeWithRotation(ctx, doc, cropped)
 		if err != nil {
 			slog.Warn("table cell OCR failed", "err", err)
 			continue
@@ -290,10 +363,20 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 	}
 	if len(needOCR) > 0 && doc != nil && doc.Health() {
 		for _, idx := range needOCR {
-			cropped := util.FastCrop(pageImg,
-				int(boxes[idx].x0*scale), int(boxes[idx].y0*scale),
-				int(boxes[idx].x1*scale), int(boxes[idx].y1*scale))
-			texts, err := p.inferOCRRecognize(ctx, doc, cropped)
+			// De-skew via WarpCrop and recognize via ocrRecognizeWithRotation
+			// the same way ocrDetectAndRecognize does, so all Go OCR paths feed
+			// the recognizer an identical geometry. Char/table-derived boxes are
+			// axis-aligned, so WarpCrop early-exits to FastCrop and
+			// ocrRecognizeWithRotation recognizes once at 0 deg here, while still
+			// inheriting WarpCrop's bounds-clamp / non-finite guard on the
+			// untrusted detector box.
+			cropped := util.WarpCrop(pageImg, [4]util.Pt{
+				{X: boxes[idx].x0 * scale, Y: boxes[idx].y0 * scale},
+				{X: boxes[idx].x1 * scale, Y: boxes[idx].y0 * scale},
+				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
+				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
+			})
+			texts, err := p.ocrRecognizeWithRotation(ctx, doc, cropped)
 			if err != nil {
 				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
 				continue
