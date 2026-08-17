@@ -84,6 +84,15 @@ func TestParseAcceptLanguage(t *testing.T) {
 	if got := ParseAcceptLanguage("en-US"); got != "en" {
 		t.Fatalf("got %q", got)
 	}
+	if got := ParseAcceptLanguage("fr;q=0"); got != "" {
+		t.Fatalf("q=0 should be ignored, got %q", got)
+	}
+	if got := ParseAcceptLanguage("fr;q=0,en;q=0.5"); got != "en" {
+		t.Fatalf("got %q", got)
+	}
+	if got := ParseAcceptLanguage("en;q=1.1,ja;q=0.8"); got != "ja" {
+		t.Fatalf("invalid q should be ignored, got %q", got)
+	}
 }
 
 func TestTranslate(t *testing.T) {

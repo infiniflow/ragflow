@@ -58,6 +58,7 @@ const (
 	FileNotFound              = "error.file.not_found"
 	FolderNotFound            = "error.folder.not_found"
 	Internal                  = "error.internal"
+	InvalidArgumentValues     = "error.invalid_argument_values"
 	InvalidArguments          = "error.invalid_arguments"
 	InvalidEmailAddress       = "error.invalid_email_address"
 	KnowledgebaseNotFound     = "error.knowledgebase.not_found"
@@ -133,6 +134,7 @@ var Keys = []string{
 	FileNotFound,
 	FolderNotFound,
 	Internal,
+	InvalidArgumentValues,
 	InvalidArguments,
 	InvalidEmailAddress,
 	KnowledgebaseNotFound,

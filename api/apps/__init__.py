@@ -83,6 +83,7 @@ async def bind_locale():
     try:
         user = _load_user()
     except Exception:
+        logging.exception("failed to load user for locale binding")
         user = None
     _bind_request_locale(user)
 

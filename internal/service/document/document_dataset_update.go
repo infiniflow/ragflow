@@ -23,7 +23,10 @@ import (
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
 	if err != nil {
-		return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
+		}
+		return nil, common.CodeServerError, err
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
@@ -116,7 +119,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 		}
-		return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotFound)
+		return nil, common.CodeServerError, err
 	}
 
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)

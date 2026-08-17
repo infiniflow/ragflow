@@ -177,7 +177,7 @@ def validate_request(*args, **kwargs):
             if no_arguments:
                 error_string += t("error.missing_arguments", fields=",".join(no_arguments))
             if error_arguments:
-                error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
+                error_string += t("error.invalid_argument_values", fields=",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
             return error_string
         return None
 

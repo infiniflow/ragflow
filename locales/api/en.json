@@ -17,6 +17,7 @@
   "error.invalid_email_address": "Invalid email address: {{email}}!",
   "error.welcome_back": "Welcome back!",
   "error.missing_arguments": "required argument are missing: {{fields}}; ",
+  "error.invalid_argument_values": "required argument values: {{fields}}",
   "error.code.success": "Success",
   "error.code.not_effective": "Not effective",
   "error.code.exception": "System exception",

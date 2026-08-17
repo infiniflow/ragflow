@@ -17,6 +17,7 @@
 package i18n
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -31,6 +32,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type localeCtxValue struct{}
 
 const (
 	DefaultLocale = "en"
@@ -200,6 +203,9 @@ func ParseAcceptLanguage(header string) string {
 				}
 			}
 		}
+		if q <= 0 || q > 1 {
+			continue
+		}
 		ranges = append(ranges, ranked{q: q, index: idx, tag: tag})
 	}
 	for i := 0; i < len(ranges); i++ {
@@ -318,6 +324,23 @@ func matchEnglishTemplate(en map[string]string, message string) (string, []Arg) 
 		return it.key, args
 	}
 	return "", nil
+}
+
+func ContextWithLocale(ctx context.Context, locale string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, localeCtxValue{}, locale)
+}
+
+func LocaleFromStdContext(ctx context.Context) string {
+	if ctx == nil {
+		return DefaultLocale
+	}
+	if loc, ok := ctx.Value(localeCtxValue{}).(string); ok && loc != "" {
+		return loc
+	}
+	return DefaultLocale
 }
 
 func Translate(locale, key string, args ...Arg) string {

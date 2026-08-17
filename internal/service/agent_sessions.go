@@ -459,6 +459,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 		}
 	}
 
+	locale := i18n.LocaleFromStdContext(ctx)
 	sessionIDs, duplicateMessages := checkDuplicateSessionIDs(ids)
 	errorsList := make([]string, 0)
 	successCount := 0
@@ -475,7 +476,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 			return nil, common.CodeServerError, err
 		}
 		if conv == nil {
-			errorsList = append(errorsList, i18n.Translate(i18n.DefaultLocale, i18n.AgentSessionNotOwned, i18n.KV("id", sessionID)))
+			errorsList = append(errorsList, i18n.Translate(locale, i18n.AgentSessionNotOwned, i18n.KV("id", sessionID)))
 			continue
 		}
 

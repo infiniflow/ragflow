@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from contextvars import ContextVar
@@ -235,6 +236,8 @@ def parse_accept_language(header: str | None) -> str | None:
                     q = float(param[2:])
                 except ValueError:
                     q = 0.0
+        if q <= 0 or q > 1:
+            continue
         ranges.append((-q, idx, tag))
     ranges.sort()
     for _, _, tag in ranges:
@@ -295,8 +298,10 @@ def get_locale() -> str:
             user_lang = getattr(user, "language", None)
         if user_lang or header:
             return resolve_locale(header, user_lang, os.environ.get("LANG"))
-    except Exception:
+    except (RuntimeError, ImportError):
         pass
+    except Exception:
+        logging.exception("failed to resolve locale from request")
     loc = _locale.get()
     if loc:
         return loc

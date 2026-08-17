@@ -301,13 +301,13 @@ async def openai_chat_completions(chat_id):
             filtered_doc_ids = ["-999"]
         doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
 
-    msg = []
+    history = []
     for message in messages:
         if message["role"] == "system":
             continue
-        if message["role"] == "assistant" and not msg:
+        if message["role"] == "assistant" and not history:
             continue
-        msg.append(message)
+        history.append(message)
 
     tools = None
     toolcall_session = None
@@ -317,7 +317,7 @@ async def openai_chat_completions(chat_id):
         chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
         if doc_ids_str:
             chat_kwargs["doc_ids"] = doc_ids_str
-        ans_iter = async_chat(dia, msg, True, **chat_kwargs)
+        ans_iter = async_chat(dia, history, True, **chat_kwargs)
         return _build_sse_response(
             _stream_chat_completion_sse(
                 ans_iter,
@@ -334,7 +334,7 @@ async def openai_chat_completions(chat_id):
     chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
     if doc_ids_str:
         chat_kwargs["doc_ids"] = doc_ids_str
-    async for ans in async_chat(dia, msg, False, **chat_kwargs):
+    async for ans in async_chat(dia, history, False, **chat_kwargs):
         answer = ans
         break
 

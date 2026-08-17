@@ -913,13 +913,13 @@ def _get_docs_with_request(req, dataset_id: str):
     if types:
         invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
         if invalid_types:
-            msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
-            return RetCode.DATA_ERROR, msg, [], 0
+            filter_error = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
+            return RetCode.DATA_ERROR, filter_error, [], 0
 
     run_status_converted, invalid_status = _parse_run_status_filter(q)
     if invalid_status:
-        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
-        return RetCode.DATA_ERROR, msg, [], 0
+        filter_error = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, filter_error, [], 0
 
     err_code, err_message, doc_ids_filter, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
     if err_code != RetCode.SUCCESS:
@@ -1272,8 +1272,8 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        msg = f"document {document_id} not found in dataset {dataset_id}"
-        return get_error_data_result(message=msg)
+        document_error = f"document {document_id} not found in dataset {dataset_id}"
+        return get_error_data_result(message=document_error)
     doc = doc[0]
 
     # Get request body
@@ -2074,11 +2074,11 @@ async def batch_update_document_status(tenant_id, dataset_id):
                         doc.kb_id,
                     )
                 except Exception as exc:
-                    msg = str(exc)
-                    if "3022" in msg:
+                    error_text = str(exc)
+                    if "3022" in error_text:
                         result[doc_id] = {"error": "Document store table missing."}
                     else:
-                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
+                        result[doc_id] = {"error": f"Document store update failed: {error_text}"}
                     has_error = True
                     continue
                 if not ok:
