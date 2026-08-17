@@ -44,10 +44,7 @@ const AddDataSourceModal = ({
 }: IModalProps<FieldValues> & { sourceData?: IDataSorceInfo }) => {
   const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
-  const { loading: testLoading, handleTest } = useTestDataSource(
-    formRef,
-    'new',
-  );
+  const { loading: testLoading, handleTest } = useTestDataSource(formRef);
 
   const fields = useMemo<FormFieldConfig[]>(() => {
     if (!sourceData) {

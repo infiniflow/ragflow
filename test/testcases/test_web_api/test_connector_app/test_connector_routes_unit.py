@@ -486,7 +486,7 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"source": "rss", "config": {"feed_url": "https://example.com"}}),
     )
-    ok_res = _run(module.test_connector("new"))
+    ok_res = _run(module.test_connector("rss"))
     assert ok_res["data"] is True
 
     monkeypatch.setattr(
@@ -494,7 +494,7 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"source": "rss", "config": "bad"}),
     )
-    bad_config_res = _run(module.test_connector("new"))
+    bad_config_res = _run(module.test_connector("rss"))
     assert bad_config_res["code"] == module.RetCode.ARGUMENT_ERROR
 
 

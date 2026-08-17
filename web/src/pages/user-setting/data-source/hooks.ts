@@ -278,7 +278,7 @@ export const useDataSourceRebuild = () => {
 
 export const useTestDataSource = (
   formRef: RefObject<DynamicFormRef | null>,
-  connectorId: string,
+  connectorId?: string,
 ) => {
   const [loading, setLoading] = useState(false);
 
@@ -293,7 +293,10 @@ export const useTestDataSource = (
         values?.config && typeof values.config === 'object'
           ? values.config
           : {};
-      const { data } = await testDataSource(connectorId, { source, config });
+      const { data } = await testDataSource(connectorId || source, {
+        source,
+        config,
+      });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
       }

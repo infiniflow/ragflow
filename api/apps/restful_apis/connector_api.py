@@ -183,11 +183,12 @@ def rm_connector(connector_id):
 @validate_request("source")
 async def test_connector(connector_id):
     """Validate connector configuration from the request body without persisting."""
-    if connector_id != "new" and not ConnectorService.accessible(connector_id, current_user.id):
-        return _connector_auth_error(connector_id, current_user.id)
-
-    from common.data_source import build_connector_for_source
+    from common.data_source import CONNECTOR_BY_SOURCE, build_connector_for_source
     from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
+
+    unsaved = connector_id in CONNECTOR_BY_SOURCE
+    if not unsaved and not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
 
     req = await get_request_json()
     source = req["source"]
@@ -195,9 +196,10 @@ async def test_connector(connector_id):
     if not isinstance(config, dict):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config must be an object.")
 
-    ok, conn = ConnectorService.get_by_id(connector_id)
-    if ok and conn.tenant_id != current_user.id:
-        return get_json_result(code=RetCode.PERMISSION_ERROR, message="You don't own this connector.")
+    if not unsaved:
+        ok, conn = ConnectorService.get_by_id(connector_id)
+        if ok and conn.tenant_id != current_user.id:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message="You don't own this connector.")
 
     def _validate() -> None:
         connector = build_connector_for_source(source, config)
