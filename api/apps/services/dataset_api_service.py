@@ -479,7 +479,16 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # Spread the per-status counts onto the dataset entry so
+            # callers see them at the same nesting level as `name`,
+            # `parser_id`, `document_count` etc. (matches the documented
+            # `include_parsing_status` response contract). Previously this
+            # was nested under a synthetic `parsing_status` key — the
+            # extra wrapping meant the documented top-level fields
+            # (`unstart_count`, `running_count`, `cancel_count`,
+            # `done_count`, `fail_count`) never appeared on the wire.
+            # Regression for #17595.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
 
     embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
