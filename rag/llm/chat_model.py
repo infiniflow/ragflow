@@ -1859,7 +1859,7 @@ class LiteLLMBase(ABC):
     # content). The strip helper lives on ``Base``; reuse it here so
     # ``LiteLLMBase`` (which does NOT inherit from ``Base``) has the same
     # behaviour instead of raising AttributeError on streamed tool calls.
-    _strip_tool_calls = Base._strip_tool_calls
+    _strip_tool_calls = staticmethod(Base._strip_tool_calls)
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
