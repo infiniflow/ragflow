@@ -1240,7 +1240,7 @@ func (c *GoogleDriveConnector) effectiveIncludeSharedWithMe() bool {
 
 func splitCommaList(value string) []string {
 	values := []string{}
-	for _, part := range strings.Split(value, ",") {
+	for part := range strings.SplitSeq(value, ",") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			values = append(values, part)

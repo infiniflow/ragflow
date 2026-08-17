@@ -55,7 +55,7 @@ function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
 
   return (
     <div className="flex items-center justify-center h-full text-text-secondary">
-      {t('chunk.representationUnsupported', {
+      {t('knowledgeCompilation.representationUnsupported', {
         kind,
         defaultValue: 'This representation type is not supported yet.',
       })}

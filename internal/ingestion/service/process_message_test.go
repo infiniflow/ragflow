@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -309,10 +310,12 @@ func TestProcessMessage_ClaimSucceedsEnqueues(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_ChannelFullNacks: when the task channel is at capacity
-// backpressure rejects the task with Nack, releases the claim, and returns nil
-// so the message is redelivered and a future attempt can re-claim it.
-func TestProcessMessage_ChannelFullNacks(t *testing.T) {
+// TestProcessMessage_ChannelFullBlocksUntilSlot: backpressure must NOT drop
+// the task. When the task channel is at capacity, processMessage blocks on the
+// send (consuming no slot, no Nack) until a worker frees one; the message is
+// then enqueued and settled by the worker. Dropping on backpressure would
+// permanently lose the task once the broker's MaxDeliver is exceeded.
+func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -326,20 +329,45 @@ func TestProcessMessage_ChannelFullNacks(t *testing.T) {
 
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
-	ingestor.processMessage(handle)
-	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
-		t.Fatalf("channel-full: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	// processMessage must BLOCK on the full channel: no ack, no nack, no
+	// immediate enqueue.
+	done := make(chan struct{})
+	go func() {
+		ingestor.processMessage(handle)
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("processMessage returned while channel was full; it must block under backpressure")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if handle.nacks.Load() != 0 || handle.acks.Load() != 0 {
+		t.Fatalf("expected 0 Ack/0 Nack while blocked, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != cap(ingestor.taskChan) {
+		t.Fatalf("expected channel still full, got %d/%d", len(ingestor.taskChan), cap(ingestor.taskChan))
 	}
 
-	// Claim must be released so a future redelivery can re-claim it.
-	if !ingestor.claimTask(taskID) {
-		t.Fatal("claim was not released on channel-full — task would be stuck forever")
+	// Free a slot: the blocked processMessage must now enqueue the task.
+	<-ingestor.taskChan
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processMessage did not enqueue after a slot freed")
 	}
-	ingestor.releaseTask(taskID)
-
-	// Drain the fillers.
+	if handle.nacks.Load() != 0 || handle.acks.Load() != 0 {
+		t.Fatalf("expected 0 Ack/0 Nack (settlement deferred to worker), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	// The real task must now be in the channel.
+	found := false
 	for i := 0; i < cap(ingestor.taskChan); i++ {
-		<-ingestor.taskChan
+		tc := <-ingestor.taskChan
+		if tc.IngestionTask != nil && tc.IngestionTask.ID == taskID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("real task was not enqueued after a slot freed")
 	}
 }
 

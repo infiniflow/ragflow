@@ -136,6 +136,7 @@ export const useTestRetrieval = () => {
       page: 1,
       doc_ids: filterValue.doc_ids,
       highlight: true,
+      include_knowledge_compilation: false,
     };
   }, [filterValue, knowledgeBaseId, values]);
 

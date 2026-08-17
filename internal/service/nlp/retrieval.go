@@ -61,6 +61,7 @@ type RetrievalRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	Aggs                   *bool
 	Highlight              *bool
+	Filter                 map[string]interface{}
 }
 
 // RetrievalResult result from retrieval search
@@ -145,6 +146,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		Top:            *req.Top,
 		RankFeature:    *req.RankFeature,
 		EmbeddingModel: req.EmbeddingModel,
+		Filter:         req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -434,6 +436,7 @@ func (s *RetrievalService) countThresholdValidMatches(ctx context.Context, req *
 		Top:            *req.Top,
 		RankFeature:    *req.RankFeature,
 		EmbeddingModel: req.EmbeddingModel,
+		Filter:         req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -737,7 +740,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 			fgToken, _ := tokenizer.FineGrainedTokenize(k)
-			for _, kk := range strings.Fields(fgToken) {
+			for kk := range strings.FieldsSeq(fgToken) {
 				if len(kk) < 2 {
 					continue
 				}
@@ -1085,7 +1088,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 func buildIndexNames(tenantIDs []string) []string {
 	var indexNames []string
 	for _, tid := range tenantIDs {
-		for _, part := range strings.Split(tid, ",") {
+		for part := range strings.SplitSeq(tid, ",") {
 			part = strings.TrimSpace(part)
 			if part != "" {
 				indexNames = append(indexNames, fmt.Sprintf("ragflow_%s", part))

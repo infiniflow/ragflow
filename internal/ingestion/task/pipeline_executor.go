@@ -449,20 +449,70 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": dsl}
 	}
+
+	// The task context contains the document snapshot loaded when the task
+	// started. Reload it here so the operation log reflects the final progress
+	// state written by the progress sink, matching the Python operation-log
+	// creation path.
+	doc := s.taskCtx.Doc
+	if db != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, docID); err == nil && persisted != nil {
+			doc = *persisted
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", docID, err))
+		}
+	}
+
+	pipelineTitle := ""
+	var pipelineAvatar *string
+	if db != nil {
+		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+			if canvas.Title != nil {
+				pipelineTitle = *canvas.Title
+			}
+			pipelineAvatar = canvas.Avatar
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
+		}
+	}
+
+	operationStatus := status
+	if doc.Run != nil && *doc.Run != "" {
+		operationStatus = *doc.Run
+	}
+	statusValue := "1"
+	if doc.Status != nil && *doc.Status != "" {
+		statusValue = *doc.Status
+	}
+	sourceFrom := doc.SourceType
+	if parts := strings.SplitN(sourceFrom, "/", 2); len(parts) > 0 {
+		sourceFrom = parts[0]
+	}
+	documentName := ""
+	if doc.Name != nil {
+		documentName = *doc.Name
+	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
 		TenantID:        s.Tenant().ID,
 		KbID:            s.KB().ID,
 		DocumentID:      docID,
 		PipelineID:      &s.canvasID,
+		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,
-		ParserID:        s.taskCtx.Doc.ParserID,
-		DocumentName:    *s.Doc().Name,
-		DocumentSuffix:  s.taskCtx.Doc.Suffix,
-		DocumentType:    s.taskCtx.Doc.Type,
-		SourceFrom:      s.taskCtx.Doc.SourceType,
-		OperationStatus: status,
+		ParserID:        doc.ParserID,
+		DocumentName:    documentName,
+		DocumentSuffix:  doc.Suffix,
+		DocumentType:    doc.Type,
+		SourceFrom:      sourceFrom,
+		Progress:        doc.Progress,
+		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
+		ProcessDuration: doc.ProcessDuration,
+		OperationStatus: operationStatus,
+		Avatar:          pipelineAvatar,
+		Status:          &statusValue,
 	}
 	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))

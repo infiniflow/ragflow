@@ -93,7 +93,7 @@ export function useBlueprintSelection({
         label: capitalize(lowerCase(preset.id)),
         value: preset.id,
       })),
-      { label: t('setting.custom'), value: CustomBlueprintValue },
+      { label: t('knowledgeCompilation.custom'), value: CustomBlueprintValue },
     ],
     [presets, t],
   );
