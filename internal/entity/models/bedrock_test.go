@@ -457,6 +457,9 @@ func TestBedrockChatPropagatesHTTPError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("want 401 propagated, got %v", err)
 	}
+	if err != nil && !strings.Contains(err.Error(), "us-east-1") {
+		t.Errorf("want region included in error, got %v", err)
+	}
 	if err != nil && !strings.Contains(err.Error(), "InvalidSignatureException") {
 		t.Errorf("want body included in error, got %v", err)
 	}
@@ -525,8 +528,8 @@ func TestBedrockCheckConnectionDelegates(t *testing.T) {
 	defer srv.Close()
 	m := newBedrockForTest(srv.URL)
 	key := validBedrockKey()
-	if err := m.CheckConnection(ctx, &APIConfig{ApiKey: &key}); err == nil || !strings.Contains(err.Error(), "403") {
-		t.Errorf("want 403 surfaced via ListModels, got %v", err)
+	if err := m.CheckConnection(ctx, &APIConfig{ApiKey: &key}); err == nil || !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "us-east-1") {
+		t.Errorf("want 403 and region surfaced via ListModels, got %v", err)
 	}
 }
 

@@ -317,6 +317,8 @@ interface UseModelsDerivedArgs {
   instanceModels: IInstanceModel[] | undefined;
   /** True while the saved instance model query is fetching. */
   instanceModelsLoading: boolean;
+  /** True only when the saved instance model query completed successfully. */
+  instanceModelsSucceeded: boolean;
   /**
    * Locally-added models for a draft (unsaved) instance. The hook uses
    * this list as the "instance models" source when `isDraftInstance` is
@@ -339,6 +341,7 @@ export function useModelsDerived({
   catalog,
   instanceModels,
   instanceModelsLoading,
+  instanceModelsSucceeded,
   draftModels,
   isDraftInstance,
   onInstanceModelsChange,
@@ -439,10 +442,19 @@ export function useModelsDerived({
   // after the instance details. Draft models remain local and must still
   // be included in the first save.
   useEffect(() => {
-    if (!isDraftInstance && !instanceModelsLoading) {
+    if (
+      !isDraftInstance &&
+      !instanceModelsLoading &&
+      instanceModelsSucceeded
+    ) {
       onEditedRef.current?.();
     }
-  }, [instanceItems, instanceModelsLoading, isDraftInstance]);
+  }, [
+    instanceItems,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+  ]);
 
   return { instanceItems, models, addedSet };
 }

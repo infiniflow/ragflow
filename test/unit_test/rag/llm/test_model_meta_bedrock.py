@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore import UNSIGNED
+from botocore.exceptions import ClientError
 
 from common.constants import LLMType
 from rag.llm.model_meta import Bedrock
@@ -93,4 +94,23 @@ def test_bedrock_requires_api_key_for_model_discovery():
     }
 
     with pytest.raises(ValueError, match="Bedrock API key must be provided"):
+        asyncio.run(Bedrock(config).get_model_list())
+
+
+def test_bedrock_model_discovery_error_includes_region():
+    client = MagicMock()
+    client.list_foundation_models.side_effect = ClientError(
+        {
+            "Error": {"Code": "AccessDeniedException", "Message": "denied"},
+            "ResponseMetadata": {"HTTPStatusCode": 403},
+        },
+        "ListFoundationModels",
+    )
+    config = {
+        "auth_mode": "bedrock_api_key",
+        "bedrock_api_key": "bedrock-test-key",
+        "bedrock_region": "us-east-1",
+    }
+
+    with patch("boto3.client", return_value=client), pytest.raises(ValueError, match="region 'us-east-1'"):
         asyncio.run(Bedrock(config).get_model_list())

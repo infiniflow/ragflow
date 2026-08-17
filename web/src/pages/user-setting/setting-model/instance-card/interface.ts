@@ -166,6 +166,7 @@ export interface SavedModeCardProps {
   instance: IProviderInstance;
   instanceDetailsLoaded: boolean;
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
+  onInstanceModelsStatusChange: (ready: boolean) => void;
   draftName: string;
   open: boolean;
   setOpen: (open: boolean) => void;

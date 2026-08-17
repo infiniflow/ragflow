@@ -39,6 +39,7 @@ type MockModelInfo = {
   max_tokens: number;
 };
 let mockDiscoveredModels: MockModelInfo[];
+let mockInstanceModelsLoaded: boolean;
 const savedInstanceDetails = {
   id: 'instance-id',
   instance_name: 'saved-instance',
@@ -96,9 +97,14 @@ jest.mock('@/components/originui/select-with-search', () => ({
 jest.mock('@/components/ui/multi-select', () => ({ MultiSelect: () => null }));
 jest.mock('@/components/ui/segmented', () => ({
   Segmented: ({ onChange }: { onChange: (value: string) => void }) => (
-    <button type="button" onClick={() => onChange('bedrock_api_key')}>
-      apiKey
-    </button>
+    <>
+      <button type="button" onClick={() => onChange('access_key_secret')}>
+        accessKey
+      </button>
+      <button type="button" onClick={() => onChange('bedrock_api_key')}>
+        apiKey
+      </button>
+    </>
   ),
 }));
 
@@ -109,13 +115,21 @@ jest.mock('./models-section', () => {
       getFormValues: () => Record<string, unknown>;
       verifyTransform: (values: Record<string, unknown>) => unknown;
       onInstanceModelsChange?: (models: MockModelInfo[]) => void;
+      onInstanceModelsEdited?: () => void;
+      onInstanceModelsStatusChange?: (ready: boolean) => void;
     }) => {
       React.useEffect(() => {
         mockCatalogCredentials(props.verifyTransform(props.getFormValues()));
         props.onInstanceModelsChange?.(mockDiscoveredModels);
+        if (mockInstanceModelsLoaded) {
+          props.onInstanceModelsEdited?.();
+        }
         // ModelsSection resolves credentials from its mount effect.
         // oxlint-disable-next-line react/exhaustive-deps
       }, []);
+      React.useEffect(() => {
+        props.onInstanceModelsStatusChange?.(mockInstanceModelsLoaded);
+      });
       return null;
     },
   };
@@ -132,6 +146,7 @@ describe('BedrockInstanceCard', () => {
         refetch: mockRefetchProviderInstance,
       }));
     mockRefetchProviderInstance.mockReset();
+    mockInstanceModelsLoaded = true;
     mockDiscoveredModels = [
       {
         model_name: 'amazon.nova-lite-v1:0',
@@ -229,7 +244,7 @@ describe('BedrockInstanceCard', () => {
     );
   });
 
-  it('updates saved credentials without replacing the model list', async () => {
+  it('updates saved credentials with the current model list', async () => {
     const ref = createRef<TestCardRef>();
     render(
       <BedrockInstanceCard
@@ -247,9 +262,11 @@ describe('BedrockInstanceCard', () => {
       />,
     );
 
-    const input = await screen.findByPlaceholderText('apiKeyMessage');
+    await screen.findByPlaceholderText('apiKeyMessage');
     await waitFor(() => expect(ref.current?.getSavePayload()).toBeNull());
-
+    fireEvent.click(screen.getByRole('button', { name: 'accessKey' }));
+    fireEvent.click(screen.getByRole('button', { name: 'apiKey' }));
+    const input = await screen.findByPlaceholderText('apiKeyMessage');
     fireEvent.change(input, { target: { value: 'new-key' } });
 
     await waitFor(() => {
@@ -268,10 +285,41 @@ describe('BedrockInstanceCard', () => {
             bedrock_api_key: 'new-key',
             bedrock_region: 'us-east-1',
           },
+          model_info: mockDiscoveredModels,
         },
       });
-      expect(result?.payload).not.toHaveProperty('model_info');
     });
+  });
+
+  it('stops saving when the model snapshot becomes stale', async () => {
+    const ref = createRef<TestCardRef>();
+    const card = (
+      <BedrockInstanceCard
+        ref={ref}
+        providerName="Bedrock"
+        defaultOpen
+        instance={{
+          id: 'instance-id',
+          instance_name: 'saved-instance',
+          provider_id: 'provider-id',
+          region: 'us-east-1',
+          status: 'active',
+          api_key: '',
+        }}
+      />
+    );
+    const { rerender } = render(card);
+
+    await waitFor(async () =>
+      expect(await ref.current?.validate()).toBe(true),
+    );
+
+    mockInstanceModelsLoaded = false;
+    rerender(card);
+
+    await waitFor(async () =>
+      expect(await ref.current?.validate()).toBe(false),
+    );
   });
 
   it('restores saved credentials before model discovery starts', async () => {

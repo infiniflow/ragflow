@@ -2104,37 +2104,39 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		effectiveInstanceName = newInstanceName
 	}
 
-	// Omitted model_info is a credential-only update. An explicit list,
-	// including [], is authoritative for model replacement.
-	if modelInfo != nil {
-		existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-		existingModelMap := make(map[string]*entity.TenantModel)
-		for _, mdl := range existingModels {
-			existingModelMap[mdl.ModelName] = mdl
-		}
+	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
+	existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	existingModelMap := make(map[string]*entity.TenantModel)
+	for _, mdl := range existingModels {
+		existingModelMap[mdl.ModelName] = mdl
+	}
 
-		submittedModelNames := make(map[string]bool)
+	// Delete models that are no longer in the submitted model_info.
+	submittedModelNames := make(map[string]bool)
+	if modelInfo != nil {
 		for _, mdl := range modelInfo {
 			if mdl.ModelName != "" {
 				submittedModelNames[mdl.ModelName] = true
 			}
 		}
-		var idsToRemove []string
-		for name, mdl := range existingModelMap {
-			if !submittedModelNames[name] {
-				idsToRemove = append(idsToRemove, mdl.ID)
-			}
+	}
+	var idsToRemove []string
+	for name, mdl := range existingModelMap {
+		if !submittedModelNames[name] {
+			idsToRemove = append(idsToRemove, mdl.ID)
 		}
-		if len(idsToRemove) > 0 {
-			if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
-				return common.CodeServerError, err
-			}
+	}
+	if len(idsToRemove) > 0 {
+		if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
+			return common.CodeServerError, err
 		}
+	}
 
-		// Add or update models from model_info.
+	// Add or update models from model_info.
+	if modelInfo != nil {
 		for _, mdl := range modelInfo {
 			if mdl.ModelName == "" {
 				continue

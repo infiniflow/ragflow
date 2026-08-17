@@ -217,6 +217,25 @@ describe('Bedrock model credentials', () => {
 });
 
 describe('saved instance model baseline', () => {
+  it('does not accept a failed model query as an authoritative snapshot', () => {
+    const onInstanceModelsEdited = jest.fn();
+
+    renderHook(() =>
+      useModelsDerived({
+        catalog: [],
+        instanceModels: [],
+        instanceModelsLoading: false,
+        instanceModelsSucceeded: false,
+        draftModels: [],
+        isDraftInstance: false,
+        onInstanceModelsChange: jest.fn(),
+        onInstanceModelsEdited,
+      }),
+    );
+
+    expect(onInstanceModelsEdited).not.toHaveBeenCalled();
+  });
+
   it('stays clean after persisted models load without hiding credential edits', async () => {
     const initialValues = {
       api_key: 'saved-key',
@@ -240,7 +259,7 @@ describe('saved instance model baseline', () => {
     const formValues = { ...initialValues };
 
     const { result, rerender } = renderHook(
-      ({ instanceModels, instanceModelsLoading }) => {
+      ({ instanceModels, instanceModelsLoading, instanceModelsSucceeded }) => {
         const modelInfoRef = useRef<
           {
             model_name: string;
@@ -276,6 +295,7 @@ describe('saved instance model baseline', () => {
           catalog: [],
           instanceModels,
           instanceModelsLoading,
+          instanceModelsSucceeded,
           draftModels: [],
           isDraftInstance: false,
           onInstanceModelsChange: (modelInfo) => {
@@ -290,13 +310,21 @@ describe('saved instance model baseline', () => {
         initialProps: {
           instanceModels: [] as (typeof persistedModel)[],
           instanceModelsLoading: true,
+          instanceModelsSucceeded: false,
         },
       },
     );
 
+    formValues.api_key = 'changed-before-models-load';
+    expect(result.current.getSavePayload()?.payload.api_key).toBe(
+      'changed-before-models-load',
+    );
+    formValues.api_key = 'saved-key';
+
     rerender({
       instanceModels: [persistedModel],
       instanceModelsLoading: false,
+      instanceModelsSucceeded: true,
     });
 
     await waitFor(() => expect(result.current.getSavePayload()).toBeNull());

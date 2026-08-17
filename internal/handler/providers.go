@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -148,11 +147,6 @@ func (h *ProviderHandler) ShowProvider(c *gin.Context) {
 	common.SuccessWithData(c, provider, "success")
 }
 
-type listModelsRequest struct {
-	APIKey  json.RawMessage `json:"api_key"`
-	BaseURL string          `json:"base_url"`
-}
-
 func (h *ProviderHandler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -169,19 +163,6 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	// 2. Attempt live API fetch when the provider has enough connection data.
 	apiKey := c.Query("api_key")
 	baseURL := c.Query("base_url")
-	if c.Request.Method == http.MethodPost {
-		var req listModelsRequest
-		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-			return
-		}
-		if bodyAPIKey := normalizeAPIKey(req.APIKey); bodyAPIKey != "" {
-			apiKey = bodyAPIKey
-		}
-		if req.BaseURL != "" {
-			baseURL = req.BaseURL
-		}
-	}
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
 
@@ -573,12 +554,12 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	InstanceName string          `json:"instance_name"`
-	APIKey       json.RawMessage `json:"api_key"`
-	BaseURL      string          `json:"base_url"`
-	Region       string          `json:"region"`
-	ModelInfo    json.RawMessage `json:"model_info"`
-	Verify       *bool           `json:"verify"`
+	InstanceName string                             `json:"instance_name"`
+	APIKey       json.RawMessage                    `json:"api_key"`
+	BaseURL      string                             `json:"base_url"`
+	Region       string                             `json:"region"`
+	ModelInfo    *[]service.CreateInstanceModelInfo `json:"model_info" binding:"required"`
+	Verify       *bool                              `json:"verify"`
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -612,19 +593,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		verify = *req.Verify
 	}
 
-	var modelInfo []service.CreateInstanceModelInfo
-	if rawModelInfo := bytes.TrimSpace(req.ModelInfo); len(rawModelInfo) > 0 {
-		if bytes.Equal(rawModelInfo, []byte("null")) {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_info must be an array")
-			return
-		}
-		if err := json.Unmarshal(rawModelInfo, &modelInfo); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_info must be an array")
-			return
-		}
-	}
-
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, modelInfo, verify)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo, verify)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

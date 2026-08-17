@@ -305,14 +305,14 @@ async def update_provider_instance(
     api_key: str | dict,
     base_url: str,
     region: str,
-    model_info: list[dict] | None = None,
+    model_info: list[dict] = None,
     verify: bool = True,
 ):
     """
     Update a provider instance.
 
-    Updates the instance credentials. Models are replaced only when model_info
-    is explicitly provided.
+    Updates the instance's api_key, base_url, region, and re-creates all models
+    based on the provided model_info list.
 
     :param tenant_id: tenant ID
     :param provider_id_or_name: provider/factory ID or name
@@ -399,17 +399,23 @@ async def update_provider_instance(
     # Use the (possibly updated) instance_name for model recreation
     effective_instance_name = instance_name
 
-    # Omitted model_info is a credential-only update. An explicit list,
-    # including [], is authoritative for model replacement.
-    msg = ""
-    if model_info is not None:
-        existing_model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
-        existing_model_names = {model_obj.model_name: model_obj for model_obj in existing_model_objs}
-        submitted_model_names = {m.get("model_name") for m in model_info if m.get("model_name")}
-        models_to_remove = set(existing_model_names.keys()) - submitted_model_names
-        if models_to_remove:
-            TenantModelService.delete_by_ids([existing_model_names[n].id for n in models_to_remove])
+    # Upsert models: add new ones, update existing ones, remove ones no longer selected
+    existing_model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
+    existing_model_names = {model_obj.model_name: model_obj for model_obj in existing_model_objs}
 
+    # Delete models that are no longer in the submitted model_info
+    submitted_model_names = set()
+    if model_info:
+        submitted_model_names = {m.get("model_name") for m in model_info if m.get("model_name")}
+    elif model_info is not None:
+        # model_info is explicitly an empty list — remove all models
+        submitted_model_names = set()
+    models_to_remove = set(existing_model_names.keys()) - submitted_model_names
+    if models_to_remove:
+        TenantModelService.delete_by_ids([existing_model_names[n].id for n in models_to_remove])
+
+    msg = ""
+    if model_info:
         for model in model_info:
             model_name = model.get("model_name")
             if not model_name:
@@ -440,6 +446,45 @@ async def update_provider_instance(
                 success, _msg = add_model_to_instance(tenant_id, provider_name, effective_instance_name, **model)
                 if not success:
                     msg += _msg
+    else:
+        if model_info is None:
+            # model_info not provided — add all factory default models (same as create)
+            factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+            factory_llms = factory_info[0]["llm"]
+            for llm in factory_llms:
+                llm_name = _factory_llm_name(llm)
+                if llm_name in existing_model_names:
+                    # Update existing
+                    update_dict = {}
+                    target_model_type = calculate_model_type(_factory_model_types(llm))
+                    if target_model_type != existing_model_names[llm_name].model_type:
+                        update_dict["model_type"] = target_model_type
+                    db_extra = json.loads(existing_model_names[llm_name].extra) if existing_model_names[llm_name].extra else {}
+                    db_extra_fields = {
+                        "max_tokens": llm["max_tokens"],
+                        "is_tools": llm.get("is_tools", False),
+                        "thinking": "thinking" in llm.get("features", []),
+                    }
+                    if runtime_verify:
+                        verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
+                        db_extra_fields["verify"] = verify_status
+                    db_extra.update(db_extra_fields)
+                    update_dict["extra"] = json.dumps(db_extra)
+                    if update_dict:
+                        TenantModelService.update_model(existing_model_names[llm_name].id, update_dict)
+                else:
+                    extra_fields = {
+                        "is_tools": llm.get("is_tools", False),
+                        "thinking": "thinking" in llm.get("features", []),
+                    }
+                    if runtime_verify:
+                        verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
+                        extra_fields["verify"] = verify_status
+                    success, _msg = add_model_to_instance(
+                        tenant_id, provider_name, effective_instance_name, **{"model_type": _factory_model_types(llm), "model_name": llm_name, "max_tokens": llm["max_tokens"], "extra": extra_fields}
+                    )
+                    if not success:
+                        msg += _msg
     if msg:
         return False, msg
     return True, "success"

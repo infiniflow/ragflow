@@ -229,7 +229,11 @@ export const useFetchInstanceModels = (
   providerName: string,
   instanceName: string,
 ) => {
-  const { data, isFetching: loading } = useQuery<IInstanceModel[]>({
+  const {
+    data,
+    isFetching: loading,
+    isSuccess,
+  } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
     gcTime: 0,
@@ -239,11 +243,14 @@ export const useFetchInstanceModels = (
         { provider_name: providerName, instance_name: instanceName },
         true,
       );
+      if (data?.code !== 0) {
+        throw new Error(data?.message || 'Failed to fetch instance models');
+      }
       return data?.data ?? [];
     },
   });
 
-  return { data, loading };
+  return { data, loading, isSuccess };
 };
 
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;
@@ -372,15 +379,20 @@ export const useListProviderModels = () => {
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
       const { provider_name, api_key, base_url } = params;
-      const requestData: Record<string, unknown> = {};
+      // GET /api/v1/providers/<provider_name>/models
+      // The API accepts api_key and base_url as optional query parameters.
+      // api_key is expected as a string; values in {} object form must be
+      // JSON-stringified before being sent.
+      const queryParams: Record<string, string> = {};
       if (api_key) {
-        requestData.api_key = api_key;
+        queryParams.api_key =
+          typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
       }
       if (base_url) {
-        requestData.base_url = base_url;
+        queryParams.base_url = base_url;
       }
       const { data } = await llmService.listProviderModels(
-        { provider_name, data: requestData },
+        { provider_name, params: queryParams },
         true,
       );
       return data;

@@ -652,7 +652,7 @@ func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("bedrock: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bedrock: API request failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("bedrock: API request failed in region %q with status %d: %s", region, resp.StatusCode, string(respBody))
 	}
 
 	var parsed bedrockConverseResponse
@@ -737,7 +737,7 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("bedrock: API request failed with status %d: %s", resp.StatusCode, string(errBody))
+		return fmt.Errorf("bedrock: API request failed in region %q with status %d: %s", region, resp.StatusCode, string(errBody))
 	}
 
 	// Bedrock sends final token usage inside a "metadata" event frame
@@ -931,7 +931,7 @@ func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, fmt.Errorf("bedrock: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bedrock: ListModels failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("bedrock: ListModels failed in region %q with status %d: %s", region, resp.StatusCode, string(respBody))
 	}
 
 	var parsed bedrockListModelsResponse
@@ -1060,7 +1060,7 @@ func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string,
 		return nil, fmt.Errorf("bedrock: read embedding response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bedrock: embedding request failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("bedrock: embedding request failed in region %q with status %d: %s", region, resp.StatusCode, string(respBody))
 	}
 	return respBody, nil
 }

@@ -99,6 +99,8 @@ export interface ModelsSectionProps {
    * redundant update for data that the backend has already persisted.
    */
   onInstanceModelsEdited?: () => void;
+  /** Reports whether the saved instance model snapshot is authoritative. */
+  onInstanceModelsStatusChange?: (ready: boolean) => void;
 }
 
 export interface ModelTypeBadgesProps {

@@ -110,6 +110,7 @@ export const BedrockInstanceCard = forwardRef<
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
   const modelInfoRef = useRef<IModelInfo[]>([]);
+  const modelsLoadedRef = useRef(false);
 
   useEffect(() => {
     if (isDraft) {
@@ -266,8 +267,6 @@ export const BedrockInstanceCard = forwardRef<
   );
 
   // Build a Bedrock-shaped payload for both submit and verify flows.
-  // Existing instances omit model_info because ModelsSection owns that
-  // state and the credential form has no authoritative model snapshot.
   const buildPayload = useCallback(
     (values: BedrockFormValues, instanceName: string, forDraft: boolean) => {
       const cleaned: Record<string, any> = { ...values };
@@ -301,13 +300,12 @@ export const BedrockInstanceCard = forwardRef<
       };
       if (forDraft) {
         payload.llm_factory = providerName;
-        if (values.auth_mode === 'bedrock_api_key') {
-          payload.model_info = modelInfoRef.current;
-        }
       }
       if (forDraft && values.auth_mode !== 'bedrock_api_key') {
         payload.max_tokens = modelPayload.max_tokens;
         payload.model_info = [modelPayload];
+      } else {
+        payload.model_info = modelInfoRef.current;
       }
       return payload;
     },
@@ -481,11 +479,28 @@ export const BedrockInstanceCard = forwardRef<
     }
   }, [getSavePayload]);
 
+  const markModelsEdited = useCallback(() => {
+    if (isDraft || !baselinePayloadRef.current) return;
+    try {
+      const baseline = JSON.parse(
+        baselinePayloadRef.current,
+      ) as Record<string, any>;
+      baseline.model_info = modelInfoRef.current;
+      baselinePayloadRef.current = JSON.stringify(baseline);
+    } catch {
+      // ignore parse errors - baseline will be re-seeded on details reload
+    }
+  }, [isDraft]);
+
   useImperativeHandle(
     ref,
     () => ({
       validate: async () => {
         if (isDraft && !draftNameRef.current.trim()) return false;
+        if (!isDraft && !modelsLoadedRef.current) {
+          message.error(tSetting('selectModelBeforeSave'));
+          return false;
+        }
         if (
           isDraft &&
           authMode === 'bedrock_api_key' &&
@@ -542,7 +557,7 @@ export const BedrockInstanceCard = forwardRef<
               <Segmented
                 value={field.value}
                 onChange={(value) => {
-                  if (value !== field.value) {
+                  if (isDraft && value !== field.value) {
                     modelInfoRef.current = [];
                   }
                   if (value !== 'access_key_secret') {
@@ -790,6 +805,13 @@ export const BedrockInstanceCard = forwardRef<
                     instanceDetailsLoaded
                     getFormValues={getModelFormValues}
                     verifyTransform={transformModelCredentials}
+                    onInstanceModelsChange={(info) => {
+                      modelInfoRef.current = info;
+                    }}
+                    onInstanceModelsEdited={markModelsEdited}
+                    onInstanceModelsStatusChange={(ready) => {
+                      modelsLoadedRef.current = ready;
+                    }}
                   />
                 </div>
               )}

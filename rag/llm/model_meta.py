@@ -91,10 +91,9 @@ class Bedrock(Base):
         validate_region_name(region)
         return api_key.strip(), region
 
-    def _list_foundation_models(self) -> dict[str, object]:
+    def _list_foundation_models(self, api_key: str, region: str) -> dict[str, object]:
         import boto3
 
-        api_key, region = self._get_config()
         client = boto3.client(
             service_name="bedrock",
             region_name=region,
@@ -140,9 +139,12 @@ class Bedrock(Base):
         return models
 
     async def get_model_list(self) -> list[dict[str, object]]:
+        api_key, region = self._get_config()
         try:
-            raw_model_list = await asyncio.to_thread(self._list_foundation_models)
-        except (BotoCoreError, ClientError) as error:
+            raw_model_list = await asyncio.to_thread(self._list_foundation_models, api_key, region)
+        except ClientError as error:
+            raise ValueError(f"Failed to list models from Amazon Bedrock in region '{region}'") from error
+        except BotoCoreError as error:
             raise ValueError("Failed to list models from Amazon Bedrock") from error
         return self._format_model_list(raw_model_list)
 
