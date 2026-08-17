@@ -1,6 +1,7 @@
 package table
 
 import (
+	"math"
 	"sort"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -47,6 +48,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 		}
 		anchor := tables[it.idx]
 		merged[it.idx] = true
+		var contGrids [][][]pdf.TSRCell
 
 		// Python nomerge_lout_no: tables whose box is followed by a
 		// caption/title/reference should not be merged cross-page.
@@ -102,6 +104,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 			// Merge: combine cells and positions.
 			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
+			contGrids = append(contGrids, tables[jt.idx].Grid)
 			if tables[jt.idx].Caption != "" {
 				if anchor.Caption != "" {
 					anchor.Caption += " "
@@ -113,6 +116,39 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 			anchorBtm = bp.Bottom
 			ap = anchor.Positions[len(anchor.Positions)-1]
 		}
+		// Rebuild the merged Grid from the per-page grids so ConstructTable
+		// emits rows from every merged page, not just the stale anchor
+		// (page-0) grid. Only when the anchor already had a Grid (the
+		// production path); Grid-less tables fall back to the cells path
+		// and must be left untouched to avoid regression.
+		//
+		// Guard: all merged pages must share the anchor's column count. A
+		// jagged cross-page stack (continuation page with a different number
+		// of columns) would feed ConstructTable a non-uniform grid, causing
+		// CalSpans / CleanupOrphanColumns / RowsToHTML to misalign or
+		// silently drop continuation columns and possibly delete a
+		// legitimate anchor column. In that case we skip the rebuild and
+		// keep the anchor-only Grid — the same safe degrade as the
+		// len(anchor.Grid)==0 path (continuation rows dropped, but
+		// structurally valid HTML).
+		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
+			anchorCols := len(anchor.Grid[0])
+			uniform := true
+			for _, cg := range contGrids {
+				if len(cg) == 0 || len(cg[0]) != anchorCols {
+					uniform = false
+					break
+				}
+			}
+			if uniform {
+				allGrids := make([][][]pdf.TSRCell, 0, 1+len(contGrids))
+				allGrids = append(allGrids, anchor.Grid)
+				allGrids = append(allGrids, contGrids...)
+				if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
+					anchor.Grid = rebuilt
+				}
+			}
+		}
 		result = append(result, anchor)
 	}
 	// Append unprocessed tables (those with empty Positions) so they
@@ -123,4 +159,66 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 		}
 	}
 	return result
+}
+
+// stackGrids concatenates per-page grids (each already built correctly by
+// processOneTable) into one grid for a cross-page-merged table. Continuation
+// pages are shifted in Y so their rows sit strictly below the anchor rows,
+// keeping Y-based downstream logic (span detection, ordering) monotonic.
+func stackGrids(grids ...[][]pdf.TSRCell) [][]pdf.TSRCell {
+	var out [][]pdf.TSRCell
+	prevMaxY := 0.0
+	for _, g := range grids {
+		if len(g) == 0 {
+			continue
+		}
+		minY, maxY := gridYExtent(g)
+		if prevMaxY > 0 {
+			// Place this page's rows below everything stacked so far, with a
+			// gap of at least one row height to avoid false row grouping.
+			shift := prevMaxY - minY + math.Max(maxY-minY, 1)
+			g = shiftGridY(g, shift)
+			maxY += shift
+		}
+		out = append(out, g...)
+		prevMaxY = maxY
+	}
+	return out
+}
+
+// gridYExtent returns the min/max Y0/Y1 across all cells of a grid.
+func gridYExtent(g [][]pdf.TSRCell) (minY, maxY float64) {
+	first := true
+	for _, row := range g {
+		for _, c := range row {
+			if first {
+				minY, maxY = c.Y0, c.Y1
+				first = false
+				continue
+			}
+			if c.Y0 < minY {
+				minY = c.Y0
+			}
+			if c.Y1 > maxY {
+				maxY = c.Y1
+			}
+		}
+	}
+	return minY, maxY
+}
+
+// shiftGridY returns a copy of g with every cell's Y0/Y1 shifted by dy.
+func shiftGridY(g [][]pdf.TSRCell, dy float64) [][]pdf.TSRCell {
+	out := make([][]pdf.TSRCell, len(g))
+	for i, row := range g {
+		nr := make([]pdf.TSRCell, len(row))
+		for j, c := range row {
+			nc := c
+			nc.Y0 += dy
+			nc.Y1 += dy
+			nr[j] = nc
+		}
+		out[i] = nr
+	}
+	return out
 }

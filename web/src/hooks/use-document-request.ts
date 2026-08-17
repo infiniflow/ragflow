@@ -70,42 +70,14 @@ import {
   useSetPaginationParams,
 } from './route-hook';
 import { KnowledgeApiAction } from './use-knowledge-request';
+import { DocumentApiAction, DocumentKeys } from './document-query-keys';
 
-export const enum DocumentApiAction {
-  UploadDocument = 'uploadDocument',
-  FetchDocumentList = 'fetchDocumentList',
-  UpdateDocumentStatus = 'updateDocumentStatus',
-  RunDocumentByIds = 'runDocumentByIds',
-  RemoveDocument = 'removeDocument',
-  SaveDocumentName = 'saveDocumentName',
-  SetDocumentParser = 'setDocumentParser',
-  SetDocumentMeta = 'setDocumentMeta',
-  FetchDocumentFilter = 'fetchDocumentFilter',
-  CreateDocument = 'createDocument',
-  FetchDocumentThumbnails = 'fetchDocumentThumbnails',
-  ParseDocument = 'parseDocument',
-}
+export { DocumentApiAction, DocumentKeys } from './document-query-keys';
 
 export const enum DocumentStructureApiAction {
   FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
   DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
 }
-
-const DocumentKeys = {
-  list: (searchString?: string, pagination?: unknown, filter?: unknown) =>
-    [
-      DocumentApiAction.FetchDocumentList,
-      searchString,
-      pagination,
-      filter,
-    ] as const,
-  filter: (searchString?: string, knowledgeId?: string) =>
-    [DocumentApiAction.FetchDocumentFilter, searchString, knowledgeId] as const,
-  thumbnails: (ids: string[]) =>
-    [DocumentApiAction.FetchDocumentThumbnails, ids] as const,
-  byIds: (ids: string[]) =>
-    [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
-};
 
 const documentIngestInFlight = new Map<string, Promise<unknown>>();
 
@@ -161,7 +133,7 @@ export const useUploadDocument = () => {
 
         if (code === 0 || code === 500) {
           queryClient.invalidateQueries({
-            queryKey: DocumentKeys.list(),
+            queryKey: DocumentKeys.all(),
           });
         }
         return ret;
@@ -238,7 +210,7 @@ export const useFetchDocumentList = (loop = true) => {
       );
       if (ret.data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.filter(),
+          queryKey: DocumentKeys.allFilters(),
         });
         return ret.data.data;
       }
@@ -382,7 +354,7 @@ export const useSetDocumentStatus = () => {
       if (data.code === 0) {
         message.success(i18n.t('message.modified'));
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
       }
       return data;
@@ -416,7 +388,7 @@ export const useRunDocument = () => {
         queryClient.setQueriesData<{
           docs: IDocumentInfo[];
           total: number;
-        }>({ queryKey: DocumentKeys.list() }, (current) => {
+        }>({ queryKey: DocumentKeys.all() }, (current) => {
           if (!current) {
             return current;
           }
@@ -439,7 +411,7 @@ export const useRunDocument = () => {
       }
       if (run !== 1) {
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
       }
       const ret = await kbService.documentIngest({
@@ -455,13 +427,13 @@ export const useRunDocument = () => {
         // polling again.
         if (run !== 1) {
           queryClient.invalidateQueries({
-            queryKey: DocumentKeys.list(),
+            queryKey: DocumentKeys.all(),
           });
         }
         message.success(i18n.t('message.operated'));
       } else {
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
       }
 
@@ -469,7 +441,7 @@ export const useRunDocument = () => {
     },
     onError: () => {
       queryClient.invalidateQueries({
-        queryKey: DocumentKeys.list(),
+        queryKey: DocumentKeys.all(),
       });
     },
   });
@@ -521,7 +493,7 @@ export const useRemoveDocument = () => {
       if (data.code === 0) {
         message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
       }
       return data.code;
@@ -555,7 +527,7 @@ export const useSaveDocumentName = () => {
       if (data.code === 0) {
         message.success(i18n.t('message.renamed'));
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
       }
       return data.code;
@@ -607,7 +579,7 @@ export const useSetDocumentParser = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
 
         message.success(i18n.t('message.modified'));
@@ -672,7 +644,7 @@ export const useSetDocumentPipelineParser = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: DocumentKeys.list(),
+          queryKey: DocumentKeys.all(),
         });
 
         message.success(i18n.t('message.modified'));
@@ -702,7 +674,7 @@ export const useSetDocumentMeta = () => {
 
         if (data?.code === 0) {
           queryClient.invalidateQueries({
-            queryKey: DocumentKeys.list(),
+            queryKey: DocumentKeys.all(),
           });
 
           message.success(i18n.t('message.modified'));
@@ -736,7 +708,7 @@ export const useCreateDocument = () => {
       if (data.code === 0) {
         if (page === 1) {
           queryClient.invalidateQueries({
-            queryKey: DocumentKeys.list(),
+            queryKey: DocumentKeys.all(),
           });
         } else {
           setPaginationParams(); // fetch document list
