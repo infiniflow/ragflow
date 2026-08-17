@@ -28,7 +28,7 @@ from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
-from common.constants import RetCode, TaskStatus
+from common.constants import FileSource, RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
 from common.misc_utils import get_uuid
@@ -183,12 +183,12 @@ def rm_connector(connector_id):
 @validate_request("source")
 async def test_connector(connector_id):
     """Validate connector configuration from the request body without persisting."""
-    from common.data_source import CONNECTOR_BY_SOURCE, build_connector_for_source
-    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
-
-    unsaved = connector_id in CONNECTOR_BY_SOURCE
+    unsaved = connector_id in {source.value for source in FileSource if source.value}
     if not unsaved and not ConnectorService.accessible(connector_id, current_user.id):
         return _connector_auth_error(connector_id, current_user.id)
+
+    from common.data_source import build_connector_for_source
+    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 
     req = await get_request_json()
     source = req["source"]

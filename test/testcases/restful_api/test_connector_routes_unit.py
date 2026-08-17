@@ -18,6 +18,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -257,6 +258,12 @@ def _load_connector_app(monkeypatch):
         SCHEDULE="schedule",
         CANCEL="cancel",
     )
+
+    class _FileSource(StrEnum):
+        LOCAL = ""
+        RSS = "rss"
+
+    constants_mod.FileSource = _FileSource
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     config_mod = ModuleType("common.data_source.config")
