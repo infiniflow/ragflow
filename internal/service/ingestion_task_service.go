@@ -479,6 +479,13 @@ func (s *IngestionTaskService) RecordComponentProgress(ctx context.Context, task
 	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
 }
 
+// ClearComponentProgress removes lifecycle rows left by a previous attempt of
+// the same reusable ingestion task. Run-count checkpoint rows are retained.
+func (s *IngestionTaskService) ClearComponentProgress(ctx context.Context, taskID string) error {
+	_, err := s.ingestionTaskLogDAO.DeleteComponentLogsByTaskID(ctx, dao.DB, taskID)
+	return err
+}
+
 // AggregateTaskProgress returns the SQL-aggregated component progress for a
 // task (done/failed/running/percent against the given total denominator).
 func (s *IngestionTaskService) AggregateTaskProgress(ctx context.Context, taskID string, total int) (*dao.TaskProgress, error) {
