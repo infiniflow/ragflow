@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOutlookConnectorOpenSync(t *testing.T) {
@@ -139,6 +140,99 @@ func TestOutlookGetJSONRetriesTransientStatus(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("calls = %d, want 2", calls)
+	}
+}
+
+func TestOutlookTokenRefreshesExpiredCachedToken(t *testing.T) {
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tokenCalls := 0
+	connector := &OutlookConnector{
+		tenantID:     "tenant",
+		clientID:     "client",
+		clientSecret: "secret",
+		httpClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost || !strings.Contains(req.URL.Host, "login.microsoftonline.com") {
+				t.Fatalf("unexpected request %s %s", req.Method, req.URL.String())
+			}
+			tokenCalls++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"access_token":"token-` + string(rune('0'+tokenCalls)) + `","expires_in":600}`)),
+				Header:     http.Header{},
+			}, nil
+		})},
+		now: func() time.Time { return now },
+	}
+
+	first, err := connector.token(context.Background())
+	if err != nil {
+		t.Fatalf("first token failed: %v", err)
+	}
+	if first != "token-1" {
+		t.Fatalf("first token = %q, want token-1", first)
+	}
+	second, err := connector.token(context.Background())
+	if err != nil {
+		t.Fatalf("second token failed: %v", err)
+	}
+	if second != first || tokenCalls != 1 {
+		t.Fatalf("cached token = %q, token calls = %d; want cached token-1 with one call", second, tokenCalls)
+	}
+
+	now = now.Add(6 * time.Minute)
+	third, err := connector.token(context.Background())
+	if err != nil {
+		t.Fatalf("third token failed: %v", err)
+	}
+	if third != "token-2" || tokenCalls != 2 {
+		t.Fatalf("refreshed token = %q, token calls = %d; want token-2 with two calls", third, tokenCalls)
+	}
+}
+
+func TestOutlookGetJSONRefreshesTokenAfterUnauthorized(t *testing.T) {
+	var tokenCalls int
+	var graphCalls int
+	authorizations := []string{}
+	connector := &OutlookConnector{
+		tenantID:     "tenant",
+		clientID:     "client",
+		clientSecret: "secret",
+		httpClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodPost {
+				tokenCalls++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"access_token":"token-` + string(rune('0'+tokenCalls)) + `","expires_in":3600}`)),
+					Header:     http.Header{},
+				}, nil
+			}
+			graphCalls++
+			authorizations = append(authorizations, req.Header.Get("Authorization"))
+			if graphCalls == 1 {
+				return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader(`{"error":"expired"}`)), Header: http.Header{}}, nil
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"value":[]}`)), Header: http.Header{}}, nil
+		})},
+	}
+
+	var page outlookDeltaPage
+	if err := connector.getJSON(context.Background(), "https://graph.example.test/messages", &page); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
+	}
+	if tokenCalls != 2 {
+		t.Fatalf("token calls = %d, want 2", tokenCalls)
+	}
+	if graphCalls != 2 {
+		t.Fatalf("graph calls = %d, want 2", graphCalls)
+	}
+	wantAuthorizations := []string{"Bearer token-1", "Bearer token-2"}
+	if len(authorizations) != len(wantAuthorizations) {
+		t.Fatalf("authorizations = %v, want %v", authorizations, wantAuthorizations)
+	}
+	for i := range wantAuthorizations {
+		if authorizations[i] != wantAuthorizations[i] {
+			t.Fatalf("authorizations = %v, want %v", authorizations, wantAuthorizations)
+		}
 	}
 }
 

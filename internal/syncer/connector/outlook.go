@@ -32,14 +32,15 @@ import (
 )
 
 const (
-	defaultOutlookBatchSize = 32
-	defaultOutlookFolder    = "inbox"
-	outlookGraphBase        = "https://graph.microsoft.com/v1.0"
-	outlookTokenURLFormat   = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
-	outlookGraphScope       = "https://graph.microsoft.com/.default"
-	outlookRequestTimeout   = 60 * time.Second
-	outlookRetryCount       = 4
-	outlookRetryBaseDelay   = 200 * time.Millisecond
+	defaultOutlookBatchSize  = 32
+	defaultOutlookFolder     = "inbox"
+	outlookGraphBase         = "https://graph.microsoft.com/v1.0"
+	outlookTokenURLFormat    = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
+	outlookGraphScope        = "https://graph.microsoft.com/.default"
+	outlookRequestTimeout    = 60 * time.Second
+	outlookRetryCount        = 4
+	outlookRetryBaseDelay    = 200 * time.Millisecond
+	outlookTokenExpiryMargin = 5 * time.Minute
 )
 
 var (
@@ -60,7 +61,9 @@ type OutlookConnector struct {
 
 	clientMu    sync.Mutex
 	accessToken string
+	tokenExpiry time.Time
 	httpClient  *http.Client
+	now         func() time.Time
 
 	acquireAccessToken func(ctx context.Context) (string, error)
 	listUsers          func(ctx context.Context) ([]string, error)
@@ -105,6 +108,13 @@ func (c *OutlookConnector) Validate(ctx context.Context) error {
 	return err
 }
 
+func (c *OutlookConnector) effectiveBatchSize() int {
+	if c.batchSize > 0 {
+		return c.batchSize
+	}
+	return defaultOutlookBatchSize
+}
+
 // OpenSync opens one Outlook sync session.
 func (c *OutlookConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	users, err := c.users(ctx)
@@ -114,7 +124,7 @@ func (c *OutlookConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 	session := &outlookSyncSession{
 		connector:   c,
 		users:       users,
-		batchSize:   c.batchSize,
+		batchSize:   c.effectiveBatchSize(),
 		windowStart: request.WindowStart,
 		windowEnd:   request.WindowEnd,
 		deltaLinks:  map[string]string{},
@@ -129,7 +139,7 @@ func (c *OutlookConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 	if err != nil {
 		return nil, err
 	}
-	return &outlookPruneSession{connector: c, users: users, batchSize: c.batchSize}, nil
+	return &outlookPruneSession{connector: c, users: users, batchSize: c.effectiveBatchSize()}, nil
 }
 
 func (c *OutlookConnector) users(ctx context.Context) ([]string, error) {
@@ -183,6 +193,7 @@ func (c *OutlookConnector) getJSON(ctx context.Context, apiURL string, out any) 
 	}
 
 	var lastErr error
+	retriedUnauthorized := false
 	for attempt := 1; attempt <= outlookRetryCount; attempt++ {
 		requestCtx, cancel := context.WithTimeout(ctx, outlookRequestTimeout)
 		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
@@ -206,6 +217,16 @@ func (c *OutlookConnector) getJSON(ctx context.Context, apiURL string, out any) 
 				return json.Unmarshal(body, out)
 			}
 			lastErr = outlookHTTPError{status: resp.StatusCode, body: strings.TrimSpace(string(bytes.TrimSpace(body)))}
+			if resp.StatusCode == http.StatusUnauthorized && !retriedUnauthorized {
+				c.invalidateToken(token)
+				token, err = c.token(ctx)
+				if err != nil {
+					return err
+				}
+				retriedUnauthorized = true
+				attempt--
+				continue
+			}
 			if !isOutlookRetryable(resp.StatusCode) {
 				return lastErr
 			}
@@ -225,34 +246,63 @@ func (c *OutlookConnector) getJSON(ctx context.Context, apiURL string, out any) 
 
 func (c *OutlookConnector) token(ctx context.Context) (string, error) {
 	c.clientMu.Lock()
-	if c.accessToken != "" {
+	if c.accessToken != "" && !c.cachedTokenExpiredLocked() {
 		token := c.accessToken
 		c.clientMu.Unlock()
 		return token, nil
 	}
 	c.clientMu.Unlock()
 
-	var token string
+	var cached outlookCachedToken
 	var err error
 	if c.acquireAccessToken != nil {
-		token, err = c.acquireAccessToken(ctx)
+		token, tokenErr := c.acquireAccessToken(ctx)
+		if tokenErr != nil {
+			err = tokenErr
+		} else {
+			cached = outlookCachedToken{
+				accessToken: token,
+				expiresAt:   c.currentTime().Add(time.Hour),
+			}
+		}
 	} else {
-		token, err = c.requestAccessToken(ctx)
+		cached, err = c.requestAccessToken(ctx)
 	}
 	if err != nil {
 		return "", err
 	}
-	if token == "" {
+	if cached.accessToken == "" {
 		return "", fmt.Errorf("Outlook token endpoint returned an empty access token")
 	}
 
 	c.clientMu.Lock()
-	c.accessToken = token
+	c.accessToken = cached.accessToken
+	c.tokenExpiry = cached.expiresAt
 	c.clientMu.Unlock()
-	return token, nil
+	return cached.accessToken, nil
 }
 
-func (c *OutlookConnector) requestAccessToken(ctx context.Context) (string, error) {
+func (c *OutlookConnector) cachedTokenExpiredLocked() bool {
+	return c.tokenExpiry.IsZero() || !c.currentTime().Add(outlookTokenExpiryMargin).Before(c.tokenExpiry)
+}
+
+func (c *OutlookConnector) invalidateToken(token string) {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+	if c.accessToken == token {
+		c.accessToken = ""
+		c.tokenExpiry = time.Time{}
+	}
+}
+
+func (c *OutlookConnector) currentTime() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+func (c *OutlookConnector) requestAccessToken(ctx context.Context) (outlookCachedToken, error) {
 	form := url.Values{
 		"client_id":     {c.clientID},
 		"client_secret": {c.clientSecret},
@@ -263,23 +313,29 @@ func (c *OutlookConnector) requestAccessToken(ctx context.Context) (string, erro
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, fmt.Sprintf(outlookTokenURLFormat, url.PathEscape(c.tenantID)), strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", err
+		return outlookCachedToken{}, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return outlookCachedToken{}, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode >= 400 {
-		return "", outlookHTTPError{status: resp.StatusCode, body: strings.TrimSpace(string(body))}
+		return outlookCachedToken{}, outlookHTTPError{status: resp.StatusCode, body: strings.TrimSpace(string(body))}
 	}
 	var token outlookTokenResponse
 	if err = json.Unmarshal(body, &token); err != nil {
-		return "", err
+		return outlookCachedToken{}, err
 	}
-	return token.AccessToken, nil
+	if token.ExpiresIn <= 0 {
+		return outlookCachedToken{}, fmt.Errorf("Outlook token endpoint returned invalid expires_in")
+	}
+	return outlookCachedToken{
+		accessToken: token.AccessToken,
+		expiresAt:   c.currentTime().Add(time.Duration(token.ExpiresIn) * time.Second),
+	}, nil
 }
 
 type outlookSyncSession struct {
@@ -354,6 +410,9 @@ func (s *outlookSyncSession) nextDocumentPage(ctx context.Context) ([]outlookBuf
 		requestURL = s.startURL(userID)
 	}
 	page, err := s.connector.deltaPage(ctx, requestURL)
+	if page.DeltaLink != "" {
+		s.deltaLinks[userID] = page.DeltaLink
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -389,9 +448,6 @@ func (s *outlookSyncSession) nextDocumentPage(ctx context.Context) ([]outlookBuf
 	if page.NextLink != "" {
 		s.pageURL = page.NextLink
 		return documents, nil
-	}
-	if page.DeltaLink != "" {
-		s.deltaLinks[userID] = page.DeltaLink
 	}
 	s.advanceUser()
 	s.completedCurrent = true
@@ -691,6 +747,12 @@ type outlookEmailAddress struct {
 
 type outlookTokenResponse struct {
 	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+type outlookCachedToken struct {
+	accessToken string
+	expiresAt   time.Time
 }
 
 type outlookHTTPError struct {
