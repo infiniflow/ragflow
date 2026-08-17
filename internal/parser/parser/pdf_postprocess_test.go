@@ -141,3 +141,38 @@ func TestApplyPDFPostProcess_ReordersMultiColumnText(t *testing.T) {
 		}
 	}
 }
+
+// TestFilterPDFHeaderFooter_SubstringMatch pins #5: Python's remove_header_footer
+// uses a substring match re.search(r"(header|footer|number)", ...) (rag/flow/parser/parser.py:754),
+// while Go used an anchored exact match ^(header|footer|number)$. A layout type
+// that merely CONTAINS one of those words (e.g. "page-footer") must be stripped to
+// match Python, not silently kept.
+func TestFilterPDFHeaderFooter_SubstringMatch(t *testing.T) {
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "real header", LayoutType: "header"},
+			{Text: "real footer", LayoutType: "footer"},
+			{Text: "page 1", LayoutType: "number"},
+			{Text: "a page-footer note", LayoutType: "page-footer"}, // composite -> substring match
+			{Text: "body text", LayoutType: "text"},
+		},
+	}
+	filterPDFHeaderFooter(result)
+
+	kept := map[string]bool{}
+	for _, s := range result.Sections {
+		kept[s.LayoutType] = true
+	}
+	for _, lt := range []string{"header", "footer", "number"} {
+		if kept[lt] {
+			t.Errorf("#5 header/footer: %q should be stripped", lt)
+		}
+	}
+	// Composite "page-footer" must be stripped by substring match (Python-equivalent).
+	if kept["page-footer"] {
+		t.Errorf("#5 header/footer: composite layout type %q should be stripped by substring match", "page-footer")
+	}
+	if !kept["text"] {
+		t.Errorf("#5 header/footer: body text %q should be kept", "text")
+	}
+}
