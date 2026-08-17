@@ -173,6 +173,29 @@ describe('useBeforeDelete', () => {
     expect(deletion?.edges).toEqual([]);
   });
 
+  it('deletes edges of a protected node when the other end is deleted', async () => {
+    const beginNode = createNode('begin', Operator.Begin);
+    const messageNode = createNode('message:0', Operator.Message);
+    const edge = createEdge('e1', 'begin', 'message:0');
+
+    useGraphStore.setState({
+      nodes: [beginNode, messageNode],
+      edges: [edge],
+    });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion;
+    await act(async () => {
+      deletion = await result.current.handleBeforeDelete({
+        nodes: [beginNode as any, messageNode as any],
+        edges: [edge],
+      });
+    });
+
+    expect(deletion?.nodes.map((node) => node.id)).toEqual(['message:0']);
+    expect(deletion?.edges.map((edge) => edge.id)).toEqual(['e1']);
+  });
+
   it('preserves agent downstream cleanup', async () => {
     const nodes = [
       createNode('agent:0', Operator.Agent),

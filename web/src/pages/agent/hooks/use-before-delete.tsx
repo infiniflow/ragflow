@@ -84,9 +84,8 @@ export function useBeforeDelete() {
     }
     for (const edge of graphEdges) {
       if (
-        (toBeDeletedNodeIdSet.has(edge.source) ||
-          toBeDeletedNodeIdSet.has(edge.target)) &&
-        allowEdge(edge)
+        toBeDeletedNodeIdSet.has(edge.source) ||
+        toBeDeletedNodeIdSet.has(edge.target)
       ) {
         edgeById.set(edge.id, edge);
       }
