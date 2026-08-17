@@ -270,6 +270,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 	}
+	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
+		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compilation_template_ids"}}
+	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
 	if err != nil {

@@ -515,7 +515,7 @@ async def search_datasets(tenant_id):
     POST /api/v1/datasets/search
     JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
-               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
@@ -538,7 +538,7 @@ async def search(tenant_id, dataset_id):
     POST /api/v1/datasets/<dataset_id>/search
     JSON body: {"question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
-               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """

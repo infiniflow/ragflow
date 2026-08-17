@@ -61,6 +61,7 @@ type RetrievalRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	Aggs                   *bool
 	Highlight              *bool
+	Filter                 map[string]interface{}
 }
 
 // RetrievalResult result from retrieval search
@@ -145,6 +146,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		Top:            *req.Top,
 		RankFeature:    *req.RankFeature,
 		EmbeddingModel: req.EmbeddingModel,
+		Filter:         req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -434,6 +436,7 @@ func (s *RetrievalService) countThresholdValidMatches(ctx context.Context, req *
 		Top:            *req.Top,
 		RankFeature:    *req.RankFeature,
 		EmbeddingModel: req.EmbeddingModel,
+		Filter:         req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
