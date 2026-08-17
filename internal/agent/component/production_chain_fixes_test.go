@@ -202,7 +202,7 @@ func TestRetrieval_NodeQueryResolvedFromCanvasState(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["query"] = "AirPure X200 vs AirPure X300"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"category":      "Product Feature Comparison",
 		"category_name": "Product Feature Comparison",
@@ -270,7 +270,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+	normalizeLegacyRetrievalInputs(runtime.WithState(t.Context(), state), db, merged)
 
 	if got, _ := merged["query"].(string); got != "diamond necklace" {
 		t.Fatalf("query = %q, want diamond necklace", got)
@@ -336,7 +336,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+	normalizeLegacyRetrievalInputs(runtime.WithState(t.Context(), state), db, merged)
 
 	if got, _ := merged["query"].(string); got != "合同" {
 		t.Fatalf("query = %q, want 合同", got)
@@ -378,7 +378,7 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	if got := resolveRetrievalDatasetID(ctx, db, "da1"); got != "kb-da1" {
 		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
@@ -401,7 +401,7 @@ func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *
 		},
 	})
 
-	consumed := normalizeStructuredRetrievalInputs(context.Background(), nil, merged)
+	consumed := normalizeStructuredRetrievalInputs(t.Context(), nil, merged)
 	if !consumed {
 		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
 	}
@@ -443,7 +443,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Retrieval): %v", err)
 	}
-	out, err := wrapper.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
+	out, err := wrapper.Invoke(t.Context(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval.Invoke: %v", err)
 	}
@@ -557,7 +557,7 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"arguments": map[string]any{
 			"x": 7,
 		},
