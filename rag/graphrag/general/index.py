@@ -24,6 +24,7 @@ from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.connection_utils import timeout
 from rag.graphrag.entity_resolution import EntityResolution
+from rag.graphrag.extractor_registry import get_graphrag_extractor
 from rag.graphrag.checkpoints import (
     COMMUNITY_CHECKPOINT,
     RESOLUTION_CHECKPOINT,
@@ -33,9 +34,10 @@ from rag.graphrag.checkpoints import (
 )
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.extractor import Extractor
-from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
-from rag.graphrag.light.graph_extractor import GraphExtractor as LightKGExt
-from rag.graphrag.ner.graph_extractor import GraphExtractor as NerKGExt
+# Import extractors to trigger registry registration
+from rag.graphrag.general import graph_extractor as _general_extractor
+from rag.graphrag.light import graph_extractor as _light_extractor
+from rag.graphrag.ner import graph_extractor as _ner_extractor
 from rag.graphrag.phase_markers import (
     PHASE_COMMUNITY,
     PHASE_RESOLUTION,
@@ -119,32 +121,39 @@ def _select_extractor_type(graphrag_config: dict):
     return graphrag_config.get("method", "light")
 
 
-def _select_extractor(graphrag_config: dict):
-    """Return the extractor class matching ``graphrag_config["method"]``.
-
-    Supported values:
-    - ``"general"``  – Microsoft GraphRAG LLM-based extractor (default in
-      earlier versions).
-    - ``"light"``   – LightRAG-style LLM-based extractor (the default when
-      *method* is omitted or unrecognised).
-    - ``"ner"``     – NER-based extractor using spaCy (no LLM
-      needed for entity / relation extraction itself).
+def _select_extractor(graphrag_config):
     """
+    Select GraphRAG extractor using registry.
+
+    Falls back to light extractor when method is unknown.
+    """
+
     method = graphrag_config.get("method", "light")
-    if method == "general":
-        return GeneralKGExt
-    if method == "ner":
-        return NerKGExt
-    return LightKGExt
+
+    extractor = get_graphrag_extractor(method)
+
+    if extractor:
+        return extractor
+
+    extractor = get_graphrag_extractor("light")
+
+    if extractor:
+        return extractor
+
+    raise RuntimeError(
+        "No GraphRAG extractor available. "
+        "Please ensure extractor registry is initialized correctly."
+    )
 
 
 def _has_cancel_and_exit(task_id: str, message: str, callback=None) -> None:
     if not task_id or not has_canceled(task_id):
         return
+
     if callback:
         callback(msg=message)
-    raise TaskCanceledException(f"Task {task_id} was cancelled")
 
+    raise TaskCanceledException(f"Task {task_id} was cancelled")
 
 async def _run_with_retry(
     label: str,
