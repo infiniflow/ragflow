@@ -307,7 +307,7 @@ func FilteredDLARegions(regions []pdf.DLARegion, boxes []pdf.TextBox) []pdf.DLAR
 	}
 	kept := regions[:0]
 	for _, r := range regions {
-		if r.Confidence >= 0.4 || !isGarbageLayoutType(r.Label) {
+		if r.Confidence >= pdf.GarbageLayoutScoreThreshold || !pdf.GarbageLayoutTypes[r.Label] {
 			kept = append(kept, r)
 		}
 	}
@@ -409,7 +409,7 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 			}
 			if bestJ >= 0 && bestOverlap >= 0.4 {
 				// Garbage layout not at page edge -> pop (Python: bxs.pop(i)).
-				if isGarbageLayoutType(ty) && pageImgHeight > 0 && !garbageKeepFeat(ty, boxes[i], pageImgHeight/scale) {
+				if pdf.GarbageLayoutTypes[ty] && pageImgHeight > 0 && !garbageKeepFeat(ty, boxes[i], pageImgHeight/scale) {
 					dropped[i] = true
 					continue
 				}
@@ -475,15 +475,6 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 }
 
 // ── garbage layout helpers ────────────────────────────────────────────
-// garbageLayoutTypes matches Python's self.garbage_layouts.
-var garbageLayoutTypes = map[string]bool{
-	pdf.LayoutTypeFooter: true, pdf.LayoutTypeHeader: true, pdf.LayoutTypeReference: true,
-}
-
-func isGarbageLayoutType(ty string) bool {
-	return garbageLayoutTypes[ty]
-}
-
 // garbageKeepFeat matches Python's keep_feats in LayoutRecognizer.__call__:
 // footer near page bottom (>90% of page height) or header near page top (<10%)
 // are real page decorations - keep them.  Others are DLA noise.

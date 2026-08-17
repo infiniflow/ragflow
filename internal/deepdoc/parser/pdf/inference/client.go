@@ -76,24 +76,6 @@ type bboxesResponse struct {
 	BBoxes [][]float64 `json:"bboxes"`
 }
 
-// dlaGarbageLayouts mirrors Python LayoutRecognizer's garbage gate
-// (deepdoc/vision/layout_recognizer.py:97 and :379), which drops any region
-// whose type is in garbage_layouts=["footer","header","reference"] AND whose
-// confidence is below 0.4. We apply the same gate at the DLA source so every
-// consumer of Client.DLA (not just the table-annotation path, which re-applies
-// it downstream) sees the Python-aligned region set.
-//
-// Of the three types, only "reference" is reachable with the OSS default
-// 10-class DLA taxonomy (DefaultDLALabels has no footer/header classes), so in
-// practice this gate only fires on low-confidence references. footer/header are
-// included defensively to match Python's full garbage set for any deployment
-// whose DLA label taxonomy emits them.
-var dlaGarbageLayouts = map[string]bool{
-	string(pdf.LayoutTypeFooter):    true,
-	string(pdf.LayoutTypeHeader):    true,
-	string(pdf.LayoutTypeReference): true,
-}
-
 // DLA analyzes a full page image and returns labeled regions.
 func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegion, error) {
 	data, err := util.EncodePNG(pageImage)
@@ -114,8 +96,9 @@ func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegio
 		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
 			label = labels[clsID]
 		}
-		// Drop low-confidence garbage-layout regions (Python parity: 0.4 gate).
-		if dlaGarbageLayouts[label] && b[4] < 0.4 {
+		// Drop low-confidence garbage-layout regions (Python parity: 0.4 gate,
+		// deepdoc/vision/layout_recognizer.py:97).
+		if pdf.GarbageLayoutTypes[label] && b[4] < pdf.GarbageLayoutScoreThreshold {
 			continue
 		}
 		regions = append(regions, pdf.DLARegion{
