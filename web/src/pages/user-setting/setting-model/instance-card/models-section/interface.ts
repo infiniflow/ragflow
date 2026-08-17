@@ -93,10 +93,10 @@ export interface ModelsSectionProps {
    */
   onInstanceModelsChange?: (modelInfo: IModelInfo[]) => void;
   /**
-   * Optional callback fired after the authoritative saved-instance model
-   * query completes or refreshes. The host uses it to absorb the fetched
-   * `model_info` into its last-saved baseline, avoiding a redundant update
-   * for data that the backend has already persisted.
+   * Optional callback fired after saved-instance model state is confirmed by
+   * the backend, either from a query result or a successful edit. The host
+   * uses it to absorb `model_info` into its last-saved baseline, avoiding a
+   * redundant update for data that the backend has already persisted.
    */
   onInstanceModelsEdited?: () => void;
 }

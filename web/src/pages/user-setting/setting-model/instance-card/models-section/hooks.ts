@@ -928,9 +928,8 @@ export function useModelEdit({
 
   // Persist edits to an existing model. For drafts the backend has no
   // instance yet, so we update the local `draftModels` list instead of
-  // calling PATCH. For saved cards the instance-models cache is patched
-  // so the UI reflects the new values immediately, before the PATCH's
-  // invalidation refetches.
+  // calling PATCH. For saved cards the cache changes only after the backend
+  // accepts the edit; the PATCH hook then refetches the complete snapshot.
   const handleEditSubmit = async (item: IProviderModelItem) => {
     if (!editingModel) return;
     const targetName = editingModel.name;
@@ -947,29 +946,7 @@ export function useModelEdit({
       return;
     }
 
-    queryClient.setQueryData<IInstanceModel[]>(
-      LlmKeys.instanceModels(providerName, instanceName),
-      (prev) => {
-        if (!prev) return prev;
-        const idx = prev.findIndex((m) => m.name === targetName);
-        if (idx === -1) return prev;
-        const next = [...prev];
-        const existing = next[idx];
-        next[idx] = {
-          ...existing,
-          max_tokens: item.max_tokens ?? 0,
-          model_type: item.model_types ?? [],
-          is_tools: hasToolFeature(item.features),
-          extra: {
-            is_tools: hasToolFeature(item.features),
-            ...(item.extra ?? {}),
-          },
-        };
-        return next;
-      },
-    );
-
-    await patchInstanceModel({
+    const data = await patchInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: targetName,
@@ -977,6 +954,29 @@ export function useModelEdit({
       model_type: item.model_types ?? [],
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    if (data.code === 0) {
+      queryClient.setQueryData<IInstanceModel[]>(
+        LlmKeys.instanceModels(providerName, instanceName),
+        (prev) => {
+          if (!prev) return prev;
+          const idx = prev.findIndex((m) => m.name === targetName);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          const existing = next[idx];
+          next[idx] = {
+            ...existing,
+            max_tokens: item.max_tokens ?? 0,
+            model_type: item.model_types ?? [],
+            is_tools: hasToolFeature(item.features),
+            extra: {
+              is_tools: hasToolFeature(item.features),
+              ...(item.extra ?? {}),
+            },
+          };
+          return next;
+        },
+      );
+    }
     clearCatalogOverride(targetName);
     setEditingModel(null);
   };

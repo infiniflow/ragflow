@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 
@@ -23,6 +24,7 @@ import {
   useModelMutations,
   useModelsCatalog,
   useModelsDerived,
+  useModelEdit,
   useModelVerify,
   useResolveCreds,
 } from './hooks';
@@ -30,12 +32,21 @@ import {
 const mockListProviderModels = jest.fn();
 const mockUpdateProviderInstance = jest.fn();
 const mockVerifyProviderConnection = jest.fn();
+const mockPatchInstanceModel = jest.fn();
+function mockInstanceModelsKey(providerName: string, instanceName: string) {
+  return ['addedProviders', providerName, instanceName, 'models'];
+}
 
 jest.mock('@/hooks/use-llm-request', () => ({
+  LlmKeys: { instanceModels: mockInstanceModelsKey },
   useAddInstanceModel: () => ({ addInstanceModel: jest.fn() }),
   useDeleteInstanceModels: () => ({ deleteInstanceModels: jest.fn() }),
   useListProviderModels: () => ({
     listProviderModels: mockListProviderModels,
+  }),
+  usePatchInstanceModel: () => ({
+    patchInstanceModel: mockPatchInstanceModel,
+    loading: false,
   }),
   useUpdateProviderInstance: () => ({
     updateProviderInstance: mockUpdateProviderInstance,
@@ -50,6 +61,10 @@ jest.mock('@/components/dynamic-form', () => ({}));
 
 jest.mock('../../provider-schema/hooks', () => ({
   useProviderFields: jest.fn(),
+}));
+
+jest.mock('../use-custom-model-fields', () => ({
+  useCustomModelFields: () => [],
 }));
 
 jest.mock('@/services/llm-service', () => ({
@@ -290,5 +305,98 @@ describe('saved instance model baseline', () => {
     expect(result.current.getSavePayload()?.payload.api_key).toBe(
       'changed-key',
     );
+  });
+
+  it('updates the saved snapshot only after a model edit succeeds', async () => {
+    const providerName = 'Bedrock';
+    const instanceName = 'saved-instance';
+    const persistedModel = {
+      name: 'saved-model',
+      model_type: ['chat'],
+      max_tokens: 4096,
+      status: 'active',
+    };
+    const queryClient = new QueryClient();
+    const queryKey = mockInstanceModelsKey(providerName, instanceName);
+    queryClient.setQueryData(queryKey, [persistedModel]);
+    let resolvePatch!: (value: { code: number }) => void;
+    mockPatchInstanceModel.mockReset().mockImplementationOnce(
+      () =>
+        new Promise<{ code: number }>((resolve) => {
+          resolvePatch = resolve;
+        }),
+    );
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () =>
+        useModelEdit({
+          providerName,
+          instanceName,
+          addedSet: new Set([persistedModel.name]),
+          updateCatalogModel: jest.fn(),
+          clearCatalogOverride: jest.fn(),
+        }),
+      { wrapper },
+    );
+
+    act(() => {
+      result.current.setEditingModel({
+        name: persistedModel.name,
+        model_types: persistedModel.model_type,
+        max_tokens: persistedModel.max_tokens,
+        features: [],
+      });
+    });
+    let submitPromise!: Promise<void>;
+    act(() => {
+      submitPromise = result.current.handleEditSubmit({
+        name: persistedModel.name,
+        model_types: persistedModel.model_type,
+        max_tokens: 8192,
+        features: [],
+      });
+    });
+
+    expect(queryClient.getQueryData(queryKey)).toEqual([persistedModel]);
+
+    await act(async () => {
+      resolvePatch({ code: 0 });
+      await submitPromise;
+    });
+
+    expect(mockPatchInstanceModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model_name: persistedModel.name,
+        max_tokens: 8192,
+      }),
+    );
+    expect(queryClient.getQueryData(queryKey)).toEqual([
+      expect.objectContaining({ max_tokens: 8192 }),
+    ]);
+
+    mockPatchInstanceModel.mockResolvedValueOnce({ code: 1 });
+    act(() => {
+      result.current.setEditingModel({
+        name: persistedModel.name,
+        model_types: persistedModel.model_type,
+        max_tokens: 8192,
+        features: [],
+      });
+    });
+    await act(async () => {
+      await result.current.handleEditSubmit({
+        name: persistedModel.name,
+        model_types: persistedModel.model_type,
+        max_tokens: 16384,
+        features: [],
+      });
+    });
+
+    expect(queryClient.getQueryData(queryKey)).toEqual([
+      expect.objectContaining({ max_tokens: 8192 }),
+    ]);
   });
 });
