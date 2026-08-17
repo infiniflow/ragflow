@@ -216,9 +216,14 @@ shared_executor = ThreadPoolExecutor(max_workers=10)
 
 
 class VisionFigureParser:
-    def __init__(self, vision_model, figures_data, *args, **kwargs):
+    def __init__(self, vision_model, figures_data, *args, lang="English", **kwargs):
         self.vision_model = vision_model
-        self.language = kwargs.get("lang") or "English"
+        # Accept `lang` as a named parameter instead of pulling it out
+        # of `**kwargs`: the wrappers above pass `lang=lang` explicitly
+        # and previously relied on kwargs lookup, which works but is easy
+        # to miss when adding new call sites. A named parameter is
+        # clearer at the contract level. Regression for #17280.
+        self.language = _normalize_vision_language(lang) or kwargs.get("lang") or "English"
         self.figure_contexts = kwargs.get("figure_contexts") or []
         self.context_size = max(0, int(kwargs.get("context_size", 0) or 0))
         self._extract_figures_info(figures_data)
