@@ -2328,3 +2328,185 @@ func TestRenderExtractorPrompts_TableDriven(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractorModularParams(t *testing.T) {
+	params := map[string]any{
+		"llm_id": "test-llm-1",
+		"keywords": map[string]any{
+			"top_n":         5,
+			"system_prompt": "Custom keywords prompt for {text}",
+		},
+		"questions": map[string]any{
+			"top_n":         3,
+			"system_prompt": "Custom questions prompt for {text}",
+		},
+		"tags": map[string]any{
+			"top_n":       2,
+			"tag_file_id": "tag_file_abc",
+		},
+		"summary": map[string]any{
+			"enabled":       true,
+			"system_prompt": "Custom summary prompt for {text}",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+
+	ext, ok := comp.(*ExtractorComponent)
+	if !ok {
+		t.Fatalf("expected *ExtractorComponent, got %T", comp)
+	}
+
+	if ext.Param.Keywords.TopN != 5 || ext.Param.Keywords.SystemPrompt != "Custom keywords prompt for {text}" {
+		t.Errorf("Keywords config mismatch: %+v", ext.Param.Keywords)
+	}
+	if ext.Param.AutoKeywords != 5 {
+		t.Errorf("AutoKeywords flat sync mismatch: %d", ext.Param.AutoKeywords)
+	}
+
+	if ext.Param.Questions.TopN != 3 || ext.Param.Questions.SystemPrompt != "Custom questions prompt for {text}" {
+		t.Errorf("Questions config mismatch: %+v", ext.Param.Questions)
+	}
+	if ext.Param.AutoQuestions != 3 {
+		t.Errorf("AutoQuestions flat sync mismatch: %d", ext.Param.AutoQuestions)
+	}
+
+	if ext.Param.Tags.TopN != 2 || ext.Param.Tags.TagFileID != "tag_file_abc" {
+		t.Errorf("Tags config mismatch: %+v", ext.Param.Tags)
+	}
+	if ext.Param.AutoTags != 2 || ext.Param.TagFileID != "tag_file_abc" {
+		t.Errorf("AutoTags flat sync mismatch: %d, %s", ext.Param.AutoTags, ext.Param.TagFileID)
+	}
+
+	if !ext.Param.Summary.Enabled || ext.Param.Summary.SystemPrompt != "Custom summary prompt for {text}" {
+		t.Errorf("Summary config mismatch: %+v", ext.Param.Summary)
+	}
+	if ext.Param.FieldName != "summary" {
+		t.Errorf("FieldName mismatch: %s", ext.Param.FieldName)
+	}
+}
+
+func TestExtractorLegacyFlatParamsFallback(t *testing.T) {
+	params := map[string]any{
+		"llm_id":         "test-llm-1",
+		"auto_keywords":  4,
+		"auto_questions": 2,
+		"auto_tags":      1,
+		"tag_file_id":    "tag_file_legacy",
+		"field_name":     "summary",
+		"sys_prompt":     "Legacy summary prompt",
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+
+	ext, ok := comp.(*ExtractorComponent)
+	if !ok {
+		t.Fatalf("expected *ExtractorComponent, got %T", comp)
+	}
+
+	if ext.Param.Keywords.TopN != 4 || ext.Param.AutoKeywords != 4 {
+		t.Errorf("Keywords fallback mismatch: %d / %d", ext.Param.Keywords.TopN, ext.Param.AutoKeywords)
+	}
+	if ext.Param.Questions.TopN != 2 || ext.Param.AutoQuestions != 2 {
+		t.Errorf("Questions fallback mismatch: %d / %d", ext.Param.Questions.TopN, ext.Param.AutoQuestions)
+	}
+	if ext.Param.Tags.TopN != 1 || ext.Param.Tags.TagFileID != "tag_file_legacy" {
+		t.Errorf("Tags fallback mismatch: %+v", ext.Param.Tags)
+	}
+	if !ext.Param.Summary.Enabled || ext.Param.Summary.SystemPrompt != "Legacy summary prompt" {
+		t.Errorf("Summary fallback mismatch: %+v", ext.Param.Summary)
+	}
+}
+
+func TestExtractorModularPromptsExecution(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "kw1, kw2"},
+		stubResponse{Content: "question 1?\nquestion 2?"},
+		stubResponse{Content: "Summary of chunk"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom KW Prompt: {text}",
+		},
+		"questions": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom Q Prompt: {text}",
+		},
+		"summary": map[string]any{
+			"enabled":       true,
+			"system_prompt": "Custom Sum Prompt: {text}",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Hello world content"},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	ck := chunks[0]
+	if kwds, ok := ck["important_kwd"].([]string); !ok || len(kwds) != 2 {
+		t.Errorf("expected important_kwd = [kw1, kw2], got %v", ck["important_kwd"])
+	}
+	if qs, ok := ck["question_kwd"].([]string); !ok || len(qs) != 2 {
+		t.Errorf("expected question_kwd = [question 1?, question 2?], got %v", ck["question_kwd"])
+	}
+	if sum, ok := ck["summary"].(string); !ok || sum != "Summary of chunk" {
+		t.Errorf("expected summary = 'Summary of chunk', got %v", ck["summary"])
+	}
+
+	// Verify custom prompts were rendered into messages and passed to the chat invoker
+	reqs := stub.requests
+	if len(reqs) != 3 {
+		t.Fatalf("expected 3 LLM calls, got %d", len(reqs))
+	}
+
+	var foundKW, foundQ, foundSum bool
+	for _, r := range reqs {
+		for _, msg := range r.Messages {
+			if strings.Contains(msg.Content, "Custom KW Prompt: Hello world content") {
+				foundKW = true
+			}
+			if strings.Contains(msg.Content, "Custom Q Prompt: Hello world content") {
+				foundQ = true
+			}
+			if strings.Contains(msg.Content, "Custom Sum Prompt: Hello world content") {
+				foundSum = true
+			}
+		}
+	}
+
+	if !foundKW {
+		t.Errorf("expected custom keyword prompt to be used in LLM call, got reqs: %+v", reqs)
+	}
+	if !foundQ {
+		t.Errorf("expected custom question prompt to be used in LLM call, got reqs: %+v", reqs)
+	}
+	if !foundSum {
+		t.Errorf("expected custom summary prompt to be used in LLM call, got reqs: %+v", reqs)
+	}
+}

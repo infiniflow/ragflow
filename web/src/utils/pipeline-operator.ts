@@ -95,6 +95,47 @@ function transformExtractorConfigToForm(
   if (Array.isArray(config.prompts) && config.prompts.length > 0) {
     result.prompts = config.prompts[0]?.content ?? '';
   }
+
+  result.keywords = {
+    top_n:
+      config.keywords?.top_n ??
+      config.auto_keywords ??
+      initialExtractorValues.keywords.top_n,
+    system_prompt:
+      config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
+  };
+  result.questions = {
+    top_n:
+      config.questions?.top_n ??
+      config.auto_questions ??
+      initialExtractorValues.questions.top_n,
+    system_prompt:
+      config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
+  };
+  result.tags = {
+    top_n:
+      config.tags?.top_n ??
+      config.auto_tags ??
+      initialExtractorValues.tags.top_n,
+    tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
+  };
+  result.summary = {
+    enabled:
+      config.summary?.enabled ??
+      (config.enable_summary === 1 || config.field_name === 'summary'),
+    system_prompt: config.summary?.system_prompt ?? config.sys_prompt ?? '',
+  };
+  result.metadata_config = {
+    enabled:
+      config.metadata_config?.enabled ??
+      (config.enable_metadata === 1 || config.enable_metadata === true),
+    metadata: config.metadata_config?.metadata ?? config.metadata ?? [],
+    built_in_metadata:
+      config.metadata_config?.built_in_metadata ??
+      config.built_in_metadata ??
+      [],
+  };
+
   return result;
 }
 

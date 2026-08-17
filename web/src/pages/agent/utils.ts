@@ -400,7 +400,24 @@ export function transformTitleChunkerParams(
 }
 
 export function transformExtractorParams(params: ExtractorFormSchemaType) {
-  return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+  return {
+    ...params,
+    prompts: [{ content: params.prompts, role: 'user' }],
+    auto_keywords: params.keywords?.top_n ?? params.auto_keywords ?? 0,
+    auto_questions: params.questions?.top_n ?? params.auto_questions ?? 0,
+    auto_tags: params.tags?.top_n ?? params.auto_tags ?? 0,
+    tag_file_id: params.tags?.tag_file_id ?? params.tag_file_id ?? '',
+    enable_summary:
+      params.summary?.enabled !== undefined
+        ? params.summary?.enabled
+          ? 1
+          : 0
+        : params.enable_summary ?? 0,
+    sys_prompt: params.summary?.system_prompt ?? params.sys_prompt ?? '',
+    field_name: params.summary?.enabled
+      ? 'summary'
+      : (params.field_name || ''),
+  };
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {

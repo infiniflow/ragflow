@@ -265,15 +265,90 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				}
 			}
 		}
-		if v, ok := params["auto_keywords"]; ok {
-			p.AutoKeywords = mapInt(v)
+		// 1. Keywords (modular or flat)
+		if kwRaw, ok := params["keywords"].(map[string]any); ok {
+			if v, ok := kwRaw["top_n"]; ok {
+				p.Keywords.TopN = mapInt(v)
+			}
+			if v, ok := kwRaw["system_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			} else if v, ok := kwRaw["sys_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			}
+		} else if v, ok := params["auto_keywords"]; ok {
+			p.Keywords.TopN = mapInt(v)
+			if v, ok := params["keywords_sys_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			}
 		}
-		if v, ok := params["auto_questions"]; ok {
-			p.AutoQuestions = mapInt(v)
+		p.AutoKeywords = p.Keywords.TopN
+
+		// 2. Questions (modular or flat)
+		if qRaw, ok := params["questions"].(map[string]any); ok {
+			if v, ok := qRaw["top_n"]; ok {
+				p.Questions.TopN = mapInt(v)
+			}
+			if v, ok := qRaw["system_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			} else if v, ok := qRaw["sys_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			}
+		} else if v, ok := params["auto_questions"]; ok {
+			p.Questions.TopN = mapInt(v)
+			if v, ok := params["questions_sys_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			}
 		}
-		if v, ok := params["auto_tags"]; ok {
-			p.AutoTags = mapInt(v)
+		p.AutoQuestions = p.Questions.TopN
+
+		// 3. Tags (modular or flat)
+		if tagRaw, ok := params["tags"].(map[string]any); ok {
+			if v, ok := tagRaw["top_n"]; ok {
+				p.Tags.TopN = mapInt(v)
+			}
+			if v, ok := tagRaw["tag_file_id"].(string); ok {
+				p.Tags.TagFileID = v
+			}
+		} else {
+			if v, ok := params["auto_tags"]; ok {
+				p.Tags.TopN = mapInt(v)
+			}
+			if v, ok := params["tag_file_id"].(string); ok {
+				p.Tags.TagFileID = v
+			}
 		}
+		p.AutoTags = p.Tags.TopN
+		p.TagFileID = p.Tags.TagFileID
+
+		// 4. Summary (modular or flat)
+		if sumRaw, ok := params["summary"].(map[string]any); ok {
+			if v, ok := sumRaw["enabled"].(bool); ok {
+				p.Summary.Enabled = v
+			} else if v, ok := sumRaw["enabled"]; ok {
+				p.Summary.Enabled = mapInt(v) == 1
+			}
+			if v, ok := sumRaw["system_prompt"].(string); ok {
+				p.Summary.SystemPrompt = v
+			} else if v, ok := sumRaw["sys_prompt"].(string); ok {
+				p.Summary.SystemPrompt = v
+			}
+		} else {
+			if v, ok := params["enable_summary"].(bool); ok {
+				p.Summary.Enabled = v
+			} else if v, ok := params["enable_summary"]; ok {
+				p.Summary.Enabled = mapInt(v) == 1
+			} else if p.FieldName == "summary" {
+				p.Summary.Enabled = true
+			}
+			p.Summary.SystemPrompt = p.SystemPrompt
+		}
+		if p.Summary.Enabled && p.FieldName == "" {
+			p.FieldName = "summary"
+		}
+		if p.Summary.SystemPrompt != "" && p.SystemPrompt == "" {
+			p.SystemPrompt = p.Summary.SystemPrompt
+		}
+
 		if v, ok := params["enable_metadata"]; ok {
 			p.EnableMetadata = mapInt(v)
 		}
@@ -305,9 +380,6 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				fields = append(fields, def)
 			}
 			p.Metadata = fields
-		}
-		if v, ok := params["tag_file_id"].(string); ok {
-			p.TagFileID = v
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -771,11 +843,22 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if exists {
 		return nil
 	}
+	topN := c.Param.Keywords.TopN
+	if topN <= 0 {
+		topN = c.Param.AutoKeywords
+	}
+	var sysPrompt, userPrompt string
+	if strings.TrimSpace(c.Param.Keywords.SystemPrompt) != "" {
+		sysPrompt, userPrompt = renderExtractorPrompts(c.Param.Keywords.SystemPrompt, "Output: ", ck, chunkText)
+	} else {
+		sysPrompt = fmt.Sprintf(autoKeywordPrompt, topN, chunkText)
+		userPrompt = "Output: "
+	}
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
 		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
-		prompt:       "Output: ",
+		systemPrompt: sysPrompt,
+		prompt:       userPrompt,
 		temperature:  &kwTemp,
 	}
 	resultStr, err := c.callText(ctx, db, kwIn, "")
@@ -806,11 +889,22 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if exists {
 		return nil
 	}
+	topN := c.Param.Questions.TopN
+	if topN <= 0 {
+		topN = c.Param.AutoQuestions
+	}
+	var sysPrompt, userPrompt string
+	if strings.TrimSpace(c.Param.Questions.SystemPrompt) != "" {
+		sysPrompt, userPrompt = renderExtractorPrompts(c.Param.Questions.SystemPrompt, "Output: ", ck, chunkText)
+	} else {
+		sysPrompt = fmt.Sprintf(autoQuestionPrompt, topN, chunkText)
+		userPrompt = "Output: "
+	}
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
 		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
-		prompt:       "Output: ",
+		systemPrompt: sysPrompt,
+		prompt:       userPrompt,
 		temperature:  &qTemp,
 	}
 	resultStr, err := c.callText(ctx, db, qIn, "")

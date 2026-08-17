@@ -350,14 +350,37 @@ export const initialTitleChunkerValues = {
 
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
+  keywords: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  questions: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  tags: {
+    top_n: 0,
+    tag_file_id: '',
+  },
+  summary: {
+    enabled: false,
+    system_prompt: '',
+  },
+  metadata: {
+    enabled: false,
+    metadata: [],
+    built_in_metadata: [],
+  },
   field_name: ContextGeneratorFieldName.Summary,
   auto_keywords: 0,
   auto_questions: 0,
   auto_tags: 0,
   tag_file_id: '',
   enable_summary: 0,
+  enable_metadata: 0,
   keywords_sys_prompt: '',
   questions_sys_prompt: '',
+  sys_prompt: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
