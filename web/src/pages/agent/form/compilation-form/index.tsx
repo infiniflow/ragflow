@@ -3,8 +3,12 @@ import { LargeModelFormField } from '@/components/large-model-form-field';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
+import {
+  getBackendLanguage,
+  subscribeBackendLanguage,
+} from '@/utils/backend-runtime';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
+import { memo, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -46,6 +50,11 @@ const CompilationForm = ({
   const ownerTenantId = useOwnerTenantId();
   const { t } = useTranslation();
   const FormSchema = useFormSchema();
+  const backendLanguage = useSyncExternalStore(
+    subscribeBackendLanguage,
+    getBackendLanguage,
+    getBackendLanguage,
+  );
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
@@ -64,22 +73,24 @@ const CompilationForm = ({
           name="llm_id"
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
-        <RAGFlowFormItem
-          name="mode"
-          label={t('setting.wikiMode')}
-          tooltip={t('setting.wikiModeTip')}
-        >
-          {(field) => (
-            <SelectWithSearch
-              value={field.value}
-              onChange={field.onChange}
-              options={[
-                { label: t('setting.entityMode'), value: 'entity' },
-                { label: t('setting.topicMode'), value: 'topic' },
-              ]}
-            />
-          )}
-        </RAGFlowFormItem>
+        {backendLanguage === 'go' && (
+          <RAGFlowFormItem
+            name="mode"
+            label={t('setting.wikiMode')}
+            tooltip={t('setting.wikiModeTip')}
+          >
+            {(field) => (
+              <SelectWithSearch
+                value={field.value}
+                onChange={field.onChange}
+                options={[
+                  { label: t('setting.entityMode'), value: 'entity' },
+                  { label: t('setting.topicMode'), value: 'topic' },
+                ]}
+              />
+            )}
+          </RAGFlowFormItem>
+        )}
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

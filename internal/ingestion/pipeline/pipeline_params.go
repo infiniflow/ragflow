@@ -53,10 +53,17 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		for pk, pv := range params {
 			if _, ok := validKeys[pk]; ok {
 				cleaned[pk] = pv
-			} else {
-				common.Warn("CleanComponentParams: dropping unknown param",
-					zap.String("cpnID", key), zap.String("param", pk))
+				continue
 			}
+			// Auto metadata params are valid extractor params even when a
+			// builtin template does not declare them (the frontend stores
+			// them on the node params); keep them through the filter.
+			if isExtractorComponent(key) && isAutoMetadataParam(pk) {
+				cleaned[pk] = pv
+				continue
+			}
+			common.Warn("CleanComponentParams: dropping unknown param",
+				zap.String("cpnID", key), zap.String("param", pk))
 		}
 		if len(cleaned) > 0 {
 			result[key] = cleaned
@@ -148,4 +155,21 @@ func ResolveComponentParamsDefaultsFromIDs(parserID string, pipelineID *string) 
 		out[k] = v
 	}
 	return out, nil
+}
+
+// isExtractorComponent reports whether a component id is an Extractor node
+// (component ids are "<ComponentName>:<name>" or "<ComponentName>_<name>").
+func isExtractorComponent(cpnID string) bool {
+	lower := strings.ToLower(cpnID)
+	return strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_")
+}
+
+// isAutoMetadataParam reports whether a param belongs to the Auto metadata
+// feature (enable_metadata toggle + metadata / built_in_metadata schemas).
+func isAutoMetadataParam(param string) bool {
+	switch param {
+	case "enable_metadata", "metadata", "built_in_metadata":
+		return true
+	}
+	return false
 }
