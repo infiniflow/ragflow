@@ -95,10 +95,20 @@ class ResearchToolSession:
             return False
 
     def _normalize_report(self, report: dict) -> dict:
+        if not isinstance(report, dict):
+            # Unstrusted text-path parser output; never crash on it.
+            _LOG.warning("normalize_report: expected dict, got %s; using empty report", type(report).__name__)
+            report = {}
         normalized = dict(report)
         recorded = set(self.evidence_ids)
         evidence_ids = []
-        for eid in normalized.get("evidence_ids") or []:
+        # The schema requires evidence_ids to be a list of integers. A scalar or
+        # string would either raise or, worse, let the loop walk characters as
+        # IDs, so coerce anything else to an empty list first.
+        raw_evidence_ids = normalized.get("evidence_ids")
+        if not isinstance(raw_evidence_ids, list):
+            raw_evidence_ids = []
+        for eid in raw_evidence_ids:
             # The schema permits integer IDs only. Reject booleans and floats
             # before conversion: int(True) == 1 and int(1.9) == 1 would both
             # silently become valid indexes, retaining evidence the model never
@@ -122,10 +132,14 @@ class ResearchToolSession:
                     idx,
                     len(recorded),
                 )
-        if not evidence_ids and recorded:
-            # Fall back to everything this claim recorded when the model gave
-            # no usable (or no) evidence_ids at all.
-            evidence_ids = list(self.evidence_ids)
+        if not evidence_ids:
+            # Do NOT repurpose every recorded chunk as a citation: evidence_ids
+            # means the chunks the report actually references, and the schema
+            # defines it that way. When no valid ID remains, leave it empty and
+            # mark the report unverified so downstream verifiers (which combine
+            # evidence_ids + is_verified + confidence) cannot mistake unrelated
+            # chunks for supporting evidence.
+            normalized["is_verified"] = False
         normalized["evidence_ids"] = evidence_ids
         return normalized
 
@@ -307,7 +321,11 @@ async def _research_text(
             continue
 
         if tool_call.get("name") == "generate_report":
-            return session._normalize_report(tool_call.get("arguments", {}))
+            args = tool_call.get("arguments", {})
+            if not isinstance(args, dict):
+                _LOG.warning("generate_report: arguments not a dict (%s); using empty", type(args).__name__)
+                args = {}
+            return session._normalize_report(args)
 
         if tool_call.get("name") == "think_tool":
             history.append({"role": "user", "content": "[continue]"})
