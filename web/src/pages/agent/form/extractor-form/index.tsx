@@ -48,7 +48,6 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialExtractorValues } from '../../constant/pipeline';
 import { useOwnerTenantId } from '../../context';
-import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -291,8 +290,6 @@ const ExtractorForm = ({
     ExtractorSubTab.Keywords,
   );
 
-  const promptOptions = useBuildNodeOutputOptions(node?.id);
-
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
@@ -365,8 +362,8 @@ const ExtractorForm = ({
             >
               <PromptEditor
                 placeholder={t('flow.messagePlaceholder')}
-                showToolbar={true}
-                baseOptions={promptOptions}
+                showToolbar={false}
+                showMergePath={false}
               />
             </RAGFlowFormItem>
           </TabsContent>
@@ -382,8 +379,8 @@ const ExtractorForm = ({
             >
               <PromptEditor
                 placeholder={t('flow.messagePlaceholder')}
-                showToolbar={true}
-                baseOptions={promptOptions}
+                showToolbar={false}
+                showMergePath={false}
               />
             </RAGFlowFormItem>
           </TabsContent>
@@ -442,8 +439,8 @@ const ExtractorForm = ({
             >
               <PromptEditor
                 placeholder={t('flow.messagePlaceholder')}
-                showToolbar={true}
-                baseOptions={promptOptions}
+                showToolbar={false}
+                showMergePath={false}
               />
             </RAGFlowFormItem>
           </TabsContent>
