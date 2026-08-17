@@ -29,6 +29,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
+from common.i18n import msg
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
@@ -117,7 +118,7 @@ def detail(search_id):
 
         search = SearchService.get_detail(search_id)
         if not search:
-            return get_data_error_result(message="Can't find this Search App!")
+            return get_data_error_result(message=msg.search.not_found)
         return get_json_result(data=search)
     except Exception as e:
         return server_error_response(e)
@@ -229,7 +230,7 @@ async def completion(search_id):
     # check if the kb_ids is accessible for this user
     for kb_id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=kb_id, user_id=uid):
-            return get_data_error_result(message=f"You don't own the dataset {kb_id}")
+            return get_data_error_result(message=msg.dataset.not_owned, id=kb_id)
 
     async def stream():
         nonlocal req, uid, kb_ids, search_config

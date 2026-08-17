@@ -20,6 +20,7 @@ from api.db.services.chat_channel_service import ChatChannelService
 from api.db.services.dialog_service import DialogService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from common.constants import RetCode
+from common.i18n import msg
 from common.misc_utils import get_uuid
 
 LOGGER = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def get_chat_channel(channel_id):
 
     e, conn = ChatChannelService.get_by_id(channel_id)
     if not e:
-        return get_data_error_result(message="Can't find this chat channel!")
+        return get_data_error_result(message=msg.chat_channel.not_found)
     return get_json_result(data=conn.to_dict())
 
 
@@ -75,7 +76,7 @@ async def update_chat_channel(channel_id):
 
     e, conn = ChatChannelService.get_by_id(channel_id)
     if not e:
-        return get_data_error_result(message="Can't find this chat channel!")
+        return get_data_error_result(message=msg.chat_channel.not_found)
 
     req = await get_request_json()
     if isinstance(req, dict) and isinstance(req.get("data"), dict):
@@ -85,7 +86,7 @@ async def update_chat_channel(channel_id):
     if req.get("chat_id"):
         e, dia = DialogService.get_by_id(req["chat_id"])
         if not e:
-            return get_data_error_result(message="Can't find this chat assistant!")
+            return get_data_error_result(message=msg.chat.assistant_not_found)
         if dia.tenant_id != conn.tenant_id:
             return _chat_channel_auth_error(channel_id, current_user.id)
 
@@ -95,7 +96,7 @@ async def update_chat_channel(channel_id):
 
     e, conn = ChatChannelService.get_by_id(channel_id)
     if not e:
-        return get_data_error_result(message="Can't find this chat channel!")
+        return get_data_error_result(message=msg.chat_channel.not_found)
     return get_json_result(data=conn.to_dict())
 
 
@@ -119,7 +120,7 @@ def get_chat_channel_runtime(channel_id):
 
     e, conn = ChatChannelService.get_by_id(channel_id)
     if not e:
-        return get_data_error_result(message="Can't find this chat channel!")
+        return get_data_error_result(message=msg.chat_channel.not_found)
 
     if conn.channel != "whatsapp":
         return get_data_error_result(message="Runtime snapshot is only available for WhatsApp.")

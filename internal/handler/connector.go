@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
@@ -102,7 +103,7 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case errors.Is(err, service.ErrConnectorNoAuth):
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 	case errors.Is(err, service.ErrConnectorNotFound):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.ConnectorNotFound)
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
 		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
 	default:

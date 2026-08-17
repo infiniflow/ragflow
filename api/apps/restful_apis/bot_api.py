@@ -42,8 +42,9 @@ from api.utils.api_utils import get_error_data_result, get_json_result, add_tena
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
-from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
+from common.i18n import msg
+from common.constants import RetCode, LLMType, StatusEnum
 from rag.utils.web_search_conn import has_web_search_provider
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -415,7 +416,7 @@ async def retrieval_test_embedded(tenant_id=None):
 
         e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
-            return get_error_data_result(message="Knowledgebase not found!")
+            return get_error_data_result(message=msg.knowledgebase.not_found)
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
@@ -533,7 +534,7 @@ async def detail_share_embedded(tenant_id=None):
 
         search = await thread_pool_exec(SearchService.get_detail, search_id)
         if not search:
-            return get_error_data_result(message="Can't find this Search App!")
+            return get_error_data_result(message=msg.search.not_found)
         return get_json_result(data=search)
     except Exception as e:
         return server_error_response(e)

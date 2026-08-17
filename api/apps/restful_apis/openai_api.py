@@ -26,6 +26,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.joint_services.tenant_model_service import resolve_model_config, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
+from common.i18n import msg
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
@@ -269,7 +270,7 @@ async def openai_chat_completions(chat_id):
 
     dia = DialogService.query(tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
-        return get_error_data_result(f"You don't own the chat {chat_id}")
+        return get_error_data_result(message=msg.chat.not_owned, id=chat_id)
     dia = dia[0]
 
     using_placeholder_model = requested_model == "model"

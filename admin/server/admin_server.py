@@ -24,8 +24,8 @@ import logging
 import threading
 import faulthandler
 
-from flask import Flask
-from flask_login import LoginManager
+from flask import Flask, request
+from flask_login import LoginManager, current_user
 from werkzeug.serving import run_simple
 from routes import admin_bp
 from common.log_utils import init_root_logger
@@ -60,6 +60,16 @@ if __name__ == "__main__":
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
+
+    @app.before_request
+    def bind_locale():
+        from common.i18n import resolve_locale, set_locale
+
+        user_lang = None
+        if getattr(current_user, "is_authenticated", False):
+            user_lang = getattr(current_user, "language", None)
+        set_locale(resolve_locale(request.headers.get("Accept-Language"), user_lang, os.environ.get("LANG")))
+
     settings.init_settings()
     setup_auth(login_manager)
     init_default_admin()

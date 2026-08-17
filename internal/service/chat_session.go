@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/i18n"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
@@ -428,7 +429,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 	for _, sid := range uniqueIDs {
 		session, err := s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sid, chatID)
 		if err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("The chat doesn't own the session %s", sid))
+			errorsList = append(errorsList, i18n.Translate(i18n.DefaultLocale, i18n.ChatSessionNotOwned, i18n.KV("id", sid)))
 			continue
 		}
 

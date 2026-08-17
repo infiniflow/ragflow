@@ -22,6 +22,7 @@ import asyncio
 from functools import wraps
 from quart import make_response, jsonify
 from common.constants import RetCode
+from common.i18n import t
 
 TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
@@ -101,7 +102,7 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
 
 
 async def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
-    result_dict = {"code": code, "message": message, "data": data}
+    result_dict = {"code": code, "message": t(message), "data": data}
     response_dict = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -121,7 +122,7 @@ async def construct_response(code=RetCode.SUCCESS, message="success", data=None,
 def sync_construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
     import flask
 
-    result_dict = {"code": code, "message": message, "data": data}
+    result_dict = {"code": code, "message": t(message), "data": data}
     response_dict = {}
     for key, value in result_dict.items():
         if value is None and key != "code":

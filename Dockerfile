@@ -103,6 +103,7 @@ COPY agent agent
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY common common
+COPY locales locales
 COPY memory memory
 COPY bin bin
 COPY tools/scripts tools/scripts

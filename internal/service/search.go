@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/utility"
 	"strings"
 )
@@ -396,7 +397,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 		accessible = s.datasetDAO.Accessible(ctx, dao.DB, datasetID, userID)
 		if !accessible {
 			// Mirror Python's search completion endpoint message.
-			return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+			return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 		}
 	}
 

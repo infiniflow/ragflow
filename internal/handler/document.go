@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/utility"
 	"reflect"
 	"strconv"
@@ -536,7 +537,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.T(c, i18n.DatasetNotOwned, i18n.KV("id", datasetID)))
 		return
 	}
 
@@ -583,7 +584,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		idOpts.Name = ""
 		_, idTotal, idErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, idOpts, 1, 1)
 		if idErr == nil && idTotal == 0 {
-			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", docID))
+			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, i18n.T(c, i18n.DocumentNotOwned, i18n.KV("id", docID)))
 			return
 		}
 	}
@@ -593,7 +594,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		nameOpts.DocIDFilterApplied = false
 		_, nameTotal, nameErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, nameOpts, 1, 1)
 		if nameErr == nil && nameTotal == 0 {
-			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", opts.Name))
+			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, i18n.T(c, i18n.DocumentNotOwned, i18n.KV("id", opts.Name)))
 			return
 		}
 	}
@@ -907,7 +908,7 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	ctx := c.Request.Context()
 	kb, err := h.datasetService.GetKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.T(c, i18n.DatasetNotFoundId, i18n.KV("id", datasetID)))
 		return
 	}
 	if !h.datasetService.CheckKBTeamPermission(ctx, kb, tenantID) {
@@ -1090,7 +1091,7 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		return
 	}
 	if datasetID == "" {
-		common.ErrorWithCode(c, common.CodeDataError, fmt.Sprintf("The dataset not own the document %s.", docID))
+		common.ErrorWithCode(c, common.CodeDataError, i18n.T(c, i18n.DatasetDocumentNotOwnedId, i18n.KV("id", docID)))
 		return
 	}
 	ctx := c.Request.Context()
@@ -1520,7 +1521,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.T(c, i18n.DatasetNotOwned, i18n.KV("id", datasetID)))
 		return
 	}
 
@@ -1645,7 +1646,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.T(c, i18n.DatasetNotOwned, i18n.KV("id", datasetID)))
 		return
 	}
 
@@ -1671,7 +1672,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
-		common.ErrorWithCode(c, common.CodeServerError, "You don't own the dataset "+datasetID)
+		common.ErrorWithCode(c, common.CodeServerError, i18n.T(c, i18n.DatasetNotOwned, i18n.KV("id", datasetID)))
 		return
 	}
 
@@ -1837,7 +1838,7 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You don't own the dataset "+datasetID+".")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.T(c, i18n.DatasetNotOwned, i18n.KV("id", datasetID)))
 		return
 	}
 

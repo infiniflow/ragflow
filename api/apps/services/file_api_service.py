@@ -26,6 +26,7 @@ from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
 from common import settings
 from common.constants import FileSource
+from common.i18n import msg
 from common.misc_utils import get_uuid, thread_pool_exec
 
 
@@ -44,7 +45,7 @@ async def upload_file(tenant_id: str, pf_id: str, file_objs: list):
 
     e, pf_folder = FileService.get_by_id(pf_id)
     if not e:
-        return False, "Can't find this folder!"
+        return False, msg.folder.not_found
 
     file_res = []
     for file_obj in file_objs:

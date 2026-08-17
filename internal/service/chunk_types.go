@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 
@@ -254,7 +255,7 @@ func IndexName(uid string) string {
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
 	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("You don't own the dataset %s", datasetID)
+		return nil, common.CodeAuthenticationError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 
 	if req.DocumentIDs == nil || len(req.DocumentIDs) == 0 {
@@ -265,7 +266,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+		return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 
 	successCount := 0
@@ -273,10 +274,10 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 		var doc *entity.Document
 		doc, err = s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, id, datasetID)
 		if err != nil {
-			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", id)
+			return nil, common.CodeDataError, i18n.Error(i18n.DocumentNotOwned, i18n.KV("id", id))
 		}
 		if doc == nil {
-			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", id)
+			return nil, common.CodeDataError, i18n.Error(i18n.DocumentNotOwned, i18n.KV("id", id))
 		}
 
 		if doc.Run == nil || *doc.Run != RUNNING {

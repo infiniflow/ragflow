@@ -33,6 +33,7 @@ from api.apps import login_required
 from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_request_json, get_json_result
 from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
+from common.i18n import msg
 from common import settings
 
 logger = logging.getLogger(__name__)
@@ -253,7 +254,7 @@ async def retrieval(tenant_id):
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
-            return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
+            return build_error_result(message=msg.knowledgebase.not_found, code=RetCode.NOT_FOUND)
         if not KnowledgebaseService.accessible(kb_id, tenant_id):
             logger.warning(
                 "Rejected /dify/retrieval cross-tenant access: caller_tenant=%s knowledge_id=%s",

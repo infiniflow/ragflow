@@ -36,6 +36,7 @@ from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
 from common.exceptions import ModelException
 from common.misc_utils import get_uuid
+from common.i18n import resolve_locale, set_locale, t
 
 settings.init_settings()
 
@@ -67,6 +68,23 @@ QuartSchema(app)
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
+
+
+def _bind_request_locale(user=None):
+    user_lang = getattr(user, "language", None) if user is not None else None
+    loc = resolve_locale(request.headers.get("Accept-Language"), user_lang, os.environ.get("LANG"))
+    set_locale(loc)
+    g.locale = loc
+
+
+@app.before_request
+async def bind_locale():
+    user = None
+    try:
+        user = _load_user()
+    except Exception:
+        user = None
+    _bind_request_locale(user)
 
 # Configure Quart timeouts for slow LLM responses (e.g., local Ollama on CPU)
 # Default Quart timeouts are 60 seconds which is too short for many LLM backends
@@ -271,6 +289,7 @@ def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> C
                         message=getattr(g, "auth_error_message", None) or "Authorization is not valid!",
                     )
                 raise QuartAuthUnauthorized()
+            _bind_request_locale(user)
             return await current_app.ensure_async(func)(*args, **kwargs)
 
         return wrapper
@@ -384,7 +403,7 @@ register_backward_compat_routes(app)
 @app.errorhandler(404)
 async def not_found(error):
     logging.error(f"The requested URL {request.path} was not found")
-    message = f"Not Found: {request.path}"
+    message = t("error.not_found_path", path=request.path)
     response = {
         "code": RetCode.NOT_FOUND,
         "message": message,

@@ -70,6 +70,7 @@ from api.utils.validation_utils import (
 )
 
 from common import settings
+from common.i18n import msg, t
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
@@ -249,15 +250,15 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="you don't own the dataset")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return get_error_data_result(message="Can't find this dataset!")
+        return get_error_data_result(message=msg.dataset.not_found)
 
     # Prepare data for validation
     docs = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not docs:
-        return get_error_data_result(message="the dataset doesn't own the document")
+        return get_error_data_result(message=msg.dataset.document_not_owned)
 
     # Validate document update request parameters
     try:
@@ -348,7 +349,7 @@ async def metadata_summary(dataset_id, tenant_id):
         description: Metadata summary retrieved successfully.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     # Get doc_ids from query parameters (comma-separated string)
     doc_ids_param = request.args.get("doc_ids", "")
     doc_ids = doc_ids_param.split(",") if doc_ids_param else None
@@ -399,7 +400,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
         description: Metadata updated successfully.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     req = await get_request_json()
     selector = req.get("selector", {}) or {}
@@ -520,7 +521,7 @@ async def upload_document(dataset_id, tenant_id):
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
-        return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
+        return get_error_data_result(message=msg.dataset.not_found_id, id=dataset_id, code=RetCode.DATA_ERROR)
 
     if not check_kb_team_permission(kb, tenant_id):
         logging.error("no authorization")
@@ -835,8 +836,8 @@ def list_docs(dataset_id, tenant_id):
                     description: Processing status.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        logging.error(f"You don't own the dataset {dataset_id}. ")
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        logging.error("dataset not owned dataset_id=%s", dataset_id)
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     if request.args.get("type") == "filter":
         err_code, err_msg, payload, total = _get_doc_filters_with_request(request, dataset_id)
@@ -857,7 +858,6 @@ def list_docs(dataset_id, tenant_id):
         if doc_item["parser_config"].get("metadata"):
             doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
     return get_json_result(data={"total": total, "docs": renamed_doc_list})
-
 
 def _get_docs_with_request(req, dataset_id: str):
     """Get documents with request parameters from a dataset.
@@ -929,10 +929,10 @@ def _get_docs_with_request(req, dataset_id: str):
     doc_id = q.get("id")
     if doc_id:
         if not DocumentService.query(id=doc_id, kb_id=dataset_id):
-            return RetCode.DATA_ERROR, f"you don't own the document {doc_id}", [], 0
+            return RetCode.DATA_ERROR, t(msg.document.not_owned, id=doc_id), [], 0
         doc_ids_filter = [doc_id]  # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
-        return RetCode.DATA_ERROR, f"you don't own the document {doc_name}", [], 0
+        return RetCode.DATA_ERROR, t(msg.document.not_owned, id=doc_name), [], 0
 
     doc_ids = q.getlist("ids")
     try:
@@ -1187,7 +1187,7 @@ async def delete_documents(tenant_id, dataset_id):
     try:
         # Validate dataset exists and user has permission
         if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-            return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+            return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
         # Get documents to delete
         doc_ids = req.get("ids") or []
@@ -1267,7 +1267,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
     # Verify ownership and existence of dataset
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="you don't own the dataset")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
@@ -1407,7 +1407,7 @@ async def update_metadata(tenant_id, dataset_id):
     """
     # Verify ownership of dataset
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     # Get request body
     req = await get_request_json()
@@ -1535,7 +1535,7 @@ def _run_sync(user_id: str, req):
             if req.get("apply_kb"):
                 e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
                 if not e:
-                    raise LookupError("Can't find this dataset!")
+                    raise LookupError(str(msg.dataset.not_found))
                 doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
                 doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
                 doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
@@ -1585,7 +1585,7 @@ async def parse_documents(tenant_id, dataset_id):
         description: Successful operation.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     req = await get_request_json()
     if req is None:
@@ -1701,7 +1701,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
         description: Successful operation.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     req = await get_request_json()
     if req is None:
@@ -2033,11 +2033,11 @@ async def batch_update_document_status(tenant_id, dataset_id):
 
     # Verify dataset ownership
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="you don't own the dataset")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return get_error_data_result(message="Can't find this dataset!")
+        return get_error_data_result(message=msg.dataset.not_found)
 
     result = {}
     has_error = False
@@ -2185,7 +2185,7 @@ async def download(dataset_id, document_id):
         return get_data_error_result(message="document not found")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_error_data_result(message=msg.dataset.document_not_owned_id, id=document_id)
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
@@ -2245,7 +2245,7 @@ async def download_document(document_id):
         return get_data_error_result(message="document not found")
     doc = DocumentService.query(id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_error_data_result(message=msg.dataset.document_not_owned_id, id=document_id)
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)

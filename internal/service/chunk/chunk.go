@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/i18n"
 	"strings"
 	"sync"
 	"time"
@@ -607,7 +608,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
+		return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 
 	if len(req.DocumentIDs) == 0 {
@@ -616,7 +617,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 	_, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
+		return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 
 	docIDs, duplicateMessages := service.CheckDuplicateIDs(req.DocumentIDs, "document")
@@ -625,7 +626,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 	for _, docID := range docIDs {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil || doc == nil {
-			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
+			return nil, common.CodeDataError, i18n.Error(i18n.DocumentNotOwned, i18n.KV("id", docID))
 		}
 
 		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, docID)
@@ -706,7 +707,7 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 
 func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	if !s.accessible(ctx, datasetID, userID) {
-		return nil, common.CodeOperatingError, fmt.Errorf("you don't own the dataset %s", datasetID)
+		return nil, common.CodeOperatingError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
@@ -1285,17 +1286,17 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
 	if !s.accessible(ctx, req.DatasetID, userID) {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+		return nil, addChunkError{code: common.CodeDataError, message: i18n.Translate(i18n.DefaultLocale, i18n.DatasetNotOwned, i18n.KV("id", req.DatasetID))}
 	}
 
 	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
 	if err != nil || kb == nil {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+		return nil, addChunkError{code: common.CodeDataError, message: i18n.Translate(i18n.DefaultLocale, i18n.DatasetNotOwned, i18n.KV("id", req.DatasetID))}
 	}
 
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
+		return nil, addChunkError{code: common.CodeDataError, message: i18n.Translate(i18n.DefaultLocale, i18n.DocumentNotOwned, i18n.KV("id", req.DocumentID))}
 	}
 
 	content := strings.TrimSpace(req.Content)

@@ -14,11 +14,12 @@
 #  limitations under the License.
 #
 from flask import jsonify
+from common.i18n import t
 
 
 def success_response(data=None, message="Success", code=0):
-    return jsonify({"code": code, "message": message, "data": data}), 200
+    return jsonify({"code": code, "message": t(message), "data": data}), 200
 
 
 def error_response(message="Error", code=-1, data=None):
-    return jsonify({"code": code, "message": message, "data": data}), 400
+    return jsonify({"code": code, "message": t(message), "data": data}), 400

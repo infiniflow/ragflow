@@ -46,6 +46,7 @@ from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_too
 from api.db.services.tenant_llm_service import LLMFactoriesService
 from common.connection_utils import timeout
 from common.constants import RetCode
+from common.i18n import t
 from common import settings
 from common.misc_utils import thread_pool_exec
 
@@ -118,12 +119,13 @@ def serialize_for_json(obj):
         return str(obj)
 
 
-def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!"):
+def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!", **params):
+    text = t(message, **params)
     if sys.exc_info()[0] is not None:
-        logging.exception(message)
+        logging.exception(text)
     else:
-        logging.error(message)
-    result_dict = {"code": code, "message": message}
+        logging.error(text)
+    result_dict = {"code": code, "message": text}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -139,17 +141,17 @@ def server_error_response(e):
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
-            resp = get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
+            resp = get_json_result(code=RetCode.UNAUTHORIZED, message=t("error.unauthorized"))
             resp.status_code = RetCode.UNAUTHORIZED
             return resp
     except Exception as ex:
         logging.warning(f"error checking authorization: {ex}")
 
     if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=t("No chunk found, please upload file and parse it."))
 
     if "not_found" in str(e):
-        return get_error_data_result(message="No chunk found! Check the chunk status please!")
+        return get_error_data_result(message=t("No chunk found! Check the chunk status please!"))
 
     return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
@@ -173,7 +175,7 @@ def validate_request(*args, **kwargs):
         if no_arguments or error_arguments:
             error_string = ""
             if no_arguments:
-                error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
+                error_string += t("error.missing_arguments", fields=",".join(no_arguments))
             if error_arguments:
                 error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
             return error_string
@@ -210,7 +212,7 @@ def not_allowed_parameters(*params):
             input_arguments = await _coerce_request_data()
             for param in params:
                 if param in input_arguments:
-                    return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
+                    return get_json_result(code=RetCode.ARGUMENT_ERROR, message=t("error.parameter_not_allowed", param=param))
             if inspect.iscoroutinefunction(func):
                 return await func(*args, **kwargs)
             return func(*args, **kwargs)
@@ -230,7 +232,7 @@ def active_required(func):
         usr = UserService.filter_by_id(user_id)
         # check is_active
         if not usr or not usr.is_active == ActiveEnum.ACTIVE.value:
-            return get_json_result(code=RetCode.FORBIDDEN, message="User isn't active, please activate first.")
+            return get_json_result(code=RetCode.FORBIDDEN, message=t("error.user_inactive"))
         if inspect.iscoroutinefunction(func):
             return await func(*args, **kwargs)
         return func(*args, **kwargs)
@@ -251,8 +253,8 @@ def add_tenant_id_to_kwargs(func):
     return wrapper
 
 
-def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
-    response = {"code": code, "message": message, "data": data}
+def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None, **params):
+    response = {"code": code, "message": t(message, **params), "data": data}
     return _safe_jsonify(response)
 
 
@@ -273,8 +275,8 @@ RET_CODE_TO_HTTP_STATUS = {
 }
 
 
-def build_error_result(code=RetCode.FORBIDDEN, message="success"):
-    response = {"code": code, "message": message}
+def build_error_result(code=RetCode.FORBIDDEN, message="success", **params):
+    response = {"code": code, "message": t(message, **params)}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
         ret_code = int(code)
@@ -292,13 +294,13 @@ def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     return response
 
 
-def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
+def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None, **params):
     if data is None:
-        return _safe_jsonify({"code": code, "message": message})
-    return _safe_jsonify({"code": code, "message": message, "data": data})
+        return _safe_jsonify({"code": code, "message": t(message, **params)})
+    return _safe_jsonify({"code": code, "message": t(message, **params), "data": data})
 
 
-def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
+def get_result(code=RetCode.SUCCESS, message="", data=None, total=None, **params):
     """
     Standard API response format:
     {
@@ -316,7 +318,7 @@ def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
         if total is not None:
             response["total_datasets"] = total
     else:
-        response["message"] = message or "Error"
+        response["message"] = t(message or "Error", **params)
 
     return _safe_jsonify(response)
 
@@ -324,8 +326,9 @@ def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
 def get_error_data_result(
     message="Sorry! Data missing!",
     code=RetCode.DATA_ERROR,
+    **params,
 ):
-    result_dict = {"code": code, "message": message}
+    result_dict = {"code": code, "message": t(message, **params)}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
