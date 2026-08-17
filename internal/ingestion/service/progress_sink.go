@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -67,6 +68,7 @@ type progressSink struct {
 // full DocumentService surface.
 type docProgressSvc interface {
 	GetDocumentByID(ctx context.Context, docID string) (*documentpkg.DocumentResponse, error)
+	UpdateRunState(ctx context.Context, docID string, progress float64, run string) error
 	UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error
 }
 
@@ -119,11 +121,12 @@ func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.Prog
 func (s *progressSink) updateDocumentProgress(ctx context.Context, docID string, progress float64, run, msg string) error {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
-	log, ok := s.accumulateLogLocked(ctx, docID, msg)
-	if !ok {
-		// Do not write a partial in-memory log when the seed read failed. The
-		// next event will retry the read and preserve the pending messages.
-		return nil
+	log, err := s.accumulateLogLocked(ctx, docID, msg)
+	if err != nil {
+		// Keep the current run state durable even when the existing log cannot
+		// be seeded. The next event will retry the seed and persist the log.
+		stateErr := s.docSvc.UpdateRunState(ctx, docID, progress, run)
+		return errors.Join(err, stateErr)
 	}
 	return s.docSvc.UpdateRunProgress(ctx, docID, progress, run, log)
 }
@@ -139,9 +142,9 @@ func (s *progressSink) accumulateLog(ctx context.Context, docID, msg string) str
 }
 
 // accumulateLogLocked appends one component lifecycle line to the run log and
-// returns the full accumulated log plus whether it is safe to mirror it. The
-// caller must hold logMu.
-func (s *progressSink) accumulateLogLocked(ctx context.Context, docID, msg string) (string, bool) {
+// returns the full accumulated log, or an error when the existing log could
+// not be seeded. The caller must hold logMu.
+func (s *progressSink) accumulateLogLocked(ctx context.Context, docID, msg string) (string, error) {
 	if !s.seeded {
 		doc, err := s.docSvc.GetDocumentByID(ctx, docID)
 		if err != nil {
@@ -149,7 +152,7 @@ func (s *progressSink) accumulateLogLocked(ctx context.Context, docID, msg strin
 				s.pending = append(s.pending, msg)
 			}
 			common.Warn(fmt.Sprintf("progressSink: seed run log from document %s: %v", docID, err))
-			return "", false
+			return "", fmt.Errorf("seed run log for document %s: %w", docID, err)
 		}
 		s.seeded = true
 		if doc != nil && doc.ProgressMsg != nil {
@@ -161,10 +164,10 @@ func (s *progressSink) accumulateLogLocked(ctx context.Context, docID, msg strin
 		s.pending = nil
 	}
 	if msg == "" {
-		return s.log.String(), true
+		return s.log.String(), nil
 	}
 	s.appendLogLineLocked(msg)
-	return s.log.String(), true
+	return s.log.String(), nil
 }
 
 func (s *progressSink) appendLogLineLocked(msg string) {

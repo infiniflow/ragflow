@@ -211,6 +211,26 @@ func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, p
 	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
 }
 
+// UpdateRunState mirrors live progress and status into the document row when
+// the existing progress log cannot be read. It intentionally leaves the log
+// untouched so a later event can retry seeding and append it safely.
+func (s *DocumentService) UpdateRunState(ctx context.Context, docID string, progress float64, run string) error {
+	updates := map[string]interface{}{
+		"progress": progress,
+		"run":      run,
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
+}
+
 // DeleteDocument delete document — delegates to full cleanup logic.
 func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 	return s.deleteDocumentFull(ctx, id)

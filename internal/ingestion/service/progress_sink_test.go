@@ -170,6 +170,10 @@ func (s *blockingDocProgressSvc) GetDocumentByID(context.Context, string) (*docu
 	return nil, nil
 }
 
+func (s *blockingDocProgressSvc) UpdateRunState(context.Context, string, float64, string) error {
+	return nil
+}
+
 func (s *blockingDocProgressSvc) UpdateRunProgress(_ context.Context, _ string, _ float64, _ string, msg string) error {
 	s.mu.Lock()
 	s.updates++
@@ -185,6 +189,10 @@ func (s *blockingDocProgressSvc) UpdateRunProgress(_ context.Context, _ string, 
 
 func (s *stubDocProgressSvc) GetDocumentByID(ctx context.Context, docID string) (*document.DocumentResponse, error) {
 	return s.doc, s.docErr
+}
+
+func (s *stubDocProgressSvc) UpdateRunState(context.Context, string, float64, string) error {
+	return nil
 }
 
 func (s *stubDocProgressSvc) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {

@@ -131,9 +131,7 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 	}, nil
 }
 
-// resolvePipelineID uses the document's parser selection exclusively. A
-// document either points at a user pipeline or uses its parser_id for a
-// built-in pipeline; the knowledgebase pipeline is not an implicit fallback.
+// resolvePipelineID resolves the pipeline selected for a document.
 func resolvePipelineID(doc *entity.Document) string {
 	if doc != nil && doc.PipelineID != nil {
 		return strings.TrimSpace(*doc.PipelineID)
