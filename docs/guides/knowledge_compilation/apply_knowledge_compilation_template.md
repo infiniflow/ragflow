@@ -50,7 +50,6 @@ Knowledge artifacts can be divided by generation scope into document-level and k
 
 ![Generate Wiki from Knowledge Artifacts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-view-knowledge-artifacts.png)
 
-Graph can also be further generated as a knowledge-base-level knowledge artifact through knowledge-base-level generation operations after document-level knowledge compilation is complete.
 
 When a knowledge-base-level knowledge artifact generation task is executed, the system generates corresponding knowledge-base-level logs. You can use the logs to view the task execution status and related runtime information. When a generation task fails or the result is abnormal, check it together with the log information.
 
