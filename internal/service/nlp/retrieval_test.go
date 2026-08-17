@@ -41,6 +41,7 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 		SimilarityThreshold:    &threshold,
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
+		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
 	})
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
@@ -54,15 +55,23 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 	if len(engine.searchLimits) != 2 || engine.searchLimits[0] != 70 || engine.searchLimits[1] != 100 {
 		t.Fatalf("search limits = %v, want [70 100]", engine.searchLimits)
 	}
+	for _, filters := range engine.searchFilters {
+		mustNot, ok := filters["must_not"].(map[string]interface{})
+		if !ok || mustNot["exists"] != "compile_kwd" {
+			t.Fatalf("must_not filter = %#v", filters["must_not"])
+		}
+	}
 }
 
 type retrievalCountEngine struct {
-	rows         []map[string]interface{}
-	searchLimits []int
+	rows          []map[string]interface{}
+	searchLimits  []int
+	searchFilters []map[string]interface{}
 }
 
 func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchLimits = append(e.searchLimits, req.Limit)
+	e.searchFilters = append(e.searchFilters, req.Filter)
 	offset := req.Offset
 	if offset > len(e.rows) {
 		offset = len(e.rows)

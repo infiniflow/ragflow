@@ -992,6 +992,7 @@ class SearchDatasetReq(BaseModel):
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
+    include_knowledge_compilation: Annotated[bool, Field(default=True)]
 
 
 class SearchDatasetsReq(BaseModel):
@@ -1014,6 +1015,7 @@ class SearchDatasetsReq(BaseModel):
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
+    include_knowledge_compilation: Annotated[bool, Field(default=True)]
 
 
 class BaseListReq(BaseModel):
