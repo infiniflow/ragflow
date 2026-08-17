@@ -61,6 +61,8 @@ export const FormSchema = z.object({
   field_name: z.string().optional(),
   sys_prompt: z.string().optional(),
   prompts: z.string().optional(),
+  keywords_sys_prompt: z.string().optional(),
+  questions_sys_prompt: z.string().optional(),
   auto_keywords: z.number().optional(),
   auto_questions: z.number().optional(),
   auto_tags: z.number().optional(),
@@ -187,9 +189,7 @@ const ExtractorForm = ({
     resolver: zodResolver(FormSchema),
   });
 
-  const [activeTab, setActiveTab] = useState<ExtractorSubTab>(
-    (form.getValues('field_name') as ExtractorSubTab) || ExtractorSubTab.Keywords,
-  );
+  const [activeTab, setActiveTab] = useState<ExtractorSubTab>(ExtractorSubTab.Keywords);
 
   const promptOptions = useBuildNodeOutputOptions(node?.id);
 
@@ -201,39 +201,20 @@ const ExtractorForm = ({
   const { treeData, loadData } = useTagFileTree(form.watch('tag_file_id'));
 
   useEffect(() => {
-    if (
-      !form.getValues('sys_prompt') &&
-      (activeTab === ExtractorSubTab.Keywords ||
-        activeTab === ExtractorSubTab.Questions ||
-        activeTab === ExtractorSubTab.Summary)
-    ) {
-      form.setValue('sys_prompt', t(`flow.prompts.system.${activeTab}`));
+    if (!form.getValues('keywords_sys_prompt')) {
+      form.setValue('keywords_sys_prompt', t('flow.prompts.system.keywords'));
     }
-  }, [activeTab, form, t]);
+    if (!form.getValues('questions_sys_prompt')) {
+      form.setValue('questions_sys_prompt', t('flow.prompts.system.questions'));
+    }
+    if (!form.getValues('sys_prompt')) {
+      form.setValue('sys_prompt', t('flow.prompts.system.summary'));
+    }
+  }, [form, t]);
 
-  const handleTabChange = useCallback(
-    (tab: string) => {
-      const newTab = tab as ExtractorSubTab;
-      const prevDefaultSys = t(`flow.prompts.system.${activeTab}`);
-      const currentSys = form.getValues('sys_prompt');
-
-      setActiveTab(newTab);
-      form.setValue('field_name', tab, { shouldDirty: true });
-
-      if (
-        newTab === ExtractorSubTab.Keywords ||
-        newTab === ExtractorSubTab.Questions ||
-        newTab === ExtractorSubTab.Summary
-      ) {
-        if (!currentSys || currentSys === prevDefaultSys) {
-          form.setValue('sys_prompt', t(`flow.prompts.system.${newTab}`), {
-            shouldDirty: true,
-          });
-        }
-      }
-    },
-    [activeTab, form, t],
-  );
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab as ExtractorSubTab);
+  }, []);
 
   return (
     <Form {...form}>
@@ -263,7 +244,7 @@ const ExtractorForm = ({
 
           <TabsContent value={ExtractorSubTab.Keywords} className="space-y-4 pt-2">
             <AutoKeywordsFormField name="auto_keywords" />
-            <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+            <RAGFlowFormItem label={t('flow.systemPrompt')} name="keywords_sys_prompt">
               <PromptEditor
                 placeholder={t('flow.messagePlaceholder')}
                 showToolbar={true}
@@ -274,7 +255,7 @@ const ExtractorForm = ({
 
           <TabsContent value={ExtractorSubTab.Questions} className="space-y-4 pt-2">
             <AutoQuestionsFormField name="auto_questions" />
-            <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+            <RAGFlowFormItem label={t('flow.systemPrompt')} name="questions_sys_prompt">
               <PromptEditor
                 placeholder={t('flow.messagePlaceholder')}
                 showToolbar={true}

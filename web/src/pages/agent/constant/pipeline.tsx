@@ -356,6 +356,8 @@ export const initialExtractorValues = {
   auto_tags: 0,
   tag_file_id: '',
   enable_summary: 0,
+  keywords_sys_prompt: '',
+  questions_sys_prompt: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
