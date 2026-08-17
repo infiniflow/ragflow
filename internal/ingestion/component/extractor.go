@@ -748,25 +748,6 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	in := c.resolveInputs(inputs)
-	common.Warn("extractor input chunks",
-		zap.String("component", "Extractor"),
-		zap.String("field_name", in.fieldName),
-		zap.Int("chunk_count", len(in.chunks)),
-	)
-	for i, ck := range in.chunks {
-		text, _ := ck["content_with_weight"].(string)
-		if strings.TrimSpace(text) == "" {
-			text, _ = ck["text"].(string)
-		}
-		if len(text) > 500 {
-			text = text[:500] + "...(truncated)"
-		}
-		common.Warn("extractor input chunk",
-			zap.String("component", "Extractor"),
-			zap.Int("chunk_index", i),
-			zap.String("text", text),
-		)
-	}
 	common.Debug("extractor stage",
 		zap.String("component", "Extractor"),
 		zap.Int("input_chunks", len(in.chunks)),
@@ -839,16 +820,6 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 				return fmt.Errorf("chunk %d: %w", i, callErr)
 			}
 			ck[in.fieldName] = ans
-			logAns := ans
-			if len(logAns) > 500 {
-				logAns = logAns[:500] + "...(truncated)"
-			}
-			common.Warn("extractor chunk result",
-				zap.String("component", "Extractor"),
-				zap.Int("chunk_index", i),
-				zap.String("field_name", in.fieldName),
-				zap.String("answer", logAns),
-			)
 		}
 		return nil
 	}); err != nil {
@@ -1309,26 +1280,6 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		temp := *in.temperature
 		req.Temperature = &temp
 	}
-	logReqMsgs := make([]eschema.Message, 0, len(msgs))
-	if len(msgs) > 6 {
-		logReqMsgs = append(logReqMsgs, msgs[:3]...)
-		logReqMsgs = append(logReqMsgs, eschema.Message{Role: eschema.User, Content: fmt.Sprintf("... (%d more)", len(msgs)-6)})
-		logReqMsgs = append(logReqMsgs, msgs[len(msgs)-3:]...)
-	} else {
-		logReqMsgs = append(logReqMsgs, msgs...)
-	}
-	logChunk := chunkText
-	if len(logChunk) > 500 {
-		logChunk = logChunk[:500] + "...(truncated)"
-	}
-	common.Warn("extractor llm request",
-		zap.String("component", "Extractor"),
-		zap.String("llm_id", in.llmID),
-		zap.String("driver", driver),
-		zap.String("model", modelName),
-		zap.Any("messages", logReqMsgs),
-		zap.String("chunk_text", logChunk),
-	)
 	var resp *extractorChatResponse
 	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
 		r, e := inv.Chat(ctx, req)
@@ -1342,17 +1293,6 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		// panic on resp.Content below. Surface a diagnosable error instead.
 		return nil, fmt.Errorf("extractor: chat: nil response from invoker")
 	}
-	logResp := resp.Content
-	if len(logResp) > 500 {
-		logResp = logResp[:500] + "...(truncated)"
-	}
-	common.Warn("extractor llm response",
-		zap.String("component", "Extractor"),
-		zap.String("llm_id", in.llmID),
-		zap.String("driver", driver),
-		zap.String("model", modelName),
-		zap.String("response", logResp),
-	)
 	return resp, nil
 }
 
