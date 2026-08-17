@@ -66,7 +66,6 @@ async def agentic_research(state: dict, tools) -> dict:
 
     claims = [ClaimTarget(**c) if isinstance(c, dict) else c for c in claims_raw]
     ctx = OrchestratorContext(question=question, claims=claims, mode=mode_label)
-    pipeline = Pipeline(tools, compilation_map)
 
     # Stagnation guard: if the fusion score stops improving across consecutive
     # rounds, further searching is unlikely to help (e.g. the corpus simply lacks
@@ -117,7 +116,7 @@ async def agentic_research(state: dict, tools) -> dict:
                     len(batch),
                     "; ".join(f'"{c.description}"' for c in batch),
                 )
-                tasks = [_run_claim_research(c, tools, pipeline, ctx, mode, compilation_map, followups=followups) for c in batch]
+                tasks = [_run_claim_research(c, tools, ctx, mode, compilation_map, followups=followups) for c in batch]
                 agent_results = await asyncio.gather(*tasks)
                 _LOG.info(
                     "[Agentic research] Round %d: finished researching %d step(s).",
@@ -304,13 +303,19 @@ async def agentic_research(state: dict, tools) -> dict:
 async def _run_claim_research(
     claim: ClaimTarget,
     tools,
-    pipeline: Pipeline,
     ctx: OrchestratorContext,
     mode,
     compilation_map: dict,
     followups: list[str] | None = None,
 ) -> dict:
     _LOG.info('[Agentic research] Researching: "%s"', _snip(claim.description))
+    # A dedicated pipeline per claim keeps the routing scope (``_routed_docs``)
+    # isolated: under asyncio.gather the shared single pipeline would let one
+    # claim's dataset_navigation_search leak its doc_scope into a sibling's
+    # follow-up searches (the doc_scope is set on the pipeline, not the claim).
+    # ``tools.kbinfos`` stays shared, so the citation pool still merges across
+    # claims via Pipeline._merge_into_kbinfos.
+    pipeline = Pipeline(tools, compilation_map)
     try:
         result = await asyncio.wait_for(
             research_agent_loop(claim, tools, pipeline, ctx, mode, compilation_map, followups=followups),
