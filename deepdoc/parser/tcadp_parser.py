@@ -178,7 +178,7 @@ class TencentCloudAPIClient:
             filename = f"tcadp_result_{timestamp}.zip"
             file_path = os.path.join(output_dir, filename)
 
-            with requests.get(download_url, stream=True) as response:
+            with requests.get(download_url, stream=True, timeout=300) as response:
                 response.raise_for_status()
                 with open(file_path, "wb") as f:
                     response.raw.decode_content = True
