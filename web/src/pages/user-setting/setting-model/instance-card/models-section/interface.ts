@@ -138,10 +138,6 @@ export interface ModelRowProps {
   onRemove: () => void;
   onEdit: () => void;
   editLabel: string;
-  /** Whether this row is currently selected for batch operations. */
-  isSelected?: boolean;
-  /** Toggle this row's selection state. */
-  onToggleSelect?: () => void;
 }
 
 export interface TagFilterButtonProps {

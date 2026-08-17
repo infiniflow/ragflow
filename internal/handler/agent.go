@@ -1395,6 +1395,14 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				if c, ok := evData["content"].(string); ok {
 					fullContent += c
 				}
+				// Mirror Python agent_api.py: the reasoning segment stays
+				// wrapped in <think> tags in the aggregated answer so the
+				// chat UI can render the "thought" section.
+				if st, _ := evData["start_to_think"].(bool); st {
+					fullContent += "<think>"
+				} else if et, _ := evData["end_to_think"].(bool); et {
+					fullContent += "</think>"
+				}
 			}
 			if ref, _ := evData["reference"].(map[string]any); ref != nil {
 				for k, v := range ref {
