@@ -96,6 +96,11 @@ func (c *Client) DLA(ctx context.Context, pageImage image.Image) ([]pdf.DLARegio
 		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
 			label = labels[clsID]
 		}
+		// Drop low-confidence garbage-layout regions (Python parity: 0.4 gate,
+		// deepdoc/vision/layout_recognizer.py:97).
+		if pdf.GarbageLayoutTypes[label] && b[4] < pdf.GarbageLayoutScoreThreshold {
+			continue
+		}
 		regions = append(regions, pdf.DLARegion{
 			X0: b[0], Y0: b[1], X1: b[2], Y1: b[3],
 			Confidence: b[4],

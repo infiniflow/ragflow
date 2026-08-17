@@ -251,6 +251,20 @@ const (
 	DLALabelTableCaption  = "table caption"
 )
 
+// GarbageLayoutScoreThreshold is the minimum confidence a garbage-layout
+// region must reach to survive; below it the region is dropped. Mirrors
+// Python's garbage gate in LayoutRecognizer (deepdoc/vision/layout_recognizer.py:97).
+const GarbageLayoutScoreThreshold = 0.4
+
+// GarbageLayoutTypes are layout types dropped when their confidence is below
+// GarbageLayoutScoreThreshold. Mirrors Python's self.garbage_layouts
+// = ["footer", "header", "reference"].
+var GarbageLayoutTypes = map[string]bool{
+	LayoutTypeFooter:    true,
+	LayoutTypeHeader:    true,
+	LayoutTypeReference: true,
+}
+
 // ── Interfaces ────────────────────────────────────────────────────────────
 
 // DocAnalyzer abstracts DeepDoc vision operations.
