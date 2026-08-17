@@ -67,6 +67,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  OBSIDIAN = 'obsidian',
 }
 
 type DataSourceFeatureVisibility = {
@@ -178,6 +179,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.BIGQUERY]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.OBSIDIAN]: {
     syncDeletedFiles: true,
   },
 };
@@ -377,6 +381,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Azure Blob Storage',
       description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
       icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
+    },
+    [DataSourceKey.OBSIDIAN]: {
+      name: 'Obsidian',
+      description: t(`setting.${DataSourceKey.OBSIDIAN}Description`),
+      icon: <SvgIcon name={'data-source/obsidian'} width={38} />,
     },
   };
 };
@@ -753,6 +762,27 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       type: FormFieldType.Text,
       required: true,
       placeholder: 'https://example.com/feed.xml',
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+  ],
+  [DataSourceKey.OBSIDIAN]: [
+    {
+      label: t('setting.dataSourceFieldVaultPath'),
+      name: 'config.vault_path',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: '/path/to/your/obsidian/vault',
     },
     {
       label: t('setting.dataSourceFieldBatchSize'),
@@ -1980,6 +2010,14 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.RSS,
     config: {
       feed_url: '',
+      batch_size: 2,
+    },
+  },
+  [DataSourceKey.OBSIDIAN]: {
+    name: '',
+    source: DataSourceKey.OBSIDIAN,
+    config: {
+      vault_path: '',
       batch_size: 2,
     },
   },

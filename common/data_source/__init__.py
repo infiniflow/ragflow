@@ -24,6 +24,7 @@ SOFTWARE.
 
 from .blob_connector import BlobStorageConnector
 from .rss_connector import RSSConnector
+from .obsidian_connector import ObsidianConnector
 from .slack_connector import SlackConnector
 from .gmail_connector import GmailConnector
 from .notion_connector import NotionConnector
@@ -92,4 +93,5 @@ __all__ = [
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",
+    "ObsidianConnector",
 ]

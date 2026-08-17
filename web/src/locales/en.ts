@@ -1343,6 +1343,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldContainerName: 'Container Name',
       dataSourceFieldPrefixOptional: 'Prefix (optional)',
       dataSourceFieldFeedUrl: 'Feed URL',
+      dataSourceFieldVaultPath: 'Vault Path',
       dataSourceFieldGcsAccessKeyId: 'GCS Access Key ID',
       dataSourceFieldGcsSecretAccessKey: 'GCS Secret Access Key',
       dataSourceFieldBucketName: 'Bucket Name',
@@ -1814,6 +1815,8 @@ Example: Virtual Hosted Style`,
         'Salesforce REST API version (e.g. v59.0). Use the version your org supports.',
       azure_blobDescription:
         'Index blobs from an Azure Blob Storage container into a knowledge base. Supports account-key, connection-string, and SAS-token auth. Unchanged blobs are skipped via ETag fingerprinting.',
+      obsidianDescription:
+        'Index markdown notes from a local Obsidian vault. Parses YAML frontmatter and [[wikilinks]] as searchable metadata.',
       azureBlobAuthModeTip:
         'Choose the authentication method. Account Key and Connection String require container_name; SAS Token requires container_url + sas_token.',
       azureBlobAccountNameTip:
