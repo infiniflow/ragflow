@@ -662,30 +662,36 @@ type discordSyncSession struct {
 
 // NextBatch returns one merged document per call until io.EOF.
 func (s *discordSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	for len(s.pending) < s.connector.batchSize {
-		var item discordMessageWithTarget
-		if s.carry != nil {
-			item = *s.carry
-			s.carry = nil
-		} else {
-			next, err := s.iter.next(ctx)
-			if errors.Is(err, io.EOF) {
+	for {
+		for len(s.pending) < s.connector.batchSize {
+			var item discordMessageWithTarget
+			if s.carry != nil {
+				item = *s.carry
+				s.carry = nil
+			} else {
+				next, err := s.iter.next(ctx)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return SyncBatch{}, err
+				}
+				item = next
+			}
+			if s.currentTarget != "" && item.target.channelID != s.currentTarget {
+				s.carry = &item
+				s.currentTarget = ""
 				break
 			}
-			if err != nil {
-				return SyncBatch{}, err
-			}
-			item = next
+			s.currentTarget = item.target.channelID
+			s.pending = append(s.pending, item)
 		}
-		if s.currentTarget != "" && item.target.channelID != s.currentTarget {
-			s.carry = &item
+		if len(s.pending) > 0 {
 			break
 		}
-		s.currentTarget = item.target.channelID
-		s.pending = append(s.pending, item)
-	}
-	if len(s.pending) == 0 {
-		return SyncBatch{}, io.EOF
+		if s.carry == nil {
+			return SyncBatch{}, io.EOF
+		}
 	}
 
 	docs := make([]SourceDocument, 0, len(s.pending))
