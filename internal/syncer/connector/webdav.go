@@ -153,7 +153,7 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	documents := make([]SourceDocument, 0, len(files))
 	for _, file := range files {
 		if !file.hasModified {
-			file.modified = time.Now().UTC()
+			file.modified = end
 		}
 		if !start.Before(file.modified) || file.modified.After(end) {
 			continue
@@ -400,7 +400,14 @@ func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, er
 	if resp.StatusCode != http.StatusOK {
 		return nil, &webdavStatusError{status: resp.StatusCode, url: fileURL}
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxWebDAVResponseSize))
+	blob, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVResponseSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(blob) > maxWebDAVResponseSize {
+		return nil, fmt.Errorf("webdav response exceeds maximum size of %d bytes", maxWebDAVResponseSize)
+	}
+	return blob, nil
 }
 
 // resolve joins a server-relative path or href onto the configured base URL.

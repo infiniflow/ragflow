@@ -295,6 +295,78 @@ func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	}
 }
 
+func TestWebDAVConnectorOpenSyncIncludesSizedFileWithoutLastModified(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, _ := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":                {isDir: true},
+		"/notes/":          {isDir: true},
+		"/notes/nomod.txt": {content: "no modified", size: 12, hasSize: true},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	windowEnd := mustTime(t, "2026-01-02T00:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: windowEnd})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+	}
+	if !batch.Documents[0].UpdatedAt.Equal(windowEnd) {
+		t.Fatalf("updated at = %v, want %v", batch.Documents[0].UpdatedAt, windowEnd)
+	}
+
+	unsetSession, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync with unset WindowEnd failed: %v", err)
+	}
+	defer unsetSession.Close()
+	unsetBatch, err := unsetSession.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch with unset WindowEnd failed: %v", err)
+	}
+	if len(unsetBatch.Documents) != 1 {
+		t.Fatalf("unset window batch len = %d, want 1: %+v", len(unsetBatch.Documents), unsetBatch.Documents)
+	}
+	if batch.Documents[0].SourceID != unsetBatch.Documents[0].SourceID {
+		t.Fatalf("unset window source id = %q", unsetBatch.Documents[0].SourceID)
+	}
+	if string(unsetBatch.Documents[0].Blob) != "no modified" {
+		t.Fatalf("unset window blob = %q", unsetBatch.Documents[0].Blob)
+	}
+	if unsetBatch.Documents[0].UpdatedAt.IsZero() {
+		t.Fatalf("unset window updated at is zero")
+	}
+}
+
+func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", fmt.Sprintf("%d", maxWebDAVResponseSize+1))
+	content := strings.Repeat("x", maxWebDAVResponseSize+1)
+	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":                {isDir: true},
+		"/notes/":          {isDir: true},
+		"/notes/large.txt": {content: content, size: int64(len(content)), hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT"},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch = %v, want EOF", err)
+	}
+	if len(*getRequests) != 1 {
+		t.Fatalf("download requests = %d, want 1", len(*getRequests))
+	}
+}
+
 func TestWebDAVConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
