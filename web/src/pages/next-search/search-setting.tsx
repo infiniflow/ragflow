@@ -50,6 +50,7 @@ import {
   IllmSettingProps,
   useUpdateSearch,
 } from '../next-searches/hooks';
+import { RerankFormFields } from '@/components/rerank';
 import {
   SearchSettingFormData,
   useRevalidatePersistedModels,
@@ -397,59 +398,7 @@ function SearchSetting({
             />
             {rerankModelEnabled && (
               <>
-                <FormField
-                  control={formMethods.control}
-                  name={'search_config.rerank_id'}
-                  // rules={{ required: 'Model is required' }}
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel required>{t('chat.model')}</FormLabel>
-                      <FormControl>
-                        <ModelTreeSelect
-                          modelTypes={['rerank']}
-                          {...field}
-                          placeholder={t('chat.model')}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={formMethods.control}
-                  name="search_config.top_k"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Top K</FormLabel>
-                      <div
-                        className={cn(
-                          'flex items-center gap-4 justify-between',
-                          className,
-                        )}
-                      >
-                        <FormControl>
-                          <SingleFormSlider
-                            {...field}
-                            max={2048}
-                            min={0}
-                            step={1}
-                          ></SingleFormSlider>
-                        </FormControl>
-                        <FormControl>
-                          <Input
-                            type={'number'}
-                            className="h-7 w-20 bg-bg-card border border-border-button rounded-sm"
-                            max={2048}
-                            min={0}
-                            step={1}
-                            {...field}
-                          ></Input>
-                        </FormControl>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <RerankFormFields prefix={'search_config'}></RerankFormFields>
               </>
             )}
             {/* AI Summary */}

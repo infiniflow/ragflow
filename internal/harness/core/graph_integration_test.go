@@ -27,7 +27,7 @@ func TestGraphIntegration_SequentialWorkflow(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("seq_first")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("seq_second")
 
-	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+	gwf, err := NewSequentialGraph(t.Context(), &SequentialConfig{
 		Name:        "seq_graph",
 		Description: "sequential graph test",
 		SubAgents:   []Agent{a1, a2},
@@ -37,7 +37,7 @@ func TestGraphIntegration_SequentialWorkflow(t *testing.T) {
 	}
 
 	// Invoke and verify no error
-	state, err := gwf.Invoke(context.Background(), &AgentInput{
+	state, err := gwf.Invoke(t.Context(), &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("run sequential")},
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestGraphIntegration_ParallelWorkflow(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("par_first")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("par_second")
 
-	gwf, err := NewParallelGraph(context.Background(), &ParallelConfig{
+	gwf, err := NewParallelGraph(t.Context(), &ParallelConfig{
 		Name:        "par_graph",
 		Description: "parallel graph test",
 		SubAgents:   []Agent{a1, a2},
@@ -71,7 +71,7 @@ func TestGraphIntegration_ParallelWorkflow(t *testing.T) {
 		t.Fatalf("NewParallelGraph: %v", err)
 	}
 
-	state, err := gwf.Invoke(context.Background(), &AgentInput{
+	state, err := gwf.Invoke(t.Context(), &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("run parallel")},
 	})
 	if err != nil {
@@ -97,7 +97,7 @@ func TestGraphIntegration_LoopWorkflow(t *testing.T) {
 		Tools:       []Tool{&mockTool{name: "mock_tool", desc: "mock"}},
 	}).WithName("loop_body")
 
-	gwf, err := NewLoopGraph(context.Background(), &LoopConfig{
+	gwf, err := NewLoopGraph(t.Context(), &LoopConfig{
 		Name:          "loop_graph",
 		Description:   "loop graph test",
 		SubAgents:     []Agent{body},
@@ -107,7 +107,7 @@ func TestGraphIntegration_LoopWorkflow(t *testing.T) {
 		t.Fatalf("NewLoopGraph: %v", err)
 	}
 
-	state, err := gwf.Invoke(context.Background(), &AgentInput{
+	state, err := gwf.Invoke(t.Context(), &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("run loop")},
 	})
 	if err != nil {
@@ -132,7 +132,8 @@ func TestGraphIntegration_SequentialGraphWithInterrupt(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("interrupt_first")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("interrupt_second")
 
-	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+	ctx := t.Context()
+	gwf, err := NewSequentialGraph(ctx, &SequentialConfig{
 		Name:        "seq_interrupt",
 		Description: "sequential graph with interrupt",
 		SubAgents:   []Agent{a1, a2},
@@ -141,7 +142,6 @@ func TestGraphIntegration_SequentialGraphWithInterrupt(t *testing.T) {
 		t.Fatalf("NewSequentialGraph: %v", err)
 	}
 
-	ctx := context.Background()
 	_, err = gwf.Invoke(ctx, &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("test interrupt")},
 	})
@@ -163,7 +163,7 @@ func TestGraphIntegration_StreamingWorkflow(t *testing.T) {
 
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("stream_agent")
 
-	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+	gwf, err := NewSequentialGraph(t.Context(), &SequentialConfig{
 		Name:        "stream_graph",
 		Description: "streaming graph test",
 		SubAgents:   []Agent{agent},
@@ -172,7 +172,7 @@ func TestGraphIntegration_StreamingWorkflow(t *testing.T) {
 		t.Fatalf("NewSequentialGraph: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	outCh, errCh := gwf.Stream(ctx, &AgentInput{
@@ -188,7 +188,7 @@ loop:
 				break loop
 			}
 			events++
-		case err := <-errCh:
+		case err = <-errCh:
 			if err != nil {
 				t.Logf("stream err: %v", err)
 			}
@@ -233,7 +233,7 @@ func TestGraphIntegration_ReActWithCheckpointResume(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	config := &types.RunnableConfig{ThreadID: "react-graph-001"}
 
 	// Phase 1: Invoke — should interrupt before execute_tools
@@ -270,7 +270,7 @@ func TestGraphIntegration_SequentialGraphCancel(t *testing.T) {
 
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("cancel_first")
 
-	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+	gwf, err := NewSequentialGraph(t.Context(), &SequentialConfig{
 		Name:        "cancel_graph",
 		Description: "sequential graph cancel test",
 		SubAgents:   []Agent{a1},
@@ -279,7 +279,7 @@ func TestGraphIntegration_SequentialGraphCancel(t *testing.T) {
 		t.Fatalf("NewSequentialGraph: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
 	_, err = gwf.Invoke(ctx, &AgentInput{
@@ -297,7 +297,7 @@ func TestGraphIntegration_WorkflowGraphCompile(t *testing.T) {
 	m.addResp("compile test")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("compile_test")
 
-	gwf, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+	gwf, err := NewSequentialGraph(t.Context(), &SequentialConfig{
 		Name:      "compile_graph",
 		SubAgents: []Agent{agent},
 	}, nil)

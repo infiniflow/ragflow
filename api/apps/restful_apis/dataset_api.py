@@ -1028,12 +1028,23 @@ async def list_dataset_nav(tenant_id, dataset_id):
     """First level of the dataset navigation tree — the top-level clusters.
 
     GET /api/v1/datasets/<dataset_id>/navigation
-    Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, has_children}, ...]}}
+    GET /api/v1/datasets/<dataset_id>/navigation?keywords=<query>&top_k=<n>
+    Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, has_children, ...}, ...]}}
     """
+    q = (request.args.get("keywords") or "").strip() or None
+    top_k_raw = request.args.get("top_k")
+    top_k = None
+    if top_k_raw:
+        try:
+            top_k = max(1, int(top_k_raw))
+        except (ValueError, TypeError):
+            return get_error_data_result(message="top_k must be a positive integer")
     try:
         success, result = await dataset_api_service.list_nav_clusters(
             dataset_id,
             tenant_id,
+            q=q,
+            top_k=top_k,
         )
         if success:
             return get_result(data=result)
@@ -1068,7 +1079,7 @@ async def search_dataset_nav(tenant_id, dataset_id):
     documents; omitted → all documents of the dataset.
 
     Success: {"code": 0, "data": {"mode": <mode>, "total": <n>,
-        "items": [{"doc_id": str, "score": float}, ...]}}
+        "items": [{name, description, doc_count, type, has_children, doc_id, score, ...}, ...]}}
     """
     q = (request.args.get("q") or "").strip()
     if not q:
@@ -1092,6 +1103,7 @@ async def search_dataset_nav(tenant_id, dataset_id):
             doc_scope=doc_scope,
         )
         if success:
+            result["items"] = await dataset_api_service._enrich_nav_items(dataset_id, tenant_id, result.get("items", []))
             return get_result(data=result)
         if isinstance(result, dict):
             msg = result.get("error", result)
