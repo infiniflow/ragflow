@@ -214,7 +214,7 @@ The OAuth configuration for signing up or signing in to RAGFlow using a third-pa
   - `userinfo_url`: URL for obtaining user information (username, email, etc.).
   - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
   - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
-  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
+  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
 
 :::tip NOTE
 The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
@@ -227,7 +227,7 @@ oauth:
     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
     token_url: "https://your-oauth-provider.com/oauth/token"
     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
 
   oidc:
     display_name: "OIDC"
@@ -235,7 +235,7 @@ oauth:
     client_secret: "your_client_secret"
     issuer: "https://your-oauth-provider.com/oidc"
     scope: "openid email profile"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
 
   github:
     # https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
@@ -244,7 +244,7 @@ oauth:
     display_name: "Github"
     client_id: "your_client_id"
     client_secret: "your_client_secret"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
 ```
 :::
 
