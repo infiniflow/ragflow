@@ -9,14 +9,14 @@ import (
 )
 
 // TestDeepDocHTTP_DLA_GarbageGate pins the Python-parity 0.4 garbage gate
-// (LayoutRecognizer.__call__, deepdoc/vision/layout_recognizer.py:97 and :379):
-// a region whose layout type is a garbage layout (footer/header/reference) and
-// whose confidence is strictly below 0.4 is dropped; everything else is kept.
+// (deepdoc/vision/layout_recognizer.py:97): a region whose layout type is a
+// garbage layout (footer/header/reference) and whose confidence is strictly
+// below 0.4 is dropped; everything else is kept.
 //
 // The OSS default 10-class DLA taxonomy only emits "reference" as a garbage
-// type, but footer/header are covered defensively (see dlaGarbageLayouts in
-// client.go). Each subtest drives a mock /predict/dla backend returning one
-// bbox and asserts the resulting region set.
+// type, but footer/header are covered defensively via pdf.GarbageLayoutTypes.
+// Each subtest drives a mock /predict/dla backend returning one bbox and
+// asserts the resulting region set.
 func TestDeepDocHTTP_DLA_GarbageGate(t *testing.T) {
 	newClient := func(t *testing.T, bboxes [][]float64) *Client {
 		t.Helper()
@@ -78,7 +78,8 @@ func TestDeepDocHTTP_DLA_GarbageGate(t *testing.T) {
 
 	t.Run("low_conf_garbage_and_text", func(t *testing.T) {
 		// A low-confidence reference is dropped while an unrelated text region
-		// is kept — Python keeps only the high-confidence non-garbage region.
+		// (non-garbage) is kept — the gate only removes garbage-layout regions
+		// below 0.4; non-garbage regions pass through at any confidence.
 		client := newClient(t, [][]float64{
 			{50, 10, 500, 50, 0.30, referenceClass}, // reference, low confidence -> dropped
 			{50, 100, 500, 300, 0.90, 1},            // text, high confidence -> kept
