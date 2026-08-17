@@ -19,174 +19,174 @@ import numbers
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
+
 class VariableAssignerParam(ComponentParamBase):
     """
     Define the Variable Assigner component parameters.
     """
+
     def __init__(self):
         super().__init__()
-        self.variables=[]
+        self.variables = []
 
     def check(self):
         return True
-    
+
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "items": {
-                "type": "json",
-                "name": "Items"
-            }
-        }
+        return {"items": {"type": "json", "name": "Items"}}
 
-class VariableAssigner(ComponentBase,ABC):
+
+class VariableAssigner(ComponentBase, ABC):
     component_name = "VariableAssigner"
+    _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
-        if not isinstance(self._param.variables,list):
+        if not isinstance(self._param.variables, list):
             return
         else:
             for item in self._param.variables:
-                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
-                    assert "Variable is not complete."
-                variable=item["variable"]
-                operator=item["operator"]
-                parameter=item["parameter"]
-                variable_value=self._canvas.get_variable_value(variable)
-                new_variable=self._operate(variable_value,operator,parameter)
+                variable = item.get("variable")
+                operator = item.get("operator")
+                parameter = item.get("parameter")
+
+                if any([not variable, not operator]):
+                    raise ValueError("Variable is not complete.")
+                if operator not in self._NO_PARAMETER_OPERATORS and parameter is None:
+                    raise ValueError("Variable is not complete.")
+                variable_value = self._canvas.get_variable_value(variable)
+                new_variable = self._operate(variable_value, operator, parameter)
                 self._canvas.set_variable_value(variable, new_variable)
 
-    def _operate(self,variable,operator,parameter):
+    def _operate(self, variable, operator, parameter):
         if operator == "overwrite":
             return self._overwrite(parameter)
         elif operator == "clear":
             return self._clear(variable)
         elif operator == "set":
-            return self._set(variable,parameter)
+            return self._set(variable, parameter)
         elif operator == "append":
-            return self._append(variable,parameter)
+            return self._append(variable, parameter)
         elif operator == "extend":
-            return self._extend(variable,parameter)
+            return self._extend(variable, parameter)
         elif operator == "remove_first":
             return self._remove_first(variable)
         elif operator == "remove_last":
             return self._remove_last(variable)
         elif operator == "+=":
-            return self._add(variable,parameter)
+            return self._add(variable, parameter)
         elif operator == "-=":
-            return self._subtract(variable,parameter)
+            return self._subtract(variable, parameter)
         elif operator == "*=":
-            return self._multiply(variable,parameter)
+            return self._multiply(variable, parameter)
         elif operator == "/=":
-            return self._divide(variable,parameter)
+            return self._divide(variable, parameter)
         else:
             return
-    
-    def _overwrite(self,parameter):
+
+    def _overwrite(self, parameter):
         return self._canvas.get_variable_value(parameter)
 
-    def _clear(self,variable):
-        if isinstance(variable,list):
+    def _clear(self, variable):
+        if isinstance(variable, list):
             return []
-        elif isinstance(variable,str):
+        elif isinstance(variable, str):
             return ""
-        elif isinstance(variable,dict):
+        elif isinstance(variable, dict):
             return {}
-        elif isinstance(variable,int):
-            return 0
-        elif isinstance(variable,float):
-            return 0.0
-        elif isinstance(variable,bool):
+        elif isinstance(variable, bool):
             return False
+        elif isinstance(variable, int):
+            return 0
+        elif isinstance(variable, float):
+            return 0.0
         else:
             return None
 
-    def _set(self,variable,parameter):
+    def _set(self, variable, parameter):
         if variable is None:
             return self._canvas.get_value_with_variable(parameter)
-        elif isinstance(variable,str):
+        elif isinstance(variable, str):
             return self._canvas.get_value_with_variable(parameter)
-        elif isinstance(variable,bool):
+        elif isinstance(variable, bool):
             return parameter
-        elif isinstance(variable,int):
+        elif isinstance(variable, int):
             return parameter
-        elif isinstance(variable,float):
+        elif isinstance(variable, float):
             return parameter
         else:
             return parameter
 
-    def _append(self,variable,parameter):
-        parameter=self._canvas.get_variable_value(parameter)
+    def _append(self, variable, parameter):
+        parameter = self._canvas.get_variable_value(parameter)
         if variable is None:
-            variable=[]
-        if not isinstance(variable,list):
+            variable = []
+        if not isinstance(variable, list):
             return "ERROR:VARIABLE_NOT_LIST"
-        elif len(variable)!=0 and not isinstance(parameter,type(variable[0])):
+        elif len(variable) != 0 and not isinstance(parameter, type(variable[0])):
             return "ERROR:PARAMETER_NOT_LIST_ELEMENT_TYPE"
         else:
             variable.append(parameter)
             return variable
 
-    def _extend(self,variable,parameter):
-        parameter=self._canvas.get_variable_value(parameter)
+    def _extend(self, variable, parameter):
+        parameter = self._canvas.get_variable_value(parameter)
         if variable is None:
-            variable=[]
-        if not isinstance(variable,list):
+            variable = []
+        if not isinstance(variable, list):
             return "ERROR:VARIABLE_NOT_LIST"
-        elif not isinstance(parameter,list):
+        elif not isinstance(parameter, list):
             return "ERROR:PARAMETER_NOT_LIST"
-        elif len(variable)!=0 and len(parameter)!=0 and not isinstance(parameter[0],type(variable[0])):
+        elif len(variable) != 0 and len(parameter) != 0 and not isinstance(parameter[0], type(variable[0])):
             return "ERROR:PARAMETER_NOT_LIST_ELEMENT_TYPE"
         else:
             return variable + parameter
 
-    def _remove_first(self,variable):
-        if len(variable)==0:
-            return variable
-        if not isinstance(variable,list):
+    def _remove_first(self, variable):
+        if not isinstance(variable, list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[1:]
+        if len(variable) == 0:
+            return variable
+        return variable[1:]
 
-    def _remove_last(self,variable):
-        if len(variable)==0:
-            return variable
-        if not isinstance(variable,list):
+    def _remove_last(self, variable):
+        if not isinstance(variable, list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[:-1]
+        if len(variable) == 0:
+            return variable
+        return variable[:-1]
 
     def is_number(self, value):
         if isinstance(value, bool):
             return False
         return isinstance(value, numbers.Number)
 
-    def _add(self,variable,parameter):
+    def _add(self, variable, parameter):
         if self.is_number(variable) and self.is_number(parameter):
             return variable + parameter
         else:
             return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
-    def _subtract(self,variable,parameter):
+    def _subtract(self, variable, parameter):
         if self.is_number(variable) and self.is_number(parameter):
             return variable - parameter
         else:
             return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
-    def _multiply(self,variable,parameter):
+    def _multiply(self, variable, parameter):
         if self.is_number(variable) and self.is_number(parameter):
             return variable * parameter
         else:
             return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
-    def _divide(self,variable,parameter):
+    def _divide(self, variable, parameter):
         if self.is_number(variable) and self.is_number(parameter):
-            if  parameter==0:
+            if parameter == 0:
                 return "ERROR:DIVIDE_BY_ZERO"
             else:
-                return variable/parameter
+                return variable / parameter
         else:
-            return  "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
+            return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
     def thoughts(self) -> str:
         return "Assign variables from canvas."

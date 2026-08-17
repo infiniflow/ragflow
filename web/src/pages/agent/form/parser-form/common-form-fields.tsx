@@ -1,17 +1,14 @@
-import { crossLanguageOptions } from '@/components/cross-language-form-field';
+import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
-import {
-  LLMFormField,
-  LLMFormFieldProps,
-} from '@/components/llm-setting-items/llm-form-field';
 import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FileType,
   OutputFormatMap,
@@ -65,26 +62,38 @@ export function ParserMethodFormField({
   optionsWithoutLLM,
 }: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
   return (
     <LayoutRecognizeFormField
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
       optionsWithoutLLM={optionsWithoutLLM}
       label={t('flow.parserMethod')}
+      ownerTenantId={ownerTenantId}
     ></LayoutRecognizeFormField>
   );
 }
 
-export function LargeModelFormField({
-  prefix,
-  options,
-}: CommonProps & Pick<LLMFormFieldProps, 'options'>) {
+export function FlattenMediaToTextFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
   return (
-    <LLMFormField
-      name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
-      options={options}
-      config={{ allowClear: true }}
-    ></LLMFormField>
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`flatten_media_to_text`, prefix)}
+      label={t('flow.flattenMediaToText')}
+      tooltip={t('flow.flattenMediaToTextTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
   );
 }
 
@@ -93,12 +102,14 @@ export function TwoColumnCheckFormField({ prefix }: CommonProps) {
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`enable_multi_column`, prefix)}
-      label={t('flow.enableMultiColumn', 'Enable multi column')}
+      label={t('flow.enableMultiColumn')}
       horizontal={true}
-      labelClassName="w-[200px]"
+      labelClassName="w-full"
+      valueClassName="w-8"
+      tooltip={t('flow.enableMultiColumnTip')}
     >
       {(field) => (
-        <Checkbox
+        <Switch
           checked={field.value}
           onCheckedChange={(checked) => {
             field.onChange?.(checked);
@@ -114,12 +125,36 @@ export function RmdirFormField({ prefix }: CommonProps) {
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix(`remove_toc`, prefix)}
-      label={t('flow.remove_toc', 'Remove TOC')}
+      label={t('flow.removeToc')}
       horizontal={true}
-      labelClassName="w-[200px]"
+      tooltip={t('flow.removeTocTip')}
+      labelClassName="w-full"
+      valueClassName="w-8"
     >
       {(field) => (
-        <Checkbox
+        <Switch
+          checked={field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
+export function RemoveHeaderFooterFormField({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(`remove_header_footer`, prefix)}
+      label={t('flow.removeHeaderFooter')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
           checked={field.value}
           onCheckedChange={(checked) => {
             field.onChange?.(checked);
@@ -132,6 +167,7 @@ export function RmdirFormField({ prefix }: CommonProps) {
 
 export function LanguageFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
+  const crossLanguageOptions = useCrossLanguageOptions();
 
   return (
     <RAGFlowFormItem

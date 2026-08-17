@@ -98,7 +98,7 @@ We use vision information to resolve problems as human being.
      ```bash
         python deepdoc/vision/t_recognizer.py --inputs=path_to_images_or_pdfs --threshold=0.2 --mode=tsr --output_dir=path_to_store_result
      ```
-    The inputs could be directory to images or PDF, or a image or PDF. 
+    The inputs could be directory to images or PDF, or an image or PDF. 
     You can look into the folder 'path_to_store_result' where has both images and html pages which demonstrate the detection results as following:
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
     <img src="https://github.com/infiniflow/ragflow/assets/12318111/cb24e81b-f2ba-49f3-ac09-883d75606f4c" width="1000"/>

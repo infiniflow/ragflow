@@ -1,7 +1,23 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
-import { t, TFunction } from 'i18next';
+import { TFunction } from 'i18next';
 import { Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,40 +27,171 @@ import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
+import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
 
 export enum DataSourceKey {
-  RSS = 'rss',
   CONFLUENCE = 'confluence',
-  S3 = 's3',
   NOTION = 'notion',
-  DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
-  MOODLE = 'moodle',
   GMAIL = 'gmail',
+  GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
+  OCI_STORAGE = 'oci_storage',
+  S3 = 's3',
+  R2 = 'r2',
   JIRA = 'jira',
-  WEBDAV = 'webdav',
   BOX = 'box',
   DROPBOX = 'dropbox',
-  R2 = 'r2',
-  OCI_STORAGE = 'oci_storage',
-  GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
-  AIRTABLE = 'airtable',
-  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
+  BITBUCKET = 'bitbucket',
   GITLAB = 'gitlab',
+  GITHUB = 'github',
+  MOODLE = 'moodle',
+  DISCORD = 'discord',
+  ZENDESK = 'zendesk',
+  WEBDAV = 'webdav',
+  AIRTABLE = 'airtable',
   ASANA = 'asana',
   IMAP = 'imap',
-  GITHUB = 'github',
-  BITBUCKET = 'bitbucket',
-  ZENDESK = 'zendesk',
+  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
-  //   SHAREPOINT = 'sharepoint',
-  //   SLACK = 'slack',
-  //   TEAMS = 'teams',
+  BIGQUERY = 'bigquery',
+  REST_API = 'rest_api',
+  RSS = 'rss',
+  ONEDRIVE = 'onedrive',
+  OUTLOOK = 'outlook',
+  SALESFORCE = 'salesforce',
+  AZURE_BLOB = 'azure_blob',
+  TEAMS = 'teams',
+  SLACK = 'slack',
+  SHAREPOINT = 'sharepoint',
 }
+
+type DataSourceFeatureVisibility = {
+  syncDeletedFiles?: boolean;
+};
+
+type DataSourceFormValues = Record<string, any>;
+
+export const DataSourceFeatureVisibilityMap: Partial<
+  Record<DataSourceKey, DataSourceFeatureVisibility>
+> = {
+  [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GITLAB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GMAIL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.IMAP]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.CONFLUENCE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DROPBOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.S3]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.R2]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.OCI_STORAGE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.NOTION]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DISCORD]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.JIRA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BITBUCKET]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AIRTABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.WEBDAV]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ASANA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.RSS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ONEDRIVE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.OUTLOOK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SALESFORCE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AZURE_BLOB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.TEAMS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SLACK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.MYSQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.POSTGRESQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.BIGQUERY]: {
+    syncDeletedFiles: true,
+  },
+};
+
+const isDataSourceFeatureVisible = (
+  source?: DataSourceKey,
+  feature?: keyof DataSourceFeatureVisibility,
+) => {
+  if (!source || !feature) {
+    return false;
+  }
+
+  return Boolean(DataSourceFeatureVisibilityMap[source]?.[feature]);
+};
 
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
@@ -100,10 +247,30 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.GMAIL}Description`),
       icon: <SvgIcon name={'data-source/gmail'} width={38} />,
     },
+    [DataSourceKey.REST_API]: {
+      name: 'REST API',
+      description: t(`setting.${DataSourceKey.REST_API}Description`),
+      icon: <SvgIcon name={'data-source/rest-api'} width={38} />,
+    },
     [DataSourceKey.MOODLE]: {
       name: 'Moodle',
       description: t(`setting.${DataSourceKey.MOODLE}Description`),
       icon: <SvgIcon name={'data-source/moodle'} width={38} />,
+    },
+    [DataSourceKey.TEAMS]: {
+      name: 'Microsoft Teams',
+      description: t(`setting.${DataSourceKey.TEAMS}Description`),
+      icon: <SvgIcon name={'data-source/teams'} width={38} />,
+    },
+    [DataSourceKey.SLACK]: {
+      name: 'Slack',
+      description: t(`setting.${DataSourceKey.SLACK}Description`),
+      icon: <SvgIcon name={'data-source/slack'} width={38} />,
+    },
+    [DataSourceKey.SHAREPOINT]: {
+      name: 'SharePoint',
+      description: t(`setting.${DataSourceKey.SHAREPOINT}Description`),
+      icon: <SvgIcon name={'data-source/sharepoint'} width={38} />,
     },
     [DataSourceKey.JIRA]: {
       name: 'Jira',
@@ -186,6 +353,31 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
     },
+    [DataSourceKey.BIGQUERY]: {
+      name: 'BigQuery',
+      description: t(`setting.${DataSourceKey.BIGQUERY}Description`),
+      icon: <SvgIcon name={'data-source/bigquery'} width={38} />,
+    },
+    [DataSourceKey.ONEDRIVE]: {
+      name: 'OneDrive',
+      description: t(`setting.${DataSourceKey.ONEDRIVE}Description`),
+      icon: <SvgIcon name={'data-source/onedrive'} width={38} />,
+    },
+    [DataSourceKey.OUTLOOK]: {
+      name: 'Outlook',
+      description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
+      icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.SALESFORCE]: {
+      name: 'Salesforce',
+      description: t(`setting.${DataSourceKey.SALESFORCE}Description`),
+      icon: <SvgIcon name={'data-source/salesforce'} width={38} />,
+    },
+    [DataSourceKey.AZURE_BLOB]: {
+      name: 'Azure Blob Storage',
+      description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
+      icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
+    },
   };
 };
 
@@ -200,7 +392,31 @@ export const useDataSourceInfo = () => {
   return { dataSourceInfo };
 };
 
-export const DataSourceFormBaseFields = [
+const isPlainObject = (value: unknown): value is DataSourceFormValues =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const mergeDataSourceFormValues = (
+  ...values: Array<DataSourceFormValues | undefined>
+): DataSourceFormValues =>
+  values.reduce<DataSourceFormValues>((result, current) => {
+    if (!current) {
+      return result;
+    }
+
+    const next = { ...result };
+
+    Object.entries(current).forEach(([key, value]) => {
+      if (isPlainObject(value) && isPlainObject(next[key])) {
+        next[key] = mergeDataSourceFormValues(next[key], value);
+      } else {
+        next[key] = value;
+      }
+    });
+
+    return next;
+  }, {});
+
+export const getDataSourceFormBaseFields = (t: TFunction) => [
   {
     id: 'Id',
     name: 'id',
@@ -209,14 +425,14 @@ export const DataSourceFormBaseFields = [
     hidden: true,
   },
   {
-    label: 'Name',
+    label: t('setting.dataSourceFieldName'),
     name: 'name',
     type: FormFieldType.Text,
     required: true,
     tooltip: t('setting.connectorNameTip'),
   },
   {
-    label: 'Source',
+    label: t('setting.dataSourceFieldSource'),
     name: 'source',
     type: FormFieldType.Select,
     required: true,
@@ -227,41 +443,345 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
-export const DataSourceFormFields = {
+
+export const getCommonExtraFields = (t: TFunction, source?: DataSourceKey) => [
+  {
+    label: t('setting.syncDeletedFiles'),
+    name: 'config.sync_deleted_files',
+    type: FormFieldType.Checkbox,
+    required: false,
+    defaultValue: false,
+    shouldRender: () => isDataSourceFeatureVisible(source, 'syncDeletedFiles'),
+  },
+];
+
+export const getCommonExtraDefaultValues = () => ({
+  config: {
+    sync_deleted_files: false,
+  },
+});
+
+const generateDataSourceFormFields = (t: TFunction) => ({
+  [DataSourceKey.ONEDRIVE]: [
+    {
+      label: t('setting.dataSourceFieldTenantId'),
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.onedriveTenantIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldClientId'),
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.onedriveClientIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldClientSecret'),
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.onedriveClientSecretTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldFolderPathOptional'),
+      name: 'config.folder_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/Documents/Reports',
+      tooltip: t('setting.onedriveFolderPathTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+  ],
+  [DataSourceKey.OUTLOOK]: [
+    {
+      label: t('setting.dataSourceFieldTenantId'),
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.outlookTenantIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldClientId'),
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.outlookClientIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldClientSecret'),
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.outlookClientSecretTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldMailFolder'),
+      name: 'config.folder',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'inbox',
+      tooltip: t('setting.outlookFolderTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldMailboxUserIds'),
+      name: 'config.user_ids',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'support@example.com, sales@example.com',
+      tooltip: t('setting.outlookUserIdsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+  ],
+  [DataSourceKey.SALESFORCE]: [
+    {
+      label: t('setting.dataSourceFieldInstanceUrl'),
+      name: 'config.credentials.instance_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://your-domain.my.salesforce.com',
+      tooltip: t('setting.salesforceInstanceUrlTip'),
+      validation: {
+        pattern: /^https:\/\/[a-zA-Z0-9.-]+\.salesforce\.com$/,
+        message: t('setting.dataSourceSalesforceInstanceUrlInvalid'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldClientId'),
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.salesforceClientIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldClientSecret'),
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.salesforceClientSecretTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldObjects'),
+      name: 'config.objects',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Account,Contact,Opportunity,Case,Knowledge__kav',
+      tooltip: t('setting.salesforceObjectsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldApiVersion'),
+      name: 'config.api_version',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'v59.0',
+      tooltip: t('setting.salesforceApiVersionTip'),
+      validation: {
+        pattern: /^v\d+\.\d+$/,
+        message: t('setting.dataSourceSalesforceApiVersionInvalid'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+  ],
+  [DataSourceKey.AZURE_BLOB]: [
+    {
+      label: t('setting.dataSourceFieldAuthMode'),
+      name: 'config.auth_mode',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        {
+          label: t('setting.dataSourceOptionAccountKey'),
+          value: 'account_key',
+        },
+        {
+          label: t('setting.dataSourceOptionConnectionString'),
+          value: 'connection_string',
+        },
+        { label: t('setting.dataSourceOptionSasToken'), value: 'sas_token' },
+      ],
+      tooltip: t('setting.azureBlobAuthModeTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldAccountName'),
+      name: 'config.credentials.account_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'mystorageaccount',
+      tooltip: t('setting.azureBlobAccountNameTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'account_key' && !(val ?? '').trim()
+          ? t('setting.dataSourceAzureAccountNameRequired')
+          : true,
+    },
+    {
+      label: t('setting.dataSourceFieldAccountKey'),
+      name: 'config.credentials.account_key',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobAccountKeyTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'account_key' && !val
+          ? t('setting.dataSourceAzureAccountKeyRequired')
+          : true,
+    },
+    {
+      label: t('setting.dataSourceFieldConnectionString'),
+      name: 'config.credentials.connection_string',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobConnectionStringTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'connection_string',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'connection_string' && !val
+          ? t('setting.dataSourceAzureConnectionStringRequired')
+          : true,
+    },
+    {
+      label: t('setting.dataSourceFieldContainerUrl'),
+      name: 'config.credentials.container_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://account.blob.core.windows.net/container',
+      tooltip: t('setting.azureBlobContainerUrlTip'),
+      shouldRender: (values: any) => values?.config?.auth_mode === 'sas_token',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'sas_token' && !(val ?? '').trim()
+          ? t('setting.dataSourceAzureContainerUrlRequired')
+          : true,
+    },
+    {
+      label: t('setting.dataSourceFieldSasToken'),
+      name: 'config.credentials.sas_token',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobSasTokenTip'),
+      shouldRender: (values: any) => values?.config?.auth_mode === 'sas_token',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'sas_token' && !val
+          ? t('setting.dataSourceAzureSasTokenRequired')
+          : true,
+    },
+    {
+      label: t('setting.dataSourceFieldContainerName'),
+      name: 'config.credentials.container_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'my-container',
+      tooltip: t('setting.azureBlobContainerNameTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key' ||
+        values?.config?.auth_mode === 'connection_string',
+      customValidate: (val: string, values: any) => {
+        const mode = values?.config?.auth_mode;
+        if (
+          (mode === 'account_key' || mode === 'connection_string') &&
+          !(val ?? '').trim()
+        ) {
+          return t('setting.dataSourceAzureContainerNameRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldPrefixOptional'),
+      name: 'config.prefix',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'documents/reports/',
+      tooltip: t('setting.azureBlobPrefixTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+  ],
   [DataSourceKey.RSS]: [
     {
-      label: 'Feed URL',
+      label: t('setting.dataSourceFieldFeedUrl'),
       name: 'config.feed_url',
       type: FormFieldType.Text,
       required: true,
       placeholder: 'https://example.com/feed.xml',
     },
     {
-      label: 'Batch Size',
+      label: t('setting.dataSourceFieldBatchSize'),
       name: 'config.batch_size',
       type: FormFieldType.Number,
       required: false,
       validation: {
         min: 1,
-        message: 'Batch Size must be at least 1',
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
       },
     },
   ],
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
-      label: 'GCS Access Key ID',
+      label: t('setting.dataSourceFieldGcsAccessKeyId'),
       name: 'config.credentials.access_key_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'GCS Secret Access Key',
+      label: t('setting.dataSourceFieldGcsSecretAccessKey'),
       name: 'config.credentials.secret_access_key',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Bucket Name',
+      label: t('setting.dataSourceFieldBucketName'),
       name: 'config.bucket_name',
       type: FormFieldType.Text,
       required: true,
@@ -269,31 +789,31 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.OCI_STORAGE]: [
     {
-      label: 'OCI Namespace',
+      label: t('setting.dataSourceFieldOciNamespace'),
       name: 'config.credentials.namespace',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'OCI Region',
+      label: t('setting.dataSourceFieldOciRegion'),
       name: 'config.credentials.region',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'OCI Access Key ID',
+      label: t('setting.dataSourceFieldOciAccessKeyId'),
       name: 'config.credentials.access_key_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'OCI Secret Access Key',
+      label: t('setting.dataSourceFieldOciSecretAccessKey'),
       name: 'config.credentials.secret_access_key',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Bucket Name',
+      label: t('setting.dataSourceFieldBucketName'),
       name: 'config.bucket_name',
       type: FormFieldType.Text,
       required: true,
@@ -301,25 +821,25 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.R2]: [
     {
-      label: 'R2 Account ID',
+      label: t('setting.dataSourceFieldR2AccountId'),
       name: 'config.credentials.account_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'R2 Access Key ID',
+      label: t('setting.dataSourceFieldR2AccessKeyId'),
       name: 'config.credentials.r2_access_key_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'R2 Secret Access Key',
+      label: t('setting.dataSourceFieldR2SecretAccessKey'),
       name: 'config.credentials.r2_secret_access_key',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Bucket Name',
+      label: t('setting.dataSourceFieldBucketName'),
       name: 'config.bucket_name',
       type: FormFieldType.Text,
       required: true,
@@ -328,13 +848,13 @@ export const DataSourceFormFields = {
   [DataSourceKey.S3]: S3Constant(t),
   [DataSourceKey.NOTION]: [
     {
-      label: 'Notion Integration Token',
+      label: t('setting.dataSourceFieldNotionIntegrationToken'),
       name: 'config.credentials.notion_integration_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Root Page Id',
+      label: t('setting.dataSourceFieldRootPageId'),
       name: 'config.root_page_id',
       type: FormFieldType.Text,
       required: false,
@@ -342,19 +862,19 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.DISCORD]: [
     {
-      label: 'Discord Bot Token',
+      label: t('setting.dataSourceFieldDiscordBotToken'),
       name: 'config.credentials.discord_bot_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Server IDs',
+      label: t('setting.dataSourceFieldServerIds'),
       name: 'config.server_ids',
       type: FormFieldType.Tag,
       required: false,
     },
     {
-      label: 'Channels',
+      label: t('setting.dataSourceFieldChannels'),
       name: 'config.channels',
       type: FormFieldType.Tag,
       required: false,
@@ -364,7 +884,7 @@ export const DataSourceFormFields = {
   [DataSourceKey.CONFLUENCE]: confluenceConstant(t),
   [DataSourceKey.GOOGLE_DRIVE]: [
     {
-      label: 'Primary Admin Email',
+      label: t('setting.dataSourceFieldPrimaryAdminEmail'),
       name: 'config.credentials.google_primary_admin',
       type: FormFieldType.Text,
       required: true,
@@ -372,7 +892,7 @@ export const DataSourceFormFields = {
       tooltip: t('setting.google_drivePrimaryAdminTip'),
     },
     {
-      label: 'OAuth Token JSON',
+      label: t('setting.dataSourceFieldOauthTokenJson'),
       name: 'config.credentials.google_tokens',
       type: FormFieldType.Textarea,
       required: true,
@@ -385,7 +905,7 @@ export const DataSourceFormFields = {
       tooltip: t('setting.google_driveTokenTip'),
     },
     {
-      label: 'My Drive Emails',
+      label: t('setting.dataSourceFieldMyDriveEmails'),
       name: 'config.my_drive_emails',
       type: FormFieldType.Text,
       required: true,
@@ -393,7 +913,7 @@ export const DataSourceFormFields = {
       tooltip: t('setting.google_driveMyDriveEmailsTip'),
     },
     {
-      label: 'Shared Folder URLs',
+      label: t('setting.dataSourceFieldSharedFolderUrls'),
       name: 'config.shared_folder_urls',
       type: FormFieldType.Textarea,
       required: true,
@@ -458,7 +978,7 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.GMAIL]: [
     {
-      label: 'Primary Admin Email',
+      label: t('setting.dataSourceFieldPrimaryAdminEmail'),
       name: 'config.credentials.google_primary_admin',
       type: FormFieldType.Text,
       required: true,
@@ -466,7 +986,7 @@ export const DataSourceFormFields = {
       tooltip: t('setting.gmailPrimaryAdminTip'),
     },
     {
-      label: 'OAuth Token JSON',
+      label: t('setting.dataSourceFieldOauthTokenJson'),
       name: 'config.credentials.google_tokens',
       type: FormFieldType.Textarea,
       required: true,
@@ -489,141 +1009,107 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.MOODLE]: [
     {
-      label: 'Moodle URL',
+      label: t('setting.dataSourceFieldMoodleUrl'),
       name: 'config.moodle_url',
       type: FormFieldType.Text,
       required: true,
       placeholder: 'https://moodle.example.com',
     },
     {
-      label: 'API Token',
+      label: t('setting.dataSourceFieldApiToken'),
       name: 'config.credentials.moodle_token',
       type: FormFieldType.Password,
       required: true,
     },
   ],
-  [DataSourceKey.JIRA]: [
+  [DataSourceKey.TEAMS]: [
     {
-      label: 'Jira Base URL',
-      name: 'config.base_url',
+      label: t('setting.dataSourceFieldTenantId'),
+      name: 'config.credentials.tenant_id',
       type: FormFieldType.Text,
       required: true,
-      placeholder: 'https://your-domain.atlassian.net',
-      tooltip: t('setting.jiraBaseUrlTip'),
+      tooltip: t('setting.teamsTenantIdTip'),
     },
     {
-      label: 'Project Key',
-      name: 'config.project_key',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'RAGFlow',
-      tooltip: t('setting.jiraProjectKeyTip'),
-    },
-    {
-      label: 'Custom JQL',
-      name: 'config.jql_query',
-      type: FormFieldType.Textarea,
-      required: false,
-      placeholder: 'project = RAG AND updated >= -7d',
-      tooltip: t('setting.jiraJqlTip'),
-    },
-    {
-      label: 'Batch Size',
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      tooltip: t('setting.jiraBatchSizeTip'),
-    },
-    {
-      label: 'Include Comments',
-      name: 'config.include_comments',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: true,
-      tooltip: t('setting.jiraCommentsTip'),
-    },
-    {
-      label: 'Include Attachments',
-      name: 'config.include_attachments',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: false,
-      tooltip: t('setting.jiraAttachmentsTip'),
-    },
-    {
-      label: 'Attachment Size Limit (bytes)',
-      name: 'config.attachment_size_limit',
-      type: FormFieldType.Number,
-      required: false,
-      defaultValue: 10 * 1024 * 1024,
-      tooltip: t('setting.jiraAttachmentSizeTip'),
-    },
-    {
-      label: 'Labels to Skip',
-      name: 'config.labels_to_skip',
-      type: FormFieldType.Tag,
-      required: false,
-      tooltip: t('setting.jiraLabelsTip'),
-    },
-    {
-      label: 'Comment Email Blacklist',
-      name: 'config.comment_email_blacklist',
-      type: FormFieldType.Tag,
-      required: false,
-      tooltip: t('setting.jiraBlacklistTip'),
-    },
-    {
-      label: 'Use Scoped Token (Clould only)',
-      name: 'config.scoped_token',
-      type: FormFieldType.Checkbox,
-      required: false,
-      tooltip: t('setting.jiraScopedTokenTip'),
-    },
-    {
-      label: 'Jira User Email (Cloud) or User Name (Server)',
-      name: 'config.credentials.jira_user_email',
+      label: t('setting.dataSourceFieldClientId'),
+      name: 'config.credentials.client_id',
       type: FormFieldType.Text,
       required: true,
-      placeholder: 'you@example.com',
-      tooltip: t('setting.jiraEmailTip'),
     },
     {
-      label: 'Jira API Token (Cloud only)',
-      name: 'config.credentials.jira_api_token',
+      label: t('setting.dataSourceFieldClientSecret'),
+      name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.jiraTokenTip'),
-    },
-    {
-      label: 'Jira Password (Server only)',
-      name: 'config.credentials.jira_password',
-      type: FormFieldType.Password,
-      required: false,
-      tooltip: t('setting.jiraPasswordTip'),
+      required: true,
     },
   ],
+  [DataSourceKey.SLACK]: [
+    {
+      label: t('setting.dataSourceFieldSlackBotToken'),
+      name: 'config.credentials.slack_bot_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.slackBotTokenTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldChannels'),
+      name: 'config.channels',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.slackChannelsTip'),
+    },
+  ],
+  [DataSourceKey.SHAREPOINT]: [
+    {
+      label: t('setting.dataSourceFieldSiteUrl'),
+      name: 'config.credentials.site_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://contoso.sharepoint.com/sites/MySite',
+      tooltip: t('setting.sharepointSiteUrlTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldTenantId'),
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: t('setting.dataSourceFieldClientId'),
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: t('setting.dataSourceFieldClientSecret'),
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
+  [DataSourceKey.JIRA]: jiraConstant(t),
   [DataSourceKey.WEBDAV]: [
     {
-      label: 'WebDAV Server URL',
+      label: t('setting.dataSourceFieldWebdavServerUrl'),
       name: 'config.base_url',
       type: FormFieldType.Text,
       required: true,
       placeholder: 'https://webdav.example.com',
     },
     {
-      label: 'Username',
+      label: t('setting.dataSourceFieldUsername'),
       name: 'config.credentials.username',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Password',
+      label: t('setting.dataSourceFieldPassword'),
       name: 'config.credentials.password',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Remote Path',
+      label: t('setting.dataSourceFieldRemotePath'),
       name: 'config.remote_path',
       type: FormFieldType.Text,
       required: false,
@@ -633,14 +1119,14 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.DROPBOX]: [
     {
-      label: 'Access Token',
+      label: t('setting.dataSourceFieldAccessToken'),
       name: 'config.credentials.dropbox_access_token',
       type: FormFieldType.Password,
       required: true,
       tooltip: t('setting.dropboxAccessTokenTip'),
     },
     {
-      label: 'Batch Size',
+      label: t('setting.dataSourceFieldBatchSize'),
       name: 'config.batch_size',
       type: FormFieldType.Number,
       required: false,
@@ -649,7 +1135,7 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.BOX]: [
     {
-      label: 'Box OAuth JSON',
+      label: t('setting.dataSourceFieldBoxOauthConfiguration'),
       name: 'config.credentials.box_tokens',
       type: FormFieldType.Textarea,
       required: true,
@@ -662,7 +1148,7 @@ export const DataSourceFormFields = {
       ),
     },
     {
-      label: 'Folder ID',
+      label: t('setting.dataSourceFieldFolderId'),
       name: 'config.folder_id',
       type: FormFieldType.Text,
       required: false,
@@ -671,19 +1157,19 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.AIRTABLE]: [
     {
-      label: 'Access Token',
+      label: t('setting.dataSourceFieldAccessToken'),
       name: 'config.credentials.airtable_access_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Base ID',
+      label: t('setting.dataSourceFieldBaseId'),
       name: 'config.base_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Table Name OR ID',
+      label: t('setting.dataSourceFieldTableNameOrId'),
       name: 'config.table_name_or_id',
       type: FormFieldType.Text,
       required: true,
@@ -691,19 +1177,19 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.DINGTALK_AI_TABLE]: [
     {
-      label: 'Access Token',
+      label: t('setting.dataSourceFieldAccessToken'),
       name: 'config.credentials.access_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Base ID',
+      label: t('setting.dataSourceFieldBaseId'),
       name: 'config.table_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Operator ID',
+      label: t('setting.dataSourceFieldOperatorId'),
       name: 'config.operator_id',
       type: FormFieldType.Text,
       required: true,
@@ -711,46 +1197,46 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.GITLAB]: [
     {
-      label: 'Project Owner',
+      label: t('setting.dataSourceFieldProjectOwner'),
       name: 'config.project_owner',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Project Name',
+      label: t('setting.dataSourceFieldProjectName'),
       name: 'config.project_name',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'GitLab Personal Access Token',
+      label: t('setting.dataSourceFieldGitlabPersonalAccessToken'),
       name: 'config.credentials.gitlab_access_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'GitLab URL',
+      label: t('setting.dataSourceFieldGitlabUrl'),
       name: 'config.gitlab_url',
       type: FormFieldType.Text,
       required: true,
       placeholder: 'https://gitlab.com',
     },
     {
-      label: 'include Merge Requests',
+      label: t('setting.dataSourceIncludeMergeRequests'),
       name: 'config.include_mrs',
       type: FormFieldType.Checkbox,
       required: false,
       defaultValue: true,
     },
     {
-      label: 'include Issues',
+      label: t('setting.dataSourceIncludeIssues'),
       name: 'config.include_issues',
       type: FormFieldType.Checkbox,
       required: false,
       defaultValue: true,
     },
     {
-      label: 'include Code Files',
+      label: t('setting.dataSourceIncludeCodeFiles'),
       name: 'config.include_code_files',
       type: FormFieldType.Checkbox,
       required: false,
@@ -759,25 +1245,25 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.ASANA]: [
     {
-      label: 'API Token',
+      label: t('setting.dataSourceFieldApiToken'),
       name: 'config.credentials.asana_api_token_secret',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Workspace ID',
+      label: t('setting.dataSourceFieldWorkspaceId'),
       name: 'config.asana_workspace_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Project IDs',
+      label: t('setting.dataSourceFieldProjectIds'),
       name: 'config.asana_project_ids',
       type: FormFieldType.Text,
       required: false,
     },
     {
-      label: 'Team ID',
+      label: t('setting.dataSourceFieldTeamId'),
       name: 'config.asana_team_id',
       type: FormFieldType.Text,
       required: false,
@@ -785,71 +1271,71 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.GITHUB]: [
     {
-      label: 'Repository Owner',
+      label: t('setting.dataSourceFieldRepositoryOwner'),
       name: 'config.repository_owner',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Repository Name',
+      label: t('setting.dataSourceFieldRepositoryName'),
       name: 'config.repository_name',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'GitHub Access Token',
+      label: t('setting.dataSourceFieldGithubAccessToken'),
       name: 'config.credentials.github_access_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Inlcude Pull Requests',
+      label: t('setting.dataSourceIncludePullRequests'),
       name: 'config.include_pull_requests',
       type: FormFieldType.Checkbox,
       required: false,
-      defaultValue: false,
+      defaultValue: true,
     },
     {
-      label: 'Inlcude Issues',
+      label: t('setting.dataSourceFieldIncludeIssues'),
       name: 'config.include_issues',
       type: FormFieldType.Checkbox,
       required: false,
-      defaultValue: false,
+      defaultValue: true,
     },
   ],
   [DataSourceKey.IMAP]: [
     {
-      label: 'Username',
+      label: t('setting.dataSourceFieldUsername'),
       name: 'config.credentials.imap_username',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Password',
+      label: t('setting.dataSourceFieldPassword'),
       name: 'config.credentials.imap_password',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Host',
+      label: t('setting.dataSourceFieldHost'),
       name: 'config.imap_host',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Port',
+      label: t('setting.dataSourceFieldPort'),
       name: 'config.imap_port',
       type: FormFieldType.Number,
       required: true,
     },
     {
-      label: 'Mailboxes',
+      label: t('setting.dataSourceFieldMailboxes'),
       name: 'config.imap_mailbox',
       type: FormFieldType.Tag,
       required: false,
     },
     {
-      label: 'Poll Range',
+      label: t('setting.dataSourceFieldPollRange'),
       name: 'config.poll_range',
       type: FormFieldType.Number,
       required: false,
@@ -858,70 +1344,70 @@ export const DataSourceFormFields = {
   [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
   [DataSourceKey.ZENDESK]: [
     {
-      label: 'Zendesk Domain',
+      label: t('setting.dataSourceFieldZendeskDomain'),
       name: 'config.credentials.zendesk_subdomain',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Zendesk Email',
+      label: t('setting.dataSourceFieldZendeskEmail'),
       name: 'config.credentials.zendesk_email',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Zendesk Token',
+      label: t('setting.dataSourceFieldZendeskToken'),
       name: 'config.credentials.zendesk_token',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'Content',
+      label: t('setting.dataSourceFieldContent'),
       name: 'config.zendesk_content_type',
       type: FormFieldType.Segmented,
       required: true,
       options: [
-        { label: 'Articles', value: 'articles' },
-        { label: 'Tickets', value: 'tickets' },
+        { label: t('setting.dataSourceOptionArticles'), value: 'articles' },
+        { label: t('setting.dataSourceOptionTickets'), value: 'tickets' },
       ],
     },
   ],
   [DataSourceKey.SEAFILE]: seafileConstant(t),
   [DataSourceKey.MYSQL]: [
     {
-      label: 'Host',
+      label: t('setting.dataSourceFieldHost'),
       name: 'config.host',
       type: FormFieldType.Text,
       required: true,
       placeholder: 'localhost',
     },
     {
-      label: 'Port',
+      label: t('setting.dataSourceFieldPort'),
       name: 'config.port',
       type: FormFieldType.Number,
       required: true,
       placeholder: '3306',
     },
     {
-      label: 'Database',
+      label: t('setting.dataSourceFieldDatabase'),
       name: 'config.database',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Username',
+      label: t('setting.dataSourceFieldUsername'),
       name: 'config.credentials.username',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Password',
+      label: t('setting.dataSourceFieldPassword'),
       name: 'config.credentials.password',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'SQL Query',
+      label: t('setting.dataSourceFieldSqlQuery'),
       name: 'config.query',
       type: FormFieldType.Textarea,
       required: false,
@@ -929,49 +1415,73 @@ export const DataSourceFormFields = {
       tooltip: t('setting.mysqlQueryTip'),
     },
     {
-      label: 'Content Columns',
+      label: t('setting.dataSourceFieldContentColumns'),
       name: 'config.content_columns',
       type: FormFieldType.Text,
       required: false,
       placeholder: 'title,description,content',
       tooltip: t('setting.mysqlContentColumnsTip'),
     },
+    {
+      label: t('setting.dataSourceFieldMetadataColumns'),
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.mysqlMetadataColumnsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldIdColumn'),
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.mysqlIdColumnTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldTimestampColumn'),
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.mysqlTimestampColumnTip'),
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
-      label: 'Host',
+      label: t('setting.dataSourceFieldHost'),
       name: 'config.host',
       type: FormFieldType.Text,
       required: true,
       placeholder: 'localhost',
     },
     {
-      label: 'Port',
+      label: t('setting.dataSourceFieldPort'),
       name: 'config.port',
       type: FormFieldType.Number,
       required: true,
       placeholder: '5432',
     },
     {
-      label: 'Database',
+      label: t('setting.dataSourceFieldDatabase'),
       name: 'config.database',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Username',
+      label: t('setting.dataSourceFieldUsername'),
       name: 'config.credentials.username',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Password',
+      label: t('setting.dataSourceFieldPassword'),
       name: 'config.credentials.password',
       type: FormFieldType.Password,
       required: true,
     },
     {
-      label: 'SQL Query',
+      label: t('setting.dataSourceFieldSqlQuery'),
       name: 'config.query',
       type: FormFieldType.Textarea,
       required: false,
@@ -979,15 +1489,490 @@ export const DataSourceFormFields = {
       tooltip: t('setting.postgresqlQueryTip'),
     },
     {
-      label: 'Content Columns',
+      label: t('setting.dataSourceFieldContentColumns'),
       name: 'config.content_columns',
       type: FormFieldType.Text,
       required: false,
       placeholder: 'title,description,content',
       tooltip: t('setting.postgresqlContentColumnsTip'),
     },
+    {
+      label: t('setting.dataSourceFieldMetadataColumns'),
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id,category,status',
+      tooltip: t('setting.postgresqlMetadataColumnsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldIdColumn'),
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.postgresqlIdColumnTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldTimestampColumn'),
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
   ],
-};
+  [DataSourceKey.BIGQUERY]: [
+    {
+      label: t('setting.dataSourceFieldProjectId'),
+      name: 'config.project_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'my-gcp-project',
+      tooltip: t('setting.bigqueryProjectIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldLocation'),
+      name: 'config.location',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'US',
+      tooltip: t('setting.bigqueryLocationTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldServiceAccountJson'),
+      name: 'config.credentials.service_account_json',
+      type: FormFieldType.Password,
+      required: true,
+      placeholder: '{ "type": "service_account", "project_id": "...", ... }',
+      tooltip: t('setting.bigqueryServiceAccountJsonTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldDatasetId'),
+      name: 'config.dataset_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'analytics',
+      tooltip: t('setting.bigqueryDatasetIdTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(values?.config?.query ?? '').trim();
+        const hasTable = !!(values?.config?.table_id ?? '').trim();
+        if (!hasQuery && !((val ?? '').trim() && hasTable)) {
+          return t('setting.dataSourceBigqueryDatasetIdRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldTableId'),
+      name: 'config.table_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'customers',
+      tooltip: t('setting.bigqueryTableIdTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(values?.config?.query ?? '').trim();
+        const hasDataset = !!(values?.config?.dataset_id ?? '').trim();
+        if (!hasQuery && !(hasDataset && (val ?? '').trim())) {
+          return t('setting.dataSourceBigqueryTableIdRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldSqlQuery'),
+      name: 'config.query',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: 'Leave empty to use Dataset ID + Table ID',
+      tooltip: t('setting.bigqueryQueryTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(val ?? '').trim();
+        const hasDataset = !!(values?.config?.dataset_id ?? '').trim();
+        const hasTable = !!(values?.config?.table_id ?? '').trim();
+        if (!hasQuery && !(hasDataset && hasTable)) {
+          return t('setting.dataSourceBigqueryQueryRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldContentColumns'),
+      name: 'config.content_columns',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'name,description,notes',
+      tooltip: t('setting.bigqueryContentColumnsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldMetadataColumns'),
+      name: 'config.metadata_columns',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'customer_id,status,region',
+      tooltip: t('setting.bigqueryMetadataColumnsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldIdColumn'),
+      name: 'config.id_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'customer_id',
+      tooltip: t('setting.bigqueryIdColumnTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldTimestampColumn'),
+      name: 'config.timestamp_column',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.bigqueryTimestampColumnTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldMaxBytesBilled'),
+      name: 'config.maximum_bytes_billed',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '1073741824',
+      tooltip: t('setting.bigqueryMaximumBytesBilledTip'),
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldMaxBytesBilled'),
+        }),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldJobTimeout'),
+      name: 'config.job_timeout_ms',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '300000',
+      tooltip: t('setting.bigqueryJobTimeoutMsTip'),
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldJobTimeout'),
+        }),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldPageSize'),
+      name: 'config.page_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '1000',
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldPageSize'),
+        }),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '100',
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldUseQueryCache'),
+      name: 'config.use_query_cache',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+  ],
+  [DataSourceKey.REST_API]: [
+    // ── Essential fields ──────────────────────────────────────────────
+    {
+      label: t('setting.dataSourceFieldBaseUrl'),
+      name: 'config.url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://api.example.com/v1/resources',
+    },
+    {
+      label: t('setting.dataSourceFieldHttpMethod'),
+      name: 'config.method',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'GET', value: 'GET' },
+        { label: 'POST', value: 'POST' },
+      ],
+      defaultValue: 'GET',
+    },
+    {
+      label: t('setting.dataSourceFieldQueryParameters'),
+      name: 'config.query_params',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `key=value\none_per_line=true`,
+      tooltip: t('setting.restApiQueryParamsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldItemsPath'),
+      name: 'config.items_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '$.items',
+      tooltip: t('setting.restApiItemsPathTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldIdField'),
+      name: 'config.id_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'id',
+      tooltip: t('setting.restApiIdFieldTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldAuthType'),
+      name: 'config.auth_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: t('setting.dataSourceOptionNone'), value: 'none' },
+        {
+          label: t('setting.dataSourceOptionApiKeyHeader'),
+          value: 'api_key_header',
+        },
+        { label: t('setting.dataSourceOptionBearerToken'), value: 'bearer' },
+        { label: t('setting.dataSourceOptionBasicAuth'), value: 'basic' },
+      ],
+      defaultValue: 'none',
+    },
+    {
+      label: t('setting.dataSourceFieldApiKeyHeaderName'),
+      name: 'config.auth_config.header_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'X-API-Key',
+      shouldRender: (values: any) =>
+        values?.config?.auth_type === 'api_key_header',
+      customValidate: (val: string, values: any) => {
+        if (
+          values?.config?.auth_type === 'api_key_header' &&
+          !(val != null && String(val).trim())
+        ) {
+          return t('setting.restApiValidationApiKeyHeaderNameRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldApiKeyValue'),
+      name: 'config.credentials.api_key',
+      type: FormFieldType.Password,
+      required: false,
+      shouldRender: (values: any) =>
+        values?.config?.auth_type === 'api_key_header',
+      customValidate: (val: string, values: any) => {
+        if (values?.config?.auth_type === 'api_key_header' && !val) {
+          return t('setting.restApiValidationApiKeyRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBearerToken'),
+      name: 'config.credentials.token',
+      type: FormFieldType.Password,
+      required: false,
+      shouldRender: (values: any) => values?.config?.auth_type === 'bearer',
+      customValidate: (val: string, values: any) => {
+        if (values?.config?.auth_type === 'bearer' && !val) {
+          return t('setting.restApiValidationBearerTokenRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldUsername'),
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: false,
+      shouldRender: (values: any) => values?.config?.auth_type === 'basic',
+      customValidate: (val: string, values: any) => {
+        if (
+          values?.config?.auth_type === 'basic' &&
+          !(val != null && String(val).trim())
+        ) {
+          return t('setting.restApiValidationBasicUsernameRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldPassword'),
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: false,
+      shouldRender: (values: any) => values?.config?.auth_type === 'basic',
+      customValidate: (val: string, values: any) => {
+        if (values?.config?.auth_type === 'basic' && !val) {
+          return t('setting.restApiValidationBasicPasswordRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldContentFields'),
+      name: 'config.content_fields',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'title,body',
+      tooltip: t('setting.restApiContentFieldsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldMetadataFields'),
+      name: 'config.metadata_fields',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'author,category',
+      tooltip: t('setting.restApiMetadataFieldsTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldPaginationType'),
+      name: 'config.pagination_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: t('setting.dataSourceOptionNone'), value: 'none' },
+        { label: t('setting.dataSourceOptionPage'), value: 'page' },
+        { label: t('setting.dataSourceOptionOffset'), value: 'offset' },
+        { label: t('setting.dataSourceOptionCursor'), value: 'cursor' },
+      ],
+      defaultValue: 'none',
+    },
+    {
+      label: t('setting.dataSourceFieldStartPage'),
+      name: 'config.pagination_config.start_page',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 1,
+      shouldRender: (values: any) => values?.config?.pagination_type === 'page',
+    },
+    {
+      label: t('setting.dataSourceFieldOffsetParam'),
+      name: 'config.pagination_config.offset_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'offset',
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: t('setting.dataSourceFieldStartOffset'),
+      name: 'config.pagination_config.start_offset',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 0,
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: t('setting.dataSourceFieldCursorParam'),
+      name: 'config.pagination_config.cursor_param',
+      type: FormFieldType.Text,
+      required: false,
+      defaultValue: 'cursor',
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'cursor',
+    },
+    {
+      label: t('setting.dataSourceFieldNextCursorJsonpath'),
+      name: 'config.pagination_config.next_cursor_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '$.next_cursor',
+      shouldRender: (values: any) =>
+        values?.config?.pagination_type === 'cursor',
+      tooltip: t('setting.restApiNextCursorPathTip'),
+    },
+    // ── Advanced settings toggle ──────────────────────────────────────
+    {
+      label: t('setting.dataSourceFieldAdvancedSettings'),
+      name: 'config.show_advanced',
+      type: FormFieldType.Switch,
+      required: false,
+      defaultValue: false,
+    },
+    // ── Advanced fields (hidden until toggled) ────────────────────────
+    {
+      label: t('setting.dataSourceFieldCustomHeaders'),
+      name: 'config.headers',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `{"X-Custom-Header": "value"}`,
+      tooltip: t('setting.restApiHeadersTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: t('setting.dataSourceFieldLimitParam'),
+      name: 'config.pagination_config.limit_param',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'limit (leave empty if already in Query Parameters)',
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'offset',
+    },
+    {
+      label: t('setting.dataSourceFieldInitialCursor'),
+      name: 'config.pagination_config.initial_cursor',
+      type: FormFieldType.Text,
+      required: false,
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced &&
+        values?.config?.pagination_type === 'cursor',
+    },
+    {
+      label: t('setting.dataSourceFieldMaxPages'),
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 1000,
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: t('setting.dataSourceFieldRequestDelay'),
+      name: 'config.request_delay',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 0.5,
+      placeholder: '0.5',
+      tooltip: t('setting.restApiRequestDelayTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: t('setting.dataSourceFieldPollTimestampField'),
+      name: 'config.poll_timestamp_field',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'updated_at',
+      tooltip: t('setting.restApiPollTimestampFieldTip'),
+      shouldRender: (values: any) => !!values?.config?.show_advanced,
+    },
+    {
+      label: t('setting.dataSourceFieldRequestBody'),
+      name: 'config.request_body',
+      type: FormFieldType.Textarea,
+      required: false,
+      placeholder: `{"status": "published"}`,
+      tooltip: t('setting.restApiRequestBodyTip'),
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced && values?.config?.method === 'POST',
+    },
+  ],
+});
 
 export const DataSourceFormDefaultValues = {
   [DataSourceKey.RSS]: {
@@ -1128,10 +2113,44 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.TEAMS]: {
+    name: '',
+    source: DataSourceKey.TEAMS,
+    config: {
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.SLACK]: {
+    name: '',
+    source: DataSourceKey.SLACK,
+    config: {
+      channels: [],
+      credentials: {
+        slack_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    name: '',
+    source: DataSourceKey.SHAREPOINT,
+    config: {
+      credentials: {
+        site_url: '',
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
   [DataSourceKey.JIRA]: {
     name: '',
     source: DataSourceKey.JIRA,
     config: {
+      is_cloud: true,
       base_url: '',
       project_key: '',
       jql_query: '',
@@ -1144,6 +2163,7 @@ export const DataSourceFormDefaultValues = {
       scoped_token: false,
       credentials: {
         jira_user_email: '',
+        jira_username: '',
         jira_api_token: '',
         jira_password: '',
       },
@@ -1239,8 +2259,8 @@ export const DataSourceFormDefaultValues = {
     config: {
       repository_owner: '',
       repository_name: '',
-      include_pull_requests: false,
-      include_issues: false,
+      include_pull_requests: true,
+      include_issues: true,
       credentials: {
         github_access_token: '',
       },
@@ -1339,4 +2359,156 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.BIGQUERY]: {
+    name: '',
+    source: DataSourceKey.BIGQUERY,
+    config: {
+      project_id: '',
+      dataset_id: '',
+      table_id: '',
+      location: '',
+      query: '',
+      content_columns: '',
+      metadata_columns: '',
+      id_column: '',
+      timestamp_column: '',
+      batch_size: 100,
+      page_size: 1000,
+      maximum_bytes_billed: 1073741824,
+      job_timeout_ms: 300000,
+      use_query_cache: true,
+      credentials: {
+        service_account_json: '',
+      },
+    },
+  },
+  [DataSourceKey.ONEDRIVE]: {
+    name: '',
+    source: DataSourceKey.ONEDRIVE,
+    config: {
+      folder_path: '',
+      batch_size: 2,
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.OUTLOOK]: {
+    name: '',
+    source: DataSourceKey.OUTLOOK,
+    config: {
+      folder: 'inbox',
+      user_ids: '',
+      batch_size: 2,
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.SALESFORCE]: {
+    name: '',
+    source: DataSourceKey.SALESFORCE,
+    config: {
+      objects: '',
+      api_version: 'v59.0',
+      batch_size: 2,
+      credentials: {
+        instance_url: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_BLOB]: {
+    name: '',
+    source: DataSourceKey.AZURE_BLOB,
+    config: {
+      auth_mode: 'account_key',
+      prefix: '',
+      batch_size: 2,
+      credentials: {
+        account_name: '',
+        account_key: '',
+        connection_string: '',
+        container_url: '',
+        sas_token: '',
+        container_name: '',
+      },
+    },
+  },
+  [DataSourceKey.REST_API]: {
+    name: '',
+    source: DataSourceKey.REST_API,
+    config: {
+      url: '',
+      method: 'GET',
+      query_params: '',
+      headers: '',
+      auth_type: 'none',
+      auth_config: {},
+      items_path: '',
+      id_field: '',
+      content_fields: '',
+      metadata_fields: '',
+      pagination_type: 'none',
+      pagination_config: {},
+      poll_timestamp_field: '',
+      request_body: '',
+      max_pages: 1000,
+      request_delay: 0.5,
+      show_advanced: false,
+      credentials: {
+        api_key: '',
+        token: '',
+        username: '',
+        password: '',
+      },
+    },
+  },
+};
+
+export const getDataSourceFieldsWithExtras = (
+  t: TFunction,
+  source?: DataSourceKey,
+) => {
+  if (!source) {
+    return [];
+  }
+
+  const formFields = generateDataSourceFormFields(t);
+  const sourceFields = formFields[source] || [];
+  const extraFields = getCommonExtraFields(t, source);
+
+  if (source !== DataSourceKey.JIRA) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const modeFieldIndex = sourceFields.findIndex(
+    (field) => field.name === 'config.is_cloud',
+  );
+  if (modeFieldIndex < 0) {
+    return [...sourceFields, ...extraFields];
+  }
+
+  const sharedFields = sourceFields.slice(0, modeFieldIndex);
+  const modeFields = sourceFields.slice(modeFieldIndex);
+
+  const sharedCheckboxFieldIndex = sharedFields.findIndex(
+    (field) => field.type === FormFieldType.Checkbox,
+  );
+
+  if (sharedCheckboxFieldIndex < 0) {
+    return [...sharedFields, ...extraFields, ...modeFields];
+  }
+
+  return [
+    ...sharedFields.slice(0, sharedCheckboxFieldIndex),
+    ...sharedFields.slice(sharedCheckboxFieldIndex),
+    ...extraFields,
+    ...modeFields,
+  ];
 };

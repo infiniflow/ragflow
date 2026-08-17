@@ -53,6 +53,22 @@ func (l *Lexer) peekChar() byte {
 	return l.input[l.readPos]
 }
 
+func (l *Lexer) peekToken() string {
+	// Skip whitespace starting from readPos
+	skipPos := l.readPos
+	for skipPos < len(l.input) && (l.input[skipPos] == ' ' || l.input[skipPos] == '\t' || l.input[skipPos] == '\n' || l.input[skipPos] == '\r') {
+		skipPos++
+	}
+
+	// Read identifier starting from skipPos
+	start := skipPos
+	for skipPos < len(l.input) && (isLetter(l.input[skipPos]) || isDigit(l.input[skipPos]) || l.input[skipPos] == '_' || l.input[skipPos] == '-' || l.input[skipPos] == '.') {
+		skipPos++
+	}
+
+	return l.input[start:skipPos]
+}
+
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
 		l.readChar()
@@ -72,6 +88,18 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		tok = newToken(TokenComma, l.ch)
 		l.readChar()
+	case '/':
+		tok = newToken(TokenSlash, l.ch)
+		l.readChar()
+	case '-':
+		tok = newToken(TokenDash, l.ch)
+		l.readChar()
+	case '[':
+		tok = newToken(TokenLBracket, l.ch)
+		l.readChar()
+	case ']':
+		tok = newToken(TokenRBracket, l.ch)
+		l.readChar()
 	case '\'':
 		tok.Type = TokenQuotedString
 		tok.Value = l.readQuotedString('\'')
@@ -86,17 +114,16 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = TokenEOF
 		tok.Value = ""
 	default:
-		if isLetter(l.ch) {
+		if isLetter(l.ch) || l.ch == '_' {
 			ident := l.readIdentifier()
 			return l.lookupIdent(ident)
 		} else if isDigit(l.ch) {
-			tok.Type = TokenNumber
-			tok.Value = l.readNumber()
+			tok.Value, tok.Type = l.readNumber()
 			return tok
-		} else {
-			tok = newToken(TokenIllegal, l.ch)
-			l.readChar()
 		}
+
+		tok = newToken(TokenIllegal, l.ch)
+		l.readChar()
 	}
 
 	return tok
@@ -123,12 +150,25 @@ func (l *Lexer) readIdentifier() string {
 	return l.input[start:l.pos]
 }
 
-func (l *Lexer) readNumber() string {
+func (l *Lexer) readNumber() (string, int) {
 	start := l.pos
+	tokenType := TokenInteger
+
+	// Read integer part
 	for isDigit(l.ch) {
 		l.readChar()
 	}
-	return l.input[start:l.pos]
+
+	// If encountering a decimal point followed by a digit, read as float
+	if l.ch == '.' && isDigit(l.peekChar()) {
+		tokenType = TokenFloat
+		l.readChar() // Consume '.'
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+	}
+
+	return l.input[start:l.pos], tokenType
 }
 
 func (l *Lexer) readQuotedString(quote byte) string {
@@ -165,8 +205,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenService, Value: ident}
 	case "SHUTDOWN":
 		return Token{Type: TokenShutdown, Value: ident}
-	case "STARTUP":
-		return Token{Type: TokenStartup, Value: ident}
 	case "RESTART":
 		return Token{Type: TokenRestart, Value: ident}
 	case "USERS":
@@ -179,10 +217,22 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAlter, Value: ident}
 	case "ACTIVE":
 		return Token{Type: TokenActive, Value: ident}
+	case "INACTIVE":
+		return Token{Type: TokenInactive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
+	case "SERVER":
+		return Token{Type: TokenServer, Value: ident}
+	case "API":
+		return Token{Type: TokenAPI, Value: ident}
 	case "ADD":
 		return Token{Type: TokenAdd, Value: ident}
+	case "LIVE":
+		return Token{Type: TokenLive, Value: ident}
+	case "HEALTH":
+		return Token{Type: TokenHealth, Value: ident}
+	case "HOST":
+		return Token{Type: TokenHost, Value: ident}
 	case "DELETE":
 		return Token{Type: TokenDelete, Value: ident}
 	case "PASSWORD":
@@ -195,6 +245,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenOf, Value: ident}
 	case "AGENTS":
 		return Token{Type: TokenAgents, Value: ident}
+	case "SEARCHES":
+		return Token{Type: TokenSearches, Value: ident}
 	case "ROLE":
 		return Token{Type: TokenRole, Value: ident}
 	case "ROLES":
@@ -233,6 +285,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenVars, Value: ident}
 	case "CONFIGS":
 		return Token{Type: TokenConfigs, Value: ident}
+	case "CONFIG":
+		return Token{Type: TokenConfig, Value: ident}
 	case "ENVS":
 		return Token{Type: TokenEnvs, Value: ident}
 	case "KEY":
@@ -255,8 +309,44 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "OPENAI_CHAT":
+		return Token{Type: TokenOpenaiChat, Value: ident}
+	case "MESSAGE":
+		return Token{Type: TokenMessage, Value: ident}
+	case "IMAGE":
+		return Token{Type: TokenImage, Value: ident}
+	case "VIDEO":
+		return Token{Type: TokenVideo, Value: ident}
+	case "AUDIO":
+		return Token{Type: TokenAudio, Value: ident}
 	case "THINK":
 		return Token{Type: TokenThink, Value: ident}
+	case "EFFORT":
+		return Token{Type: TokenEffort, Value: ident}
+	case "VERBOSITY":
+		return Token{Type: TokenVerbosity, Value: ident}
+	case "NONE":
+		return Token{Type: TokenNone, Value: ident}
+	case "MINIMAL":
+		return Token{Type: TokenMinimal, Value: ident}
+	case "LOW":
+		return Token{Type: TokenLow, Value: ident}
+	case "MEDIUM":
+		return Token{Type: TokenMedium, Value: ident}
+	case "HIGH":
+		return Token{Type: TokenHigh, Value: ident}
+	case "MAX":
+		return Token{Type: TokenMax, Value: ident}
+	case "STORE":
+		return Token{Type: TokenStore, Value: ident}
+	case "ENGINE":
+		return Token{Type: TokenEngine, Value: ident}
+	case "STREAM":
+		return Token{Type: TokenStream, Value: ident}
+	case "LS":
+		return Token{Type: TokenLS, Value: ident}
+	case "CAT":
+		return Token{Type: TokenCat, Value: ident}
 	case "FILES":
 		return Token{Type: TokenFiles, Value: ident}
 	case "AS":
@@ -273,26 +363,56 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenParser, Value: ident}
 	case "PIPELINE":
 		return Token{Type: TokenPipeline, Value: ident}
+	case "GET":
+		return Token{Type: TokenGet, Value: ident}
 	case "SEARCH":
 		return Token{Type: TokenSearch, Value: ident}
+	case "AGENT":
+		return Token{Type: TokenAgent, Value: ident}
+	case "MEMORY":
+		return Token{Type: TokenMemory, Value: ident}
+	case "MEMORIES":
+		return Token{Type: TokenMemories, Value: ident}
+	case "RETRIEVE":
+		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
-	case "LLM":
-		return Token{Type: TokenLLM, Value: ident}
-	case "VLM":
-		return Token{Type: TokenVLM, Value: ident}
+	case "SOFT":
+		return Token{Type: TokenSoft, Value: ident}
+	case "FINGERPRINT":
+		return Token{Type: TokenFingerprint, Value: ident}
+	case "LICENSE":
+		return Token{Type: TokenLicense, Value: ident}
+	case "VISION":
+		return Token{Type: TokenVision, Value: ident}
 	case "EMBEDDING":
 		return Token{Type: TokenEmbedding, Value: ident}
-	case "RERANKER":
-		return Token{Type: TokenReranker, Value: ident}
+	case "RERANK":
+		return Token{Type: TokenRerank, Value: ident}
 	case "ASR":
 		return Token{Type: TokenASR, Value: ident}
 	case "TTS":
 		return Token{Type: TokenTTS, Value: ident}
+	case "EMBED":
+		return Token{Type: TokenEmbed, Value: ident}
+	case "TEXT":
+		return Token{Type: TokenText, Value: ident}
+	case "QUERY":
+		return Token{Type: TokenQuery, Value: ident}
+	case "TOP":
+		return Token{Type: TokenTop, Value: ident}
+	case "DIMENSION":
+		return Token{Type: TokenDimension, Value: ident}
+	case "OCR":
+		return Token{Type: TokenOCR, Value: ident}
+	case "DOC_PARSE":
+		return Token{Type: TokenDocParse, Value: ident}
 	case "ASYNC":
 		return Token{Type: TokenAsync, Value: ident}
 	case "SYNC":
 		return Token{Type: TokenSync, Value: ident}
+	case "SYNC_LOGS":
+		return Token{Type: TokenSyncLogs, Value: ident}
 	case "BENCHMARK":
 		return Token{Type: TokenBenchmark, Value: ident}
 	case "PING":
@@ -303,14 +423,22 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenTokens, Value: ident}
 	case "INDEX":
 		return Token{Type: TokenIndex, Value: ident}
-	case "VECTOR_SIZE":
-		return Token{Type: TokenVectorSize, Value: ident}
-	case "DOC_META":
-		return Token{Type: TokenDocMeta, Value: ident}
+	case "VECTOR":
+		return Token{Type: TokenVector, Value: ident}
+	case "SIZE":
+		return Token{Type: TokenSize, Value: ident}
+	case "METADATA":
+		return Token{Type: TokenMetadata, Value: ident}
+	case "TABLE":
+		return Token{Type: TokenTable, Value: ident}
 	case "AVAILABLE":
 		return Token{Type: TokenAvailable, Value: ident}
+	case "SUPPORTED":
+		return Token{Type: TokenSupported, Value: ident}
 	case "NAME":
 		return Token{Type: TokenName, Value: ident}
+	case "BALANCE":
+		return Token{Type: TokenBalance, Value: ident}
 	case "INSTANCE":
 		return Token{Type: TokenInstance, Value: ident}
 	case "INSTANCES":
@@ -323,10 +451,130 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenInsert, Value: ident}
 	case "FILE":
 		return Token{Type: TokenFile, Value: ident}
-	case "METADATA":
-		return Token{Type: TokenMetadata, Value: ident}
 	case "USE":
 		return Token{Type: TokenUse, Value: ident}
+	case "CHECK":
+		return Token{Type: TokenCheck, Value: ident}
+	case "UPDATE":
+		return Token{Type: TokenUpdate, Value: ident}
+	case "REMOVE":
+		return Token{Type: TokenRemove, Value: ident}
+	case "EXPLAIN":
+		return Token{Type: TokenExplain, Value: ident}
+	case "CHUNK":
+		// Check if followed by STORE for compound token
+		if strings.ToUpper(l.peekToken()) == "STORE" {
+			// Skip whitespace to STORE
+			for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+				l.readChar()
+			}
+			// Skip past STORE
+			for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' || l.ch == '-' || l.ch == '.' {
+				l.readChar()
+			}
+			return Token{Type: TokenChunkStore, Value: "CHUNK STORE"}
+		}
+		return Token{Type: TokenChunk, Value: ident}
+	case "CHUNKS":
+		return Token{Type: TokenChunks, Value: ident}
+	case "DOCUMENT":
+		return Token{Type: TokenDocument, Value: ident}
+	case "DOCUMENTS":
+		return Token{Type: TokenDocuments, Value: ident}
+	case "TAGS":
+		return Token{Type: TokenTag, Value: ident}
+	case "REGION":
+		return Token{Type: TokenRegion, Value: ident}
+	case "URL":
+		return Token{Type: TokenURL, Value: ident}
+	case "TASK":
+		return Token{Type: TokenTask, Value: ident}
+	case "TASKS":
+		return Token{Type: TokenTasks, Value: ident}
+	case "START":
+		return Token{Type: TokenStart, Value: ident}
+	case "STOP":
+		return Token{Type: TokenStop, Value: ident}
+	case "INGESTOR":
+		return Token{Type: TokenIngestor, Value: ident}
+	case "INGESTORS":
+		return Token{Type: TokenIngestors, Value: ident}
+	case "INGESTION":
+		return Token{Type: TokenIngestion, Value: ident}
+	case "CACHE":
+		return Token{Type: TokenCache, Value: ident}
+	case "MQ":
+		return Token{Type: TokenMQ, Value: ident}
+	case "PUBLISH":
+		return Token{Type: TokenPublish, Value: ident}
+	case "PULL":
+		return Token{Type: TokenPull, Value: ident}
+	case "PENDING":
+		return Token{Type: TokenPending, Value: ident}
+	case "NOACK":
+		return Token{Type: TokenNoACK, Value: ident}
+	case "ANALYZE":
+		return Token{Type: TokenAnalyze, Value: ident}
+	case "SUMMARY":
+		return Token{Type: TokenSummary, Value: ident}
+	case "STATS":
+		return Token{Type: TokenStats, Value: ident}
+	case "STORAGE":
+		return Token{Type: TokenStorage, Value: ident}
+	case "QUOTA":
+		return Token{Type: TokenQuota, Value: ident}
+	case "TREE":
+		return Token{Type: TokenTree, Value: ident}
+	case "ORPHAN":
+		return Token{Type: TokenOrphan, Value: ident}
+	case "DAYS":
+		return Token{Type: TokenDays, Value: ident}
+	case "HOUR":
+		return Token{Type: TokenHour, Value: ident}
+	case "DAY":
+		return Token{Type: TokenDay, Value: ident}
+	case "MONTH":
+		return Token{Type: TokenMonth, Value: ident}
+	case "WINDOW":
+		return Token{Type: TokenWindow, Value: ident}
+	case "ACTIVITY":
+		return Token{Type: TokenActivity, Value: ident}
+	case "PURGE":
+		return Token{Type: TokenPurge, Value: ident}
+	case "PREVIEW":
+		return Token{Type: TokenPreview, Value: ident}
+	case "PLAN":
+		return Token{Type: TokenPlan, Value: ident}
+	case "DATA":
+		return Token{Type: TokenData, Value: ident}
+	case "LOG":
+		return Token{Type: TokenLog, Value: ident}
+	case "LOGS":
+		return Token{Type: TokenLogs, Value: ident}
+	case "LEVEL":
+		return Token{Type: TokenLevel, Value: ident}
+	case "DEBUG":
+		return Token{Type: TokenDebug, Value: ident}
+	case "INFO":
+		return Token{Type: TokenInfo, Value: ident}
+	case "IN":
+		return Token{Type: TokenIn, Value: ident}
+	case "WARN":
+		return Token{Type: TokenWarn, Value: ident}
+	case "ERROR":
+		return Token{Type: TokenError, Value: ident}
+	case "FATAL":
+		return Token{Type: TokenFatal, Value: ident}
+	case "PANIC":
+		return Token{Type: TokenPanic, Value: ident}
+	case "PARAM":
+		return Token{Type: TokenParam, Value: ident}
+	case "PLAY":
+		return Token{Type: TokenPlay, Value: ident}
+	case "FORMAT":
+		return Token{Type: TokenFormat, Value: ident}
+	case "SAVE":
+		return Token{Type: TokenSave, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

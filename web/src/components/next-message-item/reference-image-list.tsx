@@ -1,4 +1,20 @@
-import Image from '@/components/image';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Image, { useDocumentImageUrl } from '@/components/image';
 import {
   Carousel,
   CarouselContent,
@@ -7,7 +23,6 @@ import {
   CarouselPrevious,
 } from '@/components/ui/carousel';
 import { IReferenceChunk } from '@/interfaces/database/chat';
-import { api_host } from '@/utils/api';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
@@ -34,6 +49,20 @@ const getButtonVisibilityClass = (imageCount: number) => {
   };
   return map[imageCount] || (imageCount >= 6 ? '@2xl:hidden' : '');
 };
+
+function ImagePhotoView({ id, index }: ImageItem) {
+  const src = useDocumentImageUrl(id);
+
+  return (
+    <PhotoView src={src}>
+      <Image
+        id={id}
+        className="h-40 w-full"
+        label={`Fig. ${(index + 1).toString()}`}
+      />
+    </PhotoView>
+  );
+}
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {
   const buttonVisibilityClass = getButtonVisibilityClass(images.length);
@@ -79,13 +108,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               @2xl:basis-1/6
               "
             >
-              <PhotoView src={`${api_host}/document/image/${id}`}>
-                <Image
-                  id={id}
-                  className="h-40 w-full"
-                  label={`Fig. ${(index + 1).toString()}`}
-                />
-              </PhotoView>
+              <ImagePhotoView id={id} index={index}></ImagePhotoView>
             </CarouselItem>
           ))}
         </CarouselContent>

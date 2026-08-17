@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   ModelVariableType,
   settledModelVariableMap,
@@ -7,6 +23,7 @@ import { camelCase, isEqual } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
+import { Collapse } from '../collapse';
 import {
   FormControl,
   FormField,
@@ -27,7 +44,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
-  options?: any[];
+  modelTypes?: string[];
   llmId?: string;
   llmSelectTestId?: string;
   llmOptionTestIdPrefix?: string;
@@ -37,7 +54,10 @@ interface LlmSettingFieldItemsProps {
     | 'presence_penalty'
     | 'frequency_penalty'
     | 'max_tokens'
+    | 'thinking'
   >;
+  showCollapse?: boolean;
+  ownerTenantId?: string;
 }
 
 export const LLMIdFormField = {
@@ -58,6 +78,8 @@ export const LlmSettingFieldSchema = {
   presence_penalty: z.coerce.number().optional(),
   frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
+  parameter: z.string().optional(),
+  thinking: z.enum(['default', 'enabled', 'disabled']).optional(),
 };
 
 export const LlmSettingSchema = {
@@ -68,7 +90,7 @@ export const LlmSettingSchema = {
 
 export function LlmSettingFieldItems({
   prefix,
-  options,
+  modelTypes,
   llmSelectTestId,
   llmOptionTestIdPrefix,
   showFields = [
@@ -77,8 +99,11 @@ export function LlmSettingFieldItems({
     'presence_penalty',
     'frequency_penalty',
     'max_tokens',
+    'thinking',
   ],
   llmId,
+  showCollapse = false,
+  ownerTenantId,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
@@ -133,14 +158,8 @@ export function LlmSettingFieldItems({
     }
   };
 
-  return (
-    <div className="space-y-5">
-      <LLMFormField
-        options={options}
-        name={llmId ?? getFieldWithPrefix('llm_id')}
-        testId={llmSelectTestId}
-        optionTestIdPrefix={llmOptionTestIdPrefix}
-      ></LLMFormField>
+  const settingFields = (
+    <section className="space-y-5">
       <FormField
         control={form.control}
         name={getFieldWithPrefix('parameter')}
@@ -149,7 +168,7 @@ export function LlmSettingFieldItems({
             <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
               <Select
-                {...field}
+                value={field.value}
                 onValueChange={(val) => {
                   handleChange(val);
                   field.onChange(val);
@@ -227,7 +246,7 @@ export function LlmSettingFieldItems({
         <SliderInputSwitchFormField
           name={getFieldWithPrefix('max_tokens')}
           checkName="maxTokensEnabled"
-          numberInputClassName="w-20"
+          numberInputClassName="w-24 shrink-0"
           label="maxTokens"
           max={128000}
           min={0}
@@ -235,6 +254,58 @@ export function LlmSettingFieldItems({
             checkParameterIsEqual();
           }}
         ></SliderInputSwitchFormField>
+      )}
+      {showFields.some((item) => item === 'thinking') && (
+        <FormField
+          control={form.control}
+          name={getFieldWithPrefix('thinking')}
+          render={({ field }) => (
+            <FormItem className="flex justify-between items-center">
+              <FormLabel className="flex-1" tooltip={t('thinkingTip')}>
+                {t('thinking')}
+              </FormLabel>
+              <FormControl>
+                <Select
+                  value={field.value ?? 'default'}
+                  onValueChange={field.onChange}
+                >
+                  <SelectTrigger className="flex-1 !m-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">
+                      {t('thinkingDefault')}
+                    </SelectItem>
+                    <SelectItem value="enabled">
+                      {t('thinkingEnabled')}
+                    </SelectItem>
+                    <SelectItem value="disabled">
+                      {t('thinkingDisabled')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
+    </section>
+  );
+
+  return (
+    <div className="space-y-5">
+      <LLMFormField
+        modelTypes={modelTypes}
+        name={llmId ?? getFieldWithPrefix('llm_id')}
+        testId={llmSelectTestId}
+        optionTestIdPrefix={llmOptionTestIdPrefix}
+        ownerTenantId={ownerTenantId}
+      ></LLMFormField>
+      {showCollapse ? (
+        <Collapse title={t('modelSetting')}>{settingFields}</Collapse>
+      ) : (
+        settingFields
       )}
     </div>
   );

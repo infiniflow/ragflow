@@ -28,7 +28,7 @@ enum WebhookTraceTabType {
 const WebhookSheet = ({ hideModal }: RunSheetProps) => {
   const { t } = useTranslation();
   const { id } = useParams();
-  const text = `${location.protocol}//${location.host}/api/v1/webhook_test/${id}`;
+  const text = `${location.protocol}//${location.host}/api/v1/agents/${id}/webhook/test`;
 
   const { data } = useFetchWebhookTrace(true);
 
@@ -49,7 +49,7 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
       return { status: 'running' };
     }
 
-    let errorItem = data?.events.find(
+    const errorItem = data?.events.find(
       (x) => x.event === 'error' || x.data?.error,
     );
     if (errorItem) {

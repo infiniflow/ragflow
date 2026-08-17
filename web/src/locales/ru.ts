@@ -56,7 +56,7 @@ export default {
       submit: 'Отправить',
       clear: 'Очистить',
       embedIntoSite: 'Встроить на веб-страницу',
-      openInNewTab: 'Чат в новой вкладке',
+      openInNewTab: 'Открыть в новой вкладке',
       previousPage: 'Назад',
       nextPage: 'Вперед',
       add: 'Добавить',
@@ -75,6 +75,7 @@ export default {
       selected: 'Выбрано',
       seeAll: 'Показать все',
       bulkOperate: 'Массовые операции',
+      owner: 'Владелец',
     },
     login: {
       loginTitle: 'Войдите в свою учетную запись',
@@ -121,8 +122,7 @@ export default {
         'Анализирует содержание диалога, извлекает ключевую информацию и формирует структурированные сводки памяти.',
       embeddingModelTooltip:
         'Преобразует текст в числовые векторы для семантического поиска и извлечения памяти.',
-      embeddingModelError:
-        'Тип памяти обязателен; тип «raw» нельзя удалить.',
+      embeddingModelError: 'Тип памяти обязателен; тип «raw» нельзя удалить.',
       memoryTypeTooltip: `Raw: исходный диалог пользователя и агента (обязателен по умолчанию).
 Семантическая память: обобщённые знания и факты о пользователе и мире.
 Эпизодическая память: события с привязкой ко времени.
@@ -213,7 +213,6 @@ export default {
       metadata: {
         fields: 'поля',
         selectFiles: 'Выбрано файлов: {{count}}',
-        type: 'Тип',
         fieldNameInvalid:
           'Имя поля может содержать только буквы или подчёркивания.',
         builtIn: 'Встроенное',
@@ -235,7 +234,8 @@ export default {
           'Имя поля уже есть. Подтвердите объединение дубликатов.',
         fieldExists: 'Поле уже существует.',
         fieldSetting: 'Настройки поля',
-        changesAffectNewParses: 'Изменения применяются только к новым парсингам.',
+        changesAffectNewParses:
+          'Изменения применяются только к новым парсингам.',
         // editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: 'Ограничить заданными значениями',
         metadataGenerationSettings: 'Настройки генерации метаданных',
@@ -246,12 +246,12 @@ export default {
         value: 'Значение',
         action: 'Действие',
         field: 'Поле',
+        type: 'Тип',
         description: 'Описание',
         fieldName: 'Имя поля',
         editMetadata: 'Редактировать метаданные',
         addMetadata: 'Добавить метаданные',
-        deleteWarn:
-          'Поле «{{field}}» будет удалено из всех связанных файлов',
+        deleteWarn: 'Поле «{{field}}» будет удалено из всех связанных файлов',
         deleteManageFieldAllWarn:
           'Это поле и все его значения будут удалены из всех связанных файлов.',
         deleteManageValueAllWarn:
@@ -264,7 +264,8 @@ export default {
         deleteSettingValueWarn: `Значение будет удалено; существующие метаданные не затронуты.`,
       },
       redoAll: 'Очистите существующие фрагменты',
-      applyAutoMetadataSettings: 'Применить глобальные настройки авто-метаданных',
+      applyAutoMetadataSettings:
+        'Применить глобальные настройки авто-метаданных',
       parseFileTip: 'Запустить парсинг?',
       parseFile: 'Парсить файл',
       emptyMetadata: 'Нет метаданных',
@@ -539,7 +540,7 @@ export default {
       embeddingModelTip:
         'Модель эмбеддингов по умолчанию для базы знаний. После появления чанков при смене модели система случайно выбирает несколько чанков для проверки совместимости, перекодирует их новой моделью и вычисляет косинусное сходство. Переключение возможно только если среднее сходство ≥ 0.9. Иначе удалите все чанки в датасете.',
       permissionsTip:
-        "Если установлено значение «Команда», все члены команды смогут управлять базой знаний.",
+        'Если установлено значение «Команда», все члены команды смогут управлять базой знаний.',
       chunkTokenNumberTip:
         'Это своего рода устанавливает порог токенов для создания чанка. Сегмент с меньшим количеством токенов, чем этот порог, будет объединен со следующими сегментами до тех пор, пока количество токенов не превысит порог, после чего будет создан чанк. Новый чанк не создается, если не встречен разделитель, даже если порог превышен.',
       chunkMethod: 'Метод чанкинга',
@@ -719,7 +720,8 @@ export default {
       graphRagMethod: 'Метод',
       graphRagMethodTip: `
       Light: (по умолчанию) Промпты github.com/HKUDS/LightRAG для извлечения сущностей и связей. Меньше токенов, памяти и вычислений.</br>
-      General: Промпты github.com/microsoft/graphrag`,
+      General: Промпты github.com/microsoft/graphrag.</br>
+      NER: Использует spaCy NER и извлечение ключевых слов на основе правил для извлечения сущностей и связей. LLM не требуется для самого извлечения, что делает его быстрым и эффективным.`,
       resolution: 'Разрешение сущностей',
       resolutionTip: `Переключатель дедубликации сущностей. Когда включен, LLM объединяет похожие сущности (например «2025» и «год 2025») для более точного графа`,
       community: 'Отчёты сообществ',
@@ -739,6 +741,8 @@ export default {
       size: 'Размер',
       uploadedTime: 'Время загрузки',
       chunk: 'Чанк',
+      createChunk: 'Создать чанк',
+      editChunk: 'Редактировать чанк',
       bulk: 'Пакетно',
       selectAll: 'Выбрать все',
       enabledSelected: 'Включить выбранные',
@@ -767,6 +771,9 @@ export default {
       delete: 'Удалить',
     },
     chat: {
+      chatSupport: 'Чат-поддержка',
+      replyInstantly: 'Обычно мы отвечаем мгновенно',
+      typeYourMessage: 'Введите сообщение...',
       messagePlaceholder: 'Введите ваше сообщение здесь...',
       exit: 'Выход',
       multipleModels: 'Несколько моделей',
@@ -858,7 +865,8 @@ export default {
       maxTokensTip: `Максимальный размер контекста модели; неверное значение вызовет ошибку. По умолчанию 512.`,
       maxTokensInvalidMessage:
         'Пожалуйста, введите действительное число для макс. токенов.',
-      maxTokensMinMessage: 'Максимальное количество токенов не может быть меньше 0.',
+      maxTokensMinMessage:
+        'Максимальное количество токенов не может быть меньше 0.',
       quote: 'Показать цитату',
       quoteTip: 'Отображать ли исходный текст как ссылку.',
       selfRag: 'Self-RAG',
@@ -873,7 +881,7 @@ export default {
       preview: 'Предпросмотр',
       embedded: 'Встроенный',
       serviceApiEndpoint: 'Конечная точка сервисного API',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       apiReference: 'Документация API',
       dateRange: 'Диапазон дат:',
       backendServiceApi: 'API Сервер',
@@ -954,6 +962,12 @@ export default {
       tocEnhance: 'Улучшение оглавлением',
       tocEnhanceTip: ` Во время парсинга документа была сгенерирована информация оглавления (см. опцию 'Включить извлечение оглавления' в методе General). Это позволяет большой модели возвращать элементы оглавления, релевантные запросу пользователя, тем самым используя эти элементы для извлечения связанных чанков и применения весов к этим чанкам в процессе сортировки. Этот подход получен из имитации поведенческой логики того, как люди ищут знания в книгах.`,
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
+      showChunkMetadata: 'Показать метаданные чанка',
+      showChunkMetadataTip:
+        'Отображать метаданные документа (заголовок, номер страницы, дата загрузки и т.д.) рядом с извлечёнными текстовыми чанками',
+      metadataFields: 'Поля метаданных',
+      metadataFieldsTip:
+        'Выберите поля метаданных для отображения рядом с каждым чанком',
     },
     setting: {
       Verify: 'Проверить',
@@ -961,12 +975,12 @@ export default {
       keyInvalid: 'Ваш API ключ недействителен.',
       deleteModel: 'Удалить модель',
       bedrockCredentialsHint:
-        'Подсказка: оставьте Access Key / Secret Key пустыми для аутентификации AWS IAM.',
-      awsAuthModeAccessKeySecret: 'Ключ доступа (Access Key)',
+        'Подсказка: оставьте ACCESS KEY / SECRET KEY пустыми для аутентификации AWS IAM.',
+      awsAuthModeAccessKeySecret: 'Ключ доступа (ACCESS KEY)',
       awsAuthModeIamRole: 'Роль IAM',
       awsAuthModeAssumeRole: 'Assume role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Введите AWS Role ARN',
       awsAssumeRoleTip:
@@ -984,6 +998,7 @@ export default {
       selectModelPlaceholder: 'Выберите модель',
       configureModelTitle: 'Настроить модель',
       connectorNameTip: 'Укажите понятное имя для коннектора',
+      syncDeletedFiles: 'Синхронизировать удалённые файлы',
       confluenceIsCloudTip:
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -1085,8 +1100,7 @@ export default {
       seafileAccountScopeTip:
         'Синхронизирует все библиотеки, видимые для указанного ниже токена API аккаунта.',
       seafileTokenPanelHeading: 'Укажите один из способов аутентификации:',
-      seafileTokenPanelAccountBullet:
-        '— доступ ко всем вашим библиотекам.',
+      seafileTokenPanelAccountBullet: '— доступ ко всем вашим библиотекам.',
       seafileTokenPanelLibraryBullet:
         '— только к одной библиотеке (безопаснее).',
       seafileValidationAccountTokenRequired:
@@ -1195,7 +1209,8 @@ export default {
       maxTokensTip: `Максимальный размер контекста mодель; недопустимое или неверное значение приведёт к ошибке. По умолчанию 512.`,
       maxTokensInvalidMessage:
         'Пожалуйста, введите действительное число для максимального количества токенов.',
-      maxTokensMinMessage: 'Максимальное количество токенов не может быть меньше 0.',
+      maxTokensMinMessage:
+        'Максимальное количество токенов не может быть меньше 0.',
       password: 'Пароль',
       passwordDescription:
         'Пожалуйста, введите ваш текущий пароль, чтобы изменить ваш пароль.',
@@ -1236,13 +1251,13 @@ export default {
       addedModels: 'Добавленные модели',
       modelsToBeAdded: 'Модели для добавления',
       addTheModel: 'Добавить',
-      apiKey: 'API-Ключ',
+      apiKey: 'API Key',
       apiKeyMessage: 'Пожалуйста, введите API ключ',
       apiKeyTip:
         'API ключ можно получить, зарегистрировавшись у соответствующего поставщика LLM.',
       showMoreModels: 'Показать модели',
       hideModels: 'Скрыть модели',
-      baseUrl: 'Базовый-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'Если ваш API ключ от OpenAI, просто проигнорируйте это. Любые другие промежуточные провайдеры дадут этот базовый url вместе с API ключом.',
       tongyiBaseUrlTip:
@@ -1284,8 +1299,15 @@ export default {
       modelNameMessage: 'Пожалуйста, введите название вашей модели!',
       modelType: 'Тип модели',
       modelTypeMessage: 'Пожалуйста, введите тип вашей модели!',
-      addLlmBaseUrl: 'Базовый url',
-      baseUrlNameMessage: 'Пожалуйста, введите ваш базовый url!',
+      addLlmBaseUrl: 'Базовый URL',
+      baseUrlNameMessage: 'Пожалуйста, введите ваш базовый URL',
+      mwsApiUrl: 'URL API',
+      mwsApiUrlMessage: 'Введите URL API проекта MWS',
+      mwsApiUrlPlaceholder:
+        'https://gpt.mwsapis.ru/projects/<project>',
+      mwsToken: 'Токен',
+      mwsTokenMessage: 'Введите токен MWS',
+      mwsTokenPlaceholder: 'API-ключ сервисного аккаунта MWS',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:
@@ -1303,17 +1325,17 @@ export default {
       FishAudioLink: 'Как использовать FishAudio',
       TencentCloudLink: 'Как использовать TencentCloud ASR',
       volcModelNameMessage: 'Пожалуйста, введите название вашей модели!',
-      addEndpointID: 'EndpointID модели',
-      endpointIDMessage: 'Пожалуйста, введите EndpointID модели',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Пожалуйста, введите Model ID модели',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Пожалуйста, введите ваш ARK_API_KEY',
-      bedrockModelNameMessage: 'Пожалуйста, введите название вашей модели!',
+      bedrockModelNameMessage: 'Пожалуйста, введите название вашей модели',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Пожалуйста, введите ваш ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Пожалуйста, введите ваш SECRET KEY',
       bedrockRegion: 'AWS Регион',
-      bedrockRegionMessage: 'Пожалуйста, выберите!',
+      bedrockRegionMessage: 'Пожалуйста, выберите',
       'us-east-2': 'US East (Огайо)',
       'us-east-1': 'US East (Северная Вирджиния)',
       'us-west-1': 'US West (Северная Калифорния)',
@@ -1351,26 +1373,26 @@ export default {
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Пожалуйста, введите ваш Secret ID',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Пожалуйста, введите ваш Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Пожалуйста, введите ваш SECRET KEY',
       SparkModelNameMessage: 'Пожалуйста, выберите модель Spark',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'Пожалуйста, введите ваш APIPassword',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'Пожалуйста, введите ваш APP ID',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'Пожалуйста, введите ваш APISecret',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'Пожалуйста, введите ваш API SECRET',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'Пожалуйста, введите ваш APIKey',
       yiyanModelNameMessage: 'Пожалуйста, введите название модели',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Пожалуйста, введите ваш API KEY',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Пожалуйста, введите ваш Secret KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Пожалуйста, введите ваш API Key',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Пожалуйста, введите ваш SECRET KEY',
       FishAudioModelNameMessage:
         'Пожалуйста, дайте вашей модели синтеза речи название',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Пожалуйста, введите ваш API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Пожалуйста, введите ваш API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Пожалуйста, введите Reference ID (оставьте пустым для использования модели по умолчанию).',
@@ -1438,7 +1460,7 @@ export default {
         chat: 'Чат',
         embedding: 'Эмбеддинг',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1685,10 +1707,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Компонент, который выполняет поиск через ваш предоставленный URL экземпляра SearXNG. Укажите TopN и URL экземпляра.',
-      pdfGenerator: 'Генератор документов',
-      pDFGenerator: 'Генератор документов',
-      pdfGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
-      pDFGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
+      docGenerator: 'Генератор документов',
+      docGeneratorDescription: `Создает файл из содержимого Markdown.`,
       subtitle: 'Подзаголовок',
       logoImage: 'Изображение логотипа',
       logoPosition: 'Позиция логотипа',
@@ -1733,7 +1753,7 @@ export default {
       bing: 'Microsoft Bing',
       bingDescription:
         'Компонент, который выполняет поиск на https://www.bing.com/, позволяя вам указать количество результатов поиска с помощью TopN. Он дополняет существующие базы знаний. Обратите внимание, что для этого требуется API ключ от microsoft.com.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: 'Страна и регион',
       language: 'Язык',
       googleScholar: 'Google Scholar',
@@ -2430,7 +2450,7 @@ export default {
         bodyTemplate: 'Шаблон тела',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'API-ключ',
+        apiKey: 'API Key',
         queryParameters: 'Параметры запроса',
         headerParameters: 'Параметры заголовка',
         requestBodyParameters: 'Параметры тела запроса',
@@ -2451,6 +2471,8 @@ export default {
       success: 'Успех',
       failed: 'Ошибка',
       logTitle: 'Заголовок',
+      tags: 'Теги',
+      canvasCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2509,6 +2531,7 @@ export default {
       okText: 'Сохранить',
       cancelText: 'Отмена',
       chooseDataset: 'Пожалуйста, сначала выберите датасет',
+      selectLocalePlaceholder: 'Выберите локаль',
     },
     language: {
       english: 'Английский',
@@ -2792,8 +2815,7 @@ export default {
       noSessionsFound: 'Сессии не найдены',
       createFirstSession: 'Создайте первую сессию',
       noCanvasFound: 'Канвасы не найдены',
-      deleteSelectedConfirm:
-        'Удалить выбранные сеансы ({{count}})?',
+      deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       batchDeleteSessions: 'Удалить сессии',
     },
   },

@@ -6,12 +6,14 @@ import { BlockButton, Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Trash2 } from 'lucide-react';
+import { isEmpty } from 'lodash';
+import { Info, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialTokenChunkerValues } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -36,21 +38,32 @@ export const FormSchema = z.object({
     }),
   ),
   overlapped_percent: z.number(),
-  delimiter_mode: z.enum(['token_size', 'delimiter']).optional(),
+  delimiter_mode: z.enum(['delimiter', 'one']).optional(),
 });
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
-const TokenChunkerForm = ({ node }: INextOperatorForm) => {
+const TokenChunkerForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+}: INextOperatorForm) => {
   const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
 
+  // Normalize legacy values: 'token_size' (removed tab) and empty fall back
+  // to 'delimiter'; nodes saved in the removed tab may carry empty delimiters,
+  // so seed the default '\n' row.
   const formDefaultValues = {
     ...defaultValues,
-    delimiter_mode: defaultValues.delimiter_mode || 'token_size',
+    delimiter_mode:
+      defaultValues.delimiter_mode === 'one' ? 'one' : 'delimiter',
+    delimiters: isEmpty(defaultValues.delimiters)
+      ? [{ value: '\n' }]
+      : defaultValues.delimiters,
   };
 
-  const form = useForm<SplitterFormSchemaType>({
+  const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues: formDefaultValues,
     resolver: zodResolver(FormSchema),
   });
@@ -69,6 +82,7 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
   });
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -79,17 +93,18 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
             type: FormFieldType.Segmented,
             label: '',
             options: [
-              { label: 'Token Size', value: 'token_size' },
               { label: t('flow.delimiters'), value: 'delimiter' },
+              { label: t('flow.one'), value: 'one' },
             ],
           }}
         />
 
-        {delimiterMode === 'token_size' && (
+        {delimiterMode === 'delimiter' && (
           <>
             <SliderInputFormField
               name="chunk_token_size"
               max={2048}
+              min={1}
               label={t('knowledgeConfiguration.chunkTokenNumber')}
             />
             <SliderInputFormField
@@ -105,11 +120,6 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
               label={t('knowledgeConfiguration.imageTableContextWindow')}
               tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
             />
-          </>
-        )}
-
-        {delimiterMode === 'delimiter' && (
-          <>
             <section>
               <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
               <div className="space-y-4">
@@ -135,68 +145,87 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
                 ))}
               </div>
             </section>
-            <BlockButton onClick={() => append({ value: '\n' })}>
+            <BlockButton type="button" onClick={() => append({ value: '\n' })}>
               {t('common.add')}
             </BlockButton>
           </>
         )}
 
-        <fieldset>
-          <div className="mb-2 flex justify-between items-center gap-1">
-            <span>{t('flow.enableChildrenDelimiters')}</span>
-
-            <FormField
-              control={form.control}
-              name="enable_children"
-              render={({ field: { value, onChange, ...restProps } }) => (
-                <FormItem>
-                  <FormControl>
-                    <Switch
-                      checked={value}
-                      onCheckedChange={onChange}
-                      {...restProps}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </div>
-
-          {form.getValues('enable_children') && (
-            <div className="space-y-4">
-              {childrenDelimiters.fields.map((field, index) => (
-                <div key={field.id} className="flex items-center gap-2">
-                  <RAGFlowFormItem
-                    name={`children_delimiters.${index}.value`}
-                    label="children_delimiter"
-                    labelClassName="!hidden"
-                    className="flex-auto space-y-0"
-                  >
-                    <DelimiterInput className="!m-0"></DelimiterInput>
-                  </RAGFlowFormItem>
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => childrenDelimiters.remove(index)}
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-              ))}
-
-              <BlockButton
-                onClick={() => childrenDelimiters.append({ value: '\n' })}
-              >
-                {t('common.add')}
-              </BlockButton>
+        {delimiterMode === 'one' && (
+          <div className="flex items-start gap-3 rounded-lg border bg-muted/50 px-4 py-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground/70" />
+            <div className="space-y-1">
+              <div className="text-sm font-medium">
+                {t('flow.oneChunkTitle')}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {t('flow.oneChunkDescription')}
+              </p>
             </div>
-          )}
-        </fieldset>
+          </div>
+        )}
+
+        {delimiterMode !== 'one' && (
+          <fieldset>
+            <div className="mb-2 flex justify-between items-center gap-1">
+              <span>{t('flow.enableChildrenDelimiters')}</span>
+
+              <FormField
+                control={form.control}
+                name="enable_children"
+                render={({ field: { value, onChange, ...restProps } }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Switch
+                        checked={value}
+                        onCheckedChange={onChange}
+                        {...restProps}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {form.getValues('enable_children') && (
+              <div className="space-y-4">
+                {childrenDelimiters.fields.map((field, index) => (
+                  <div key={field.id} className="flex items-center gap-2">
+                    <RAGFlowFormItem
+                      name={`children_delimiters.${index}.value`}
+                      label="children_delimiter"
+                      labelClassName="!hidden"
+                      className="flex-auto space-y-0"
+                    >
+                      <DelimiterInput className="!m-0"></DelimiterInput>
+                    </RAGFlowFormItem>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => childrenDelimiters.remove(index)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+
+                <BlockButton
+                  type="button"
+                  onClick={() => childrenDelimiters.append({ value: '\n' })}
+                >
+                  {t('common.add')}
+                </BlockButton>
+              </div>
+            )}
+          </fieldset>
+        )}
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

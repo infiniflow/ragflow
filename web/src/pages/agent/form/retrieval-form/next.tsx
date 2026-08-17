@@ -9,7 +9,7 @@ import {
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
+
 import { TopNFormField } from '@/components/top-n-item';
 import {
   Form,
@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import {
@@ -33,6 +33,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -43,15 +44,13 @@ import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
-  keywords_similarity_weight: z.coerce.number(),
+  keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
   top_k: z.coerce.number(),
-  kb_ids: z.array(z.string()),
+  dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
   cross_languages: z.array(z.string()),
-  use_kg: z.boolean(),
-  toc_enhance: z.boolean(),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
@@ -134,6 +133,7 @@ export function EmptyResponseField() {
 
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const outputList = useMemo(() => {
     return [
@@ -166,16 +166,19 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
-        <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields></RerankFormFields>
+                <RerankFormFields
+                  ownerTenantId={ownerTenantId}
+                ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}
@@ -183,8 +186,6 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-                <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-                <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
               </>
             )}
           </section>

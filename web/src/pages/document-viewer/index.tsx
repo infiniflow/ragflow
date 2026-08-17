@@ -1,5 +1,5 @@
 import { Images } from '@/constants/common';
-import { ExternalApi, api_host } from '@/utils/api';
+import { restAPIv1 } from '@/utils/api';
 import { useParams, useSearchParams } from 'react-router';
 // import Docx from './docx';
 // import Excel from './excel';
@@ -16,6 +16,7 @@ import PdfPreview from '@/components/document-preview/pdf-preview';
 import { PptPreviewer } from '@/components/document-preview/ppt-preview';
 import { TxtPreviewer } from '@/components/document-preview/txt-preview';
 import { previewHtmlFile } from '@/utils/file-util';
+import CSVFileViewer from '@/components/document-preview/csv-preview';
 // import styles from './index.less';
 
 // TODO: The interface returns an incorrect content-type for the SVG.
@@ -28,8 +29,8 @@ const DocumentViewer = () => {
     currentQueryParameters.get('resource') === 'files' ? 'files' : 'document';
   const api =
     resource === 'files'
-      ? `${ExternalApi}${api_host}/files/${documentId}`
-      : `${api_host}/document/get/${documentId}`;
+      ? `${restAPIv1}/files/${documentId}`
+      : `${restAPIv1}/documents/${documentId}/preview`;
   // request.head
 
   if (ext === 'html' && documentId) {
@@ -55,6 +56,11 @@ const DocumentViewer = () => {
       )}
       {(ext === 'xlsx' || ext === 'xls') && (
         <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>
+      )}
+      {ext === 'csv' && (
+        <section className="m-1">
+          <CSVFileViewer url={api} />
+        </section>
       )}
 
       {ext === 'docx' && <DocPreviewer url={api}></DocPreviewer>}

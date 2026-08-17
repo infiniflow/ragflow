@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
@@ -15,6 +16,7 @@ import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { MetadataType } from '../components/metedata/constant';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import { DatasetActionCell } from './dataset-action-cell';
@@ -23,7 +25,8 @@ import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
 
 type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
-  UseRenameDocumentShowType & {
+  UseRenameDocumentShowType &
+  Pick<UseRowSelectionType, 'setRowSelection'> & {
     showLog: (record: IDocumentInfo) => void;
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
   };
@@ -33,6 +36,7 @@ export function useDatasetTableColumns({
   showRenameModal,
   showManageMetadataModal,
   showLog,
+  setRowSelection,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -40,6 +44,7 @@ export function useDatasetTableColumns({
   // const { dataSourceInfo } = useDataSourceInfo();
   const { navigateToChunkParsedResult } = useNavigatePage();
   const { setDocumentStatus } = useSetDocumentStatus();
+  const { id: datasetId } = useParams();
 
   const columns: ColumnDef<IDocumentInfo>[] = [
     {
@@ -94,7 +99,7 @@ export function useDatasetTableColumns({
                 className="flex items-center gap-2 cursor-pointer"
                 onClick={navigateToChunkParsedResult(
                   row.original.id,
-                  row.original.kb_id,
+                  row.original.dataset_id,
                 )}
               >
                 <FileIcon name={name}></FileIcon>
@@ -136,30 +141,6 @@ export function useDatasetTableColumns({
         </time>
       ),
     },
-    /*
-    {
-      accessorKey: 'source_from',
-      header: t('source'),
-      cell: ({ row }) => (
-        <div className="text-text-primary">
-          {row.original.source_type === 'local' ||
-          row.original.source_type === '' ? (
-            <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
-              <MonitorUp className="text-accent-primary" size={16} />
-            </div>
-          ) : (
-            <div className="w-6 h-6 flex items-center justify-center">
-              {
-                dataSourceInfo[
-                  row.original.source_type as keyof typeof dataSourceInfo
-                ]?.icon
-              }
-            </div>
-          )}
-        </div>
-      ),
-    },
-    */
     {
       accessorKey: 'status',
       header: t('enabled'),
@@ -169,17 +150,21 @@ export function useDatasetTableColumns({
           <Switch
             checked={row.getValue('status') === '1'}
             onCheckedChange={(e) => {
-              setDocumentStatus({ status: e, documentId: id });
+              setDocumentStatus({
+                status: e,
+                documentId: id,
+                datasetId: datasetId!,
+              });
             }}
           />
         );
       },
     },
     {
-      accessorKey: 'chunk_num',
+      accessorKey: 'chunk_count',
       header: t('chunkNumber'),
       cell: ({ row }) => (
-        <div className="capitalize">{row.getValue('chunk_num')}</div>
+        <div className="capitalize">{row.getValue('chunk_count')}</div>
       ),
     },
     {
@@ -193,9 +178,6 @@ export function useDatasetTableColumns({
             size="auto"
             onClick={() => {
               showManageMetadataModal({
-                // metadata: util.JSONToMetaDataTableData(
-                //   row.original.meta_fields || {},
-                // ),
                 isEditField: false,
                 isCanAdd: true,
                 isAddValue: true,
@@ -206,10 +188,6 @@ export function useDatasetTableColumns({
                     <div className="text-base font-normal">
                       {t('metadata.editMetadata')}
                     </div>
-                    {/* <div className="text-sm text-text-secondary w-full truncate">
-                      {t('metadata.editMetadataForDataset')}
-                      {row.original.name}
-                    </div> */}
                   </div>
                 ),
                 secondTitle: (
@@ -231,7 +209,6 @@ export function useDatasetTableColumns({
     {
       accessorKey: 'run',
       header: t('Parse'),
-      // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
         return (
           <ParseDropdownButton
@@ -265,6 +242,7 @@ export function useDatasetTableColumns({
           <DatasetActionCell
             record={record}
             showRenameModal={showRenameModal}
+            setRowSelection={setRowSelection}
           />
         );
       },

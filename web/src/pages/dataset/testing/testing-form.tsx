@@ -22,6 +22,7 @@ import {
   similarityThresholdSchema,
   vectorSimilarityWeightSchema,
 } from '@/components/similarity-slider';
+import { TopSelectFormItem } from '@/components/top-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -31,13 +32,15 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
+import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import { trim } from 'lodash';
 import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -60,9 +63,9 @@ export default function TestingForm({
     ...similarityThresholdSchema,
     ...vectorSimilarityWeightSchema,
     ...topKSchema,
-    use_kg: z.boolean().optional(),
-    kb_ids: z.array(z.string()).optional(),
+    dataset_ids: z.array(z.string()).optional(),
     ...MetadataFilterSchema,
+    size: z.number().optional(),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -71,8 +74,8 @@ export default function TestingForm({
       ...initialSimilarityThresholdValue,
       ...initialVectorSimilarityWeightValue,
       ...initialTopKValue,
-      use_kg: false,
-      kb_ids: [knowledgeBaseId],
+      dataset_ids: [knowledgeBaseId],
+      size: 10,
     },
   });
 
@@ -81,7 +84,7 @@ export default function TestingForm({
   const values = useWatch({ control: form.control });
 
   useEffect(() => {
-    setValues(values as Required<z.infer<typeof formSchema>>);
+    setValues(values as ITestRetrievalRequestBody);
   }, [setValues, values]);
 
   function onSubmit() {
@@ -99,12 +102,14 @@ export default function TestingForm({
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields></RerankFormFields>
-            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+            <RerankFormFields
+              ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+            ></RerankFormFields>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>
             <MetadataFilter prefix=""></MetadataFilter>
+            <TopSelectFormItem></TopSelectFormItem>
           </FormContainer>
         </div>
 
@@ -114,9 +119,16 @@ export default function TestingForm({
             name="question"
             render={({ field }) => (
               <FormItem>
-                {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
                 <FormControl>
-                  <Textarea {...field}></Textarea>
+                  <Textarea
+                    {...field}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        form.handleSubmit(onSubmit)();
+                      }
+                    }}
+                  ></Textarea>
                 </FormControl>
 
                 <FormMessage />

@@ -19,28 +19,41 @@ package service
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/entity"
-	"strings"
-	"time"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
+	"ragflow/internal/utility"
+	"strings"
 )
 
 // TenantService tenant service
 type TenantService struct {
-	tenantDAO     *dao.TenantDAO
-	userTenantDAO *dao.UserTenantDAO
-	docEngine     engine.DocEngine
+	tenantDAO            *dao.TenantDAO
+	userTenantDAO        *dao.UserTenantDAO
+	userDAO              *dao.UserDAO
+	modelProviderDAO     *dao.TenantModelProviderDAO
+	modelInstanceDAO     *dao.TenantModelInstanceDAO
+	modelDAO             *dao.TenantModelDAO
+	modelGroupDAO        *dao.TenantModelGroupDAO
+	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
+	kbDAO                *dao.KnowledgebaseDAO
+	docEngine            engine.DocEngine
 }
 
 // NewTenantService create tenant service
 func NewTenantService() *TenantService {
 	return &TenantService{
-		tenantDAO:     dao.NewTenantDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		docEngine:     engine.Get(),
+		tenantDAO:            dao.NewTenantDAO(),
+		userTenantDAO:        dao.NewUserTenantDAO(),
+		userDAO:              dao.NewUserDAO(),
+		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
+		modelDAO:             dao.NewTenantModelDAO(),
+		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
+		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
+		kbDAO:                dao.NewKnowledgebaseDAO(),
+		docEngine:            engine.Get(),
 	}
 }
 
@@ -53,14 +66,14 @@ type TenantInfoResponse struct {
 	RerankID  string  `json:"rerank_id"`
 	ASRID     string  `json:"asr_id"`
 	Img2TxtID string  `json:"img2txt_id"`
-	TTSID     *string `json:"tts_id,omitempty"`
+	TTSID     string  `json:"tts_id"`
 	ParserIDs string  `json:"parser_ids"`
 	Role      string  `json:"role"`
 }
 
 // GetTenantInfo get tenant information for the current user (owner tenant)
-func (s *TenantService) GetTenantInfo(userID string) (*TenantInfoResponse, error) {
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+func (s *TenantService) GetTenantInfo(ctx context.Context, userID string) (*TenantInfoResponse, error) {
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +110,19 @@ type TenantListItem struct {
 // TenantLLMService tenant LLM service
 // This service handles operations related to tenant-specific LLM configurations
 type TenantLLMService struct {
-	tenantLLMDAO *dao.TenantLLMDAO
+	tenantLLMDAO     *dao.TenantLLMDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
 }
 
 // NewTenantLLMService creates a new TenantLLMService instance
 func NewTenantLLMService() *TenantLLMService {
 	return &TenantLLMService{
-		tenantLLMDAO: dao.NewTenantLLMDAO(),
+		tenantLLMDAO:     dao.NewTenantLLMDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
 	}
 }
 
@@ -133,16 +152,16 @@ func NewTenantLLMService() *TenantLLMService {
  *	// Get API key for model without factory
  *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4")
  */
-func (s *TenantLLMService) GetAPIKey(tenantID, modelName string) (*entity.TenantLLM, error) {
+func (s *TenantLLMService) GetAPIKey(ctx context.Context, tenantID, modelName string) (*entity.TenantLLM, error) {
 	modelName, factory := s.SplitModelNameAndFactory(modelName)
 
 	var tenantLLM *entity.TenantLLM
 	var err error
 
 	if factory == "" {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(tenantID, modelName)
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(ctx, dao.DB, tenantID, modelName)
 	} else {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(tenantID, modelName, factory)
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(ctx, dao.DB, tenantID, modelName, factory)
 	}
 
 	if err != nil {
@@ -162,6 +181,49 @@ func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, s
 		return strings.Join(arr[0:len(arr)-1], "@"), arr[len(arr)-1]
 	}
 	return arr[0], arr[1]
+}
+
+// GetAPIKeyFromInstance returns the API key for the given composite model name
+// by looking it up in the tenant_model_instance table. compositeModelName is in
+// "model@instance@provider" or "model@provider" format.
+func (s *TenantLLMService) GetAPIKeyFromInstance(ctx context.Context, tenantID, compositeModelName string) (string, error) {
+	parts := strings.Split(compositeModelName, "@")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
+	}
+
+	var providerName, instanceName string
+	switch len(parts) {
+	case 2:
+		instanceName = "default"
+		providerName = parts[1]
+	case 3:
+		instanceName = parts[1]
+		providerName = parts[2]
+	default:
+		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
+	}
+
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	if err != nil {
+		return "", fmt.Errorf("provider %q not found: %w", providerName, err)
+	}
+	if provider == nil {
+		return "", fmt.Errorf("provider %q not found", providerName)
+	}
+
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
+	if err != nil {
+		return "", fmt.Errorf("instance %q not found: %w", instanceName, err)
+	}
+	if instance == nil {
+		return "", fmt.Errorf("instance %q not found", instanceName)
+	}
+
+	if instance.APIKey == "" {
+		return "", fmt.Errorf("no API key configured for model %s", compositeModelName)
+	}
+	return instance.APIKey, nil
 }
 
 // EnsureTenantModelIDForParams ensures tenant model IDs are populated for LLM-related parameters
@@ -198,7 +260,7 @@ func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, s
  *	//     "tenant_embd_id": 456,   // ID from tenant_llm table
  *	// }
  */
-func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params map[string]interface{}) map[string]interface{} {
+func (s *TenantLLMService) EnsureTenantModelIDForParams(ctx context.Context, tenantID string, params map[string]interface{}) map[string]interface{} {
 	paramKeys := []string{"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"}
 
 	for _, key := range paramKeys {
@@ -211,7 +273,7 @@ func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params 
 					continue
 				}
 
-				tenantLLM, err := s.GetAPIKey(tenantID, modelName)
+				tenantLLM, err := s.GetAPIKey(ctx, tenantID, modelName)
 				if err == nil && tenantLLM != nil {
 					params[tenantKey] = tenantLLM.ID
 				} else {
@@ -225,21 +287,21 @@ func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params 
 }
 
 // GetTenantList get tenant list for a user
-func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) {
-	tenants, err := s.userTenantDAO.GetTenantsByUserID(userID)
+func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*TenantListItem, error) {
+	tenants, err := s.userTenantDAO.GetTenantsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
 
 	result := make([]*TenantListItem, len(tenants))
-	now := time.Now()
 
 	for i, t := range tenants {
 		// Parse update_date and calculate delta_seconds
 		var deltaSeconds float64
 		if t.UpdateDate != "" {
-			if updateTime, err := time.Parse("2006-01-02 15:04:05", t.UpdateDate); err == nil {
-				deltaSeconds = now.Sub(updateTime).Seconds()
+			deltaSeconds, err = common.DeltaSeconds(t.UpdateDate)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -257,30 +319,664 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	return result, nil
 }
 
-// CreateDocMetaIndex creates the document metadata index for a tenant
-func (s *TenantService) CreateDocMetaIndex(tenantID string) (common.ErrorCode, error) {
-	// Build index name: ragflow_doc_meta_<tenant_id>
-	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
-
-	// Call document engine to create doc meta index
-	err := s.docEngine.CreateDocMetaIndex(context.Background(), indexName)
+// CreateMetadataStore creates the metadata store for a tenant
+func (s *TenantService) CreateMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
+	// Call document engine to create doc meta table
+	err := s.docEngine.CreateMetadataStore(ctx, tenantID)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to create doc meta index: %w", err)
+		return common.CodeServerError, fmt.Errorf("failed to create metadata table: %w", err)
 	}
 
 	return common.CodeSuccess, nil
 }
 
-// DeleteDocMetaIndex deletes the document metadata index for a tenant
-func (s *TenantService) DeleteDocMetaIndex(tenantID string) (common.ErrorCode, error) {
-	// Build index name: ragflow_doc_meta_<tenant_id>
-	indexName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
-
-	// Call document engine to delete doc meta index
-	err := s.docEngine.DeleteIndex(context.Background(), indexName)
+// DeleteMetadataStore deletes the metadata store for a tenant
+func (s *TenantService) DeleteMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
+	// Call document engine to delete doc meta table
+	err := s.docEngine.DropMetadataStore(ctx, tenantID)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to delete doc meta index: %w", err)
+		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
 	}
 
+	return common.CodeSuccess, nil
+}
+
+// CreateDatasetTableRequest represents the request for creating a dataset table
+type CreateDatasetTableRequest struct {
+	KBID       string `json:"kb_id" binding:"required"`
+	VectorSize int    `json:"vector_size" binding:"required"`
+	ParserID   string `json:"parser_id,omitempty"`
+}
+
+// CreateChunkStoreResponse represents the response for creating a chunk store
+type CreateChunkStoreResponse struct {
+	KBID       string `json:"kb_id"`
+	TableName  string `json:"table_name"`
+	VectorSize int    `json:"vector_size"`
+}
+
+// CreateChunkStore creates a chunk store in the document engine for a knowledge base
+func (s *TenantService) CreateChunkStore(ctx context.Context, req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
+	if req == nil {
+		return nil, common.CodeDataError, fmt.Errorf("request is required")
+	}
+	// Get KB to find tenant_id for building table name
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, req.KBID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to query knowledge base %s: %w", req.KBID, err)
+	}
+
+	// vector_size is required
+	vecSize := req.VectorSize
+	if vecSize <= 0 {
+		return nil, common.CodeDataError, fmt.Errorf("vector_size must be positive")
+	}
+
+	// Build table name prefix: ragflow_<tenant_id>
+	tableName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	// Call document engine to create table
+	// Full table name will be built as "{tableName}_{kb_id}"
+	err = s.docEngine.CreateChunkStore(ctx, tableName, req.KBID, vecSize, req.ParserID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
+	}
+
+	return &CreateChunkStoreResponse{
+		KBID:       req.KBID,
+		TableName:  tableName,
+		VectorSize: vecSize,
+	}, common.CodeSuccess, nil
+}
+
+// DeleteChunkStore deletes the chunk store in the document engine for a knowledge base
+func (s *TenantService) DeleteChunkStore(ctx context.Context, kbID string) (common.ErrorCode, error) {
+	// Get KB to find tenant_id for building table name
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
+		}
+		return common.CodeServerError, fmt.Errorf("failed to query knowledge base %s: %w", kbID, err)
+	}
+
+	// Call document engine to delete table
+	err = s.docEngine.DropChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
+	}
+
+	return common.CodeSuccess, nil
+}
+
+type ModelItem struct {
+	ModelProvider *string `json:"model_provider"`
+	ModelInstance *string `json:"model_instance"`
+	ModelName     *string `json:"model_name"`
+	ModelID       string  `json:"model_id"`
+	ModelType     string  `json:"model_type"`
+	Enable        bool    `json:"enable"`
+}
+
+func tenantDefaultModelFields(modelType string) (string, string, entity.ModelType, error) {
+	switch modelType {
+	case "chat":
+		return "llm_id", "tenant_llm_id", entity.ModelTypeChat, nil
+	case "embedding":
+		return "embd_id", "tenant_embd_id", entity.ModelTypeEmbedding, nil
+	case "rerank":
+		return "rerank_id", "tenant_rerank_id", entity.ModelTypeRerank, nil
+	case "asr", "speech2text":
+		return "asr_id", "tenant_asr_id", entity.ModelTypeSpeech2Text, nil
+	case "vision", "image2text":
+		return "img2txt_id", "tenant_img2txt_id", entity.ModelTypeImage2Text, nil
+	case "tts":
+		return "tts_id", "tenant_tts_id", entity.ModelTypeTTS, nil
+	case "ocr":
+		return "ocr_id", "tenant_ocr_id", entity.ModelTypeOCR, nil
+	default:
+		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
+	}
+}
+
+func ptrStringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// GetDefaultModelName returns the full default model ID for a tenant and model type
+// Format: modelName@instanceName@providerName or modelName@providerName
+// Returns empty string if no default model is set
+func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return "", err
+	}
+
+	var modelID string
+	switch modelType {
+	case entity.ModelTypeChat:
+		modelID = tenant.LLMID
+	case entity.ModelTypeEmbedding:
+		modelID = tenant.EmbdID
+	case entity.ModelTypeRerank:
+		modelID = tenant.RerankID
+	case entity.ModelTypeSpeech2Text:
+		modelID = tenant.ASRID
+	case entity.ModelTypeImage2Text:
+		modelID = tenant.Img2TxtID
+	case entity.ModelTypeTTS:
+		modelID = *tenant.TTSID
+	case entity.ModelTypeOCR:
+		modelID = *tenant.OCRID
+	default:
+		return "", fmt.Errorf("invalid model type: %s", modelType)
+	}
+
+	return modelID, nil
+}
+
+func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
+	// Mirror Python's _get_model_info: right-anchored rsplit so that model
+	// names containing '@' (e.g. LM Studio IDs like
+	// "text-embedding-nomic-embed-text-v1.5@q8_0") remain intact.
+	// The composite key is: modelName@instanceName@providerName or
+	// modelName@providerName.
+	parts := rsplitN(defaultModel, "@", 2)
+	var modelName, instanceName, providerName string
+	switch len(parts) {
+	case 3:
+		modelName, instanceName, providerName = parts[0], parts[1], parts[2]
+	case 2:
+		modelName, providerName = parts[0], parts[1]
+		instanceName = "default"
+	default:
+		modelName = parts[0]
+		providerName = ""
+		instanceName = "default"
+	}
+
+	// Special case: OCR with infiniflow@default@deepdoc is always enabled.
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return &providerName, &instanceName, &modelName, true, nil
+	}
+
+	// Special case: TEI Builtin embedding model.
+	composeProfiles := common.GetEnv(common.EnvComposeProfiles)
+	teiModel := common.GetEnv(common.EnvTEIModel)
+	if modelType == "embedding" && strings.Contains(composeProfiles, "tei-") && teiModel != "" &&
+		modelName == teiModel && (providerName == "" || providerName == "Builtin") {
+		return &providerName, &instanceName, &modelName, true, nil
+	}
+
+	// Check if the provider exists for the tenant.
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+
+	// Check if the instance exists.
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProvider.ID, instanceName)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+
+	// Check if the model exists and is active. Model type validity is
+	// enforced on the save path against the tenant_model record, so models
+	// added online that are absent from the static catalog still resolve.
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
+	if err != nil {
+		if !dao.IsNotFoundErr(err) {
+			return nil, nil, nil, false, err
+		}
+	}
+	if modelEntity == nil {
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", modelName)
+	}
+	if modelEntity.Status != "active" {
+		return nil, nil, nil, false, fmt.Errorf("model %s isn't available", modelName)
+	}
+
+	return &providerName, &instanceName, &modelName, true, nil
+}
+
+// rsplitN splits s by sep from the right, limiting to n+1 parts (mirrors
+// Python's str.rsplit(sep, maxsplit)).
+func rsplitN(s, sep string, n int) []string {
+	if n <= 0 {
+		return []string{s}
+	}
+	result := make([]string, 0, n+1)
+	remaining := s
+	for i := 0; i < n; i++ {
+		idx := strings.LastIndex(remaining, sep)
+		if idx < 0 {
+			result = append(result, remaining)
+			// Reverse the collected parts.
+			for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+				result[left], result[right] = result[right], result[left]
+			}
+			return result
+		}
+		result = append(result, remaining[idx+len(sep):])
+		remaining = remaining[:idx]
+	}
+	result = append(result, remaining)
+	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+		result[left], result[right] = result[right], result[left]
+	}
+	return result
+}
+
+func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID string) ([]ModelItem, error) {
+
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(tenantInfos) == 0 {
+		return nil, nil // No tenant found (should not happen for valid user)
+	}
+
+	ownedTenant := tenantInfos[0]
+
+	var result []ModelItem
+
+	defaultChatModelProvider, defaultChatModelInstance, defaultChatModelName, defaultChatModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.LLMID, "chat")
+	if err == nil {
+		result = append(result, ModelItem{
+			ModelProvider: defaultChatModelProvider,
+			ModelInstance: defaultChatModelInstance,
+			ModelName:     defaultChatModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantLLMID),
+			ModelType:     "chat",
+			Enable:        defaultChatModelEnable,
+		})
+	}
+
+	defaultEmbeddingModelProvider, defaultEmbeddingModelInstance, defaultEmbeddingModelName, defaultEmbeddingModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.EmbDID, "embedding")
+	if err == nil {
+		result = append(result, ModelItem{
+			ModelProvider: defaultEmbeddingModelProvider,
+			ModelInstance: defaultEmbeddingModelInstance,
+			ModelName:     defaultEmbeddingModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantEmbdID),
+			ModelType:     "embedding",
+			Enable:        defaultEmbeddingModelEnable,
+		})
+	}
+
+	defaultRerankModelProvider, defaultRerankModelInstance, defaultRerankModelName, defaultRerankModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.RerankID, "rerank")
+	if err == nil {
+		result = append(result, ModelItem{
+			ModelProvider: defaultRerankModelProvider,
+			ModelInstance: defaultRerankModelInstance,
+			ModelName:     defaultRerankModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantRerankID),
+			ModelType:     "rerank",
+			Enable:        defaultRerankModelEnable,
+		})
+	}
+
+	defaultASRModelProvider, defaultASRModelInstance, defaultASRModelName, defaultASREnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.ASRID, "asr")
+	if err == nil {
+		result = append(result, ModelItem{
+			ModelProvider: defaultASRModelProvider,
+			ModelInstance: defaultASRModelInstance,
+			ModelName:     defaultASRModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantASRID),
+			ModelType:     "asr",
+			Enable:        defaultASREnable,
+		})
+	}
+
+	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
+	if err == nil {
+		result = append(result, ModelItem{
+			ModelProvider: defaultImage2TextModelProvider,
+			ModelInstance: defaultImage2TextModelInstance,
+			ModelName:     defaultImage2TextModelName,
+			ModelID:       ptrStringValue(ownedTenant.TenantImg2TxtID),
+			ModelType:     "vision",
+			Enable:        defaultImage2TextModelEnable,
+		})
+	}
+
+	if ownedTenant.OCRID != "" {
+		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultOCRModelProvider,
+				ModelInstance: defaultOCRModelInstance,
+				ModelName:     defaultOCRModelName,
+				ModelID:       ptrStringValue(ownedTenant.TenantOCRID),
+				ModelType:     "ocr",
+				Enable:        defaultOCRModelEnable,
+			})
+		}
+	}
+
+	if ownedTenant.TTSID != "" {
+		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.TTSID, "tts")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultTTSModelProvider,
+				ModelInstance: defaultTTSModelInstance,
+				ModelName:     defaultTTSModelName,
+				ModelID:       ptrStringValue(ownedTenant.TenantTTSID),
+				ModelType:     "tts",
+				Enable:        defaultTTSModelEnable,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+func (s *TenantService) checkModelAvailable(ctx context.Context, tenantID, providerName, instanceName, modelName, modelType string) error {
+	_, _, modelTypeBit, err := tenantDefaultModelFields(modelType)
+	if err != nil {
+		return err
+	}
+
+	// Static bypass: deepdoc is a built-in model that doesn't need DB checks (mirrors Python _check_model_available).
+	if providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+		return nil
+	}
+
+	// Static bypass: OCR with infiniflow@default@deepdoc is always enabled (mirrors Python _check_model_available).
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" {
+		return nil
+	}
+
+	// Static bypass: TEI Builtin embedding model when COMPOSE_PROFILES includes tei- (mirrors Python _check_model_available).
+	composeProfiles := common.GetEnv(common.EnvComposeProfiles)
+	teiModel := common.GetEnv(common.EnvTEIModel)
+	if modelType == "embedding" && strings.Contains(composeProfiles, "tei-") && teiModel != "" &&
+		modelName == teiModel && (providerName == "" || providerName == "Builtin") {
+		return nil
+	}
+
+	// Check if the provider and instance exists
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	if err != nil {
+		return err
+	}
+
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProvider.ID, instanceName)
+	if err != nil {
+		return err
+	}
+
+	// Validate model availability through the DB (TenantModel table)
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return fmt.Errorf("model %s isn't available", modelName)
+		}
+		return err
+	}
+	if modelEntity.Status != "active" {
+		return fmt.Errorf("model %s isn't available", modelName)
+	}
+	if !entity.ModelType(modelEntity.ModelType).Has(modelTypeBit) {
+		return fmt.Errorf("model %s isn't a %s model", modelName, modelType)
+	}
+
+	return nil
+}
+
+func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
+
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return err
+	}
+	if len(tenantInfos) == 0 {
+		return nil // No tenant found (should not happen for valid user)
+	}
+
+	ownedTenant := tenantInfos[0]
+	var defaultModel string
+	modelTypeID, tenantModelTypeID, modelTypeBit, err := tenantDefaultModelFields(modelType)
+	if err != nil {
+		return err
+	}
+
+	var tenantModelID interface{}
+	if modelID != "" {
+		modelEntity, err := s.modelDAO.GetByID(ctx, dao.DB, modelID)
+		if err != nil {
+			return fmt.Errorf("model ID %s is invalid", modelID)
+		}
+		instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
+		if err != nil {
+			return fmt.Errorf("instance for model %s not found: %w", modelID, err)
+		}
+		providerEntity, err := s.modelProviderDAO.GetByID(ctx, dao.DB, instanceEntity.ProviderID)
+		if err != nil {
+			return fmt.Errorf("provider for model %s not found: %w", modelID, err)
+		}
+
+		if providerEntity.TenantID != ownedTenant.TenantID {
+			return fmt.Errorf("model %s does not belong to your tenant", modelID)
+		}
+		if modelEntity.Status != "active" {
+			return fmt.Errorf("model %s isn't available", modelEntity.ModelName)
+		}
+		if !entity.ModelType(modelEntity.ModelType).Has(modelTypeBit) {
+			return fmt.Errorf("model %s isn't a %s model", modelEntity.ModelName, modelType)
+		}
+
+		modelProvider = providerEntity.ProviderName
+		modelInstance = instanceEntity.InstanceName
+		modelName = modelEntity.ModelName
+		tenantModelID = modelID
+	}
+
+	if modelProvider == "" && modelInstance == "" && modelName == "" {
+		defaultModel = ""
+		tenantModelID = nil
+	} else if modelProvider != "" && modelInstance != "" && modelName != "" {
+		err = s.checkModelAvailable(ctx, ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
+		if err != nil {
+			return err
+		}
+		if modelID == "" {
+			// Builtin provider doesn't use tenant_model rows; leave tenantModelID nil
+			// (mirrors Python resolve_model_id returning None for Builtin).
+			if modelProvider == "Builtin" {
+				tenantModelID = nil
+			} else {
+				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, ownedTenant.TenantID, modelProvider)
+				if err != nil {
+					return err
+				}
+				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProviderEntity.ID, modelInstance)
+				if err != nil {
+					return err
+				}
+				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+				if err != nil {
+					return err
+				}
+				tenantModelID = modelEntity.ID
+			}
+		}
+		defaultModel = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
+	} else {
+		return fmt.Errorf("model provider, instance and name must be specified together")
+	}
+
+	err = s.tenantDAO.Update(ctx, dao.DB, ownedTenant.TenantID, map[string]interface{}{
+		modelTypeID:       defaultModel,
+		tenantModelTypeID: tenantModelID,
+	})
+
+	return err
+}
+
+// Tenant member role constants.
+const (
+	TenantRoleOwner  = "owner"
+	TenantRoleNormal = "normal"
+	TenantRoleInvite = "invite"
+	TenantRoleAdmin  = "admin"
+)
+
+// TenantMemberResponse is one entry in the member list response.
+type TenantMemberResponse struct {
+	ID              string  `json:"id"`
+	UserID          string  `json:"user_id"`
+	Role            string  `json:"role"`
+	Status          string  `json:"status"`
+	Nickname        string  `json:"nickname"`
+	Email           string  `json:"email"`
+	Avatar          string  `json:"avatar"`
+	IsAuthenticated bool    `json:"is_authenticated"`
+	IsActive        string  `json:"is_active"`
+	IsAnonymous     bool    `json:"is_anonymous"`
+	IsSuperuser     bool    `json:"is_superuser"`
+	UpdateDate      string  `json:"update_date"`
+	DeltaSeconds    float64 `json:"delta_seconds"`
+}
+
+// ListMembers returns all non-owner members of tenantID.
+// Only the tenant owner (userID == tenantID) may call this.
+func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
+	if userID != tenantID {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	result := make([]*TenantMemberResponse, 0, len(rows))
+	for _, r := range rows {
+		delta, _ := common.DeltaSeconds(r.UpdateDate)
+		result = append(result, &TenantMemberResponse{
+			ID:              r.ID,
+			UserID:          r.UserID,
+			Role:            r.Role,
+			Status:          r.Status,
+			Nickname:        r.Nickname,
+			Email:           r.Email,
+			Avatar:          r.Avatar,
+			IsAuthenticated: r.IsAuthenticated,
+			IsActive:        r.IsActive,
+			IsAnonymous:     r.IsAnonymous,
+			IsSuperuser:     r.IsSuperuser,
+			UpdateDate:      r.UpdateDate,
+			DeltaSeconds:    delta,
+		})
+	}
+	return result, common.CodeSuccess, nil
+}
+
+// AddMemberRequest holds the invite payload.
+type AddMemberRequest struct {
+	Email string `json:"email"`
+}
+
+// AddMemberResponse holds the new member's public data.
+type AddMemberResponse struct {
+	ID       string `json:"id"`
+	Avatar   string `json:"avatar"`
+	Email    string `json:"email"`
+	Nickname string `json:"nickname"`
+}
+
+// AddMember invites a user (by email) to the tenant.
+// Only the tenant owner (userID == tenantID) may call this.
+func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
+	if userID != tenantID {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	if req.Email == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
+	}
+
+	invitee, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("user not found")
+	}
+
+	// Reject if already a member or has a pending invitation.
+	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
+	if existing != nil {
+		switch existing.Role {
+		case TenantRoleOwner:
+			return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
+		case TenantRoleNormal, TenantRoleAdmin:
+			return nil, common.CodeDataError, fmt.Errorf("user is already a member")
+		case TenantRoleInvite:
+			return nil, common.CodeDataError, fmt.Errorf("user already has a pending invitation")
+		}
+	}
+
+	status := "1"
+	ut := &entity.UserTenant{
+		ID:        utility.GenerateUUID(),
+		UserID:    invitee.ID,
+		TenantID:  tenantID,
+		Role:      TenantRoleInvite,
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	if err = s.userTenantDAO.Create(ctx, dao.DB, ut); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
+	}
+
+	avatar := ""
+	if invitee.Avatar != nil {
+		avatar = *invitee.Avatar
+	}
+	return &AddMemberResponse{
+		ID:       invitee.ID,
+		Avatar:   avatar,
+		Email:    invitee.Email,
+		Nickname: invitee.Nickname,
+	}, common.CodeSuccess, nil
+}
+
+// RemoveMember removes a user from the tenant.
+// Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
+// The tenant owner (targetUserID == tenantID) cannot be removed.
+func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
+	if userID != tenantID && userID != targetUserID {
+		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	if targetUserID == tenantID {
+		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
+	}
+	if s.userTenantDAO == nil {
+		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
+	}
+	if err := s.userTenantDAO.DeleteByUserAndTenant(ctx, dao.DB, targetUserID, tenantID); err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)
+	}
+	return common.CodeSuccess, nil
+}
+
+// AcceptInvite transitions the calling user's role from "invite" → "normal" for the given tenant.
+func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
+	if s.userTenantDAO == nil {
+		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
+	}
+	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err != nil || existing == nil {
+		return common.CodeDataError, fmt.Errorf("no pending invitation found")
+	}
+	if existing.Role != TenantRoleInvite {
+		return common.CodeArgumentError, fmt.Errorf("no pending invitation to accept")
+	}
+	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(ctx, dao.DB, userID, tenantID, TenantRoleNormal); err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to accept invitation: %w", err)
+	}
 	return common.CodeSuccess, nil
 }

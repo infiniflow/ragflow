@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
@@ -10,7 +26,7 @@ import {
   IMessage,
   Message,
 } from '@/interfaces/database/chat';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -26,10 +42,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './use-user-setting-request';
+import { useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -72,10 +87,14 @@ export const useGetPaginationWithRouter = () => {
   } = useSetPaginationParams();
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize?: number) => {
-      setPaginationParams(pageNumber, pageSize);
+    (pageNumber: number, size?: number) => {
+      if (size !== pageSize) {
+        setPaginationParams(1, size);
+      } else {
+        setPaginationParams(pageNumber, size);
+      }
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const setCurrentPagination = useCallback(
@@ -107,6 +126,24 @@ export const useGetPaginationWithRouter = () => {
   };
 };
 
+// When the current page becomes empty (e.g. after deleting the last card on
+// the last page), navigate back to the previous page automatically.
+export const useGoToPreviousPageOnEmpty = (
+  listLength: number | undefined,
+  loading: boolean = false,
+) => {
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  useEffect(() => {
+    if (!loading && listLength === 0 && pagination.current > 1) {
+      setPagination({
+        page: pagination.current - 1,
+        pageSize: pagination.pageSize,
+      });
+    }
+  }, [listLength, loading, pagination, setPagination]);
+};
+
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -122,8 +159,11 @@ export const useHandleSearchChange = () => {
   return { handleInputChange, searchString, pagination, setPagination };
 };
 
-export const useGetPagination = () => {
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
+export const useGetPagination = (options?: { pageSize?: number }) => {
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: options?.pageSize ?? 10,
+  });
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
@@ -148,6 +188,7 @@ export const useGetPagination = () => {
 
   return {
     pagination: currentPagination,
+    setPagination,
   };
 };
 
@@ -259,6 +300,7 @@ export const useSendMessageWithSse = () => {
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
+        // oxlint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();
@@ -274,7 +316,11 @@ export const useSendMessageWithSse = () => {
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
-                    const currentAnswer = d.answer || '';
+                    // Skip final-chunk answer only when prior stream chunks exist (avoids duplicate).
+                    // Empty-response and other single-shot answers arrive with final=true only.
+                    // const currentAnswer = d.final ? '' : d.answer || '';
+                    const currentAnswer =
+                      d.final && prevAnswer ? '' : d.answer || '';
 
                     let newAnswer: string;
                     if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
@@ -294,18 +340,17 @@ export const useSendMessageWithSse = () => {
                     return {
                       ...d,
                       answer: newAnswer,
-                      conversationId: body?.conversation_id,
+                      conversationId: body?.session_id ?? body?.conversation_id,
                       chatBoxId: body.chatBoxId,
                     };
                   });
                 }
-              } catch (e) {
+              } catch {
                 // Swallow parse errors silently
               }
             }
-          } catch (e) {
-            if (e instanceof DOMException && e.name === 'AbortError') {
-              console.log('Request was aborted by user or logic.');
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
               break;
             }
           }
@@ -313,7 +358,7 @@ export const useSendMessageWithSse = () => {
         setDoneValue(body, true);
         resetAnswer();
         return { data: await res, response };
-      } catch (e) {
+      } catch {
         setDoneValue(body, true);
 
         resetAnswer();
@@ -356,7 +401,7 @@ export const useSpeechWithSse = (url: string = api.chatsTts) => {
         if (res?.code !== 0) {
           message.error(res?.message);
         }
-      } catch (error) {
+      } catch {
         // Swallow errors silently
       }
       return response;
@@ -392,7 +437,13 @@ export const useScrollToBottom = (
     const container = containerRef.current;
 
     const handleScroll = () => {
-      setIsAtBottom(checkIfUserAtBottom());
+      // Write the ref here rather than relying on the effect that mirrors
+      // `isAtBottom`: that effect only runs after the next render, and while the
+      // main thread is busy rendering a streaming answer an already scheduled
+      // auto-scroll would still see the stale `true`.
+      const atBottom = checkIfUserAtBottom();
+      isAtBottomRef.current = atBottom;
+      setIsAtBottom(atBottom);
     };
 
     container.addEventListener('scroll', handleScroll);
@@ -411,16 +462,22 @@ export const useScrollToBottom = (
     }
   }, [containerRef]);
 
+  // Streaming replaces `messages` many times a second. The previous
+  // rAF + setTimeout(100) chain always had several scrolls queued, and they read
+  // `isAtBottomRef` long after the user had scrolled up — yanking the view back
+  // down. One cancellable frame per change, gated on the latest position, keeps
+  // auto-follow without fighting the user.
   useEffect(() => {
     if (!messages) return;
     if (!containerRef?.current) return;
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        if (isAtBottomRef.current) {
-          scrollToBottom();
-        }
-      }, 100);
+    if (!isAtBottomRef.current) return;
+
+    const frame = requestAnimationFrame(() => {
+      if (isAtBottomRef.current) {
+        scrollToBottom();
+      }
     });
+    return () => cancelAnimationFrame(frame);
   }, [messages, containerRef, scrollToBottom]);
 
   return { scrollRef: ref, isAtBottom, scrollToBottom };
@@ -705,12 +762,14 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        let nextMessages;
-        if (index !== -1) {
-          nextMessages = messages.slice(0, index);
-        }
+        // Always pass the truncated history explicitly, even when it is
+        // empty (regenerating the first question), so the backend can
+        // overwrite the session with it via pass_all_history_messages.
+        const nextMessages = index !== -1 ? messages.slice(0, index) : [];
         sendMessage({
-          message: { ...message, id: uuid() },
+          // Keep the original id so the question/answer pair id stays
+          // consistent between local state and the persisted session.
+          message: { ...message },
           messages: nextMessages,
         });
       }
@@ -746,12 +805,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-export const useFetchModelId = () => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
-
-  return tenantInfo?.llm_id ?? '';
 };
 
 const ChunkTokenNumMap = {

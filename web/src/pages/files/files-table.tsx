@@ -41,20 +41,27 @@ import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
-import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
+import {
+  UseHandleConnectToKnowledgeReturnType,
+  useRenameCurrentFile,
+} from './hooks';
 import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
+import { isGoDatasetBackend } from '../../utils/api-proxy-scheme';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
-  UseMoveDocumentShowType;
+  UseMoveDocumentShowType & {
+    connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType;
+  };
 
 export function FilesTable({
   files,
@@ -65,6 +72,7 @@ export function FilesTable({
   rowSelection,
   setRowSelection,
   showMoveFileModal,
+  connectKnowledgeModal,
 }: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -76,6 +84,7 @@ export function FilesTable({
     keyPrefix: 'fileManager',
   });
   const navigateToOtherFolder = useNavigateToOtherFolder();
+  const navigate = useNavigate();
   const {
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
@@ -83,7 +92,7 @@ export function FilesTable({
     initialConnectedIds,
     onConnectToKnowledgeOk,
     connectToKnowledgeLoading,
-  } = useHandleConnectToKnowledge();
+  } = connectKnowledgeModal;
   const {
     fileRenameVisible,
     showFileRenameModal,
@@ -92,6 +101,45 @@ export function FilesTable({
     initialFileName,
     fileRenameLoading,
   } = useRenameCurrentFile();
+
+  // Check if skills feature is enabled (only in hybrid or go mode)
+  const isSkillsEnabled = useMemo(() => isGoDatasetBackend(), []);
+
+  // Sort files with skills folder first, then by time
+  // Filter out skills folder if not in hybrid/go mode
+  const { sortedFiles, hiddenCount } = useMemo(() => {
+    if (!files) return { sortedFiles: [] as IFile[], hiddenCount: 0 };
+
+    // Filter out skills folder if feature is disabled
+    const filteredFiles = isSkillsEnabled
+      ? files
+      : files.filter((file) => {
+          const isSkills =
+            isFolderType(file.type) && file.name.toLowerCase() === 'skills';
+          return !isSkills;
+        });
+
+    const sorted = [...filteredFiles].sort((a, b) => {
+      const aIsSkills =
+        isFolderType(a.type) && a.name.toLowerCase() === 'skills';
+      const bIsSkills =
+        isFolderType(b.type) && b.name.toLowerCase() === 'skills';
+
+      // Skills folder always comes first
+      if (aIsSkills && !bIsSkills) return -1;
+      if (!aIsSkills && bIsSkills) return 1;
+
+      // Then sort by create_time desc (newest first)
+      return (b.create_time || 0) - (a.create_time || 0);
+    });
+
+    return { sortedFiles: sorted, hiddenCount: files.length - filteredFiles.length };
+  }, [files, isSkillsEnabled]);
+
+  // Keep the displayed total consistent with the rows actually shown:
+  // client-side filtered rows (e.g. the skills folder when the feature is
+  // disabled) are still included in the server-side total.
+  const displayTotal = Math.max((total ?? 0) - hiddenCount, 0);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -141,9 +189,12 @@ export function FilesTable({
         const type = row.original.type;
         const id = row.original.id;
         const isFolder = isFolderType(type);
+        const isSkillsFolder = isFolder && name.toLowerCase() === 'skills';
 
         const handleNameClick = () => {
-          if (isFolder) {
+          if (isSkillsFolder) {
+            navigate('/files/skills');
+          } else if (isFolder) {
             navigateToOtherFolder(id);
           }
         };
@@ -156,7 +207,7 @@ export function FilesTable({
                 onClick={handleNameClick}
                 className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
               >
-                <FileIcon name={name} type={type} />
+                <FileIcon name={name} type={isSkillsFolder ? 'skills' : type} />
 
                 <span className="truncate">{name}</span>
               </Button>
@@ -250,7 +301,7 @@ export function FilesTable({
   }, [pagination]);
 
   const table = useReactTable({
-    data: files || [],
+    data: sortedFiles,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -263,7 +314,13 @@ export function FilesTable({
     getRowId: (row) => row.id, // Use file ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     enableRowSelection(row) {
-      return !isKnowledgeBaseType(row.original.source_type);
+      const name = row.original.name;
+      const type = row.original.type;
+      const isSkillsFolder =
+        isFolderType(type) && name.toLowerCase() === 'skills';
+      // Skills folder is not selectable when enabled (it's a special entry)
+      // When disabled, it's already filtered out
+      return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
     },
     state: {
       sorting,
@@ -272,13 +329,13 @@ export function FilesTable({
       rowSelection,
       pagination: currentPagination,
     },
-    rowCount: total ?? 0,
+    rowCount: displayTotal,
     debugTable: true,
   });
 
   return (
     <>
-      <div className="flex-1 h-0 size-full">
+      <div className="flex-1 min-h-0 size-full">
         <Table rootClassName="max-h-full overflow-auto">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -336,7 +393,7 @@ export function FilesTable({
       <footer className="flex items-center justify-end pb-5 mt-4">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
-          total={total}
+          total={displayTotal}
           onChange={(page, pageSize) => {
             setPagination({ page, pageSize });
           }}

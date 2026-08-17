@@ -1,5 +1,22 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 // src/pages/next-searches/hooks.ts
 
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
@@ -90,7 +107,7 @@ export const useFetchSearchList = () => {
   const { handleInputChange, searchString, pagination, setPagination } =
     useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
@@ -99,6 +116,7 @@ export const useFetchSearchList = () => {
       'searchList',
       {
         debouncedSearchString,
+        filterValue,
         ...pagination,
       },
     ],
@@ -109,7 +127,9 @@ export const useFetchSearchList = () => {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
+            owner_ids: filterValue.owner,
           },
+          paramsSerializer: { indexes: null },
         },
         true,
       );
@@ -129,6 +149,8 @@ export const useFetchSearchList = () => {
     handleInputChange,
     setPagination,
     refetch,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -149,6 +171,10 @@ export interface IllmSettingProps {
   top_p?: number;
   frequency_penalty?: number;
   presence_penalty?: number;
+  temperature_enabled?: boolean;
+  top_p_enabled?: boolean;
+  frequency_penalty_enabled?: boolean;
+  presence_penalty_enabled?: boolean;
 }
 interface IllmSettingEnableProps {
   temperatureEnabled?: boolean;
@@ -184,6 +210,10 @@ export interface ISearchAppDetailProps {
     meta_data_filter?: {
       method: string;
       manual: { key: string; op: string; value: string }[];
+    };
+    reference_metadata?: {
+      include?: boolean;
+      fields?: string[];
     };
   };
   tenant_id: string;
@@ -290,9 +320,6 @@ export const useUpdateSearch = () => {
         queryKey: ['searchDetail', variables.search_id],
       });
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const updateSearch = useCallback(
@@ -338,13 +365,12 @@ export const useRenameSearch = () => {
       setLoading(true);
       if (search?.id) {
         try {
-          const reponse = await searchService.getSearchDetail({
+          const response = await searchService.getSearchDetail({
             search_id: search?.id,
           });
-          const detail = reponse.data?.data;
-          console.log('detail-->', detail);
+          const detail = response.data?.data;
 
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          // oxlint-disable-next-line typescript/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;
           res = await updateSearch({
             ...searchDataTemp,

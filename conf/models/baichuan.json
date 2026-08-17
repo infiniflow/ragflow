@@ -1,0 +1,131 @@
+{
+  "name": "BaiChuan",
+  "url": {
+    "default": "https://api.baichuan-ai.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "embedding": "embeddings"
+  },
+  "class": "baichuan",
+  "models": [
+    {
+      "name": "Baichuan4",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan4-Air",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan4-Turbo",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan-M3",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan-M3-plus",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan-M2-plus",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan-M2",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan3-Turbo",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan3-Turbo-128k",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan2-Turbo",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Baichuan-Text-Embedding",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 16
+    }
+  ]
+}

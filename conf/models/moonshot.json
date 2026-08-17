@@ -1,0 +1,165 @@
+{
+  "name": "Moonshot",
+  "rank": 994,
+  "url": {
+    "default": "https://api.moonshot.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "balance": "users/me/balance"
+  },
+  "class": "kimi",
+  "models": [
+    {
+      "name": "kimi-k3",
+      "content_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code",
+      "content_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code-highspeed",
+      "content_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.6",
+      "content_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.5",
+      "content_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot-v1-8k",
+      "content_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot-v1-32k",
+      "content_length": 32768,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot-v1-128k",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot-v1-8k-vision-preview",
+      "content_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot-v1-32k-vision-preview",
+      "content_length": 32768,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot-v1-128k-vision-preview",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

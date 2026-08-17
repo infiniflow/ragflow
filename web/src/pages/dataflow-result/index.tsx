@@ -23,8 +23,8 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { Images } from '@/constants/common';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { Routes } from '@/routes';
 import { LucideArrowBigLeft } from 'lucide-react';
 import TimelineDataFlow from './components/time-line';
@@ -34,16 +34,44 @@ import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
 const DataflowResult = () => {
-  const { isReadOnly, knowledgeId, agentId, agentTitle, documentExtension } =
-    useGetPipelineResultSearchParams();
+  const {
+    isReadOnly,
+    knowledgeId,
+    agentId,
+    documentExtension,
+    documentName,
+    documentSize,
+    documentCreatedAt,
+  } = useGetPipelineResultSearchParams();
 
   const isAgent = !!agentId;
 
   const { pipelineResult } = useFetchPipelineResult({ agentId });
 
   const {
-    data: { documentInfo },
+    data: { documentInfo: chunkDocumentInfo },
   } = useFetchNextChunkList(!isAgent);
+
+  // In agent mode the chunk list query is disabled, so the document info
+  // comes from the search params passed by the pipeline log sheet instead.
+  const documentInfo = useMemo<IKnowledgeFile>(() => {
+    if (!isAgent) {
+      return chunkDocumentInfo;
+    }
+    return {
+      name: documentName,
+      size: Number(documentSize) || 0,
+      create_date: documentCreatedAt
+        ? new Date(Number(documentCreatedAt) * 1000).toISOString()
+        : '',
+    } as IKnowledgeFile;
+  }, [
+    chunkDocumentInfo,
+    documentCreatedAt,
+    documentName,
+    documentSize,
+    isAgent,
+  ]);
 
   const { selectedChunk, handleChunkCardClick } = useHandleChunkCardClick();
   const [activeStepId, setActiveStepId] = useState<number | string>(2);
@@ -56,13 +84,7 @@ const DataflowResult = () => {
     agentId ? (pipelineResult as IPipelineFileLogDetail) : dataset,
   );
 
-  const {
-    navigateToDatasetOverview,
-    navigateToDatasetList,
-    navigateToAgents,
-    navigateToAgent,
-  } = useNavigatePage();
-  let fileUrl = useGetDocumentUrl(isAgent);
+  const fileUrl = useGetDocumentUrl(isAgent);
 
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunk);
@@ -70,7 +92,7 @@ const DataflowResult = () => {
   const fileType = useMemo(() => {
     if (isAgent) {
       return Images.some((x) => x === documentExtension)
-        ? documentInfo?.name.split('.').pop() || 'visual'
+        ? documentInfo?.name?.split('.').pop() || documentExtension
         : documentExtension;
     }
     switch (documentInfo?.type) {

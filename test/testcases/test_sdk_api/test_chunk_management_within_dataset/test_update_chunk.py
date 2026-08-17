@@ -21,27 +21,19 @@ import pytest
 
 
 class TestUpdatedChunk:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
             ({"content": None}, ""),
-            pytest.param(
-                {"content": ""},
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": ""}, "`content` is required"),
             pytest.param(
                 {"content": 1},
                 "TypeError('expected string or bytes-like object')",
                 marks=pytest.mark.skip,
             ),
             ({"content": "update chunk"}, ""),
-            pytest.param(
-                {"content": " "},
-                """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
-                marks=pytest.mark.skip(reason="issues/6541"),
-            ),
+            ({"content": " "}, "`content` is required"),
             ({"content": "\n!?。；！？\"'"}, ""),
         ],
     )
@@ -174,4 +166,6 @@ class TestUpdatedChunk:
 
         with pytest.raises(Exception) as exception_info:
             chunks[0].update({})
-        assert str(exception_info.value) in [f"You don't own the document {chunks[0].document_id}", f"Can't find this chunk {chunks[0].id}"], str(exception_info.value)
+        message = str(exception_info.value)
+        ownership_message = f"you don't own the document {chunks[0].document_id}"
+        assert message.rstrip(".") == ownership_message or message == f"Can't find this chunk {chunks[0].id}", message

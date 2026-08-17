@@ -1,13 +1,50 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Authorization } from '@/constants/authorization';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useGetPipelineResultSearchParams } from '@/pages/dataflow-result/hooks';
-import api, { api_host } from '@/utils/api';
+import api, { restAPIv1 } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
-import { useSize } from 'ahooks';
+import { useDebounceFn, useSize } from 'ahooks';
 import axios from 'axios';
-import mammoth from 'mammoth';
+import JSZip from 'jszip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
+
+// ZIP file header bytes "PK"
+const ZIP_HEADER_0 = 0x50;
+const ZIP_HEADER_1 = 0x4b;
+
+export const isZipLikeBlob = async (blob: Blob): Promise<boolean> => {
+  try {
+    const headerSlice = blob.slice(0, 4);
+    const buf = await headerSlice.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    return (
+      bytes.length >= 2 &&
+      bytes[0] === ZIP_HEADER_0 &&
+      bytes[1] === ZIP_HEADER_1
+    );
+  } catch (e) {
+    console.error('Failed to inspect blob header', e);
+    return false;
+  }
+};
 
 export const useDocumentResizeObserver = () => {
   const [containerWidth, setContainerWidth] = useState<number>();
@@ -57,7 +94,7 @@ export const useGetDocumentUrl = (isAgent: boolean) => {
     if (isAgent) {
       return api.downloadFile + `?id=${id}&created_by=${createdBy}`;
     }
-    return `${api_host}/document/get/${documentId}`;
+    return `${restAPIv1}/documents/${documentId}/preview`;
   }, [createdBy, documentId, id, isAgent]);
 
   return url;
@@ -95,75 +132,196 @@ export const useFetchDocument = () => {
   return { fetchDocument };
 };
 
+/**
+ * WPS spreadsheets embed images in cells via the proprietary DISPIMG formula
+ * (stored in xl/cellimages.xml). @js-preview/excel cannot evaluate this
+ * formula and crashes with "Cannot read properties of undefined (reading
+ * 'render')". This function strips DISPIMG formulas from worksheet XML,
+ * replacing them with a text placeholder so the rest of the sheet renders.
+ */
+async function stripWpsDispImg(data: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(data);
+
+  const worksheetPaths = Object.keys(zip.files).filter((path) =>
+    /^xl\/worksheets\/sheet\d+\.xml$/.test(path),
+  );
+
+  let modified = false;
+  for (const path of worksheetPaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+    const xml = await file.async('string');
+    if (!xml.includes('DISPIMG')) continue;
+
+    modified = true;
+    let cleaned = xml;
+    // Remove <f> formula tags that reference DISPIMG
+    cleaned = cleaned.replace(
+      /<f\b[^>]*>[\s\S]*?DISPIMG[\s\S]*?<\/f>/g,
+      '',
+    );
+    // Replace cached <v> values that reference DISPIMG with a placeholder
+    cleaned = cleaned.replace(
+      /<v>[^<]*DISPIMG[^<]*<\/v>/g,
+      '<v>[图片]</v>',
+    );
+    zip.file(path, cleaned);
+  }
+
+  if (!modified) return data;
+  return zip.generateAsync({
+    type: 'arraybuffer',
+    compression: 'DEFLATE',
+  });
+}
+
+/**
+ * ExcelJS (used internally by @js-preview/excel) fails to parse workbooks
+ * whose root <workbook> element carries an XML namespace prefix (e.g.
+ * <x:workbook> instead of <workbook>). This is common in files exported by
+ * WPS Office or older Excel versions. The workbook-xform parser only sets
+ * its model when the closing tag name is exactly "workbook", so a prefixed
+ * root element leaves the model undefined and crashes with
+ * "Cannot read properties of undefined (reading 'sheets')".
+ *
+ * When such a prefix is detected, re-serialize the file with SheetJS (which
+ * always emits a standard, prefix-free xlsx) so ExcelJS can parse it.
+ */
+async function normalizeXlsxForExcelJS(data: ArrayBuffer): Promise<ArrayBuffer> {
+  try {
+    const zip = await JSZip.loadAsync(data);
+    const workbookFile = zip.file('xl/workbook.xml');
+    if (!workbookFile) return data;
+
+    const xml = await workbookFile.async('string');
+    // Detect a namespace prefix on the root <workbook> element, e.g. <x:workbook>
+    if (!/<\w+:workbook[\s>]/.test(xml)) return data;
+
+    const workbook = XLSX.read(data, { type: 'array' });
+    return XLSX.write(workbook, {
+      bookType: 'xlsx',
+      type: 'array',
+    }) as ArrayBuffer;
+  } catch {
+    // Not a valid ZIP, SheetJS can't parse, etc. - let the previewer
+    // handle the original data and surface its own error.
+    return data;
+  }
+}
+
 export const useFetchExcel = (filePath: string) => {
   const [status, setStatus] = useState(true);
   const { fetchDocument } = useFetchDocument();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+  const size = useSize(containerEl);
   const { error } = useCatchError(filePath);
 
-  const fetchDocumentAsync = useCallback(async () => {
-    let myExcelPreviewer;
-    if (containerRef.current) {
-      myExcelPreviewer = jsPreviewExcel.init(containerRef.current);
+  const previewerRef = useRef<ReturnType<typeof jsPreviewExcel.init> | null>(
+    null,
+  );
+  // Cache the fetched ArrayBuffer so we don't re-fetch on every resize.
+  const dataRef = useRef<ArrayBuffer | null>(null);
+  const [dataReady, setDataReady] = useState(false);
+
+  // @js-preview/excel reads the container's width/height at init time and
+  // exposes no public resize method, so the only way to make the spreadsheet
+  // track container size changes is to destroy + re-init the previewer.
+  const renderPreview = useCallback(async () => {
+    if (!containerEl || !dataRef.current) return;
+
+    if (previewerRef.current) {
+      previewerRef.current.destroy();
+      previewerRef.current = null;
     }
-    const jsonFile = await fetchDocument(filePath);
-    myExcelPreviewer
-      ?.preview(jsonFile.data)
-      .then(() => {
-        console.log('succeed');
-        setStatus(true);
-      })
-      .catch((e) => {
-        console.warn('failed', e);
-        myExcelPreviewer.destroy();
-        setStatus(false);
-      });
-  }, [filePath, fetchDocument]);
 
-  useEffect(() => {
-    fetchDocumentAsync();
-  }, [fetchDocumentAsync]);
+    const previewer = jsPreviewExcel.init(containerEl);
+    previewerRef.current = previewer;
 
-  return { status, containerRef, error };
-};
-
-export const useFetchDocx = (filePath: string) => {
-  const [succeed, setSucceed] = useState(true);
-  const [error, setError] = useState<string>();
-  const { fetchDocument } = useFetchDocument();
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const fetchDocumentAsync = useCallback(async () => {
     try {
-      const jsonFile = await fetchDocument(filePath);
-      mammoth
-        .convertToHtml(
-          { arrayBuffer: jsonFile.data },
-          { includeDefaultStyleMap: true },
-        )
-        .then((result) => {
-          setSucceed(true);
-          const docEl = document.createElement('div');
-          docEl.className = 'document-container';
-          docEl.innerHTML = result.value;
-          const container = containerRef.current;
-          if (container) {
-            container.innerHTML = docEl.outerHTML;
-          }
-        })
-        .catch(() => {
-          setSucceed(false);
-        });
-    } catch (error: any) {
-      setError(error.toString());
+      await previewer.preview(dataRef.current);
+      setStatus(true);
+    } catch (e) {
+      // oxlint-disable-next-line no-console
+      console.warn('failed', e);
+      // Defer destroy() so the library's pending setTimeout(0) callback
+      // (scheduled by xs.loadData during its error handling) can access
+      // workbookDataSource before we null it out. Destroying immediately
+      // triggers a secondary "Cannot read properties of null (reading
+      // '_worksheets')" error.
+      previewerRef.current = null;
+      setTimeout(() => {
+        previewer.destroy();
+      }, 0);
+      setStatus(false);
     }
+  }, [containerEl]);
+
+  // Leading edge renders immediately on first data/size, trailing edge
+  // collapses rapid resize bursts into a single re-render.
+  const { run: debouncedRender } = useDebounceFn(renderPreview, {
+    wait: 150,
+    leading: true,
+    trailing: true,
+  });
+
+  // Fetch the file once per url. On url change, drop cached data and the
+  // existing previewer so the next render starts from a clean state.
+  useEffect(() => {
+    if (!filePath) return;
+
+    setDataReady(false);
+    setStatus(true);
+    if (previewerRef.current) {
+      previewerRef.current.destroy();
+      previewerRef.current = null;
+    }
+    dataRef.current = null;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const jsonFile = await fetchDocument(filePath);
+        if (cancelled) return;
+        try {
+          let data = jsonFile.data;
+          data = await normalizeXlsxForExcelJS(data);
+          data = await stripWpsDispImg(data);
+          dataRef.current = data;
+        } catch {
+          // Not a valid ZIP or preprocessing failed — use original data
+          dataRef.current = jsonFile.data;
+        }
+        setDataReady(true);
+      } catch (e) {
+        if (!cancelled) {
+          // oxlint-disable-next-line no-console
+          console.warn('failed to fetch', e);
+          setStatus(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [filePath, fetchDocument]);
 
+  // Initial render + debounced re-render on container resize.
   useEffect(() => {
-    fetchDocumentAsync();
-  }, [fetchDocumentAsync]);
+    if (!dataReady || !containerEl) return;
+    debouncedRender();
+  }, [dataReady, containerEl, size?.width, size?.height, debouncedRender]);
 
-  return { succeed, containerRef, error };
+  // Tear down the previewer on unmount.
+  useEffect(() => {
+    return () => {
+      if (previewerRef.current) {
+        previewerRef.current.destroy();
+        previewerRef.current = null;
+      }
+    };
+  }, []);
+
+  return { status, containerRef: setContainerEl, error };
 };
 
 export const useCatchDocumentError = (url: string) => {
@@ -175,9 +333,24 @@ export const useCatchDocumentError = (url: string) => {
   const [error, setError] = useState<string>('');
 
   const fetchDocument = useCallback(async () => {
-    const { data } = await axios.get(url, { headers: httpHeaders });
-    if (data.code !== 0) {
-      setError(data?.message);
+    try {
+      const { data } = await axios.get(url, { headers: httpHeaders });
+      // Only treat as error if response is JSON with an error code
+      // Binary data (like PDF) won't have a code property
+      if (
+        data &&
+        typeof data === 'object' &&
+        'code' in data &&
+        data.code !== 0
+      ) {
+        setError(data?.message || 'Failed to load document');
+      }
+    } catch (e) {
+      // Network errors or non-2xx responses
+      const errMsg = e instanceof Error ? e.message : 'Failed to load document';
+      if (errMsg) {
+        setError(errMsg);
+      }
     }
   }, [url, httpHeaders]);
   useEffect(() => {
@@ -185,4 +358,118 @@ export const useCatchDocumentError = (url: string) => {
   }, [fetchDocument]);
 
   return error;
+};
+
+const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 175, 200] as const;
+
+const clampZoom = (scale: number, direction: 1 | -1): number => {
+  let idx = ZOOM_STEPS.indexOf(scale as (typeof ZOOM_STEPS)[number]);
+  if (idx < 0) {
+    if (direction > 0) {
+      idx = ZOOM_STEPS.findIndex((v) => v > scale);
+    } else {
+      for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
+        if (ZOOM_STEPS[i] < scale) {
+          idx = i;
+          break;
+        }
+      }
+    }
+  }
+  idx = Math.max(
+    0,
+    Math.min(ZOOM_STEPS.length - 1, idx < 0 ? 0 : idx + direction),
+  );
+  return ZOOM_STEPS[idx] ?? scale;
+};
+
+interface UseDocxPreviewZoomOptions {
+  url: string;
+  totalPages: number;
+  pageWidthPx?: number;
+  containerWidth?: number;
+  paddingPx?: number;
+  enabled?: boolean;
+}
+
+interface UseDocxPreviewZoomResult {
+  zoomScale: number;
+  minZoom: number;
+  maxZoom: number;
+  handleZoomIn: () => void;
+  handleZoomOut: () => void;
+  resetZoom: () => void;
+}
+
+export const useDocxPreviewZoom = ({
+  url,
+  totalPages,
+  pageWidthPx,
+  containerWidth,
+  paddingPx = 32,
+  enabled = true,
+}: UseDocxPreviewZoomOptions): UseDocxPreviewZoomResult => {
+  const [zoomScale, setZoomScale] = useState(100);
+  const [hasUserZoomed, setHasUserZoomed] = useState(false);
+  const [isInitialFitPending, setIsInitialFitPending] = useState(true);
+
+  const resetZoom = useCallback(() => {
+    setZoomScale(100);
+    setHasUserZoomed(false);
+    setIsInitialFitPending(true);
+  }, []);
+
+  useEffect(() => {
+    resetZoom();
+  }, [url, resetZoom]);
+
+  const handleZoomIn = useCallback(() => {
+    setHasUserZoomed(true);
+    setZoomScale((s) => clampZoom(s, 1));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setHasUserZoomed(true);
+    setZoomScale((s) => clampZoom(s, -1));
+  }, []);
+
+  // Fit the page width to the container on first paint and on resize,
+  // unless the user has manually changed the zoom level.
+  useEffect(() => {
+    if (!enabled || totalPages <= 0 || !containerWidth || !pageWidthPx) {
+      return;
+    }
+
+    const availableWidth = Math.max(0, containerWidth - paddingPx);
+    if (availableWidth <= 0) {
+      return;
+    }
+
+    const fitScale = Math.floor((availableWidth / pageWidthPx) * 100);
+    const clampedFitScale = Math.min(100, fitScale);
+
+    if (isInitialFitPending) {
+      setZoomScale(clampedFitScale);
+      setIsInitialFitPending(false);
+    } else if (!hasUserZoomed) {
+      setZoomScale(clampedFitScale);
+    }
+  }, [
+    enabled,
+    totalPages,
+    containerWidth,
+    pageWidthPx,
+    paddingPx,
+    isInitialFitPending,
+    hasUserZoomed,
+  ]);
+
+  return {
+    zoomScale,
+    minZoom: ZOOM_STEPS[0],
+    maxZoom: ZOOM_STEPS[ZOOM_STEPS.length - 1],
+    handleZoomIn,
+    handleZoomOut,
+    resetZoom,
+  };
 };

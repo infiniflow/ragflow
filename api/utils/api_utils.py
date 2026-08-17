@@ -19,7 +19,6 @@ import functools
 import inspect
 import json
 import logging
-import os
 import sys
 import time
 from copy import deepcopy
@@ -32,7 +31,7 @@ from quart import (
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest, Unauthorized as WerkzeugUnauthorized
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -41,8 +40,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from peewee import OperationalError
 
-from common.constants import ActiveEnum
-from api.db.db_models import APIToken
+from common.constants import ActiveEnum, LLMType
 from api.utils.json_encode import CustomJSONEncoder
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from api.db.services.tenant_llm_service import LLMFactoriesService
@@ -52,6 +50,7 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
+
 
 def _safe_jsonify(payload: dict):
     if has_app_context():
@@ -89,8 +88,10 @@ async def _coerce_request_data() -> dict:
     request._cached_payload = payload
     return payload
 
+
 async def get_request_json():
     return await _coerce_request_data()
+
 
 def serialize_for_json(obj):
     """
@@ -146,6 +147,9 @@ def server_error_response(e):
 
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+
+    if "not_found" in str(e):
+        return get_error_data_result(message="No chunk found! Check the chunk status please!")
 
     return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
@@ -210,6 +214,7 @@ def not_allowed_parameters(*params):
             if inspect.iscoroutinefunction(func):
                 return await func(*args, **kwargs)
             return func(*args, **kwargs)
+
         return wrapper
 
     return decorator
@@ -237,10 +242,12 @@ def add_tenant_id_to_kwargs(func):
     @wraps(func)
     async def wrapper(**kwargs):
         from api.apps import current_user
+
         kwargs["tenant_id"] = current_user.id
         if inspect.iscoroutinefunction(func):
             return await func(**kwargs)
         return func(**kwargs)
+
     return wrapper
 
 
@@ -249,33 +256,39 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
     return _safe_jsonify(response)
 
 
-def apikey_required(func):
-    @wraps(func)
-    async def decorated_function(*args, **kwargs):
-        authorization = request.headers.get("Authorization")
-        if not authorization:
-            return build_error_result(message="Authorization header is missing!", code=RetCode.FORBIDDEN)
-        parts = authorization.split()
-        if len(parts) < 2:
-            return build_error_result(message="Please check your authorization format.", code=RetCode.FORBIDDEN)
-        token = parts[1]
-        objs = APIToken.query(token=token)
-        if not objs:
-            return build_error_result(message="API-KEY is invalid!", code=RetCode.FORBIDDEN)
-        kwargs["tenant_id"] = objs[0].tenant_id
-        if inspect.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-
-        return func(*args, **kwargs)
-
-    return decorated_function
+# Internal RetCode values below 200 collide with the HTTP 1xx (informational) range.
+# h11 refuses to send a 1xx status as a final response, so Hypercorn drops the
+# connection and the client receives an empty reply instead of the JSON error body.
+# Map them to real HTTP statuses; the body keeps the original RetCode.
+RET_CODE_TO_HTTP_STATUS = {
+    RetCode.EXCEPTION_ERROR: 500,
+    RetCode.ARGUMENT_ERROR: 400,
+    RetCode.DATA_ERROR: 400,
+    RetCode.OPERATING_ERROR: 400,
+    RetCode.CONNECTION_ERROR: 500,
+    RetCode.RUNNING: 500,
+    RetCode.PERMISSION_ERROR: 403,
+    # Dify's external knowledge API expects HTTP 403 for authorization failures.
+    RetCode.AUTHENTICATION_ERROR: 403,
+}
 
 
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        ret_code = int(code)
+        http_status = RET_CODE_TO_HTTP_STATUS.get(ret_code)
+        # The status logs below carry the ret code only; `message` can hold user input.
+        if http_status is not None:
+            logging.debug("build_error_result: ret code %s mapped to HTTP %s", ret_code, http_status)
+        elif 200 <= ret_code <= 599:
+            http_status = ret_code
+            logging.debug("build_error_result: ret code %s used as HTTP status", ret_code)
+        else:
+            http_status = 500
+            logging.warning("build_error_result: unmapped ret code %s, falling back to HTTP 500", ret_code)
+        response.status_code = http_status
     return response
 
 
@@ -283,44 +296,6 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
     if data is None:
         return _safe_jsonify({"code": code, "message": message})
     return _safe_jsonify({"code": code, "message": message, "data": data})
-
-
-def token_required(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Validate the token (API Key)
-        if os.environ.get("DISABLE_SDK"):
-            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
-            err.code = RetCode.SUCCESS
-            raise err
-
-        authorization_str = request.headers.get("Authorization")
-        if not authorization_str:
-            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
-            err.code = RetCode.SUCCESS
-            raise err
-
-        authorization_list = authorization_str.split()
-        if len(authorization_list) < 2:
-            err = WerkzeugUnauthorized(description="Please check your authorization format.")
-            err.code = RetCode.AUTHENTICATION_ERROR
-            raise err
-
-        token = authorization_list[1]
-        objs = APIToken.query(token=token)
-        if not objs:
-            err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
-            err.code = RetCode.AUTHENTICATION_ERROR
-            raise err
-
-        # On success, inject tenant_id into the route function's kwargs
-        kwargs["tenant_id"] = objs[0].tenant_id
-        result = func(*args, **kwargs)
-        if inspect.iscoroutine(result):
-            return await result
-        return result
-
-    return wrapper
 
 
 def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
@@ -398,9 +373,10 @@ def get_parser_config(chunk_method, parser_config):
             "topn_tags": 3,
             "raptor": {
                 "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
+                "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                "max_token": 512,
+                "clustering_threshold": 0.3,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 0,
             },
@@ -414,6 +390,20 @@ def get_parser_config(chunk_method, parser_config):
                     "category",
                 ],
                 "method": "light",
+                "batch_chunk_token_size": 4096,
+                "retry_attempts": 2,
+                "retry_backoff_seconds": 2.0,
+                "retry_backoff_max_seconds": 60.0,
+                "build_subgraph_timeout_per_chunk_seconds": 300,
+                "build_subgraph_min_timeout_seconds": 600,
+                "merge_timeout_seconds": 180,
+                "resolution_timeout_seconds": 1800,
+                "community_timeout_seconds": 1800,
+                "lock_acquire_timeout_seconds": 600,
+            },
+            "parent_child": {
+                "use_parent_child": False,
+                "children_delimiter": "\n",
             },
         },
         "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
@@ -428,7 +418,7 @@ def get_parser_config(chunk_method, parser_config):
         "one": None,
         "knowledge_graph": {
             "chunk_token_num": 8192,
-            "delimiter": r"\n",
+            "delimiter": "\n",
             "entity_types": ["organization", "person", "location", "event", "time"],
             "raptor": {"use_raptor": False},
             "graphrag": {"use_graphrag": False},
@@ -442,16 +432,23 @@ def get_parser_config(chunk_method, parser_config):
     # If no parser_config provided, return default merged with base defaults
     if not parser_config:
         if default_config is None:
-            return deep_merge(base_defaults, {})
-        return deep_merge(base_defaults, default_config)
+            merged_config = deep_merge(base_defaults, {})
+        else:
+            merged_config = deep_merge(base_defaults, default_config)
+    elif default_config is None:
+        # If parser_config is provided but no defaults for this method
+        merged_config = deep_merge(base_defaults, parser_config)
+    else:
+        # Ensure raptor and graph_rag fields have default values if not provided
+        merged_config = deep_merge(base_defaults, default_config)
+        merged_config = deep_merge(merged_config, parser_config)
 
-    # If parser_config is provided, merge with defaults to ensure required fields exist
-    if default_config is None:
-        return deep_merge(base_defaults, parser_config)
-
-    # Ensure raptor and graph_rag fields have default values if not provided
-    merged_config = deep_merge(base_defaults, default_config)
-    merged_config = deep_merge(merged_config, parser_config)
+    # Flatten parent_child config into children_delimiter for the execution layer
+    pc = merged_config.get("parent_child", {})
+    if pc.get("use_parent_child"):
+        merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
+    elif pc:
+        merged_config["children_delimiter"] = ""
 
     return merged_config
 
@@ -460,15 +457,36 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     total_tokens = prompt_tokens + completion_tokens
 
     if stream:
+        usage = None
+        if finish_reason is not None:
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                },
+            }
         return {
             "id": f"{id}",
             "object": "chat.completion.chunk",
+            "created": created if created is not None else int(time.time()),
             "model": model,
+            "system_fingerprint": "",
+            "usage": usage,
             "choices": [
                 {
-                    "delta": {"content": content},
+                    "delta": {
+                        "content": content,
+                        "role": "assistant",
+                        "function_call": None,
+                        "tool_calls": None,
+                    },
                     "finish_reason": finish_reason,
                     "index": 0,
+                    "logprobs": None,
                 }
             ],
         }
@@ -476,7 +494,7 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     return {
         "id": f"{id}",
         "object": object,
-        "created": int(time.time()) if created else None,
+        "created": created if created is not None else int(time.time()),
         "model": model,
         "param": param,
         "usage": {
@@ -530,8 +548,7 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
-    from api.db.services.llm_service import LLMService
-    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import resolve_model_config
 
     """
     Verifies availability of an embedding model for a specific tenant.
@@ -567,18 +584,9 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, s
         (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
     """
     try:
-        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
-        in_llm_service = bool(LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"))
-
-        tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
-        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
-
-        is_builtin_model = llm_factory == "Builtin"
-        if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, f"Unsupported model: <{embd_id}>"
-
-        if not (is_builtin_model or is_tenant_model):
-            return False, f"Unauthorized model: <{embd_id}>"
+        resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_id)
+    except LookupError as e:
+        return False, str(e)
     except OperationalError as e:
         logging.exception(e)
         return False, "Database operation failed"
@@ -706,11 +714,12 @@ def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, s
                 tool_dict["enabled"] = cached_tool.get("enabled", True)
                 results[server_key].append(tool_dict)
 
-        # PERF: blocking call to close sessions — consider moving to background thread or task queue
-        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
         return results, ""
     except Exception as e:
         return {}, str(e)
+    finally:
+        # PERF: blocking call to close sessions — consider moving to background thread or task queue
+        close_multiple_mcp_toolcall_sessions(tool_call_sessions)
 
 
 async def is_strong_enough(chat_model, embedding_model):
@@ -724,24 +733,15 @@ async def is_strong_enough(chat_model, embedding_model):
     async def _is_strong_enough():
         nonlocal chat_model, embedding_model
         if embedding_model:
-            await asyncio.wait_for(
-                thread_pool_exec(embedding_model.encode, ["Are you strong enough!?"]),
-                timeout=10
-            )
+            await asyncio.wait_for(thread_pool_exec(embedding_model.encode, ["Are you strong enough!?"]), timeout=10)
 
         if chat_model:
-            res = await asyncio.wait_for(
-                chat_model.async_chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}]),
-                timeout=30
-            )
+            res = await asyncio.wait_for(chat_model.async_chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}]), timeout=30)
             if "**ERROR**" in res:
                 raise Exception(res)
 
     # Pressure test for GraphRAG task
-    tasks = [
-        asyncio.create_task(_is_strong_enough())
-        for _ in range(count)
-    ]
+    tasks = [asyncio.create_task(_is_strong_enough()) for _ in range(count)]
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:

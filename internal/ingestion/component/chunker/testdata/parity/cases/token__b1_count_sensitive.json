@@ -1,0 +1,16 @@
+{
+ "id": "token__b1_count_sensitive",
+ "component": "TokenChunker",
+ "notes": "Tokenizer-liveness guard for PR #17712. A single long paragraph with no delimiter and a small chunk_token_size, so correct token counting splits it into many chunks by the token budget. If the Go tokenizer ever returns 0 (the offline bug), the budget is never exceeded and the paragraph collapses into a single chunk, which diverges from the multi-chunk Python baseline.",
+ "param": {
+  "chunk_token_size": 50,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "b1.txt",
+  "output_format": "text",
+  "text": "RAGFlow is a retrieval augmented generation engine that ingests heterogeneous documents and slices them into retrievable passages. The chunker must respect a token budget so that each passage fits the context window of the downstream language model without truncation. Token counting is the linchpin of this budget because every merge decision reads the per segment token length. When the encoder is missing the chunker silently reports zero tokens for every string and the budget is never exceeded so an entire document collapses into one oversized chunk. That degenerate behaviour is invisible to a test that only checks for a non empty result because zero is a number like any other. The only way to notice is to compare the actual chunk count against a reference implementation that counts tokens correctly. This case pins that comparison with a long single paragraph and a deliberately small budget so the correct count yields many chunks and a dead encoder yields exactly one. Retrieval quality depends on passages being coherent and appropriately sized so the guard is not merely cosmetic but protects the core promise of the system."
+ }
+}

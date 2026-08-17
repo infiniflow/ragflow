@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FileMimeType } from '@/constants/common';
 import { UploadFile } from '@/interfaces/antd-compat';
 import fileManagerService from '@/services/file-manager-service';
@@ -54,10 +70,10 @@ export const transformBase64ToFile = (
   dataUrl: string,
   filename: string = 'file',
 ) => {
-  let arr = dataUrl.split(','),
-    bstr = atob(arr[1]),
-    n = bstr.length,
-    u8arr = new Uint8Array(n);
+  const arr = dataUrl.split(','),
+    bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
 
   const mime = arr[0].match(/:(.*?);/);
   const mimeType = mime ? mime[1] : 'image/png';
@@ -140,6 +156,11 @@ export const downloadFileFromBlob = (blob: Blob, name?: string) => {
   window.URL.revokeObjectURL(url);
 };
 
+export const downloadMarkdownFile = (content: string, filename: string) => {
+  const blob = new Blob([content], { type: FileMimeType.Md });
+  downloadFileFromBlob(blob, filename);
+};
+
 export const downloadDocument = async ({
   id,
   filename,
@@ -168,8 +189,50 @@ export const downloadJsonFile = async (
   data: Record<string, any>,
   fileName: string,
 ) => {
-  const blob = new Blob([JSON.stringify(data)], { type: FileMimeType.Json });
+  // Pretty-print with 2-space indent + sort keys at every depth so
+  // the downloaded file is human-readable AND byte-stable across
+  // re-exports: a user exporting the same canvas twice gets the
+  // exact same bytes (modulo round-trip edits), which makes the
+  // file easy to diff in version control and easy to hand-edit.
+  // Mirrors the `sort_keys=True` we apply to the testdata fixtures
+  // fixtures, so an exported dsl imported in v2 mode and re-
+  // exported stays identical at the byte level.
+  //
+  // JSON.stringify already leaves non-ASCII (e.g. the Chinese
+  // prompts we store under `Browser.prompts`) un-escaped by
+  // default, so no `ensure_ascii` toggle is needed.
+  const blob = new Blob([JSON.stringify(sortKeysDeep(data), null, 2)], {
+    type: FileMimeType.Json,
+  });
   downloadFileFromBlob(blob, fileName);
+};
+
+// sortKeysDeep returns a structural copy of `value` with every
+// plain-object key sorted alphabetically. Array element order is
+// preserved (semantic — nodes/edges are not interchangeable), but
+// each element is recursively sorted if it is itself an object.
+// Primitives, `null`, and non-plain objects are passed through
+// unchanged. Used to make the exported dsl byte-stable: JSON
+// property iteration order is implementation-defined in JS, and
+// React Flow nodes carry fields in a stable order today but we
+// don't want to depend on that.
+const sortKeysDeep = (value: any): any => {
+  if (Array.isArray(value)) {
+    return value.map(sortKeysDeep);
+  }
+  if (value !== null && typeof value === 'object') {
+    // Only sort plain {…} objects — skip Date, RegExp, Map, etc.
+    if (Object.getPrototypeOf(value) !== Object.prototype) {
+      return value;
+    }
+    return Object.keys(value)
+      .sort()
+      .reduce<Record<string, any>>((acc, key) => {
+        acc[key] = sortKeysDeep(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
 };
 
 export function transformBase64ToFileWithPreview(

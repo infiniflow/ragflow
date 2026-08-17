@@ -72,11 +72,10 @@ class SearchService(CommonService):
             .join(User, on=((User.id == cls.model.tenant_id) & (User.status == StatusEnum.VALID.value)))
             .where((cls.model.id == search_id) & (cls.model.status == StatusEnum.VALID.value))
             .first()
-            .to_dict()
         )
         if not search:
             return {}
-        return search
+        return search.to_dict()
 
     @classmethod
     @DB.connection_context()
@@ -97,8 +96,7 @@ class SearchService(CommonService):
         query = (
             cls.model.select(*fields)
             .join(User, on=(cls.model.tenant_id == User.id))
-            .where(((cls.model.tenant_id.in_(joined_tenant_ids)) | (cls.model.tenant_id == user_id)) & (
-                        cls.model.status == StatusEnum.VALID.value))
+            .where(((cls.model.tenant_id.in_(joined_tenant_ids)) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value))
         )
 
         if keywords:

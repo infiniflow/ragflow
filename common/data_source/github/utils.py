@@ -8,9 +8,7 @@ from common.data_source.models import ExternalAccess
 from .models import SerializedRepository
 
 
-def get_external_access_permission(
-    repo: Repository, github_client: Github
-) -> ExternalAccess:
+def get_external_access_permission(repo: Repository, github_client: Github) -> ExternalAccess:
     """
     Get the external access permission for a repository.
     This functionality requires Enterprise Edition.
@@ -20,9 +18,7 @@ def get_external_access_permission(
     return ExternalAccess.empty()
 
 
-def deserialize_repository(
-    cached_repo: SerializedRepository, github_client: Github
-) -> Repository:
+def deserialize_repository(cached_repo: SerializedRepository, github_client: Github) -> Repository:
     """
     Deserialize a SerializedRepository back into a Repository object.
     """
