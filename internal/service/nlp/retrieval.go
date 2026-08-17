@@ -740,7 +740,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 			fgToken, _ := tokenizer.FineGrainedTokenize(k)
-			for _, kk := range strings.Fields(fgToken) {
+			for kk := range strings.FieldsSeq(fgToken) {
 				if len(kk) < 2 {
 					continue
 				}
@@ -1088,7 +1088,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 func buildIndexNames(tenantIDs []string) []string {
 	var indexNames []string
 	for _, tid := range tenantIDs {
-		for _, part := range strings.Split(tid, ",") {
+		for part := range strings.SplitSeq(tid, ",") {
 			part = strings.TrimSpace(part)
 			if part != "" {
 				indexNames = append(indexNames, fmt.Sprintf("ragflow_%s", part))

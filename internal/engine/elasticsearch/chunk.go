@@ -2163,7 +2163,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
 				separator = "###"
 			}
-			for _, tag := range strings.Split(valueStr, separator) {
+			for tag := range strings.SplitSeq(valueStr, separator) {
 				countElasticsearchAggregationTag(tagCounts, tag)
 			}
 			continue
