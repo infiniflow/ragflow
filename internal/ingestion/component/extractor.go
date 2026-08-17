@@ -1120,7 +1120,15 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	if err != nil {
 		return nil, err
 	}
-	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText)
+	// The invoke loop pre-renders via renderExtractorPrompts and passes chunkText="".
+	// Direct callers (e.g. the message-fitting path) may pass a non-empty chunkText
+	// that has not been pre-rendered; apply renderExtractorPrompts here so those
+	// callers do not need to know about the rendering contract.
+	sys, user := in.systemPrompt, in.prompt
+	if chunkText != "" {
+		sys, user = renderExtractorPrompts(sys, user, nil, chunkText)
+	}
+	msgs := buildExtractorMessages(sys, user)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
 	if fitErr != nil {
 		return nil, fitErr
@@ -1505,26 +1513,14 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	return fitted, nil
 }
 
-// buildExtractorMessages assembles system + user messages for
-// one extraction call. The user prompt is rendered as
-// "<prompt>\n\n<chunkText>" so the python behavior of
-// substituting the chunk text into the args dict is preserved
-// without invoking a template engine.
-//
-// Prompt placeholders of the form `{ComponentName:ParamName@chunks}`
-// buildExtractorMessages assembles system + user messages for
-// one extraction call.
-func buildExtractorMessages(system, prompt, chunkText string) []eschema.Message {
+// buildExtractorMessages assembles system + user messages for one extraction
+// call. Prompt rendering (placeholder substitution and chunk-text injection)
+// is performed upstream by renderExtractorPrompts; this function is a pure
+// structural assembler with no rendering logic.
+func buildExtractorMessages(system, user string) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
 	if system != "" {
 		out = append(out, eschema.Message{Role: eschema.System, Content: system})
-	}
-	user := prompt
-	if chunkText != "" {
-		if user != "" {
-			user += "\n\n"
-		}
-		user += chunkText
 	}
 	if strings.TrimSpace(user) == "" {
 		user = " "
@@ -1535,7 +1531,7 @@ func buildExtractorMessages(system, prompt, chunkText string) []eschema.Message 
 
 // unifiedPlaceholderRE matches plain field placeholders {fieldName} and
 // canvas macro placeholders {ComponentName:ParamName@fieldName}.
-var unifiedPlaceholderRE = regexp.MustCompile(`\{([A-Za-z0-9_]+(:[A-Za-z0-9_]+)?@[A-Za-z0-9_]+|[A-Za-z0-9_]+)\}`)
+var unifiedPlaceholderRE = regexp.MustCompile(`\{([A-Za-z0-9_]+(:[A-Za-z0-9_]+)?@[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // bodyPlaceholderAliases lists plain placeholder names that resolve to chunk body content.
 var bodyPlaceholderAliases = map[string]bool{
