@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -170,12 +171,16 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	baseURL := c.Query("base_url")
 	if c.Request.Method == http.MethodPost {
 		var req listModelsRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
 		}
-		apiKey = normalizeAPIKey(req.APIKey)
-		baseURL = req.BaseURL
+		if bodyAPIKey := normalizeAPIKey(req.APIKey); bodyAPIKey != "" {
+			apiKey = bodyAPIKey
+		}
+		if req.BaseURL != "" {
+			baseURL = req.BaseURL
+		}
 	}
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
@@ -259,10 +264,10 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	// 4. Merge: static as base, remote overrides on name conflicts
 	merged := make(map[string]map[string]interface{})
 	for _, m := range staticModels {
-		if maxTokens, ok := m["max_tokens"]; ok && maxTokens != nil {
-			m["max_tokens"] = maxTokens
-		} else if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
-			m["max_tokens"] = maxOutput
+		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
+			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
+				m["max_tokens"] = maxOutput
+			}
 		}
 		if name, ok := m["name"].(string); ok {
 			merged[name] = m

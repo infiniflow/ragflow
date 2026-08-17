@@ -509,16 +509,24 @@ export function useInstanceSaveState({
         };
       }
       const resolvedId = instanceDetails?.id || instanceId;
-      return {
+      const payload: Record<string, any> = {
         ...transformed,
         provider_name: providerName,
         instance_name: editedNameRef.current,
         id: resolvedId,
         base_url: transformed.base_url ?? '',
         region: values.region || 'default',
-        model_info: modelInfo,
         verify: false,
       };
+      if (modelInfo.length > 0) {
+        payload.model_info = modelInfo;
+      } else if (
+        Array.isArray(payload.model_info) &&
+        payload.model_info.length === 0
+      ) {
+        delete payload.model_info;
+      }
+      return payload;
     }
 
     if (isDraft) {
@@ -547,9 +555,11 @@ export function useInstanceSaveState({
       api_key: apiKeyValue ?? '',
       base_url: values.base_url,
       region: values.region || 'default',
-      model_info: modelInfoRef.current.length > 0 ? modelInfoRef.current : [],
       verify: false,
     };
+    if (modelInfoRef.current.length > 0) {
+      payload.model_info = modelInfoRef.current;
+    }
     return payload;
   }, [
     isDraft,
@@ -580,12 +590,6 @@ export function useInstanceSaveState({
       api_key: buildApiKeyValue(initialValues),
       base_url: initialValues.base_url,
       region: initialValues.region,
-      // model_info baseline is `[]`; `markModelsEdited` rewrites it after
-      // a model PATCH so the next top-save short-circuits. The first
-      // save after the models initially load may re-send the same
-      // model_info (idempotent) - acceptable, matches the old
-      // `lastSavedPayloadRef` seeding behaviour.
-      model_info: [] as IModelInfo[],
       verify: false,
     };
     baselinePayloadRef.current = JSON.stringify(baseline);
@@ -677,8 +681,11 @@ export function useInstanceSaveState({
     if (!prev) return;
     try {
       const parsed = JSON.parse(prev) as Record<string, any>;
-      parsed.model_info =
-        modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
+      if (modelInfoRef.current.length > 0) {
+        parsed.model_info = modelInfoRef.current;
+      } else {
+        delete parsed.model_info;
+      }
       parsed.verify = false;
       baselinePayloadRef.current = JSON.stringify(parsed);
     } catch {

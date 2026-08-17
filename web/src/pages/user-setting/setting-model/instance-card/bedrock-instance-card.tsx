@@ -331,8 +331,10 @@ export const BedrockInstanceCard = forwardRef<
   );
 
   const getModelFormValues = useCallback(() => {
-    const credentials = transformModelCredentials(form.getValues());
+    const values = form.getValues();
+    const credentials = transformModelCredentials(values);
     return {
+      ...values,
       api_key: credentials.apiKey,
       base_url: credentials.baseUrl,
     };
@@ -489,7 +491,7 @@ export const BedrockInstanceCard = forwardRef<
           authMode === 'bedrock_api_key' &&
           modelInfoRef.current.length === 0
         ) {
-          message.error(tSetting('selectModelBeforeVerify'));
+          message.error(tSetting('selectModelBeforeSave'));
           return false;
         }
         const isValid = await form.trigger();

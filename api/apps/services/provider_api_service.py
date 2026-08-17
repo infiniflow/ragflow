@@ -356,7 +356,7 @@ async def update_provider_instance(
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
-    region = region.strip()
+    region = (region or "").strip()
 
     api_key_str = ""
     if api_key:
@@ -482,7 +482,7 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
-    region = region.strip()
+    region = (region or "").strip()
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
