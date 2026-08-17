@@ -348,8 +348,19 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 	// DLA dump: post-filter regions (NMS + confidence filter + Y-sort +
 	// cleanup), matching Python's page_layout. This makes the Go dump
 	// comparable with the Python parity dump, which also writes post-filter
-	// regions. Real DLA regions always carry a score, so cleanupLayouts'
-	// box-fallback never triggers and nil boxes are safe here.
+	// regions.
+	//
+	// Coordinate space: Go dumps image-pixel coordinates (no scale division;
+	// see FilteredDLARegions), whereas Python's page_layout divides by
+	// scale_factor (typically 3, layout_recognizer.py:90-93). So the two
+	// dumps differ by ~3x in absolute coordinates — this is expected, and the
+	// parity comparison is count-only (CompareDLAWithPython), so it does not
+	// affect the match.
+	//
+	// Real DLA regions always carry a score, so cleanupLayouts' box-fallback
+	// never triggers and nil boxes are safe here (count-wise). If a score-0
+	// region were ever emitted, the area tie-break would fall back to keeping
+	// the first region rather than mirroring Python's area-based choice.
 	if parsed.DLARegions != nil {
 		filteredPages := make([]pdf.DLAPageRegions, 0, len(parsed.DLARegions))
 		for _, pr := range parsed.DLARegions {

@@ -1,21 +1,20 @@
-// Red tests pinning the Python-equivalent behavior of AnnotateBoxLayouts.
+// Tests pinning the Python-equivalent behavior of AnnotateBoxLayouts.
 //
 // These assert the layout-annotation semantics that Python's
-// LayoutRecognizer.__call__ (deepdoc/vision/layout_recognizer.py:68) produces
-// and that the current Go implementation does NOT yet replicate. They are
-// intended to be RED until the missing steps are implemented:
+// LayoutRecognizer.__call__ (deepdoc/vision/layout_recognizer.py:68) produces,
+// and that the Go implementation now replicates (GREEN):
 //
 //   - #1 layouts_cleanup: Python de-dupes overlapping same-type regions
 //     (recognizer.py:124-160, called at layout_recognizer.py:100) BEFORE
-//     annotation. Go currently keeps both, which yields extra synthetic
-//     figure/equation boxes.
+//     annotation. Go matches via cleanupLayouts, so no extra synthetic
+//     figure/equation boxes are emitted.
 //   - #2 sort_Y_firstly: Python sorts regions top-to-bottom (recognizer.py:54,
 //     layout_recognizer.py:99) before numbering them, so layoutno indices
-//     follow reading order. Go numbers in wire-return order.
+//     follow reading order. Go matches via sortYFirstly.
 //   - #3 synthetic namespace: Python numbers unmatched figure/equation regions
 //     in SEPARATE counters -> "figure-N" / "equation-N"
-//     (layout_recognizer.py:145-155). Go shares one counter and labels all
-//     "figure-N" (table_annotate.go:198-218).
+//     (layout_recognizer.py:145-155). Go matches via a per-type typeIndex
+//     keyed by the original type label.
 //
 // These are pure-Go unit tests (no model server, no external service): they
 // feed crafted pdf.DLARegion slices and assert the annotated pdf.TextBox
