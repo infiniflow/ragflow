@@ -51,8 +51,9 @@ type stubExtractorChatInvoker struct {
 
 	// lastReq records the most recent call's request for inspection
 	// (e.g. driver / model name resolved from the llm_id).
-	lastReq extractorChatRequest
-	calls   atomic.Int32
+	lastReq  extractorChatRequest
+	requests []extractorChatRequest
+	calls    atomic.Int32
 }
 
 // stubResponse couples a Content value and an Err. tests populate
@@ -66,6 +67,7 @@ func (s *stubExtractorChatInvoker) Chat(_ context.Context, req extractorChatRequ
 	s.calls.Add(1)
 	s.mu.Lock()
 	s.lastReq = req
+	s.requests = append(s.requests, req)
 	var resp stubResponse
 	if len(s.responses) > 0 {
 		resp = s.responses[0]
@@ -2102,5 +2104,192 @@ func TestExtractorContextLength_NilDBGraceful(t *testing.T) {
 	ctx := extractorStateCtx(t, "tenant-1")
 	if got := extractorContextLength(ctx, nil, ""); got != 0 {
 		t.Fatalf("extractorContextLength(nil db, default model) = %d, want 0 (skip fitting)", got)
+	}
+}
+
+// TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk verifies that
+// when the prompt contains {ComponentName:ParamName@chunks}, each chunk's
+// LLM invocation receives ONLY that chunk's text (not all chunks joined together),
+// and the chunk text appears exactly once without duplication.
+func TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer1"},
+		stubResponse{Content: "answer2"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "summary",
+		Prompt:    "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
+		LLMID:     "gpt-4o-mini",
+	}}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Chunk One Body"},
+			{"text": "Chunk Two Body"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+
+	if len(stub.requests) != 2 {
+		t.Fatalf("got %d LLM calls, want 2", len(stub.requests))
+	}
+
+	// Call 1 must contain Chunk 1 exactly once, and NOT contain Chunk 2
+	req1User := stub.requests[0].Messages[len(stub.requests[0].Messages)-1].Content
+	if n := strings.Count(req1User, "Chunk One Body"); n != 1 {
+		t.Errorf("call 1 chunk text count = %d, want 1; prompt: %q", n, req1User)
+	}
+	if strings.Contains(req1User, "Chunk Two Body") {
+		t.Errorf("call 1 wrongly contains Chunk Two Body; prompt: %q", req1User)
+	}
+
+	// Call 2 must contain Chunk 2 exactly once, and NOT contain Chunk 1
+	req2User := stub.requests[1].Messages[len(stub.requests[1].Messages)-1].Content
+	if n := strings.Count(req2User, "Chunk Two Body"); n != 1 {
+		t.Errorf("call 2 chunk text count = %d, want 1; prompt: %q", n, req2User)
+	}
+	if strings.Contains(req2User, "Chunk One Body") {
+		t.Errorf("call 2 wrongly contains Chunk One Body; prompt: %q", req2User)
+	}
+}
+
+// TestRenderExtractorPrompts_TableDriven covers all prompt rendering cases
+// and fallback permutations.
+func TestRenderExtractorPrompts_TableDriven(t *testing.T) {
+	tests := []struct {
+		name         string
+		sysTemplate  string
+		userTemplate string
+		ck           map[string]any
+		chunkText    string
+		wantSys      string
+		wantUser     string
+	}{
+		{
+			name:         "text in user",
+			sysTemplate:  "",
+			userTemplate: "Analyze: {text}",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "Analyze: body content",
+		},
+		{
+			name:         "text in system only suppresses user append",
+			sysTemplate:  "Context: {text}",
+			userTemplate: "Extract:",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "Context: body content",
+			wantUser:     "Extract:",
+		},
+		{
+			name:         "canvas macro @chunks in user",
+			sysTemplate:  "",
+			userTemplate: "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "Summarize: body content",
+		},
+		{
+			name:         "canvas macro @text in user",
+			sysTemplate:  "",
+			userTemplate: "Parse: {Parser:Doc@text}",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "Parse: body content",
+		},
+		{
+			name:         "canvas macro @markdown in user",
+			sysTemplate:  "",
+			userTemplate: "Parse: {Parser:Doc@markdown}",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "Parse: body content",
+		},
+		{
+			name:         "metadata only appends chunkText",
+			sysTemplate:  "",
+			userTemplate: "Title: {title}",
+			ck:           map[string]any{"title": "DocTitle", "text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "Title: DocTitle\n\nbody content",
+		},
+		{
+			name:         "no placeholder appends chunkText",
+			sysTemplate:  "",
+			userTemplate: "Summarize the text:",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "Summarize the text:\n\nbody content",
+		},
+		{
+			name:         "empty chunkText does not append",
+			sysTemplate:  "",
+			userTemplate: "Summarize:",
+			ck:           map[string]any{},
+			chunkText:    "",
+			wantSys:      "",
+			wantUser:     "Summarize:",
+		},
+		{
+			name:         "content_with_weight present in ck",
+			sysTemplate:  "",
+			userTemplate: "Weighted: {content_with_weight}",
+			ck:           map[string]any{"content_with_weight": "weighted content", "text": "plain content"},
+			chunkText:    "weighted content",
+			wantSys:      "",
+			wantUser:     "Weighted: weighted content",
+		},
+		{
+			name:         "content_with_weight absent in ck falls back to chunkText",
+			sysTemplate:  "",
+			userTemplate: "Weighted: {content_with_weight}",
+			ck:           map[string]any{"text": "plain content"},
+			chunkText:    "plain content",
+			wantSys:      "",
+			wantUser:     "Weighted: plain content",
+		},
+		{
+			name:         "whitespace user template trimmed before append",
+			sysTemplate:  "",
+			userTemplate: "   ",
+			ck:           map[string]any{"text": "body content"},
+			chunkText:    "body content",
+			wantSys:      "",
+			wantUser:     "body content",
+		},
+		{
+			name:         "empty templates produce single space user turn",
+			sysTemplate:  "",
+			userTemplate: "",
+			ck:           map[string]any{},
+			chunkText:    "",
+			wantSys:      "",
+			wantUser:     " ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSys, gotUser := renderExtractorPrompts(tt.sysTemplate, tt.userTemplate, tt.ck, tt.chunkText)
+			if gotSys != tt.wantSys {
+				t.Errorf("renderExtractorPrompts() gotSys = %q, want %q", gotSys, tt.wantSys)
+			}
+			if gotUser != tt.wantUser {
+				t.Errorf("renderExtractorPrompts() gotUser = %q, want %q", gotUser, tt.wantUser)
+			}
+		})
 	}
 }
