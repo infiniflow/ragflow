@@ -612,6 +612,9 @@ func (it *discordMessageIterator) next(ctx context.Context) (discordMessageWithT
 		it.page = it.page[1:]
 
 		createdAt := discordMessageCreatedAt(msg)
+		if createdAt.IsZero() {
+			continue
+		}
 		if !it.upperBound.IsZero() && !createdAt.Before(it.upperBound) {
 			continue
 		}
