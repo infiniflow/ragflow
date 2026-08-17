@@ -224,9 +224,17 @@ def _format_seed_chunks(seed_chunks, tools) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 _AGGREGATE_RE = re.compile(
+    # English aggregate words (the primary backstop language).
     r"\b(how many|how much|average|mean|sum|total|count|every|all|most|"
-    r"maximum|minimum|max|min|combined|overall|each|per)\b"
-    r"|aggregate|合计|平均|总共|所有|每个|一共",
+    r"maximum|minimum|max|min|combined|overall|each|per|aggregate)\b"
+    # CJK aggregate words. Word-boundary \b is meaningless for CJK, so these
+    # match as plain substrings. Note the LLM is the PRIMARY aggregate signal
+    # (it emits claim_type="aggregate" in DECOMPOSE_UNIFIED); this regex is only
+    # a secondary backstop for when the LLM missed the aggregate shape.
+    r"|合计|平均|总共|所有|每个|一共|总和|总数|多少人|多少个|人均|每条|每个|全体"
+    # Common non-English aggregate words (secondary backstop, best-effort).
+    r"|combien|quel nombre|gesamt|durchschnitt|jeder|alle|summe"
+    r"|media|promedio|totale|ogni|tutti|quantos|cada",
     re.IGNORECASE,
 )
 
@@ -246,7 +254,15 @@ def _ensure_aggregate_structure(question: str, claims: list) -> list:
     fallback claims are appended with a stable ``claim_id`` so existing claim
     references never break.
     """
-    if not _is_aggregate_question(question):
+    # The primary aggregate signal is the LLM's structure judgement in
+    # DECOMPOSE_UNIFIED (it emits claim_type="aggregate" language-independently,
+    # covering German/Japanese/French aggregate questions that the regex word
+    # list below would miss). The regex rule is only a secondary backstop for
+    # when the LLM missed the aggregate shape entirely. Triggering on EITHER
+    # keeps the enumerate+combine structure intact for every aggregate question,
+    # no matter the language.
+    llm_said_aggregate = any(getattr(c, "claim_type", "") == "aggregate" for c in claims)
+    if not (llm_said_aggregate or _is_aggregate_question(question)):
         return claims
     existing_desc = {c.description.strip().lower() for c in claims if getattr(c, "description", None)}
     existing_ids = {c.claim_id for c in claims if getattr(c, "claim_id", None)}
