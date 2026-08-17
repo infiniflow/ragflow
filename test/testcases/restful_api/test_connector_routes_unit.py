@@ -484,7 +484,6 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
         "build_connector_for_source",
         lambda source, config: _FakeConnector(),
     )
-    monkeypatch.setattr(module.ConnectorService, "accessible", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda _connector_id: (False, None))
 
     monkeypatch.setattr(
