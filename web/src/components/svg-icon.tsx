@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { IconMap, LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
 import Icon from '@ant-design/icons';
@@ -72,6 +88,9 @@ const themeIcons = [
   LLMFactory.Meituan,
   LLMFactory.Longcat,
   LLMFactory.MinerU,
+  LLMFactory.MinerUNet,
+  LLMFactory.JiekouAI,
+  LLMFactory.Perplexity,
 ];
 
 const svgIcons = [
@@ -81,11 +100,33 @@ const svgIcons = [
   LLMFactory.Gemini,
   LLMFactory.StepFun,
   LLMFactory.MinerU,
+  LLMFactory.MinerUNet,
   LLMFactory.PaddleOCR,
+  LLMFactory.PaddleOCRNet,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
   LLMFactory.Avian,
   LLMFactory.RAGcon,
+  LLMFactory.SoMark,
+  LLMFactory.NewAPI,
+  LLMFactory.Astraflow,
+  LLMFactory.AstraflowCN,
+  LLMFactory.FuturMix,
+  LLMFactory.Xiaomi,
+  LLMFactory.YouDao,
+  LLMFactory.BAAI,
+  LLMFactory.NomicAI,
+  LLMFactory.SentenceTransformers,
+  LLMFactory.Grok,
+  LLMFactory.FastEmbed,
+  LLMFactory.HuaweiCloud,
+  LLMFactory.OrcaRouter,
+  LLMFactory.Qiniu,
+  LLMFactory.TokenHub,
+  LLMFactory.FunASR,
+  LLMFactory.AIMLAPI,
+  LLMFactory.GreenPT,
+  LLMFactory.MWS,
 ];
 
 export const LlmIcon = ({

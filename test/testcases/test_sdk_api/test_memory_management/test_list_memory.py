@@ -17,15 +17,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from ragflow_sdk import RAGFlow
-from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from configs import INVALID_API_TOKEN, HOST_ADDRESS, SDK_UNAUTHORIZED_ERROR_MESSAGE
+
 
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
@@ -45,11 +46,12 @@ class TestCapability:
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
 
+
 @pytest.mark.usefixtures("add_memory_func")
 class TestMemoryList:
     @pytest.mark.p2
     def test_params_unset(self, client):
-        res  = client.list_memory()
+        res = client.list_memory()
         assert len(res["memory_list"]) == 3, str(res)
         assert res["total_count"] == 3, str(res)
 
@@ -69,8 +71,7 @@ class TestMemoryList:
             ({"page": 2, "page_size": 2}, 1),
             ({"page": 5, "page_size": 10}, 0),
         ],
-        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page" , "normal_middle_page",
-             "full_data_single_page"],
+        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page", "full_data_single_page"],
     )
     def test_page(self, client, params, expected_page_size):
         # have added 3 memories in fixture
@@ -110,9 +111,23 @@ class TestMemoryList:
         memory_id = memory.id
         memory_config = memory.get_config()
         assert memory_config.id == memory_id, memory_config
-        for field in ["name", "avatar", "tenant_id", "owner_name", "memory_type", "storage_type",
-                      "embd_id", "llm_id", "permissions", "description", "memory_size", "forgetting_policy",
-                      "temperature", "system_prompt", "user_prompt"]:
+        for field in [
+            "name",
+            "avatar",
+            "tenant_id",
+            "owner_name",
+            "memory_type",
+            "storage_type",
+            "embd_id",
+            "llm_id",
+            "permissions",
+            "description",
+            "memory_size",
+            "forgetting_policy",
+            "temperature",
+            "system_prompt",
+            "user_prompt",
+        ]:
             assert hasattr(memory, field), memory_config
 
     @pytest.mark.p2

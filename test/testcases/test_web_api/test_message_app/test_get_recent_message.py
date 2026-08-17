@@ -38,7 +38,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestGetRecentMessage:
-
     @pytest.mark.p1
     def test_get_recent_messages(self, WebApiAuth):
         memory_id = self.memory_id

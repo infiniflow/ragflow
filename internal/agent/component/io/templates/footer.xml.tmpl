@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<w:p><w:pPr><w:pStyle w:val="Footer"/><w:jc w:val="center"/></w:pPr>
+{{if .FooterText}}<w:r><w:rPr><w:sz w:val="{{pt $.FontSize}}"/><w:rFonts w:ascii="{{$.FontFamily}}" w:eastAsia="{{$.FontFamily}}" w:hAnsi="{{$.FontFamily}}"/></w:rPr><w:t xml:space="preserve">{{xml .FooterText}}</w:t></w:r>{{if or .AddPageNumbers .AddTimestamp}}<w:r><w:t xml:space="preserve"> | </w:t></w:r>{{end}}{{end}}
+{{if .AddPageNumbers}}<w:r><w:rPr><w:sz w:val="{{pt $.FontSize}}"/><w:rFonts w:ascii="{{$.FontFamily}}" w:eastAsia="{{$.FontFamily}}" w:hAnsi="{{$.FontFamily}}"/></w:rPr><w:t xml:space="preserve">Page </w:t></w:r>
+<w:r><w:fldChar w:fldCharType="begin"/></w:r>
+<w:r><w:rPr><w:sz w:val="{{pt $.FontSize}}"/><w:rFonts w:ascii="{{$.FontFamily}}" w:eastAsia="{{$.FontFamily}}" w:hAnsi="{{$.FontFamily}}"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>
+<w:r><w:fldChar w:fldCharType="separate"/></w:r>
+<w:r><w:rPr><w:sz w:val="{{pt $.FontSize}}"/><w:rFonts w:ascii="{{$.FontFamily}}" w:eastAsia="{{$.FontFamily}}" w:hAnsi="{{$.FontFamily}}"/></w:rPr><w:t>1</w:t></w:r>
+<w:r><w:fldChar w:fldCharType="end"/></w:r>{{if .AddTimestamp}}<w:r><w:t xml:space="preserve"> | </w:t></w:r>{{end}}{{end}}
+{{if .AddTimestamp}}<w:r><w:rPr><w:sz w:val="{{pt $.FontSize}}"/><w:rFonts w:ascii="{{$.FontFamily}}" w:eastAsia="{{$.FontFamily}}" w:hAnsi="{{$.FontFamily}}"/></w:rPr><w:t xml:space="preserve">{{xml .Timestamp}}</w:t></w:r>{{end}}
+</w:p>
+</w:ftr>

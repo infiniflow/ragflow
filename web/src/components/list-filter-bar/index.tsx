@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { cn } from '@/lib/utils';
 import { Funnel } from 'lucide-react';
 import React, {
@@ -16,6 +32,7 @@ interface IProps {
   searchString?: string;
   onSearchChange?: ChangeEventHandler<HTMLInputElement>;
   showFilter?: boolean;
+  showSearch?: boolean;
   leftPanel?: ReactNode;
   preChildren?: ReactNode;
 }
@@ -31,14 +48,6 @@ export const FilterButton = React.forwardRef<
       {...props}
       ref={ref}
     >
-      {/* <span
-        className={cn({
-          'text-text-primary': count > 0,
-          'text-text-sub-title-invert': count === 0,
-        })}
-      >
-        Filter
-      </span> */}
       <Funnel />
 
       {count > 0 && (
@@ -51,6 +60,7 @@ export const FilterButton = React.forwardRef<
 });
 
 FilterButton.displayName = 'FilterButton';
+
 export default function ListFilterBar({
   title,
   children,
@@ -58,6 +68,7 @@ export default function ListFilterBar({
   searchString,
   onSearchChange,
   showFilter = true,
+  showSearch = true,
   leftPanel,
   value,
   onChange,
@@ -83,7 +94,7 @@ export default function ListFilterBar({
             return (
               pre +
               Object.values(cur).reduce((pre, cur) => {
-                return pre + cur.length;
+                return pre + (cur?.length || 0);
               }, 0)
             );
           }
@@ -92,11 +103,17 @@ export default function ListFilterBar({
       : 0;
   }, [value]);
 
+  const hasFilter = Boolean(filters?.length && showFilter);
+
   return (
-    <div className={cn('flex justify-between items-center', className)}>
-      <h1 className="text-2xl font-semibold flex items-center gap-2.5">
+    <div
+      className={cn(
+        'flex min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between',
+        className,
+      )}
+    >
+      <h1 className="flex min-w-0 shrink-0 items-center gap-2.5 text-2xl font-semibold">
         {typeof icon === 'string' ? (
-          // <IconFont name={icon} className="size-6"></IconFont>
           <HomeIcon
             name={`${icon}`}
             imgClass={cn('size-[1em]', iconClassName)}
@@ -107,9 +124,23 @@ export default function ListFilterBar({
         {leftPanel || title}
       </h1>
 
-      <div className="flex gap-4 items-center" role="toolbar">
+      <div
+        className={cn(
+          'min-w-0 w-full items-center gap-2',
+          preChildren
+            ? 'flex flex-wrap md:flex-nowrap md:w-auto md:shrink-0 md:gap-4'
+            : cn(
+                'grid',
+                hasFilter
+                  ? 'grid-cols-[auto_minmax(0,1fr)_auto]'
+                  : 'grid-cols-[minmax(0,1fr)_auto]',
+                'md:flex md:w-auto md:shrink-0 md:gap-4',
+              ),
+        )}
+        role="toolbar"
+      >
         {preChildren}
-        {filters?.length && showFilter && (
+        {hasFilter && (
           <FilterPopover
             value={value}
             onChange={onChange}
@@ -117,17 +148,25 @@ export default function ListFilterBar({
             filterGroup={filterGroup}
             onOpenChange={onOpenChange}
           >
-            <FilterButton count={filterCount}></FilterButton>
+            <FilterButton count={filterCount} />
           </FilterPopover>
         )}
+        {showSearch && (
+          <SearchInput
+            value={searchString}
+            onChange={onSearchChange}
+            className={cn(
+              'min-w-0 w-full',
+              preChildren ? 'flex-1 basis-32' : '',
+              'md:w-32',
+            )}
+            role="searchbox"
+          />
+        )}
 
-        <SearchInput
-          value={searchString}
-          onChange={onSearchChange}
-          className="w-32"
-          role="searchbox"
-        ></SearchInput>
-        {children}
+        {children && (
+          <div className="shrink-0 justify-self-end">{children}</div>
+        )}
       </div>
     </div>
   );

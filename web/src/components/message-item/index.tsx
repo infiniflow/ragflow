@@ -1,16 +1,33 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { MessageType } from '@/constants/chat';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import {
   IMessage,
   IReference,
   IReferenceChunk,
   UploadResponseDataType,
 } from '@/interfaces/database/chat';
-import classNames from 'classnames';
-import { memo, useCallback, useMemo } from 'react';
-
-import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import classNames from 'classnames';
+import { isEmpty } from 'lodash';
+import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
@@ -50,6 +67,7 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  nickname,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -97,6 +115,7 @@ const MessageItem = ({
                 className="size-10"
                 avatar={avatar ?? '/logo.svg'}
                 isPerson
+                name={nickname}
               />
             ) : avatarDialog ? (
               <RAGFlowAvatar
@@ -134,7 +153,7 @@ const MessageItem = ({
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}
-            {messageContent && (
+            {(messageContent || sendLoading) && (
               <div
                 className={cn(
                   isAssistant
@@ -145,12 +164,16 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                <MarkdownContent
-                  loading={loading}
-                  content={messageContent}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
+                {sendLoading && isEmpty(messageContent) ? (
+                  <LoadingDots className="text-text-secondary" />
+                ) : (
+                  <MarkdownContent
+                    loading={loading}
+                    content={messageContent}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MarkdownContent>
+                )}
               </div>
             )}
             {isAssistant && (

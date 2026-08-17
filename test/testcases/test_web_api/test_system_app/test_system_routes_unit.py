@@ -122,9 +122,7 @@ def _load_system_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
-    user_service_mod.UserTenantService = SimpleNamespace(
-        query=lambda **_kwargs: [SimpleNamespace(role="owner", tenant_id="tenant-1")]
-    )
+    user_service_mod.UserTenantService = SimpleNamespace(query=lambda **_kwargs: [SimpleNamespace(role="owner", tenant_id="tenant-1")])
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
 
     db_models_mod = ModuleType("api.db.db_models")
@@ -156,7 +154,7 @@ def _load_system_module(monkeypatch):
     quart_mod.jsonify = lambda payload: payload
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
-    module_path = repo_root / "api" / "apps" / "system_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "system_api.py"
     spec = importlib.util.spec_from_file_location("test_system_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -213,6 +211,7 @@ def test_status_branch_matrix_unit(monkeypatch):
     assert res["data"]["redis"]["status"] == "red"
     assert "Lost connection!" in res["data"]["redis"]["error"]
     assert res["data"]["task_executor_heartbeats"] == {}
+
 
 @pytest.mark.p2
 def test_get_config_returns_register_enabled_unit(monkeypatch):

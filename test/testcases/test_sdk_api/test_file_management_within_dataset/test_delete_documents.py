@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents
+from common import bulk_upload_documents, list_all_documents
 
 
 class TestDocumentsDeletion:
@@ -26,8 +26,8 @@ class TestDocumentsDeletion:
         [
             ({"ids": None}, "should either provide doc ids or set delete_all(true), dataset:", 3),
             ({"ids": []}, "should either provide doc ids or set delete_all(true), dataset:", 3),
-            ({"ids": ["invalid_id"]}, "Field: <ids> - Message: <Invalid UUID1 format> - Value: <['invalid_id']>", 3),
-            ({"ids": ["\n!?。；！？\"'"]}, "Field: <ids> - Message: <Invalid UUID1 format> - Value:", 3),
+            ({"ids": ["invalid_id"]}, "These documents do not belong to dataset", 3),
+            ({"ids": ["\n!?。；！？\"'"]}, "These documents do not belong to dataset", 3),
             ("not json", "must be a mapping", 3),
             (lambda r: {"ids": r[:1]}, "", 2),
             (lambda r: {"ids": r}, "", 0),
@@ -69,7 +69,7 @@ class TestDocumentsDeletion:
 
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(**payload)
-        assert "Field: <ids> - Message: <Invalid UUID1 format> - Value: <" in str(exception_info.value), str(exception_info.value)
+        assert "These documents do not belong to dataset" in str(exception_info.value), str(exception_info.value)
 
         documents = dataset.list_documents()
         assert len(documents) == 3, str(documents)
@@ -114,7 +114,7 @@ def test_delete_1k(add_dataset, tmp_path):
     count = 1_000
     dataset = add_dataset
     documents = bulk_upload_documents(dataset, count, tmp_path)
-    assert len(dataset.list_documents(page_size=count * 2)) == count
+    assert len(list_all_documents(dataset, limit=count + 1)) == count
 
     dataset.delete_documents(ids=[doc.id for doc in documents])
     assert len(dataset.list_documents()) == 0

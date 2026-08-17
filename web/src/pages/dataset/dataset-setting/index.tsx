@@ -1,6 +1,4 @@
 import { DataFlowSelect } from '@/components/data-pipeline-select';
-import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
-import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -14,7 +12,7 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType, ParseType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
-import { IConnector, IKnowledge } from '@/interfaces/database/knowledge';
+import { IConnector, IDataset } from '@/interfaces/database/dataset';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,17 +20,14 @@ import { createContext, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  GenerateType,
-  IGenerateLogButtonProps,
-} from '../dataset/generate-button/generate';
 import { ChunkMethodForm } from './chunk-method-form';
 import ChunkMethodLearnMore from './chunk-method-learn-more';
 import LinkDataSource, {
   IDataSourceNodeProps,
 } from './components/link-data-source';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
 import { MainContainer } from './configuration-form-container';
-import { ChunkMethodItem, ParseTypeItem } from './configuration/common-item';
+import { ChunkMethodItem } from './configuration/common-item';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
@@ -43,8 +38,8 @@ const enum DocumentType {
 }
 export const DataSetContext = createContext<{
   loading: boolean;
-  knowledgeDetails: IKnowledge;
-}>({ loading: false, knowledgeDetails: {} as IKnowledge });
+  knowledgeDetails: IDataset;
+}>({ loading: false, knowledgeDetails: {} as IDataset });
 
 const initialEntityTypes = [
   'organization',
@@ -57,6 +52,7 @@ const initialEntityTypes = [
 const enum MethodValue {
   General = 'general',
   Light = 'light',
+  NER = 'ner',
 }
 
 export default function DatasetSettings() {
@@ -94,12 +90,15 @@ export default function DatasetSettings() {
           max_cluster: 64,
           random_seed: 0,
           scope: 'file',
+          clustering_method: 'gmm',
+          tree_builder: 'raptor',
           prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {
           use_graphrag: true,
           entity_types: initialEntityTypes,
           method: MethodValue.Light,
+          batch_chunk_token_size: 4096,
         },
         metadata: {
           type: 'object',
@@ -121,13 +120,8 @@ export default function DatasetSettings() {
     useFetchKnowledgeConfigurationOnMount(form);
   // const [pipelineData, setPipelineData] = useState<IDataPipelineNodeProps>();
   const [sourceData, setSourceData] = useState<IDataSourceNodeProps[]>();
-  const [graphRagGenerateData, setGraphRagGenerateData] =
-    useState<IGenerateLogButtonProps>();
-  const [raptorGenerateData, setRaptorGenerateData] =
-    useState<IGenerateLogButtonProps>();
 
   useEffect(() => {
-    console.log('🚀 ~ DatasetSettings ~ knowledgeDetails:', knowledgeDetails);
     if (knowledgeDetails) {
       // const data: IDataPipelineNodeProps = {
       //   id: knowledgeDetails.pipeline_id,
@@ -137,26 +131,19 @@ export default function DatasetSettings() {
       // };
       // setPipelineData(data);
 
-      const source_data: IDataSourceNodeProps[] =
-        knowledgeDetails?.connectors?.map((connector) => {
-          return {
-            ...connector,
-            icon:
-              dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
-                ?.icon || '',
-          };
-        });
+      const source_data: IDataSourceNodeProps[] = (
+        knowledgeDetails?.connectors ?? []
+      ).map((connector: IConnector) => {
+        return {
+          ...connector,
+          icon:
+            dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
+              ?.icon || '',
+        };
+      });
 
       setSourceData(source_data);
 
-      setGraphRagGenerateData({
-        finish_at: knowledgeDetails.graphrag_task_finish_at,
-        task_id: knowledgeDetails.graphrag_task_id,
-      } as IGenerateLogButtonProps);
-      setRaptorGenerateData({
-        finish_at: knowledgeDetails.raptor_task_finish_at,
-        task_id: knowledgeDetails.raptor_task_id,
-      } as IGenerateLogButtonProps);
       form.setValue(
         'parse_type',
         knowledgeDetails.pipeline_id ? ParseType.Pipeline : ParseType.BuiltIn,
@@ -199,20 +186,6 @@ export default function DatasetSettings() {
       form.setValue('connectors', connectors || []);
       // form.setValue('pipeline_name', data.name || '');
       // form.setValue('pipeline_avatar', data.avatar || '');
-    }
-  };
-
-  const handleDeletePipelineTask = (type: GenerateType) => {
-    if (type === GenerateType.KnowledgeGraph) {
-      setGraphRagGenerateData({
-        finish_at: '',
-        task_id: '',
-      } as IGenerateLogButtonProps);
-    } else if (type === GenerateType.Raptor) {
-      setRaptorGenerateData({
-        finish_at: '',
-        task_id: '',
-      } as IGenerateLogButtonProps);
     }
   };
 
@@ -323,7 +296,6 @@ export default function DatasetSettings() {
                       />
                     )}
 
-                    {/* <Divider /> */}
                     {parseType === ParseType.BuiltIn && <ChunkMethodForm />}
 
                     {/* <LinkDataPipeline
@@ -337,24 +309,6 @@ export default function DatasetSettings() {
                       unbindFunc={unbindFunc}
                       handleAutoParse={handleAutoParse}
                     />
-                    <Divider />
-                    <div className="text-base font-medium text-text-primary">
-                      {t('knowledgeConfiguration.globalIndex')}
-                    </div>
-                    <GraphRagItems
-                      className="border-none p-0"
-                      data={graphRagGenerateData as IGenerateLogButtonProps}
-                      onDelete={() =>
-                        handleDeletePipelineTask(GenerateType.KnowledgeGraph)
-                      }
-                    ></GraphRagItems>
-                    <Divider />
-                    <RaptorFormFields
-                      data={raptorGenerateData as IGenerateLogButtonProps}
-                      onDelete={() =>
-                        handleDeletePipelineTask(GenerateType.Raptor)
-                      }
-                    ></RaptorFormFields>
                   </MainContainer>
                 </div>
 

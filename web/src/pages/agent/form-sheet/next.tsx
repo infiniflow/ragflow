@@ -10,12 +10,13 @@ import { IModalProps } from '@/interfaces/common';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { lowerFirst } from 'lodash';
-import { CirclePlay, X } from 'lucide-react';
+import { ArrowUpRight, CirclePlay, X } from 'lucide-react';
+import { MouseEventHandler } from 'react';
 import { Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import { useIsMcp } from '../hooks/use-is-mcp';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
 import { FormConfigMap } from './form-config-map';
@@ -31,6 +32,13 @@ interface IProps {
 }
 
 const EmptyContent = () => <div></div>;
+const SandboxQuickstartUrl =
+  'https://github.com/infiniflow/ragflow/blob/main/docs/guides/agent/agent_quickstarts/sandbox_quickstart.md';
+
+const openSandboxQuickstart: MouseEventHandler<HTMLButtonElement> = (e) => {
+  e.stopPropagation();
+  window.open(SandboxQuickstartUrl, '_blank', 'noopener,noreferrer');
+};
 
 const FormSheet = ({
   visible,
@@ -99,6 +107,17 @@ const FormSheet = ({
               <p className="text-text-secondary">
                 {t(
                   `${lowerFirst(operatorName === Operator.Tool ? toolComponentName : operatorName)}Description`,
+                )}
+                {operatorName === Operator.Code && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-1 inline-flex size-5 !p-0 align-middle bg-transparent"
+                    type="button"
+                    onClick={openSandboxQuickstart}
+                  >
+                    <ArrowUpRight className="size-4 cursor-pointer text-text-secondary" />
+                  </Button>
                 )}
               </p>
             )}

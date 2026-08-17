@@ -77,7 +77,7 @@ class TestRquest:
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
         assert res["code"] == 102, res
-        assert res["message"] == "No properties were modified", res
+        assert res["message"] == "no properties were modified", res
 
     @pytest.mark.p3
     def test_payload_unset(self, HttpApiAuth, add_dataset_func):
@@ -105,14 +105,14 @@ class TestDatasetUpdate:
         payload = {"name": "not uuid"}
         res = update_dataset(HttpApiAuth, "not_uuid", payload)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_not_uuid1(self, HttpApiAuth):
         payload = {"name": "not uuid1"}
         res = update_dataset(HttpApiAuth, uuid.uuid4().hex, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_wrong_uuid(self, HttpApiAuth):
@@ -214,9 +214,9 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "avatar_prefix, expected_message",
         [
-            ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -291,7 +291,7 @@ class TestDatasetUpdate:
 
     @pytest.mark.p1
     def test_embedding_model_with_existing_chunks(self, HttpApiAuth, add_chunks):
-        """Guard: embedding_model cannot change when dataset has chunks (chunk_count > 0)."""
+        """Embedding model can be changed even when dataset has chunks (chunk_count > 0)."""
         dataset_id, _, _ = add_chunks
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
@@ -306,12 +306,7 @@ class TestDatasetUpdate:
 
         payload = {"embedding_model": new_embedding}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 102, res
-        expected_message = (
-            f"When chunk_num ({dataset['chunk_count']}) > 0, "
-            f"embedding_model must remain {current_embedding}"
-        )
-        assert res["message"] == expected_message, res
+        assert res["code"] == 0, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -354,9 +349,9 @@ class TestDatasetUpdate:
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
+            assert "embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
-            assert "Both model_name and provider must be non-empty strings" in res["message"], res
+            assert "both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
     def test_embedding_model_none(self, HttpApiAuth, add_dataset_func):
@@ -578,12 +573,12 @@ class TestDatasetUpdate:
             {"raptor": {"use_raptor": True}},
             {"raptor": {"use_raptor": False}},
             {"raptor": {"prompt": "Who are you?"}},
-            {"raptor": {"max_token": 1}},
+            {"raptor": {"max_token": 512}},
             {"raptor": {"max_token": 1024}},
             {"raptor": {"max_token": 2048}},
-            {"raptor": {"threshold": 0.0}},
-            {"raptor": {"threshold": 0.5}},
-            {"raptor": {"threshold": 1.0}},
+            {"raptor": {"clustering_threshold": 0.0}},
+            {"raptor": {"clustering_threshold": 0.5}},
+            {"raptor": {"clustering_threshold": 1.0}},
             {"raptor": {"max_cluster": 1}},
             {"raptor": {"max_cluster": 512}},
             {"raptor": {"max_cluster": 1024}},
@@ -631,9 +626,9 @@ class TestDatasetUpdate:
             "raptor_max_token_min",
             "raptor_max_token_mid",
             "raptor_max_token_max",
-            "raptor_threshold_min",
-            "raptor_threshold_mid",
-            "raptor_threshold_max",
+            "raptor_clustering_threshold_min",
+            "raptor_clustering_threshold_mid",
+            "raptor_clustering_threshold_max",
             "raptor_max_cluster_min",
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
@@ -691,20 +686,18 @@ class TestDatasetUpdate:
             ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ({"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ({"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ({"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-            ({"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ({"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ({"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
             ({"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-            ({"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-            ({"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ({"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+            ({"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+            ({"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+            ({"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
             ({"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ({"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
             ({"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -754,13 +747,11 @@ class TestDatasetUpdate:
             "raptor_type_invalid",
             "raptor_prompt_empty",
             "raptor_prompt_space",
-            "raptor_max_token_min_limit",
             "raptor_max_token_max_limit",
-            "raptor_max_token_float_not_allowed",
             "raptor_max_token_type_invalid",
-            "raptor_threshold_min_limit",
-            "raptor_threshold_max_limit",
-            "raptor_threshold_type_invalid",
+            "raptor_clustering_threshold_min_limit",
+            "raptor_clustering_threshold_max_limit",
+            "raptor_clustering_threshold_type_invalid",
             "raptor_max_cluster_min_limit",
             "raptor_max_cluster_max_limit",
             "raptor_max_cluster_float_not_allowed",

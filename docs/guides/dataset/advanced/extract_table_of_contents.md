@@ -1,11 +1,13 @@
 ---
 sidebar_position: 3
+title: Extract Table of Contents
+sidebar_label: Extract Table of Contents
 slug: /enable_table_of_contents
 sidebar_custom_props: {
   categoryIcon: LucideTableOfContents
 }
 ---
-# Extract table of contents
+# Extract Table of Contents
 
 Extract PageIndex, namely table of contents, from documents to provide long context RAG and improve retrieval.
 
@@ -21,7 +23,7 @@ Enabling PageIndex extraction requires significant memory, computational resourc
 
 The system's default chat model is used to summarize clustered content. Before proceeding, ensure that you have a chat model properly configured:
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
 
 ## Quickstart
 
@@ -30,12 +32,12 @@ The system's default chat model is used to summarize clustered content. Before p
 2. Enable **PageIndex**.
 
 3. To use this technique during retrieval, do either of the following:
-   
+
    - In the **Chat setting** panel of your chat app, switch on the **PageIndex** toggle.
    - If you are using an Agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **PageIndex** toggle.
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### Will previously parsed files be searched using the directory enhancement feature once I enable `PageIndex`?
+### Will Previously Parsed Files Be Searched Using the Directory Enhancement Feature Once I Enable `PageIndex`?
 
 No. Only files parsed after you enable **PageIndex** will be searched using the directory enhancement feature. To apply this feature to files parsed before enabling **PageIndex**, you must reparse them.

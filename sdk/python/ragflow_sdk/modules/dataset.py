@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from typing import Any
+
 from .base import Base
 from .document import Document
 
@@ -79,7 +80,7 @@ class DataSet(Base):
         # Validate that id and ids are not used together
         if id and ids:
             raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
-        
+
         params = {
             "id": id,
             "name": name,
@@ -109,22 +110,24 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
-        
-    
+
     def _get_documents_status(self, document_ids):
         import time
+
         terminal_states = {"DONE", "FAIL", "CANCEL"}
         interval_sec = 1
         pending = set(document_ids)
         finished = []
         while pending:
             for doc_id in list(pending):
+
                 def fetch_doc(doc_id: str) -> Document | None:
                     try:
                         docs = self.list_documents(id=doc_id)
                         return docs[0] if docs else None
                     except Exception:
                         return None
+
                 doc = fetch_doc(doc_id)
                 if doc is None:
                     continue
@@ -137,13 +140,12 @@ class DataSet(Base):
             if pending:
                 time.sleep(interval_sec)
         return finished
-    
+
     def async_parse_documents(self, document_ids):
         res = self.post(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
-        
 
     def parse_documents(self, document_ids):
         try:
@@ -151,9 +153,8 @@ class DataSet(Base):
             self._get_documents_status(document_ids)
         except KeyboardInterrupt:
             self.async_cancel_parse_documents(document_ids)
-            
-        return self._get_documents_status(document_ids)
 
+        return self._get_documents_status(document_ids)
 
     def async_cancel_parse_documents(self, document_ids):
         res = self.rm(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
@@ -165,7 +166,7 @@ class DataSet(Base):
         """
         Retrieve auto-metadata configuration for a dataset via SDK.
         """
-        res = self.get(f"/datasets/{self.id}/auto_metadata")
+        res = self.get(f"/datasets/{self.id}/metadata/config")
         res = res.json()
         if res.get("code") == 0:
             return res["data"]
@@ -175,7 +176,7 @@ class DataSet(Base):
         """
         Update auto-metadata configuration for a dataset via SDK.
         """
-        res = self.put(f"/datasets/{self.id}/auto_metadata", config)
+        res = self.put(f"/datasets/{self.id}/metadata/config", config)
         res = res.json()
         if res.get("code") == 0:
             return res["data"]

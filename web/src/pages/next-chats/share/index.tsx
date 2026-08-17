@@ -4,8 +4,7 @@ import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
-import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchFlowSSE } from '@/hooks/use-agent-request';
+import { MessageType } from '@/constants/chat';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
@@ -20,7 +19,6 @@ import { buildMessageItemReference } from '../utils';
 const ChatContainer = () => {
   const {
     sharedId: conversationId,
-    from,
     locale,
     theme,
     visibleAvatar,
@@ -44,15 +42,13 @@ const ChatContainer = () => {
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
 
-  const { data: flowData } = useFetchFlowSSE();
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      changeLanguageAsync(locale);
+      changeLanguageAsync(locale, { persist: false });
     }
   }, [locale, visibleAvatar]);
 
-  const avatarDialogSrc =
-    from === SharedFrom.Agent ? flowData?.avatar : chatInfo.avatar;
+  const avatarDialogSrc = chatInfo.avatar;
 
   if (!conversationId) {
     return <div>empty</div>;
@@ -64,6 +60,7 @@ const ChatContainer = () => {
         title={chatInfo.title}
         avatar={chatInfo.avatar}
         handleReset={removeAllMessagesExceptFirst}
+        hideReset={sendLoading}
       >
         <div className="flex flex-1 flex-col p-2.5 h-[90vh] m-3">
           <div
@@ -119,7 +116,9 @@ const ChatContainer = () => {
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
                 showReasoning
-                showInternet={chatInfo?.has_tavily_key}
+                showInternet={
+                  chatInfo?.has_web_search_provider ?? chatInfo?.has_tavily_key
+                }
               ></NextMessageInput>
             </div>
           </div>

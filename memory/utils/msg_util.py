@@ -27,9 +27,9 @@ def get_json_result_from_llm_response(response_str: str) -> dict:
     """
     try:
         clean_str = response_str.strip()
-        if clean_str.startswith('```json'):
+        if clean_str.startswith("```json"):
             clean_str = clean_str[7:]  # Remove the starting ```json
-        if clean_str.endswith('```'):
+        if clean_str.endswith("```"):
             clean_str = clean_str[:-3]  # Remove the ending ```
 
         return json.loads(clean_str.strip())

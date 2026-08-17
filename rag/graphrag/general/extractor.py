@@ -142,7 +142,6 @@ class Extractor:
             async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int, task_id=""):
                 nonlocal error_count
                 async with limiter:
-
                     if task_id and has_canceled(task_id):
                         raise TaskCanceledException(f"Task {task_id} was cancelled during entity extraction")
 
@@ -158,10 +157,7 @@ class Extractor:
                         if error_count > max_errors:
                             raise Exception(f"Maximum error count ({max_errors}) reached. Last errors: {str(e)}")
 
-            tasks = [
-                asyncio.create_task(worker((doc_id, ck), i, len(chunks), task_id))
-                for i, ck in enumerate(chunks)
-            ]
+            tasks = [asyncio.create_task(worker((doc_id, ck), i, len(chunks), task_id)) for i, ck in enumerate(chunks)]
 
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)
@@ -207,10 +203,7 @@ class Extractor:
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled before nodes merging")
 
-        tasks = [
-            asyncio.create_task(self._merge_nodes(en_nm, ents, all_entities_data, task_id))
-            for en_nm, ents in maybe_nodes.items()
-        ]
+        tasks = [asyncio.create_task(self._merge_nodes(en_nm, ents, all_entities_data, task_id)) for en_nm, ents in maybe_nodes.items()]
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -236,11 +229,7 @@ class Extractor:
 
         tasks = []
         for (src, tgt), rels in maybe_edges.items():
-            tasks.append(
-                asyncio.create_task(
-                    self._merge_edges(src, tgt, rels, all_relationships_data, task_id)
-                )
-            )
+            tasks.append(asyncio.create_task(self._merge_edges(src, tgt, rels, all_relationships_data, task_id)))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -319,7 +308,10 @@ class Extractor:
             node1_attrs = graph.nodes[node1]
             node0_attrs["description"] += f"{GRAPH_FIELD_SEP}{node1_attrs['description']}"
             node0_attrs["source_id"] = sorted(set(node0_attrs["source_id"] + node1_attrs["source_id"]))
-            for neighbor in graph.neighbors(node1):
+            # Snapshot neighbors before mutation; otherwise networkx raises
+            # "dictionary keys changed during iteration" when concurrent merges
+            # or graph.add_edge/remove_node below touch the same adjacency dict.
+            for neighbor in list(graph.neighbors(node1)):
                 change.removed_edges.add(get_from_to(node1, neighbor))
                 if neighbor not in nodes_set:
                     edge1_attrs = graph.get_edge_data(node1, neighbor)
@@ -335,6 +327,10 @@ class Extractor:
                         graph.add_edge(nodes[0], neighbor, **edge0_attrs)
                     else:
                         graph.add_edge(nodes[0], neighbor, **edge1_attrs)
+                        # Track the redirected neighbour so a later node1 in this
+                        # merge that also points to it takes the merge branch
+                        # above instead of overwriting the edge we just added.
+                        node0_neighbors.add(neighbor)
             graph.remove_node(node1)
         node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"], task_id=task_id)
         graph.nodes[nodes[0]].update(node0_attrs)

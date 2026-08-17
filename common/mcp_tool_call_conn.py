@@ -20,6 +20,7 @@ import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from dataclasses import dataclass
 from string import Template
 from typing import Any, Literal, Protocol
 
@@ -36,13 +37,19 @@ MCPTask = tuple[MCPTaskType, dict[str, Any], asyncio.Queue[Any]]
 
 
 class ToolCallSession(Protocol):
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> str: ...
+    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> str: ...
+
+
+@dataclass(frozen=True)
+class MCPToolBinding:
+    session: ToolCallSession
+    original_name: str
 
 
 class MCPToolCallSession(ToolCallSession):
     _ALL_INSTANCES: weakref.WeakSet["MCPToolCallSession"] = weakref.WeakSet()
 
-    def __init__(self, mcp_server: Any, server_variables: dict[str, Any] | None = None, custom_header = None) -> None:
+    def __init__(self, mcp_server: Any, server_variables: dict[str, Any] | None = None, custom_header=None) -> None:
         self.__class__._ALL_INSTANCES.add(self)
 
         self._custom_header = custom_header
@@ -116,8 +123,7 @@ class MCPToolCallSession(ToolCallSession):
                 await self._process_mcp_tasks(None, msg)
 
         else:
-            await self._process_mcp_tasks(None,
-                                          f"Unsupported MCP server type: {self._mcp_server.server_type}, id: {self._mcp_server.id}")
+            await self._process_mcp_tasks(None, f"Unsupported MCP server type: {self._mcp_server.server_type}, id: {self._mcp_server.id}")
 
     async def _process_mcp_tasks(self, client_session: ClientSession | None, error_message: str | None = None) -> None:
         while not self._close:
@@ -175,8 +181,7 @@ class MCPToolCallSession(ToolCallSession):
             raise
 
     async def _call_mcp_tool(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 10) -> str:
-        result: CallToolResult = await self._call_mcp_server("tool_call", name=name, arguments=arguments,
-                                                             request_timeout=request_timeout)
+        result: CallToolResult = await self._call_mcp_server("tool_call", name=name, arguments=arguments, request_timeout=request_timeout)
 
         if result.isError:
             return f"MCP server error: {result.content}"
@@ -300,8 +305,7 @@ def close_multiple_mcp_toolcall_sessions(sessions: list[MCPToolCallSession]) -> 
     except Exception:
         logging.exception("Exception during MCP session cleanup thread management")
 
-    logging.info(
-        f"{len(sessions)} MCP sessions has been cleaned up. {len(list(MCPToolCallSession._ALL_INSTANCES))} in global context.")
+    logging.info(f"{len(sessions)} MCP sessions has been cleaned up. {len(list(MCPToolCallSession._ALL_INSTANCES))} in global context.")
 
 
 def shutdown_all_mcp_sessions():
@@ -316,12 +320,12 @@ def shutdown_all_mcp_sessions():
     logging.info("All MCPToolCallSession instances have been closed.")
 
 
-def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict) -> dict[str, Any]:
+def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict, function_name: str | None = None) -> dict[str, Any]:
     if isinstance(mcp_tool, dict):
         return {
             "type": "function",
             "function": {
-                "name": mcp_tool["name"],
+                "name": function_name or mcp_tool["name"],
                 "description": mcp_tool["description"],
                 "parameters": mcp_tool["inputSchema"],
             },
@@ -330,7 +334,7 @@ def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": mcp_tool.name,
+            "name": function_name or mcp_tool.name,
             "description": mcp_tool.description,
             "parameters": mcp_tool.inputSchema,
         },

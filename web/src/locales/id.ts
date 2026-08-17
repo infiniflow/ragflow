@@ -36,6 +36,8 @@ export default {
       preview: 'Pratinjau',
       move: 'Pindahkan',
       warn: 'Peringatan',
+      owner: 'Pemilik',
+      running: 'Berjalan...',
     },
     login: {
       login: 'Masuk',
@@ -288,11 +290,11 @@ export default {
         Jika Anda ingin merangkum sesuatu yang membutuhkan semua konteks dari sebuah artikel and panjang konteks LLM yang dipilih mencakup panjang dokumen, Anda dapat mencoba metode ini.
         </p>`,
       knowledgeGraph: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
- 
+
      <p>Setelah file dipotong, digunakan potongan untuk mengekstrak grafik pengetahuan dan peta pikiran dari seluruh dokumen. Metode ini menerapkan cara naif untuk memotong file:
      Teks berturut-turut akan dipotong menjadi potongan masing-masing yang berjumlah sekitar 512 token.</p>
      <p>Selanjutnya, potongan akan dikirim ke LLM untuk mengekstrak node dan hubungan dari grafik pengetahuan, dan peta pikiran.</p>
- 
+
      Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
@@ -334,6 +336,8 @@ export default {
     },
     chunk: {
       chunk: 'Potongan',
+      createChunk: 'Buat potongan',
+      editChunk: 'Edit potongan',
       bulk: 'Massal',
       selectAll: 'Pilih Semua',
       enabledSelected: 'Aktifkan yang Dipilih',
@@ -474,6 +478,12 @@ export default {
         'Dalam percakapan multi-putaran, kueri ke basis pengetahuan dioptimalkan. Model besar akan dipanggil untuk mengonsumsi token tambahan.',
       languageSelectionTip: 'Pilih bahasa yang digunakan dalam percakapan.',
       description: 'Description of assistant',
+      showChunkMetadata: 'Tampilkan metadata chunk',
+      showChunkMetadataTip:
+        'Tampilkan metadata dokumen (mis. judul, nomor halaman, tanggal unggah) bersama potongan teks yang diambil',
+      metadataFields: 'Bidang metadata',
+      metadataFieldsTip:
+        'Pilih bidang metadata yang akan ditampilkan untuk setiap chunk',
     },
     setting: {
       profile: 'Profil',
@@ -529,9 +539,9 @@ export default {
         'Kunci API dapat diperoleh dengan mendaftar ke penyedia LLM yang sesuai.',
       showMoreModels: 'Tampilkan lebih banyak model',
       hideModels: 'Sembunyikan model',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
+        'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan Base URL ini dengan kunci API.',
       tongyiBaseUrlTip:
         'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -570,8 +580,8 @@ export default {
       modelNameMessage: 'Silakan masukkan nama model Anda!',
       modelType: 'Jenis Model',
       modelTypeMessage: 'Silakan masukkan jenis model Anda!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Silakan masukkan base url Anda!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Silakan masukkan Base URL Anda',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:
@@ -589,17 +599,17 @@ export default {
       FishAudioLink: 'Cara menggunakan FishAudio',
       TencentCloudLink: 'Cara menggunakan TencentCloud ASR',
       volcModelNameMessage: 'Silakan masukkan nama model Anda!',
-      addEndpointID: 'EndpointID dari model',
-      endpointIDMessage: 'Silakan masukkan EndpointID dari model',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Silakan masukkan Model ID dari model',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Silakan masukkan ARK_API_KEY Anda',
-      bedrockModelNameMessage: 'Silakan masukkan nama model Anda!',
+      bedrockModelNameMessage: 'Silakan masukkan nama model Anda',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Silakan masukkan ACCESS KEY Anda',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Silakan masukkan SECRET KEY Anda',
       bedrockRegion: 'Wilayah AWS',
-      bedrockRegionMessage: 'Silakan pilih!',
+      bedrockRegionMessage: 'Silakan pilih',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -637,25 +647,25 @@ export default {
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Silakan masukkan Secret ID Anda',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Silakan masukkan Secret Key Anda',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Silakan masukkan SECRET KEY Anda',
       SparkModelNameMessage: 'Silakan pilih model Spark',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'silakan masukkan APIPassword Anda',
       addSparkAPPID: 'Spark APPID',
       SparkAPPIDMessage: 'silakan masukkan APPID Anda',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'silakan masukkan APISecret Anda',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'silakan masukkan API SECRET Anda',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'silakan masukkan APIKey Anda',
       yiyanModelNameMessage: 'Silakan masukkan nama model',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Silakan masukkan API KEY Anda',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Silakan masukkan Secret KEY Anda',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Silakan masukkan API Key Anda',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Silakan masukkan SECRET KEY Anda',
       FishAudioModelNameMessage: 'Silakan beri nama model sintesis ucapan Anda',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Silakan masukkan API KEY Anda',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Silakan masukkan API Key Anda',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Silakan masukkan Reference ID (biarkan kosong untuk menggunakan model default).',
@@ -1136,6 +1146,11 @@ export default {
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
+      tags: 'Tag',
+      canvasCategory: 'Kategori kanvas',
+      created: 'Dibuat',
+      id: 'ID',
+      logTitle: 'Judul',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',
@@ -1147,6 +1162,7 @@ export default {
       bulgarian: 'Bulgaria',
       arabic: 'Arab',
       turkish: 'Turki',
+      korean: 'Korea',
     },
   },
 };

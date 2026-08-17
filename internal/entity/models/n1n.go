@@ -1,0 +1,442 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package models
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"ragflow/internal/common"
+	"strings"
+)
+
+// N1NModel implements ModelDriver for n1n.ai
+type N1NModel struct {
+	baseModel BaseModel
+}
+
+// NewN1NModel creates a new n1n.ai model instance.
+func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
+	return &N1NModel{
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
+		},
+	}
+}
+
+func (n *N1NModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewN1NModel(baseURL, n.baseModel.URLSuffix)
+}
+
+func (n *N1NModel) Name() string {
+	return "n1n"
+}
+
+func (n *N1NModel) endpointURL(region, suffix string) (string, error) {
+	baseURL, err := n.baseModel.GetBaseURL(&APIConfig{Region: &region})
+	if err != nil {
+		return "", err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
+}
+
+func n1nRegion(apiConfig *APIConfig) string {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		return *apiConfig.Region
+	}
+	return "default"
+}
+
+func newN1NJSONRequest(ctx context.Context, method, endpoint string, payload interface{}, apiKey string) (*http.Request, error) {
+	var body io.Reader
+	if payload != nil {
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
+		}
+		body = bytes.NewBuffer(jsonData)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	}
+	return req, nil
+}
+
+// ChatWithMessages sends a single, non-streaming chat completion
+// against n1n.ai's /v1/chat/completions endpoint.
+func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		thinkingType := "disabled"
+		if *chatModelConfig.Thinking {
+			thinkingType = "enabled"
+		}
+		reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
+	}
+
+	body, err := n.baseModel.doRequest(ctx, endpoint, apiConfig, reqBody, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+}
+
+// ChatStreamlyWithSender sends a streaming chat completion.
+func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is required")
+	}
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
+	if err != nil {
+		return err
+	}
+
+	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		thinkingType := "disabled"
+		if *chatModelConfig.Thinking {
+			thinkingType = "enabled"
+		}
+		reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
+	}
+
+	return n.baseModel.doStreamRequest(ctx, endpoint, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
+}
+
+type n1nEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type n1nEmbeddingResponse struct {
+	Data  []n1nEmbeddingData `json:"data"`
+	Model string             `json:"model"`
+}
+
+type n1nEmbeddingRequest struct {
+	Model      string   `json:"model"`
+	Input      []string `json:"input"`
+	Dimensions int      `json:"dimensions,omitempty"`
+}
+
+// Embed turns a list of texts into embedding vectors
+func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	apiKey := *apiConfig.ApiKey
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Embedding)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := n1nEmbeddingRequest{
+		Model: *modelName,
+		Input: texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody.Dimensions = embeddingConfig.Dimension
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := n.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("n1n embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed n1nEmbeddingResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([]EmbeddingData, len(texts))
+	filled := make([]bool, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(texts) {
+			return nil, fmt.Errorf("n1n: embedding response index %d out of range for %d inputs", item.Index, len(texts))
+		}
+		if filled[item.Index] {
+			return nil, fmt.Errorf("n1n: duplicate embedding index %d in response", item.Index)
+		}
+		embeddings[item.Index] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     item.Index,
+		}
+		filled[item.Index] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("n1n: missing embedding for input index %d", i)
+		}
+	}
+	return embeddings, nil
+}
+
+type n1nRerankResult struct {
+	Index          int     `json:"index"`
+	RelevanceScore float64 `json:"relevance_score"`
+}
+
+type n1nRerankResponse struct {
+	Results []n1nRerankResult `json:"results"`
+}
+
+type n1nRerankRequest struct {
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+	TopN      int      `json:"top_n,omitempty"`
+}
+
+// Rerank scores a query against a list of documents using
+// n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
+func (n *N1NModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	apiKey := *apiConfig.ApiKey
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Rerank)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := n1nRerankRequest{
+		Model:     *modelName,
+		Query:     query,
+		Documents: documents,
+	}
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		reqBody.TopN = rerankConfig.TopN
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := n.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("n1n rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed n1nRerankResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	rerankResponse := &RerankResponse{}
+	seen := make(map[int]bool, len(parsed.Results))
+	for _, r := range parsed.Results {
+		if r.Index < 0 || r.Index >= len(documents) {
+			return nil, fmt.Errorf("n1n: rerank result index %d out of range for %d documents", r.Index, len(documents))
+		}
+		if seen[r.Index] {
+			return nil, fmt.Errorf("n1n: duplicate rerank index %d in response", r.Index)
+		}
+		seen[r.Index] = true
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          r.Index,
+			RelevanceScore: r.RelevanceScore,
+		})
+	}
+	return rerankResponse, nil
+}
+
+type n1nModelCatalogItem struct {
+	ID string `json:"id"`
+}
+
+type n1nModelCatalogResponse struct {
+	Data []ModelListItem `json:"data"`
+}
+
+// ListModels returns the live n1n.ai model catalog
+func (n *N1NModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	apiKey := *apiConfig.ApiKey
+
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Models)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := newN1NJSONRequest(ctx, "GET", endpoint, nil, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := n.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("n1n models API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed n1nModelCatalogResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return ParseListModel(ModelList{Models: parsed.Data}), nil
+}
+
+// CheckConnection verifies the API key
+func (n *N1NModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := n.ListModels(ctx, apiConfig)
+	return err
+}
+
+func (n *N1NModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", n.Name())
+}
+
+// OCRFile is not exposed by the n1n.ai API.
+func (n *N1NModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+// ParseFile is not exposed by the n1n.ai API.
+func (n *N1NModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}

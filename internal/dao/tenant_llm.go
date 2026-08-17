@@ -17,7 +17,11 @@
 package dao
 
 import (
+	"context"
+	"fmt"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantLLMDAO tenant LLM data access object
@@ -28,10 +32,31 @@ func NewTenantLLMDAO() *TenantLLMDAO {
 	return &TenantLLMDAO{}
 }
 
-// GetByTenantAndModelName get tenant LLM by tenant ID and model name
-func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, providerName string, modelName string) (*entity.TenantLLM, error) {
+// GetByID get tenant LLM by primary key ID
+func (dao *TenantLLMDAO) GetByID(ctx context.Context, db *gorm.DB, id int64) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, providerName, modelName).First(&tenantLLM).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
+// GetByTenantAndModelName get tenant LLM by tenant ID and model name
+func (dao *TenantLLMDAO) GetByTenantAndModelName(ctx context.Context, db *gorm.DB, tenantID, providerName string, modelName string) (*entity.TenantLLM, error) {
+	var tenantLLM entity.TenantLLM
+	err := db.WithContext(ctx).Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, providerName, modelName).First(&tenantLLM).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenantLLM, nil
+}
+
+// GetByTenantNameAndType get tenant LLM by tenant ID, model name, and model type
+func (dao *TenantLLMDAO) GetByTenantNameAndType(ctx context.Context, db *gorm.DB, tenantID, modelName string, modelType entity.ModelType) (*entity.TenantLLM, error) {
+	var tenantLLM entity.TenantLLM
+	// tenant_llm.model_type is a VARCHAR column, so convert to string.
+	err := db.WithContext(ctx).Where("tenant_id = ? AND llm_name = ? AND model_type = ?", tenantID, modelName, modelType.String()).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +64,10 @@ func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, providerName string, 
 }
 
 // GetByTenantAndType get tenant LLM by tenant ID and model type
-func (dao *TenantLLMDAO) GetByTenantAndType(tenantID string, modelType entity.ModelType) (*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) GetByTenantAndType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND model_type = ?", tenantID, modelType).First(&tenantLLM).Error
+	// tenant_llm.model_type is a VARCHAR column, so convert to string.
+	err := db.WithContext(ctx).Where("tenant_id = ? AND model_type = ?", tenantID, modelType.String()).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -49,9 +75,10 @@ func (dao *TenantLLMDAO) GetByTenantAndType(tenantID string, modelType entity.Mo
 }
 
 // GetByTenantAndFactory get tenant LLM by tenant ID, model type and factory
-func (dao *TenantLLMDAO) GetByTenantAndFactory(tenantID string, modelType entity.ModelType, factory string) (*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) GetByTenantAndFactory(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, factory string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND model_type = ? AND llm_factory = ?", tenantID, modelType, factory).First(&tenantLLM).Error
+	// tenant_llm.model_type is a VARCHAR column, so convert to string.
+	err := db.WithContext(ctx).Where("tenant_id = ? AND model_type = ? AND llm_factory = ?", tenantID, modelType.String(), factory).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -59,9 +86,9 @@ func (dao *TenantLLMDAO) GetByTenantAndFactory(tenantID string, modelType entity
 }
 
 // ListByTenant list all tenant LLMs for a tenant
-func (dao *TenantLLMDAO) ListByTenant(tenantID string) ([]entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) ListByTenant(ctx context.Context, db *gorm.DB, tenantID string) ([]entity.TenantLLM, error) {
 	var tenantLLMs []entity.TenantLLM
-	err := DB.Where("tenant_id = ?", tenantID).Find(&tenantLLMs).Error
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tenantLLMs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -69,35 +96,35 @@ func (dao *TenantLLMDAO) ListByTenant(tenantID string) ([]entity.TenantLLM, erro
 }
 
 // GetByTenantFactoryAndModelName get tenant LLM by tenant ID, factory and model name
-func (dao *TenantLLMDAO) GetByTenantFactoryAndModelName(tenantID, factory, modelName string) (*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) GetByTenantFactoryAndModelName(ctx context.Context, db *gorm.DB, tenantID, factory, modelName string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, modelName).First(&tenantLLM).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, modelName).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
 	return &tenantLLM, nil
 }
 
-// Create create a new tenant LLM record
-func (dao *TenantLLMDAO) Create(tenantLLM *entity.TenantLLM) error {
-	return DB.Create(tenantLLM).Error
+// Create a new tenant LLM record
+func (dao *TenantLLMDAO) Create(ctx context.Context, db *gorm.DB, tenantLLM *entity.TenantLLM) error {
+	return db.WithContext(ctx).Create(tenantLLM).Error
 }
 
-// Update update an existing tenant LLM record
-func (dao *TenantLLMDAO) Update(tenantLLM *entity.TenantLLM) error {
-	return DB.Save(tenantLLM).Error
+// Update an existing tenant LLM record
+func (dao *TenantLLMDAO) Update(ctx context.Context, db *gorm.DB, tenantLLM *entity.TenantLLM) error {
+	return db.WithContext(ctx).Save(tenantLLM).Error
 }
 
-// Delete delete a tenant LLM record by tenant ID, factory and model name
-func (dao *TenantLLMDAO) Delete(tenantID, factory, modelName string) error {
-	return DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, modelName).Delete(&entity.TenantLLM{}).Error
+// Delete a tenant LLM record by tenant ID, factory and model name
+func (dao *TenantLLMDAO) Delete(ctx context.Context, db *gorm.DB, tenantID, factory, modelName string) error {
+	return db.WithContext(ctx).Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, modelName).Delete(&entity.TenantLLM{}).Error
 }
 
 // GetMyLLMs get tenant LLMs with factory details
-func (dao *TenantLLMDAO) GetMyLLMs(tenantID string) ([]entity.MyLLM, error) {
+func (dao *TenantLLMDAO) GetMyLLMs(ctx context.Context, db *gorm.DB, tenantID string) ([]entity.MyLLM, error) {
 	var myLLMs []entity.MyLLM
 
-	err := DB.Table("tenant_llm tl").
+	err := db.WithContext(ctx).Table("tenant_llm tl").
 		Select("tl.id, tl.llm_factory, lf.logo, lf.tags, tl.model_type, tl.llm_name, tl.used_tokens, tl.status").
 		Joins("JOIN llm_factories lf ON tl.llm_factory = lf.name").
 		Where("tl.tenant_id = ? AND tl.api_key IS NOT NULL", tenantID).
@@ -109,9 +136,9 @@ func (dao *TenantLLMDAO) GetMyLLMs(tenantID string) ([]entity.MyLLM, error) {
 }
 
 // ListValidByTenant lists valid tenant LLMs for a tenant
-func (dao *TenantLLMDAO) ListValidByTenant(tenantID string) ([]*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) ListValidByTenant(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.TenantLLM, error) {
 	var tenantLLMs []*entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND api_key IS NOT NULL AND api_key != ? AND status = ?", tenantID, "", "1").Find(&tenantLLMs).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND api_key IS NOT NULL AND api_key != ? AND status = ?", tenantID, "", "1").Find(&tenantLLMs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +146,9 @@ func (dao *TenantLLMDAO) ListValidByTenant(tenantID string) ([]*entity.TenantLLM
 }
 
 // ListAllByTenant lists all tenant LLMs for a tenant
-func (dao *TenantLLMDAO) ListAllByTenant(tenantID string) ([]*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) ListAllByTenant(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.TenantLLM, error) {
 	var tenantLLMs []*entity.TenantLLM
-	err := DB.Where("tenant_id = ?", tenantID).Find(&tenantLLMs).Error
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tenantLLMs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -129,16 +156,16 @@ func (dao *TenantLLMDAO) ListAllByTenant(tenantID string) ([]*entity.TenantLLM, 
 }
 
 // InsertMany inserts multiple tenant LLM records
-func (dao *TenantLLMDAO) InsertMany(tenantLLMs []*entity.TenantLLM) error {
+func (dao *TenantLLMDAO) InsertMany(ctx context.Context, db *gorm.DB, tenantLLMs []*entity.TenantLLM) error {
 	if len(tenantLLMs) == 0 {
 		return nil
 	}
-	return DB.Create(&tenantLLMs).Error
+	return db.WithContext(ctx).Create(&tenantLLMs).Error
 }
 
 // DeleteByTenantID deletes all tenant LLM records by tenant ID (hard delete)
-func (dao *TenantLLMDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantLLM{})
+func (dao *TenantLLMDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantLLM{})
 	return result.RowsAffected, result.Error
 }
 
@@ -159,7 +186,7 @@ func (dao *TenantLLMDAO) DeleteByTenantID(tenantID string) (int64, error) {
 //
 //	modelName, factory := splitModelNameAndFactory("gpt-4@OpenAI")
 //	// Returns: "gpt-4", "OpenAI"
-func splitModelNameAndFactory(modelName string) (string, string) {
+func splitModelNameAndFactory(ctx context.Context, db *gorm.DB, modelName string) (string, string) {
 	// Split by "@" separator
 	// Handle cases like "model@factory" or "model@sub@factory"
 	lastAtIndex := -1
@@ -182,7 +209,7 @@ func splitModelNameAndFactory(modelName string) (string, string) {
 	// Validate if factory exists in llm_factories table
 	// This matches Python's logic of checking against model providers
 	var factoryCount int64
-	DB.Model(&entity.LLMFactories{}).Where("name = ?", factory).Count(&factoryCount)
+	db.WithContext(ctx).Model(&entity.LLMFactories{}).Where("name = ?", factory).Count(&factoryCount)
 
 	// If factory doesn't exist in database, treat the whole string as model name
 	if factoryCount == 0 {
@@ -211,21 +238,21 @@ func splitModelNameAndFactory(modelName string) (string, string) {
 //
 //	// Model name with factory prefix
 //	tenantLLM, err := dao.GetByTenantIDAndLLMName("tenant123", "gpt-4@OpenAI")
-func (dao *TenantLLMDAO) GetByTenantIDAndLLMName(tenantID string, llmName string) (*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) GetByTenantIDAndLLMName(ctx context.Context, db *gorm.DB, tenantID string, llmName string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
 
 	// Split model name and factory from the combined format
-	modelName, factory := splitModelNameAndFactory(llmName)
+	modelName, factory := splitModelNameAndFactory(ctx, db, llmName)
 
 	// First attempt: try to find with model name only
-	err := DB.Where("tenant_id = ? AND llm_name = ?", tenantID, modelName).First(&tenantLLM).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND llm_name = ?", tenantID, modelName).First(&tenantLLM).Error
 	if err == nil {
 		return &tenantLLM, nil
 	}
 
 	// Second attempt: if factory is specified, try with both model name and factory
 	if factory != "" {
-		err = DB.Where("tenant_id = ? AND llm_name = ? AND llm_factory = ?", tenantID, modelName, factory).First(&tenantLLM).Error
+		err = db.WithContext(ctx).Where("tenant_id = ? AND llm_name = ? AND llm_factory = ?", tenantID, modelName, factory).First(&tenantLLM).Error
 		if err == nil {
 			return &tenantLLM, nil
 		}
@@ -234,7 +261,7 @@ func (dao *TenantLLMDAO) GetByTenantIDAndLLMName(tenantID string, llmName string
 		// These factories append "___FactoryName" to the model name
 		if factory == "LocalAI" || factory == "HuggingFace" || factory == "OpenAI-API-Compatible" {
 			specialModelName := modelName + "___" + factory
-			err = DB.Where("tenant_id = ? AND llm_name = ?", tenantID, specialModelName).First(&tenantLLM).Error
+			err = db.WithContext(ctx).Where("tenant_id = ? AND llm_name = ?", tenantID, specialModelName).First(&tenantLLM).Error
 			if err == nil {
 				return &tenantLLM, nil
 			}
@@ -260,11 +287,58 @@ func (dao *TenantLLMDAO) GetByTenantIDAndLLMName(tenantID string, llmName string
 // Example:
 //
 //	tenantLLM, err := dao.GetByTenantIDLLMNameAndFactory("tenant123", "gpt-4", "OpenAI")
-func (dao *TenantLLMDAO) GetByTenantIDLLMNameAndFactory(tenantID, llmName, factory string) (*entity.TenantLLM, error) {
+func (dao *TenantLLMDAO) GetByTenantIDLLMNameAndFactory(ctx context.Context, db *gorm.DB, tenantID, llmName, factory string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND llm_name = ? AND llm_factory = ?", tenantID, llmName, factory).First(&tenantLLM).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND llm_name = ? AND llm_factory = ?", tenantID, llmName, factory).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
 	return &tenantLLM, nil
+}
+
+// LookupTenantLLMByID looks up a TenantLLM record by ID and returns the record plus composite model name.
+func LookupTenantLLMByID(ctx context.Context, db *gorm.DB, tenantLLMDao *TenantLLMDAO, id int64) (*entity.TenantLLM, string, error) {
+	tenantLLM, err := tenantLLMDao.GetByID(ctx, db, id)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant_llm by id %d: %w", id, err)
+	}
+	if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+		return nil, "", fmt.Errorf("tenant_llm record not found for id %d", id)
+	}
+	compositeName := fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+	return tenantLLM, compositeName, nil
+}
+
+// LookupTenantLLMByName looks up a TenantLLM record by tenant name and model type.
+func LookupTenantLLMByName(ctx context.Context, db *gorm.DB, tenantLLMDao *TenantLLMDAO, tenantID, name string, modelType entity.ModelType) (*entity.TenantLLM, string, error) {
+	// Parse factory from name if present (e.g., "model@Factory")
+	modelName, factory := splitModelNameAndFactory(ctx, db, name)
+
+	// If factory is found, use factory-based lookup
+	if factory != "" {
+		return LookupTenantLLMByFactory(ctx, db, tenantLLMDao, tenantID, factory, modelName, modelType)
+	}
+
+	tenantLLM, err := tenantLLMDao.GetByTenantNameAndType(ctx, db, tenantID, modelName, modelType)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant_llm by name %s: %w", name, err)
+	}
+	if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+		return nil, "", fmt.Errorf("tenant_llm record not found for name %s", name)
+	}
+	compositeName := fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+	return tenantLLM, compositeName, nil
+}
+
+// LookupTenantLLMByFactory looks up a TenantLLM record by tenant, factory, and model name.
+func LookupTenantLLMByFactory(ctx context.Context, db *gorm.DB, tenantLLMDao *TenantLLMDAO, tenantID, factory, name string, modelType entity.ModelType) (*entity.TenantLLM, string, error) {
+	tenantLLM, err := tenantLLMDao.GetByTenantFactoryAndModelName(ctx, db, tenantID, factory, name)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant_llm by factory %s and name %s: %w", factory, name, err)
+	}
+	if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
+		return nil, "", fmt.Errorf("tenant_llm record not found for factory %s and name %s", factory, name)
+	}
+	compositeName := fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
+	return tenantLLM, compositeName, nil
 }

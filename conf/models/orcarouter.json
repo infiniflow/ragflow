@@ -1,0 +1,31 @@
+{
+  "name": "OrcaRouter",
+  "url": {
+    "default": "https://api.orcarouter.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models",
+    "tts": "v1/audio/speech"
+  },
+  "class": "orcarouter",
+  "models": [
+    {
+      "name": "orcarouter/auto",
+      "content_length": 128000,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/tts-1",
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

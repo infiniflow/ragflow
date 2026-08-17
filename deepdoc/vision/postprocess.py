@@ -23,18 +23,17 @@ import pyclipper
 
 
 def build_post_process(config, global_config=None):
-    support_dict = {'DBPostProcess': DBPostProcess, 'CTCLabelDecode': CTCLabelDecode}
+    support_dict = {"DBPostProcess": DBPostProcess, "CTCLabelDecode": CTCLabelDecode}
 
     config = copy.deepcopy(config)
-    module_name = config.pop('name')
+    module_name = config.pop("name")
     if module_name == "None":
         return
     if global_config is not None:
         config.update(global_config)
     module_class = support_dict.get(module_name)
     if module_class is None:
-        raise ValueError(
-            'post process only support {}'.format(list(support_dict)))
+        raise ValueError("post process only support {}".format(list(support_dict)))
     return module_class(**config)
 
 
@@ -43,15 +42,7 @@ class DBPostProcess:
     The post process for Differentiable Binarization (DB).
     """
 
-    def __init__(self,
-                 thresh=0.3,
-                 box_thresh=0.7,
-                 max_candidates=1000,
-                 unclip_ratio=2.0,
-                 use_dilation=False,
-                 score_mode="fast",
-                 box_type='quad',
-                 **kwargs):
+    def __init__(self, thresh=0.3, box_thresh=0.7, max_candidates=1000, unclip_ratio=2.0, use_dilation=False, score_mode="fast", box_type="quad", **kwargs):
         self.thresh = thresh
         self.box_thresh = box_thresh
         self.max_candidates = max_candidates
@@ -59,12 +50,9 @@ class DBPostProcess:
         self.min_size = 3
         self.score_mode = score_mode
         self.box_type = box_type
-        assert score_mode in [
-            "slow", "fast"
-        ], "Score mode must be in [slow, fast] but got: {}".format(score_mode)
+        assert score_mode in ["slow", "fast"], "Score mode must be in [slow, fast] but got: {}".format(score_mode)
 
-        self.dilation_kernel = None if not use_dilation else np.array(
-            [[1, 1], [1, 1]])
+        self.dilation_kernel = None if not use_dilation else np.array([[1, 1], [1, 1]])
 
     def polygons_from_bitmap(self, pred, _bitmap, dest_width, dest_height):
         """
@@ -78,10 +66,9 @@ class DBPostProcess:
         boxes = []
         scores = []
 
-        contours, _ = cv2.findContours((bitmap * 255).astype(np.uint8),
-                                       cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours((bitmap * 255).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-        for contour in contours[:self.max_candidates]:
+        for contour in contours[: self.max_candidates]:
             epsilon = 0.002 * cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, epsilon, True)
             points = approx.reshape((-1, 2))
@@ -105,10 +92,8 @@ class DBPostProcess:
                 continue
 
             box = np.array(box)
-            box[:, 0] = np.clip(
-                np.round(box[:, 0] / width * dest_width), 0, dest_width)
-            box[:, 1] = np.clip(
-                np.round(box[:, 1] / height * dest_height), 0, dest_height)
+            box[:, 0] = np.clip(np.round(box[:, 0] / width * dest_width), 0, dest_width)
+            box[:, 1] = np.clip(np.round(box[:, 1] / height * dest_height), 0, dest_height)
             boxes.append(box.tolist())
             scores.append(score)
         return boxes, scores
@@ -122,8 +107,7 @@ class DBPostProcess:
         bitmap = _bitmap
         height, width = bitmap.shape
 
-        outs = cv2.findContours((bitmap * 255).astype(np.uint8), cv2.RETR_LIST,
-                                cv2.CHAIN_APPROX_SIMPLE)
+        outs = cv2.findContours((bitmap * 255).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         if len(outs) == 3:
             _img, contours, _ = outs[0], outs[1], outs[2]
         elif len(outs) == 2:
@@ -152,10 +136,8 @@ class DBPostProcess:
                 continue
             box = np.array(box)
 
-            box[:, 0] = np.clip(
-                np.round(box[:, 0] / width * dest_width), 0, dest_width)
-            box[:, 1] = np.clip(
-                np.round(box[:, 1] / height * dest_height), 0, dest_height)
+            box[:, 0] = np.clip(np.round(box[:, 0] / width * dest_width), 0, dest_width)
+            box[:, 1] = np.clip(np.round(box[:, 1] / height * dest_height), 0, dest_height)
             boxes.append(box.astype("int32"))
             scores.append(score)
         return np.array(boxes, dtype="int32"), scores
@@ -186,9 +168,7 @@ class DBPostProcess:
             index_2 = 3
             index_3 = 2
 
-        box = [
-            points[index_1], points[index_2], points[index_3], points[index_4]
-        ]
+        box = [points[index_1], points[index_2], points[index_3], points[index_4]]
         return box, min(bounding_box[1])
 
     def box_score_fast(self, bitmap, _box):
@@ -206,7 +186,7 @@ class DBPostProcess:
         box[:, 0] = box[:, 0] - xmin
         box[:, 1] = box[:, 1] - ymin
         cv2.fillPoly(mask, box.reshape(1, -1, 2).astype("int32"), 1)
-        return cv2.mean(bitmap[ymin:ymax + 1, xmin:xmax + 1], mask)[0]
+        return cv2.mean(bitmap[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
 
     def box_score_slow(self, bitmap, contour):
         """
@@ -227,10 +207,10 @@ class DBPostProcess:
         contour[:, 1] = contour[:, 1] - ymin
 
         cv2.fillPoly(mask, contour.reshape(1, -1, 2).astype("int32"), 1)
-        return cv2.mean(bitmap[ymin:ymax + 1, xmin:xmax + 1], mask)[0]
+        return cv2.mean(bitmap[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
 
     def __call__(self, outs_dict, shape_list):
-        pred = outs_dict['maps']
+        pred = outs_dict["maps"]
         if not isinstance(pred, np.ndarray):
             pred = pred.numpy()
         pred = pred[:, 0, :, :]
@@ -240,27 +220,22 @@ class DBPostProcess:
         for batch_index in range(pred.shape[0]):
             src_h, src_w, ratio_h, ratio_w = shape_list[batch_index]
             if self.dilation_kernel is not None:
-                mask = cv2.dilate(
-                    np.array(segmentation[batch_index]).astype(np.uint8),
-                    self.dilation_kernel)
+                mask = cv2.dilate(np.array(segmentation[batch_index]).astype(np.uint8), self.dilation_kernel)
             else:
                 mask = segmentation[batch_index]
-            if self.box_type == 'poly':
-                boxes, scores = self.polygons_from_bitmap(pred[batch_index],
-                                                          mask, src_w, src_h)
-            elif self.box_type == 'quad':
-                boxes, scores = self.boxes_from_bitmap(pred[batch_index], mask,
-                                                       src_w, src_h)
+            if self.box_type == "poly":
+                boxes, scores = self.polygons_from_bitmap(pred[batch_index], mask, src_w, src_h)
+            elif self.box_type == "quad":
+                boxes, scores = self.boxes_from_bitmap(pred[batch_index], mask, src_w, src_h)
             else:
-                raise ValueError(
-                    "box_type can only be one of ['quad', 'poly']")
+                raise ValueError("box_type can only be one of ['quad', 'poly']")
 
-            boxes_batch.append({'points': boxes})
+            boxes_batch.append({"points": boxes})
         return boxes_batch
 
 
 class BaseRecLabelDecode:
-    """ Convert between text-label and text-index """
+    """Convert between text-label and text-index"""
 
     def __init__(self, character_dict_path=None, use_space_char=False):
         self.beg_str = "sos"
@@ -275,12 +250,12 @@ class BaseRecLabelDecode:
             with open(character_dict_path, "rb") as fin:
                 lines = fin.readlines()
                 for line in lines:
-                    line = line.decode('utf-8').strip("\n").strip("\r\n")
+                    line = line.decode("utf-8").strip("\n").strip("\r\n")
                     self.character_str.append(line)
             if use_space_char:
                 self.character_str.append(" ")
             dict_character = list(self.character_str)
-            if 'arabic' in character_dict_path:
+            if "arabic" in character_dict_path:
                 self.reverse = True
 
         dict_character = self.add_special_char(dict_character)
@@ -291,40 +266,36 @@ class BaseRecLabelDecode:
 
     def pred_reverse(self, pred):
         pred_re = []
-        c_current = ''
+        c_current = ""
         for c in pred:
-            if not bool(re.search('[a-zA-Z0-9 :*./%+-]', c)):
-                if c_current != '':
+            if not bool(re.search("[a-zA-Z0-9 :*./%+-]", c)):
+                if c_current != "":
                     pred_re.append(c_current)
                 pred_re.append(c)
-                c_current = ''
+                c_current = ""
             else:
                 c_current += c
-        if c_current != '':
+        if c_current != "":
             pred_re.append(c_current)
 
-        return ''.join(pred_re[::-1])
+        return "".join(pred_re[::-1])
 
     def add_special_char(self, dict_character):
         return dict_character
 
     def decode(self, text_index, text_prob=None, is_remove_duplicate=False):
-        """ convert text-index into text-label. """
+        """convert text-index into text-label."""
         result_list = []
         ignored_tokens = self.get_ignored_tokens()
         batch_size = len(text_index)
         for batch_idx in range(batch_size):
             selection = np.ones(len(text_index[batch_idx]), dtype=bool)
             if is_remove_duplicate:
-                selection[1:] = text_index[batch_idx][1:] != text_index[
-                    batch_idx][:-1]
+                selection[1:] = text_index[batch_idx][1:] != text_index[batch_idx][:-1]
             for ignored_token in ignored_tokens:
                 selection &= text_index[batch_idx] != ignored_token
 
-            char_list = [
-                self.character[text_id]
-                for text_id in text_index[batch_idx][selection]
-            ]
+            char_list = [self.character[text_id] for text_id in text_index[batch_idx][selection]]
             if text_prob is not None:
                 conf_list = text_prob[batch_idx][selection]
             else:
@@ -332,7 +303,7 @@ class BaseRecLabelDecode:
             if len(conf_list) == 0:
                 conf_list = [0]
 
-            text = ''.join(char_list)
+            text = "".join(char_list)
 
             if self.reverse:  # for arabic rec
                 text = self.pred_reverse(text)
@@ -345,12 +316,10 @@ class BaseRecLabelDecode:
 
 
 class CTCLabelDecode(BaseRecLabelDecode):
-    """ Convert between text-label and text-index """
+    """Convert between text-label and text-index"""
 
-    def __init__(self, character_dict_path=None, use_space_char=False,
-                 **kwargs):
-        super(CTCLabelDecode, self).__init__(character_dict_path,
-                                             use_space_char)
+    def __init__(self, character_dict_path=None, use_space_char=False, **kwargs):
+        super(CTCLabelDecode, self).__init__(character_dict_path, use_space_char)
 
     def __call__(self, preds, label=None, *args, **kwargs):
         if isinstance(preds, tuple) or isinstance(preds, list):
@@ -366,5 +335,5 @@ class CTCLabelDecode(BaseRecLabelDecode):
         return text, label
 
     def add_special_char(self, dict_character):
-        dict_character = ['blank'] + dict_character
+        dict_character = ["blank"] + dict_character
         return dict_character

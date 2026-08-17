@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import {
@@ -8,7 +24,7 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
-import { downloadFile } from '@/services/file-manager-service';
+import { downloadAgentFile } from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
@@ -82,7 +98,11 @@ export const AssistantGroupButton = ({
         className="space-x-1"
       >
         <ToggleGroupItem value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
+          <CopyToClipboard
+            text={content}
+            className="border-none hover:!bg-transparent"
+            avoidButtonWrapper
+          ></CopyToClipboard>
         </ToggleGroupItem>
         {showLoudspeaker && (
           <ToggleGroupItem value="b" onClick={handleRead}>
@@ -114,15 +134,22 @@ export const AssistantGroupButton = ({
         )}
         {showLog && (
           <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
-            <NotebookText className="size-4" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <NotebookText className="size-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('flow.log')}</TooltipContent>
+            </Tooltip>
           </ToggleGroupItem>
         )}
-        {!!attachment?.doc_id && !isShare && (
+        {!!attachment?.doc_id && (
           <ToggleGroupItem
             value="g"
             onClick={async () => {
               try {
-                const response = await downloadFile({
+                const response = await downloadAgentFile({
                   docId: attachment.doc_id,
                   ext: attachment.format,
                 });
@@ -186,7 +213,7 @@ export const UserGroupButton = ({
       className="space-x-1"
     >
       <ToggleGroupItem value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
+        <CopyToClipboard text={content} avoidButtonWrapper></CopyToClipboard>
       </ToggleGroupItem>
       {regenerateMessage && (
         <ToggleGroupItem
