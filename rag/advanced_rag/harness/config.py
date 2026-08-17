@@ -18,6 +18,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         available_tools=["hybrid_search", "web_search", "bm25_search"],
         sufficiency_threshold=0.85,
         fallback_to_direct_llm=False,
+        terminal_tool_shortcut=True,
     ),
     "medium": ExecutionStrategy(
         label="medium",
@@ -38,6 +39,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         c_low=0.45,
         llm_floor=0.55,
         allows_reconcile=False,
+        terminal_tool_shortcut=True,
     ),
     "high": ExecutionStrategy(
         label="high",
@@ -47,7 +49,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         requires_sufficiency_judge=True,
         requires_selective_gen=True,
         allows_dynamic_claims=False,
-        allows_replan=False,
+        allows_replan=True,
         max_orchestrator_cycles=3,
         max_agent_cycles=2,
         max_parallel_agents=2,
@@ -67,6 +69,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         c_low=0.40,
         llm_floor=0.50,
         allows_reconcile=True,
+        terminal_tool_shortcut=True,
     ),
     "ultra": ExecutionStrategy(
         label="ultra",
@@ -101,6 +104,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         c_low=0.35,
         llm_floor=0.45,
         allows_reconcile=True,
+        terminal_tool_shortcut=True,
     ),
 }
 

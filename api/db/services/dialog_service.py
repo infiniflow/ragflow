@@ -1893,7 +1893,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     # "reasoning" arrives as "1".."4" mapping to the ordered THINKING_MODES
     # (low, medium, high, ultra); fall back to "medium" on anything else.
-    from rag.advanced_rag.harness.config import THINKING_MODES
+    from rag.advanced_rag.harness.config import THINKING_MODES, get_mode
 
     _mode_labels = list(THINKING_MODES.keys())
     try:
@@ -1901,6 +1901,10 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         thinking_mode = _mode_labels[_n - 1] if 1 <= _n <= len(_mode_labels) else "medium"
     except (TypeError, ValueError):
         thinking_mode = "medium"
+    # Per-mode terminal-tool shortcut: only enabled when the mode opts in via
+    # ``terminal_tool_shortcut`` in harness config. Controls whether the outer
+    # tool loop short-circuits after a successful ``rag`` call.
+    _terminal_shortcut = get_mode(thinking_mode).terminal_tool_shortcut
 
     gen_conf = dialog.llm_setting or {}
     doc_scope = None
@@ -1992,7 +1996,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     # the model calls it, stream its result and stop — otherwise the model would
     # have to relay the (citation-bearing) answer through another round, which
     # small models mangle or drop, so the client receives nothing.
-    if getattr(chat_mdl, "mdl", None) is not None:
+    #
+    # This is opt-in per thinking mode: when ``terminal_tool_shortcut`` is
+    # False (see harness config.py), ``terminal_tools`` stays unset and the
+    # outer tool loop keeps its multi-round re-ask behaviour instead.
+    if getattr(chat_mdl, "mdl", None) is not None and _terminal_shortcut:
         chat_mdl.mdl.terminal_tools = {"rag"}
     if stream:
         # Surface the outer model's reasoning, agent progress logs, and the

@@ -595,6 +595,25 @@ class Base(ABC):
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+
+                    # Terminal-tool short-circuit: a terminal tool (e.g. ``rag``)
+                    # already produces the final answer, so return its result
+                    # immediately instead of feeding it back for another round.
+                    # Mirrors the streaming tool loops (``async_chat_streamly_with_tools``
+                    # / ``async_chat_streamly_delta_with_tools``), which otherwise keep
+                    # re-running the full terminal tool until ``max_rounds`` is exhausted.
+                    # The behaviour is opt-in: ``terminal_tools`` is only populated by
+                    # the harness when the thinking mode enables ``terminal_tool_shortcut``.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    ans += out
+                                return self._strip_tool_calls(ans), tk_count
+
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
@@ -2297,6 +2316,24 @@ class LiteLLMBase(ABC):
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
+
+                    # Terminal-tool short-circuit: a terminal tool (e.g. ``rag``)
+                    # already produces the final answer, so return its result
+                    # immediately instead of feeding it back for another round.
+                    # Mirrors the streaming tool loop in this class and the
+                    # non-streaming loop on ``Base``. Opt-in: ``terminal_tools``
+                    # is only populated by the harness when the thinking mode
+                    # enables ``terminal_tool_shortcut``.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    ans += out
+                                return self._sanitize_answer(ans), tk_count
+
                     history = self._append_history_batch(
                         history,
                         results,

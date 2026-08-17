@@ -56,6 +56,14 @@ class ExecutionStrategy:
     # Whether the mode can force a re-investigation (RECONCILE). medium=False so
     # RECONCILE degrades to CONTINUE; high/ultra=True.
     allows_reconcile: bool = False
+    # Terminal-tool shortcut: when True, the outer tool loop treats ``rag`` as a
+    # terminal tool and short-circuits after its first successful call — the
+    # produced (cited) answer is returned immediately instead of being fed back
+    # for another outer round. Mirrors the ``_terminal`` short-circuit that
+    # already exists in the streaming tool loops. When False, the outer loop
+    # keeps its multi-round re-ask behaviour (research more evidence between
+    # rounds). Default False keeps legacy behaviour unless a mode opts in.
+    terminal_tool_shortcut: bool = False
 
 
 # ═══════════════════════════════════════════════════════════════
