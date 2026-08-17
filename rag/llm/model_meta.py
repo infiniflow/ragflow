@@ -122,6 +122,39 @@ class VolcEngine(Base):
 class Ollama(Base):
     _FACTORY_NAME = "Ollama"
 
+    def _get_api_key(self):
+        # Ollama typically does not require auth. The model-list verify path
+        # in get_model_list() only sends an Authorization header when the
+        # resolved key is truthy (see ``if resolved_key:`` in get_model_list).
+        # The base default returns self.api_key verbatim, which breaks when
+        # the API service stores the key as a JSON dict for consistency with
+        # other providers -- the Bearer header would be malformed as
+        # ``Authorization: Bearer {"api_key": "sk-xxx", ...}``. Ollama does
+        # not validate the token and accepts the malformed Bearer, but
+        # downstream Ollama setups that do validate (e.g. behind an
+        # authenticating reverse proxy) would reject it.
+        #
+        # Resolve to a plain string the same way LocalAI / VolcEngine /
+        # OpenRouter / NewAPI do for the model-list path:
+        #   * JSON dict with an "api_key" field -> the inner key.
+        #   * JSON dict without "api_key" -> "" so the no-auth path is kept
+        #     (Ollama's normal case; the verify endpoint will then call
+        #     /api/tags without an Authorization header, which Ollama
+        #     accepts by default).
+        #   * Plain string (the common case) -> returned as-is.
+        #   * JSON parse error, JSON non-object, or non-string api_key ->
+        #     fall back to the base default to avoid regressing any caller
+        #     that depends on the historical raw passthrough.
+        if not self.api_key:
+            return ""
+        try:
+            parsed = json.loads(self.api_key)
+        except (JSONDecodeError, TypeError, ValueError):
+            return self.api_key
+        if isinstance(parsed, dict):
+            return parsed.get("api_key", "") if "api_key" in parsed else ""
+        return self.api_key
+
     def _get_model_tags_url(self):
         return self.base_url.rstrip("/") + "/api/tags"
 
@@ -132,8 +165,15 @@ class Ollama(Base):
         if not self.base_url:
             return []
         headers = {}
-        if self.api_key:
-            headers.update({"Authorization": f"Bearer {self._get_api_key()}"})
+        # Use the resolved key (not raw self.api_key) so a JSON dict that
+        # has no inner ``api_key`` field resolves to ``""`` and the no-auth
+        # path is taken -- matches Ollama's normal case where no Authorization
+        # header is needed. Pre-fix this check used raw self.api_key, so a
+        # JSON-dict value (truthy) added a malformed ``Bearer {"api_key": ...}``
+        # header.
+        resolved_key = self._get_api_key()
+        if resolved_key:
+            headers.update({"Authorization": f"Bearer {resolved_key}"})
         async with aiohttp.ClientSession() as session:
             async with session.get(self._get_model_tags_url(), headers=headers) as resp:
                 if resp.status != 200:

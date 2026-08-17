@@ -484,7 +484,13 @@ class DocMetadataService:
 
                 # Index exists - check if document exists
                 try:
-                    doc_exists = settings.docStoreConn.get(doc_id, index_name, [kb_id])
+                    # Doc-meta tables are per-tenant, not per-kb; ``kb_id`` is
+                    # unused by ES/OB and the Infinity connector special-cases
+                    # ``ragflow_doc_meta_`` to ignore it as well. Pass ``[]``
+                    # so the Infinity connector doesn't try to build a
+                    # non-existent ``ragflow_doc_meta_<tenant>_<kb>`` table
+                    # name. See also: ``_get_doc_meta_index_name`` above.
+                    doc_exists = settings.docStoreConn.get(doc_id, index_name, [])
                     if doc_exists:
                         # Document exists - replace meta_fields entirely.
                         # Using update with a `doc` body would deep-merge the meta_fields
@@ -555,10 +561,15 @@ class DocMetadataService:
             # Try to get the metadata to confirm it exists before deleting
             # This is more efficient than attempting delete on non-existent records
             try:
+                # Doc-meta tables are per-tenant, not per-kb, so there is no
+                # kb suffix to query by. Pass an empty list — the Infinity
+                # connector (and OB) special-cases ``ragflow_doc_meta_``
+                # indexes and queries the table directly; ES relies on the
+                # empty-``kb_id`` filter it already injects below.
                 existing_metadata = settings.docStoreConn.get(
                     doc_id,
                     index_name,
-                    [""],  # Empty list for metadata tables
+                    [],
                 )
                 logging.debug(f"[METADATA DELETE] Get result: {existing_metadata is not None}")
                 if not existing_metadata:
@@ -698,13 +709,13 @@ class DocMetadataService:
                 return {}
 
             # Extract fields
-            doc_obj = doc
             tenant_id = doc.knowledgebase.tenant_id
-            kb_id = doc_obj.kb_id
             index_name = cls._get_doc_meta_index_name(tenant_id)
 
-            # Try to get metadata from ES/Infinity
-            metadata_doc = settings.docStoreConn.get(doc_id, index_name, [kb_id])
+            # Try to get metadata from ES/Infinity. Doc-meta tables are
+            # per-tenant, not per-kb; pass ``[]`` to avoid the Infinity
+            # connector building a non-existent ``<tenant>_<kb>`` table name.
+            metadata_doc = settings.docStoreConn.get(doc_id, index_name, [])
 
             if metadata_doc:
                 # Extract and unflatten metadata

@@ -318,11 +318,19 @@ func processTablesWithReplacements(
 	removeSet map[int]bool,
 	replacements []replacement,
 ) []pdf.TextBox {
-	for _, r := range replacements {
-		removeSet[r.boxIdx] = true
-	}
 	anchors := findTableAnchorsWithReplacements(boxes, tables, replacements)
 	htmls := buildTableHTMLs(boxes, tables)
+	// A box is removed only when it is actually replaced by a table HTML box.
+	// A DLA-tagged region that produced no table HTML (no cells, or a
+	// degenerate table whose ConstructTable returned "") keeps its original
+	// text as prose instead of being silently dropped. Marking per replacement
+	// (rather than un-marking empties) also avoids duplicating content when one
+	// box is covered by both an empty and a real table.
+	for _, r := range replacements {
+		if html, ok := htmls[r.tableIdx]; ok && html != "" {
+			removeSet[r.boxIdx] = true
+		}
+	}
 	anchorList := buildAndSortAnchors(anchors)
 	return insertTableBoxes(boxes, tables, removeSet, anchorList, htmls)
 }
