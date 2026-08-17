@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -32,8 +33,7 @@ import (
 )
 
 // progressLogMaxChars bounds the accumulated run log mirrored into
-// document.progress_msg. Mirrors Python's TASK_MAX_LOG_LENGTH
-// (api/db/services/task_service.py).
+// document.progress_msg.
 const progressLogMaxChars = 3000
 
 // progressSink implements pipeline.ProgressSink. It is the single writer of
@@ -54,9 +54,11 @@ type progressSink struct {
 	// logMu guards the accumulated run log below: OnComponentProgress fires
 	// from concurrent parallel-branch goroutines, so both the lazy seed and
 	// the append must hold the same mutex.
-	logMu  sync.Mutex
-	seeded bool
-	log    strings.Builder
+	logMu   sync.Mutex
+	seeded  bool
+	log     strings.Builder
+	pending []string
+	now     func() time.Time
 }
 
 // docProgressSvc is the subset of *service.DocumentService the sink needs to
@@ -77,6 +79,7 @@ func newProgressSink(ctx context.Context, taskSvc *servicepkg.IngestionTaskServi
 	return &progressSink{
 		taskSvc: taskSvc,
 		docSvc:  documentpkg.NewDocumentService(),
+		now:     time.Now,
 	}
 }
 
@@ -104,58 +107,93 @@ func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.Prog
 		return
 	}
 	progress, run := deriveDocumentProgress(agg, int(total))
-	if err = s.docSvc.UpdateRunProgress(ctx, ev.DocumentID, progress, run, s.accumulateLog(ctx, ev.DocumentID, ev.Message)); err != nil {
+	if err = s.updateDocumentProgress(ctx, ev.DocumentID, progress, run, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: mirror progress to document %s for task %s failed: %v", ev.DocumentID, ev.TaskID, err), err)
 	}
 }
 
-// accumulateLog appends one component lifecycle line to the run log and
-// returns the full accumulated log for mirroring into document.progress_msg.
-// The document-details dialog renders progress_msg verbatim as a multi-line
-// log (whitespace-pre-line), matching Python's append-and-trim semantics in
-// TaskService.update_progress; a single overwrite would leave the dialog
-// showing only the latest line. The buffer is lazily seeded from the
-// document row on the first event so a resumed run keeps the lines logged
-// before the crash/redelivery instead of restarting empty (StartRunning
-// resets the row to "" on a fresh run, which then seeds an empty log).
+// updateDocumentProgress serializes log accumulation with the corresponding
+// document write. Without holding the same lock across both operations, a
+// slower database write can store an older snapshot after a newer event has
+// already been persisted.
+func (s *progressSink) updateDocumentProgress(ctx context.Context, docID string, progress float64, run, msg string) error {
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	log, ok := s.accumulateLogLocked(ctx, docID, msg)
+	if !ok {
+		// Do not write a partial in-memory log when the seed read failed. The
+		// next event will retry the read and preserve the pending messages.
+		return nil
+	}
+	return s.docSvc.UpdateRunProgress(ctx, docID, progress, run, log)
+}
+
+// accumulateLog appends one component lifecycle line to the run log. It is
+// retained as a small test seam; production writes use updateDocumentProgress
+// so the append and document update share one lock.
 func (s *progressSink) accumulateLog(ctx context.Context, docID, msg string) string {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
+	log, _ := s.accumulateLogLocked(ctx, docID, msg)
+	return log
+}
+
+// accumulateLogLocked appends one component lifecycle line to the run log and
+// returns the full accumulated log plus whether it is safe to mirror it. The
+// caller must hold logMu.
+func (s *progressSink) accumulateLogLocked(ctx context.Context, docID, msg string) (string, bool) {
 	if !s.seeded {
-		s.seeded = true
 		doc, err := s.docSvc.GetDocumentByID(ctx, docID)
-		switch {
-		case err != nil:
+		if err != nil {
+			if msg != "" {
+				s.pending = append(s.pending, msg)
+			}
 			common.Warn(fmt.Sprintf("progressSink: seed run log from document %s: %v", docID, err))
-		case doc != nil && doc.ProgressMsg != nil:
+			return "", false
+		}
+		s.seeded = true
+		if doc != nil && doc.ProgressMsg != nil {
 			s.log.WriteString(*doc.ProgressMsg)
 		}
+		for _, pending := range s.pending {
+			s.appendLogLineLocked(pending)
+		}
+		s.pending = nil
 	}
 	if msg == "" {
-		return s.log.String()
+		return s.log.String(), true
 	}
+	s.appendLogLineLocked(msg)
+	return s.log.String(), true
+}
+
+func (s *progressSink) appendLogLineLocked(msg string) {
 	if s.log.Len() > 0 {
 		s.log.WriteByte('\n')
 	}
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	s.log.WriteString(now().Format("15:04:05"))
+	s.log.WriteString(": ")
 	s.log.WriteString(msg)
 	log := trimLogHead(s.log.String(), progressLogMaxChars)
 	if len(log) != s.log.Len() {
 		s.log.Reset()
 		s.log.WriteString(log)
 	}
-	return log
 }
 
 // trimLogHead drops whole lines from the head of text until the remainder
-// fits maxChars, keeping the newest lines. Mirrors Python's
-// trim_header_by_lines: text without a fitting newline boundary is returned
-// unchanged.
+// fits maxChars, keeping the newest lines. Text without a fitting newline
+// boundary is returned unchanged.
 func trimLogHead(text string, maxChars int) string {
 	if len(text) <= maxChars {
 		return text
 	}
 	for i := 0; i < len(text); i++ {
-		if text[i] == '\n' && len(text)-i <= maxChars {
+		if text[i] == '\n' && len(text)-(i+1) <= maxChars {
 			return text[i+1:]
 		}
 	}
@@ -176,5 +214,9 @@ func deriveDocumentProgress(agg *dao.TaskProgress, total int) (float64, string) 
 	case agg.Done > 0 || agg.Running > 0:
 		run = string(entity.TaskStatusRunning)
 	}
-	return agg.Percent / 100, run
+	progress := agg.Percent / 100
+	if progress > 1 {
+		progress = 1
+	}
+	return progress, run
 }

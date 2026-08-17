@@ -408,9 +408,37 @@ export const useRunDocument = () => {
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
     }) => {
-      queryClient.invalidateQueries({
-        queryKey: [DocumentApiAction.FetchDocumentList],
-      });
+      if (run === 1) {
+        const documentIdSet = new Set(documentIds);
+        queryClient.setQueriesData<{
+          docs: IDocumentInfo[];
+          total: number;
+        }>({ queryKey: [DocumentApiAction.FetchDocumentList] }, (current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            docs: current.docs.map((doc) =>
+              documentIdSet.has(doc.id)
+                ? {
+                    ...doc,
+                    run: RunningStatus.RUNNING,
+                    progress: 0,
+                    process_duration: 0,
+                    process_begin_at: new Date().toISOString(),
+                    progress_msg: '',
+                  }
+                : doc,
+            ),
+          };
+        });
+      }
+      if (run !== 1) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+      }
       const ret = await kbService.documentIngest({
         doc_ids: documentIds,
         run,
@@ -418,13 +446,28 @@ export const useRunDocument = () => {
       });
       const code = get(ret, 'data.code');
       if (code === 0) {
+        // For a start request, keep the optimistic running state until the
+        // polling query observes the worker's state. Invalidating here can
+        // immediately fetch the pre-worker "not started" row and disable
+        // polling again.
+        if (run !== 1) {
+          queryClient.invalidateQueries({
+            queryKey: [DocumentApiAction.FetchDocumentList],
+          });
+        }
+        message.success(i18n.t('message.operated'));
+      } else {
         queryClient.invalidateQueries({
           queryKey: [DocumentApiAction.FetchDocumentList],
         });
-        message.success(i18n.t('message.operated'));
       }
 
       return code;
+    },
+    onError: () => {
+      queryClient.invalidateQueries({
+        queryKey: [DocumentApiAction.FetchDocumentList],
+      });
     },
   });
 

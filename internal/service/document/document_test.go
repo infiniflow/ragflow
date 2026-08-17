@@ -3095,6 +3095,10 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	begin := time.Now().Add(-2 * time.Second)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_begin_at", begin).Error; err != nil {
+		t.Fatalf("set process_begin_at: %v", err)
+	}
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3113,6 +3117,9 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
 		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
+	}
+	if doc.ProcessDuration <= 0 {
+		t.Fatalf("process_duration = %v, want positive live duration", doc.ProcessDuration)
 	}
 }
 
