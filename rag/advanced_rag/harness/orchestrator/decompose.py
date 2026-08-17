@@ -11,6 +11,7 @@ from rag.advanced_rag.harness.sufficiency import (
     cross_check_claim,
     compute_fusion_score,
     route_sufficiency_verdict,
+    content_words_after_entities,
 )
 from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
 from rag.advanced_rag.harness.stats import in_phase
@@ -81,11 +82,26 @@ Return JSON:
   "report": "A precise, self-contained evidence-backed finding for this claim. MUST preserve every exact number, year, percentage, proper noun (person/place/org/product), and specific relationship verbatim from the evidence — do not paraphrase away or generalize away the concrete values. This report is the primary material for the final answer, so it must carry the answerable fact (e.g. '1,429,475 residents of Markazi in the 2016 census', 'the 1978 Academy Award for Best Picture went to The Deer Hunter'). If the evidence is incomplete, say what is known so far and what is still missing.",
   "gaps": ["specific missing fact or relationship"],
   "intermediate": "ONE bridge entity or relationship that must be retrieved BEFORE the claim can be answered, e.g. for 'company that Brian Bergstein is employed by violates which law' the intermediate is 'Who is Brian Bergstein's employer?'. Empty string if none / not a multi-hop bridge.",
-  "next_queries": ["standalone follow-up search query"],
+  "next_queries": [
+    {{"query": "standalone follow-up search query", "is_bridge": true}},
+    {{"query": "another standalone follow-up search query", "is_bridge": false}}
+  ],
   "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match; keep the exact numbers and entity names"],
   "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"]
 }}
-Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one. The report must be long enough to carry the full answerable fact — prefer completeness over brevity."""
+Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one. The report must be long enough to carry the full answerable fact — prefer completeness over brevity.
+
+next_queries FORMAT (MANDATORY):
+- Each element MUST be a JSON object {{"query": "...", "is_bridge": true|false}}. NEVER output plain strings.
+- Every next_query MUST include the "is_bridge" field; never omit it.
+- is_bridge=true means the query names ONLY an intermediate node (a bare person/place/company/work name) with NO relationship or target wording — it is just a hop toward the answer, so it will be combined with the claim description to search relation-aware.
+- is_bridge=false means the query ALREADY carries the relationship or target wording, so it is self-sufficient.
+- Examples:
+    {{"query": "Glyn Harper", "is_bridge": true}}
+    {{"query": "Glyn Harper children's book", "is_bridge": false}}
+    {{"query": "population of Paris 2019", "is_bridge": false}}
+- If the query is empty or would not add a new hop, omit it from the list entirely.
+Return a strict JSON object with no commentary before or after."""
 
 
 @in_phase("decompose")
@@ -105,7 +121,9 @@ async def decompose_and_search(state: dict, tools) -> dict:
     # Cross-round evidence dedup state: which evidence IDs each claim has already
     # had analysed. Later rounds only send NEW evidence IDs plus the prior report.
     attempted_evidence: dict[str, set[int]] = {c.claim_id: set() for c in ctx.claims}
-    pending_queries: dict[str, list[str]] = {c.claim_id: [] for c in ctx.claims}
+    # Per-claim pending follow-up queries, each a (query, is_bridge) tuple where
+    # is_bridge comes from the LLM annotation (or None -> spaCy fallback).
+    pending_queries: dict[str, list] = {c.claim_id: [] for c in ctx.claims}
     completed_cycles = 0
 
     # Stagnation guard: stop when the fusion score stops improving across
@@ -466,7 +484,7 @@ async def _analyze_claim_evidence(
             "confidence": 0.0,
             "report": "",
             "gaps": ["no evidence found"],
-            "next_queries": _fallback_queries(question, claim),
+            "next_queries": [(q, None) for q in _fallback_queries(question, claim)],
         }
 
     # Single-pass evidence analysis: send the compacted retrieved evidence to the
@@ -521,7 +539,7 @@ async def _analyze_claim_evidence(
                 "confidence": 0.0,
                 "report": "",
                 "gaps": ["no evidence found"],
-                "next_queries": _fallback_queries(question, claim),
+                "next_queries": [(q, None) for q in _fallback_queries(question, claim)],
             }
         return await _analyze_from_summary(question, claim, query, cycle, max_cycles, evidence, result, evidence_ids, tools, prev_report=prev_report)
     except Exception:
@@ -699,9 +717,16 @@ def _normalize_analysis(
     # intermediate node (e.g. Uber) before re-targeting the final answer. This is what
     # makes multi-hop questions retrieve correctly instead of one-shot keyword hit.
     intermediate = str(parsed.get("intermediate") or "").strip()
-    next_queries = _string_list(parsed.get("next_queries"))[:_MAX_NEXT_QUERIES]
+    # ``next_queries`` is now a list of {"query": ..., "is_bridge": ...} objects
+    # (backward compatible with plain string lists). Each entry becomes a
+    # ``(query, is_bridge)`` tuple where ``is_bridge`` is True/False from the
+    # LLM or ``None`` when the LLM did not annotate it (caller then falls back
+    # to the spaCy heuristic in ``_is_bridge_query``).
+    next_queries = _parse_next_queries(parsed.get("next_queries"))[:_MAX_NEXT_QUERIES]
     if intermediate and not is_verified:
-        next_queries = [intermediate] + [q for q in next_queries if q != intermediate]
+        # The ``intermediate`` field is, by definition, a bare bridge query that
+        # must be searched before re-targeting the claim -> force is_bridge=True.
+        next_queries = [(intermediate, True)] + [q for q in next_queries if q[0] != intermediate]
         next_queries = next_queries[:_MAX_NEXT_QUERIES]
     grounded = _string_list(parsed.get("grounded"))
     numbers = _string_list(parsed.get("numbers"))
@@ -714,7 +739,7 @@ def _normalize_analysis(
         # gate (agent_confidence >= c_high/c_low). Keep the LLM's raw confidence
         # so the ladder's thresholds behave as designed.
     elif not next_queries and cycle + 1 < max_cycles:
-        next_queries = _fallback_queries(question, claim)
+        next_queries = [(q, None) for q in _fallback_queries(question, claim)]
 
     return {
         "is_verified": is_verified,
@@ -727,6 +752,35 @@ def _normalize_analysis(
     }
 
 
+def _parse_next_queries(raw) -> list[tuple[str, bool | None]]:
+    """Parse the LLM's ``next_queries`` field into ``(query, is_bridge)`` pairs.
+
+    Accepts both the new object form (``[{"query": ..., "is_bridge": bool}]``)
+    and the legacy plain-string form (``["..."]``). For plain strings the
+    ``is_bridge`` flag is ``None``, signalling the caller to fall back to the
+    language-agnostic spaCy heuristic. Skips blank queries.
+    """
+    out: list[tuple[str, bool | None]] = []
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if isinstance(item, str):
+            q = item.strip()
+            if q:
+                out.append((q, None))
+            continue
+        if isinstance(item, dict):
+            q = str(item.get("query") or "").strip()
+            if not q:
+                continue
+            flag = item.get("is_bridge")
+            out.append((q, flag if isinstance(flag, bool) else None))
+            continue
+    return out
+
+
 def _fallback_analysis(
     result: dict,
     cycle: int,
@@ -737,7 +791,7 @@ def _fallback_analysis(
     chunks = result.get("chunks", []) or []
     is_last_cycle = cycle + 1 >= max_cycles
     is_verified = bool(chunks) and is_last_cycle
-    next_queries = [] if is_last_cycle or claim is None else _fallback_queries(question, claim)
+    next_queries = [] if is_last_cycle or claim is None else [(q, None) for q in _fallback_queries(question, claim)]
     return {
         "is_verified": is_verified,
         "confidence": 0.55 if is_verified else (0.35 if chunks else 0.0),
@@ -800,8 +854,8 @@ def _pick_next_query(
     question: str,
     claim: ClaimTarget,
     attempted: set[str],
-    pending: list[str],
-    global_pool: list[str] | None = None,
+    pending: list,
+    global_pool: list | None = None,
 ) -> str:
     # 0. Multi-hop: resolve the claim's prerequisite (bridge entity/relationship)
     # before targeting the claim itself. The first time the claim is researched, the
@@ -821,15 +875,22 @@ def _pick_next_query(
     #    children's book", the bridge "Glyn Harper" combines with "children's book"
     #    to retrieve the title, instead of stopping at the bridge).
     while pending:
-        query = (pending.pop(0) or "").strip()
+        item = pending.pop(0)
+        query, flag = item if isinstance(item, tuple) else (item, None)
+        query = (query or "").strip()
         normalized = _normalize_query(query)
         if normalized and normalized not in attempted:
-            # If the pending query looks like a bare bridge entity (short, no
-            # relationship verb), prepend the claim description so the search is
-            # relation-aware. This keeps a multi-hop chain advancing past the
-            # intermediate node toward the final answer.
+            # If the pending query is a bare bridge entity (only an intermediate
+            # node, no relationship to the answer), prepend the claim description
+            # so the search is relation-aware and keeps the multi-hop chain
+            # advancing past the intermediate node toward the final answer.
+            #
+            # Bridge determination: prefer the LLM's ``is_bridge`` annotation
+            # (``flag``); when the LLM did not annotate it (``None``), fall back
+            # to the language-agnostic spaCy NER heuristic in ``_is_bridge_query``.
             desc = (claim.description or "").strip()
-            if desc and _is_bridge_query(query, desc):
+            is_bridge = flag if flag is not None else (bool(desc) and _is_bridge_query(query))
+            if is_bridge:
                 combined = f"{query} {desc}"
                 if _normalize_query(combined) not in attempted:
                     return combined
@@ -868,79 +929,28 @@ def _pick_next_query(
     return ""
 
 
-_RELATION_VERBS = (
-    "founded",
-    "founded by",
-    "created",
-    "created by",
-    "directed",
-    "directed by",
-    "written by",
-    "wrote",
-    "wrote the",
-    "starring",
-    "starred in",
-    "played",
-    "played for",
-    "part of",
-    "member of",
-    "located in",
-    "in",
-    "of the",
-    "employer",
-    "spouse",
-    "wife",
-    "husband",
-    "married to",
-    "sister",
-    "brother",
-    "daughter",
-    "son of",
-    "child of",
-    "won",
-    "winner of",
-    "had",
-    "has",
-    "was the",
-    "is the",
-    "occurred in",
-    "took place",
-    "opened",
-    "built",
-    "owned by",
-    "also known as",
-    "was released in",
-)
-
-
-def _is_bridge_query(query: str, claim_desc: str) -> bool:
-    """True when ``query`` is a bare bridge entity (a short intermediate node
-    that names a person/place/thing but no relationship), so it should be
+def _is_bridge_query(query: str) -> bool:
+    """True when ``query`` is a bare bridge entity — a short intermediate node
+    that names a person/place/thing but no relationship — so it should be
     combined with the claim description to keep the multi-hop chain moving.
 
-    A bridge query typically has few words, shares little vocabulary with the
-    claim description, and carries no relationship verb. Combining it with the
-    claim description yields a relation-aware search (e.g. ``Glyn Harper
-    children's book``) that reaches the final answer instead of stalling on the
-    intermediate entity.
+    The primary source of truth is the LLM's ``is_bridge`` annotation on
+    ``next_queries`` (see ``_EVIDENCE_ANALYSIS_USER``). This function is the
+    language-agnostic *fallback* for queries the LLM did not annotate.
+
+    Heuristic (no per-language rules): a bare bridge query carries named
+    entities but, once those spans are stripped, no remaining *content* word —
+    judged by spaCy POS tags (NOUN/VERB/ADJ/ADV/PROPN/NUM) in
+    ``content_words_after_entities``. Because spaCy assigns POS tags for
+    en/zh/de/fr/es/pt/ja identically, no English verb/stopword list is needed:
+    e.g. "Glyn Harper" / "福楼拜" / "Apple" (no leftover content) are bridges,
+    while "Glyn Harper children book" / "福楼拜 写了 包法利夫人" / "population of
+    Paris" (leftover content) are relation-aware.
     """
-    q = query.strip().lower()
+    q = query.strip()
     if not q:
         return False
-    # Contains a relationship verb -> already relation-aware, no need to merge.
-    if any(v in q for v in _RELATION_VERBS):
-        return False
-    words_q = set(_normalize_query(q).split())
-    if not words_q:
-        return False
-    # A short bare entity (1-4 tokens) with no relationship verb is a bridge
-    # node: it names a person/place/thing but not the relationship to the final
-    # answer. Merging it with the claim description makes the search relation-
-    # aware (e.g. "Glyn Harper" + "children's book" -> the book title). This
-    # holds even when the entity also appears in the claim description (a common
-    # case: the claim's subject IS the bridge, and the missing piece is what
-    # that subject did / who it relates to).
-    return len(words_q) <= 4
+    return not content_words_after_entities(q)
 
 
 def _fallback_queries(question: str, claim: ClaimTarget) -> list[str]:
@@ -953,16 +963,19 @@ def _fallback_queries(question: str, claim: ClaimTarget) -> list[str]:
     return candidates[:_MAX_NEXT_QUERIES]
 
 
-def _new_queries(raw_queries: list[str], attempted: set[str]) -> list[str]:
+def _new_queries(raw_queries: list, attempted: set[str]) -> list:
+    """Filter and dedupe ``next_queries`` (each a ``(query, is_bridge)`` tuple)
+    against the already-attempted set. Returns the surviving tuple list."""
     queries = []
     seen = set(attempted)
-    for query in raw_queries:
+    for item in raw_queries:
+        query, flag = item if isinstance(item, tuple) else (item, None)
         query = (query or "").strip()
         normalized = _normalize_query(query)
         if not normalized or normalized in seen:
             continue
         seen.add(normalized)
-        queries.append(query)
+        queries.append((query, flag))
         if len(queries) >= _MAX_NEXT_QUERIES:
             break
     return queries

@@ -69,7 +69,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         c_low=0.40,
         llm_floor=0.50,
         allows_reconcile=True,
-        terminal_tool_shortcut=True,
+        terminal_tool_shortcut=False,
     ),
     "ultra": ExecutionStrategy(
         label="ultra",
@@ -104,7 +104,7 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         c_low=0.35,
         llm_floor=0.45,
         allows_reconcile=True,
-        terminal_tool_shortcut=True,
+        terminal_tool_shortcut=False,
     ),
 }
 
