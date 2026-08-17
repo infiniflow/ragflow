@@ -308,3 +308,49 @@ func TestResolveComponentParamsDefaults_ResultIsMutable(t *testing.T) {
 
 // ensure entity.JSONMap is used (import used).
 var _ entity.JSONMap
+
+func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	checked := 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			t.Fatalf("registry.Get(%q) failed", ref)
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			if s.ComponentName != "Extractor" {
+				continue
+			}
+			checked++
+			overrides := map[string]any{
+				s.CpnID: map[string]any{
+					"built_in_metadata": []any{
+						map[string]any{"key": "update_time", "type": "time"},
+					},
+				},
+			}
+			result := BuildParserConfig(dslJSON, overrides)
+			params, ok := result[s.CpnID].(map[string]any)
+			if !ok {
+				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
+			}
+			if _, ok := params["built_in_metadata"]; !ok {
+				t.Errorf("template %q: built_in_metadata dropped by CleanComponentParams; add \"built_in_metadata\": [] to the extractor node params", ref)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("expected at least one builtin template with an Extractor component")
+	}
+}
