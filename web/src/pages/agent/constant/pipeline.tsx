@@ -371,7 +371,7 @@ export const initialExtractorValues = {
     metadata: [],
     built_in_metadata: [],
   },
-  field_name: ContextGeneratorFieldName.Summary,
+  field_name: '',
   auto_keywords: 0,
   auto_questions: 0,
   auto_tags: 0,

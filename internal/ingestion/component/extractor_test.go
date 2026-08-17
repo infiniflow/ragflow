@@ -2618,3 +2618,98 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 		t.Errorf("expected metadata.year = 2026, got %v", meta["year"])
 	}
 }
+
+func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "A concise summary."})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"summary": map[string]any{
+			"enabled": true,
+			// system_prompt left empty to test default prompt injection
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "This is a detailed paragraph about artificial intelligence."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	if chunks[0]["summary"] != "A concise summary." {
+		t.Errorf("expected summary = 'A concise summary.', got %v", chunks[0]["summary"])
+	}
+
+	if stub.Calls() != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", stub.Calls())
+	}
+
+	lastReq := stub.lastRequest()
+	msgs := lastReq.Messages
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (system + user), got %d: %+v", len(msgs), msgs)
+	}
+
+	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "You are a precise and faithful text summarizer") {
+		t.Errorf("expected autoSummaryPrompt in system message, got: %+v", msgs[0])
+	}
+
+	if msgs[1].Role != "user" || !strings.Contains(msgs[1].Content, "This is a detailed paragraph about artificial intelligence.") {
+		t.Errorf("expected chunk text in user message, got: %+v", msgs[1])
+	}
+}
+
+func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "Not expected"})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"summary": map[string]any{
+			"enabled": false,
+		},
+		"field_name": "summary", // legacy default that should be ignored when enabled=false
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Some text."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	if stub.Calls() != 0 {
+		t.Errorf("expected 0 LLM calls when summary is disabled, got %d", stub.Calls())
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+	if _, has := chunks[0]["summary"]; has {
+		t.Errorf("expected no summary key in chunk, got %v", chunks[0]["summary"])
+	}
+}

@@ -427,8 +427,8 @@ export function transformExtractorParams(params: ExtractorFormSchemaType) {
         : params.enable_summary ?? 0,
     sys_prompt: params.summary?.system_prompt ?? params.sys_prompt ?? '',
     field_name: params.summary?.enabled
-      ? 'summary'
-      : (params.field_name || ''),
+      ? (params.field_name || 'summary')
+      : (params.field_name === 'summary' ? '' : (params.field_name || '')),
     enable_metadata: isMetadataEnabled ? 1 : 0,
     metadata: metadataList,
     built_in_metadata: builtInMetadataList,

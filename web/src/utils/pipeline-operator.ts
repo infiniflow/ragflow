@@ -122,7 +122,7 @@ function transformExtractorConfigToForm(
   result.summary = {
     enabled:
       config.summary?.enabled ??
-      (config.enable_summary === 1 || config.field_name === 'summary'),
+      (config.enable_summary === 1 || config.enable_summary === true),
     system_prompt: config.summary?.system_prompt ?? config.sys_prompt ?? '',
   };
   result.metadata_config = {

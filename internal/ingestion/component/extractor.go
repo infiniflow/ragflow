@@ -207,6 +207,18 @@ Propose questions about a given piece of text content.
 
 ## Content to analyze:
 %s`
+
+	autoSummaryPrompt = `## Role
+You are a precise and faithful text summarizer.
+
+## Task
+Create a concise and faithful summary of the provided text content.
+
+## Requirements
+- The summary MUST strictly rely on the provided text without hallucinating.
+- The summary MUST be in the same language as the original text content.
+- Be concise and focus on the main ideas, omitting redundant details.
+- Output summary ONLY.`
 )
 
 // ExtractorComponent performs LLM-based extraction over a chunk
@@ -342,11 +354,20 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			}
 			p.Summary.SystemPrompt = p.SystemPrompt
 		}
-		if p.Summary.Enabled && p.FieldName == "" {
-			p.FieldName = "summary"
-		}
-		if p.Summary.SystemPrompt != "" && p.SystemPrompt == "" {
-			p.SystemPrompt = p.Summary.SystemPrompt
+		if p.Summary.Enabled {
+			p.EnableSummary = 1
+			if p.FieldName == "" {
+				p.FieldName = "summary"
+			}
+			if p.Summary.SystemPrompt != "" && p.SystemPrompt == "" {
+				p.SystemPrompt = p.Summary.SystemPrompt
+			}
+		} else {
+			p.EnableSummary = 0
+			// When summary is explicitly disabled, avoid legacy "summary" field_name default triggering open-ended calls
+			if p.FieldName == "summary" {
+				p.FieldName = ""
+			}
 		}
 
 		// Metadata sub-config parsing with legacy flat fallback
@@ -546,10 +567,10 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelName, cfg)
-	var chatCfg *models.ChatConfig
+	chatCfg := &models.ChatConfig{}
 	if req.Temperature != nil {
 		temp := *req.Temperature
-		chatCfg = &models.ChatConfig{Temperature: &temp}
+		chatCfg.Temperature = &temp
 	}
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
@@ -563,6 +584,7 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
 		return nil, err
 	}
+	common.Info(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
 	return &extractorChatResponse{Content: out.Content}, nil
 }
 
@@ -726,6 +748,25 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	in := c.resolveInputs(inputs)
+	common.Warn("extractor input chunks",
+		zap.String("component", "Extractor"),
+		zap.String("field_name", in.fieldName),
+		zap.Int("chunk_count", len(in.chunks)),
+	)
+	for i, ck := range in.chunks {
+		text, _ := ck["content_with_weight"].(string)
+		if strings.TrimSpace(text) == "" {
+			text, _ = ck["text"].(string)
+		}
+		if len(text) > 500 {
+			text = text[:500] + "...(truncated)"
+		}
+		common.Warn("extractor input chunk",
+			zap.String("component", "Extractor"),
+			zap.Int("chunk_index", i),
+			zap.String("text", text),
+		)
+	}
 	common.Debug("extractor stage",
 		zap.String("component", "Extractor"),
 		zap.Int("input_chunks", len(in.chunks)),
@@ -750,8 +791,11 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// Without this, a template containing {text} would be forwarded
 			// to the model unsubstituted.
 			callIn := in
+			if (in.fieldName == "summary" || c.Param.Summary.Enabled) && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
+				callIn.systemPrompt = autoSummaryPrompt
+			}
 			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(
-				in.systemPrompt, in.prompt, map[string]any{}, "",
+				callIn.systemPrompt, in.prompt, map[string]any{}, "",
 			)
 			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
@@ -786,12 +830,25 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(in.systemPrompt, in.prompt, ck, text)
+			if (in.fieldName == "summary" || c.Param.Summary.Enabled) && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
+				callIn.systemPrompt = autoSummaryPrompt
+			}
+			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(callIn.systemPrompt, in.prompt, ck, text)
 			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
 				return fmt.Errorf("chunk %d: %w", i, callErr)
 			}
 			ck[in.fieldName] = ans
+			logAns := ans
+			if len(logAns) > 500 {
+				logAns = logAns[:500] + "...(truncated)"
+			}
+			common.Warn("extractor chunk result",
+				zap.String("component", "Extractor"),
+				zap.Int("chunk_index", i),
+				zap.String("field_name", in.fieldName),
+				zap.String("answer", logAns),
+			)
 		}
 		return nil
 	}); err != nil {
@@ -1252,6 +1309,26 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		temp := *in.temperature
 		req.Temperature = &temp
 	}
+	logReqMsgs := make([]eschema.Message, 0, len(msgs))
+	if len(msgs) > 6 {
+		logReqMsgs = append(logReqMsgs, msgs[:3]...)
+		logReqMsgs = append(logReqMsgs, eschema.Message{Role: eschema.User, Content: fmt.Sprintf("... (%d more)", len(msgs)-6)})
+		logReqMsgs = append(logReqMsgs, msgs[len(msgs)-3:]...)
+	} else {
+		logReqMsgs = append(logReqMsgs, msgs...)
+	}
+	logChunk := chunkText
+	if len(logChunk) > 500 {
+		logChunk = logChunk[:500] + "...(truncated)"
+	}
+	common.Warn("extractor llm request",
+		zap.String("component", "Extractor"),
+		zap.String("llm_id", in.llmID),
+		zap.String("driver", driver),
+		zap.String("model", modelName),
+		zap.Any("messages", logReqMsgs),
+		zap.String("chunk_text", logChunk),
+	)
 	var resp *extractorChatResponse
 	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
 		r, e := inv.Chat(ctx, req)
@@ -1265,6 +1342,17 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		// panic on resp.Content below. Surface a diagnosable error instead.
 		return nil, fmt.Errorf("extractor: chat: nil response from invoker")
 	}
+	logResp := resp.Content
+	if len(logResp) > 500 {
+		logResp = logResp[:500] + "...(truncated)"
+	}
+	common.Warn("extractor llm response",
+		zap.String("component", "Extractor"),
+		zap.String("llm_id", in.llmID),
+		zap.String("driver", driver),
+		zap.String("model", modelName),
+		zap.String("response", logResp),
+	)
 	return resp, nil
 }
 

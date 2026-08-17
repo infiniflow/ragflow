@@ -700,6 +700,18 @@ func llmTagChunk(
 	}
 	msgs = fitted
 
+	logPrompt := prompt
+	if len(logPrompt) > 500 {
+		logPrompt = logPrompt[:500] + "...(truncated)"
+	}
+	common.Warn("extractor tags llm request",
+		zap.String("component", "Extractor"),
+		zap.String("llm_id", llmID),
+		zap.String("driver", driver),
+		zap.String("model", model),
+		zap.String("prompt", logPrompt),
+	)
+
 	temperature := 0.5
 	var result map[string]int
 	timeoutErr := runtime.WithTimeout(ctx, taggerTimeout, func(timeoutCtx context.Context) error {
@@ -715,6 +727,17 @@ func llmTagChunk(
 			common.Error("extractor tags: LLM call failed", err)
 			return nil
 		}
+		logResp := resp.Content
+		if len(logResp) > 500 {
+			logResp = logResp[:500] + "...(truncated)"
+		}
+		common.Warn("extractor tags llm response",
+			zap.String("component", "Extractor"),
+			zap.String("llm_id", llmID),
+			zap.String("driver", driver),
+			zap.String("model", model),
+			zap.String("response", logResp),
+		)
 		result = parseTaggerResponse(resp.Content, topN)
 		return nil
 	})
