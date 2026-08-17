@@ -33,6 +33,41 @@ class Base(ABC):
         self.base_url = base_url
 
     def _get_api_key(self):
+        # Shared JSON-decode resolution for every model-list verify path in
+        # this file. Mirrors the per-site pattern in VolcEngine (line 68),
+        # OpenRouter (line 365), NewAPI (line 928), LocalAI (line 221), and
+        # Ollama (line 125) -- but in the base class so the 6 providers that
+        # do not override this method (Xinference, HuggingFace, FunASR,
+        # NVIDIA, GreenPT, VLLM, LMStudio, RAGcon, AIMLAPI) get the same
+        # wire-correct behavior for free.
+        #
+        # When the API service stores the api_key as a JSON dict -- the
+        # format used by ``api/apps/services/provider_api_service.py:313``
+        # which calls ``json.dumps(api_key)`` for non-string values -- the
+        # raw ``self.api_key`` would render as
+        # ``Authorization: Bearer {"api_key": "sk-xxx", ...}``, which
+        # real-provider endpoints 401. Resolve the same way the per-site
+        # overrides do:
+        #   * JSON dict with an ``api_key`` field  -> the inner key.
+        #   * JSON dict without ``api_key``        -> ``""`` so the resolved
+        #     value is falsy and any ``if resolved_key:`` gate in the
+        #     subclass's ``get_model_list`` skips the Authorization header
+        #     entirely. For real-provider subclasses (NVIDIA, GreenPT,
+        #     AIMLAPI) this is no better than the pre-fix malformed Bearer --
+        #     they 401 either way -- but the LocalAI/Ollama subclass pattern
+        #     of "no-auth when api_key is absent" still works.
+        #   * Plain string (the common case)  -> returned as-is.
+        #   * JSON parse error, JSON non-object, or non-string api_key  ->
+        #     fall back to the pre-fix raw passthrough so we do not
+        #     regress any caller that depends on the historical behavior.
+        if not self.api_key:
+            return ""
+        try:
+            parsed = json.loads(self.api_key)
+        except (JSONDecodeError, TypeError, ValueError):
+            return self.api_key
+        if isinstance(parsed, dict):
+            return parsed.get("api_key", "") if "api_key" in parsed else ""
         return self.api_key
 
     def _get_model_list_url(self):
