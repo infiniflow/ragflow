@@ -58,7 +58,7 @@ export function NavTreeView() {
                 </h3>
                 {selectedNode.doc_count !== undefined && (
                   <span className="text-xs text-text-secondary">
-                    {t('datasetNav.docCount', {
+                    {t('knowledgeCompilation.navDocCount', {
                       count: selectedNode.doc_count,
                     })}
                   </span>
@@ -67,16 +67,16 @@ export function NavTreeView() {
               <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 text-sm text-text-primary space-y-4">
                 <div>
                   <h4 className="text-xs font-medium text-text-secondary mb-1">
-                    {t('datasetNav.description')}
+                    {t('knowledgeCompilation.description')}
                   </h4>
                   <p className="whitespace-pre-wrap">
-                    {selectedNode.description || t('datasetNav.noDescription')}
+                    {selectedNode.description || t('knowledgeCompilation.navNoDescription')}
                   </p>
                 </div>
                 {selectedNode.keywords && selectedNode.keywords.length > 0 && (
                   <div>
                     <h4 className="text-xs font-medium text-text-secondary mb-1">
-                      {t('datasetNav.keywords')}
+                      {t('knowledgeCompilation.navKeywords')}
                     </h4>
                     <div className="flex flex-wrap gap-1">
                       {selectedNode.keywords.map((kw, i) => (
@@ -93,7 +93,7 @@ export function NavTreeView() {
                 {selectedNode.entities && selectedNode.entities.length > 0 && (
                   <div>
                     <h4 className="text-xs font-medium text-text-secondary mb-1">
-                      {t('datasetNav.entities')}
+                      {t('knowledgeCompilation.navEntities')}
                     </h4>
                     <div className="flex flex-wrap gap-1">
                       {selectedNode.entities.map((entity, i) => (
@@ -110,7 +110,7 @@ export function NavTreeView() {
                 {selectedNode.graph_content && (
                   <div>
                     <h4 className="text-xs font-medium text-text-secondary mb-1">
-                      {t('datasetNav.graphContent')}
+                      {t('knowledgeCompilation.navGraphContent')}
                     </h4>
                     <p className="whitespace-pre-wrap text-xs text-text-secondary">
                       {selectedNode.graph_content}
@@ -121,7 +121,7 @@ export function NavTreeView() {
             </section>
           ) : (
             <div className="flex-1 flex items-center justify-center text-sm text-text-secondary">
-              {t('datasetNav.selectNode')}
+              {t('knowledgeCompilation.navSelectNode')}
             </div>
           )}
         </ResizablePanel>

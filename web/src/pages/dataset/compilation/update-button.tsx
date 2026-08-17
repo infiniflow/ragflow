@@ -66,7 +66,7 @@ export function CompilationUpdateButton({
               <UpdateRunProgress data={traceData} generateType={generateType} />
             ) : (
               <>
-                {t('knowledgeDetails.update', { defaultValue: 'Update' })}
+                {t('knowledgeCompilation.update', { defaultValue: 'Update' })}
                 {newlyUploaded > 0 && (
                   <Badge variant="success" className="ml-1">
                     {newlyUploaded}
@@ -89,7 +89,7 @@ export function CompilationUpdateButton({
         </TooltipTrigger>
         <TooltipContent>
           {isGenerating
-            ? t('knowledgeDetails.viewUpdateLogs', {
+            ? t('knowledgeCompilation.viewUpdateLogs', {
                 defaultValue: 'View update logs',
               })
             : tooltip}

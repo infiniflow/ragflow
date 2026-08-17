@@ -52,7 +52,7 @@ export default function Compilation() {
             />
             <h2 className="text-xl font-medium text-text-primary">
               {knowledgeBase?.name}
-              {t('knowledgeDetails.compilationTitleSuffix')}
+              {t('knowledgeCompilation.compilationTitleSuffix')}
             </h2>
           </div>
 
