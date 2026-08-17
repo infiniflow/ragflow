@@ -55,8 +55,9 @@ func countSyntheticFigures(boxes []pdf.TextBox) int {
 // TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged pins #1: two heavily
 // overlapping same-type (figure) regions must be treated as ONE, so only one
 // figure box (the annotated text box) results and NO synthetic figure box is
-// produced. Python merges via layouts_cleanup; Go currently keeps both and
-// emits an extra synthetic figure box.
+// produced. Python merges via layouts_cleanup; Go now mirrors that by fusing
+// the overlapping pair into one region, so the duplicate synthetic figure is
+// avoided.
 func TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged(t *testing.T) {
 	box := pdf.TextBox{X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "Some caption text", PageNumber: 0}
 	regions := []pdf.DLARegion{
@@ -108,8 +109,9 @@ func TestAnnotateBoxLayouts_SameTypeOutOfYOrder_LayoutNoFollowsY(t *testing.T) {
 
 // TestAnnotateBoxLayouts_SyntheticFigureEquation_SeparateNamespaces pins #3:
 // an unmatched figure region and an unmatched equation region must yield
-// distinct synthetic layoutnos "figure-0" and "equation-0". Go currently
-// shares one counter and labels both "figure-N".
+// distinct synthetic layoutnos "figure-0" and "equation-0". Go now keeps
+// per-type synthetic counters so figures and equations are numbered
+// independently instead of sharing a single figure-N counter.
 func TestAnnotateBoxLayouts_SyntheticFigureEquation_SeparateNamespaces(t *testing.T) {
 	regions := []pdf.DLARegion{
 		{X0: 0, Y0: 0, X1: 50, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure},
@@ -126,7 +128,7 @@ func TestAnnotateBoxLayouts_SyntheticFigureEquation_SeparateNamespaces(t *testin
 		t.Errorf("#3 synthetic namespace: expected a synthetic box with layoutno \"figure-0\"")
 	}
 	if !layoutNos["equation-0"] {
-		t.Errorf("#3 synthetic namespace: expected a synthetic box with layoutno \"equation-0\" (separate counter from figure); Go currently folds equation into the shared figure counter")
+		t.Errorf("#3 synthetic namespace: expected a synthetic box with layoutno \"equation-0\" (separate counter from figure); equation was folded into the shared figure counter")
 	}
 }
 
@@ -134,8 +136,8 @@ func TestAnnotateBoxLayouts_SyntheticFigureEquation_SeparateNamespaces(t *testin
 // regions cover the box by the SAME fraction (ov tie), Python's
 // find_overlapped_with_threshold (recognizer.py:255-269) breaks the tie by the
 // region-coverage ratio (_ov = box∩region / region area), preferring the region
-// the box sits more "inside" of. Go must mirror the (ov, _ov) tuple comparison
-// rather than its current Y-order-first pick.
+// the box sits more "inside" of. Go mirrors the (ov, _ov) tuple comparison so
+// the higher-_ov region wins the tie instead of the first Y-sorted candidate.
 //
 // Layout: wide top region A and narrow bottom region B. The box spans both
 // vertically with EQUAL absolute intersection, so ov_A == ov_B. B is smaller,
