@@ -17,7 +17,8 @@
 import pytest
 from configs import DOCUMENT_NAME_LIMIT
 from ragflow_sdk import DataSet
-from configs import DEFAULT_PARSER_CONFIG  
+from configs import DEFAULT_PARSER_CONFIG
+
 
 class TestDocumentsUpdated:
     @pytest.mark.p1
@@ -64,7 +65,8 @@ class TestDocumentsUpdated:
                 assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"name": name})
-            updated_doc = dataset.list_documents(id=document.id)[0]
+            docs = dataset.list_documents(id=document.id)
+            updated_doc = [doc for doc in docs if doc.id == document.id][0]
             assert updated_doc.name == name, str(updated_doc)
 
     @pytest.mark.p2
@@ -138,14 +140,15 @@ class TestDocumentsUpdated:
                 assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"chunk_method": chunk_method})
-            updated_doc = dataset.list_documents(id=document.id)[0]
+            docs = dataset.list_documents()
+            updated_doc = [doc for doc in docs if doc.id == document.id][0]
             assert updated_doc.chunk_method == chunk_method, str(updated_doc)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"chunk_count": 1}, "Can't change `chunk_count`"),
+            ({"chunk_count": 1}, "can't change `chunk_count`"),
             pytest.param(
                 {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
                 "The input parameters are invalid",
@@ -186,7 +189,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            ({"progress": 1.0}, "Can't change `progress`"),
+            ({"progress": 1.0}, "can't change `progress`"),
             pytest.param(
                 {"progress_msg": "ragflow_test"},
                 "The input parameters are invalid",
@@ -212,7 +215,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            ({"token_count": 1}, "Can't change `token_count`"),
+            ({"token_count": 1}, "can't change `token_count`"),
             pytest.param(
                 {"type": "ragflow_test"},
                 "The input parameters are invalid",
@@ -242,7 +245,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"chunk_count": 1}, "Can't change `chunk_count`"),
+            ({"chunk_count": 1}, "can't change `chunk_count`"),
         ],
     )
     def test_immutable_fields_chunk_count(self, add_documents, payload, expected_message):
@@ -257,7 +260,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"token_count": 9999}, "Can't change `token_count`"),  # Attempt to change immutable field
+            ({"token_count": 9999}, "can't change `token_count`"),  # Attempt to change immutable field
         ],
     )
     def test_immutable_fields_token_count(self, add_documents, payload, expected_message):
@@ -272,7 +275,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"progress": 0.5}, "Can't change `progress`"),  # Attempt to change immutable field
+            ({"progress": 0.5}, "can't change `progress`"),  # Attempt to change immutable field
             ({"progress": 1.5}, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <1.5>"),  # Attempt to change immutable field
         ],
     )
@@ -295,9 +298,10 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
     "topn_tags": 3,
     "raptor": {
         "use_raptor": True,
-        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-        "max_token": 256,
-        "threshold": 0.1,
+        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+        "max_token": 512,
+        "clustering_threshold": 0.3,
+        "clustering_ratio": 0.5,
         "max_cluster": 64,
         "random_seed": 0,
     },
@@ -311,8 +315,10 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
             "category",
         ],
         "method": "light",
+        "batch_chunk_token_size": 4096,
     },
 }
+
 
 class TestUpdateDocumentParserConfig:
     @pytest.mark.p2
@@ -392,12 +398,21 @@ class TestUpdateDocumentParserConfig:
                 {"task_page_size": "1024"},
                 "Input should be a valid integer",
             ),
-            ("naive", {"raptor": {"use_raptor": True,                 
-                                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                                "max_token": 256,
-                                "threshold": 0.1,
-                                "max_cluster": 64,
-                                "random_seed": 0,}}, ""),
+            (
+                "naive",
+                {
+                    "raptor": {
+                        "use_raptor": True,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
+                        "max_cluster": 64,
+                        "random_seed": 0,
+                    }
+                },
+                "",
+            ),
             ("naive", {"raptor": {"use_raptor": False}}, ""),
             (
                 "naive",
@@ -479,7 +494,8 @@ class TestUpdateDocumentParserConfig:
             assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update(update_data)
-            updated_doc = dataset.list_documents(id=document.id)[0]
+            docs = dataset.list_documents(id=document.id)
+            updated_doc = [doc for doc in docs if doc.id == document.id][0]
             if parser_config:
                 for k, v in parser_config.items():
                     if isinstance(v, dict):

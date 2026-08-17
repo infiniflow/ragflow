@@ -16,7 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from configs import SESSION_WITH_CHAT_NAME_LIMIT
+from common import list_all_sessions
+from configs import HOST_ADDRESS, SESSION_WITH_CHAT_NAME_LIMIT
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Session
 
@@ -31,26 +32,16 @@ class _DummyStreamResponse:
             yield line
 
 
-@pytest.fixture(scope="session")
-def auth():
-    return "unit-auth"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info():
-    return None
-
-
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
             ("valid_name", ""),
             pytest.param("a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` can not be empty."),
+            ("", "`name` can not be empty"),
             ("duplicated_name", ""),
             ("case insensitive", ""),
         ],
@@ -84,7 +75,7 @@ class TestSessionWithChatAssistantCreate:
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
 
-        updated_sessions = chat_assistant.list_sessions(page_size=count * 2)
+        updated_sessions = list_all_sessions(chat_assistant, limit=count + 1)
         assert len(updated_sessions) == count
 
     @pytest.mark.p3
@@ -95,12 +86,12 @@ class TestSessionWithChatAssistantCreate:
         client.delete_chats(ids=[chat_assistant.id])
         with pytest.raises(Exception) as exception_info:
             chat_assistant.create_session(name="valid_name")
-        assert "You do not own the assistant" in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)
 
 
 @pytest.mark.p2
 def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat_session = Session(client, {"id": "session-chat", "chat_id": "chat-1"})
     chat_done_session = Session(client, {"id": "session-chat-done", "chat_id": "chat-1"})
     agent_session = Session(client, {"id": "session-agent", "agent_id": "agent-1"})
@@ -136,9 +127,7 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     monkeypatch.setattr(
         chat_done_session,
         "post",
-        lambda *_args, **_kwargs: _DummyStreamResponse(
-            ['{"data":{"answer":"chat-done","reference":{"chunks":[]}}}', "data: [DONE]"]
-        ),
+        lambda *_args, **_kwargs: _DummyStreamResponse(['{"data":{"answer":"chat-done","reference":{"chunks":[]}}}', "data: [DONE]"]),
     )
     monkeypatch.setattr(agent_session, "post", _agent_post)
 
@@ -160,8 +149,10 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     assert calls[0][2]["session_id"] == "session-chat"
     assert calls[0][2]["temperature"] == 0.2
     assert calls[0][3] is True
-    assert calls[1][1] == "/agents/agent-1/completions"
-    assert calls[1][2]["question"] == "hello agent"
+    assert calls[1][1] == "/agents/chat/completions"
+    assert calls[1][2]["agent_id"] == "agent-1"
+    assert calls[1][2]["query"] == "hello agent"
     assert calls[1][2]["session_id"] == "session-agent"
+    assert calls[1][2]["openai-compatible"] is False
     assert calls[1][2]["top_p"] == 0.8
     assert calls[1][3] is True

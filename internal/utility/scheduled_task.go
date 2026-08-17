@@ -19,7 +19,7 @@ package utility
 import (
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"sync/atomic"
 	"time"
 
@@ -51,7 +51,7 @@ func StatusMessageSending() {
 	// Serialize to JSON
 	jsonData, err := json.Marshal(statusMessage)
 	if err != nil {
-		logger.Error("Failed to marshal status message", err)
+		common.Error("Failed to marshal status message", err)
 		return
 	}
 
@@ -66,13 +66,13 @@ func StatusMessageSending() {
 	// Send POST request
 	resp, err := client.PostJSON("/v1/admin/status", jsonData)
 	if err != nil {
-		logger.Error("Error sending status message", err)
+		common.Error("Error sending status message", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		logger.Error("Failed to send status message", fmt.Errorf("status: %d", resp.StatusCode))
+		common.Error("Failed to send status message", fmt.Errorf("status: %d", resp.StatusCode))
 	}
 }
 
@@ -107,14 +107,14 @@ func (t *ScheduledTask) Start() {
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()
 
-			logger.Info("Task started", zap.String("name", t.Name))
+		common.Info("Task started", zap.String("name", t.Name))
 
 		for {
 			select {
 			case <-ticker.C:
 				t.runSafely()
 			case <-t.stop:
-				logger.Info("Task stopped", zap.String("name", t.Name))
+				common.Info("Task stopped", zap.String("name", t.Name))
 				return
 			}
 		}
@@ -125,7 +125,7 @@ func (t *ScheduledTask) Start() {
 func (t *ScheduledTask) runSafely() {
 	// Attempt to set the flag
 	if !atomic.CompareAndSwapInt32(&t.executing, 0, 1) {
-		logger.Warn("Task skipped - previous execution still running", zap.String("name", t.Name))
+		common.Warn("Task skipped - previous execution still running", zap.String("name", t.Name))
 		return
 	}
 
@@ -134,7 +134,7 @@ func (t *ScheduledTask) runSafely() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Fatal("Task panicked", zap.String("name", t.Name), zap.Any("recover", r))
+			common.Fatal("Task panicked", zap.String("name", t.Name), zap.Any("recover", r))
 		}
 	}()
 

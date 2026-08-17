@@ -1,0 +1,85 @@
+# .rooignore for RAGFlow
+# Purpose: reduce indexing noise, token waste, and accidental reads of generated files
+
+# Git / platform
+.git/
+.github/
+
+# IDE / local editor
+.idea/
+.vscode/
+.trae/
+
+# Python caches / build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+*.egg-info/
+ragflow.egg-info/
+sdk/python/ragflow_sdk.egg-info/
+sdk/python/build/
+sdk/python/dist/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node / frontend dependencies and build output
+node_modules/
+web/node_modules/
+web/dist/
+web/build/
+web/.cache/
+*.tsbuildinfo
+
+# Logs / runtime artifacts
+logs/
+docker/ragflow-logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Large local dependency artifacts
+libssl*.deb
+tika-server*.jar*
+cl100k_base.tiktoken
+chrome*
+huggingface.co/
+nltk_data/
+uv-x86_64*.tar.gz
+uv-aarch64*.tar.gz
+
+# Temp / data / local storage
+tmp/
+cache/
+backup/
+docker/data/
+docker/oceanbase/conf
+docker/oceanbase/data
+docker/seekdb
+
+# Native / compiled build dirs
+target/
+bin/
+internal/binding/cpp/build/
+internal/binding/cpp/cmake-build-release/
+internal/binding/cpp/cmake-build-debug/
+
+# Optional: skip tests and docs from indexing
+# test/
+# tests/
+# docs/
+
+# Ignore Roo's own config file
+.rooignore

@@ -24,11 +24,16 @@ from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
 from rag.app.naive import by_plaintext, PARSERS
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
+from common.constants import MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
 
 
+logger = logging.getLogger(__name__)
+
+
 class Pdf(PdfParser):
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
@@ -55,7 +60,7 @@ class Pdf(PdfParser):
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, excel, txt.
     One file forms a chunk which maintains original text order.
@@ -81,12 +86,24 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
             cks.append({"text": text, "image": image, "ck_type": ck_type})
 
-        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, **kwargs)
+        logger.info(
+            "DOCX figure vision enhancement: language=%s image_count=%d",
+            lang or "English",
+            len(image_idxs),
+        )
+        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, lang=lang, **kwargs)
         sections = [ck["text"] for ck in cks if ck.get("text")]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -105,6 +122,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             pdf_cls=Pdf,
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
+            mistral_ocr_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
             **kwargs,
         )
@@ -126,7 +144,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
-        sections = excel_parser.html(binary, 1000000000)
+        sections = excel_parser.html(binary, MAXIMUM_TASK_PAGE_NUMBER)
 
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -162,7 +180,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
-    tokenize(doc, "\n".join(sections), eng)
+    tokenize(doc, "\n".join(sections), eng, language=lang)
     return [doc]
 
 

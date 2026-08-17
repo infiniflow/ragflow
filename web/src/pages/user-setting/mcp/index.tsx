@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { CardContainer } from '@/components/card-container';
 import {
   ConfirmDeleteDialog,
@@ -39,10 +55,16 @@ export default function McpServer() {
     handleDelete,
     handleExportMcp,
     handleSelectAll,
+    resetSelection,
   } = useBulkOperateMCP(data.mcp_servers);
   const { t } = useTranslation();
-  const { importVisible, showImportModal, hideImportModal, onImportOk } =
-    useImportMcp();
+  const {
+    importVisible,
+    showImportModal,
+    hideImportModal,
+    onImportOk,
+    loading: importLoading,
+  } = useImportMcp();
 
   const [isSelectionMode, setSelectionMode] = useState(false);
 
@@ -55,7 +77,8 @@ export default function McpServer() {
 
   const switchSelectionMode = useCallback(() => {
     setSelectionMode((prev) => !prev);
-  }, []);
+    resetSelection();
+  }, [resetSelection]);
 
   return (
     <ProfileSettingWrapperCard
@@ -102,7 +125,18 @@ export default function McpServer() {
           <>
             {isSelectionMode && (
               <section className="pb-5 flex items-center">
-                <Checkbox id="all" onCheckedChange={handleSelectAll} />
+                <Checkbox
+                  id="all"
+                  checked={
+                    selectedList.length > 0 &&
+                    selectedList.length === data.mcp_servers.length
+                      ? true
+                      : selectedList.length > 0
+                        ? 'indeterminate'
+                        : false
+                  }
+                  onCheckedChange={handleSelectAll}
+                />
                 <Label
                   className="pl-2 text-text-primary cursor-pointer"
                   htmlFor="all"
@@ -185,6 +219,7 @@ export default function McpServer() {
         <ImportMcpDialog
           hideModal={hideImportModal}
           onOk={onImportOk}
+          loading={importLoading}
         ></ImportMcpDialog>
       )}
     </ProfileSettingWrapperCard>

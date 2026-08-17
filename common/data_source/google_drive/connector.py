@@ -159,6 +159,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
 
         self._creds: OAuthCredentials | ServiceAccountCredentials | None = None
         self._creds_dict: dict[str, Any] | None = None
+        self._all_drive_ids_cache: set[str] | None = None
 
         # ids of folders and shared drives that have been traversed
         self._retrieved_folder_and_drive_ids: set[str] = set()
@@ -211,6 +212,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             self.include_files_shared_with_me = True
 
         self._creds_dict = new_creds_dict
+        self._all_drive_ids_cache = None
 
         return new_creds_dict
 
@@ -249,7 +251,9 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         return user_emails
 
     def get_all_drive_ids(self) -> set[str]:
-        return self._get_all_drives_for_user(self.primary_admin_email)
+        if self._all_drive_ids_cache is None:
+            self._all_drive_ids_cache = self._get_all_drives_for_user(self.primary_admin_email)
+        return set(self._all_drive_ids_cache)
 
     def _get_all_drives_for_user(self, user_email: str) -> set[str]:
         drive_service = get_drive_service(self.creds, user_email)
@@ -265,7 +269,14 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             all_drive_ids.add(drive["id"])
 
         if not all_drive_ids:
-            self.logger.warning("No drives found even though indexing shared drives was requested.")
+            if self._requested_shared_drive_ids:
+                self.logger.warning(
+                    "No shared drives found for user %s while resolving requested shared drives.",
+                    user_email,
+                )
+            elif self.include_shared_drives:
+                log_fn = self.logger.warning if is_service_account else self.logger.info
+                log_fn("No shared drives found for user %s.", user_email)
 
         return all_drive_ids
 
@@ -739,9 +750,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         if remaining_folders:
             self.logger.warning(f"Some folders/drives were not retrieved. IDs: {remaining_folders}")
 
-    def _adjust_start_for_query(
-        self, start: SecondsSinceUnixEpoch | None
-    ) -> SecondsSinceUnixEpoch | None:
+    def _adjust_start_for_query(self, start: SecondsSinceUnixEpoch | None) -> SecondsSinceUnixEpoch | None:
         """Subtract the configured time buffer from start to create an overlap window for incremental syncs."""
         if not start or start <= 0:
             return start
@@ -1087,8 +1096,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
         try:
@@ -1096,8 +1103,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             while checkpoint.completion_stage != DriveRetrievalStage.DONE:
                 yield from self._extract_slim_docs_from_google_drive(
                     checkpoint=checkpoint,
-                    start=start,
-                    end=end,
                 )
             self.logger.info("Drive perm sync: Slim doc retrieval complete")
 
@@ -1218,6 +1223,7 @@ def yield_all_docs_from_checkpoint_connector(
 if __name__ == "__main__":
     import time
     from common.data_source.google_util.util import get_credentials_from_env
+
     logging.basicConfig(level=logging.DEBUG)
 
     try:

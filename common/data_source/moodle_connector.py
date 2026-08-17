@@ -21,14 +21,19 @@ from common.data_source.interfaces import (
     LoadConnector,
     PollConnector,
     SecondsSinceUnixEpoch,
+    SlimConnectorWithPermSync,
 )
-from common.data_source.models import Document
+from common.data_source.models import (
+    Document,
+    GenerateSlimDocumentOutput,
+    SlimDocument,
+)
 from common.data_source.utils import batch_generator, rl_requests
 
 logger = logging.getLogger(__name__)
 
 
-class MoodleConnector(LoadConnector, PollConnector):
+class MoodleConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """Moodle LMS connector for accessing course content"""
 
     def __init__(self, moodle_url: str, batch_size: int = INDEX_BATCH_SIZE) -> None:
@@ -46,9 +51,7 @@ class MoodleConnector(LoadConnector, PollConnector):
         delimiter = "&" if "?" in file_url else "?"
         return f"{file_url}{delimiter}token={token}"
 
-    def _log_error(
-        self, context: str, error: Exception, level: str = "warning"
-    ) -> None:
+    def _log_error(self, context: str, error: Exception, level: str = "warning") -> None:
         """Simplified logging wrapper"""
         msg = f"{context}: {error}"
         if level == "error":
@@ -60,9 +63,7 @@ class MoodleConnector(LoadConnector, PollConnector):
         """Return latest valid timestamp"""
         return max((t for t in timestamps if t and t > 0), default=0)
 
-    def _yield_in_batches(
-        self, generator: Generator[Document, None, None]
-    ) -> Generator[list[Document], None, None]:
+    def _yield_in_batches(self, generator: Generator[Document, None, None]) -> Generator[list[Document], None, None]:
         for batch in batch_generator(generator, self.batch_size):
             yield batch
 
@@ -72,16 +73,12 @@ class MoodleConnector(LoadConnector, PollConnector):
             raise ConnectorMissingCredentialError("Moodle API token is required")
 
         try:
-            self.moodle_client = MoodleClient(
-                self.moodle_url + "/webservice/rest/server.php", token
-            )
+            self.moodle_client = MoodleClient(self.moodle_url + "/webservice/rest/server.php", token)
             self.moodle_client.core.webservice.get_site_info()
         except MoodleException as e:
             if "invalidtoken" in str(e).lower():
                 raise CredentialExpiredError("Moodle token is invalid or expired")
-            raise ConnectorMissingCredentialError(
-                f"Failed to initialize Moodle client: {e}"
-            )
+            raise ConnectorMissingCredentialError(f"Failed to initialize Moodle client: {e}")
 
     def validate_connector_settings(self) -> None:
         if not self.moodle_client:
@@ -96,9 +93,7 @@ class MoodleConnector(LoadConnector, PollConnector):
             if "invalidtoken" in msg:
                 raise CredentialExpiredError("Moodle token is invalid or expired")
             if "accessexception" in msg:
-                raise InsufficientPermissionsError(
-                    "Insufficient permissions. Ensure web services are enabled and permissions are correct."
-                )
+                raise InsufficientPermissionsError("Insufficient permissions. Ensure web services are enabled and permissions are correct.")
             raise ConnectorValidationError(f"Moodle validation error: {e}")
         except Exception as e:
             raise ConnectorValidationError(f"Unexpected validation error: {e}")
@@ -119,23 +114,89 @@ class MoodleConnector(LoadConnector, PollConnector):
 
         yield from self._yield_in_batches(self._process_courses(courses))
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Generator[list[Document], None, None]:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Generator[list[Document], None, None]:
         if not self.moodle_client:
             raise ConnectorMissingCredentialError("Moodle client not initialized")
 
-        logger.info(
-            f"Polling Moodle updates between {datetime.fromtimestamp(start)} and {datetime.fromtimestamp(end)}"
-        )
+        logger.info(f"Polling Moodle updates between {datetime.fromtimestamp(start)} and {datetime.fromtimestamp(end)}")
         courses = self._get_enrolled_courses()
         if not courses:
             logger.warning("No courses found to poll")
             return
 
-        yield from self._yield_in_batches(
-            self._get_updated_content(courses, start, end)
-        )
+        yield from self._yield_in_batches(self._get_updated_content(courses, start, end))
+
+    @staticmethod
+    def _slim_doc_id_for_module(module) -> Optional[str]:
+        """Return the indexed document id for a Moodle module, or None.
+
+        The id format must match the ones produced by the _process_*
+        helpers below. Module types that we never ingest (label, url) and
+        modules with no id return None.
+        """
+        mtype = getattr(module, "modname", None)
+        mid = getattr(module, "id", None)
+        if not mtype or mid is None:
+            return None
+        if mtype in ("label", "url"):
+            return None
+        if mtype == "resource":
+            return f"moodle_resource_{mid}"
+        if mtype == "forum":
+            return f"moodle_forum_{mid}"
+        if mtype == "page":
+            return f"moodle_page_{mid}"
+        if mtype == "book":
+            return f"moodle_book_{mid}"
+        if mtype in ("assign", "quiz"):
+            return f"moodle_{mtype}_{mid}"
+        return None
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """List the ids of every Moodle module that could be indexed.
+
+        This is a lightweight pass over courses and modules with no file
+        downloads. The caller compares the returned ids against the index
+        and removes any indexed document whose id is not in this list.
+        """
+        del callback
+        if not self.moodle_client:
+            raise ConnectorMissingCredentialError("Moodle client not initialized")
+
+        logger.info("Starting Moodle slim snapshot for stale-document cleanup")
+        courses = self._get_enrolled_courses()
+        if not courses:
+            logger.warning("No courses found for slim snapshot")
+            return
+
+        batch: list[SlimDocument] = []
+        total = 0
+        for course in courses:
+            try:
+                contents = self._get_course_contents(course.id)
+                for section in contents:
+                    for module in section.modules:
+                        slim_id = self._slim_doc_id_for_module(module)
+                        if slim_id is None:
+                            continue
+                        batch.append(SlimDocument(id=slim_id))
+                        total += 1
+                        if len(batch) >= self.batch_size:
+                            yield batch
+                            batch = []
+            except Exception as e:
+                self._log_error(
+                    f"slim snapshot for course {getattr(course, 'fullname', '?')}",
+                    e,
+                )
+
+        if batch:
+            yield batch
+
+        logger.info(f"Moodle slim snapshot completed: {total} documents listed")
 
     @retry(tries=3, delay=1, backoff=2)
     def _get_enrolled_courses(self) -> list:
@@ -171,9 +232,7 @@ class MoodleConnector(LoadConnector, PollConnector):
             except Exception as e:
                 self._log_error(f"processing course {course.fullname}", e)
 
-    def _get_updated_content(
-        self, courses, start: float, end: float
-    ) -> Generator[Document, None, None]:
+    def _get_updated_content(self, courses, start: float, end: float) -> Generator[Document, None, None]:
         for course in courses:
             try:
                 contents = self._get_course_contents(course.id)
@@ -184,11 +243,7 @@ class MoodleConnector(LoadConnector, PollConnector):
                             getattr(module, "timemodified", 0),
                         ]
                         if hasattr(module, "contents"):
-                            times.extend(
-                                getattr(c, "timemodified", 0)
-                                for c in module.contents
-                                if c and getattr(c, "timemodified", 0)
-                            )
+                            times.extend(getattr(c, "timemodified", 0) for c in module.contents if c and getattr(c, "timemodified", 0))
                         last_mod = self._get_latest_timestamp(*times)
                         if start < last_mod <= end:
                             doc = self._process_module(course, section, module)
@@ -232,9 +287,7 @@ class MoodleConnector(LoadConnector, PollConnector):
         )
 
         try:
-            resp = rl_requests.get(
-                self._add_token_to_url(file_info.fileurl), timeout=60
-            )
+            resp = rl_requests.get(self._add_token_to_url(file_info.fileurl), timeout=60)
             resp.raise_for_status()
             blob = resp.content
             ext = os.path.splitext(file_name)[1] or ".bin"
@@ -282,9 +335,7 @@ class MoodleConnector(LoadConnector, PollConnector):
             return None
 
         try:
-            result = self.moodle_client.mod.forum.get_forum_discussions(
-                forumid=module.instance
-            )
+            result = self.moodle_client.mod.forum.get_forum_discussions(forumid=module.instance)
             disc_list = getattr(result, "discussions", [])
             if not disc_list:
                 return None
@@ -363,9 +414,7 @@ class MoodleConnector(LoadConnector, PollConnector):
         )
 
         try:
-            resp = rl_requests.get(
-                self._add_token_to_url(file_info.fileurl), timeout=60
-            )
+            resp = rl_requests.get(self._add_token_to_url(file_info.fileurl), timeout=60)
             resp.raise_for_status()
             blob = resp.content
             ext = os.path.splitext(file_name)[1] or ".html"
@@ -462,12 +511,7 @@ class MoodleConnector(LoadConnector, PollConnector):
             return None
 
         contents = module.contents
-        chapters = [
-            c
-            for c in contents
-            if getattr(c, "fileurl", None)
-            and os.path.basename(c.filename) == "index.html"
-        ]
+        chapters = [c for c in contents if getattr(c, "fileurl", None) and os.path.basename(c.filename) == "index.html"]
         if not chapters:
             return None
 

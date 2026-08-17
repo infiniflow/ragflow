@@ -12,12 +12,13 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-//
+//go:build manual
 
 package tokenizer
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -25,13 +26,11 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-
-	"ragflow/internal/logger"
 )
 
 func init() {
 	// Initialize logger for tests
-	if err := logger.Init("info"); err != nil {
+	if err := common.InitLogger("info", common.FileOutput{}, "tokenizer_test"); err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 	}
 }
@@ -40,7 +39,7 @@ func init() {
 func TestConcurrentTokenize(t *testing.T) {
 	// Use small pool to test expansion
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        2,
 		MaxSize:        10,
 		IdleTimeout:    5 * time.Second,
@@ -173,10 +172,71 @@ func TestConcurrentTokenize(t *testing.T) {
 	t.Log("=== Test completed successfully ===")
 }
 
+func TestConcurrentTokenizeLanguageIsolation(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	SetEngineType("")
+
+	cfg := &PoolConfig{
+		DictPath:       "",
+		MinSize:        2,
+		MaxSize:        8,
+		IdleTimeout:    3 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}
+
+	if err := Init(cfg); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	sample := findEnglishDutchDifferentiator(t)
+
+	const goroutinesPerLang = 8
+	const requestsPerGoroutine = 20
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errors := make(chan string, goroutinesPerLang*requestsPerGoroutine*2)
+
+	run := func(tok Tokenizer, lang, want string) {
+		defer wg.Done()
+		<-start
+		for i := 0; i < requestsPerGoroutine; i++ {
+			got, err := tok.Tokenize(sample.input)
+			if err != nil {
+				errors <- fmt.Sprintf("lang=%s req=%d unexpected error: %v", lang, i, err)
+				return
+			}
+			if got != want {
+				errors <- fmt.Sprintf("lang=%s req=%d got %q want %q", lang, i, got, want)
+				return
+			}
+		}
+	}
+
+	for i := 0; i < goroutinesPerLang; i++ {
+		wg.Add(2)
+		go run(New("English"), "English", sample.english)
+		go run(New("Dutch"), "Dutch", sample.dutch)
+	}
+
+	close(start)
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Error(err)
+	}
+	if t.Failed() {
+		t.Fatalf("concurrent language isolation failed for input %q (English=%q Dutch=%q)", sample.input, sample.english, sample.dutch)
+	}
+}
+
 // TestConcurrentTokenizeWithPosition tests concurrent tokenization with position info
 func TestConcurrentTokenizeWithPosition(t *testing.T) {
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        2,
 		MaxSize:        8,
 		IdleTimeout:    3 * time.Second,
@@ -237,7 +297,7 @@ func TestConcurrentTokenizeWithPosition(t *testing.T) {
 func TestPoolExhaustion(t *testing.T) {
 	// Very small pool to test exhaustion
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    10 * time.Second,
@@ -300,7 +360,7 @@ func TestPoolExhaustion(t *testing.T) {
 // TestFineGrainedTokenizeConcurrent tests concurrent fine-grained tokenization
 func TestFineGrainedTokenizeConcurrent(t *testing.T) {
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        2,
 		MaxSize:        6,
 		IdleTimeout:    3 * time.Second,
@@ -347,7 +407,7 @@ func TestFineGrainedTokenizeConcurrent(t *testing.T) {
 // TestTermFreqAndTagConcurrent tests concurrent term frequency and tag lookups
 func TestTermFreqAndTagConcurrent(t *testing.T) {
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        2,
 		MaxSize:        6,
 		IdleTimeout:    3 * time.Second,
@@ -393,7 +453,7 @@ func TestTermFreqAndTagConcurrent(t *testing.T) {
 // BenchmarkTokenize benchmarks the tokenization performance
 func BenchmarkTokenize(b *testing.B) {
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        runtime.NumCPU() * 2,
 		MaxSize:        runtime.NumCPU() * 4,
 		IdleTimeout:    5 * time.Minute,
@@ -429,7 +489,7 @@ func BenchmarkTokenize(b *testing.B) {
 // BenchmarkTokenizeWithPosition benchmarks position-aware tokenization
 func BenchmarkTokenizeWithPosition(b *testing.B) {
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        runtime.NumCPU() * 2,
 		MaxSize:        runtime.NumCPU() * 4,
 		IdleTimeout:    5 * time.Minute,
@@ -457,7 +517,7 @@ func BenchmarkTokenizeWithPosition(b *testing.B) {
 // ExampleGetPoolStats demonstrates getting pool statistics
 func ExampleGetPoolStats() {
 	cfg := &PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
+		DictPath:       "", // uses default or RAGFLOW_DICT_PATH env var
 		MinSize:        2,
 		MaxSize:        10,
 		IdleTimeout:    5 * time.Minute,
@@ -482,7 +542,7 @@ func ExampleGetPoolStats() {
 // logPoolStats logs pool statistics using the zap logger
 func logPoolStats(msg string) {
 	stats := GetPoolStats()
-	logger.Info(msg,
+	common.Info(msg,
 		zap.Bool("initialized", stats["initialized"].(bool)),
 		zap.Int32("current_size", stats["current_size"].(int32)),
 		zap.Int("min_size", stats["min_size"].(int)),

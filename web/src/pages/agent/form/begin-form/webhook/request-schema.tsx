@@ -33,6 +33,7 @@ export function WebhookRequestSchema() {
           WebhookRequestParameters.String,
           WebhookRequestParameters.Number,
           WebhookRequestParameters.Boolean,
+          WebhookRequestParameters.Object,
         ];
   }, [isFormDataContentType]);
 

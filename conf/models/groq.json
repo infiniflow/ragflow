@@ -1,0 +1,116 @@
+{
+  "name": "Groq",
+  "url": {
+    "default": "https://api.groq.com/openai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
+  },
+  "class": "groq",
+  "models": [
+    {
+      "name": "llama-3.1-8b-instant",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "llama-3.3-70b-versatile",
+      "content_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "groq/compound",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "groq/compound-mini",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "content_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "canopylabs/orpheus-v1-english",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "canopylabs/orpheus-arabic-saudi",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "whisper-large-v3-turbo",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "whisper-large-v3",
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

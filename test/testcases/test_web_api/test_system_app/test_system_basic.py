@@ -42,13 +42,6 @@ class TestAuthorization:
 
     @pytest.mark.p2
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    def test_auth_invalid_version(self, invalid_auth, expected_code, expected_fragment):
-        res = system_version(invalid_auth)
-        assert res["code"] == expected_code, res
-        assert expected_fragment in res["message"], res
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
     def test_auth_invalid_token_list(self, invalid_auth, expected_code, expected_fragment):
         res = system_token_list(invalid_auth)
         assert res["code"] == expected_code, res

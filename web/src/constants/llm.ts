@@ -1,3 +1,24 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+export enum ModelStatus {
+  Active = 'active',
+  Inactive = 'inactive',
+}
+
 export enum LLMFactory {
   TongYiQianWen = 'Tongyi-Qianwen',
   Moonshot = 'Moonshot',
@@ -23,6 +44,7 @@ export enum LLMFactory {
   NVIDIA = 'NVIDIA',
   LMStudio = 'LM-Studio',
   OpenAiAPICompatible = 'OpenAI-API-Compatible',
+  MWS = 'MWS',
   Cohere = 'Cohere',
   LeptonAI = 'LeptonAI',
   TogetherAI = 'TogetherAI',
@@ -61,11 +83,29 @@ export enum LLMFactory {
   JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
   MinerU = 'MinerU',
+  MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
+  PaddleOCRNet = 'PaddleOCR.Net',
+  OpenDataLoader = 'OpenDataLoader',
+  SoMark = 'SoMark',
   N1n = 'n1n',
   Avian = 'Avian',
   RAGcon = 'RAGcon',
   Perplexity = 'Perplexity',
+  Astraflow = 'Astraflow',
+  AstraflowCN = 'Astraflow-CN',
+  FastEmbed = 'FastEmbed',
+  FuturMix = 'FuturMix',
+  SiliconflowIntl = 'siliconflow_intl',
+  Xiaomi = 'Xiaomi',
+  HuaweiCloud = 'HuaweiCloud',
+  OrcaRouter = 'OrcaRouter',
+  Qiniu = 'Qiniu',
+  TokenHub = 'TokenHub',
+  NewAPI = 'New API',
+  FunASR = 'FunASR',
+  AIMLAPI = 'aimlapi.com',
+  GreenPT = 'GreenPT',
 }
 
 // Please lowercase the file name
@@ -132,20 +172,61 @@ export const IconMap = {
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
+  [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
+  [LLMFactory.PaddleOCRNet]: 'paddleocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
   [LLMFactory.Perplexity]: 'perplexity',
+  [LLMFactory.Astraflow]: 'astraflow',
+  [LLMFactory.AstraflowCN]: 'astraflow',
+  [LLMFactory.FastEmbed]: 'fastembed',
+  [LLMFactory.FuturMix]: 'futurmix',
+  [LLMFactory.SiliconflowIntl]: 'siliconflow',
+  [LLMFactory.Xiaomi]: 'xiaomi',
+  [LLMFactory.HuaweiCloud]: 'huaweicloud',
+  [LLMFactory.OrcaRouter]: 'orcarouter',
+  [LLMFactory.Qiniu]: 'qiniu',
+  [LLMFactory.TokenHub]: 'tokenhub',
+  [LLMFactory.SoMark]: 'somark',
+  [LLMFactory.NewAPI]: 'new-api',
+  [LLMFactory.FunASR]: 'funasr',
+  [LLMFactory.AIMLAPI]: 'aimlapi',
+  [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.MWS]: 'mws',
+};
+
+export const ModelTypeToField: Record<string, string> = {
+  chat: 'llm_id',
+  embedding: 'embd_id',
+  vision: 'img2txt_id',
+  asr: 'asr_id',
+  rerank: 'rerank_id',
+  tts: 'tts_id',
+};
+
+export const FieldToModelType: Record<string, string> = {
+  llm_id: 'chat',
+  embd_id: 'embedding',
+  img2txt_id: 'vision',
+  asr_id: 'asr',
+  rerank_id: 'rerank',
+  tts_id: 'tts',
 };
 
 export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
+  [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
+  [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.MWS]:
+    'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
+  [LLMFactory.TongYiQianWen]:
+    'https://bailian.console.aliyun.com/?tab=model#/api-key',
   [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
@@ -188,8 +269,41 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
   [LLMFactory.Perplexity]:
     'https://docs.perplexity.ai/docs/embeddings/quickstart',
+  [LLMFactory.Astraflow]: 'https://astraflow.ucloud-global.com/en-us',
+  [LLMFactory.AstraflowCN]: 'https://astraflow.ucloud.cn/',
+  [LLMFactory.FastEmbed]: 'https://qdrant.github.io/fastembed/',
+  [LLMFactory.FuturMix]: 'https://futurmix.ai',
+  [LLMFactory.SiliconflowIntl]: 'https://cloud.siliconflow.us/account/ak',
+  [LLMFactory.Xiaomi]: 'https://mimo.mi.com/',
+  [LLMFactory.HuaweiCloud]: 'https://www.huaweicloud.com',
+  [LLMFactory.OrcaRouter]: 'https://orcarouter.ai',
+  [LLMFactory.Qiniu]: 'https://www.qiniu.com',
+  [LLMFactory.TokenHub]: 'https://aitok.cc',
+  [LLMFactory.WenXinYiYan]: 'https://yiyan.baidu.com',
+  [LLMFactory.Ollama]: 'https://ollama.com',
+  [LLMFactory.Xinference]: 'https://github.com/xorbitsai/inference',
+  [LLMFactory.LocalAI]: 'https://localai.io',
+  [LLMFactory.LMStudio]: 'https://lmstudio.ai',
+  [LLMFactory.LeptonAI]: 'https://lepton.ai',
+  [LLMFactory.PerfXCloud]: 'https://www.perfxcloud.cn',
+  [LLMFactory.YouDao]: 'https://ai.youdao.com',
+  [LLMFactory.BAAI]: 'https://www.baai.ac.cn',
+  [LLMFactory.NomicAI]: 'https://nomic.ai',
+  [LLMFactory.JinaAI]: 'https://jina.ai/embeddings/',
+  [LLMFactory.SentenceTransformers]: 'https://www.sbert.net',
+  [LLMFactory.GPUStack]: 'https://gpustack.ai',
+  [LLMFactory.VLLM]: 'https://vllm.ai',
+  [LLMFactory.Grok]: 'https://x.ai',
+  [LLMFactory.Longcat]: 'https://longcat.chat',
+  [LLMFactory.JiekouAI]: 'https://jiekou.ai',
+  [LLMFactory.MinerU]: 'https://mineru.net',
+  [LLMFactory.MinerUNet]: 'https://mineru.net',
+  [LLMFactory.PaddleOCRNet]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
+  [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
 };

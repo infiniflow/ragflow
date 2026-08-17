@@ -1,5 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { RunningStatus } from '@/constants/knowledge';
-import { DataSourceKey } from './contant';
+import { DataSourceKey } from './constant';
 
 export interface IDataSorceInfo {
   id: DataSourceKey;
@@ -28,20 +44,20 @@ export interface IDataSourceBase {
 
 export interface IDataSourceLog {
   connector_id: string;
+  docs_removed_from_index?: number;
   error_count: number;
   error_msg: string;
   id: string;
   kb_id: string;
   kb_name: string;
-  name: string;
   new_docs_indexed: number;
-  poll_range_end: null | string;
-  poll_range_start: null | string;
-  reindex: string;
-  source: DataSourceKey;
+  prune_freq?: number;
+  refresh_freq?: number;
   status: RunningStatus;
-  tenant_id: string;
-  timeout_secs: number;
+  task_type?: string;
+  time_started?: string | null;
+  total_docs_indexed?: number;
+  update_date: string;
 }
 
 interface IDataSourceInfoItem {

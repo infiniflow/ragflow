@@ -1,0 +1,6 @@
+{
+ "captured_at": "2026-08-05T06:03:59+00:00",
+ "command": "python internal/ingestion/component/chunker/tool-py/capture_golden.py --all",
+ "commit": "5f0d164d69fd7e2c6aca3994a2597bea33cd3fe9",
+ "python": "3.13.12"
+}

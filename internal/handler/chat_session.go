@@ -17,10 +17,14 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -41,259 +45,233 @@ func NewChatSessionHandler(chatSessionService *service.ChatSessionService, userS
 	}
 }
 
-// SetChatSession create or update a chat session
-// @Summary Set chat session
-// @Description Create or update a chat session. If is_new is true, creates new chat session; otherwise updates existing one.
-// @Tags chat_session
-// @Accept json
-// @Produce json
-// @Param request body service.SetChatSessionRequest true "chat session configuration"
-// @Success 200 {object} service.SetChatSessionResponse
-// @Router /v1/conversation/set [post]
-func (h *ChatSessionHandler) SetChatSession(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
-	// Parse request body
-	var req service.SetChatSessionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Call service to set chat session
-	result, err := h.chatSessionService.SetChatSession(userID, &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
-}
-
-// RemoveChatSessionsRequest remove chat sessions request
-type RemoveChatSessionsRequest struct {
-	ConversationIDs []string `json:"conversation_ids" binding:"required"`
-}
-
-// RemoveChatSessions remove/delete chat sessions
-// @Summary Remove Chat Sessions
-// @Description Remove chat sessions by their IDs. Only the owner of the chat session can perform this operation.
-// @Tags chat_session
-// @Accept json
-// @Produce json
-// @Param request body RemoveChatSessionsRequest true "chat session IDs to remove"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/conversation/rm [post]
-func (h *ChatSessionHandler) RemoveChatSessions(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
-	// Parse request body
-	var req RemoveChatSessionsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	// Call service to remove chat sessions
-	if err := h.chatSessionService.RemoveChatSessions(userID, req.ConversationIDs); err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "Only owner of chat session authorized for this operation" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"data":    false,
-				"message": err.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    true,
-		"message": "success",
-	})
-}
-
 // ListChatSessions list chat sessions for a dialog
 // @Summary List Chat Sessions
 // @Description Get list of chat sessions for a specific dialog
 // @Tags chat_session
 // @Accept json
 // @Produce json
-// @Param dialog_id query string true "dialog ID"
+// @Param chat_id query string true "chat ID"
 // @Success 200 {object} service.ListChatSessionsResponse
-// @Router /v1/conversation/list [get]
+// @Router /api/v1/chats/<chat_id>/sessions [get]
 func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
 
-	// Get dialog_id from query parameter
-	dialogID := c.Query("dialog_id")
-	if dialogID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "dialog_id is required",
-		})
+	// Get chat_id from query parameter
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "chat_id is required")
 		return
+	}
+
+	// Mirror Python's list_sessions query handling: invalid/negative page
+	// values fall back to the default; page_size 0 yields an empty list and a
+	// negative page_size disables pagination.
+	page := 1
+	if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	pageSize := 30
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
+			pageSize = ps
+		}
+	}
+
+	orderby := "create_time"
+	if queryOrderby := c.Query("orderby"); queryOrderby != "" {
+		switch queryOrderby {
+		case "create_time", "update_time", "name":
+			orderby = queryOrderby
+		default:
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", queryOrderby))
+			return
+		}
+	}
+
+	desc := true
+	if descStr := c.Query("desc"); descStr != "" {
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	// Call service to list chat sessions
-	result, err := h.chatSessionService.ListChatSessions(userID, dialogID)
+	ctx := c.Request.Context()
+	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), orderby, desc, page, pageSize)
 	if err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "Only owner of dialog authorized for this operation" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"data":    false,
-				"message": err.Error(),
-			})
+		// Mirror Python: ownership failures return code 109 "no authorization"
+		if strings.Contains(err.Error(), "no authorization") {
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result.Sessions,
-		"message": "success",
-	})
+	common.SuccessWithData(c, result.Sessions, "success")
 }
 
-// CompletionRequest completion request
-type CompletionRequest struct {
-	ConversationID   string                   `json:"conversation_id" binding:"required"`
-	Messages         []map[string]interface{} `json:"messages" binding:"required"`
-	LLMID            string                   `json:"llm_id,omitempty"`
-	Stream           bool                     `json:"stream,omitempty"`
-	Temperature      float64                  `json:"temperature,omitempty"`
-	TopP             float64                  `json:"top_p,omitempty"`
-	FrequencyPenalty float64                  `json:"frequency_penalty,omitempty"`
-	PresencePenalty  float64                  `json:"presence_penalty,omitempty"`
-	MaxTokens        int                      `json:"max_tokens,omitempty"`
+type ChatCompletionsRequest struct {
+	ChatID                 string                   `json:"chat_id,omitempty"`
+	SessionID              string                   `json:"session_id,omitempty"`
+	ConversationID         string                   `json:"conversation_id,omitempty"`
+	Messages               []map[string]interface{} `json:"messages,omitempty"`
+	Question               string                   `json:"question,omitempty"`
+	Files                  []interface{}            `json:"files,omitempty"`
+	LLMID                  string                   `json:"llm_id,omitempty"`
+	PassAllHistoryMessages *bool                    `json:"pass_all_history_messages,omitempty"`
+	PassAllHistory         *bool                    `json:"pass_all_history,omitempty"`
+	StoreHistoryMessages   *bool                    `json:"store_history_messages,omitempty"`
+	StoreHistory           *bool                    `json:"store_history,omitempty"`
+	Legacy                 bool                     `json:"legacy,omitempty"`
+	Stream                 *bool                    `json:"stream"`
+	Thinking               string                   `json:"thinking"`
+	Temperature            *float64                 `json:"temperature,omitempty"`
+	TopP                   *float64                 `json:"top_p,omitempty"`
+	FrequencyPenalty       *float64                 `json:"frequency_penalty,omitempty"`
+	PresencePenalty        *float64                 `json:"presence_penalty,omitempty"`
+	MaxTokens              *int                     `json:"max_tokens,omitempty"`
 }
 
-// Completion chat completion
+// ChatCompletions chat completion
 // @Summary Chat Completion
-// @Description Send messages to the chat model and get a response. Supports streaming and non-streaming modes.
+// @Description Send messages to the chat model and get a response.
+// @Description Default is streaming (text/event-stream); set stream:false for JSON.
 // @Tags chat_session
 // @Accept json
-// @Produce json
-// @Param request body CompletionRequest true "completion request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/conversation/completion [post]
-func (h *ChatSessionHandler) Completion(c *gin.Context) {
+// @Produce json, text/event-stream
+// @Param request body ChatCompletionsRequest true "chat completion request"
+// @Success 200 {object} map[string]interface{} "Non-streaming JSON response"
+// @Success 200 {string} text/event-stream "Streaming SSE response"
+// @Router /api/v1/chat/completions [post]
+func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
 
-	// Parse request body
-	var req CompletionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+	var rawBody map[string]interface{}
+	if err := c.ShouldBindJSON(&rawBody); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
-	// Build chat model config
-	chatModelConfig := make(map[string]interface{})
-	if req.Temperature != 0 {
-		chatModelConfig["temperature"] = req.Temperature
+	var req ChatCompletionsRequest
+	b, err := json.Marshal(rawBody)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
 	}
-	if req.TopP != 0 {
-		chatModelConfig["top_p"] = req.TopP
-	}
-	if req.FrequencyPenalty != 0 {
-		chatModelConfig["frequency_penalty"] = req.FrequencyPenalty
-	}
-	if req.PresencePenalty != 0 {
-		chatModelConfig["presence_penalty"] = req.PresencePenalty
-	}
-	if req.MaxTokens != 0 {
-		chatModelConfig["max_tokens"] = req.MaxTokens
+	if err = json.Unmarshal(b, &req); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
 	}
 
-	// Process messages - filter out system messages and initial assistant messages
-	var processedMessages []map[string]interface{}
-	for i, m := range req.Messages {
-		role, _ := m["role"].(string)
-		if role == "system" {
-			continue
-		}
-		if role == "assistant" && len(processedMessages) == 0 {
-			continue
-		}
-		processedMessages = append(processedMessages, m)
-		_ = i
+	// Normalize session_id / conversation_id
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = req.ConversationID
 	}
 
-	// Get last message ID if present
-	var messageID string
-	if len(processedMessages) > 0 {
-		if id, ok := processedMessages[len(processedMessages)-1]["id"].(string); ok {
-			messageID = id
+	// Build generation config
+	genConfig := make(map[string]interface{})
+	if req.Thinking != "" {
+		switch req.Thinking {
+		case "enabled":
+			genConfig["thinking"] = true
+		case "disabled":
+			genConfig["thinking"] = false
+		case "", "default":
 		}
 	}
+	if req.Temperature != nil {
+		genConfig["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		genConfig["top_p"] = *req.TopP
+	}
+	if req.FrequencyPenalty != nil {
+		genConfig["frequency_penalty"] = *req.FrequencyPenalty
+	}
+	if req.PresencePenalty != nil {
+		genConfig["presence_penalty"] = *req.PresencePenalty
+	}
+	if req.MaxTokens != nil {
+		genConfig["max_tokens"] = *req.MaxTokens
+	}
 
-	// Call service
-	if req.Stream {
-		// Streaming response
+	// Resolve pass_all_history from either alias
+	passAllHistory := false
+	if req.PassAllHistory != nil {
+		passAllHistory = *req.PassAllHistory
+	}
+	if req.PassAllHistoryMessages != nil {
+		passAllHistory = *req.PassAllHistoryMessages
+	}
+
+	// Resolve store_history from either alias (default true, mirrors Python)
+	storeHistory := true
+	if req.StoreHistory != nil {
+		storeHistory = *req.StoreHistory
+	}
+	if req.StoreHistoryMessages != nil {
+		storeHistory = *req.StoreHistoryMessages
+	}
+	if !storeHistory && !passAllHistory {
+		common.ErrorWithCode(c, common.CodeDataError, "`pass_all_history_messages` must be true when `store_history_messages` is false.")
+		return
+	}
+
+	// Remove known keys from rawBody; what remains is passthrough kwargs
+	knownKeys := []string{
+		"chat_id", "session_id", "conversation_id",
+		"messages", "question", "files",
+		"llm_id",
+		"pass_all_history_messages", "pass_all_history",
+		"store_history_messages", "store_history",
+		"legacy", "stream",
+		"temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens",
+	}
+	for _, key := range knownKeys {
+		delete(rawBody, key)
+	}
+	kwargs := rawBody
+
+	// Determine stream mode
+	streamMode := true
+	if req.Stream != nil {
+		streamMode = *req.Stream
+	}
+
+	if streamMode {
+		disableWriteDeadlineForSSE(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
 		c.Header("X-Accel-Buffering", "no")
 
-		// Create a channel for streaming data
-		streamChan := make(chan string)
+		streamChan := make(chan string, 32)
+		reqCtx := c.Request.Context()
 		go func() {
 			defer close(streamChan)
-			err := h.chatSessionService.CompletionStream(userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID, streamChan)
-			if err != nil {
-				streamChan <- fmt.Sprintf("data: %s\n\n", err.Error())
-			}
+			_, _ = h.chatSessionService.ChatCompletions(
+				reqCtx, userID,
+				req.ChatID, sessionID,
+				req.Messages, req.Question, req.Files,
+				req.LLMID, genConfig, kwargs,
+				passAllHistory, storeHistory, req.Legacy,
+				true, streamChan,
+			)
 		}()
 
-		// Stream data to client
 		c.Stream(func(w io.Writer) bool {
 			data, ok := <-streamChan
 			if !ok {
@@ -303,20 +281,224 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 			return true
 		})
 	} else {
-		// Non-streaming response
-		result, err := h.chatSessionService.Completion(userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID)
+		var result map[string]interface{}
+		result, err = h.chatSessionService.ChatCompletions(
+			c.Request.Context(), userID,
+			req.ChatID, sessionID,
+			req.Messages, req.Question, req.Files,
+			req.LLMID, genConfig, kwargs,
+			passAllHistory, storeHistory, req.Legacy,
+			false, nil,
+		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    500,
-				"message": err.Error(),
-			})
+			var codedErr *common.CodedError
+			if errors.As(err, &codedErr) {
+				common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+				return
+			}
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 			return
 		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"data":    result,
-			"message": "",
-		})
+		common.SuccessWithData(c, result, "")
 	}
+}
+
+func (h *ChatSessionHandler) GetSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
+
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.GetSession(ctx, userID, chatID, sessionID)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+// CreateSession create a session in a dialog
+func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
+		return
+	}
+
+	chatID := strings.TrimSpace(c.Param("chat_id"))
+	if chatID == "" {
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
+		return
+	}
+
+	req := map[string]interface{}{}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			req = map[string]interface{}{}
+		} else {
+			// Mirror Python's malformed-JSON contract message.
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+			return
+		}
+	}
+	if req == nil {
+		req = map[string]interface{}{}
+	}
+
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			common.ResponseWithCodeData(c, code, false, err.Error())
+			return
+		}
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, "success")
+}
+
+// DeleteSessions delete a session in a dialog
+func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := strings.TrimSpace(c.Param("chat_id"))
+	if chatID == "" {
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
+		return
+	}
+
+	req := map[string]interface{}{}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			req = map[string]interface{}{}
+		} else {
+			// Mirror Python's malformed-JSON contract message.
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+			return
+		}
+	}
+	if req == nil {
+		req = map[string]interface{}{}
+	}
+
+	ctx := c.Request.Context()
+	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, userID, chatID, req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			common.ResponseWithCodeData(c, code, false, err.Error())
+			return
+		}
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, result, message)
+}
+
+func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
+
+	// An empty payload is a valid no-op (mirrors Python's update_session).
+	req := map[string]any{}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
+
+	ctx := c.Request.Context()
+	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			common.ResponseWithCodeData(c, code, false, err.Error())
+			return
+		}
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
+
+	req := map[string]interface{}{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+				"Request body cannot be empty")
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+		return
+	}
+
+	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			common.ResponseWithCodeData(c, code, false, err.Error())
+			return
+		}
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
 }

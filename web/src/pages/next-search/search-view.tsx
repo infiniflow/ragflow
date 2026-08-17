@@ -1,22 +1,37 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
-import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
-import { Input } from '@/components/originui/input';
 import { SkeletonCard } from '@/components/skeleton-card';
+import { TopSelect } from '@/components/top-select';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { ListTree, Search, X } from 'lucide-react';
-import { Dispatch, SetStateAction, useEffect, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
@@ -24,10 +39,18 @@ import ExpandableContent from './expandable-content';
 import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
-import MindMapDrawer from './mindmap-drawer';
-import { RAGFlowLogo } from './ragflow-log';
+import MindMapSheet from './mindmap-sheet';
+import { RAGFlowLogo } from './ragflow-logo';
 import RetrievalDocuments from './retrieval-documents';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import classNames from 'classnames';
 
+const formatMetadataValue = (value: unknown) => {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
 export default function SearchingView({
   setIsSearching,
   searchData,
@@ -55,20 +78,25 @@ export default function SearchingView({
   chunks,
   total,
   handleSearch,
-  pagination,
-  onChange,
+  pageSize,
+  handleTopChange,
+  showEmbedLogo,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
   searchData: ISearchAppDetailProps;
+  showEmbedLogo?: boolean;
 }) {
   const { t } = useTranslation();
 
-  const [searchtext, setSearchtext] = useState<string>('');
+  const [searchText, setSearchText] = useState<string>('');
   const [retrievalLoading, setRetrievalLoading] = useState(false);
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setSearchtext(searchStr);
-  }, [searchStr, setSearchtext]);
+    setSearchText(searchStr);
+  }, [searchStr, setSearchText]);
+
+  const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
   return (
     <section
       className={cn(
@@ -85,56 +113,71 @@ export default function SearchingView({
           onClick={() => {
             setIsSearching?.(false);
           }}
+          showEmbedIcon={showEmbedLogo}
         ></RAGFlowLogo>
         <div
           className={cn(
-            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center w-2/3 transform scale-100 ml-16 h-full',
+            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center  transform scale-100 ml-16 h-full flex-1 3xl:w-2/3 3xl:flex-none',
           )}
         >
           <div className={cn('flex flex-col justify-start items-start w-full')}>
             <div className="relative w-full text-primary">
-              <Input
+              <textarea
+                ref={searchInputRef}
+                rows={1}
                 placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-full py-6 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base',
+                  'w-full rounded-full py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  isMultiLine ? 'rounded-3xl' : 'rounded-full',
                 )}
-                value={searchtext}
+                value={searchText}
                 onChange={(e) => {
-                  setSearchtext(e.target.value);
+                  setSearchText(e.target.value);
                 }}
                 disabled={sendingLoading}
-                onKeyUp={(e) => {
-                  if (e.key === 'Enter') {
-                    handleSearch(searchtext);
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    handleSearch(searchText);
                   }
                 }}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 transform flex items-center gap-1">
-                <X
-                  className="text-text-secondary cursor-pointer opacity-80"
-                  size={14}
-                  onClick={() => {
-                    setSearchtext('');
-                    handleClickRelatedQuestion('');
-                  }}
-                />
-                <span className="text-text-secondary opacity-20 ml-4">|</span>
+              <div
+                className={cn(
+                  'absolute  right-3 flex items-center gap-3',
+                  isMultiLine ? 'bottom-3' : 'top-1/2 -translate-y-1/2',
+                )}
+              >
+                {searchText && (
+                  <X
+                    className="text-text-secondary cursor-pointer opacity-80 hover:opacity-100"
+                    size={16}
+                    onClick={() => {
+                      setSearchText('');
+                      handleClickRelatedQuestion('');
+                    }}
+                  />
+                )}
+                <span className="h-4 w-px bg-border-button" aria-hidden />
                 <button
                   type="button"
-                  className="rounded-full bg-text-primary p-1 text-bg-base shadow w-12 h-8 ml-4"
+                  className="flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
                   onClick={() => {
                     if (sendingLoading) {
                       stopOutputMessage();
                     } else {
-                      handleSearch(searchtext);
+                      handleSearch(searchText);
                     }
                   }}
                 >
                   {sendingLoading ? (
-                    // <Square size={22} className="m-auto" />
-                    <div className="w-2 h-2 bg-bg-base m-auto"></div>
+                    <div className="size-2 bg-bg-base"></div>
                   ) : (
-                    <Search size={22} className="m-auto" />
+                    <Search size={18} />
                   )}
                 </button>
               </div>
@@ -173,19 +216,29 @@ export default function SearchingView({
             )}
             {/* retrieval documents */}
             {!isSearchStrEmpty && !sendingLoading && (
-              <>
-                <div className=" mt-3 w-44 ">
+              <section className="flex justify-start items-center gap-4">
+                <div className="w-44 ">
                   <RetrievalDocuments
                     selectedDocumentIds={selectedDocumentIds}
                     setSelectedDocumentIds={setSelectedDocumentIds}
-                    onTesting={handleTestChunk}
+                    onTesting={(vals: string[]) =>
+                      handleTestChunk(vals, 1, pageSize)
+                    }
                     setLoading={(loading: boolean) => {
                       setRetrievalLoading(loading);
                     }}
                   ></RetrievalDocuments>
                 </div>
-                {/* <div className="w-full border-b border-border-default/80 my-6"></div> */}
-              </>
+                <div className="w-44">
+                  <TopSelect
+                    value={pageSize}
+                    onChange={handleTopChange}
+                  ></TopSelect>
+                </div>
+                <span className="ml-auto text-sm text-text-secondary pr-2">
+                  {t('common.total')}: {total}
+                </span>
+              </section>
             )}
             <div className="mt-3 ">
               {chunks?.length > 0 && (
@@ -200,10 +253,39 @@ export default function SearchingView({
                                 id={chunk.image_id || chunk.img_id}
                               ></ImageWithPopover>
                             )}
-                            <HighLightMarkdown>
-                              {chunk.content_with_weight}
-                            </HighLightMarkdown>
+                            <div
+                              dangerouslySetInnerHTML={{
+                                __html: sanitizeHtmlWithImagesAsText(
+                                  chunk.content_with_weight,
+                                ).trim(),
+                              }}
+                              className={classNames(
+                                // Keep whitespaces?
+                                'text-wrap break-words whitespace-pre text-base',
+                                '[&_em]:text-accent-primary [&_em]:not-italic',
+                              )}
+                            />
                           </div>
+                          {chunk.document_metadata &&
+                            Object.keys(chunk.document_metadata).length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {Object.entries(chunk.document_metadata).map(
+                                  ([key, value]) => (
+                                    <div
+                                      key={key}
+                                      className="text-xs border border-border-default rounded px-2 py-1"
+                                    >
+                                      <span className="text-text-secondary">
+                                        {key}:
+                                      </span>{' '}
+                                      <span className="text-text-primary">
+                                        {formatMetadataValue(value)}
+                                      </span>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
                           <div
                             className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
                             onClick={() =>
@@ -263,46 +345,37 @@ export default function SearchingView({
               )}
           </div>
 
-          {total > 0 && (
-            <div className="mt-8 px-8 pb-8 text-base">
-              <RAGFlowPagination
-                current={pagination.current}
-                pageSize={pagination.pageSize}
-                total={total}
-                onChange={onChange}
-              ></RAGFlowPagination>
-            </div>
-          )}
+          {!mindMapVisible &&
+            !isFirstRender &&
+            !isSearchStrEmpty &&
+            !isEmpty(searchData.search_config.kb_ids) &&
+            searchData.search_config.query_mindmap && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    onClick={showMindMapModal}
+                    variant={'outline'}
+                    className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
+                  >
+                    <ListTree />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-fit">
+                  {t('chunk.mind')}
+                </PopoverContent>
+              </Popover>
+            )}
         </div>
         {mindMapVisible && (
-          <div className="flex-1 h-[88dvh] z-30 ml-32 mt-5">
-            <MindMapDrawer
-              visible={mindMapVisible}
-              hideModal={hideMindMapModal}
-              data={mindMap}
-              loading={mindMapLoading}
-            ></MindMapDrawer>
-          </div>
+          <MindMapSheet
+            visible={mindMapVisible}
+            hideModal={hideMindMapModal}
+            data={mindMap}
+            loading={mindMapLoading}
+          ></MindMapSheet>
         )}
       </div>
-      {!mindMapVisible &&
-        !isFirstRender &&
-        !isSearchStrEmpty &&
-        !isEmpty(searchData.search_config.kb_ids) &&
-        searchData.search_config.query_mindmap && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                onClick={showMindMapModal}
-                variant={'outline'}
-                className="absolute top-28 right-3 z-30 rounded-full size-6"
-              >
-                <ListTree />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-fit">{t('chunk.mind')}</PopoverContent>
-          </Popover>
-        )}
+
       {visible && (
         <PdfDrawer
           visible={visible}
