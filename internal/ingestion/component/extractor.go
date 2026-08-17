@@ -349,37 +349,43 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			p.SystemPrompt = p.Summary.SystemPrompt
 		}
 
-		if v, ok := params["enable_metadata"]; ok {
-			p.EnableMetadata = mapInt(v)
-		}
-		if v, ok := params["metadata"].([]any); ok {
-			fields := make([]common.MetadataFieldDef, 0, len(v))
-			for _, f := range v {
-				m, ok := f.(map[string]any)
-				if !ok {
-					continue
-				}
-				key, _ := m["key"].(string)
-				if key = strings.TrimSpace(key); key == "" {
-					continue
-				}
-				def := common.MetadataFieldDef{Key: key}
-				if t, ok := m["type"].(string); ok {
-					def.Type = t
-				}
-				if d, ok := m["description"].(string); ok {
-					def.Description = d
-				}
-				if e, ok := m["enum"].([]any); ok {
-					for _, ev := range e {
-						if s, ok := ev.(string); ok {
-							def.Enum = append(def.Enum, s)
-						}
-					}
-				}
-				fields = append(fields, def)
+		// Metadata sub-config parsing with legacy flat fallback
+		if metaRaw, ok := params["metadata_config"].(map[string]any); ok {
+			if v, ok := metaRaw["enabled"].(bool); ok {
+				p.MetadataConfig.Enabled = v
+			} else if v, ok := metaRaw["enabled"]; ok {
+				p.MetadataConfig.Enabled = mapInt(v) == 1
 			}
-			p.Metadata = fields
+			if v, ok := metaRaw["metadata"]; ok {
+				p.MetadataConfig.Metadata = parseMetadataFieldDefs(v)
+			}
+			if v, ok := metaRaw["built_in_metadata"]; ok {
+				p.MetadataConfig.BuiltInMetadata = parseMetadataFieldDefs(v)
+			}
+			if p.MetadataConfig.Enabled {
+				p.EnableMetadata = 1
+			} else {
+				p.EnableMetadata = 0
+			}
+			p.Metadata = p.MetadataConfig.Metadata
+		} else {
+			if v, ok := params["enable_metadata"].(bool); ok {
+				if v {
+					p.EnableMetadata = 1
+				} else {
+					p.EnableMetadata = 0
+				}
+			} else if v, ok := params["enable_metadata"]; ok {
+				p.EnableMetadata = mapInt(v)
+			}
+			if v, ok := params["metadata"]; ok {
+				p.Metadata = parseMetadataFieldDefs(v)
+			}
+			if v, ok := params["built_in_metadata"]; ok {
+				p.MetadataConfig.BuiltInMetadata = parseMetadataFieldDefs(v)
+			}
+			p.MetadataConfig.Enabled = p.EnableMetadata > 0
+			p.MetadataConfig.Metadata = p.Metadata
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -1764,10 +1770,42 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 	return out, true
 }
 
-// init registers Extractor under CategoryIngestion (per plan §4
-// Phase 2.5). Metadata is derived from the Inputs()/Outputs()
-// methods on ExtractorComponent so the API layer (Phase 4) can
-// enumerate the catalog without instantiating the component.
+// parseMetadataFieldDefs converts an any value (typically []any of maps)
+// to a typed []common.MetadataFieldDef slice.
+func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	fields := make([]common.MetadataFieldDef, 0, len(arr))
+	for _, f := range arr {
+		m, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := m["key"].(string)
+		if key = strings.TrimSpace(key); key == "" {
+			continue
+		}
+		def := common.MetadataFieldDef{Key: key}
+		if t, ok := m["type"].(string); ok {
+			def.Type = t
+		}
+		if d, ok := m["description"].(string); ok {
+			def.Description = d
+		}
+		if e, ok := m["enum"].([]any); ok {
+			for _, ev := range e {
+				if s, ok := ev.(string); ok {
+					def.Enum = append(def.Enum, s)
+				}
+			}
+		}
+		fields = append(fields, def)
+	}
+	return fields
+}
+
 // mapInt converts a JSON-compatible value to int.
 func mapInt(v interface{}) int {
 	switch n := v.(type) {

@@ -110,10 +110,11 @@ type MetadataExtractConfig struct {
 // Summary, Metadata) as well as legacy flat fields for backward compatibility.
 type ExtractorParam struct {
 	// Modular sub-configs
-	Keywords  KeywordExtractConfig  `json:"keywords,omitempty"`
-	Questions QuestionExtractConfig `json:"questions,omitempty"`
-	Tags      TagExtractConfig      `json:"tags,omitempty"`
-	Summary   SummaryExtractConfig  `json:"summary,omitempty"`
+	Keywords       KeywordExtractConfig  `json:"keywords,omitempty"`
+	Questions      QuestionExtractConfig `json:"questions,omitempty"`
+	Tags           TagExtractConfig      `json:"tags,omitempty"`
+	Summary        SummaryExtractConfig  `json:"summary,omitempty"`
+	MetadataConfig MetadataExtractConfig `json:"metadata_config,omitempty"`
 
 	// FieldName is the chunk key the LLM extraction result is written
 	// to (Python: `self._param.field_name`). Optional — when empty,

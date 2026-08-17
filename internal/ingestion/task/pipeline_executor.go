@@ -301,17 +301,30 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config
-// (update_time / file_name) and whether auto-metadata is enabled. The frontend
-// stores both on the builtin extractor node params (Extractor:AutoExtractDefault)
-// via the operator form; the top-level parser_config shape (Python dataset
-// settings) is supported as a fallback.
+// (update_time / file_name) and whether auto-metadata is enabled. Supports
+// modular metadata_config sub-objects as well as legacy flat fields on
+// Extractor nodes and top-level parser_config.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
-	if nodeRaw, ok := parserConfig["Extractor:AutoExtractDefault"]; ok {
-		if node, ok := nodeRaw.(map[string]any); ok {
-			enabled := parserConfigBool(node["enable_metadata"])
-			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
-				return arr, enabled
+	for k, nodeRaw := range parserConfig {
+		if strings.HasPrefix(k, "Extractor") {
+			if node, ok := nodeRaw.(map[string]any); ok {
+				if metaConf, ok := node["metadata_config"].(map[string]any); ok {
+					enabled := parserConfigBool(metaConf["enabled"])
+					if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
+						return arr, enabled
+					}
+				}
+				enabled := parserConfigBool(node["enable_metadata"])
+				if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
+					return arr, enabled
+				}
 			}
+		}
+	}
+	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
+		enabled := parserConfigBool(metaConf["enabled"])
+		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
+			return arr, enabled
 		}
 	}
 	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {

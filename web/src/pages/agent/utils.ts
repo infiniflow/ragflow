@@ -400,6 +400,18 @@ export function transformTitleChunkerParams(
 }
 
 export function transformExtractorParams(params: ExtractorFormSchemaType) {
+  const isMetadataEnabled =
+    params.metadata_config?.enabled !== undefined
+      ? params.metadata_config?.enabled
+      : params.enable_metadata === 1 || params.enable_metadata === true;
+
+  const metadataList =
+    params.metadata_config?.metadata ?? params.metadata ?? [];
+  const builtInMetadataList =
+    params.metadata_config?.built_in_metadata ??
+    params.built_in_metadata ??
+    [];
+
   return {
     ...params,
     prompts: [{ content: params.prompts, role: 'user' }],
@@ -417,6 +429,14 @@ export function transformExtractorParams(params: ExtractorFormSchemaType) {
     field_name: params.summary?.enabled
       ? 'summary'
       : (params.field_name || ''),
+    enable_metadata: isMetadataEnabled ? 1 : 0,
+    metadata: metadataList,
+    built_in_metadata: builtInMetadataList,
+    metadata_config: {
+      enabled: isMetadataEnabled,
+      metadata: metadataList,
+      built_in_metadata: builtInMetadataList,
+    },
   };
 }
 

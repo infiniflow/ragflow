@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2508,5 +2509,112 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 	}
 	if !foundSum {
 		t.Errorf("expected custom summary prompt to be used in LLM call, got reqs: %+v", reqs)
+	}
+}
+
+func TestExtractorModularMetadataConfig(t *testing.T) {
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata_config": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{
+					"key":         "author",
+					"type":        "string",
+					"description": "The author name",
+					"enum":        []any{"Alice", "Bob"},
+				},
+				map[string]any{
+					"key":  "year",
+					"type": "integer",
+				},
+			},
+			"built_in_metadata": []any{
+				map[string]any{
+					"key":  "file_name",
+					"type": "string",
+				},
+			},
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	ext, ok := comp.(*ExtractorComponent)
+	if !ok {
+		t.Fatalf("expected *ExtractorComponent, got %T", comp)
+	}
+
+	if !ext.Param.MetadataConfig.Enabled || ext.Param.EnableMetadata != 1 {
+		t.Errorf("Metadata enabled mismatch: %+v / %d", ext.Param.MetadataConfig.Enabled, ext.Param.EnableMetadata)
+	}
+	if len(ext.Param.MetadataConfig.Metadata) != 2 || len(ext.Param.Metadata) != 2 {
+		t.Fatalf("Metadata fields mismatch: %d / %d", len(ext.Param.MetadataConfig.Metadata), len(ext.Param.Metadata))
+	}
+	if ext.Param.Metadata[0].Key != "author" || ext.Param.Metadata[0].Description != "The author name" || len(ext.Param.Metadata[0].Enum) != 2 {
+		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata[0])
+	}
+	if len(ext.Param.MetadataConfig.BuiltInMetadata) != 1 || ext.Param.MetadataConfig.BuiltInMetadata[0].Key != "file_name" {
+		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.MetadataConfig.BuiltInMetadata)
+	}
+}
+
+func TestExtractorModularMetadataExecution(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: `{"author": "Alice", "year": 2026}`},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata_config": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{
+					"key":  "author",
+					"type": "string",
+				},
+				map[string]any{
+					"key":  "year",
+					"type": "integer",
+				},
+			},
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Written by Alice in 2026."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	ck := chunks[0]
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected chunk metadata map, got %T: %v", ck["metadata"], ck["metadata"])
+	}
+	if meta["author"] != "Alice" {
+		t.Errorf("expected metadata.author = Alice, got %v", meta["author"])
+	}
+	// year can be float64 or int from JSON
+	if fmt.Sprintf("%v", meta["year"]) != "2026" {
+		t.Errorf("expected metadata.year = 2026, got %v", meta["year"])
 	}
 }
