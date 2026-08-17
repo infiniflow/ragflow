@@ -92,7 +92,7 @@ func variantFromEnv() string {
 }
 
 type outputDirs struct {
-	text, tables, dla string
+	text, tables, dla, tsr string
 }
 
 func mkOutputDirs(variant string) outputDirs {
@@ -100,10 +100,12 @@ func mkOutputDirs(variant string) outputDirs {
 		text:   filepath.Join("testdata", "output", "go", variant, "text"),
 		tables: filepath.Join("testdata", "output", "go", variant, "tables"),
 		dla:    filepath.Join("testdata", "output", "go", variant, "dla"),
+		tsr:    filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
 	}
 	os.MkdirAll(d.text, 0755)
 	os.MkdirAll(d.tables, 0755)
 	os.MkdirAll(d.dla, 0755)
+	os.MkdirAll(d.tsr, 0755)
 	return d
 }
 
@@ -372,5 +374,41 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 		if b, _ := json.MarshalIndent(filteredPages, "", "  "); b != nil {
 			os.WriteFile(filepath.Join(dirs.dla, name+".json"), b, 0644)
 		}
+	}
+
+	// ── TSR raw cells ── (matching Python's tsr_raw dump from parser.tb_cpns).
+	// Flat list of per-cell records so CompareTSRRawWithPython can diff labels
+	// and table counts against the Python reference.
+	type tsrRawCellDump struct {
+		TableIndex int     `json:"table_index"`
+		Page       int     `json:"page"`
+		Label      string  `json:"label"`
+		X0         float64 `json:"x0"`
+		Y0         float64 `json:"y0"`
+		X1         float64 `json:"x1"`
+		Y1         float64 `json:"y1"`
+		Text       string  `json:"text"`
+	}
+	var tsrCells []tsrRawCellDump
+	for ti, t := range parsed.Tables {
+		page := 0
+		if len(t.Positions) > 0 && len(t.Positions[0].PageNumbers) > 0 {
+			page = t.Positions[0].PageNumbers[0]
+		}
+		for _, c := range t.Cells {
+			tsrCells = append(tsrCells, tsrRawCellDump{
+				TableIndex: ti,
+				Page:       page,
+				Label:      c.Label,
+				X0:         c.X0,
+				Y0:         c.Y0,
+				X1:         c.X1,
+				Y1:         c.Y1,
+				Text:       c.Text,
+			})
+		}
+	}
+	if b, _ := json.MarshalIndent(tsrCells, "", "  "); b != nil {
+		os.WriteFile(filepath.Join(dirs.tsr, name+".json"), b, 0644)
 	}
 }
