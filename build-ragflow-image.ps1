@@ -1,4 +1,4 @@
-<#
+﻿<#
 .СИНОПСИС
     Собирает локальный Docker-образ RAGFlow из текущего рабочего дерева.
 
@@ -45,6 +45,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 function Write-Step([string]$msg) {
     Write-Host ""
