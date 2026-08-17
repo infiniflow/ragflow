@@ -15,11 +15,14 @@
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { useRef } from 'react';
 
+import { useInstanceSaveState } from '../hooks';
 import {
   DRAFT_INSTANCE_SENTINEL,
   useModelMutations,
   useModelsCatalog,
+  useModelsDerived,
   useModelVerify,
   useResolveCreds,
 } from './hooks';
@@ -41,6 +44,12 @@ jest.mock('@/hooks/use-llm-request', () => ({
   useVerifyProviderConnection: () => ({
     verifyProviderConnection: mockVerifyProviderConnection,
   }),
+}));
+
+jest.mock('@/components/dynamic-form', () => ({}));
+
+jest.mock('../../provider-schema/hooks', () => ({
+  useProviderFields: jest.fn(),
 }));
 
 jest.mock('@/services/llm-service', () => ({
@@ -153,10 +162,9 @@ describe('Bedrock model credentials', () => {
     };
 
     const { result } = renderHook(() => {
-      const { resolveCreds } = useResolveCreds(
-        instance,
-        () => ({ api_key: apiKey }),
-      );
+      const { resolveCreds } = useResolveCreds(instance, () => ({
+        api_key: apiKey,
+      }));
       const verify = useModelVerify({
         providerName: 'Bedrock',
         resolveCreds,
@@ -189,6 +197,98 @@ describe('Bedrock model credentials', () => {
     await act(async () => result.current.mutations.handleBatchToggleModels());
     expect(mockUpdateProviderInstance).toHaveBeenCalledWith(
       expect.objectContaining({ api_key: apiKey, region: 'default' }),
+    );
+  });
+});
+
+describe('saved instance model baseline', () => {
+  it('stays clean after persisted models load without hiding credential edits', async () => {
+    const initialValues = {
+      api_key: 'saved-key',
+      base_url: '',
+      region: 'default',
+    };
+    const instanceDetails = {
+      id: 'instance-id',
+      instance_name: 'saved-instance',
+      provider_id: 'provider-id',
+      region: 'default',
+      status: 'active',
+      api_key: 'saved-key',
+    };
+    const persistedModel = {
+      name: 'saved-model',
+      model_type: ['chat'],
+      max_tokens: 8192,
+      status: 'active',
+    };
+    const formValues = { ...initialValues };
+
+    const { result, rerender } = renderHook(
+      ({ instanceModels, instanceModelsLoading }) => {
+        const modelInfoRef = useRef<
+          {
+            model_name: string;
+            model_type: string | string[];
+            max_tokens: number;
+            extra?: Record<string, unknown>;
+          }[]
+        >([]);
+        const formRef = useRef({
+          submit: jest.fn(),
+          isDirty: () => false,
+          getValues: () => formValues,
+          reset: jest.fn(),
+          trigger: jest.fn(),
+          watch: jest.fn(),
+          watchDirty: jest.fn(),
+          updateFieldType: jest.fn(),
+          onFieldUpdate: jest.fn(),
+        });
+        const saveState = useInstanceSaveState({
+          formRef,
+          providerName: 'Bedrock',
+          instanceName: instanceDetails.instance_name,
+          instanceId: instanceDetails.id,
+          isDraft: false,
+          draftName: '',
+          instanceDetails,
+          initialValues,
+          modelInfoRef,
+        });
+
+        useModelsDerived({
+          catalog: [],
+          instanceModels,
+          instanceModelsLoading,
+          draftModels: [],
+          isDraftInstance: false,
+          onInstanceModelsChange: (modelInfo) => {
+            modelInfoRef.current = modelInfo;
+          },
+          onInstanceModelsEdited: saveState.markModelsEdited,
+        });
+
+        return saveState;
+      },
+      {
+        initialProps: {
+          instanceModels: [] as (typeof persistedModel)[],
+          instanceModelsLoading: true,
+        },
+      },
+    );
+
+    rerender({
+      instanceModels: [persistedModel],
+      instanceModelsLoading: false,
+    });
+
+    await waitFor(() => expect(result.current.getSavePayload()).toBeNull());
+
+    formValues.api_key = 'changed-key';
+    expect(result.current.getSavePayload()?.payload.api_key).toBe(
+      'changed-key',
     );
   });
 });

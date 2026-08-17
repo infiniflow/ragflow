@@ -315,6 +315,8 @@ export function useModelsCatalog({
 interface UseModelsDerivedArgs {
   catalog: IProviderModelItem[];
   instanceModels: IInstanceModel[] | undefined;
+  /** True while the saved instance model query is fetching. */
+  instanceModelsLoading: boolean;
   /**
    * Locally-added models for a draft (unsaved) instance. The hook uses
    * this list as the "instance models" source when `isDraftInstance` is
@@ -336,6 +338,7 @@ interface UseModelsDerivedArgs {
 export function useModelsDerived({
   catalog,
   instanceModels,
+  instanceModelsLoading,
   draftModels,
   isDraftInstance,
   onInstanceModelsChange,
@@ -423,36 +426,23 @@ export function useModelsDerived({
     onEditedRef.current = onInstanceModelsEdited;
   });
 
-  // Track the previous set of instance model names so we can tell
-  // "patch" (same names, different data) apart from "add/remove"
-  // (different names). Only the patch case needs to fire the host-side
-  // baseline-update callback so the next blur auto-save short-circuits.
-  const prevNamesRef = useRef<Set<string>>(new Set());
-
   // Push the latest per-instance model list up to the host so its
-  // auto-save can include `model_info` in the payload. When the change
-  // is purely a patch (same names, different data), also notify the
-  // host via `onInstanceModelsEdited` so it can absorb the model_info
-  // diff into its last-saved baseline — without this signal, the next
-  // blur would signature-mismatch and fire a redundant PUT carrying
-  // the already-PATCH-saved model_info. Adds/removes intentionally
-  // skip this signal so the next blur still carries the updated list
-  // into PUT (the standard sync path for the instance's model_info).
+  // save payload can include `model_info`.
   useEffect(() => {
-    const currentNames = new Set(instanceItems.map((m) => m.name));
-    const prevNames = prevNamesRef.current;
-    const isPatch =
-      currentNames.size > 0 &&
-      currentNames.size === prevNames.size &&
-      Array.from(currentNames).every((n) => prevNames.has(n));
-
     onChangeRef.current?.(buildModelInfo(instanceItems));
-    if (isPatch) {
+  }, [instanceItems]);
+
+  // Saved instance models come from the backend, both after the initial
+  // query and after mutation-driven refetches. Once that authoritative
+  // snapshot is ready, absorb it into the host's saved baseline so an
+  // unchanged card does not look dirty solely because model_info loaded
+  // after the instance details. Draft models remain local and must still
+  // be included in the first save.
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading) {
       onEditedRef.current?.();
     }
-
-    prevNamesRef.current = currentNames;
-  }, [instanceItems]);
+  }, [instanceItems, instanceModelsLoading, isDraftInstance]);
 
   return { instanceItems, models, addedSet };
 }

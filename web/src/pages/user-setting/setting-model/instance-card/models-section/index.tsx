@@ -70,10 +70,8 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
-  const { data: instanceModels } = useFetchInstanceModels(
-    providerName,
-    instanceName,
-  );
+  const { data: instanceModels, loading: instanceModelsLoading } =
+    useFetchInstanceModels(providerName, instanceName);
 
   // 3. Upstream catalog + auto-fetch on mount.
   const {
@@ -149,6 +147,7 @@ export function ModelsSection(props: ModelsSectionProps) {
   const { instanceItems, models, addedSet } = useModelsDerived({
     catalog,
     instanceModels,
+    instanceModelsLoading,
     draftModels,
     isDraftInstance,
     onInstanceModelsChange,

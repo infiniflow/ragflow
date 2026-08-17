@@ -437,9 +437,9 @@ interface UseInstanceSaveStateArgs {
  *   - `getSavePayload()`: return the body if dirty (or a draft with a
  *     name), else `null` so the parent can skip the redundant call.
  *   - `markSaved()`: re-baseline after a successful save.
- *   - `markModelsEdited()`: absorb a model PATCH into the baseline so
- *     the next top-save does not re-PUT the same model_info (the PATCH
- *     endpoint already persisted it).
+ *   - `markModelsEdited()`: absorb the authoritative saved model snapshot
+ *     into the baseline so the next top-save does not re-PUT model_info
+ *     that the backend already persisted.
  *
  * The dirty check compares a JSON signature of the current payload to
  * the baseline signature, mirroring the old `lastSavedPayloadRef`
@@ -663,15 +663,11 @@ export function useInstanceSaveState({
     }
   }, [buildPayload]);
 
-  // Absorb a model patch into the baseline. `patchInstanceModel` has
-  // already persisted the new max_tokens / model_type / features
-  // server-side, so the next top-save should NOT re-PUT the same
-  // model_info. By parsing the previously-saved baseline and overwriting
-  // ONLY model_info, the baseline now matches the current state and the
-  // signature check in `getSavePayload` short-circuits - while any
-  // in-flight edits to api_key / base_url / region remain in the
-  // baseline unchanged and will still trigger a save via signature
-  // mismatch.
+  // Absorb the latest backend-fetched model list into the baseline. By
+  // parsing the previously-saved baseline and overwriting ONLY model_info,
+  // the signature check in `getSavePayload` short-circuits for an unchanged
+  // card while any in-flight api_key / base_url / region edits still differ
+  // from the baseline and remain eligible for saving.
   //
   // Skipped for drafts (the baseline is empty there) and until the
   // baseline has been seeded.
