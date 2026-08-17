@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	"sync"
 	"time"
@@ -91,6 +92,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 		}
 		if !claimed {
 			_ = envelope.Handle.Ack() // this task has been claimed by other worker
+			w.scheduleRetryIfTaskScheduled(ctx, envelope.TaskID, 3*time.Second)
 			return
 		}
 	}
@@ -185,6 +187,21 @@ func (w *TaskWorker) scheduleRetry(ctx context.Context, taskID string, delay tim
 	if err := w.scheduler.ScheduleTaskAfter(ctx, taskID, delay); err != nil {
 		common.Warn("syncer retry task publish failed", zap.String("task_id", taskID), zap.Duration("delay", delay), zap.Error(err))
 	}
+}
+
+func (w *TaskWorker) scheduleRetryIfTaskScheduled(ctx context.Context, taskID string, delay time.Duration) {
+	if w.scheduler == nil || taskID == "" {
+		return
+	}
+	taskContext, err := w.taskService.GetContext(ctx, taskID)
+	if err != nil {
+		common.Warn("syncer retry task lookup failed", zap.String("task_id", taskID), zap.Error(err))
+		return
+	}
+	if taskContext.Task.Status != dao.SyncStatusSchedule {
+		return
+	}
+	w.scheduleRetry(ctx, taskID, delay)
 }
 
 // transientRetryDelay return retry delay

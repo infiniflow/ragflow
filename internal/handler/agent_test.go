@@ -866,6 +866,46 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 }
 
+// TestAgentChatCompletions_NonStreamingPreservesThinkMarkers covers the
+// non-streaming aggregation: start_to_think/end_to_think message events must
+// survive as <think> tags in the final content, mirroring Python
+// agent_api.py, so clients can render the "thought" section.
+func TestAgentChatCompletions_NonStreamingPreservesThinkMarkers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hello","stream":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"","start_to_think":true}`},
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"reasoning trace"}`},
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"","end_to_think":true}`},
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"final answer"}`},
+		{Type: "message_end", MessageID: "msg-1", SessionID: "sess-1", Data: `{}`},
+		{Type: "done", Data: ""},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"code":0`) {
+		t.Fatalf("body should contain success code, got %q", body)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data, _ := response["data"].(map[string]any)
+	ansData, _ := data["data"].(map[string]any)
+	if got, _ := ansData["content"].(string); got != "<think>reasoning trace</think>final answer" {
+		t.Errorf("aggregated content = %q, want the think section preserved as %q", got, "<think>reasoning trace</think>final answer")
+	}
+}
+
 type emptySessionCaptureRunner struct {
 	sessionID string
 }

@@ -33,6 +33,7 @@ import { getAuthorization } from '@/utils/authorization-util';
 import { useCatchDocumentError } from './hooks';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
+  standardFontDataUrl?: string;
 };
 
 const Loader = PdfLoader as React.ComponentType<PdfLoaderProps>;
@@ -100,6 +101,9 @@ const PdfPreview = ({
           </div>
         }
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
+        cMapUrl="/pdfjs-dist/cmaps/"
+        cMapPacked={true}
+        standardFontDataUrl="/pdfjs-dist/standard_fonts/"
         errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {

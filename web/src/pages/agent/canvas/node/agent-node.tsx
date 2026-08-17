@@ -71,8 +71,14 @@ function InnerAgentNode({
           id={NodeHandleId.AgentBottom}
           left={180}
           visible={hasSubAgent(edges, id)}
+          nodeId={id}
         />
-        <BottomHandle id={NodeHandleId.Tool} left={20} visible={hasTools} />
+        <BottomHandle
+          id={NodeHandleId.Tool}
+          left={20}
+          visible={hasTools}
+          nodeId={id}
+        />
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">
           <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>

@@ -28,6 +28,9 @@ export const MoreButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
         size={size || 'icon-xs'}
         className={cn(
           'opacity-0 size-3.5 transition-all bg-transparent group-hover:bg-transparent',
+          // Keep the 14px visual size but increase the hit area with an
+          // absolutely positioned pseudo-element (14px + 8px on each side).
+          'relative after:absolute after:-inset-2 after:content-[""]',
           'group-focus-within:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100',
           className,
         )}

@@ -148,7 +148,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <div className="flex justify-between gap-4 px-4 pt-4">
         <div className="flex items-center gap-2">
           <ConfirmDeleteDialog
-            title={t('knowledgeDetails.deleteStructureConfirm', {
+            title={t('knowledgeCompilation.deleteStructureConfirm', {
               name: t(ViewModeLabelKeyMap[kind]),
             })}
             onOk={handleDeleteStructure}
@@ -164,7 +164,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             newlyUploaded={newlyUploaded}
             removed={removed}
             loading={alterationLoading || runLoading}
-            tooltip={t('knowledgeDetails.updateStructureTooltip', {
+            tooltip={t('knowledgeCompilation.updateStructureTooltip', {
               newlyUploaded,
               removed,
               name: t(ViewModeLabelKeyMap[kind]),
@@ -177,7 +177,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             options={entityOptions}
             value={selectedEntityName || graphKeywords}
             onChange={handleSelectEntity}
-            placeholder={t('knowledgeDetails.searchEntity')}
+            placeholder={t('knowledgeCompilation.searchEntity')}
             allowClear
             triggerClassName="w-96 max-w-full"
             onNoMatchEnter={handleNoMatchEnter}
@@ -193,7 +193,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
         open={updateSheetOpen}
         onOpenChange={setUpdateSheetOpen}
         data={structureRunData}
-        title={t('knowledgeDetails.updateStructureSheetTitle', {
+        title={t('knowledgeCompilation.updateStructureSheetTitle', {
           name: t(ViewModeLabelKeyMap[kind]),
         })}
       />

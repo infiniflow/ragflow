@@ -536,7 +536,7 @@ func extractContentTokens(fields map[string]interface{}, cfield string) []string
 	// Split by whitespace to get individual tokens
 	seen := make(map[string]bool)
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if !seen[t] {
 			seen[t] = true
 			result = append(result, t)
@@ -553,7 +553,7 @@ func extractTitleTokens(fields map[string]interface{}) []string {
 	}
 	// NOTE: Do NOT call RemoveRedundantSpaces here - it removes spaces between Chinese chars
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if t != "" {
 			result = append(result, t)
 		}
@@ -568,7 +568,7 @@ func extractQuestionTokens(fields map[string]interface{}) []string {
 		return []string{}
 	}
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if t != "" {
 			result = append(result, t)
 		}
