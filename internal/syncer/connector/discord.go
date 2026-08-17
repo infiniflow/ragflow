@@ -381,9 +381,12 @@ func (c *DiscordConnector) listTargets(ctx context.Context) ([]discordTarget, er
 		for _, ch := range textChannels {
 			targets = append(targets, discordTarget{channelID: ch.ID, name: ch.Name})
 			for _, kind := range []string{"public", "private"} {
-				threads, err := c.listArchivedThreads(ctx, ch.ID, kind)
+				threads, status, err := c.listArchivedThreads(ctx, ch.ID, kind)
 				if err != nil {
-					continue
+					if status == http.StatusForbidden {
+						continue
+					}
+					return nil, err
 				}
 				for _, thread := range threads {
 					targets = append(targets, discordTarget{channelID: thread.ID, name: thread.Name, isThread: true})
@@ -391,9 +394,12 @@ func (c *DiscordConnector) listTargets(ctx context.Context) ([]discordTarget, er
 			}
 		}
 
-		activeThreads, err := c.listActiveThreads(ctx, guildID)
+		activeThreads, status, err := c.listActiveThreads(ctx, guildID)
 		if err != nil {
-			continue
+			if status == http.StatusForbidden {
+				continue
+			}
+			return nil, err
 		}
 		for _, thread := range activeThreads {
 			if _, ok := selected[thread.ParentID]; ok {
@@ -430,16 +436,17 @@ func (c *DiscordConnector) listGuilds(ctx context.Context) ([]discordGuild, erro
 }
 
 // listActiveThreads returns all active threads of a guild.
-func (c *DiscordConnector) listActiveThreads(ctx context.Context, guildID string) ([]discordChannel, error) {
+func (c *DiscordConnector) listActiveThreads(ctx context.Context, guildID string) ([]discordChannel, int, error) {
 	var resp discordActiveThreadsResponse
-	if _, err := c.getJSON(ctx, http.MethodGet, "/guilds/"+url.PathEscape(guildID)+"/threads/active", nil, &resp); err != nil {
-		return nil, err
+	status, err := c.getJSON(ctx, http.MethodGet, "/guilds/"+url.PathEscape(guildID)+"/threads/active", nil, &resp)
+	if err != nil {
+		return nil, status, err
 	}
-	return resp.Threads, nil
+	return resp.Threads, status, nil
 }
 
 // listArchivedThreads paginates archived public or private threads of a channel.
-func (c *DiscordConnector) listArchivedThreads(ctx context.Context, channelID, kind string) ([]discordChannel, error) {
+func (c *DiscordConnector) listArchivedThreads(ctx context.Context, channelID, kind string) ([]discordChannel, int, error) {
 	var out []discordChannel
 	before := ""
 	for {
@@ -448,8 +455,9 @@ func (c *DiscordConnector) listArchivedThreads(ctx context.Context, channelID, k
 			query.Set("before", before)
 		}
 		var resp discordThreadsResponse
-		if _, err := c.getJSON(ctx, http.MethodGet, "/channels/"+url.PathEscape(channelID)+"/threads/archived/"+kind, query, &resp); err != nil {
-			return nil, err
+		status, err := c.getJSON(ctx, http.MethodGet, "/channels/"+url.PathEscape(channelID)+"/threads/archived/"+kind, query, &resp)
+		if err != nil {
+			return nil, status, err
 		}
 		if len(resp.Threads) == 0 {
 			break
@@ -460,7 +468,7 @@ func (c *DiscordConnector) listArchivedThreads(ctx context.Context, channelID, k
 		}
 		before = resp.Threads[len(resp.Threads)-1].ID
 	}
-	return out, nil
+	return out, http.StatusOK, nil
 }
 
 // getJSON performs one authenticated Discord REST request with 429 handling.
@@ -805,9 +813,10 @@ type discordPruneSession struct {
 	connector *DiscordConnector
 	iter      *discordMessageIterator
 
-	groupSize int
-	firstID   string
-	groupDocs []SlimDocument
+	groupSize     int
+	firstID       string
+	currentTarget string
+	groupDocs     []SlimDocument
 }
 
 // NextBatch returns slim documents grouped by the connector batch size.
@@ -821,14 +830,21 @@ func (s *discordPruneSession) NextBatch(ctx context.Context) (PruneBatch, error)
 			return PruneBatch{}, err
 		}
 
+		if s.currentTarget != "" && item.target.channelID != s.currentTarget {
+			s.groupDocs = append(s.groupDocs, SlimDocument{SourceID: s.firstID})
+			s.groupSize = 0
+			s.firstID = ""
+		}
 		if s.groupSize == 0 {
 			s.firstID = discordDocIDPrefix + item.message.ID
+			s.currentTarget = item.target.channelID
 		}
 		s.groupSize++
 		if s.groupSize >= s.connector.batchSize {
 			s.groupDocs = append(s.groupDocs, SlimDocument{SourceID: s.firstID})
 			s.groupSize = 0
 			s.firstID = ""
+			s.currentTarget = ""
 		}
 	}
 
@@ -836,6 +852,7 @@ func (s *discordPruneSession) NextBatch(ctx context.Context) (PruneBatch, error)
 		s.groupDocs = append(s.groupDocs, SlimDocument{SourceID: s.firstID})
 		s.groupSize = 0
 		s.firstID = ""
+		s.currentTarget = ""
 	}
 	if len(s.groupDocs) == 0 {
 		return PruneBatch{}, io.EOF

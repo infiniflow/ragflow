@@ -41,6 +41,8 @@ type discordFixture struct {
 	forbidPrivateArchived bool
 	forbidChannels        map[string]bool // channelID -> messages endpoint returns 403
 	rateLimitOnce         atomic.Bool
+	failArchivedThreads   bool
+	failActiveThreads     bool
 
 	requests atomic.Int64
 }
@@ -98,6 +100,10 @@ func (f *discordFixture) handler() http.Handler {
 			return
 		case strings.HasPrefix(path, "/guilds/") && strings.HasSuffix(path, "/threads/active"):
 			guildID := strings.TrimSuffix(strings.TrimPrefix(path, "/guilds/"), "/threads/active")
+			if f.failActiveThreads {
+				http.Error(w, "server error", http.StatusInternalServerError)
+				return
+			}
 			json.NewEncoder(w).Encode(map[string]any{"threads": f.activeThread[guildID]})
 			return
 		case strings.HasPrefix(path, "/channels/") && strings.Contains(path, "/threads/archived/"):
@@ -106,6 +112,10 @@ func (f *discordFixture) handler() http.Handler {
 			channelID = strings.TrimSuffix(channelID, "/threads/archived/private")
 			if strings.Contains(r.URL.Path, "/threads/archived/private") && f.forbidPrivateArchived {
 				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			if f.failArchivedThreads {
+				http.Error(w, "server error", http.StatusInternalServerError)
 				return
 			}
 			all := f.archived[channelID]
@@ -417,6 +427,35 @@ func TestDiscordOpenSyncChannelsAndThreads(t *testing.T) {
 		if blobs[i] != want[i] {
 			t.Fatalf("document %d = %q, want %q", i, blobs[i], want[i])
 		}
+	}
+}
+
+func TestDiscordThreadListErrorsPropagate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fail func(*discordFixture)
+	}{
+		{"archived", func(f *discordFixture) { f.failArchivedThreads = true }},
+		{"active", func(f *discordFixture) { f.failActiveThreads = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newDiscordFixture()
+			tc.fail(fixture)
+			server := httptest.NewServer(fixture.handler())
+			defer server.Close()
+
+			connector := newDiscordTestConnector(t, map[string]any{
+				"credentials": map[string]any{"discord_bot_token": "token"},
+			})
+			connector.baseURL = server.URL
+
+			if _, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true}); err == nil {
+				t.Fatalf("OpenSync: want error, got nil")
+			}
+			if _, err := connector.OpenPrune(context.Background(), PruneRequest{}); err == nil {
+				t.Fatalf("OpenPrune: want error, got nil")
+			}
+		})
 	}
 }
 
@@ -755,6 +794,56 @@ func TestDiscordPruneSlimDocuments(t *testing.T) {
 	}
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("NextBatch EOF = %v, want io.EOF", err)
+	}
+}
+
+func TestDiscordPruneGroupBreaksOnTargetSwitch(t *testing.T) {
+	fixture := newDiscordFixture()
+	base := mustTime(t, "2026-08-14T10:00:00Z")
+	fixture.setMessages("ch-1",
+		fixtureMessage("m1", "one", "alice", base),
+		fixtureMessage("m2", "two", "bob", base.Add(-time.Minute)),
+	)
+	fixture.setMessages("thread-a",
+		fixtureMessage("m3", "three", "carol", base.Add(-2*time.Minute)),
+		fixtureMessage("m4", "four", "dave", base.Add(-3*time.Minute)),
+	)
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"batch_size":  10,
+	})
+	connector.baseURL = server.URL
+
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+
+	var ids []string
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		for _, doc := range batch.Documents {
+			ids = append(ids, doc.SourceID)
+		}
+	}
+	want := []string{"DISCORD_m1", "DISCORD_m3"}
+	if len(ids) != len(want) {
+		t.Fatalf("slim ids = %v, want %v", ids, want)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("slim id %d = %q, want %q", i, ids[i], want[i])
+		}
 	}
 }
 
