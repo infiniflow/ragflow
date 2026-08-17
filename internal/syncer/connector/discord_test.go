@@ -191,7 +191,7 @@ func TestDiscordConfigParsing(t *testing.T) {
 	if len(connector.serverIDs) != 2 {
 		t.Fatalf("serverIDs = %d, want 2", len(connector.serverIDs))
 	}
-	if _, ok := connector.serverIDs[2]; !ok {
+	if _, ok := connector.serverIDs["2"]; !ok {
 		t.Fatalf("serverIDs missing id 2")
 	}
 	if len(connector.channelNames) != 2 || connector.channelNames[0] != "general" {
@@ -223,6 +223,22 @@ func TestDiscordConfigParsing(t *testing.T) {
 	})
 	if !def.startDate.Equal(discordEpoch) {
 		t.Fatalf("default startDate = %v, want %v", def.startDate, discordEpoch)
+	}
+}
+
+func TestDiscordConfigParsingInvalidServerID(t *testing.T) {
+	for _, serverIDs := range []any{
+		[]any{"1001", "not-a-number"},
+		"1001, not-a-number",
+	} {
+		_, err := NewDiscordConnector(map[string]any{
+			"server_ids":  serverIDs,
+			"credentials": map[string]any{"discord_bot_token": "token"},
+		})
+		var valErr *ConnectorValidationError
+		if !errors.As(err, &valErr) {
+			t.Fatalf("NewDiscordConnector(server_ids=%v) err = %v, want ConnectorValidationError", serverIDs, err)
+		}
 	}
 }
 

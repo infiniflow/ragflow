@@ -55,7 +55,7 @@ var discordEpoch = time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
 // their threads through the REST API with a bot token.
 type DiscordConnector struct {
 	token        string
-	serverIDs    map[int64]struct{}
+	serverIDs    map[string]struct{}
 	channelNames []string
 	batchSize    int
 	startDate    time.Time
@@ -127,11 +127,11 @@ func NewDiscordConnector(config map[string]any) (*DiscordConnector, error) {
 		baseURL = discordDefaultBaseURL
 	}
 
-	serverIDs := map[int64]struct{}{}
+	serverIDs := map[string]struct{}{}
 	for _, raw := range coerceDiscordStringList(config["server_ids"]) {
-		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
-		if err != nil {
-			continue
+		id := strings.TrimSpace(raw)
+		if !discordValidServerID(id) {
+			return nil, &ConnectorValidationError{Message: fmt.Sprintf("Invalid Discord server_ids entry %q; expected a numeric server ID", raw)}
 		}
 		serverIDs[id] = struct{}{}
 	}
@@ -165,6 +165,19 @@ func NewDiscordConnector(config map[string]any) (*DiscordConnector, error) {
 		baseURL:      baseURL,
 		client:       &http.Client{Timeout: discordRequestTimeout},
 	}, nil
+}
+
+// discordValidServerID reports whether s is a plausible Discord snowflake ID.
+func discordValidServerID(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // coerceDiscordStringList normalizes a config field that may be a list or a
@@ -328,8 +341,8 @@ func (c *DiscordConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 func (c *DiscordConnector) listTargets(ctx context.Context) ([]discordTarget, error) {
 	guildIDs := make([]string, 0, len(c.serverIDs))
 	if len(c.serverIDs) > 0 {
-		for id := range c.serverIDs {
-			guildIDs = append(guildIDs, strconv.FormatInt(id, 10))
+		for guildID := range c.serverIDs {
+			guildIDs = append(guildIDs, guildID)
 		}
 	} else {
 		guilds, err := c.listGuilds(ctx)
