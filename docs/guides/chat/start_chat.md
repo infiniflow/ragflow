@@ -1,11 +1,13 @@
 ---
 sidebar_position: 1
+title: Start AI Chat
+sidebar_label: Start AI Chat
 slug: /start_chat
 sidebar_custom_props: {
   categoryIcon: LucideBot
 }
 ---
-# Start AI chat
+# Start AI Chat
 
 Initiate an AI-powered chat with a configured chat assistant.
 
@@ -13,7 +15,7 @@ Initiate an AI-powered chat with a configured chat assistant.
 
 Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
 
-## Start an AI chat
+## Start an AI Chat
 
 You start an AI conversation by creating an assistant.
 
@@ -44,8 +46,8 @@ You start an AI conversation by creating an assistant.
    - **Rerank model** sets the reranker model to use. It is left empty by default.
      - If **Rerank model** is left empty, the hybrid score system uses keyword similarity and vector similarity, and the default weight assigned to the vector similarity component is 1-0.7=0.3.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
-   - [Cross-language search](../../references/glossary.mdx#cross-language-search): Optional  
-     Select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.  
+   - [Cross-language search](../../references/glossary.mdx#cross-language-search): Optional
+     Select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.
      - When selecting target languages, please ensure that these languages are present in the dataset to guarantee an effective search.
      - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
@@ -57,23 +59,23 @@ You start an AI conversation by creating an assistant.
 4. Update Model-specific Settings:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Creativity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+   - **Creativity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.
    This parameter has three options:
       - **Improvise**: Produces more creative responses.
       - **Precise**: (Default) Produces more conservative responses.
       - **Balance**: A middle ground between **Improvise** and **Precise**.
-   - **Temperature**: The randomness level of the model's output.  
+   - **Temperature**: The randomness level of the model's output.
    Defaults to 0.1.
       - Lower values lead to more deterministic and predictable outputs.
       - Higher values lead to more creative and varied outputs.
       - A temperature of zero results in the same output for the same prompt.
-   - **Top P**: Nucleus sampling.  
+   - **Top P**: Nucleus sampling.
       - Reduces the likelihood of generating repetitive or unnatural text by setting a threshold *P* and restricting the sampling to tokens with a cumulative probability exceeding *P*.
       - Defaults to 0.3.
-   - **Presence penalty**: Encourages the model to include a more diverse range of tokens in the response.  
+   - **Presence penalty**: Encourages the model to include a more diverse range of tokens in the response.
       - A higher **presence penalty** value results in the model being more likely to generate tokens not yet been included in the generated text.
       - Defaults to 0.4.
-   - **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
+   - **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.
       - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
       - Defaults to 0.7.
 
@@ -94,11 +96,11 @@ You start an AI conversation by creating an assistant.
    ![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
 :::
 
-## Update settings of an existing chat assistant
+## Update Settings of an Existing Chat Assistant
 
 ![chat_setting](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_setting.jpg)
 
-## Integrate chat capabilities into your application or webpage
+## Integrate Chat Capabilities into Your Application or Webpage
 
 RAGFlow offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
 

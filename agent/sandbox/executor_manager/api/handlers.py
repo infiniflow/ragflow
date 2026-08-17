@@ -21,7 +21,6 @@ from fastapi import Request
 from models.enums import ResultStatus, SupportLanguage
 from models.schemas import CodeExecutionRequest, CodeExecutionResult
 from services.execution import execute_code
-from services.limiter import limiter
 from services.security import analyze_code_security
 
 
@@ -29,7 +28,6 @@ async def healthz_handler():
     return {"status": "ok"}
 
 
-@limiter.limit("5/second")
 async def run_code_handler(req: CodeExecutionRequest, request: Request):
     logger.info("🟢 Received /run request")
 

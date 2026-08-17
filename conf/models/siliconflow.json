@@ -1,0 +1,158 @@
+{
+  "name": "SILICONFLOW",
+  "rank": 980,
+  "url": {
+    "default": "https://api.siliconflow.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "balance": "user/info",
+    "tts": "audio/speech",
+    "asr": "audio/transcriptions"
+  },
+  "models": [
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
+      "content_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
+      "content_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Pro/moonshotai/Kimi-K2.6",
+      "content_length": 262144,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Pro/zai-org/GLM-5.1",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-8b",
+      "content_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-4b",
+      "content_length": 262144,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "tencent/hunyuan-mt-7b",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "BAAI/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "Qwen/Qwen3-Embedding-0.6B",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 32
+    },
+    {
+      "name": "BAAI/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_dimension": 1024,
+      "dimensions": [],
+      "max_batch_size": 32
+    },
+    {
+      "name": "fnlp/MOSS-TTSD-v0.5",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "FunAudioLLM/CosyVoice2-0.5B",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "FunAudioLLM/SenseVoiceSmall",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

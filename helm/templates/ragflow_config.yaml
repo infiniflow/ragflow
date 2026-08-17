@@ -18,7 +18,7 @@ kind: ConfigMap
 metadata:
   name: nginx-config
 data:
-  ragflow.conf: |
+  ragflow.conf.python: |
     server {
         listen 80;
         server_name _;

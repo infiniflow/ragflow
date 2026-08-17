@@ -11,6 +11,7 @@ from peewee import DoesNotExist
 class UserCanvasVersionService(CommonService):
     model = UserCanvasVersion
 
+    # Build a stable display name for saved snapshots.
     @staticmethod
     def build_version_title(user_nickname, agent_title, ts=None):
         tenant = str(user_nickname or "").strip() or "tenant"
@@ -18,6 +19,7 @@ class UserCanvasVersionService(CommonService):
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts is not None else time.strftime("%Y-%m-%d %H:%M:%S")
         return "{0}_{1}_{2}".format(tenant, title, stamp)
 
+    # Normalize DSL before comparing or writing version content.
     @staticmethod
     def _normalize_dsl(dsl):
         normalized = dsl
@@ -40,14 +42,7 @@ class UserCanvasVersionService(CommonService):
     def list_by_canvas_id(cls, user_canvas_id):
         try:
             user_canvas_version = cls.model.select(
-                *[cls.model.id,
-                  cls.model.create_time,
-                  cls.model.title,
-                  cls.model.create_date,
-                  cls.model.update_date,
-                  cls.model.user_canvas_id,
-                  cls.model.update_time,
-                  cls.model.release]
+                *[cls.model.id, cls.model.create_time, cls.model.title, cls.model.create_date, cls.model.update_date, cls.model.user_canvas_id, cls.model.update_time, cls.model.release]
             ).where(cls.model.user_canvas_id == user_canvas_id)
             return user_canvas_version
         except DoesNotExist:
@@ -136,13 +131,9 @@ class UserCanvasVersionService(CommonService):
         """
         try:
             normalized_dsl = cls._normalize_dsl(dsl)
-            latest = (
-                cls.model.select()
-                .where(cls.model.user_canvas_id == user_canvas_id)
-                .order_by(cls.model.create_time.desc())
-                .first()
-            )
+            latest = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(cls.model.create_time.desc()).first()
 
+            # Repeated saves with the same DSL only refresh the latest snapshot.
             if latest and cls._normalize_dsl(latest.dsl) == normalized_dsl:
                 # Protect released version: if latest is released and current is not,
                 # create a new version instead of updating
@@ -170,6 +161,7 @@ class UserCanvasVersionService(CommonService):
                 cls.delete_all_versions(user_canvas_id)
                 return latest.id, False
 
+            # Real content changes create a new snapshot.
             insert_data = {"user_canvas_id": user_canvas_id, "dsl": normalized_dsl}
             if title is not None:
                 insert_data["title"] = title

@@ -1,39 +1,34 @@
-import { isEmpty } from 'lodash';
-
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  LucideBookText,
+  LucideCog,
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
   LucideTextSearch,
 } from 'lucide-react';
 
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import {
-  useFetchKnowledgeBaseConfiguration,
-  useFetchKnowledgeGraph,
-} from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
 
+import { IDataset } from '@/interfaces/database/dataset';
 import { useParams } from 'react-router';
+import { getBackendLanguage } from '@/utils/backend-runtime';
 
 type PropType = {
   refreshCount?: number;
+  dataset: IDataset;
 };
 
-export function SideBar({ refreshCount }: PropType) {
+export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
-  // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration({ refreshCount });
-  const { data: routerData } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
@@ -41,7 +36,7 @@ export function SideBar({ refreshCount }: PropType) {
       {
         icon: <LucideFolderOpen className="size-[1em]" />,
         label: t(`knowledgeDetails.subbarFiles`),
-        key: Routes.DatasetBase,
+        key: Routes.Files,
       },
       {
         icon: <LucideTextSearch className="size-[1em]" />,
@@ -53,23 +48,33 @@ export function SideBar({ refreshCount }: PropType) {
         label: t(`knowledgeDetails.overview`),
         key: Routes.DataSetOverview,
       },
+      ...(getBackendLanguage() === 'python'
+        ? [
+            {
+              icon: <LucideSettings className="size-[1em]" />,
+              label: t(`knowledgeDetails.configuration`),
+              key: Routes.DataSetSetting,
+            },
+          ]
+        : []),
+      ...(getBackendLanguage() === 'go'
+        ? [
+            {
+              icon: <LucideCog className="size-[1em]" />,
+              label: t(`knowledgeDetails.configuration`),
+              key: Routes.DataSetSettingNext,
+            },
+          ]
+        : []),
       {
-        icon: <LucideSettings className="size-[1em]" />,
-        label: t(`knowledgeDetails.configuration`),
-        key: Routes.DataSetSetting,
+        icon: <LucideBookText className="size-[1em]" />,
+        label: 'Artifacts',
+        key: Routes.Compilation,
       },
     ];
 
-    if (!isEmpty(routerData?.graph)) {
-      list.push({
-        icon: <IconFontFill name="knowledgegraph" className="size-[1em]" />,
-        label: t(`knowledgeDetails.knowledgeGraph`),
-        key: Routes.KnowledgeGraph,
-      });
-    }
-
     return list;
-  }, [t, routerData]);
+  }, [t]);
 
   return (
     <aside className="flex flex-col w-64 relative">
@@ -99,9 +104,9 @@ export function SideBar({ refreshCount }: PropType) {
         >
           <div className="flex justify-between">
             <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
+              {data.document_count} {t('knowledgeDetails.files')}
             </span>
-            <span>{formatBytes(data.size)}</span>
+            <span>{data.size ? formatBytes(data.size) : ''}</span>
           </div>
 
           <div className="mt-0.5">

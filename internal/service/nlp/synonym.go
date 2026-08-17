@@ -18,11 +18,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"regexp"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
-
-	"ragflow/internal/logger"
 
 	"go.uber.org/zap"
 )
@@ -30,17 +31,17 @@ import (
 // Synonym provides synonym lookup functionality
 // Reference: rag/nlp/synonym.py Dealer class
 type Synonym struct {
-	lookupNum  int
+	lookupNum  atomic.Int64
 	loadTm     time.Time
 	dictionary map[string][]string
-	redis      RedisClient // Optional Redis client for real-time synonym loading
+	redis      Client // Optional Redis client for real-time synonym loading
 	wordNet    *WordNet
 	resPath    string
 }
 
-// RedisClient interface for Redis operations
+// Client interface for Redis operations
 // This should be implemented by the caller if Redis support is needed
-type RedisClient interface {
+type Client interface {
 	Get(key string) (string, error)
 }
 
@@ -49,15 +50,15 @@ type RedisClient interface {
 // wordnetDir: path to wordnet directory (e.g., "/usr/share/infinity/resource/wordnet").
 //
 //	If empty, WordNet will not be initialized.
-func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
+func NewSynonym(redis Client, resPath string, wordnetDir string) *Synonym {
 	s := &Synonym{
-		lookupNum:  100000000,
 		loadTm:     time.Now().Add(-1000000 * time.Second),
 		dictionary: make(map[string][]string),
 		redis:      redis,
 		wordNet:    nil, // Will be initialized below
 		resPath:    resPath,
 	}
+	s.lookupNum.Store(100000000)
 
 	if resPath == "" {
 		s.resPath = "rag/res"
@@ -96,18 +97,18 @@ func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
 				}
 			}
 		} else {
-			logger.Warn("Failed to parse synonym.json", zap.Error(err))
+			common.Warn("Failed to parse synonym.json", zap.Error(err))
 		}
 	} else {
-		logger.Warn("Missing synonym.json", zap.Error(err))
+		common.Warn("Missing synonym.json", zap.Error(err))
 	}
 
 	if redis == nil {
-		logger.Warn("Realtime synonym is disabled, since no redis connection.")
+		common.Warn("Realtime synonym is disabled, since no redis connection.")
 	}
 
 	if len(s.dictionary) == 0 {
-		logger.Warn("Fail to load synonym")
+		common.Warn("Fail to load synonym")
 	}
 
 	s.load()
@@ -160,7 +161,7 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	}
 
 	// 1) Check the custom dictionary first
-	//s.lookupNum++
+	s.lookupNum.Add(1)
 	//s.load()
 
 	key := regexp.MustCompile(`[ \t]+`).ReplaceAllString(strings.TrimSpace(tk), " ")
@@ -196,6 +197,9 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 			}
 		}
 
+		// Sort for deterministic results (map iteration order is non-deterministic in Go)
+		sort.Strings(wnRes)
+
 		if len(wnRes) > topN {
 			return wnRes[:topN]
 		}
@@ -213,7 +217,7 @@ func (s *Synonym) GetDictionary() map[string][]string {
 
 // GetLookupNum returns the number of lookups since last load
 func (s *Synonym) GetLookupNum() int {
-	return s.lookupNum
+	return int(s.lookupNum.Load())
 }
 
 // GetLoadTime returns the last load time

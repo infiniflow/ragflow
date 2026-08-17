@@ -47,7 +47,6 @@ class TableStructureRecognizer(Recognizer):
                 snapshot_download(
                     repo_id="InfiniFlow/deepdoc",
                     local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
-                    local_dir_use_symlinks=False,
                 ),
             )
 
@@ -112,7 +111,12 @@ class TableStructureRecognizer(Recognizer):
 
     @staticmethod
     def is_caption(bx):
-        patt = [r"[图表]+[ 0-9:：]{2,}"]
+        patt = [
+            r"[图表]+[ 0-9:：]{2,}",
+            r"(?i)Fig\.?\s*\d+",
+            r"(?i)Figure\s+\d+",
+            r"(?i)Table\s+\d+",
+        ]
         if any([re.match(p, bx["text"].strip()) for p in patt]) or bx.get("layout_type", "").find("caption") >= 0:
             return True
         return False

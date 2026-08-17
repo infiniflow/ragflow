@@ -1,0 +1,79 @@
+{
+  "name": "Avian",
+  "url": {
+    "default": "https://api.avian.io"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models"
+  },
+  "class": "avian",
+  "models": [
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "content_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "content_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.2",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.5",
+      "content_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5",
+      "content_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.5",
+      "content_length": 204800,
+      "max_output": 196608,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

@@ -1,13 +1,31 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { DynamicForm, FormFieldConfig } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
-  DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
-  DataSourceFormFields,
+  getCommonExtraDefaultValues,
+  getDataSourceFormBaseFields,
+  getDataSourceFieldsWithExtras,
+  mergeDataSourceFormValues,
 } from './constant';
 import { IDataSorceInfo } from './interface';
 
@@ -19,18 +37,26 @@ const AddDataSourceModal = ({
   onOk,
 }: IModalProps<FieldValues> & { sourceData?: IDataSorceInfo }) => {
   const { t } = useTranslation();
-  const [fields, setFields] = useState<FormFieldConfig[]>([]);
-
-  useEffect(() => {
-    if (sourceData) {
-      setFields([
-        ...DataSourceFormBaseFields,
-        ...DataSourceFormFields[
-          sourceData.id as keyof typeof DataSourceFormFields
-        ],
-      ] as FormFieldConfig[]);
+  const fields = useMemo<FormFieldConfig[]>(() => {
+    if (!sourceData) {
+      return [];
     }
-  }, [sourceData]);
+    return [
+      ...getDataSourceFormBaseFields(t),
+      ...getDataSourceFieldsWithExtras(t, sourceData.id as any),
+    ] as FormFieldConfig[];
+  }, [sourceData, t]);
+
+  const defaultValues = useMemo<FieldValues>(
+    () =>
+      mergeDataSourceFormValues(
+        DataSourceFormDefaultValues[
+          sourceData?.id as keyof typeof DataSourceFormDefaultValues
+        ] as FieldValues,
+        getCommonExtraDefaultValues(),
+      ) as FieldValues,
+    [sourceData],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     await onOk?.(values);
@@ -58,11 +84,7 @@ const AddDataSourceModal = ({
         onSubmit={(data) => {
           console.log(data);
         }}
-        defaultValues={
-          DataSourceFormDefaultValues[
-            sourceData?.id as keyof typeof DataSourceFormDefaultValues
-          ] as FieldValues
-        }
+        defaultValues={defaultValues}
         labelClassName="font-normal"
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">

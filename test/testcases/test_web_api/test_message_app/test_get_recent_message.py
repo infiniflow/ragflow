@@ -16,7 +16,7 @@
 import random
 
 import pytest
-from test_web_api.common import get_recent_message
+from test_common import get_recent_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -38,7 +38,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestGetRecentMessage:
-
     @pytest.mark.p1
     def test_get_recent_messages(self, WebApiAuth):
         memory_id = self.memory_id

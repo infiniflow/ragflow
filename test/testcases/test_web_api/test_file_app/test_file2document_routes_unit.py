@@ -34,17 +34,6 @@ class _DummyManager:
         return decorator
 
 
-class _AwaitableValue:
-    def __init__(self, value):
-        self._value = value
-
-    def __await__(self):
-        async def _co():
-            return self._value
-
-        return _co().__await__()
-
-
 class _DummyFile:
     def __init__(self, file_id, file_type, *, name="file.txt", location="loc", size=1):
         self.id = file_id
@@ -68,6 +57,10 @@ def _set_request_json(monkeypatch, module, payload_state):
         return deepcopy(payload_state)
 
     monkeypatch.setattr(module, "get_request_json", _req_json)
+
+
+def _set_request_args(monkeypatch, module, args):
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=args))
 
 
 @pytest.fixture(scope="session")
@@ -107,7 +100,18 @@ def _load_file2document_module(monkeypatch):
 
     services_pkg = ModuleType("api.db.services")
     services_pkg.__path__ = []
+    services_pkg.duplicate_name = lambda _query_func, **kwargs: "file(1).txt" if kwargs.get("name") == "file.txt" and kwargs.get("kb_id") == "kb-dup" else kwargs.get("name")
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    common_pkg = ModuleType("api.common")
+    common_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.common", common_pkg)
+
+    permission_mod = ModuleType("api.common.check_team_permission")
+    permission_mod.check_file_team_permission = lambda *_args, **_kwargs: True
+    permission_mod.check_kb_team_permission = lambda *_args, **_kwargs: True
+    monkeypatch.setitem(sys.modules, "api.common.check_team_permission", permission_mod)
+    common_pkg.check_team_permission = permission_mod
 
     file2document_mod = ModuleType("api.db.services.file2document_service")
 
@@ -118,6 +122,10 @@ def _load_file2document_module(monkeypatch):
 
         @staticmethod
         def delete_by_file_id(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def delete_by_document_id(*_args, **_kwargs):
             return None
 
         @staticmethod
@@ -178,6 +186,10 @@ def _load_file2document_module(monkeypatch):
             return True
 
         @staticmethod
+        def query(*_args, **_kwargs):
+            return False
+
+        @staticmethod
         def insert(_payload):
             return SimpleNamespace(id="doc-1")
 
@@ -229,7 +241,7 @@ def _load_file2document_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     module_name = "test_file2document_routes_unit_module"
-    module_path = repo_root / "api" / "apps" / "file2document_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "file2document_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -243,26 +255,39 @@ def test_convert_branch_matrix_unit(monkeypatch):
     module = _load_file2document_module(monkeypatch)
     req_state = {"kb_ids": ["kb-1"], "file_ids": ["f1"]}
     _set_request_json(monkeypatch, module, req_state)
+    _set_request_args(monkeypatch, module, {})
 
-    # Falsy file → "File not found!" (synchronous validation)
+    # Falsy file returns "File not found!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_FalsyFile("f1", module.FileType.DOC.value)])
     res = _run(module.convert())
     assert res["message"] == "File not found!"
 
-    # Valid file but invalid kb → "Can't find this dataset!" (synchronous validation)
-    # KnowledgebaseService stub returns (False, None) by default
+    # Valid file but invalid kb returns "Can't find this dataset!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_DummyFile("f1", module.FileType.DOC.value)])
     res = _run(module.convert())
     assert res["message"] == "Can't find this dataset!"
 
-    # Valid file and kb → schedules background work, returns data=True immediately
     kb = SimpleNamespace(id="kb-1", parser_id="naive", pipeline_id="p1", parser_config={})
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+
+    # Unauthorized file access is rejected before scheduling background work.
+    monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: False)
+    res = _run(module.convert())
+    assert res["message"] == "no authorization"
+
+    # Unauthorized dataset access is rejected before scheduling background work.
+    monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: False)
+    res = _run(module.convert())
+    assert res["message"] == "no authorization"
+
+    # Valid file and kb schedule background work and return data=True immediately.
+    monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: True)
     res = _run(module.convert())
     assert res["code"] == 0
     assert res["data"] is True
 
-    # Folder expansion → schedules background work, returns data=True immediately
+    # Folder expansion schedules background work and returns data=True immediately.
     req_state["file_ids"] = ["folder-1"]
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_DummyFile("folder-1", module.FileType.FOLDER.value, name="folder")])
     monkeypatch.setattr(module.FileService, "get_all_innermost_file_ids", lambda _file_id, _acc: ["inner-1"])
@@ -270,7 +295,7 @@ def test_convert_branch_matrix_unit(monkeypatch):
     assert res["code"] == 0
     assert res["data"] is True
 
-    # Exception in file lookup → 500
+    # Exception in file lookup returns 500.
     req_state["file_ids"] = ["f1"]
     monkeypatch.setattr(
         module.FileService,
@@ -283,62 +308,18 @@ def test_convert_branch_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p2
-def test_rm_branch_matrix_unit(monkeypatch):
+def test_convert_files_renames_duplicate_document_name_unit(monkeypatch):
     module = _load_file2document_module(monkeypatch)
-    req_state = {"file_ids": []}
-    _set_request_json(monkeypatch, module, req_state)
+    inserted_docs = []
+    file = _DummyFile("f1", module.FileType.DOC.value, name="file.txt")
+    kb = SimpleNamespace(id="kb-dup", parser_id="naive", pipeline_id="p1", parser_config={})
 
-    deleted = []
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, file))
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+    monkeypatch.setattr(module.DocumentService, "insert", lambda payload: inserted_docs.append(payload) or SimpleNamespace(id="doc-1"))
 
-    res = _run(module.rm())
-    assert res["code"] == module.RetCode.ARGUMENT_ERROR
-    assert 'Lack of "Files ID"' in res["message"]
+    module._convert_files(["f1"], ["kb-dup"], "user-1", "add")
 
-    req_state["file_ids"] = ["f1"]
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [])
-    res = _run(module.rm())
-    assert res["message"] == "Inform not found!"
-
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [None])
-    res = _run(module.rm())
-    assert res["message"] == "Inform not found!"
-
-    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda _file_id: [SimpleNamespace(document_id="doc-1")])
-    monkeypatch.setattr(module.File2DocumentService, "delete_by_file_id", lambda file_id: deleted.append(file_id))
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
-    res = _run(module.rm())
-    assert res["message"] == "Document not found!"
-    assert deleted == ["f1"]
-
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (True, SimpleNamespace(id=_doc_id)))
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: None)
-    res = _run(module.rm())
-    assert res["message"] == "Tenant not found!"
-
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: False)
-    res = _run(module.rm())
-    assert "Document removal" in res["message"]
-
-    req_state["file_ids"] = ["f1", "f2"]
-    monkeypatch.setattr(
-        module.File2DocumentService,
-        "get_by_file_id",
-        lambda file_id: [SimpleNamespace(document_id=f"doc-{file_id}")],
-    )
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(id=doc_id)))
-    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
-    monkeypatch.setattr(module.DocumentService, "remove_document", lambda *_args, **_kwargs: True)
-    res = _run(module.rm())
-    assert res["code"] == 0
-    assert res["data"] is True
-
-    monkeypatch.setattr(
-        module.File2DocumentService,
-        "get_by_file_id",
-        lambda _file_id: (_ for _ in ()).throw(RuntimeError("rm boom")),
-    )
-    req_state["file_ids"] = ["boom"]
-    res = _run(module.rm())
-    assert res["code"] == 500
-    assert "rm boom" in res["message"]
+    assert inserted_docs[0]["name"] == "file(1).txt"
+    assert inserted_docs[0]["suffix"] == "txt"
+    assert inserted_docs[0]["location"] == "loc"

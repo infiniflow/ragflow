@@ -1,12 +1,34 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
+  IFile,
   IFolder,
 } from '@/interfaces/database/file-manager';
-import { IConnectRequestBody } from '@/interfaces/request/file-manager';
+import {
+  ConnectFileToKnowledgeMode,
+  IConnectRequestBody,
+} from '@/interfaces/request/file-manager';
 import fileManagerService from '@/services/file-manager-service';
+import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
+import request from '@/utils/request';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback } from 'react';
@@ -56,7 +78,10 @@ export const useUploadFile = () => {
       const formData = new FormData();
       formData.append('parent_id', params.parentId);
       fileList.forEach((file: any, index: number) => {
-        formData.append('file', file);
+        // Explicitly set filename to file.name (base name) to prevent the
+        // browser from using webkitRelativePath (e.g. "folder/file.txt")
+        // which would cause the backend to create an extra folder.
+        formData.append('file', file, file.name);
         formData.append('path', pathList[index]);
       });
       try {
@@ -69,7 +94,9 @@ export const useUploadFile = () => {
           });
         }
         return ret?.data?.code;
-      } catch (error) {}
+      } catch {
+        return;
+      }
     },
   });
 
@@ -213,7 +240,6 @@ export const useFetchFileList = () => {
 };
 
 export const useDeleteFile = () => {
-  const { setPaginationParams } = useSetPaginationParams();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
@@ -229,11 +255,10 @@ export const useDeleteFile = () => {
       });
       if (data.code === 0) {
         message.success(t('message.deleted'));
-        setPaginationParams(1); // TODO: There should be a better way to paginate the request list
-        queryClient.invalidateQueries({
-          queryKey: [FileApiAction.FetchFileList],
-        });
       }
+      queryClient.invalidateQueries({
+        queryKey: [FileApiAction.FetchFileList],
+      });
       return data.code;
     },
   });
@@ -294,12 +319,49 @@ export const useConnectToKnowledge = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [FileApiAction.ConnectFileToKnowledge],
-    mutationFn: async (params: IConnectRequestBody) => {
-      const { data } = await fileManagerService.connectFileToKnowledge(params);
+    mutationFn: async (
+      params: IConnectRequestBody & {
+        mode: ConnectFileToKnowledgeMode;
+        kbsInfo: IFile['kbs_info'];
+      },
+    ) => {
+      const { data } = await request.post(api.connectFileToKnowledge, {
+        data: { fileIds: params.fileIds, kbIds: params.kbIds },
+        params: { mode: params.mode },
+      });
       if (data.code === 0) {
         message.success(t('message.operated'));
+        const fileIdSet = new Set(params.fileIds);
+        queryClient.setQueriesData<IFetchFileListResult>(
+          {
+            queryKey: [FileApiAction.FetchFileList],
+          },
+          (oldData) => {
+            if (!oldData?.files) return oldData;
+            return {
+              ...oldData,
+              files: oldData.files.map((file) => {
+                if (!fileIdSet.has(file.id)) return file;
+                const kbsInfo =
+                  params.mode === 'replace'
+                    ? params.kbsInfo
+                    : [
+                        ...(file.kbs_info ?? []),
+                        ...params.kbsInfo.filter(
+                          (kb) =>
+                            !(file.kbs_info ?? []).some(
+                              (item) => item.kb_id === kb.kb_id,
+                            ),
+                        ),
+                      ];
+                return { ...file, kbs_info: kbsInfo };
+              }),
+            };
+          },
+        );
         queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
+          refetchType: 'none',
         });
       }
       return data.code;
@@ -317,6 +379,8 @@ export const useFetchPureFileList = () => {
     mutationFn: async (parentId: string) => {
       const { data } = await fileManagerService.listFile({
         parent_id: parentId,
+        page_size: 100,
+        page: 1,
       });
 
       return data;

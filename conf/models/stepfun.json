@@ -1,0 +1,161 @@
+{
+  "name": "StepFun",
+  "url": {
+    "default": "https://api.stepfun.ai/v1",
+    "china": "https://api.stepfun.com/v1",
+    "plan": "https://api.stepfun.com/step_plan/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "tts": "audio/speech"
+  },
+  "class": "step",
+  "models": [
+    {
+      "name": "step-3.5-flash",
+      "content_length": 262144,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-3.5-flash-paid",
+      "content_length": 262144,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-2-16k",
+      "content_length": 16384,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1-256k",
+      "content_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1-128k",
+      "content_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1-32k",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1-8k",
+      "content_length": 8192,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1-flash",
+      "content_length": 8192,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1v-32k",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1v-8k",
+      "content_length": 8192,
+      "max_output": 4096,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-1o-vision-32k",
+      "content_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "step-tts-2",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "stepaudio-2.5-tts",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "step-tts-mini",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { IFlow } from '@/interfaces/database/agent';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { formatDate } from '@/utils/date';
 import { BookPlus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -26,7 +26,7 @@ interface PublishConfirmDialogProps {
 function AssociatedDataset({
   associatedDatasets,
 }: {
-  associatedDatasets: Pick<IKnowledge, 'id' | 'name' | 'avatar'>[];
+  associatedDatasets: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
 }) {
   const { t } = useTranslation();
 

@@ -1,3 +1,20 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import classNames from 'classnames';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -7,25 +24,29 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import { preprocessLaTeX } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
+import { omit } from 'lodash';
 import { useIsDarkTheme } from '../theme-provider';
+import { SafeImg } from '@/components/safe-img';
 import styles from './index.module.less';
 
 const HighLightMarkdown = ({
-  className,
   children,
 }: {
   className?: string;
   children: string | null | undefined;
 }) => {
   const isDarkTheme = useIsDarkTheme();
+  // IMPORTANT: preprocessLaTeX() decodes &lt;/&gt;/&amp; back to raw HTML before
+  // rehypeRaw parses the markdown. Sanitizing children *before* preprocessLaTeX
+  // would let entity-encoded payloads bypass DOMPurify and inject HTML.
+  // Sanitize the *post*-processed string instead. (Coderabbit CRITICAL #3486038798)
+  const processed = children ? preprocessLaTeX(children) : children;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;
@@ -33,13 +54,14 @@ const HighLightMarkdown = ({
   return (
     <div dir={dir} className={classNames(styles.text)}>
       <Markdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={MarkdownRemarkPlugins}
         rehypePlugins={[rehypeRaw, rehypeKatex]}
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
+            p: ({ children, ...props }: any) => (
+              <p {...omit(props, 'node')}>{children}</p>
             ),
+            img: SafeImg,
             code(props: any) {
               const { children, className, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
@@ -61,7 +83,7 @@ const HighLightMarkdown = ({
           } as any
         }
       >
-        {children ? preprocessLaTeX(children) : children}
+        {processed}
       </Markdown>
     </div>
   );

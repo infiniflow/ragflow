@@ -4,7 +4,9 @@ import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogMessage } from '@/interfaces/database/agent';
 import {
+  Docagg,
   IMessage,
+  IReferenceChunk,
   IReferenceObject,
   Message,
 } from '@/interfaces/database/chat';
@@ -18,11 +20,75 @@ interface CustomModalProps {
   reference: IReferenceObject;
 }
 
+interface IAgentLogReferenceChunk {
+  citation_id?: string;
+  content?: string | null;
+  document_id: string;
+  document_name: string;
+  dataset_id: string;
+  id: string;
+  image_id: string;
+  positions?: number[] | number[][];
+  similarity?: number;
+  vector_similarity?: number;
+  term_similarity?: number;
+  doc_type?: string;
+  document_metadata?: Record<string, any>;
+  url?: string;
+}
+
+// Runtime agent-log messages carry the reference chunks array directly,
+// even though IAgentLogMessage does not declare it.
+type AgentLogMessageWithReference = IAgentLogMessage & {
+  reference?: IAgentLogReferenceChunk[];
+};
+
+const buildReferenceObject = (
+  chunks: IAgentLogReferenceChunk[] | undefined | null,
+): IReferenceObject => {
+  if (!chunks || !Array.isArray(chunks) || chunks.length === 0) {
+    return { chunks: {}, doc_aggs: {} };
+  }
+
+  const chunkMap: Record<string, IReferenceChunk> = {};
+  const docAggMap: Record<string, Docagg> = {};
+
+  chunks.forEach((chunk, index) => {
+    const key = chunk.citation_id ?? String(index);
+
+    chunkMap[key] = {
+      id: chunk.id,
+      content: (chunk.content ?? null) as IReferenceChunk['content'],
+      document_id: chunk.document_id,
+      document_name: chunk.document_name,
+      dataset_id: chunk.dataset_id,
+      image_id: chunk.image_id,
+      similarity: chunk.similarity ?? 0,
+      vector_similarity: chunk.vector_similarity ?? 0,
+      term_similarity: chunk.term_similarity ?? 0,
+      positions: (chunk.positions ?? []) as IReferenceChunk['positions'],
+      doc_type: chunk.doc_type,
+      document_metadata: chunk.document_metadata,
+    };
+
+    if (!docAggMap[chunk.document_id]) {
+      docAggMap[chunk.document_id] = {
+        count: 0,
+        doc_id: chunk.document_id,
+        doc_name: chunk.document_name,
+        url: chunk.url,
+      };
+    }
+    docAggMap[chunk.document_id].count++;
+  });
+
+  return { chunks: chunkMap, doc_aggs: docAggMap };
+};
+
 export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
   isOpen,
   onClose,
   message: derivedMessages,
-  reference,
 }) => {
   const { data: userInfo } = useFetchUserInfo();
   const { data: canvasInfo } = useFetchAgent();
@@ -61,6 +127,7 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
       <div className="flex items-start mb-4 flex-col gap-4 justify-start">
         <div className="w-full">
           {derivedMessages?.map((message, i) => {
+            const msg = message as AgentLogMessageWithReference;
             return (
               <MessageItem
                 key={buildMessageUuidWithRole(
@@ -70,7 +137,7 @@ export const AgentLogDetailModal: React.FC<CustomModalProps> = ({
                 avatar={userInfo.avatar}
                 avatarDialog={canvasInfo.avatar}
                 item={message as IMessage}
-                reference={reference}
+                reference={buildReferenceObject(msg.reference)}
                 index={i}
                 showLikeButton={false}
                 showLog={false}

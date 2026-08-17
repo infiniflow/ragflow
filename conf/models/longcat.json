@@ -1,0 +1,24 @@
+{
+  "name": "LongCat",
+  "url": {
+    "default": "https://api.longcat.chat"
+  },
+  "url_suffix": {
+    "chat": "openai/v1/chat/completions",
+    "models": "openai/v1/models"
+  },
+  "class": "longcat",
+  "models": [
+    {
+      "name": "LongCat-2.0",
+      "content_length": 1048576,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}
