@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -397,5 +398,125 @@ func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
 	}
 	if len(ingestor.taskChan) != 0 {
 		t.Fatal("expected no task enqueued on activation failure")
+	}
+}
+
+// TestProcessMessage_DuplicateIngestionDeliveryAckSkips drives the redelivery
+// path that the burst test CANNOT reach: the burst test's simulated broker only
+// redelivers on Nack, and the fixed processMessage never Nacks, so a duplicate
+// delivery never occurs there. Here we inject a SECOND delivery of the same
+// ingestion taskID while the first is still in flight and assert the core
+// safety net: the duplicate is ack-skipped (never enqueued, never nack-looped)
+// and the task is executed EXACTLY ONCE. This proves the claim guard — the
+// mechanism that makes blocking-send safe — actually prevents duplicate
+// execution, not just backpressure drops.
+func TestProcessMessage_DuplicateIngestionDeliveryAckSkips(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	var executions int32
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
+		atomic.AddInt32(&executions, 1)
+		time.Sleep(150 * time.Millisecond) // stay in-flight so the 2nd delivery races the claim
+		return nil
+	}
+	ingestor.startWorkerPool()
+	defer ingestor.Stop(context.Background())
+
+	// First delivery: claimed + enqueued (settlement deferred to the worker).
+	// The worker may dequeue immediately, so we assert on handle settlement
+	// and on the duplicate below rather than on channel length.
+	h1 := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+	ingestor.processMessage(h1)
+	if h1.acks.Load() != 0 || h1.nacks.Load() != 0 {
+		t.Fatalf("first delivery: expected 0 Ack/0 Nack (settlement deferred to worker), got acks=%d nacks=%d", h1.acks.Load(), h1.nacks.Load())
+	}
+
+	// Second delivery of the SAME taskID while the first is still running.
+	h2 := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+	ingestor.processMessage(h2)
+	if h2.acks.Load() != 1 || h2.nacks.Load() != 0 {
+		t.Fatalf("duplicate delivery: expected 1 Ack/0 Nack (claim guard ack-skip), got acks=%d nacks=%d", h2.acks.Load(), h2.nacks.Load())
+	}
+	// The duplicate must NOT have been enqueued for a second execution: the
+	// channel holds at most the single in-flight task (h1), never a second.
+	if len(ingestor.taskChan) > 1 {
+		t.Fatalf("duplicate delivery: expected at most 1 in-flight task, got %d", len(ingestor.taskChan))
+	}
+
+	// Wait until the task actually reaches COMPLETED (executions is bumped at
+	// the START of runDocumentTask, before the simulated work, so poll the
+	// durable terminal status rather than the in-flight counter).
+	deadline := time.Now().Add(5 * time.Second)
+	completed := false
+	for time.Now().Before(deadline) {
+		if countTasksWithStatus(t, db, []string{taskID}, common.COMPLETED) == 1 {
+			completed = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !completed {
+		t.Fatalf("first delivery never reached COMPLETED (executions=%d); the worker must finish the only enqueued run",
+			atomic.LoadInt32(&executions))
+	}
+	// Exactly one execution must have happened — the duplicate was ack-skipped.
+	if got := atomic.LoadInt32(&executions); got != 1 {
+		t.Fatalf("task executed %d times; the claim guard must prevent duplicate execution, want 1", got)
+	}
+}
+
+// TestProcessMessage_DuplicateMemoryDeliveryAckSkips verifies the memory
+// branch's dedup claim (added alongside the ingestion claim). A second delivery
+// of the same memory taskID while the first is still in flight is ack-skipped
+// and NOT re-enqueued. Without this guard a redelivered memory message is
+// dispatched to the worker again — the memory branch has no ingestion state
+// machine to reject a second run — duplicating the extraction.
+func TestProcessMessage_DuplicateMemoryDeliveryAckSkips(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	const memID = "mem-dup-1"
+	payload, err := json.Marshal(map[string]any{
+		"id":        memID,
+		"task_type": "memory",
+		"memory_id": "mem-dup",
+		"source_id": 7,
+		"message_dict": map[string]any{
+			"user_id":    "u",
+			"agent_id":   "a",
+			"session_id": "s",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	// First delivery: claimed + enqueued (worker pool not started, so it stays
+	// in-flight in the channel with the claim held).
+	h1 := &fakeTaskHandle{msg: common.TaskMessage{TaskID: memID, TaskType: common.TaskTypeMemory, Payload: payload}}
+	ingestor.processMessage(h1)
+	if h1.acks.Load() != 0 || h1.nacks.Load() != 0 {
+		t.Fatalf("first memory delivery: expected 0 Ack/0 Nack, got acks=%d nacks=%d", h1.acks.Load(), h1.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("first memory delivery: expected 1 enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	// Second delivery of the SAME memory taskID while the first is in flight.
+	h2 := &fakeTaskHandle{msg: common.TaskMessage{TaskID: memID, TaskType: common.TaskTypeMemory, Payload: payload}}
+	ingestor.processMessage(h2)
+	if h2.acks.Load() != 1 || h2.nacks.Load() != 0 {
+		t.Fatalf("duplicate memory delivery: expected 1 Ack/0 Nack (claim guard ack-skip), got acks=%d nacks=%d", h2.acks.Load(), h2.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("duplicate memory delivery: expected no additional enqueue (still 1), got %d", len(ingestor.taskChan))
 	}
 }

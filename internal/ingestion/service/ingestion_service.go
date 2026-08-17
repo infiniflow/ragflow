@@ -331,13 +331,29 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
+		// Dedup claim: a memory task, like an ingestion task, must not be
+		// executed twice if the broker redelivers it while the first run is
+		// still in flight. Without this guard a redelivered memory message is
+		// dispatched to the worker again (the memory branch has no ingestion
+		// state machine to reject a second RUNNING transition), duplicating
+		// the extraction. The claim is released by executeMemoryTask when the
+		// worker settles, or by the ctx.Done branch below on shutdown.
+		if !e.claimTask(taskMessage.TaskID) {
+			common.Warn(fmt.Sprintf("memory task %s redelivered while already processing, ack skip", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack redelivered memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
 		select {
 		case e.taskChan <- taskCtx:
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
 		case <-e.ctx.Done():
-			// Shutdown won the race: return without settling so the broker
-			// redelivers the memory task after restart.
+			// Shutdown won the race: release the claim and return without
+			// settling so the broker redelivers the memory task after restart
+			// rather than blocking the consume loop forever.
+			e.releaseTask(taskMessage.TaskID)
 			common.Info(fmt.Sprintf("Ingestor shutting down; memory task %s not enqueued", taskMessage.TaskID))
 			return
 		}
@@ -486,6 +502,12 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	taskID, _ := taskCtx.MemoryPayload["id"].(string)
 	if taskID == "" {
 		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
+	}
+	// Release the dedup claim taken in processMessage so a future redelivery
+	// (after the broker exhausts AckWait, or after a restart) can re-claim and
+	// retry this memory task instead of being permanently skipped.
+	if taskID != "" {
+		defer e.releaseTask(taskID)
 	}
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
 	if taskCtx.Handle == nil {
