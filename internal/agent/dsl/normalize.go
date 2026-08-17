@@ -45,10 +45,12 @@
 //  2. If `graph.nodes` is missing but `components` is non-empty, builds
 //     a default-layout graph from the components (deterministic order,
 //     50/200/350 px column layout).
-//  3. Repairs any historically leaked runtime-only Parallel /
+//  3. Rebuilds component adjacency from graph edges. For a components-only
+//     legacy payload, preserves downstream and derives upstream from it.
+//  4. Repairs any historically leaked runtime-only Parallel /
 //     parallelNode canvas shape back to the front-end's Iteration /
 //     iterationNode protocol.
-//  4. Returns a defensive copy of the input with all transforms
+//  5. Returns a defensive copy of the input with all transforms
 //     applied. Never mutates its input.
 //
 // The function never panics on malformed input; unparseable entries are
@@ -64,6 +66,7 @@ package dsl
 import (
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // componentNameIteration / componentNameIterationItem are the legacy
@@ -134,6 +137,11 @@ func normalize(dsl map[string]any, foldLegacy bool) map[string]any {
 			}
 		}
 	}
+
+	// Keep runtime adjacency as a deterministic projection of the canvas
+	// topology. For components-only payloads, preserve the historical
+	// downstream authority and rebuild upstream from it.
+	reconcileTopology(out)
 
 	// (3) Repair any historically leaked runtime-only Parallel /
 	// parallelNode view back to the front-end's Iteration /
@@ -292,6 +300,77 @@ func graphHasNodes(dsl map[string]any) bool {
 		return false
 	}
 	return len(nodes) > 0
+}
+
+func reconcileTopology(dsl map[string]any) {
+	components, _ := dsl["components"].(map[string]any)
+	if len(components) == 0 {
+		return
+	}
+
+	downstream := make(map[string][]string, len(components))
+	upstream := make(map[string][]string, len(components))
+	for id := range components {
+		downstream[id] = []string{}
+		upstream[id] = []string{}
+	}
+
+	graph, _ := dsl["graph"].(map[string]any)
+	edges, _ := graph["edges"].([]any)
+	legacyLoopItem := false
+	for _, raw := range components {
+		component, _ := raw.(map[string]any)
+		name, _, _ := extractComponent(component)
+		if name == componentNameLoopItem || name == componentNameIterationItem {
+			legacyLoopItem = true
+			break
+		}
+	}
+	if !graphHasNodes(dsl) || (legacyLoopItem && len(edges) == 0) {
+		for source, raw := range components {
+			component, _ := raw.(map[string]any)
+			for _, target := range toStringSlice(component["downstream"]) {
+				downstream[source] = append(downstream[source], target)
+				if _, ok := upstream[target]; ok {
+					upstream[target] = append(upstream[target], source)
+				}
+			}
+		}
+	} else {
+		for _, raw := range edges {
+			edge, _ := raw.(map[string]any)
+			if edge == nil {
+				continue
+			}
+			source, _ := edge["source"].(string)
+			target, _ := edge["target"].(string)
+			if _, sourceOK := components[source]; !sourceOK {
+				continue
+			}
+			if _, targetOK := components[target]; !targetOK {
+				continue
+			}
+			upstream[target] = append(upstream[target], source)
+
+			component, _ := components[source].(map[string]any)
+			name, _, _ := extractComponent(component)
+			sourceHandle, _ := edge["sourceHandle"].(string)
+			targetHandle, _ := edge["targetHandle"].(string)
+			if name == "Agent" && (sourceHandle == "agentException" || targetHandle == "agentTop" || strings.HasPrefix(target, "Tool")) {
+				continue
+			}
+			downstream[source] = append(downstream[source], target)
+		}
+	}
+
+	for id, raw := range components {
+		component, _ := raw.(map[string]any)
+		if component == nil {
+			continue
+		}
+		component["downstream"] = stringsToAny(downstream[id])
+		component["upstream"] = stringsToAny(upstream[id])
+	}
 }
 
 // buildGraphFromComponents converts the `components` block into

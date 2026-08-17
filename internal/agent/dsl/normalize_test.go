@@ -703,3 +703,55 @@ func equalStringSlices(a, b []string) bool {
 	}
 	return true
 }
+
+func TestNormalizeForCanvasGraphOverridesConflictingComponentTopology(t *testing.T) {
+	in := map[string]any{
+		"components": map[string]any{
+			"begin":   map[string]any{"obj": map[string]any{"component_name": "Begin"}, "downstream": []any{"load"}, "upstream": []any{}},
+			"quality": map[string]any{"obj": map[string]any{"component_name": "Message"}, "downstream": []any{}, "upstream": []any{}},
+			"load":    map[string]any{"obj": map[string]any{"component_name": "Message"}, "downstream": []any{}, "upstream": []any{"begin"}},
+		},
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{"id": "begin"},
+				map[string]any{"id": "quality"},
+				map[string]any{"id": "load"},
+			},
+			"edges": []any{
+				map[string]any{"source": "begin", "target": "quality"},
+				map[string]any{"source": "quality", "target": "load"},
+			},
+		},
+	}
+
+	out := NormalizeForCanvas(in)
+	components := out["components"].(map[string]any)
+	begin := components["begin"].(map[string]any)
+	quality := components["quality"].(map[string]any)
+	load := components["load"].(map[string]any)
+	if got := stringSliceAny(begin["downstream"].([]any)); !equalStringSlices(got, []string{"quality"}) {
+		t.Fatalf("begin downstream = %v, want [quality]", got)
+	}
+	if got := stringSliceAny(quality["upstream"].([]any)); !equalStringSlices(got, []string{"begin"}) {
+		t.Fatalf("quality upstream = %v, want [begin]", got)
+	}
+	if got := stringSliceAny(load["upstream"].([]any)); !equalStringSlices(got, []string{"quality"}) {
+		t.Fatalf("load upstream = %v, want [quality]", got)
+	}
+}
+
+func TestNormalizeForCanvasComponentsOnlyRebuildsUpstream(t *testing.T) {
+	in := map[string]any{
+		"components": map[string]any{
+			"begin":  map[string]any{"obj": map[string]any{"component_name": "Begin"}, "downstream": []any{"middle"}, "upstream": []any{"wrong"}},
+			"middle": map[string]any{"obj": map[string]any{"component_name": "Message"}, "downstream": []any{}, "upstream": []any{}},
+		},
+	}
+
+	out := NormalizeForCanvas(in)
+	components := out["components"].(map[string]any)
+	middle := components["middle"].(map[string]any)
+	if got := stringSliceAny(middle["upstream"].([]any)); !equalStringSlices(got, []string{"begin"}) {
+		t.Fatalf("middle upstream = %v, want [begin]", got)
+	}
+}

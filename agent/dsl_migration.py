@@ -17,7 +17,6 @@
 import copy
 import re
 
-
 # Keep all legacy chunker renames in one place so the migration rule stays readable.
 COMPONENT_RENAMES = {
     "Splitter": "TokenChunker",
@@ -30,6 +29,85 @@ NODE_TYPE_RENAMES = {
 }
 
 VARIABLE_REF_PATTERN = re.compile(r"(\{+\s*)([A-Za-z0-9:_-]+)(@[A-Za-z0-9_.-]+)(\s*\}+)")
+
+_NON_RUNTIME_COMPONENTS = {"Note", "Tool", "Placeholder"}
+_AGENT_TOP_HANDLE = "agentTop"
+_AGENT_EXCEPTION_HANDLE = "agentException"
+
+
+def _normalize_topology(dsl: dict) -> None:
+    """Make the execution topology a deterministic projection of ``graph``.
+
+    ``graph.edges`` is authoritative when a renderable graph is present.  A
+    components-only legacy DSL keeps its historical downstream topology and
+    gets a matching upstream projection.  This prevents a persisted payload
+    from rendering one route while executing another one.
+    """
+    components = dsl.get("components")
+    if not isinstance(components, dict) or not components:
+        return
+
+    component_ids = set(components)
+    graph = dsl.get("graph")
+    nodes = graph.get("nodes") if isinstance(graph, dict) else None
+    edges = graph.get("edges") if isinstance(graph, dict) else None
+
+    has_legacy_loop_item = any(
+        isinstance(component, dict) and isinstance(component.get("obj"), dict) and component["obj"].get("component_name") in {"LoopItem", "IterationItem"} for component in components.values()
+    )
+
+    if not isinstance(nodes, list) or not nodes or (has_legacy_loop_item and not edges):
+        upstream = {component_id: [] for component_id in components}
+        for source, component in components.items():
+            if not isinstance(component, dict):
+                continue
+            downstream = component.get("downstream")
+            if not isinstance(downstream, list):
+                component["downstream"] = []
+                downstream = []
+            for target in downstream:
+                if target in upstream:
+                    upstream[target].append(source)
+        for component_id, component in components.items():
+            if isinstance(component, dict):
+                component["upstream"] = upstream[component_id]
+        return
+
+    graph_node_ids = {node.get("id") for node in nodes if isinstance(node, dict) and isinstance(node.get("id"), str)}
+    bottom_subagents = {edge.get("target") for edge in edges or [] if isinstance(edge, dict) and edge.get("targetHandle") == _AGENT_TOP_HANDLE}
+    missing_components = []
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("id") in component_ids:
+            continue
+        label = node.get("data", {}).get("label") if isinstance(node.get("data"), dict) else None
+        if label not in _NON_RUNTIME_COMPONENTS and node.get("id") not in bottom_subagents:
+            missing_components.append(node.get("id"))
+    missing_nodes = component_ids - graph_node_ids
+    if missing_components or missing_nodes:
+        raise ValueError(f"DSL graph/components node mismatch: missing components={sorted(str(node_id) for node_id in missing_components)}, missing graph nodes={sorted(missing_nodes)}")
+
+    expected_downstream = {component_id: [] for component_id in components}
+    expected_upstream = {component_id: [] for component_id in components}
+    for edge in edges if isinstance(edges, list) else []:
+        if not isinstance(edge, dict):
+            continue
+        source = edge.get("source")
+        target = edge.get("target")
+        if target in expected_upstream and source in component_ids:
+            expected_upstream[target].append(source)
+        if source not in expected_downstream or target not in component_ids:
+            continue
+        component = components[source]
+        obj = component.get("obj", {}) if isinstance(component, dict) else {}
+        is_agent = isinstance(obj, dict) and obj.get("component_name") == "Agent"
+        if is_agent and (edge.get("sourceHandle") == _AGENT_EXCEPTION_HANDLE or edge.get("targetHandle") == _AGENT_TOP_HANDLE or (isinstance(target, str) and target.startswith("Tool"))):
+            continue
+        expected_downstream[source].append(target)
+
+    for component_id, component in components.items():
+        if isinstance(component, dict):
+            component["downstream"] = expected_downstream[component_id]
+            component["upstream"] = expected_upstream[component_id]
 
 
 def normalize_chunker_dsl(dsl: dict) -> dict:
@@ -51,7 +129,7 @@ def normalize_chunker_dsl(dsl: dict) -> dict:
         return normalized
 
     component_id_map: dict[str, str] = {}
-    for component_id in components.keys():
+    for component_id in components:
         new_component_id = component_id
         for old_name, new_name in COMPONENT_RENAMES.items():
             prefix = f"{old_name}:"
@@ -160,5 +238,7 @@ def normalize_chunker_dsl(dsl: dict) -> dict:
     for key in ("history", "messages", "reference"):
         if key in normalized:
             normalized[key] = rewrite_value(normalized[key])
+
+    _normalize_topology(normalized)
 
     return normalized
