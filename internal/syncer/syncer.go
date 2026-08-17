@@ -175,6 +175,7 @@ func registerBuiltInConnectors(registry *syncerconnector.Registry) {
 	registerDAOConnector(registry, "gmail", syncerconnector.NewGmailConnector)
 	registerDAOConnector(registry, "google-drive", syncerconnector.NewGoogleDriveConnector)
 	registerDAOConnector(registry, "google_drive", syncerconnector.NewGoogleDriveConnector)
+	registerDAOConnector(registry, "outlook", syncerconnector.NewOutlookConnector)
 	registerDAOConnector(registry, "mysql", syncerconnector.NewMySQLConnector)
 	registerDAOConnector(registry, "postgresql", syncerconnector.NewPostgreSQLConnector)
 }
