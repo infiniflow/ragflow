@@ -41,7 +41,7 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 		SimilarityThreshold:    &threshold,
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
-		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compilation_template_ids"}},
+		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
 	})
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
@@ -57,7 +57,7 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 	}
 	for _, filters := range engine.searchFilters {
 		mustNot, ok := filters["must_not"].(map[string]interface{})
-		if !ok || mustNot["exists"] != "compilation_template_ids" {
+		if !ok || mustNot["exists"] != "compile_kwd" {
 			t.Fatalf("must_not filter = %#v", filters["must_not"])
 		}
 	}
