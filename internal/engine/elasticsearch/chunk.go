@@ -885,6 +885,9 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Build the query
 	var qry map[string]interface{}
 	if len(filterClauses) == 0 && len(mustClauses) == 0 && len(mustNotClauses) == 0 {
+		if len(condition) > 0 {
+			return 0, fmt.Errorf("ES delete aborted: non-empty condition yielded match_all query on index %s", fullIndexName)
+		}
 		qry = map[string]interface{}{"match_all": map[string]interface{}{}}
 	} else {
 		boolMap := map[string]interface{}{}

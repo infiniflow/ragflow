@@ -57,7 +57,13 @@ from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile.wiki import (
-    _wiki_doc_ids,
+    WIKI_MAP_STATE_COMPILE_KWD,
+    WIKI_MAP_STATE_META_COMPILE_KWD,
+    _wiki_commit_active_map_state,
+    _wiki_compare_chunk_states,
+    _wiki_load_active_map_state,
+    _wiki_load_map_extracts_for_state,
+    _wiki_scan_current_chunk_state,
     wiki_map_from_chunks,
     wiki_plan_from_reduction,
     wiki_reduce_from_extracts,
@@ -333,71 +339,8 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
 
 
 async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
-    from common.doc_store.doc_store_base import OrderByExpr
-    from api.db.services.document_service import DocumentService
-
-    index = search.index_name(tenant_id)
-    if not settings.docStoreConn.index_exist(index, kb_id):
-        return set()
-
-    doc_ids: set[str] = set()
-    disabled_doc_ids = _wiki_doc_ids(await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id))
-    select_fields = ["id", "doc_id"]
-    offset = 0
-    page_size = 1000
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                select_fields,
-                [],
-                {"compile_kwd": [WIKI_MAP_COMPILE_KWD]},
-                [],
-                OrderByExpr(),
-                offset,
-                page_size,
-                index,
-                [kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
-        except Exception:
-            logging.exception("wiki: failed to scan MAP doc ids for kb=%s", kb_id)
-            return doc_ids
-        if not field_map:
-            break
-        for row in field_map.values():
-            doc_ids.update(_wiki_doc_ids(row.get("doc_id")) - disabled_doc_ids)
-        if len(field_map) < page_size:
-            break
-        offset += page_size
-    return doc_ids
-
-
-async def _wiki_delete_map_rows_for_docs(
-    tenant_id: str,
-    kb_id: str,
-    doc_ids: set[str],
-) -> None:
-    """Remove MAP resume rows so the next run must re-extract the documents."""
-    if not doc_ids:
-        return
-    try:
-        await thread_pool_exec(
-            settings.docStoreConn.delete,
-            {
-                "compile_kwd": [WIKI_MAP_COMPILE_KWD],
-                "doc_id": sorted(str(doc_id) for doc_id in doc_ids),
-            },
-            search.index_name(tenant_id),
-            kb_id,
-        )
-    except Exception:
-        logging.exception(
-            "wiki: failed to invalidate MAP resume rows for kb=%s docs=%s",
-            kb_id,
-            sorted(doc_ids),
-        )
-        raise
+    state = await _wiki_load_active_map_state(tenant_id, kb_id)
+    return {str(item.get("doc_id") or "") for item in state.values() if item.get("doc_id")}
 
 
 async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool | None:
@@ -444,26 +387,11 @@ async def _wiki_delete_deleted_doc_state(
     if not settings.docStoreConn.index_exist(index, kb_id):
         return
 
-    # 1. MAP resume rows are keyed by the real doc_id — delete outright.
-    try:
-        await thread_pool_exec(
-            settings.docStoreConn.delete,
-            {
-                "compile_kwd": [WIKI_MAP_COMPILE_KWD],
-                "doc_id": sorted(deleted_doc_ids),
-            },
-            index,
-            kb_id,
-        )
-    except Exception:
-        logging.exception(
-            "wiki: failed to delete MAP rows for removed docs in kb=%s docs=%s",
-            kb_id,
-            sorted(deleted_doc_ids),
-        )
-        return
+    # MAP extraction versions are historical cache entries and deliberately
+    # survive document deletion.  The committed active-state snapshot decides
+    # which versions are allowed to participate in the current Wiki.
 
-    # 1b. doc_page_source rows are keyed by doc_id too — delete outright.
+    # doc_page_source rows are current derived state and are deleted outright.
     try:
         await thread_pool_exec(
             settings.docStoreConn.delete,
@@ -717,7 +645,8 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
         "wiki_reduce_result",
         "wiki_page_draft",
         "wiki_doc_page_source",
-        "wiki_map_extract",
+        WIKI_MAP_STATE_COMPILE_KWD,
+        WIKI_MAP_STATE_META_COMPILE_KWD,
         "wiki_mode_meta",
     ]
     # Delete in one bulk call using compile_kwd IN filter.
@@ -1445,10 +1374,9 @@ async def run_wiki(
 
         return _cb
 
-    # 4. MAP per eligible doc. Each MAP call's own resume mechanism
-    # (wiki_map_extract rows keyed by chunk_id) skips chunks that
-    # were already processed in a prior run — this is the incremental
-    # behavior the user asked for.
+    # 4. MAP per eligible doc. Historical extraction versions are keyed by
+    # doc_id + chunk_id + input hash, so unchanged or reverted content can
+    # reuse prior LLM output.
     #
     # Resolve templates before starting workers so the first eligible
     # template remains the deterministic source for KB-wide REDUCE/PLAN/
@@ -1491,8 +1419,7 @@ async def run_wiki(
             "saw_any": False,
             "status": "ok",
             "agg": {"entities": 0, "concepts": 0, "claims": 0, "relations": 0},
-            "delta": {"new": 0, "changed": 0, "unchanged": 0, "deleted": 0},
-            "had_delta": False,
+            "map": {"requested": 0, "cache_hits": 0, "extracted": 0},
         }
         for i, (doc, _, _) in enumerate(resolved_eligible)
     }
@@ -1551,9 +1478,8 @@ async def run_wiki(
                     stats["agg"][key] += len(phase1.get(key) or [])
                 meta = phase1.get("_meta") or {}
                 if isinstance(meta, dict):
-                    for key in stats["delta"]:
-                        stats["delta"][key] += int(meta.get(key, 0) or 0)
-                    stats["had_delta"] |= bool(meta.get("had_delta"))
+                    for key in stats["map"]:
+                        stats["map"][key] += int(meta.get(key, 0) or 0)
             except Exception:
                 logging.exception(
                     "wiki: MAP failed for doc %s batch %d",
@@ -1582,20 +1508,18 @@ async def run_wiki(
             stats["status"] = "empty"
             logging.info("wiki: no chunks for doc %s; skipping", doc_id)
         agg = stats["agg"]
-        delta = stats["delta"]
+        map_stats = stats["map"]
         logging.info(
-            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, new=%d changed=%d unchanged=%d deleted=%d, delta=%s)",
+            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, requested=%d cache_hits=%d extracted=%d)",
             doc_id,
             agg["entities"],
             agg["concepts"],
             agg["claims"],
             agg["relations"],
             stats["batch_count"],
-            delta["new"],
-            delta["changed"],
-            delta["unchanged"],
-            delta["deleted"],
-            stats["had_delta"],
+            map_stats["requested"],
+            map_stats["cache_hits"],
+            map_stats["extracted"],
         )
 
     # 5. REDUCE / PLAN / REFINE KB-wide. Each phase has its own
@@ -1679,7 +1603,6 @@ async def run_wiki_incremental(
     embedding_model,
     load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
     mode: str | None = None,
-    _map_rebuild_retry: bool = False,
 ) -> None:
     """Dual-mode wiki compilation with incremental support.
 
@@ -1758,6 +1681,25 @@ async def run_wiki_incremental(
         return
     pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible) if eligible else {}
 
+    eligible_doc_ids = {str(doc.get("id")) for doc, _ in eligible if doc.get("id")}
+    previous_chunk_state = await _wiki_load_active_map_state(ctx.tenant_id, ctx.kb_id)
+    current_chunk_state = await _wiki_scan_current_chunk_state(
+        ctx.tenant_id,
+        ctx.kb_id,
+        eligible_doc_ids,
+    )
+    chunk_delta = _wiki_compare_chunk_states(previous_chunk_state, current_chunk_state)
+    target_chunk_ids = chunk_delta["new_chunk_ids"] | chunk_delta["changed_chunk_ids"]
+    has_chunk_delta = bool(target_chunk_ids or chunk_delta["deleted_chunk_ids"])
+    logging.info(
+        "wiki chunk delta: kb=%s new=%d changed=%d deleted=%d unchanged=%d",
+        ctx.kb_id,
+        len(chunk_delta["new_chunk_ids"]),
+        len(chunk_delta["changed_chunk_ids"]),
+        len(chunk_delta["deleted_chunk_ids"]),
+        len(chunk_delta["unchanged_chunk_ids"]),
+    )
+
     # Resolve mode from the eligible documents' templates. Each eligible
     # doc resolves to a wiki template either via its own parser_config or via
     # its ingestion pipeline (doc.pipeline_id → pipeline dsl → compiler →
@@ -1801,6 +1743,10 @@ async def run_wiki_incremental(
         is_incremental = False
         existing_map_doc_ids = set()
         deleted_doc_ids = set()
+        previous_chunk_state = {}
+        chunk_delta = _wiki_compare_chunk_states(previous_chunk_state, current_chunk_state)
+        target_chunk_ids = set(chunk_delta["new_chunk_ids"])
+        has_chunk_delta = bool(target_chunk_ids)
     await _wiki_save_mode(ctx.tenant_id, ctx.kb_id, mode, current_embedding)
 
     # 3. Resolve chat model
@@ -1833,7 +1779,6 @@ async def run_wiki_incremental(
     # 4. MAP per doc (same as run_wiki's MAP phase)
     map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
     n_docs = len(eligible)
-    all_map_results: list[dict] = []
 
     # Pre-resolve parser_cfg for each eligible doc (avoids sync DB call in worker)
     doc_configs: dict[str, dict] = {}
@@ -1874,7 +1819,7 @@ async def run_wiki_incremental(
                 doc_id = doc["id"]
                 map_llm_id = pipeline_chat_llm_ids.get(str(doc_id))
 
-                result = await wiki_map_from_chunks(
+                await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
                         _bundle_for(map_llm_id),
@@ -1891,15 +1836,8 @@ async def run_wiki_incremental(
                     batch_size_cap=8,
                     window_fraction=0.5,
                     max_workers=WIKI_MAP_LLM_POOL_SIZE,
+                    target_chunk_ids=target_chunk_ids,
                 )
-                # Only forward extracts that actually produced content. An
-                # all-unchanged doc (MAP fully resumed from prior rows) returns an
-                # empty extract; appending it would make ``all_map_results``
-                # non-empty and suppress wiki_compile_incremental's "load stored
-                # extracts from ES" fallback, so nothing would ever be compiled.
-                if result and any(result.get(k) for k in ("entities", "concepts", "claims", "relations", "topics")):
-                    result["doc_id"] = doc_id
-                    all_map_results.append(result)
             except Exception:
                 logging.exception("wiki: MAP failed for doc %s", doc_id)
             finally:
@@ -1916,7 +1854,25 @@ async def run_wiki_incremental(
                 task.cancel()
         await asyncio.gather(*producers, *workers, return_exceptions=True)
 
-    if not all_map_results and not deleted_doc_ids:
+    if target_chunk_ids:
+        resolved_versions = await _wiki_load_map_extracts_for_state(
+            ctx.tenant_id,
+            ctx.kb_id,
+            current_chunk_state,
+            target_chunk_ids,
+        )
+        resolved_chunk_ids = {str((extract.get("_map_version") or {}).get("chunk_id") or "") for extract in resolved_versions}
+        missing_chunk_ids = target_chunk_ids - resolved_chunk_ids
+        if missing_chunk_ids:
+            logging.error(
+                "wiki: MAP extraction/cache resolution incomplete kb=%s missing_chunks=%s",
+                ctx.kb_id,
+                sorted(missing_chunk_ids),
+            )
+            progress(-1, f"Wiki MAP failed for {len(missing_chunk_ids)} chunk(s).")
+            return
+
+    if not has_chunk_delta and not deleted_doc_ids:
         # Nothing fresh, changed, or deleted this run. Skip only when there is
         # genuinely nothing to build: an existing MAP baseline already has
         # compiled pages. When the Wiki was explicitly cleared, both
@@ -1937,7 +1893,12 @@ async def run_wiki_incremental(
             # the persisted pages (zero LLM cost) so a re-run backfills graph
             # edges for pages written before auto-linking existed.
             try:
-                await _wiki_finalize(ctx.tenant_id, ctx.kb_id, embedding_model)
+                await _wiki_finalize(
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    embedding_model,
+                    chunk_state=current_chunk_state,
+                )
             except Exception:
                 logging.exception("wiki: up-to-date FINALIZE failed for kb=%s", ctx.kb_id)
 
@@ -1945,38 +1906,18 @@ async def run_wiki_incremental(
             # persistence existed (or a graph lost to an interrupted run) still
             # render. Reload pages → project → persist wiki_entity/relation.
             try:
-                graph_pages = await _wiki_load_pages_for_graph(ctx.tenant_id, ctx.kb_id)
+                graph_pages = await _wiki_load_pages_for_graph(
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    chunk_state=current_chunk_state,
+                )
                 if graph_pages:
                     await persist_wiki_page_graph(ctx=ctx, pages=graph_pages)
             except Exception:
                 logging.exception("wiki: up-to-date page-graph persist failed for kb=%s", ctx.kb_id)
 
+            await _wiki_commit_active_map_state(ctx.tenant_id, ctx.kb_id, current_chunk_state)
             progress(1.0, "Wiki is up to date.")
-            return
-        if existing_map_doc_ids and has_compiled_pages is False and not _map_rebuild_retry:
-            # A first build can be interrupted after MAP rows are written. If
-            # those rows are subsequently removed or become unreadable, the
-            # resume check still suppresses MAP and the restore phase sees no
-            # payload. Invalidate only the affected documents and retry once;
-            # the second invocation then treats them as a clean MAP build.
-            stale_doc_ids = {str(doc.get("id")) for doc, _ in eligible if doc.get("id")}
-            logging.warning(
-                "wiki: MAP resume state is unusable with no compiled pages; forcing one MAP rebuild kb=%s docs=%s",
-                ctx.kb_id,
-                sorted(stale_doc_ids),
-            )
-            try:
-                await _wiki_delete_map_rows_for_docs(ctx.tenant_id, ctx.kb_id, stale_doc_ids)
-            except Exception:
-                progress(-1, "Failed to reset stale MAP state for wiki rebuild.")
-                return
-            await run_wiki_incremental(
-                ctx=ctx,
-                embedding_model=embedding_model,
-                load_chunks_for_doc=load_chunks_for_doc,
-                mode=mode,
-                _map_rebuild_retry=True,
-            )
             return
         logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
 
@@ -1996,8 +1937,10 @@ async def run_wiki_incremental(
         kb_id=ctx.kb_id,
         mode=mode,
         incremental=is_incremental,
-        map_results=all_map_results or None,
         deleted_doc_ids=deleted_doc_ids or None,
+        chunk_delta=chunk_delta,
+        previous_chunk_state=previous_chunk_state,
+        current_chunk_state=current_chunk_state,
         callback=lambda p, msg: progress(p, msg),
     )
 
@@ -2010,12 +1953,21 @@ async def run_wiki_incremental(
             _wiki_load_pages_for_graph,
         )
 
-        graph_pages = await _wiki_load_pages_for_graph(ctx.tenant_id, ctx.kb_id)
+        graph_pages = await _wiki_load_pages_for_graph(
+            ctx.tenant_id,
+            ctx.kb_id,
+            chunk_state=current_chunk_state,
+        )
         if graph_pages:
             await persist_wiki_page_graph(ctx=ctx, pages=graph_pages)
     except Exception:
         logging.exception("wiki: page-graph persist failed for kb=%s", ctx.kb_id)
 
-    progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")
+    if not summary.get("errors"):
+        await _wiki_commit_active_map_state(ctx.tenant_id, ctx.kb_id, current_chunk_state)
+
     if summary.get("errors"):
-        logging.warning("wiki: non-fatal errors: %s", summary["errors"])
+        logging.warning("wiki: incomplete compilation errors: %s", summary["errors"])
+        progress(-1, f"Wiki incomplete: {len(summary['errors'])} page(s) failed; retry required.")
+    else:
+        progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")
