@@ -416,11 +416,39 @@ func (c *webdavClient) resolve(target string) (string, error) {
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return "", fmt.Errorf("invalid WebDAV base URL")
 	}
+	return resolveWebDAVURL(c.baseURL, target)
+}
+
+// resolveWebDAVURL joins a target onto a WebDAV base URL without letting a
+// leading slash discard a non-root mount path.
+func resolveWebDAVURL(baseURL, target string) (string, error) {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
 	ref, err := url.Parse(target)
 	if err != nil {
 		return "", err
 	}
-	return base.ResolveReference(ref).String(), nil
+	if ref.IsAbs() || ref.Host != "" {
+		if ref.Scheme == "" {
+			ref.Scheme = base.Scheme
+		}
+		return ref.String(), nil
+	}
+	resolved := *base
+	switch {
+	case base.Path == "" || base.Path == "/":
+		resolved.Path = ref.Path
+	case ref.Path == base.Path || strings.HasPrefix(ref.Path, base.Path+"/"):
+		resolved.Path = ref.Path
+	default:
+		resolved.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(ref.Path, "/")
+	}
+	resolved.RawPath = ""
+	resolved.RawQuery = ref.RawQuery
+	resolved.Fragment = ref.Fragment
+	return resolved.String(), nil
 }
 
 type webdavStatusError struct {
@@ -461,18 +489,21 @@ func parseWebDAVMultistatus(data []byte, baseURL string) ([]webdavFile, error) {
 	if err := xml.Unmarshal(data, &status); err != nil {
 		return nil, fmt.Errorf("failed to parse WebDAV PROPFIND response: %w", err)
 	}
-	base, err := url.Parse(baseURL)
-	if err != nil {
+	if _, err := url.Parse(baseURL); err != nil {
 		return nil, fmt.Errorf("invalid WebDAV base URL")
 	}
 	files := make([]webdavFile, 0, len(status.Responses))
 	for _, response := range status.Responses {
-		ref, err := url.Parse(strings.TrimSpace(response.Href))
-		if err != nil || ref.String() == "" {
+		href := strings.TrimSpace(response.Href)
+		if href == "" {
+			continue
+		}
+		fileURL, err := resolveWebDAVURL(baseURL, href)
+		if err != nil {
 			continue
 		}
 		file := webdavFile{
-			url:   base.ResolveReference(ref).String(),
+			url:   fileURL,
 			isDir: response.Propstat.Prop.ResourceType.Collection != nil,
 		}
 		if raw := strings.TrimSpace(response.Propstat.Prop.ContentLength); raw != "" {

@@ -40,6 +40,17 @@ type webdavTestFile struct {
 // newWebDAVTestServer serves a small static WebDAV tree.
 func newWebDAVTestServer(t *testing.T, files map[string]webdavTestFile) (*httptest.Server, *[]string, *[]string) {
 	t.Helper()
+	return newWebDAVTestServerAtMount(t, "", files)
+}
+
+// newWebDAVMountedTestServer serves a small static WebDAV tree under a non-root endpoint path.
+func newWebDAVMountedTestServer(t *testing.T, mountPath string, files map[string]webdavTestFile) (*httptest.Server, *[]string, *[]string) {
+	t.Helper()
+	return newWebDAVTestServerAtMount(t, mountPath, files)
+}
+
+func newWebDAVTestServerAtMount(t *testing.T, mountPath string, files map[string]webdavTestFile) (*httptest.Server, *[]string, *[]string) {
+	t.Helper()
 	var authHeaders []string
 	var getRequests []string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,20 +60,32 @@ func newWebDAVTestServer(t *testing.T, files map[string]webdavTestFile) (*httpte
 			return
 		}
 		authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+		if mountPath != "" && !strings.HasPrefix(r.URL.Path, mountPath) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		apiPath := strings.TrimPrefix(r.URL.Path, mountPath)
+		if apiPath == "" {
+			apiPath = "/"
+		}
 
 		switch r.Method {
 		case "PROPFIND":
-			if _, ok := files[r.URL.Path]; !ok {
+			if _, ok := files[apiPath]; !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			var body bytes.Buffer
 			body.WriteString(`<?xml version="1.0" encoding="utf-8"?>` + "\n")
 			body.WriteString(`<D:multistatus xmlns:D="DAV:">` + "\n")
-			writeWebDAVTestResponse(&body, r.URL.Path, files[r.URL.Path])
+			writeWebDAVTestResponse(&body, r.URL.Path, files[apiPath])
 			for itemPath, item := range files {
-				if itemPath != r.URL.Path && webDAVTestParent(itemPath) == r.URL.Path {
-					writeWebDAVTestResponse(&body, itemPath, item)
+				if itemPath != apiPath && webDAVTestParent(itemPath) == apiPath {
+					href := itemPath
+					if mountPath != "" {
+						href = mountPath + itemPath
+					}
+					writeWebDAVTestResponse(&body, href, item)
 				}
 			}
 			body.WriteString(`</D:multistatus>`)
@@ -70,7 +93,7 @@ func newWebDAVTestServer(t *testing.T, files map[string]webdavTestFile) (*httpte
 			w.WriteHeader(http.StatusMultiStatus)
 			_, _ = io.WriteString(w, body.String())
 		case "GET":
-			entry, ok := files[r.URL.Path]
+			entry, ok := files[apiPath]
 			if !ok || entry.isDir {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -292,6 +315,61 @@ func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	}
 	if batch.Documents[0].SemanticIdentifier != "beta.md" {
 		t.Fatalf("incremental document = %q", batch.Documents[0].SemanticIdentifier)
+	}
+}
+
+func TestWebDAVConnectorMountedUnderNonRootPath(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, getRequests := newWebDAVMountedTestServer(t, "/webdav", webDAVTestTree())
+	connector := webDAVTestConnector(t, server.URL+"/webdav", false, 10)
+
+	resolved, err := connector.client.resolve("/notes")
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
+	if resolved != server.URL+"/webdav/notes" {
+		t.Fatalf("resolved URL = %q, want %q", resolved, server.URL+"/webdav/notes")
+	}
+
+	if err := connector.Validate(context.Background()); err != nil {
+		t.Fatalf("Validate failed: %v", err)
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 4 {
+		t.Fatalf("batch len = %d, want 4: %+v", len(batch.Documents), batch.Documents)
+	}
+	mountedSourceID := "webdav:" + server.URL + "/webdav:" + server.URL + "/webdav/notes/alpha.txt"
+	foundMountedSourceID := false
+	for _, doc := range batch.Documents {
+		if doc.SourceID == mountedSourceID {
+			foundMountedSourceID = true
+		}
+		if !strings.HasPrefix(doc.SourceID, "webdav:"+server.URL+"/webdav:") {
+			t.Fatalf("source id escaped mount path: %q", doc.SourceID)
+		}
+	}
+	if !foundMountedSourceID {
+		t.Fatalf("missing mounted source id %q in %+v", mountedSourceID, batch.Documents)
+	}
+	if len(*getRequests) != 4 {
+		t.Fatalf("download requests = %d, want 4: %v", len(*getRequests), *getRequests)
+	}
+	for _, requestPath := range *getRequests {
+		if !strings.HasPrefix(requestPath, "/webdav/") {
+			t.Fatalf("download request escaped mount path: %q", requestPath)
+		}
+	}
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch EOF = %v", err)
 	}
 }
 
