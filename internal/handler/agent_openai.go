@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -50,11 +51,13 @@ type openAICompatCompletionTokenDetails struct {
 }
 
 type openAICompatStreamDelta struct {
-	Content      any    `json:"content"`
-	Role         string `json:"role"`
-	FunctionCall any    `json:"function_call"`
-	ToolCalls    any    `json:"tool_calls"`
-	Reference    any    `json:"reference,omitempty"`
+	Content        any    `json:"content"`
+	Role           string `json:"role"`
+	FunctionCall   any    `json:"function_call"`
+	ToolCalls      any    `json:"tool_calls"`
+	Reference      any    `json:"reference,omitempty"`
+	Error          any    `json:"error,omitempty"`
+	WaitingForUser any    `json:"waiting_for_user,omitempty"`
 }
 
 type openAICompatStreamChoice struct {
@@ -123,7 +126,11 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 		return
 	}
 
-	response := collectOpenAICompatCompletion(events, completionID, req.AgentID, promptTokens)
+	response, err := collectOpenAICompatCompletion(events, completionID, req.AgentID, promptTokens)
+	if err != nil {
+		writeOpenAICompatError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, response)
 }
 
@@ -139,6 +146,25 @@ func (h *AgentHandler) streamOpenAICompat(
 
 	completionTokens := 0
 	for ev := range events {
+		switch ev.Type {
+		case "error":
+			message := openAICompatRunEventMessage(ev, "Agent run failed.")
+			chunk := newOpenAICompatStreamChunk(completionID, model, "**ERROR**: "+message, "error")
+			chunk.Choices[0].Delta.Error = map[string]string{
+				"message": message,
+				"type":    "server_error",
+			}
+			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
+			_ = writeOpenAICompatSSE(c, chunk)
+			return
+		case "waiting_for_user":
+			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "waiting_for_user")
+			chunk.Choices[0].Delta.WaitingForUser = openAICompatWaitingForUser(ev)
+			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
+			_ = writeOpenAICompatSSE(c, chunk)
+			return
+		}
+
 		if ev.Type != "message" && ev.Type != "message_end" {
 			continue
 		}
@@ -184,11 +210,28 @@ func collectOpenAICompatCompletion(
 	events <-chan canvas.RunEvent,
 	completionID, model string,
 	promptTokens int,
-) openAICompatCompletion {
+) (openAICompatCompletion, error) {
 	content := ""
 	completionTokens := 0
 	var reference any
 	for ev := range events {
+		if ev.Type == "error" {
+			return openAICompatCompletion{}, common.NewCodedError(
+				common.CodeServerError,
+				openAICompatRunEventMessage(ev, "Agent run failed."),
+			)
+		}
+		if ev.Type == "waiting_for_user" {
+			waiting := openAICompatWaitingForUser(ev)
+			message := "Agent is waiting for user input."
+			if waiting.CpnID != "" {
+				message += " cpn_id: " + waiting.CpnID
+			}
+			if waiting.Tips != "" {
+				message += " " + waiting.Tips
+			}
+			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, message)
+		}
 		if ev.Type != "message" && ev.Type != "message_end" {
 			continue
 		}
@@ -232,7 +275,7 @@ func collectOpenAICompatCompletion(
 			FinishReason: "stop",
 			Index:        0,
 		}},
-	}
+	}, nil
 }
 
 func newOpenAICompatStreamChunk(
@@ -259,6 +302,33 @@ func newOpenAICompatStreamChunk(
 	}
 }
 
+func openAICompatUsageForCompletion(promptTokens, completionTokens int) *openAICompatUsage {
+	return &openAICompatUsage{
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+	}
+}
+
+func openAICompatRunEventMessage(ev canvas.RunEvent, fallback string) string {
+	var payload canvas.ErrorEvent
+	if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Message != "" {
+		return payload.Message
+	}
+	if message := strings.TrimSpace(ev.Data); message != "" {
+		return message
+	}
+	return fallback
+}
+
+func openAICompatWaitingForUser(ev canvas.RunEvent) canvas.WaitingForUserEvent {
+	var waiting canvas.WaitingForUserEvent
+	if err := json.Unmarshal([]byte(ev.Data), &waiting); err != nil {
+		return canvas.WaitingForUserEvent{}
+	}
+	return waiting
+}
+
 func writeOpenAICompatSSE(c *gin.Context, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -281,6 +351,10 @@ func writeOpenAICompatSSE(c *gin.Context, payload any) error {
 
 func writeOpenAICompatError(c *gin.Context, err error) {
 	code, message := mapAgentError(err)
+	var codedErr *common.CodedError
+	if errors.As(err, &codedErr) {
+		code, message = codedErr.Code, codedErr.Message
+	}
 	status, errorType := openAICompatErrorResponse(code, err)
 	c.JSON(status, gin.H{
 		"error": gin.H{
