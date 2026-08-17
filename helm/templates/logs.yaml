@@ -1,0 +1,18 @@
+{{- if .Values.ragflow.logs.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-logs
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow
+spec:
+  {{- with .Values.ragflow.logs.persistence.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - {{ .Values.ragflow.logs.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.ragflow.logs.persistence.capacity }}
+{{- end }}

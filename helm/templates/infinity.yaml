@@ -58,6 +58,9 @@ spec:
         {{- with .Values.infinity.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
+        args:
+          - -f
+          - /infinity_conf.toml
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
@@ -69,6 +72,9 @@ spec:
           - containerPort: 5432
             name: psql
         volumeMounts:
+          - mountPath: /infinity_conf.toml
+            subPath: infinity_conf.toml
+            name: infinity-config
           - mountPath: /var/infinity
             name: infinity-data
         {{- with .Values.infinity.deployment.resources }}
@@ -90,6 +96,9 @@ spec:
           timeoutSeconds: 10
           failureThreshold: 120
       volumes:
+        - name: infinity-config
+          configMap:
+            name: {{ include "ragflow.fullname" . }}-infinity-config
         - name: infinity-data
           persistentVolumeClaim:
             claimName: {{ include "ragflow.fullname" . }}-infinity

@@ -4,6 +4,12 @@ kind: ConfigMap
 metadata:
   name: ragflow-service-config
 data:
+  service_conf.yaml.template: |
+    {{- if .Values.ragflow.serviceConfTemplate }}
+    {{- .Values.ragflow.serviceConfTemplate | nindent 4 }}
+    {{- else }}
+    {{- .Files.Get "files/service_conf.yaml.template" | nindent 4 }}
+    {{- end }}
   {{- with .Values.ragflow.service_conf }}
   local.service_conf.yaml: |
     {{- . | toYaml | nindent 4 }}
@@ -12,6 +18,14 @@ data:
   llm_factories.json: |
     {{- . | toPrettyJson | nindent 4 }}
   {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ragflow-entrypoint
+data:
+  entrypoint.sh: |
+    {{- .Files.Get "files/entrypoint.sh" | nindent 4 }}
 ---
 apiVersion: v1
 kind: ConfigMap

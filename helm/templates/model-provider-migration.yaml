@@ -1,0 +1,38 @@
+{{- if .Values.ragflow.modelProviderMigration.enabled }}
+{{- $image := include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ragflow.fullname" . }}-model-provider-migration
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ragflow-model-provider-migration
+    spec:
+      restartPolicy: OnFailure
+      {{- if or .Values.global.imagePullSecrets .Values.ragflow.image.pullSecrets }}
+      imagePullSecrets:
+        {{- concat (default (list) .Values.global.imagePullSecrets) (default (list) .Values.ragflow.image.pullSecrets) | toYaml | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: model-provider-migration
+          image: {{ $image }}:{{ .Values.ragflow.image.tag }}
+          imagePullPolicy: {{ .Values.ragflow.image.pullPolicy }}
+          args: ["--disable-webserver", "--disable-taskexecutor", "--disable-datasync", "--init-model-provider-tables"]
+          envFrom:
+            - secretRef:
+                name: {{ include "ragflow.fullname" . }}-env-config
+          volumeMounts:
+            {{- include "ragflow.volumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "ragflow.volumes" . | nindent 8 }}
+{{- end }}

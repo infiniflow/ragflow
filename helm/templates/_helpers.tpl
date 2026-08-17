@@ -85,3 +85,56 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/* Shared RAGFlow configuration mounts. */}}
+{{- define "ragflow.volumeMounts" -}}
+- mountPath: /etc/nginx/conf.d/ragflow.conf.python
+  subPath: ragflow.conf.python
+  name: nginx-config-volume
+- mountPath: /etc/nginx/proxy.conf
+  subPath: proxy.conf
+  name: nginx-config-volume
+- mountPath: /etc/nginx/nginx.conf
+  subPath: nginx.conf
+  name: nginx-config-volume
+- mountPath: /ragflow/conf/service_conf.yaml.template
+  subPath: service_conf.yaml.template
+  name: service-conf-volume
+- mountPath: /ragflow/entrypoint.sh
+  subPath: entrypoint.sh
+  name: entrypoint-volume
+  readOnly: true
+{{- if .Values.ragflow.logs.persistence.enabled }}
+- mountPath: /ragflow/logs
+  name: ragflow-logs
+{{- end }}
+{{- with .Values.ragflow.service_conf }}
+- mountPath: /ragflow/conf/local.service_conf.yaml
+  subPath: local.service_conf.yaml
+  name: service-conf-volume
+{{- end }}
+{{- with .Values.ragflow.llm_factories }}
+- mountPath: /ragflow/conf/llm_factories.json
+  subPath: llm_factories.json
+  name: service-conf-volume
+{{- end }}
+{{- end }}
+
+{{/* Shared RAGFlow configuration volumes. */}}
+{{- define "ragflow.volumes" -}}
+- name: nginx-config-volume
+  configMap:
+    name: nginx-config
+- name: service-conf-volume
+  configMap:
+    name: ragflow-service-config
+- name: entrypoint-volume
+  configMap:
+    name: ragflow-entrypoint
+    defaultMode: 0755
+{{- if .Values.ragflow.logs.persistence.enabled }}
+- name: ragflow-logs
+  persistentVolumeClaim:
+    claimName: {{ include "ragflow.fullname" . }}-logs
+{{- end }}
+{{- end }}

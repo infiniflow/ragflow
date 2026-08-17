@@ -16,8 +16,8 @@ env:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
   # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
-  # DOC_ENGINE: elasticsearch
-  DOC_ENGINE: infinity
+  DOC_ENGINE: elasticsearch
+  # DOC_ENGINE: infinity
   # DOC_ENGINE: opensearch
 
   # The version of Elasticsearch.
@@ -58,7 +58,10 @@ env:
   # REDIS_PORT: "6379"
 
   # The local time zone.
-  TZ: "Asia/Shanghai"
+  TZ: "Asia/Krasnoyarsk"
+
+  # The image defaults to the Python API backend.
+  API_PROXY_SCHEME: python
 
   # Uncomment the following line if you have limited access to huggingface.co:
   # HF_ENDPOINT: https://hf-mirror.com
@@ -75,14 +78,19 @@ env:
   EMBEDDING_BATCH_SIZE: 16
 
 ragflow:
+  # Initialize admin@ragflow.io on API Pod startup when it does not exist.
+  initSuperuser: false
   image:
     repository: infiniflow/ragflow
-    tag: v0.26.4
+    tag: nightly
     pullPolicy: IfNotPresent
     pullSecrets: []
-  # Optional service configuration overrides
-  # to be written to local.service_conf.yaml
-  # inside the RAGFlow container
+  # Full Docker-compatible service_conf.yaml.template, bundled in the chart.
+  # Override only when a complete replacement is required.
+  serviceConfTemplate: ""
+
+  # Optional service configuration overrides to be written to
+  # local.service_conf.yaml inside the RAGFlow container.
   # https://ragflow.io/docs/dev/configurations#service-configuration
   service_conf:
 
@@ -103,9 +111,73 @@ ragflow:
     #       is_tools: false
 
   # Kubernetes configuration
-  deployment:
+  api:
+    replicaCount: 1
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 0
+        maxSurge: 1
+    readinessProbe:
+      httpGet:
+        path: /api/v1/system/healthz
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 12
+    startupProbe:
+      httpGet:
+        path: /api/v1/system/healthz
+        port: http
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 60
+    livenessProbe:
+      httpGet:
+        path: /api/v1/system/healthz
+        port: http
+      periodSeconds: 15
+      timeoutSeconds: 3
+      failureThreshold: 3
+    # Includes the preStop hook. Kubernetes force-kills the container after this timeout.
+    terminationGracePeriodSeconds: 1200
+    preStopCommand: |
+      /usr/sbin/nginx -s quit
+      while [ -s /var/run/nginx.pid ] && kill -0 "$(cat /var/run/nginx.pid)" 2>/dev/null; do
+        sleep 2
+      done
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: ragflow-api
+              topologyKey: kubernetes.io/hostname
+    resources:
+    service:
+      enabled: true
+      type: ClusterIP
+  executor:
+    replicaCount: 1
+    workers: 1
     strategy:
     resources:
+  dataSync:
+    replicaCount: 1
+    strategy:
+    resources:
+  logs:
+    persistence:
+      enabled: true
+      className:
+      capacity: 5Gi
+      # API, executor and data-sync share this volume; use an RWX class.
+      accessMode: ReadWriteMany
+  modelProviderMigration:
+    enabled: true
   service:
     # Use LoadBalancer to expose the web interface externally
     type: ClusterIP
@@ -116,10 +188,6 @@ ragflow:
     port: 9381
     # Admin Service type
     serviceType: ClusterIP
-  api:
-    service:
-      enabled: true
-      type: ClusterIP
 
 infinity:
   image:
@@ -137,6 +205,7 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  enabled: true
   image:
     repository: elasticsearch
     tag: "8.11.3"
