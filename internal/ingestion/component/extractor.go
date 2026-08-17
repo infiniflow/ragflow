@@ -1124,9 +1124,11 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	// Direct callers (e.g. the message-fitting path) may pass a non-empty chunkText
 	// that has not been pre-rendered; apply renderExtractorPrompts here so those
 	// callers do not need to know about the rendering contract.
+	// Pass an empty map (not nil) so that any future write to ck inside the renderer
+	// does not panic — nil map reads are safe in Go but writes are not.
 	sys, user := in.systemPrompt, in.prompt
 	if chunkText != "" {
-		sys, user = renderExtractorPrompts(sys, user, nil, chunkText)
+		sys, user = renderExtractorPrompts(sys, user, map[string]any{}, chunkText)
 	}
 	msgs := buildExtractorMessages(sys, user)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
@@ -1601,6 +1603,10 @@ func renderExtractorPrompts(sysTemplate, userTemplate string, ck map[string]any,
 	renderedUser := render(userTemplate)
 
 	if !bodyInjected && strings.TrimSpace(chunkText) != "" {
+		// TrimSpace before testing emptiness is intentional: a user template
+		// that renders to pure whitespace (e.g. "   ") must not produce a
+		// leading "\n\n" separator — the result should be chunkText alone.
+		// A plain `if renderedUser != ""` check would fail that invariant.
 		trimmed := strings.TrimSpace(renderedUser)
 		if trimmed != "" {
 			renderedUser = trimmed + "\n\n" + chunkText

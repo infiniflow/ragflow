@@ -2279,6 +2279,32 @@ func TestRenderExtractorPrompts_TableDriven(t *testing.T) {
 			wantSys:      "",
 			wantUser:     " ",
 		},
+		{
+			// content_with_weight is present in ck but its value is an empty
+			// string. isBodyPlaceholder fires, but the resolved value is empty
+			// so bodyInjected must NOT be set — the fallback append should
+			// still fire and deliver chunkText.
+			name:         "content_with_weight empty string in ck falls back to chunkText",
+			sysTemplate:  "",
+			userTemplate: "Weighted: {content_with_weight}",
+			ck:           map[string]any{"content_with_weight": ""},
+			chunkText:    "fallback body",
+			wantSys:      "",
+			wantUser:     "Weighted: fallback body",
+		},
+		{
+			// Both system and user prompts reference body placeholders.
+			// The body must appear in each substitution position but must NOT
+			// be appended a third time (bodyInjected is shared across both
+			// render calls).
+			name:         "body placeholder in both system and user no extra append",
+			sysTemplate:  "Context: {text}",
+			userTemplate: "Also: {chunks}",
+			ck:           map[string]any{"text": "the body"},
+			chunkText:    "the body",
+			wantSys:      "Context: the body",
+			wantUser:     "Also: the body",
+		},
 	}
 
 	for _, tt := range tests {
