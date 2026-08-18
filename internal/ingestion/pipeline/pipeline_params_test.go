@@ -246,8 +246,12 @@ func TestBuildParserConfig_BuiltinExtractorKeepsTagFileID(t *testing.T) {
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
 			}
-			if params["tag_file_id"] != "file-123" {
-				t.Errorf("template %q: expected tag_file_id to survive BuildParserConfig, got %v", ref, params["tag_file_id"])
+			tagFileID := params["tag_file_id"]
+			if tags, ok := params["tags"].(map[string]any); ok && tags["tag_file_id"] != nil {
+				tagFileID = tags["tag_file_id"]
+			}
+			if tagFileID != "file-123" {
+				t.Errorf("template %q: expected tag_file_id to survive BuildParserConfig, got %v", ref, tagFileID)
 			}
 		}
 	}
@@ -335,8 +339,11 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 			checked++
 			overrides := map[string]any{
 				s.CpnID: map[string]any{
-					"built_in_metadata": []any{
-						map[string]any{"key": "update_time", "type": "time"},
+					"metadata": map[string]any{
+						"enabled": true,
+						"built_in_metadata": []any{
+							map[string]any{"key": "update_time", "type": "time"},
+						},
 					},
 				},
 			}
@@ -345,8 +352,8 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
 			}
-			if _, ok := params["built_in_metadata"]; !ok {
-				t.Errorf("template %q: built_in_metadata dropped by CleanComponentParams; add \"built_in_metadata\": [] to the extractor node params", ref)
+			if _, ok := params["metadata"]; !ok {
+				t.Errorf("template %q: metadata dropped by CleanComponentParams", ref)
 			}
 		}
 	}
@@ -378,7 +385,7 @@ func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 				"enabled":       true,
 				"system_prompt": "summary prompt",
 			},
-			"metadata_config": map[string]any{
+			"metadata": map[string]any{
 				"enabled": true,
 				"metadata": []any{
 					map[string]any{"key": "category", "type": "string"},
@@ -402,13 +409,82 @@ func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 	if sum, ok := ext["summary"].(map[string]any); !ok || sum["enabled"] != true {
 		t.Errorf("expected summary.enabled == true, got: %v", ext["summary"])
 	}
-	if meta, ok := ext["metadata_config"].(map[string]any); !ok || meta["enabled"] != true {
-		t.Errorf("expected metadata_config.enabled == true, got: %v", ext["metadata_config"])
+	if meta, ok := ext["metadata"].(map[string]any); !ok || meta["enabled"] != true {
+		t.Errorf("expected metadata.enabled == true, got: %v", ext["metadata"])
 	}
 	if kw, ok := ext["keywords"].(map[string]any); !ok || kw["top_n"] != 5 {
 		t.Errorf("expected keywords.top_n == 5, got: %v", ext["keywords"])
 	}
 	if ext["llm_id"] != "gpt-4" {
 		t.Errorf("expected llm_id == gpt-4, got: %v", ext["llm_id"])
+	}
+	if _, ok := ext["enable_summary"]; !ok {
+		t.Errorf("expected legacy flat field enable_summary to be kept for backward compatibility, got: %v", ext["enable_summary"])
+	}
+}
+
+func TestCleanComponentParams_KeepsLegacyExtractorParams(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Extractor:AutoExtractDefault": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Extractor",
+					"params":         map[string]any{},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl: %v", err)
+	}
+
+	legacyConfig := map[string]any{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"auto_keywords":   4,
+			"auto_questions":  2,
+			"auto_tags":       3,
+			"tag_file_id":     "tag-file-1",
+			"enable_summary":  1,
+			"enable_metadata": 1,
+			"metadata_config": map[string]any{
+				"enabled": true,
+				"metadata": []any{
+					map[string]any{"key": "cat", "type": "string"},
+				},
+			},
+			"sys_prompt": "legacy summary sys prompt",
+			"llm_id":     "gpt-4",
+		},
+	}
+
+	result := CleanComponentParams(dslJSON, legacyConfig)
+	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
+	}
+
+	kw, ok := ext["keywords"].(map[string]any)
+	if !ok || kw["top_n"] != 4 {
+		t.Errorf("expected keywords.top_n == 4, got: %#v", ext["keywords"])
+	}
+	q, ok := ext["questions"].(map[string]any)
+	if !ok || q["top_n"] != 2 {
+		t.Errorf("expected questions.top_n == 2, got: %#v", ext["questions"])
+	}
+	tags, ok := ext["tags"].(map[string]any)
+	if !ok || tags["top_n"] != 3 || tags["tag_file_id"] != "tag-file-1" {
+		t.Errorf("expected tags.top_n == 3 / tag_file_id == tag-file-1, got: %#v", ext["tags"])
+	}
+	sum, ok := ext["summary"].(map[string]any)
+	if !ok || sum["enabled"] != true || sum["system_prompt"] != "legacy summary sys prompt" {
+		t.Errorf("expected summary.enabled == true / system_prompt == legacy summary sys prompt, got: %#v", ext["summary"])
+	}
+	meta, ok := ext["metadata"].(map[string]any)
+	if !ok || meta["enabled"] != true {
+		t.Errorf("expected metadata.enabled == true, got: %#v", ext["metadata"])
+	}
+	if ext["llm_id"] != "gpt-4" {
+		t.Errorf("expected llm_id == gpt-4, got: %#v", ext["llm_id"])
 	}
 }

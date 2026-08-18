@@ -111,7 +111,11 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
-	builtInMetadata, err := normalizeMetadataConfigFields(req.BuiltInMetadata, "built_in_metadata")
+	builtInFields := req.BuiltInMetadata
+	if len(builtInFields) == 0 && len(req.BuiltInMetadataCamel) > 0 {
+		builtInFields = req.BuiltInMetadataCamel
+	}
+	builtInMetadata, err := normalizeMetadataConfigFields(builtInFields, "built_in_metadata")
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -122,6 +126,11 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}
 	parserConfig["metadata"] = metadata
 	parserConfig["built_in_metadata"] = builtInMetadata
+	if parserConfig["enable_metadata"] == nil {
+		parserConfig["enable_metadata"] = len(metadata) > 0 || len(builtInMetadata) > 0
+	} else if len(metadata) == 0 && len(builtInMetadata) == 0 {
+		parserConfig["enable_metadata"] = false
+	}
 	if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
 		parserConfig = service.ApplyComponentScopedParserConfig(
 			parserConfig,

@@ -17,9 +17,29 @@ func ApplyComponentScopedParserConfig(
 		parserConfig = entity.JSONMap{}
 	}
 
-	enableMetadata := parserConfigTruthy(parserConfig["enable_metadata"])
+	rawMetaSlice := anySlice(parserConfig["metadata"])
+	if len(rawMetaSlice) == 0 {
+		if ext, ok := parserConfig["ext"].(map[string]any); ok {
+			rawMetaSlice = anySlice(ext["metadata"])
+		}
+	}
+	rawBuiltInSlice := anySlice(parserConfig["built_in_metadata"])
+	if len(rawBuiltInSlice) == 0 {
+		if ext, ok := parserConfig["ext"].(map[string]any); ok {
+			rawBuiltInSlice = anySlice(ext["built_in_metadata"])
+		}
+	}
+	enableMetadataVal := parserConfig["enable_metadata"]
+	if enableMetadataVal == nil {
+		if ext, ok := parserConfig["ext"].(map[string]any); ok {
+			enableMetadataVal = ext["enable_metadata"]
+		}
+	}
+	enableMetadata := ParserConfigTruthy(enableMetadataVal)
+	if !enableMetadata && enableMetadataVal == nil {
+		enableMetadata = len(rawMetaSlice) > 0 || len(rawBuiltInSlice) > 0
+	}
 	metadataFields := mergeMetadataFields(parserConfig)
-	hasMetadataConfig := hasMetadataConfigShape(parserConfig)
 
 	for cpnID, raw := range parserConfig {
 		params, ok := raw.(map[string]any)
@@ -33,12 +53,48 @@ func ApplyComponentScopedParserConfig(
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}
-			if enableMetadata && len(metadataFields) > 0 {
-				params["enable_metadata"] = 1
-				params["metadata"] = metadataFields
-			} else if hasMetadataConfig {
-				params["enable_metadata"] = 0
-				params["metadata"] = []any{}
+
+			nodeLegacyEnabledVal, hasLegacyNodeEnabled := params["enable_metadata"]
+			delete(params, "enable_metadata")
+
+			customMeta := validMetadataFields(rawMetaSlice)
+			builtInMeta := validMetadataFields(rawBuiltInSlice)
+			if metaObj, ok := params["metadata"].(map[string]any); ok {
+				if rawMetaSlice == nil {
+					customMeta = validMetadataFields(anySlice(metaObj["metadata"]))
+				}
+				if rawBuiltInSlice == nil {
+					builtInMeta = validMetadataFields(anySlice(metaObj["built_in_metadata"]))
+				}
+			}
+
+			if metaObj, ok := params["metadata"].(map[string]any); ok {
+				if enabledVal, hasEnabled := metaObj["enabled"]; hasEnabled {
+					params["metadata"] = map[string]any{
+						"enabled":           ParserConfigTruthy(enabledVal),
+						"metadata":          customMeta,
+						"built_in_metadata": builtInMeta,
+					}
+					continue
+				}
+			}
+
+			nodeEnabled := enableMetadata
+			if hasLegacyNodeEnabled {
+				nodeEnabled = ParserConfigTruthy(nodeLegacyEnabledVal)
+			}
+			if nodeEnabled && len(metadataFields) > 0 {
+				params["metadata"] = map[string]any{
+					"enabled":           true,
+					"metadata":          customMeta,
+					"built_in_metadata": builtInMeta,
+				}
+			} else {
+				params["metadata"] = map[string]any{
+					"enabled":           false,
+					"metadata":          customMeta,
+					"built_in_metadata": builtInMeta,
+				}
 			}
 		case strings.HasPrefix(cpnLower, "compiler:") || strings.HasPrefix(cpnLower, "compiler_"):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
@@ -50,20 +106,25 @@ func ApplyComponentScopedParserConfig(
 	return parserConfig
 }
 
+func validMetadataFields(items []any) []any {
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		field, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := field["key"].(string)
+		if strings.TrimSpace(name) != "" {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
 func mergeMetadataFields(parserConfig entity.JSONMap) []any {
 	var out []any
 	for _, key := range []string{"metadata", "built_in_metadata"} {
-		for _, item := range anySlice(parserConfig[key]) {
-			field, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			name, _ := field["key"].(string)
-			if strings.TrimSpace(name) == "" {
-				continue
-			}
-			out = append(out, field)
-		}
+		out = append(out, validMetadataFields(anySlice(parserConfig[key]))...)
 	}
 	return out
 }
@@ -98,7 +159,8 @@ func hasMetadataConfigShape(parserConfig entity.JSONMap) bool {
 	return false
 }
 
-func parserConfigTruthy(value any) bool {
+// ParserConfigTruthy evaluates whether a parser config flag value represents true.
+func ParserConfigTruthy(value any) bool {
 	switch typed := value.(type) {
 	case bool:
 		return typed

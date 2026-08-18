@@ -3,6 +3,7 @@ package pipeline
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ComponentParamsSchema describes the full set of user-configurable parameters
@@ -36,6 +37,18 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 	}
 	if dsl.Components == nil {
 		return nil, fmt.Errorf("ExtractAllComponentParams: DSL has no components")
+	}
+
+	extractorCount := 0
+	for cpnID, comp := range dsl.Components {
+		lowerName := strings.ToLower(comp.Obj.ComponentName)
+		lowerID := strings.ToLower(cpnID)
+		if lowerName == "extractor" || strings.HasPrefix(lowerID, "extractor:") || strings.HasPrefix(lowerID, "extractor_") {
+			extractorCount++
+		}
+	}
+	if extractorCount > 1 {
+		return nil, fmt.Errorf("ExtractAllComponentParams: at most 1 Extractor component is allowed, found %d", extractorCount)
 	}
 
 	out := make([]ComponentParamsSchema, 0, len(dsl.Components))

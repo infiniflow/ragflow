@@ -141,7 +141,6 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		FieldName: "summary",
 		LLMID:     "gpt-4o-mini",
-		Prompt:    "Summarize:",
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -310,7 +309,6 @@ func TestExtractorComponent_Invoke_KeepsJSONAsString(t *testing.T) {
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		FieldName: "extraction",
-		Prompt:    "extract:",
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "doc"}}},
@@ -577,163 +575,82 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	}
 }
 
-// TestNewExtractorComponent_SysPromptAlias verifies that "sys_prompt"
-// (the Python DSL name) is accepted as a fallback for SystemPrompt.
-func TestNewExtractorComponent_SysPromptAlias(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"sys_prompt": "You are a Python DSL prompt.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.SystemPrompt != "You are a Python DSL prompt." {
-		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "You are a Python DSL prompt.")
-	}
-}
-
-// TestNewExtractorComponent_MetadataAsAnySlice guards against the regression
-// where InjectExtractorEnableMetadata injected the field schema as a
-// []map[string]interface{} while NewExtractorComponent only accepted []any;
-// the type assertion then failed and ExtractorParam.Metadata stayed empty, so
-// auto-metadata never fired. The override_params path passes the injected
-// value straight through (no JSON round-trip), so the slice element type must
-// be []any for the assertion to succeed.
-func TestNewExtractorComponent_MetadataAsAnySlice(t *testing.T) {
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name":      "out",
-		"enable_metadata": 1,
-		// This is exactly the dynamic type InjectExtractorEnableMetadata
-		// produces ([]any of map[string]any), NOT []map[string]interface{}.
-		"metadata": []any{
-			map[string]any{"key": "author", "type": "string", "description": "doc author"},
-			map[string]any{"key": "year", "type": "number", "enum": []any{"2020", "2021"}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.EnableMetadata != 1 {
-		t.Fatalf("EnableMetadata = %d, want 1", ec.Param.EnableMetadata)
-	}
-	if len(ec.Param.Metadata) != 2 {
-		t.Fatalf("Metadata = %#v, want 2 fields", ec.Param.Metadata)
-	}
-	if ec.Param.Metadata[0].Key != "author" || ec.Param.Metadata[0].Type != "string" {
-		t.Errorf("Metadata[0] = %#v, want key=author type=string", ec.Param.Metadata[0])
-	}
-	if len(ec.Param.Metadata[1].Enum) != 2 {
-		t.Errorf("Metadata[1].Enum = %#v, want 2 enum values", ec.Param.Metadata[1].Enum)
-	}
-}
-
-// TestNewExtractorComponent_PromptsArray verifies that the Python DSL
-// "prompts" array format is parsed into Param.Prompt.
-func TestNewExtractorComponent_PromptsArray(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompts": []any{
-			map[string]any{
-				"content": "Analyze: {TitleChunker:FlatMiceFix@chunks}",
-				"role":    "user",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	want := "Analyze: {TitleChunker:FlatMiceFix@chunks}"
-	if ec.Param.Prompt != want {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, want)
-	}
-}
-
-// TestNewExtractorComponent_PromptsArray_PromptWins verifies that
-// "prompt" (string) takes priority over "prompts" (array) when both
-// are present in the DSL params.
-func TestNewExtractorComponent_PromptsArray_PromptWins(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompt":     "Direct prompt wins.",
-		"prompts": []any{
-			map[string]any{
-				"content": "Should be ignored.",
-				"role":    "user",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.Prompt != "Direct prompt wins." {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
-	}
-}
-
-// TestNewExtractorComponent_PromptsString verifies that a bare-string
-// "prompts" (the shape emitted by the front-end graph.nodes form and
-// the dsl/testdata templates) is normalized into Param.Prompt, mirroring
-// Python agent/component/llm.py:119-120 which coerces a string prompts
-// into [{"role":"user","content":prompts}]. Without this normalization
-// the string form is silently dropped (the .([]any) assertion fails).
-func TestNewExtractorComponent_PromptsString(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompts":    "Content: {TitleChunker:FlatMiceFix@chunks}",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	want := "Content: {TitleChunker:FlatMiceFix@chunks}"
-	if ec.Param.Prompt != want {
-		t.Errorf("Prompt = %q, want %q (string prompts should be normalized)", ec.Param.Prompt, want)
-	}
-}
-
-// TestNewExtractorComponent_PromptsString_PromptWins verifies that
-// "prompt" (string) still takes priority over a string-form "prompts"
-// when both are present, matching the prompt>prompts precedence of
-// the list-form path (TestNewExtractorComponent_PromptsArray_PromptWins).
-func TestNewExtractorComponent_PromptsString_PromptWins(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompt":     "Direct prompt wins.",
-		"prompts":    "Should be ignored.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.Prompt != "Direct prompt wins." {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
-	}
-}
-
-// TestNewExtractorComponent_SystemPromptWinsOverSysPrompt verifies
-// that "system_prompt" takes priority over "sys_prompt".
-func TestNewExtractorComponent_SystemPromptWinsOverSysPrompt(t *testing.T) {
+// TestNewExtractorComponent_StrictSystemPrompt verifies that "system_prompt"
+// is parsed into Param.SystemPrompt and nested configurations.
+func TestNewExtractorComponent_StrictSystemPrompt(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: "ok"})
 	comp, err := NewExtractorComponent(map[string]any{
 		"field_name":    "out",
-		"system_prompt": "system_prompt wins.",
-		"sys_prompt":    "sys_prompt ignored.",
+		"system_prompt": "You are a prompt.",
+		"keywords": map[string]any{
+			"top_n":         3,
+			"system_prompt": "kw prompt",
+		},
+		"questions": map[string]any{
+			"top_n":         2,
+			"system_prompt": "q prompt",
+		},
+		"summary": map[string]any{
+			"enabled":       true,
+			"system_prompt": "sum prompt",
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewExtractorComponent: %v", err)
 	}
 	ec := comp.(*ExtractorComponent)
-	if ec.Param.SystemPrompt != "system_prompt wins." {
-		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "system_prompt wins.")
+	if ec.Param.SystemPrompt != "You are a prompt." {
+		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "You are a prompt.")
+	}
+	if ec.Param.Keywords.SystemPrompt != "kw prompt" || ec.Param.Keywords.TopN != 3 {
+		t.Errorf("Keywords = %#v, want kw prompt / 3", ec.Param.Keywords)
+	}
+	if ec.Param.Questions.SystemPrompt != "q prompt" || ec.Param.Questions.TopN != 2 {
+		t.Errorf("Questions = %#v, want q prompt / 2", ec.Param.Questions)
+	}
+	if ec.Param.Summary.SystemPrompt != "sum prompt" || !ec.Param.Summary.Enabled {
+		t.Errorf("Summary = %#v, want sum prompt / enabled", ec.Param.Summary)
+	}
+}
+
+func TestExtractorComponent_NewExtractorComponent_LegacyParamsFallback(t *testing.T) {
+	comp, err := NewExtractorComponent(map[string]any{
+		"auto_keywords":       5,
+		"keywords_sys_prompt": "legacy kw prompt",
+		"auto_questions":      3,
+		"questions_sys_prompt": "legacy q prompt",
+		"auto_tags":           2,
+		"tag_file_id":         "tag-1",
+		"enable_summary":      1,
+		"sys_prompt":          "legacy sum prompt",
+		"metadata_config": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "cat", "type": "string"},
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent with legacy params failed: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.Keywords.TopN != 5 || ec.Param.Keywords.SystemPrompt != "legacy kw prompt" {
+		t.Errorf("Keywords = %#v, want 5 / legacy kw prompt", ec.Param.Keywords)
+	}
+	if ec.Param.Questions.TopN != 3 || ec.Param.Questions.SystemPrompt != "legacy q prompt" {
+		t.Errorf("Questions = %#v, want 3 / legacy q prompt", ec.Param.Questions)
+	}
+	if ec.Param.Tags.TopN != 2 || ec.Param.Tags.TagFileID != "tag-1" {
+		t.Errorf("Tags = %#v, want 2 / tag-1", ec.Param.Tags)
+	}
+	if !ec.Param.Summary.Enabled || ec.Param.Summary.SystemPrompt != "legacy sum prompt" {
+		t.Errorf("Summary = %#v, want enabled / legacy sum prompt", ec.Param.Summary)
+	}
+	if !ec.Param.Metadata.Enabled || len(ec.Param.Metadata.Metadata) != 1 || len(ec.Param.Metadata.BuiltInMetadata) != 1 {
+		t.Errorf("Metadata = %#v, want enabled with 1 custom and 1 built-in field", ec.Param.Metadata)
 	}
 }
 
@@ -862,8 +779,10 @@ func TestCleanExtractionResult(t *testing.T) {
 // metadata extraction with the given field definitions.
 func newMetadataExtractor(fields ...common.MetadataFieldDef) *ExtractorComponent {
 	return &ExtractorComponent{Param: schema.ExtractorParam{
-		EnableMetadata: 1,
-		Metadata:       fields,
+		Metadata: schema.MetadataExtractConfig{
+			Enabled:  true,
+			Metadata: fields,
+		},
 	}}
 }
 
@@ -1163,8 +1082,8 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		LLMID:        "gpt-4o-mini",
-		AutoKeywords: 3,
+		LLMID:    "gpt-4o-mini",
+		Keywords: schema.KeywordExtractConfig{TopN: 3},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "document content"}},
@@ -1413,9 +1332,9 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		LLMID:         "gpt-4o-mini",
-		AutoKeywords:  2,
-		AutoQuestions: 2,
+		LLMID:     "gpt-4o-mini",
+		Keywords:  schema.KeywordExtractConfig{TopN: 2},
+		Questions: schema.QuestionExtractConfig{TopN: 2},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -1471,20 +1390,18 @@ func TestResolveExtractorChatTarget_EmptyLLMID(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_ContentWithWeightPlaceholder verifies that
-// a prompt referencing {content_with_weight} (a chunk field that is NOT in
-// the {text}/{chunks} suppression set of the old code) substitutes the
-// field without also appending the chunk text a second time. Regression
-// guard for the duplicate-injection bug fixed in
-// fix/extractor-chunk-text-injection.
+// TestExtractorComponent_Invoke_ContentWithWeightPlaceholder verifies that
+// a system prompt referencing {content_with_weight} substitutes the field correctly,
+// and the user message carries the chunk text.
 func TestExtractorComponent_Invoke_ContentWithWeightPlaceholder(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Weighted: {content_with_weight}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "out",
+		SystemPrompt: "Weighted: {content_with_weight}",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
@@ -1495,35 +1412,37 @@ func TestExtractorComponent_Invoke_ContentWithWeightPlaceholder(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
+		if msg.Role == eschema.System {
+			sysContent = msg.Content
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	if strings.Contains(userContent, "{content_with_weight}") {
-		t.Errorf("prompt still contains literal {content_with_weight}: %q", userContent)
+	if strings.Contains(sysContent, "{content_with_weight}") {
+		t.Errorf("system prompt still contains literal {content_with_weight}: %q", sysContent)
 	}
-	if n := strings.Count(userContent, "weighted doc"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
+	if !strings.Contains(sysContent, "Weighted: weighted doc") {
+		t.Errorf("system prompt missing substituted text: %q", sysContent)
+	}
+	if userContent != "weighted doc" {
+		t.Errorf("user message = %q, want %q", userContent, "weighted doc")
 	}
 }
 
 // TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText verifies
-// that a non-content placeholder like {title} being substituted does NOT
-// suppress the chunk-text append — otherwise the document body would
-// silently disappear from the LLM call. Regression guard for the
-// "compare substituted vs original" approach, which incorrectly suppressed
-// on any replacement.
+// that a non-content placeholder like {title} in SystemPrompt is substituted,
+// while User message delivers the document body.
 func TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Title: {title}\nExtract:",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "out",
+		SystemPrompt: "Title: {title}\nExtract:",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{
@@ -1537,34 +1456,37 @@ func TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText(t *testin
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
+		if msg.Role == eschema.System {
+			sysContent = msg.Content
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	// {title} must be replaced, and chunk body must still be present.
-	if strings.Contains(userContent, "{title}") {
-		t.Errorf("prompt still contains literal {title}: %q", userContent)
+	if strings.Contains(sysContent, "{title}") {
+		t.Errorf("system prompt still contains literal {title}: %q", sysContent)
 	}
-	if !strings.Contains(userContent, "DOC BODY") {
-		t.Errorf("chunk body missing from LLM call — append was wrongly suppressed: %q", userContent)
+	if !strings.Contains(sysContent, "Title: My Title") {
+		t.Errorf("system prompt missing substituted title: %q", sysContent)
+	}
+	if userContent != "DOC BODY" {
+		t.Errorf("user message = %q, want %q", userContent, "DOC BODY")
 	}
 }
 
 // TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText verifies
-// that a {text} placeholder that cannot be resolved against the chunk (the
-// chunk has content_with_weight but no text field) does NOT suppress the
-// chunk-text append. Otherwise the LLM receives a literal {text} and no content.
+// that a {text} placeholder that cannot be resolved against the chunk map
+// falls back to chunkText.
 func TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Content: {text}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "out",
+		SystemPrompt: "Content: {text}",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{
@@ -1577,32 +1499,34 @@ func TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText(t *te
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
+		if msg.Role == eschema.System {
+			sysContent = msg.Content
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	// {text} was not resolved (chunk has no text field), so the append must
-	// still deliver the chunk body.
-	if !strings.Contains(userContent, "weighted doc") {
-		t.Errorf("chunk body missing — append was wrongly suppressed on unresolved {text}: %q", userContent)
+	if sysContent != "Content: weighted doc" {
+		t.Errorf("system prompt = %q, want %q", sysContent, "Content: weighted doc")
+	}
+	if userContent != "weighted doc" {
+		t.Errorf("user message = %q, want %q", userContent, "weighted doc")
 	}
 }
 
 // TestExtractorComponent_Invoke_SubstitutesPlaceholders verifies that
-// {field_name} placeholders in the user prompt are substituted with
-// the current chunk's field values before the LLM call, matching
-// Python's string_format (agent/component/base.py:602).
+// {field_name} placeholders in the system prompt are substituted with
+// the current chunk's field values before the LLM call.
 func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "substituted answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Analyze: {text}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "summary",
+		SystemPrompt: "Analyze: {text}",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "the document content"}},
@@ -1613,38 +1537,36 @@ func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
+		if msg.Role == eschema.System {
+			sysContent = msg.Content
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	if strings.Contains(userContent, "{text}") {
-		t.Errorf("prompt still contains literal {text}: %q", userContent)
+	if strings.Contains(sysContent, "{text}") {
+		t.Errorf("system prompt still contains literal {text}: %q", sysContent)
 	}
-	if !strings.Contains(userContent, "the document content") {
-		t.Errorf("prompt missing chunk text: %q", userContent)
+	if sysContent != "Analyze: the document content" {
+		t.Errorf("system prompt = %q, want %q", sysContent, "Analyze: the document content")
 	}
-	// Regression guard: when the prompt embeds {text}, the chunk text
-	// must appear exactly once — buildExtractorMessages must not append
-	// it a second time (placeholder duplication bug).
-	if n := strings.Count(userContent, "the document content"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
+	if userContent != "the document content" {
+		t.Errorf("user message = %q, want %q", userContent, "the document content")
 	}
 }
 
 // TestExtractorComponent_Invoke_PlaceholderChunksAlias verifies that
-// {chunks} (the Python DSL upstream key) is also substituted with
-// the current chunk text.
+// {chunks} is also substituted in SystemPrompt.
 func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Content: {chunks}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "out",
+		SystemPrompt: "Content: {chunks}",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
@@ -1655,36 +1577,37 @@ func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
+		if msg.Role == eschema.System {
+			sysContent = msg.Content
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	if strings.Contains(userContent, "{chunks}") {
-		t.Errorf("prompt still contains literal {chunks}: %q", userContent)
+	if strings.Contains(sysContent, "{chunks}") {
+		t.Errorf("system prompt still contains literal {chunks}: %q", sysContent)
 	}
-	if !strings.Contains(userContent, "weighted doc") {
-		t.Errorf("prompt missing chunk text: %q", userContent)
+	if sysContent != "Content: weighted doc" {
+		t.Errorf("system prompt = %q, want %q", sysContent, "Content: weighted doc")
 	}
-	// Regression guard: {chunks} must not duplicate the chunk text.
-	if n := strings.Count(userContent, "weighted doc"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
+	if userContent != "weighted doc" {
+		t.Errorf("user message = %q, want %q", userContent, "weighted doc")
 	}
 }
 
 // TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder verifies
-// that when the prompt has no {text}/{chunks} placeholder, the chunk text is
-// still automatically appended by buildExtractorMessages exactly once.
+// that when the system prompt has no placeholder, the chunk text is
+// still delivered via the User message.
 func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Summarize the above:",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "summary",
+		SystemPrompt: "Summarize the above:",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "the document content"}},
@@ -1695,78 +1618,34 @@ func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	if n := strings.Count(userContent, "the document content"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend
-// verifies that a content-bearing placeholder in systemPrompt (not just
-// prompt) also suppresses the automatic chunk-text append. The chunk body
-// is delivered via systemPrompt substitution; since the append is also
-// suppressed, it must NOT appear a second time in the user message.
-func TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName:    "out",
-		Prompt:       "Extract:",
-		SystemPrompt: "Context: {text}",
-		LLMID:        "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "system prompt body"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
 	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		switch msg.Role {
-		case eschema.System:
+		if msg.Role == eschema.System {
 			sysContent = msg.Content
-		case eschema.User:
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	// {text} in systemPrompt must be resolved to the chunk body.
-	if !strings.Contains(sysContent, "system prompt body") {
-		t.Errorf("system message missing chunk body: %q", sysContent)
+	if sysContent != "Summarize the above:" {
+		t.Errorf("system prompt = %q, want %q", sysContent, "Summarize the above:")
 	}
-	// The append must be suppressed: the user message should NOT also
-	// contain the chunk body (otherwise it is duplicated).
-	if strings.Contains(userContent, "system prompt body") {
-		t.Errorf("chunk body duplicated into user message (append not suppressed): %q", userContent)
+	if userContent != "the document content" {
+		t.Errorf("user message = %q, want %q", userContent, "the document content")
 	}
 }
 
 // TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring
 // verifies that a chunk field whose value happens to contain a content
-// placeholder substring (e.g. title = "{text}") does not fool the
-// suppression check. {text} in prompt is resolved to "body"; {title}
-// is resolved to "{text}" literally — the substitution function knows
-// {text} was actually replaced (title's replacement is a different
-// placeholder), so suppression triggers correctly.
+// placeholder substring (e.g. title = "{text}") is substituted correctly in SystemPrompt.
 func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Body: {text}\nLabel: {title}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "out",
+		SystemPrompt: "Body: {text}\nLabel: {title}",
+		LLMID:        "gpt-4o-mini",
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{
@@ -1780,22 +1659,19 @@ func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *tes
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	var userContent string
+	var sysContent, userContent string
 	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
+		if msg.Role == eschema.System {
+			sysContent = msg.Content
+		} else if msg.Role == eschema.User {
 			userContent = msg.Content
 		}
 	}
-	// {text} resolved to body → append suppressed. The body should appear
-	// exactly once (from {text} substitution), not twice.
-	if n := strings.Count(userContent, "the document body"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
+	if sysContent != "Body: the document body\nLabel: {text}" {
+		t.Errorf("system prompt = %q, want %q", sysContent, "Body: the document body\nLabel: {text}")
 	}
-	// {title} was substituted to the literal "{text}" — this is the tricky
-	// case: the substituted prompt now contains "{text}" as a value, but
-	// the suppression must still have triggered because {text} was resolved.
-	if !strings.Contains(userContent, "Label: {text}") {
-		t.Errorf("expected title substitution to produce literal '{text}' label: %q", userContent)
+	if userContent != "the document body" {
+		t.Errorf("user message = %q, want %q", userContent, "the document body")
 	}
 }
 
@@ -1879,9 +1755,8 @@ func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 	chunkBody := strings.Repeat("chunk text with lots of tokens. ", 500)
 	_, err := c.callText(t.Context(), nil, extractorInputs{
 		systemPrompt: "extract fields",
-		prompt:       "summarize\n\n" + chunkBody,
 		llmID:        "test@test",
-	}, "")
+	}, chunkBody)
 	if err != nil {
 		t.Fatalf("callText: %v", err)
 	}
@@ -1935,7 +1810,6 @@ func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
 	c := &ExtractorComponent{}
 	_, err := c.callText(ctx, db, extractorInputs{
 		systemPrompt: "extract fields",
-		prompt:       "summarize",
 		llmID:        "gpt-4o@OpenAI",
 	}, strings.Repeat("chunk text with lots of tokens. ", 500))
 	if err != nil {
@@ -2128,9 +2002,9 @@ func TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
-		LLMID:     "gpt-4o-mini",
+		FieldName:    "summary",
+		SystemPrompt: "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
+		LLMID:        "gpt-4o-mini",
 	}}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -2150,183 +2024,145 @@ func TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk(t *testing.T) {
 		t.Fatalf("got %d LLM calls, want 2", len(stub.requests))
 	}
 
-	// Call 1 must contain Chunk 1 exactly once, and NOT contain Chunk 2
-	req1User := stub.requests[0].Messages[len(stub.requests[0].Messages)-1].Content
-	if n := strings.Count(req1User, "Chunk One Body"); n != 1 {
-		t.Errorf("call 1 chunk text count = %d, want 1; prompt: %q", n, req1User)
+	// Call 1 System must contain Chunk 1 exactly once, and NOT contain Chunk 2; User contains Chunk 1
+	req1Sys := stub.requests[0].Messages[0].Content
+	req1User := stub.requests[0].Messages[1].Content
+	if n := strings.Count(req1Sys, "Chunk One Body"); n != 1 {
+		t.Errorf("call 1 chunk text count in system = %d, want 1; prompt: %q", n, req1Sys)
 	}
-	if strings.Contains(req1User, "Chunk Two Body") {
-		t.Errorf("call 1 wrongly contains Chunk Two Body; prompt: %q", req1User)
+	if strings.Contains(req1Sys, "Chunk Two Body") {
+		t.Errorf("call 1 wrongly contains Chunk Two Body; prompt: %q", req1Sys)
+	}
+	if req1User != "Chunk One Body" {
+		t.Errorf("call 1 user message = %q, want %q", req1User, "Chunk One Body")
 	}
 
-	// Call 2 must contain Chunk 2 exactly once, and NOT contain Chunk 1
-	req2User := stub.requests[1].Messages[len(stub.requests[1].Messages)-1].Content
-	if n := strings.Count(req2User, "Chunk Two Body"); n != 1 {
-		t.Errorf("call 2 chunk text count = %d, want 1; prompt: %q", n, req2User)
+	// Call 2 System must contain Chunk 2 exactly once, and NOT contain Chunk 1; User contains Chunk 2
+	req2Sys := stub.requests[1].Messages[0].Content
+	req2User := stub.requests[1].Messages[1].Content
+	if n := strings.Count(req2Sys, "Chunk Two Body"); n != 1 {
+		t.Errorf("call 2 chunk text count in system = %d, want 1; prompt: %q", n, req2Sys)
 	}
-	if strings.Contains(req2User, "Chunk One Body") {
-		t.Errorf("call 2 wrongly contains Chunk One Body; prompt: %q", req2User)
+	if strings.Contains(req2Sys, "Chunk One Body") {
+		t.Errorf("call 2 wrongly contains Chunk One Body; prompt: %q", req2Sys)
+	}
+	if req2User != "Chunk Two Body" {
+		t.Errorf("call 2 user message = %q, want %q", req2User, "Chunk Two Body")
 	}
 }
 
-// TestRenderExtractorPrompts_TableDriven covers all prompt rendering cases
-// and fallback permutations.
-func TestRenderExtractorPrompts_TableDriven(t *testing.T) {
+// TestRenderExtractorSystemPrompt_TableDriven covers all system prompt rendering cases.
+func TestRenderExtractorSystemPrompt_TableDriven(t *testing.T) {
 	tests := []struct {
-		name         string
-		sysTemplate  string
-		userTemplate string
-		ck           map[string]any
-		chunkText    string
-		wantSys      string
-		wantUser     string
+		name        string
+		sysTemplate string
+		ck          map[string]any
+		chunkText   string
+		wantSys     string
 	}{
 		{
-			name:         "text in user",
-			sysTemplate:  "",
-			userTemplate: "Analyze: {text}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Analyze: body content",
+			name:        "text in system",
+			sysTemplate: "Analyze: {text}",
+			ck:          map[string]any{"text": "body content"},
+			chunkText:   "body content",
+			wantSys:     "Analyze: body content",
 		},
 		{
-			name:         "text in system only suppresses user append",
-			sysTemplate:  "Context: {text}",
-			userTemplate: "Extract:",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "Context: body content",
-			wantUser:     "Extract:",
+			name:        "text in system falls back to chunkText",
+			sysTemplate: "Context: {text}",
+			ck:          map[string]any{},
+			chunkText:   "body content",
+			wantSys:     "Context: body content",
 		},
 		{
-			name:         "canvas macro @chunks in user",
-			sysTemplate:  "",
-			userTemplate: "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Summarize: body content",
+			name:        "canvas macro @chunks in system",
+			sysTemplate: "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
+			ck:          map[string]any{"text": "body content"},
+			chunkText:   "body content",
+			wantSys:     "Summarize: body content",
 		},
 		{
-			name:         "canvas macro @text in user",
-			sysTemplate:  "",
-			userTemplate: "Parse: {Parser:Doc@text}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Parse: body content",
+			name:        "canvas macro @text in system",
+			sysTemplate: "Parse: {Parser:Doc@text}",
+			ck:          map[string]any{"text": "body content"},
+			chunkText:   "body content",
+			wantSys:     "Parse: body content",
 		},
 		{
-			name:         "canvas macro @markdown in user",
-			sysTemplate:  "",
-			userTemplate: "Parse: {Parser:Doc@markdown}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Parse: body content",
+			name:        "canvas macro @markdown in system",
+			sysTemplate: "Parse: {Parser:Doc@markdown}",
+			ck:          map[string]any{"text": "body content"},
+			chunkText:   "body content",
+			wantSys:     "Parse: body content",
 		},
 		{
-			name:         "metadata only appends chunkText",
-			sysTemplate:  "",
-			userTemplate: "Title: {title}",
-			ck:           map[string]any{"title": "DocTitle", "text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Title: DocTitle\n\nbody content",
+			name:        "metadata placeholder",
+			sysTemplate: "Title: {title}",
+			ck:          map[string]any{"title": "DocTitle", "text": "body content"},
+			chunkText:   "body content",
+			wantSys:     "Title: DocTitle",
 		},
 		{
-			name:         "no placeholder appends chunkText",
-			sysTemplate:  "",
-			userTemplate: "Summarize the text:",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Summarize the text:\n\nbody content",
+			name:        "content_with_weight present in ck",
+			sysTemplate: "Weighted: {content_with_weight}",
+			ck:          map[string]any{"content_with_weight": "weighted content", "text": "plain content"},
+			chunkText:   "weighted content",
+			wantSys:     "Weighted: weighted content",
 		},
 		{
-			name:         "empty chunkText does not append",
-			sysTemplate:  "",
-			userTemplate: "Summarize:",
-			ck:           map[string]any{},
-			chunkText:    "",
-			wantSys:      "",
-			wantUser:     "Summarize:",
+			name:        "content_with_weight absent in ck falls back to chunkText",
+			sysTemplate: "Weighted: {content_with_weight}",
+			ck:          map[string]any{"text": "plain content"},
+			chunkText:   "plain content",
+			wantSys:     "Weighted: plain content",
 		},
 		{
-			name:         "content_with_weight present in ck",
-			sysTemplate:  "",
-			userTemplate: "Weighted: {content_with_weight}",
-			ck:           map[string]any{"content_with_weight": "weighted content", "text": "plain content"},
-			chunkText:    "weighted content",
-			wantSys:      "",
-			wantUser:     "Weighted: weighted content",
-		},
-		{
-			name:         "content_with_weight absent in ck falls back to chunkText",
-			sysTemplate:  "",
-			userTemplate: "Weighted: {content_with_weight}",
-			ck:           map[string]any{"text": "plain content"},
-			chunkText:    "plain content",
-			wantSys:      "",
-			wantUser:     "Weighted: plain content",
-		},
-		{
-			name:         "whitespace user template trimmed before append",
-			sysTemplate:  "",
-			userTemplate: "   ",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "body content",
-		},
-		{
-			name:         "empty templates produce single space user turn",
-			sysTemplate:  "",
-			userTemplate: "",
-			ck:           map[string]any{},
-			chunkText:    "",
-			wantSys:      "",
-			wantUser:     " ",
-		},
-		{
-			// content_with_weight is present in ck but its value is an empty
-			// string. isBodyPlaceholder fires, but the resolved value is empty
-			// so bodyInjected must NOT be set — the fallback append should
-			// still fire and deliver chunkText.
-			name:         "content_with_weight empty string in ck falls back to chunkText",
-			sysTemplate:  "",
-			userTemplate: "Weighted: {content_with_weight}",
-			ck:           map[string]any{"content_with_weight": ""},
-			chunkText:    "fallback body",
-			wantSys:      "",
-			wantUser:     "Weighted: fallback body",
-		},
-		{
-			// Both system and user prompts reference body placeholders.
-			// The body must appear in each substitution position but must NOT
-			// be appended a third time (bodyInjected is shared across both
-			// render calls).
-			name:         "body placeholder in both system and user no extra append",
-			sysTemplate:  "Context: {text}",
-			userTemplate: "Also: {chunks}",
-			ck:           map[string]any{"text": "the body"},
-			chunkText:    "the body",
-			wantSys:      "Context: the body",
-			wantUser:     "Also: the body",
+			name:        "content_with_weight empty string in ck falls back to chunkText",
+			sysTemplate: "Weighted: {content_with_weight}",
+			ck:          map[string]any{"content_with_weight": ""},
+			chunkText:   "fallback body",
+			wantSys:     "Weighted: fallback body",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSys, gotUser := renderExtractorPrompts(tt.sysTemplate, tt.userTemplate, tt.ck, tt.chunkText)
+			gotSys := renderExtractorSystemPrompt(tt.sysTemplate, tt.ck, tt.chunkText)
 			if gotSys != tt.wantSys {
-				t.Errorf("renderExtractorPrompts() gotSys = %q, want %q", gotSys, tt.wantSys)
-			}
-			if gotUser != tt.wantUser {
-				t.Errorf("renderExtractorPrompts() gotUser = %q, want %q", gotUser, tt.wantUser)
+				t.Errorf("renderExtractorSystemPrompt() gotSys = %q, want %q", gotSys, tt.wantSys)
 			}
 		})
+	}
+}
+
+func TestBuildExtractorMessages(t *testing.T) {
+	msgs := buildExtractorMessages("System rule", "Chunk content")
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != eschema.System || msgs[0].Content != "System rule" {
+		t.Errorf("msgs[0] = %#v, want system message", msgs[0])
+	}
+	if msgs[1].Role != eschema.User || msgs[1].Content != "Chunk content" {
+		t.Errorf("msgs[1] = %#v, want user message", msgs[1])
+	}
+
+	// Empty system prompt omitted
+	msgsNoSys := buildExtractorMessages("", "Chunk content")
+	if len(msgsNoSys) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgsNoSys))
+	}
+	if msgsNoSys[0].Role != eschema.User || msgsNoSys[0].Content != "Chunk content" {
+		t.Errorf("msgsNoSys[0] = %#v, want user message", msgsNoSys[0])
+	}
+
+	// Empty user chunk text normalized to single space
+	msgsEmptyUser := buildExtractorMessages("System rule", "")
+	if len(msgsEmptyUser) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgsEmptyUser))
+	}
+	if msgsEmptyUser[1].Role != eschema.User || msgsEmptyUser[1].Content != " " {
+		t.Errorf("msgsEmptyUser[1] = %#v, want single space", msgsEmptyUser[1])
 	}
 }
 
@@ -2349,6 +2185,12 @@ func TestExtractorModularParams(t *testing.T) {
 			"enabled":       true,
 			"system_prompt": "Custom summary prompt for {text}",
 		},
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "category", "type": "string"},
+			},
+		},
 	}
 
 	comp, err := NewExtractorComponent(params)
@@ -2364,64 +2206,20 @@ func TestExtractorModularParams(t *testing.T) {
 	if ext.Param.Keywords.TopN != 5 || ext.Param.Keywords.SystemPrompt != "Custom keywords prompt for {text}" {
 		t.Errorf("Keywords config mismatch: %+v", ext.Param.Keywords)
 	}
-	if ext.Param.AutoKeywords != 5 {
-		t.Errorf("AutoKeywords flat sync mismatch: %d", ext.Param.AutoKeywords)
-	}
-
 	if ext.Param.Questions.TopN != 3 || ext.Param.Questions.SystemPrompt != "Custom questions prompt for {text}" {
 		t.Errorf("Questions config mismatch: %+v", ext.Param.Questions)
 	}
-	if ext.Param.AutoQuestions != 3 {
-		t.Errorf("AutoQuestions flat sync mismatch: %d", ext.Param.AutoQuestions)
-	}
-
 	if ext.Param.Tags.TopN != 2 || ext.Param.Tags.TagFileID != "tag_file_abc" {
 		t.Errorf("Tags config mismatch: %+v", ext.Param.Tags)
 	}
-	if ext.Param.AutoTags != 2 || ext.Param.TagFileID != "tag_file_abc" {
-		t.Errorf("AutoTags flat sync mismatch: %d, %s", ext.Param.AutoTags, ext.Param.TagFileID)
-	}
-
 	if !ext.Param.Summary.Enabled || ext.Param.Summary.SystemPrompt != "Custom summary prompt for {text}" {
 		t.Errorf("Summary config mismatch: %+v", ext.Param.Summary)
 	}
 	if ext.Param.FieldName != "summary" {
 		t.Errorf("FieldName mismatch: %s", ext.Param.FieldName)
 	}
-}
-
-func TestExtractorLegacyFlatParamsFallback(t *testing.T) {
-	params := map[string]any{
-		"llm_id":         "test-llm-1",
-		"auto_keywords":  4,
-		"auto_questions": 2,
-		"auto_tags":      1,
-		"tag_file_id":    "tag_file_legacy",
-		"field_name":     "summary",
-		"sys_prompt":     "Legacy summary prompt",
-	}
-
-	comp, err := NewExtractorComponent(params)
-	if err != nil {
-		t.Fatalf("NewExtractorComponent failed: %v", err)
-	}
-
-	ext, ok := comp.(*ExtractorComponent)
-	if !ok {
-		t.Fatalf("expected *ExtractorComponent, got %T", comp)
-	}
-
-	if ext.Param.Keywords.TopN != 4 || ext.Param.AutoKeywords != 4 {
-		t.Errorf("Keywords fallback mismatch: %d / %d", ext.Param.Keywords.TopN, ext.Param.AutoKeywords)
-	}
-	if ext.Param.Questions.TopN != 2 || ext.Param.AutoQuestions != 2 {
-		t.Errorf("Questions fallback mismatch: %d / %d", ext.Param.Questions.TopN, ext.Param.AutoQuestions)
-	}
-	if ext.Param.Tags.TopN != 1 || ext.Param.Tags.TagFileID != "tag_file_legacy" {
-		t.Errorf("Tags fallback mismatch: %+v", ext.Param.Tags)
-	}
-	if !ext.Param.Summary.Enabled || ext.Param.Summary.SystemPrompt != "Legacy summary prompt" {
-		t.Errorf("Summary fallback mismatch: %+v", ext.Param.Summary)
+	if !ext.Param.Metadata.Enabled || len(ext.Param.Metadata.Metadata) != 1 {
+		t.Errorf("Metadata config mismatch: %+v", ext.Param.Metadata)
 	}
 }
 
@@ -2515,7 +2313,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 func TestExtractorModularMetadataConfig(t *testing.T) {
 	params := map[string]any{
 		"llm_id": "llm-1",
-		"metadata_config": map[string]any{
+		"metadata": map[string]any{
 			"enabled": true,
 			"metadata": []any{
 				map[string]any{
@@ -2548,17 +2346,17 @@ func TestExtractorModularMetadataConfig(t *testing.T) {
 		t.Fatalf("expected *ExtractorComponent, got %T", comp)
 	}
 
-	if !ext.Param.MetadataConfig.Enabled || ext.Param.EnableMetadata != 1 {
-		t.Errorf("Metadata enabled mismatch: %+v / %d", ext.Param.MetadataConfig.Enabled, ext.Param.EnableMetadata)
+	if !ext.Param.Metadata.Enabled {
+		t.Errorf("Metadata enabled mismatch: %+v", ext.Param.Metadata.Enabled)
 	}
-	if len(ext.Param.MetadataConfig.Metadata) != 2 || len(ext.Param.Metadata) != 2 {
-		t.Fatalf("Metadata fields mismatch: %d / %d", len(ext.Param.MetadataConfig.Metadata), len(ext.Param.Metadata))
+	if len(ext.Param.Metadata.Metadata) != 2 {
+		t.Fatalf("Metadata fields mismatch: %d", len(ext.Param.Metadata.Metadata))
 	}
-	if ext.Param.Metadata[0].Key != "author" || ext.Param.Metadata[0].Description != "The author name" || len(ext.Param.Metadata[0].Enum) != 2 {
-		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata[0])
+	if ext.Param.Metadata.Metadata[0].Key != "author" || ext.Param.Metadata.Metadata[0].Description != "The author name" || len(ext.Param.Metadata.Metadata[0].Enum) != 2 {
+		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata.Metadata[0])
 	}
-	if len(ext.Param.MetadataConfig.BuiltInMetadata) != 1 || ext.Param.MetadataConfig.BuiltInMetadata[0].Key != "file_name" {
-		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.MetadataConfig.BuiltInMetadata)
+	if len(ext.Param.Metadata.BuiltInMetadata) != 1 || ext.Param.Metadata.BuiltInMetadata[0].Key != "file_name" {
+		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.Metadata.BuiltInMetadata)
 	}
 }
 
@@ -2569,7 +2367,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 
 	params := map[string]any{
 		"llm_id": "llm-1",
-		"metadata_config": map[string]any{
+		"metadata": map[string]any{
 			"enabled": true,
 			"metadata": []any{
 				map[string]any{
@@ -2714,33 +2512,26 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 	}
 }
 
-func TestExtractor_NestedPrecedenceOverFlat(t *testing.T) {
-	// Case A: Nested explicitly disabled (enabled=false) while legacy flat has enabled=1/5.
-	// Nested MUST win and disable the features.
+func TestExtractor_ModularConfiguration(t *testing.T) {
 	paramsDisabled := map[string]any{
-		"metadata_config": map[string]any{
+		"metadata": map[string]any{
 			"enabled": false,
 			"metadata": []any{
 				map[string]any{"key": "category", "type": "string"},
 			},
 		},
-		"enable_metadata": 1,
 		"summary": map[string]any{
 			"enabled": false,
 		},
-		"enable_summary": 1,
 		"keywords": map[string]any{
 			"top_n": 0,
 		},
-		"auto_keywords": 5,
 		"questions": map[string]any{
 			"top_n": 0,
 		},
-		"auto_questions": 3,
 		"tags": map[string]any{
 			"top_n": 0,
 		},
-		"auto_tags": 2,
 	}
 
 	compRawA, err := NewExtractorComponent(paramsDisabled)
@@ -2748,49 +2539,43 @@ func TestExtractor_NestedPrecedenceOverFlat(t *testing.T) {
 		t.Fatalf("NewExtractorComponent A: %v", err)
 	}
 	compA := compRawA.(*ExtractorComponent)
-	if compA.Param.MetadataConfig.Enabled != false || compA.Param.EnableMetadata != 0 {
-		t.Errorf("expected metadata disabled, got nested=%v flat=%v", compA.Param.MetadataConfig.Enabled, compA.Param.EnableMetadata)
+	if compA.Param.Metadata.Enabled != false {
+		t.Errorf("expected metadata disabled, got nested=%v", compA.Param.Metadata.Enabled)
 	}
-	if compA.Param.Summary.Enabled != false || compA.Param.EnableSummary != 0 {
-		t.Errorf("expected summary disabled, got nested=%v flat=%v", compA.Param.Summary.Enabled, compA.Param.EnableSummary)
+	if compA.Param.Summary.Enabled != false {
+		t.Errorf("expected summary disabled, got nested=%v", compA.Param.Summary.Enabled)
 	}
-	if compA.Param.Keywords.TopN != 0 || compA.Param.AutoKeywords != 0 {
-		t.Errorf("expected keywords disabled (0), got nested=%v flat=%v", compA.Param.Keywords.TopN, compA.Param.AutoKeywords)
+	if compA.Param.Keywords.TopN != 0 {
+		t.Errorf("expected keywords disabled (0), got nested=%v", compA.Param.Keywords.TopN)
 	}
-	if compA.Param.Questions.TopN != 0 || compA.Param.AutoQuestions != 0 {
-		t.Errorf("expected questions disabled (0), got nested=%v flat=%v", compA.Param.Questions.TopN, compA.Param.AutoQuestions)
+	if compA.Param.Questions.TopN != 0 {
+		t.Errorf("expected questions disabled (0), got nested=%v", compA.Param.Questions.TopN)
 	}
-	if compA.Param.Tags.TopN != 0 || compA.Param.AutoTags != 0 {
-		t.Errorf("expected tags disabled (0), got nested=%v flat=%v", compA.Param.Tags.TopN, compA.Param.AutoTags)
+	if compA.Param.Tags.TopN != 0 {
+		t.Errorf("expected tags disabled (0), got nested=%v", compA.Param.Tags.TopN)
 	}
 
-	// Case B: Nested explicitly enabled (enabled=true) while legacy flat has 0.
-	// Nested MUST win and enable the features.
+	// Case B: Nested explicitly enabled (enabled=true)
 	paramsEnabled := map[string]any{
-		"metadata_config": map[string]any{
+		"metadata": map[string]any{
 			"enabled": true,
 			"metadata": []any{
 				map[string]any{"key": "author", "type": "string"},
 			},
 		},
-		"enable_metadata": 0,
 		"summary": map[string]any{
 			"enabled": true,
 		},
-		"enable_summary": 0,
 		"keywords": map[string]any{
 			"top_n": 4,
 		},
-		"auto_keywords": 0,
 		"questions": map[string]any{
 			"top_n": 2,
 		},
-		"auto_questions": 0,
 		"tags": map[string]any{
 			"top_n":       3,
 			"tag_file_id": "file-123",
 		},
-		"auto_tags": 0,
 	}
 
 	compRawB, err := NewExtractorComponent(paramsEnabled)
@@ -2798,19 +2583,147 @@ func TestExtractor_NestedPrecedenceOverFlat(t *testing.T) {
 		t.Fatalf("NewExtractorComponent B: %v", err)
 	}
 	compB := compRawB.(*ExtractorComponent)
-	if compB.Param.MetadataConfig.Enabled != true || compB.Param.EnableMetadata != 1 {
-		t.Errorf("expected metadata enabled, got nested=%v flat=%v", compB.Param.MetadataConfig.Enabled, compB.Param.EnableMetadata)
+	if compB.Param.Metadata.Enabled != true {
+		t.Errorf("expected metadata enabled, got nested=%v", compB.Param.Metadata.Enabled)
 	}
-	if compB.Param.Summary.Enabled != true || compB.Param.EnableSummary != 1 {
-		t.Errorf("expected summary enabled, got nested=%v flat=%v", compB.Param.Summary.Enabled, compB.Param.EnableSummary)
+	if compB.Param.Summary.Enabled != true {
+		t.Errorf("expected summary enabled, got nested=%v", compB.Param.Summary.Enabled)
 	}
-	if compB.Param.Keywords.TopN != 4 || compB.Param.AutoKeywords != 4 {
-		t.Errorf("expected keywords 4, got nested=%v flat=%v", compB.Param.Keywords.TopN, compB.Param.AutoKeywords)
+	if compB.Param.Keywords.TopN != 4 {
+		t.Errorf("expected keywords 4, got nested=%v", compB.Param.Keywords.TopN)
 	}
-	if compB.Param.Questions.TopN != 2 || compB.Param.AutoQuestions != 2 {
-		t.Errorf("expected questions 2, got nested=%v flat=%v", compB.Param.Questions.TopN, compB.Param.AutoQuestions)
+	if compB.Param.Questions.TopN != 2 {
+		t.Errorf("expected questions 2, got nested=%v", compB.Param.Questions.TopN)
 	}
-	if compB.Param.Tags.TopN != 3 || compB.Param.AutoTags != 3 {
-		t.Errorf("expected tags 3, got nested=%v flat=%v", compB.Param.Tags.TopN, compB.Param.AutoTags)
+	if compB.Param.Tags.TopN != 3 || compB.Param.Tags.TagFileID != "file-123" {
+		t.Errorf("expected tags 3 / file-123, got nested=%+v", compB.Param.Tags)
+	}
+}
+
+func TestMetadataLLMCacheKey_V2Namespace(t *testing.T) {
+	key := metadataLLMCacheKey("llm-1", `{"type":"object"}`, "chunk content")
+	if !strings.HasPrefix(key, "kc:meta:v2:") {
+		t.Fatalf("expected key with kc:meta:v2: prefix, got %q", key)
+	}
+}
+
+func TestExtractor_Precedence_ModularBeatsLegacy(t *testing.T) {
+	// Mixed config: both modular objects and legacy flat fields present
+	mixedParams := map[string]any{
+		// Modular overrides
+		"keywords": map[string]any{
+			"top_n":         10,
+			"system_prompt": "modular kw",
+		},
+		"questions": map[string]any{
+			"top_n":         8,
+			"system_prompt": "modular q",
+		},
+		"tags": map[string]any{
+			"top_n":       6,
+			"tag_file_id": "modular-tag-file",
+		},
+		"summary": map[string]any{
+			"enabled":       false,
+			"system_prompt": "modular summary",
+		},
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "modular_meta", "type": "string"},
+			},
+		},
+		// Legacy flat fields (should be ignored when modular exists)
+		"auto_keywords":        2,
+		"keywords_sys_prompt":  "legacy kw",
+		"auto_questions":       1,
+		"questions_sys_prompt": "legacy q",
+		"auto_tags":            1,
+		"tag_file_id":          "legacy-tag-file",
+		"enable_summary":       1,
+		"sys_prompt":           "legacy summary",
+		"enable_metadata":      0,
+		"metadata_config": map[string]any{
+			"enabled": false,
+			"metadata": []any{
+				map[string]any{"key": "legacy_meta", "type": "string"},
+			},
+		},
+	}
+
+	compRaw, err := NewExtractorComponent(mixedParams)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent with mixed params failed: %v", err)
+	}
+	ec := compRaw.(*ExtractorComponent)
+
+	if ec.Param.Keywords.TopN != 10 || ec.Param.Keywords.SystemPrompt != "modular kw" {
+		t.Errorf("Keywords = %#v, want modular 10 / modular kw", ec.Param.Keywords)
+	}
+	if ec.Param.Questions.TopN != 8 || ec.Param.Questions.SystemPrompt != "modular q" {
+		t.Errorf("Questions = %#v, want modular 8 / modular q", ec.Param.Questions)
+	}
+	if ec.Param.Tags.TopN != 6 || ec.Param.Tags.TagFileID != "modular-tag-file" {
+		t.Errorf("Tags = %#v, want modular 6 / modular-tag-file", ec.Param.Tags)
+	}
+	if ec.Param.Summary.Enabled || ec.Param.Summary.SystemPrompt != "modular summary" {
+		t.Errorf("Summary = %#v, want modular disabled / modular summary", ec.Param.Summary)
+	}
+	if !ec.Param.Metadata.Enabled || len(ec.Param.Metadata.Metadata) != 1 || ec.Param.Metadata.Metadata[0].Key != "modular_meta" {
+		t.Errorf("Metadata = %#v, want modular enabled with modular_meta field", ec.Param.Metadata)
+	}
+}
+
+func TestExtractor_EndToEnd_LegacyPipelineFlow(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: "keyword1, keyword2"},
+		stubResponse{Content: "question1?\nquestion2?"},
+		stubResponse{Content: `{"category": "tech"}`},
+		stubResponse{Content: "RAGFlow summary."},
+	)
+
+	legacyFlatParams := map[string]any{
+		"auto_keywords":       3,
+		"keywords_sys_prompt": "Extract {top_n} keywords",
+		"auto_questions":      2,
+		"enable_summary":      1,
+		"sys_prompt":          "Summarize: {text}",
+		"enable_metadata":     1,
+		"metadata": []any{
+			map[string]any{"key": "category", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+	}
+
+	comp, err := NewExtractorComponent(legacyFlatParams)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"text": "RAGFlow is an open-source RAG engine."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 output chunk, got %#v", out["chunks"])
+	}
+	if chunks[0]["summary"] != "RAGFlow summary." {
+		t.Errorf("expected summary field in chunk, got %#v", chunks[0]["summary"])
+	}
+	meta, ok := chunks[0]["metadata"].(map[string]any)
+	if !ok || meta["category"] != "tech" {
+		t.Errorf("expected metadata.category == tech in chunk, got %#v", chunks[0]["metadata"])
+	}
+	kw, ok := chunks[0]["important_kwd"].([]string)
+	if !ok || len(kw) == 0 {
+		t.Errorf("expected important_kwd in chunk, got %#v", chunks[0]["important_kwd"])
 	}
 }

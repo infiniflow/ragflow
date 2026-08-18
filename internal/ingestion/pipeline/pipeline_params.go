@@ -2,19 +2,99 @@ package pipeline
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 
 	"go.uber.org/zap"
 )
 
+// llmRuntimeParamKeys contains generic LLM hyper-parameters and UI switches common to LLM-based components.
+var llmRuntimeParamKeys = map[string]struct{}{
+	"llm_id":                  {},
+	"temperature":             {},
+	"top_p":                   {},
+	"max_tokens":              {},
+	"presence_penalty":        {},
+	"frequency_penalty":       {},
+	"outputs":                 {},
+	"temperatureEnabled":      {},
+	"topPEnabled":             {},
+	"presencePenaltyEnabled":  {},
+	"frequencyPenaltyEnabled": {},
+	"maxTokensEnabled":        {},
+}
+
+// extractorLegacyParamKeys contains legacy flat extractor fields preserved for backward compatibility.
+var extractorLegacyParamKeys = map[string]struct{}{
+	"auto_keywords":        {},
+	"keywords_sys_prompt":  {},
+	"auto_questions":       {},
+	"questions_sys_prompt": {},
+	"auto_tags":            {},
+	"topn_tags":            {},
+	"tag_file_id":          {},
+	"enable_summary":       {},
+	"sys_prompt":           {},
+	"enable_metadata":      {},
+	"metadata_config":      {},
+}
+
+// extractorValidParamKeys is dynamically derived from schema.ExtractorParam + LLM hyper-parameters + legacy keys.
+var extractorValidParamKeys = func() map[string]struct{} {
+	keys := extractJSONTags(schema.ExtractorParam{})
+	for k := range llmRuntimeParamKeys {
+		keys[k] = struct{}{}
+	}
+	for k := range extractorLegacyParamKeys {
+		keys[k] = struct{}{}
+	}
+	return keys
+}()
+
+// extractJSONTags returns all top-level json tag names from a struct.
+func extractJSONTags(v any) map[string]struct{} {
+	tags := make(map[string]struct{})
+	t := reflect.TypeOf(v)
+	if t == nil {
+		return tags
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return tags
+	}
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name := strings.Split(tag, ",")[0]
+		if name != "" {
+			tags[name] = struct{}{}
+		}
+	}
+	return tags
+}
+
+// getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
+func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
+	lower := strings.ToLower(cpnID)
+	if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+		return extractorValidParamKeys, true
+	}
+	return nil, false
+}
+
 // CleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
 // Keys containing ':' are treated as component IDs; they are kept only when both
-// the cpnID AND the param name exist in the DSL schema. Keys without ':' (legacy
-// flat fields such as chunk_token_num, image_context_size) are dropped with a
-// warning — they do not belong in the new component-params world.
+// the cpnID AND the param name exist in the DSL schema or the component's dynamic
+// parameter schema (e.g. Extractor modular features). Keys without ':' (legacy
+// flat fields) are dropped with a warning.
 func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
 	schemas, err := ExtractAllComponentParams(dslJSON)
 	if err != nil {
@@ -49,18 +129,22 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		if !ok {
 			continue
 		}
+		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
+		if hasDynamic {
+			params = NormalizeExtractorParams(params)
+		}
 		cleaned := make(map[string]any, len(params))
 		for pk, pv := range params {
 			if _, ok := validKeys[pk]; ok {
 				cleaned[pk] = pv
 				continue
 			}
-			// Extractor params are valid even when a builtin template does
-			// not declare them explicitly in params: {} (the frontend stores
-			// them on the node params); keep them through the filter.
-			if isExtractorComponent(key) && isExtractorParam(pk) {
-				cleaned[pk] = pv
-				continue
+			// Extractor and dynamic components: check reflection-driven whitelist
+			if hasDynamic {
+				if _, ok := dynamicWhitelist[pk]; ok {
+					cleaned[pk] = pv
+					continue
+				}
 			}
 			common.Warn("CleanComponentParams: dropping unknown param",
 				zap.String("cpnID", key), zap.String("param", pk))
@@ -70,6 +154,229 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 	}
 	return result
+}
+
+// NormalizeExtractorParams normalizes a raw Extractor parameters map from either
+// legacy flat fields or mixed structures into the canonical modular v2 format.
+func NormalizeExtractorParams(raw map[string]any) map[string]any {
+	if raw == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		out[k] = v
+	}
+
+	// 1. Keywords
+	if kwRaw, ok := out["keywords"].(map[string]any); ok {
+		kw := make(map[string]any, len(kwRaw))
+		for k, v := range kwRaw {
+			kw[k] = v
+		}
+		if _, has := kw["top_n"]; !has {
+			if v, ok := out["auto_keywords"]; ok {
+				kw["top_n"] = v
+			}
+		}
+		if _, has := kw["system_prompt"]; !has {
+			if v, ok := out["keywords_sys_prompt"]; ok {
+				kw["system_prompt"] = v
+			}
+		}
+		out["keywords"] = kw
+	} else if out["auto_keywords"] != nil || out["keywords_sys_prompt"] != nil {
+		kw := map[string]any{
+			"top_n":         0,
+			"system_prompt": "",
+		}
+		if v, ok := out["auto_keywords"]; ok {
+			kw["top_n"] = v
+		}
+		if v, ok := out["keywords_sys_prompt"]; ok {
+			kw["system_prompt"] = v
+		}
+		out["keywords"] = kw
+	}
+
+	// 2. Questions
+	if qRaw, ok := out["questions"].(map[string]any); ok {
+		q := make(map[string]any, len(qRaw))
+		for k, v := range qRaw {
+			q[k] = v
+		}
+		if _, has := q["top_n"]; !has {
+			if v, ok := out["auto_questions"]; ok {
+				q["top_n"] = v
+			}
+		}
+		if _, has := q["system_prompt"]; !has {
+			if v, ok := out["questions_sys_prompt"]; ok {
+				q["system_prompt"] = v
+			}
+		}
+		out["questions"] = q
+	} else if out["auto_questions"] != nil || out["questions_sys_prompt"] != nil {
+		q := map[string]any{
+			"top_n":         0,
+			"system_prompt": "",
+		}
+		if v, ok := out["auto_questions"]; ok {
+			q["top_n"] = v
+		}
+		if v, ok := out["questions_sys_prompt"]; ok {
+			q["system_prompt"] = v
+		}
+		out["questions"] = q
+	}
+
+	// 3. Tags
+	if tagRaw, ok := out["tags"].(map[string]any); ok {
+		tag := make(map[string]any, len(tagRaw))
+		for k, v := range tagRaw {
+			tag[k] = v
+		}
+		if _, has := tag["top_n"]; !has {
+			if v, ok := out["auto_tags"]; ok {
+				tag["top_n"] = v
+			} else if v, ok := out["topn_tags"]; ok {
+				tag["top_n"] = v
+			}
+		}
+		if _, has := tag["tag_file_id"]; !has {
+			if v, ok := out["tag_file_id"]; ok {
+				tag["tag_file_id"] = v
+			}
+		}
+		out["tags"] = tag
+	} else if out["auto_tags"] != nil || out["topn_tags"] != nil || out["tag_file_id"] != nil {
+		tag := map[string]any{
+			"top_n":       0,
+			"tag_file_id": "",
+		}
+		if v, ok := out["auto_tags"]; ok {
+			tag["top_n"] = v
+		} else if v, ok := out["topn_tags"]; ok {
+			tag["top_n"] = v
+		}
+		if v, ok := out["tag_file_id"]; ok {
+			tag["tag_file_id"] = v
+		}
+		out["tags"] = tag
+	}
+
+	// 4. Summary
+	if sumRaw, ok := out["summary"].(map[string]any); ok {
+		sum := make(map[string]any, len(sumRaw))
+		for k, v := range sumRaw {
+			sum[k] = v
+		}
+		if _, has := sum["enabled"]; !has {
+			if v, ok := out["enable_summary"]; ok {
+				sum["enabled"] = isTruthy(v)
+			}
+		}
+		if _, has := sum["system_prompt"]; !has {
+			if v, ok := out["sys_prompt"]; ok {
+				sum["system_prompt"] = v
+			}
+		}
+		out["summary"] = sum
+	} else if out["enable_summary"] != nil || out["sys_prompt"] != nil || out["field_name"] == "summary" {
+		sum := map[string]any{
+			"enabled":       false,
+			"system_prompt": "",
+		}
+		if v, ok := out["enable_summary"]; ok {
+			sum["enabled"] = isTruthy(v)
+		} else if out["field_name"] == "summary" {
+			sum["enabled"] = true
+		}
+		if v, ok := out["sys_prompt"]; ok {
+			sum["system_prompt"] = v
+		}
+		out["summary"] = sum
+	}
+
+	// 5. Metadata
+	if metaRaw, ok := out["metadata"].(map[string]any); ok {
+		meta := make(map[string]any, len(metaRaw))
+		for k, v := range metaRaw {
+			meta[k] = v
+		}
+		if _, has := meta["enabled"]; !has {
+			if v, ok := out["enable_metadata"]; ok {
+				meta["enabled"] = isTruthy(v)
+			}
+		}
+		if _, has := meta["built_in_metadata"]; !has {
+			if v, ok := out["built_in_metadata"]; ok {
+				meta["built_in_metadata"] = v
+			}
+		}
+		out["metadata"] = meta
+	} else if metaConf, ok := out["metadata_config"].(map[string]any); ok {
+		meta := make(map[string]any, len(metaConf))
+		for k, v := range metaConf {
+			meta[k] = v
+		}
+		out["metadata"] = meta
+	} else if out["enable_metadata"] != nil || out["metadata"] != nil || out["built_in_metadata"] != nil {
+		meta := map[string]any{
+			"enabled":           false,
+			"metadata":          []any{},
+			"built_in_metadata": []any{},
+		}
+		if v, ok := out["enable_metadata"]; ok {
+			meta["enabled"] = isTruthy(v)
+		}
+		if v, ok := out["metadata"]; ok {
+			if arr, ok := v.([]any); ok {
+				meta["metadata"] = arr
+			}
+		}
+		if v, ok := out["built_in_metadata"]; ok {
+			if arr, ok := v.([]any); ok {
+				meta["built_in_metadata"] = arr
+			}
+		}
+		if !isTruthy(meta["enabled"]) && (len(anySlice(meta["metadata"])) > 0 || len(anySlice(meta["built_in_metadata"])) > 0) && out["enable_metadata"] == nil {
+			meta["enabled"] = true
+		}
+		out["metadata"] = meta
+	}
+
+	return out
+}
+
+func isTruthy(v any) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case float64:
+		return val > 0
+	case int:
+		return val > 0
+	case int64:
+		return val > 0
+	case string:
+		return val == "1" || strings.EqualFold(val, "true")
+	}
+	return false
+}
+
+func anySlice(value any) []any {
+	switch typed := value.(type) {
+	case []any:
+		return typed
+	case []map[string]any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // BuildParserConfig builds the final parser_config by starting from the DSL
@@ -155,29 +462,4 @@ func ResolveComponentParamsDefaultsFromIDs(parserID string, pipelineID *string) 
 		out[k] = v
 	}
 	return out, nil
-}
-
-// isExtractorComponent reports whether a component id is an Extractor node
-// (component ids are "<ComponentName>:<name>" or "<ComponentName>_<name>").
-func isExtractorComponent(cpnID string) bool {
-	lower := strings.ToLower(cpnID)
-	return strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_")
-}
-
-// isExtractorParam reports whether a param belongs to the Extractor component
-// (modular sub-configs, legacy flat fields, LLM settings, or UI state flags).
-func isExtractorParam(param string) bool {
-	switch param {
-	case "keywords", "questions", "tags", "summary", "metadata_config",
-		"auto_keywords", "keywords_sys_prompt",
-		"auto_questions", "questions_sys_prompt",
-		"auto_tags", "tag_file_id",
-		"enable_summary", "sys_prompt", "system_prompt", "prompt", "prompts", "field_name",
-		"enable_metadata", "metadata", "built_in_metadata",
-		"llm_id", "temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty",
-		"temperatureEnabled", "topPEnabled", "maxTokensEnabled", "presencePenaltyEnabled", "frequencyPenaltyEnabled",
-		"outputs":
-		return true
-	}
-	return false
 }
