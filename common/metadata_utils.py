@@ -255,8 +255,13 @@ async def apply_meta_data_filter(
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
         logging.debug(f"Metadata filter(manual): {filters}")
+        if not filters:
+            # An empty condition list restricts nothing and must not load the
+            # KB metadata: callers that treat "filter present but empty" as
+            # match-nothing decide that themselves before reaching here.
+            return doc_ids
         doc_ids.extend(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
-        if filters and not doc_ids:
+        if not doc_ids:
             doc_ids = ["-999"]
 
     logging.debug(f"apply_meta_data_filter meta_filter={meta_data_filter}, returning doc_ids={doc_ids}")

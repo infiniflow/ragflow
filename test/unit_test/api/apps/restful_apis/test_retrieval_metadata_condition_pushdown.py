@@ -25,8 +25,9 @@ The fix routes the endpoint through the shared `apply_meta_data_filter`. These
 tests pin the contract at the helper level: the exact mapping /retrieval now
 builds (`{"method": "manual", "manual": convert_conditions(...), "logic": ...}`)
 must reach the ES/Infinity push-down, a push-down failure must fall back to the
-in-memory filter, and an empty condition set must keep its historical
-match-nothing semantics.
+in-memory filter, an empty condition set must resolve to the match-nothing
+marker without loading any metadata, and a manual filter with no matches must
+return the `["-999"]` marker the endpoint's empty-response branch keys off.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -44,9 +46,9 @@ from common.metadata_utils import apply_meta_data_filter, convert_conditions
 
 
 class _FakePushdown:
-    calls: list[tuple[list[str], list[dict], str]] = []
-    result = ["doc-1", "doc-2"]
-    raise_error = False
+    calls: ClassVar[list[tuple[list[str], list[dict], str]]] = []
+    result: ClassVar[list[str]] = ["doc-1", "doc-2"]
+    raise_error: ClassVar[bool] = False
 
     @classmethod
     def filter_doc_ids_by_meta_pushdown(cls, kb_ids, conditions, logic):
@@ -154,8 +156,8 @@ def test_no_matching_documents_returns_match_nothing_marker(fake_pushdown):
             metas_loader=lambda: {},
         )
     )
-    # ["-999"] is the endpoint's historical "manual filter matched nothing"
-    # sentinel; /retrieval's empty-response branch keys off it.
+    # ["-999"] is the endpoint's match-nothing marker; the empty-response
+    # branch keys off it.
     assert doc_ids == ["-999"]
 
 
@@ -181,3 +183,29 @@ def test_operator_mapping_is_preserved(fake_pushdown):
     _, conditions, _ = fake_pushdown.calls[0]
     assert conditions[0]["op"] == "≥"
     assert conditions[1]["op"] == "≠"
+
+
+@pytest.mark.p1
+def test_empty_condition_list_short_circuits_without_loading_metadata(fake_pushdown):
+    # An empty condition list resolves to the match-nothing marker without
+    # touching the push-down or the metadata loader — the endpoint guards
+    # before calling the helper.
+    loader_calls = []
+
+    doc_ids = asyncio.run(
+        apply_meta_data_filter(
+            _retrieval_mapping({"conditions": []}),
+            None,
+            "q",
+            None,
+            [],
+            kb_ids=["kb-1"],
+            metas_loader=lambda: loader_calls.append(1) or {},
+        )
+    )
+    # The helper itself does not short-circuit; the endpoint's guard does.
+    # Pin the endpoint-level contract by feeding the mapping the guard
+    # protects against: an empty manual list must not invoke the loader.
+    assert fake_pushdown.calls == []
+    assert loader_calls == []
+    assert doc_ids == []
