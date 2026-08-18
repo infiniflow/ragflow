@@ -76,16 +76,22 @@ func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchReques
 	e.searchLimits = append(e.searchLimits, req.Limit)
 	e.searchFilters = append(e.searchFilters, req.Filter)
 	offset := req.Offset
-	if offset > len(e.rows) { offset = len(e.rows) }
+	if offset > len(e.rows) {
+		offset = len(e.rows)
+	}
 	end := offset + req.Limit
-	if req.Limit <= 0 || end > len(e.rows) { end = len(e.rows) }
+	if req.Limit <= 0 || end > len(e.rows) {
+		end = len(e.rows)
+	}
 	return &types.SearchResult{Chunks: e.rows[offset:end], Total: int64(len(e.rows))}, nil
 }
 
 func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := chunk["id"].(string); ok { ids = append(ids, id) }
+		if id, ok := chunk["id"].(string); ok {
+			ids = append(ids, id)
+		}
 	}
 	return ids
 }
@@ -93,7 +99,9 @@ func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []st
 func (e *retrievalCountEngine) GetFields(chunks []map[string]interface{}, _ []string) map[string]map[string]interface{} {
 	fields := make(map[string]map[string]interface{}, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := chunk["id"].(string); ok { fields[id] = chunk }
+		if id, ok := chunk["id"].(string); ok {
+			fields[id] = chunk
+		}
 	}
 	return fields
 }
@@ -110,39 +118,83 @@ func (e *retrievalCountEngine) KNNScores(_ context.Context, chunks []map[string]
 
 func (e *retrievalCountEngine) GetScores(result map[string]interface{}) map[string]float64 {
 	scores := make(map[string]float64, len(result))
-	for id, raw := range result { if score, ok := raw.(float64); ok { scores[id] = score } }
+	for id, raw := range result {
+		if score, ok := raw.(float64); ok {
+			scores[id] = score
+		}
+	}
 	return scores
 }
 
 func (e *retrievalCountEngine) DropChunkStore(context.Context, string, string) error { return nil }
-func (e *retrievalCountEngine) ChunkStoreExists(context.Context, string, string) (bool, error) { return true, nil }
-func (e *retrievalCountEngine) Close() error { return nil }
+func (e *retrievalCountEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+func (e *retrievalCountEngine) Close() error               { return nil }
 func (e *retrievalCountEngine) Ping(context.Context) error { return nil }
-func (e *retrievalCountEngine) GetType() string { return "elasticsearch" }
-func (e *retrievalCountEngine) SupportsPageRank() bool { return false }
-func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string) error { return nil }
-func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) { return nil, nil }
-func (e *retrievalCountEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error { return nil }
-func (e *retrievalCountEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) { return 0, nil }
-func (e *retrievalCountEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) { return nil, nil }
+func (e *retrievalCountEngine) GetType() string            { return "elasticsearch" }
+func (e *retrievalCountEngine) SupportsPageRank() bool     { return false }
+func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+	return nil
+}
+func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+	return nil, nil
+}
+func (e *retrievalCountEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
+	return nil
+}
+func (e *retrievalCountEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
+	return 0, nil
+}
+func (e *retrievalCountEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return nil, nil
+}
 func (e *retrievalCountEngine) CreateMetadataStore(context.Context, string) error { return nil }
-func (e *retrievalCountEngine) InsertMetadata(context.Context, []map[string]interface{}, string) ([]string, error) { return nil, nil }
-func (e *retrievalCountEngine) UpdateMetadata(context.Context, string, string, map[string]interface{}, string) error { return nil }
-func (e *retrievalCountEngine) DeleteMetadata(context.Context, map[string]interface{}, string) (int64, error) { return 0, nil }
-func (e *retrievalCountEngine) DeleteMetadataKeys(context.Context, string, string, []string, string) error { return nil }
+func (e *retrievalCountEngine) InsertMetadata(context.Context, []map[string]interface{}, string) ([]string, error) {
+	return nil, nil
+}
+func (e *retrievalCountEngine) UpdateMetadata(context.Context, string, string, map[string]interface{}, string) error {
+	return nil
+}
+func (e *retrievalCountEngine) DeleteMetadata(context.Context, map[string]interface{}, string) (int64, error) {
+	return 0, nil
+}
+func (e *retrievalCountEngine) DeleteMetadataKeys(context.Context, string, string, []string, string) error {
+	return nil
+}
 func (e *retrievalCountEngine) DropMetadataStore(context.Context, string) error { return nil }
-func (e *retrievalCountEngine) MetadataStoreExists(context.Context, string) (bool, error) { return true, nil }
-func (e *retrievalCountEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) { return nil, nil }
-func (e *retrievalCountEngine) IndexDocument(context.Context, string, string, interface{}) error { return nil }
+func (e *retrievalCountEngine) MetadataStoreExists(context.Context, string) (bool, error) {
+	return true, nil
+}
+func (e *retrievalCountEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return nil, nil
+}
+func (e *retrievalCountEngine) IndexDocument(context.Context, string, string, interface{}) error {
+	return nil
+}
 func (e *retrievalCountEngine) DeleteDocument(context.Context, string, string) error { return nil }
-func (e *retrievalCountEngine) BulkIndex(context.Context, string, []interface{}) (interface{}, error) { return nil, nil }
-func (e *retrievalCountEngine) GetAggregation([]map[string]interface{}, string) []map[string]interface{} { return nil }
-func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string { return nil }
-func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) { return nil, nil }
-func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string { return nil }
+func (e *retrievalCountEngine) BulkIndex(context.Context, string, []interface{}) (interface{}, error) {
+	return nil, nil
+}
+func (e *retrievalCountEngine) GetAggregation([]map[string]interface{}, string) []map[string]interface{} {
+	return nil
+}
+func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
+	return nil
+}
+func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
+	return nil
+}
 
 func TestBuildInfinityFusionExprUsesVectorSimilarityWeight(t *testing.T) {
-	tests := []struct { name string; vectorSimilarityWeight *float64; expectedWeights string }{
+	tests := []struct {
+		name                   string
+		vectorSimilarityWeight *float64
+		expectedWeights        string
+	}{
 		{name: "default", vectorSimilarityWeight: nil, expectedWeights: "0.7,0.3"},
 		{name: "text only", vectorSimilarityWeight: float64Ptr(0), expectedWeights: "1,0"},
 		{name: "balanced", vectorSimilarityWeight: float64Ptr(0.5), expectedWeights: "0.5,0.5"},
@@ -151,22 +203,28 @@ func TestBuildInfinityFusionExprUsesVectorSimilarityWeight(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			expr := buildInfinityFusionExpr(10, tt.vectorSimilarityWeight)
-			if expr.Method != "weighted_sum" { t.Fatalf("expected weighted_sum, got %q", expr.Method) }
-			if expr.TopN != 10 { t.Fatalf("expected TopN=10, got %d", expr.TopN) }
+			if expr.Method != "weighted_sum" {
+				t.Fatalf("expected weighted_sum, got %q", expr.Method)
+			}
+			if expr.TopN != 10 {
+				t.Fatalf("expected TopN=10, got %d", expr.TopN)
+			}
 			weights, ok := expr.FusionParams["weights"].(string)
-			if !ok || weights != tt.expectedWeights { t.Fatalf("expected weights=%q, got %v", tt.expectedWeights, expr.FusionParams["weights"]) }
+			if !ok || weights != tt.expectedWeights {
+				t.Fatalf("expected weights=%q, got %v", tt.expectedWeights, expr.FusionParams["weights"])
+			}
 		})
 	}
 }
 
 func float64Ptr(value float64) *float64 { return &value }
-func intPtr(value int) *int { return &value }
+func intPtr(value int) *int             { return &value }
 
 type captureSearchDocEngine struct {
 	engine.DocEngine
 	engineType    string
 	searchRequest *types.SearchRequest
-	result *types.SearchResult
+	result        *types.SearchResult
 }
 
 func (e *captureSearchDocEngine) GetType() string {
@@ -175,21 +233,34 @@ func (e *captureSearchDocEngine) GetType() string {
 
 func (e *captureSearchDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchRequest = req
-	if e.result != nil { return e.result, nil }
+	if e.result != nil {
+		return e.result, nil
+	}
 	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "chunk-1"}}, Total: 1}, nil
 }
-func (e *captureSearchDocEngine) GetChunkIDs(_ []map[string]interface{}) []string { return []string{"chunk-1"} }
-func (e *captureSearchDocEngine) GetFields(_ []map[string]interface{}, _ []string) map[string]map[string]interface{} { return map[string]map[string]interface{}{} }
-func (e *captureSearchDocEngine) GetAggregation(_ []map[string]interface{}, _ string) []map[string]interface{} { return []map[string]interface{}{} }
-func (e *captureSearchDocEngine) GetHighlight(_ []map[string]interface{}, _ []string, _ string) map[string]string { return nil }
+func (e *captureSearchDocEngine) GetChunkIDs(_ []map[string]interface{}) []string {
+	return []string{"chunk-1"}
+}
+func (e *captureSearchDocEngine) GetFields(_ []map[string]interface{}, _ []string) map[string]map[string]interface{} {
+	return map[string]map[string]interface{}{}
+}
+func (e *captureSearchDocEngine) GetAggregation(_ []map[string]interface{}, _ string) []map[string]interface{} {
+	return []map[string]interface{}{}
+}
+func (e *captureSearchDocEngine) GetHighlight(_ []map[string]interface{}, _ []string, _ string) map[string]string {
+	return nil
+}
 
-type captureEmbeddingDriver struct { modelModule.ModelDriver }
+type captureEmbeddingDriver struct{ modelModule.ModelDriver }
+
 func (d *captureEmbeddingDriver) Embed(_ context.Context, _ *string, _ []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return []modelModule.EmbeddingData{{Embedding: []float64{0.1, 0.2}}}, nil
 }
 
 func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
-	if GetQueryBuilder() == nil { globalQueryBuilder = NewQueryBuilder() }
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
 	vectorWeight := 0.8
 	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineInfinity)}
 	service := NewRetrievalService(docEngine, nil)
@@ -197,12 +268,16 @@ func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
 		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, Top: 10,
 		RankFeature: map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
-	if err != nil { t.Fatalf("Search failed: %v", err) }
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
 	assertFusionWeights(t, docEngine.searchRequest, "0.2,0.8")
 }
 
 func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
-	if GetQueryBuilder() == nil { globalQueryBuilder = NewQueryBuilder() }
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
 	vectorWeight := 0.8
 	top := 10
 	docEngine := &captureSearchDocEngine{
@@ -214,16 +289,24 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, Top: &top,
 		RankFeature: &map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
-	if err != nil { t.Fatalf("Retrieval failed: %v", err) }
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
 	assertFusionWeights(t, docEngine.searchRequest, "0.2,0.8")
 }
 
 func assertFusionWeights(t *testing.T, request *types.SearchRequest, want string) {
 	t.Helper()
-	if request == nil || len(request.MatchExprs) != 3 { t.Fatalf("expected three match expressions, got %#v", request) }
+	if request == nil || len(request.MatchExprs) != 3 {
+		t.Fatalf("expected three match expressions, got %#v", request)
+	}
 	fusionExpr, ok := request.MatchExprs[2].(*types.FusionExpr)
-	if !ok { t.Fatalf("expected third match expression to be FusionExpr, got %T", request.MatchExprs[2]) }
-	if got := fusionExpr.FusionParams["weights"]; got != want { t.Fatalf("expected weights=%s, got %v", want, got) }
+	if !ok {
+		t.Fatalf("expected third match expression to be FusionExpr, got %T", request.MatchExprs[2])
+	}
+	if got := fusionExpr.FusionParams["weights"]; got != want {
+		t.Fatalf("expected weights=%s, got %v", want, got)
+	}
 }
 
 func TestBuildRetrievalFusionExprKeepsLegacyWeightsOutsideInfinity(t *testing.T) {
