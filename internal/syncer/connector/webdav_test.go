@@ -552,3 +552,68 @@ func TestWebDAVConnectorFiltersAndImages(t *testing.T) {
 		t.Fatalf("with images batch len = %d, want 5", len(imageBatch.Documents))
 	}
 }
+
+// TestWebDAVConnectorOpenSyncRejectsExternalHref verifies that a PROPFIND response
+// containing an absolute href to a different origin is rejected at URL resolution
+// time, preventing any GET to the external host.
+func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	var getPaths []string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			getPaths = append(getPaths, r.URL.Path)
+		}
+		if r.Method != "PROPFIND" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusMultiStatus)
+		_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+<D:response><D:href>/</D:href><D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
+<D:response><D:href>/notes/alpha.txt</D:href><D:propstat><D:prop><D:getcontentlength>11</D:getcontentlength><D:getlastmodified>Fri, 02 Jan 2026 00:00:00 GMT</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
+<D:response><D:href>http://evil.example.com/secret.txt</D:href><D:propstat><D:prop><D:getcontentlength>5</D:getcontentlength><D:getlastmodified>Fri, 02 Jan 2026 00:00:00 GMT</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
+</D:multistatus>`)
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	// Build connector without auth so the test handler stays simple.
+	connector, err := NewWebDAVConnector(map[string]any{
+		"base_url":    server.URL,
+		"remote_path": "/",
+		"batch_size":  10,
+	})
+	if err != nil {
+		t.Fatalf("NewWebDAVConnector failed: %v", err)
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+
+	for {
+		batch, batchErr := session.NextBatch(context.Background())
+		if errors.Is(batchErr, io.EOF) {
+			break
+		}
+		if batchErr != nil {
+			t.Fatalf("NextBatch failed: %v", batchErr)
+		}
+		for _, doc := range batch.Documents {
+			if strings.Contains(doc.SourceID, "evil.example.com") {
+				t.Fatalf("external href leaked into sync results: %s", doc.SourceID)
+			}
+		}
+	}
+
+	// The only GET should be for /notes/alpha.txt, never evil.example.com.
+	for _, p := range getPaths {
+		if strings.Contains(p, "evil") {
+			t.Fatalf("GET issued to external host: %s", p)
+		}
+	}
+}

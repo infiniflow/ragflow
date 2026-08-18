@@ -434,6 +434,9 @@ func resolveWebDAVURL(baseURL, target string) (string, error) {
 		if ref.Scheme == "" {
 			ref.Scheme = base.Scheme
 		}
+		if ref.Scheme != base.Scheme || ref.Host != base.Host {
+			return "", fmt.Errorf("webdav href resolves to a different origin than base URL: %s", ref.String())
+		}
 		return ref.String(), nil
 	}
 	resolved := *base
