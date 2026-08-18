@@ -8,9 +8,9 @@ import (
 )
 
 // mockRotationDoc implements DocAnalyzer with deterministic OCR results per angle.
-// The mock tracks the call sequence: evaluateTableOrientation tests angles in
-// order 0°, 90°, 180°, 270°. Each call to OCRDetect increments an internal
-// counter and returns data for the corresponding angle.
+// The mock tracks the call sequence: EvaluateTableOrientation calls OCRRecognize
+// once per angle in order 0°, 90°, 180°, 270°. Each call to OCRRecognize
+// increments an internal counter and returns data for the corresponding angle.
 type mockRotationDoc struct {
 	// angle → {regions count, average confidence, error}
 	angles map[int]struct {
@@ -202,17 +202,18 @@ func TestEvaluateTableOrientation(t *testing.T) {
 		}
 	})
 
-	t.Run("threshold guard — 0° already reads well, do not rotate", func(t *testing.T) {
-		// 0° confidence 0.90 (>= 0.8 guard) even though 90° is slightly higher
-		// (0.95): the absolute threshold must still keep 0° because score0 >= 0.8.
+	t.Run("threshold guard — score_0 >= 0.8 blocks rotation despite large margin", func(t *testing.T) {
+		// Isolate the score_0 < 0.8 clause: 0° reads well (0.80) and 90° is
+		// clearly higher (1.00), so the margin clause (combined diff 0.22 > 0.2)
+		// passes, but score_0 = 0.88 >= 0.8 must still force keeping 0°.
 		doc := &mockRotationDoc{
 			angles: map[int]struct {
 				regions int
 				avgConf float64
 				err     error
 			}{
-				0:  {regions: 8, avgConf: 0.90},
-				90: {regions: 8, avgConf: 0.95},
+				0:  {regions: 50, avgConf: 0.80},
+				90: {regions: 50, avgConf: 1.00},
 			},
 		}
 		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
@@ -245,6 +246,46 @@ func TestEvaluateTableOrientation(t *testing.T) {
 			if s != 0 {
 				t.Error("all scores should be 0 on OCR failure")
 			}
+		}
+	})
+
+	t.Run("zero score_0 with low non-zero score — keep 0°", func(t *testing.T) {
+		// 0° has no recognized text (score_0 == 0). A non-zero angle with a
+		// low combined score must NOT be accepted, matching Python's
+		// `score_0 is not None` threshold (not `score_0 > 0`).
+		doc := &mockRotationDoc{
+			angles: map[int]struct {
+				regions int
+				avgConf float64
+				err     error
+			}{
+				0:  {regions: 0, avgConf: 0},
+				90: {regions: 2, avgConf: 0.05},
+			},
+		}
+		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		if angle != 0 {
+			t.Errorf("expected 0° (score_0 == 0, low non-zero score), got %d°", angle)
+		}
+	})
+
+	t.Run("zero score_0 with high non-zero score — accept rotation", func(t *testing.T) {
+		// 0° has no recognized text (score_0 == 0) but 90° reads clearly
+		// (combined 1.045 > 0.2). Mirrors Python: score_0 is not None, so the
+		// margin clause alone decides and 90° is accepted.
+		doc := &mockRotationDoc{
+			angles: map[int]struct {
+				regions int
+				avgConf float64
+				err     error
+			}{
+				0:  {regions: 0, avgConf: 0},
+				90: {regions: 50, avgConf: 0.95},
+			},
+		}
+		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		if angle != 90 {
+			t.Errorf("expected 90° (score_0 == 0, high non-zero score), got %d°", angle)
 		}
 	})
 }

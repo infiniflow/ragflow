@@ -84,9 +84,11 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 	}
 
 	// Absolute threshold: only accept non-0° if its combined score exceeds
-	// 0° by more than 0.2 AND the 0° score is below 0.8. Mirrors Python.
+	// 0° by more than 0.2 AND the 0° score is below 0.8. Mirrors Python's
+	// `score_0 is not None` (not score_0 > 0): when 0° has no recognized text
+	// (score_0 == 0) the margin clause still gates acceptance.
 	score0 := scores[0]
-	if bestAngle != 0 && score0 > 0 {
+	if bestAngle != 0 {
 		if !(bestScore-score0 > 0.2 && score0 < 0.8) {
 			bestAngle = 0
 			bestImg = tableImg

@@ -1,27 +1,24 @@
 package table
 
 // =============================================================================
-// Parity: table orientation scoring uses detection geometry, not recognition
-// confidence.
+// Parity: Go's EvaluateTableOrientation must agree with Python's
+// _evaluate_table_orientation (deepdoc/parser/pdf_parser.py:367) on which
+// rotation angle is chosen.
 //
-// Python's _evaluate_table_orientation (deepdoc/parser/pdf_parser.py:367)
-// scores each candidate rotation (0/90/180/270) by OCR *recognition
+// Both score each candidate rotation (0/90/180/270) by OCR *recognition
 // confidence*:
 //   combined = avg_conf * (1 + 0.1 * min(regions, 50) / 50)
-// so it picks the orientation where the text is actually legible.
+// so the orientation where the text is actually legible wins.
 //
-// Go's EvaluateTableOrientation (table_orient.go:23) scores by OCR *detection*
-// region count + area only:
-//   combined = regions * (1 + 0.06 * areaRatio)
-//
-// Detection geometry is rotation-invariant: a 90°-rotated text line yields the
-// same number of detection boxes and the same axis-aligned bbox area as at 0°
-// (the bbox just swaps width/height). So for a cleanly-rotated table all four
-// candidate angles get the SAME Go score, and Go falls back to 0° — it is
-// orientation-blind and cannot tell that the table needs rotating.
+// Why recognition confidence (not detection geometry) is the right signal:
+// detection box count and axis-aligned bbox area are rotation-invariant — a
+// 90°-rotated text line yields the same boxes and area as at 0° (the bbox just
+// swaps width/height). Detection therefore carries no orientation signal; only
+// recognition legibility does. This is the rationale for scoring by confidence
+// rather than by detection geometry.
 //
 // Run with:
-//   ./build.sh --test -run TestEvaluateTableOrientation_IgnoresRecognitionConfidence ./internal/deepdoc/parser/pdf/table/
+//   ./build.sh --test -run TestEvaluateTableOrientation_MatchesPythonRecognitionConfidence ./internal/deepdoc/parser/pdf/table/
 // =============================================================================
 
 import (
@@ -33,11 +30,10 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// orientConfMock returns angle-independent OCR *detection* output (the honest
-// model of "detection cannot distinguish orientation") while carrying a
-// per-angle recognition confidence as ground truth. EvaluateTableOrientation
-// only consumes OCRDetect; OCRRecognize is used solely to compute the
-// Python-equivalent expected angle below.
+// orientConfMock implements DocAnalyzer with per-angle recognition confidence
+// as ground truth (the signal EvaluateTableOrientation now consumes) plus an
+// angle-independent OCR *detection* output kept only to satisfy the interface
+// and to document that detection geometry is rotation-invariant.
 type orientConfMock struct {
 	// angle → {regions, avgConf}
 	angles map[int]struct {
@@ -78,11 +74,13 @@ func (m *orientConfMock) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.O
 	return texts, nil
 }
 
-// TestEvaluateTableOrientation_IgnoresRecognitionConfidence exposes that
-// Go's EvaluateTableOrientation cannot rotate a table whose only signal of
-// correct orientation is recognition confidence. Detection geometry alone is
-// insufficient because it is invariant under 90° rotation.
-func TestEvaluateTableOrientation_IgnoresRecognitionConfidence(t *testing.T) {
+// TestEvaluateTableOrientation_MatchesPythonRecognitionConfidence verifies that
+// Go's EvaluateTableOrientation picks the same rotation angle as Python's
+// _evaluate_table_orientation when scoring purely by recognition confidence.
+// Detection geometry is rotation-invariant, so only recognition legibility can
+// distinguish the correct orientation — Go must agree with Python on which
+// angle that is.
+func TestEvaluateTableOrientation_MatchesPythonRecognitionConfidence(t *testing.T) {
 	// Ground truth per angle: detection is identical (8 regions, same area),
 	// but recognition confidence differs — only 90° is upright/legible.
 	doc := &orientConfMock{
@@ -124,14 +122,13 @@ func TestEvaluateTableOrientation_IgnoresRecognitionConfidence(t *testing.T) {
 	t.Logf("Python-expected angle: %d° (score0=%.3f, best=%.3f)", pyBest, pyScore0, pyBestScore)
 	t.Logf("Go angle: %d° scores=%v", goAngle, goScores)
 
-	// Go scores every angle identically (detection is rotation-invariant) and
-	// falls back to 0°, so it returns the WRONG (unrotated) orientation.
+	// Both implementations score purely by recognition confidence, so they must
+	// agree on the chosen angle. A mismatch means Go diverged from the Python
+	// formula or threshold.
 	if goAngle != pyBest {
-		t.Errorf("TABLE ORIENTATION DIVERGENCE: Go returns %d° but Python (recognition-confidence scoring) returns %d°. "+
-			"Go scores orientation by detection region count + area only, which is rotation-invariant, so it is orientation-blind: "+
-			"a correctly-vertical table that should be rotated to %d° is left unrotated at 0°. "+
-			"Fix: score each angle by recognition confidence (reuse inferOCRRecognize + ocrBestScore from #18299), e.g. "+
-			"avg_conf*(1+0.1*min(regions,50)/50), with threshold best-score0>0.2 && score0<0.8.",
+		t.Errorf("TABLE ORIENTATION PARITY DIVERGENCE: Go returns %d° but Python (recognition-confidence scoring) returns %d°. "+
+			"Both should score each angle by avg_conf*(1+0.1*min(regions,50)/50) with threshold "+
+			"best-score_0>0.2 && score_0<0.8, yielding angle %d°.",
 			goAngle, pyBest, pyBest)
 	}
 }
