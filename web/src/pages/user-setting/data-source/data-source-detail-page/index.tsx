@@ -29,9 +29,9 @@ import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 import {
   DataSourceFormDefaultValues,
-  DataSourceKey,
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
@@ -49,6 +49,8 @@ import { DataSourceLogsTable } from './log-table';
 const SourceDetailPage = () => {
   const { t } = useTranslation();
   const formRef = useRef<DynamicFormRef>(null);
+  const [searchParams] = useSearchParams();
+  const connectorId = searchParams.get('id')!;
 
   const { data: detail } = useFetchDataSourceDetail();
   const { updateStatus, loading: statusUpdateLoading } =
@@ -158,7 +160,10 @@ const SourceDetailPage = () => {
   }, [detail]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
-  const { loading: testLoading, handleTest } = useTestDataSource();
+  const { loading: testLoading, handleTest } = useTestDataSource(
+    formRef,
+    connectorId,
+  );
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
@@ -248,18 +253,15 @@ const SourceDetailPage = () => {
             />
           </div>
           <div className="max-w-[1200px] flex justify-end gap-2">
-            {(detail?.source === DataSourceKey.REST_API ||
-              detail?.source === DataSourceKey.BIGQUERY) && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleTest}
-                disabled={testLoading}
-                loading={testLoading}
-              >
-                {t('setting.restApiTestConnection')}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testLoading}
+              loading={testLoading}
+            >
+              {t('setting.dataSourceTestConnection')}
+            </Button>
             <Button
               type="button"
               onClick={handlePrimaryAction}

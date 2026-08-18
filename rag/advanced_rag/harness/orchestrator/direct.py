@@ -2,11 +2,13 @@
 
 import logging
 
+from rag.advanced_rag.harness.stats import in_phase
 from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
 
 
+@in_phase("direct")
 async def direct_search(state: dict, tools) -> dict:
     """Single hybrid search → merge into kbinfos."""
     question = state.get("question", "")

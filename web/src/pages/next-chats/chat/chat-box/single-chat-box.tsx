@@ -14,7 +14,8 @@ import {
 } from '../../hooks/use-button-disabled';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
-import { buildMessageItemReference } from '../../utils';
+import { useMessageReferences } from '../../hooks/use-message-references';
+import { EmptyReference } from '../../utils';
 import { useShowInternet } from '../use-show-internet';
 
 interface IProps {
@@ -49,6 +50,11 @@ export function SingleChatBox({ conversation }: IProps) {
     useClickDrawer();
 
   const showInternet = useShowInternet();
+
+  const messageReferences = useMessageReferences(
+    messages,
+    conversation.reference,
+  );
 
   useEffect(() => {
     // Skip when the conversation prop is stale — its id doesn't match the
@@ -92,15 +98,10 @@ export function SingleChatBox({ conversation }: IProps) {
               nickname={userInfo.nickname}
               avatar={userInfo.avatar}
               avatarDialog={currentDialog.icon}
-              reference={buildMessageItemReference(
-                {
-                  messages,
-                  reference: conversation.reference,
-                },
-                message,
-              )}
+              reference={messageReferences.get(message) ?? EmptyReference}
               clickDocumentButton={clickDocumentButton}
               index={i}
+              isLast={i === messages.length - 1}
               removeMessageById={removeMessageById}
               regenerateMessage={regenerateMessage}
               sendLoading={sendLoading}

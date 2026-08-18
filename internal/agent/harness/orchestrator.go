@@ -31,6 +31,9 @@ type SearchFn func(ctx context.Context, query, keywords string) ([]map[string]in
 type Kbinfos struct {
 	Chunks  []map[string]interface{}
 	DocAggs []map[string]interface{}
+	// PreSummary is the merged claim-report summary produced by AgenticResearch
+	// (Python kbinfos["pre_summary"]). The final-answer call reads it when set.
+	PreSummary string
 }
 
 func (k *Kbinfos) HasChunks() bool { return len(k.Chunks) > 0 }
@@ -129,6 +132,13 @@ type OrchestratorResult struct {
 	Abstain       bool
 	EmptyResult   bool
 	Kbinfos       *Kbinfos
+	// Caveat is the decision-ladder explanation for a partial answer (e.g.
+	// "evidence partially supports the answer"), surfaced in the final answer.
+	Caveat string
+	// ForceLLM is set by the FALLBACK_LLM verdict: even with no gathered
+	// evidence, finalization must still call the direct LLM (rather than return
+	// the canned "no evidence" string).
+	ForceLLM bool
 }
 
 // DirectSearch is the low-mode orchestrator: one hybrid search → merge.
@@ -199,17 +209,27 @@ func DecomposeAndSearch(ctx context.Context, search SearchFn, question, keywords
 				crossResults = append(crossResults, CrossCheckClaim(c.AgentResult, allChunks))
 			}
 		}
-		verdict := ComputeFusionScore(agentResults, crossResults, mode)
-		action, _ := RouteSufficiencyVerdict(verdict, modeLabel, cycle, mode.MaxOrchestratorCycles)
+		claimTargets := make([]ClaimTarget, 0, len(claims))
+		for _, c := range claims {
+			if c != nil {
+				claimTargets = append(claimTargets, *c)
+			}
+		}
+		verdict := ComputeFusionScore(agentResults, crossResults, mode, question, claimTargets, allChunks)
+		action, _, caveat := RouteSufficiencyVerdict(verdict, modeLabel, cycle, mode.MaxOrchestratorCycles, nil)
 
 		switch action {
-		case "ANSWER", "ANSWER_PARTIAL":
-			return OrchestratorResult{Verdict: &verdict, PartialAnswer: action == "ANSWER_PARTIAL", Kbinfos: kbinfos}
+		case "ANSWER":
+			return OrchestratorResult{Verdict: &verdict, Kbinfos: kbinfos}
+		case "ANSWER_PARTIAL":
+			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, Kbinfos: kbinfos}
+		case "FALLBACK_LLM":
+			// ultra route: no grounded answer, hand off to the direct LLM. Force
+			// finalization to call the model even with empty evidence.
+			return OrchestratorResult{Verdict: &verdict, PartialAnswer: true, Caveat: caveat, ForceLLM: true, Kbinfos: kbinfos}
 		case "ABSTAIN":
 			kbinfos.Chunks = nil
 			return OrchestratorResult{Verdict: &verdict, Abstain: true, Kbinfos: kbinfos}
-		case "REPLAN":
-			// Reset unverified for another cycle (simplified: continue loop).
 		case "CONTINUE":
 			// fallthrough to next cycle
 		}

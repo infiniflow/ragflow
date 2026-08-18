@@ -43,8 +43,8 @@ function NavNodeDeleteAction({
 
   return (
     <ConfirmDeleteDialog
-      title={t('datasetNav.deleteNodeTitle')}
-      content={{ title: t('datasetNav.deleteNodeDescription') }}
+      title={t('knowledgeCompilation.navDeleteNodeTitle')}
+      content={{ title: t('knowledgeCompilation.navDeleteNodeDescription') }}
       onOk={handleConfirmDelete}
     >
       <Button
@@ -117,7 +117,7 @@ export function NavTreeLeftPanel({
         onNodeClick,
         onNodeExpand,
         onEntityClick,
-        loadingPlaceholder: t('datasetNav.loading'),
+        loadingPlaceholder: t('knowledgeCompilation.navLoading'),
       }),
     [
       navList?.items,
@@ -135,12 +135,12 @@ export function NavTreeLeftPanel({
     <aside className="size-full flex flex-col">
       <section className="flex items-center justify-between px-3 pt-3">
         <span className="text-sm font-medium text-text-primary">
-          {t('datasetNav.title')} ({navList?.total ?? 0})
+          {t('knowledgeCompilation.navTitle')} ({navList?.total ?? 0})
         </span>
         {treeData.length > 0 && (
           <ConfirmDeleteDialog
-            title={t('datasetNav.deleteAllTitle')}
-            content={{ title: t('datasetNav.deleteAllDescription') }}
+            title={t('knowledgeCompilation.navDeleteAllTitle')}
+            content={{ title: t('knowledgeCompilation.navDeleteAllDescription') }}
             onOk={onDeleteAll}
           >
             <Button
@@ -166,7 +166,7 @@ export function NavTreeLeftPanel({
           </div>
         ) : treeData.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-secondary">
-            {t('datasetNav.empty')}
+            {t('knowledgeCompilation.navEmpty')}
           </div>
         ) : (
           <TreeView

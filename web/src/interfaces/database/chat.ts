@@ -78,6 +78,7 @@ export interface IDialog {
   top_k: number;
   top_n: number;
   rerank_id?: string;
+  tenant_rerank_id?: string;
   meta_data_filter: MetaDataFilter;
 }
 
@@ -130,7 +131,7 @@ export interface IReferenceChunk {
   similarity: number;
   vector_similarity: number;
   term_similarity: number;
-  positions: number[];
+  positions: number[][];
   doc_type?: string;
   document_metadata?: Record<string, any>;
 }

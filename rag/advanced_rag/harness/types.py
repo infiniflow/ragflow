@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 # ═══════════════════════════════════════════════════════════════
 # Route
 # ═══════════════════════════════════════════════════════════════
@@ -153,7 +152,7 @@ class SufficiencyVerdict:
 @dataclass
 class ToolResult:
     chunks: list[dict] = field(default_factory=list)
-    # Doc-id list from routing tools (e.g. dataset_navigation_by_tree) that
+    # Doc-id list from routing tools (e.g. dataset_navigation_search) that
     # narrow the corpus to the relevant documents instead of returning chunks.
     docs: list[str] | None = None
     metadata: dict = field(default_factory=dict)

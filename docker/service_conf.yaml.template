@@ -55,6 +55,13 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+gaussdb:
+  host: '${GAUSSDB_HOST}'
+  port: ${GAUSSDB_PORT}
+  database: '${GAUSSDB_DATABASE:-postgres}'
+  user: '${GAUSSDB_USER}'
+  password: '${GAUSSDB_PASSWORD}'
+  schema: '${GAUSSDB_SCHEMA:-public}'
 seekdb:
   scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
   config:
@@ -90,7 +97,6 @@ ingestor:
   compiler_pool_size: 0
 file_syncer:
   max_concurrent_syncs: 5
-  sync_interval: 3
 user_default_llm:
   default_models:
     embedding_model:
@@ -104,6 +110,8 @@ user_default_llm:
 #   port: 5432
 #   max_connections: 100
 #   stale_timeout: 30
+# GaussDB metadata DB is configured through GAUSSDB_METADATA_* environment
+# variables and is intentionally not rendered into service_conf.yaml.
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'

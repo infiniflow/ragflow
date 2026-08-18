@@ -16,6 +16,7 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	vectorSimilarityWeight := 0.8
 	searchID := "search-1"
 	rerankID := "rerank-1"
+	includeKnowledgeCompilation := false
 	req := &service.SearchDatasetRequest{
 		Question:               "hello world",
 		Page:                   &page,
@@ -30,6 +31,7 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 		Keyword:                &keyword,
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
+		IncludeCompiledChunks:  &includeKnowledgeCompilation,
 	}
 
 	converted := req.ToSearchDatasetsRequest("dataset-1")
@@ -50,5 +52,8 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	}
 	if converted.SimilarityThreshold != req.SimilarityThreshold || converted.VectorSimilarityWeight != req.VectorSimilarityWeight {
 		t.Fatalf("converted request did not preserve thresholds: %#v", converted)
+	}
+	if converted.IncludeCompiledChunks != req.IncludeCompiledChunks {
+		t.Fatalf("converted request did not preserve include_knowledge_compilation: %#v", converted)
 	}
 }

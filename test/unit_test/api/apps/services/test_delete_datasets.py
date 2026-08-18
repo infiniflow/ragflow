@@ -17,8 +17,8 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 from enum import IntEnum
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -155,7 +155,16 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         ),
         StatusEnum=SimpleNamespace(),
         LLMType=SimpleNamespace(),
+        RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
+    )
+    _stub(monkeypatch, "rag.advanced_rag", __path__=[])
+    _stub(monkeypatch, "rag.advanced_rag.knowlege_compile", __path__=[])
+    _stub(
+        monkeypatch,
+        "rag.advanced_rag.knowlege_compile.wiki",
+        WIKI_PAGE_COMPILE_KWD="wiki",
+        _chunk_hash=lambda content: "stub-hash",
     )
     _stub(
         monkeypatch,

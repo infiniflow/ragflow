@@ -92,13 +92,6 @@ export const InitialOutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat.Text,
 };
 
-export enum ContextGeneratorFieldName {
-  Summary = 'summary',
-  Keywords = 'keywords',
-  Questions = 'questions',
-  Metadata = 'metadata',
-}
-
 export const FileId = 'File'; // BeginId
 
 export enum TokenizerSearchMethod {
@@ -350,11 +343,39 @@ export const initialTitleChunkerValues = {
 
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
-  field_name: ContextGeneratorFieldName.Summary,
+  keywords: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  questions: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  tags: {
+    top_n: 0,
+    tag_file_id: '',
+  },
+  summary: {
+    enabled: false,
+    system_prompt: '',
+  },
+  metadata_config: {
+    enabled: false,
+    metadata: [],
+    built_in_metadata: [],
+  },
+  metadata: [],
+  built_in_metadata: [],
+  field_name: '',
   auto_keywords: 0,
   auto_questions: 0,
-  auto_tags: 1,
+  auto_tags: 0,
   tag_file_id: '',
+  enable_summary: 0,
+  enable_metadata: 0,
+  keywords_sys_prompt: '',
+  questions_sys_prompt: '',
+  sys_prompt: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
@@ -363,7 +384,7 @@ export const initialExtractorValues = {
 export const initialCompilationValues = {
   compilation_template_group_id: '',
   llm_id: '',
-  plan: false,
+  mode: 'entity',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },

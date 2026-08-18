@@ -29,13 +29,11 @@ interface ICompilationEmptyStateProps {
 }
 
 const TitleKeyMap: Record<EmptyStateType, string> = {
-  [ViewMode.LlmWiki]: 'knowledgeDetails.noWikiPages',
-  [ViewMode.Skills]: 'knowledgeDetails.noSkills',
-  [ViewMode.Graph]: 'knowledgeDetails.noStructureGraph',
-  [ViewMode.MindMap]: 'knowledgeDetails.noStructureMindmap',
-  [ViewMode.Timeline]: 'knowledgeDetails.noStructureTimeline',
-  // [ViewMode.SessionEssence]: 'knowledgeDetails.noStructureSessionEssence',
-  // [ViewMode.SessionGraph]: 'knowledgeDetails.noStructureSessionGraph',
+  [ViewMode.LlmWiki]: 'knowledgeCompilation.noWikiPages',
+  [ViewMode.Skills]: 'knowledgeCompilation.noSkills',
+  [ViewMode.Graph]: 'knowledgeCompilation.noStructureGraph',
+  [ViewMode.MindMap]: 'knowledgeCompilation.noStructureMindmap',
+  [ViewMode.Timeline]: 'knowledgeCompilation.noStructureTimeline',
 };
 
 export function CompilationEmptyState({
@@ -73,12 +71,12 @@ export function CompilationEmptyState({
               disabled={disabled}
             >
               <WandSparkles className="mr-2 size-4" />
-              {t('knowledgeDetails.generate')}
+              {t('knowledgeCompilation.generate')}
             </Button>
           )}
           {isGo && (
             <p className="text-sm text-text-secondary">
-              {t('knowledgeDetails.autoCompiled')}
+              {t('knowledgeCompilation.autoCompiled')}
             </p>
           )}
         </div>
@@ -99,12 +97,12 @@ export function CompilationEmptyState({
               ) : (
                 <div className="flex flex-col items-center gap-2 text-text-secondary">
                   <span className="text-4xl font-medium text-accent-primary">
-                    {t('knowledgeDetails.compiling', {
+                    {t('knowledgeCompilation.compiling', {
                       defaultValue: 'Compiling…',
                     })}
                   </span>
                   <span>
-                    {t('knowledgeDetails.compilingCounts', {
+                    {t('knowledgeCompilation.compilingCounts', {
                       inflight: data?.inflight ?? 0,
                       backlog: data?.backlog ?? 0,
                       defaultValue:

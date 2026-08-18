@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 // TestBatchCompareWithPython compares Go output against Python reference

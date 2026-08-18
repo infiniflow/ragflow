@@ -35,9 +35,9 @@ type ModelDriver interface {
 	// ChatStreamlyWithSender sends multiple messages asynchronously
 	ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
 	// Embed a list of texts into embeddings
-	Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error)
+	Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
-	Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error)
+	Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error)
 	// TranscribeAudio transcribe audio
 	TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error)
 	TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error
@@ -192,9 +192,25 @@ type APIConfig struct {
 	BaseURL *string
 }
 
+type EmbedRequest struct {
+	Texts  []string // for text
+	Images [][]byte // for image
+	Urls   []string // for image
+}
+
 type EmbeddingConfig struct {
 	Dimension      int
 	EncodingFormat string
+}
+
+type RerankRequest struct {
+	Query         string  // for text question
+	ImageQuery    []byte  // for image
+	ImageQueryURL *string // for image
+
+	Documents []string // for text candidates
+	Images    [][]byte // for image candidates
+	ImageURLs []string // for image candidates
 }
 
 type RerankConfig struct {
@@ -270,8 +286,8 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity between query and texts
-func (r *RerankModel) Rerank(ctx context.Context, query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return r.ModelDriver.Rerank(ctx, r.ModelName, query, texts, apiConfig, rerankConfig, modelUsage)
+func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
 }
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.

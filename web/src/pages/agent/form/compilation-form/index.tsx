@@ -1,11 +1,16 @@
 import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { LargeModelFormField } from '@/components/large-model-form-field';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
-import { useTranslate } from '@/hooks/common-hooks';
+import {
+  getBackendLanguage,
+  subscribeBackendLanguage,
+} from '@/utils/backend-runtime';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
+import { memo, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialCompilationValues } from '../../constant/pipeline';
 import { useOwnerTenantId } from '../../context';
@@ -17,13 +22,22 @@ import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
-export const FormSchema = z.object({
-  compilation_template_group_id: z.string().optional(),
-  llm_id: z.string().optional(),
-  plan: z.boolean(),
-});
+function useFormSchema() {
+  const { t } = useTranslation();
+  const FormSchema = z.object({
+    compilation_template_group_id: z
+      .string()
+      .min(1, t('knowledgeConfiguration.compilationTemplateRequired')),
+    llm_id: z.string().optional(),
+    mode: z.enum(['entity', 'topic']),
+  });
 
-export type CompilationFormSchemaType = z.infer<typeof FormSchema>;
+  return FormSchema;
+}
+
+export type CompilationFormSchemaType = z.infer<
+  ReturnType<typeof useFormSchema>
+>;
 
 const outputList = buildOutputList(initialCompilationValues.outputs);
 
@@ -34,7 +48,13 @@ const CompilationForm = ({
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
-  const { t } = useTranslate('setting');
+  const { t } = useTranslation();
+  const FormSchema = useFormSchema();
+  const backendLanguage = useSyncExternalStore(
+    subscribeBackendLanguage,
+    getBackendLanguage,
+    getBackendLanguage,
+  );
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
@@ -53,11 +73,24 @@ const CompilationForm = ({
           name="llm_id"
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
-        <SwitchFormField
-          name="plan"
-          label={t('plan')}
-          tooltip={t('planTip')}
-        ></SwitchFormField>
+        {backendLanguage === 'go' && (
+          <RAGFlowFormItem
+            name="mode"
+            label={t('knowledgeCompilation.wikiMode')}
+            tooltip={t('knowledgeCompilation.wikiModeTip')}
+          >
+            {(field) => (
+              <SelectWithSearch
+                value={field.value}
+                onChange={field.onChange}
+                options={[
+                  { label: t('knowledgeCompilation.entityMode'), value: 'entity' },
+                  { label: t('knowledgeCompilation.topicMode'), value: 'topic' },
+                ]}
+              />
+            )}
+          </RAGFlowFormItem>
+        )}
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

@@ -16,7 +16,7 @@ Current phase: {phase}
 Phase hint: {phase_hint}
 
 Rules:
-1. Go coarse-to-fine. First narrow the corpus with navigation tools (dataset_navigation_by_tree,
+1. Go coarse-to-fine. First narrow the corpus with navigation tools (dataset_navigation_search,
    then ontology_navigate / mindmap_navigate).
 2. After a navigation tool returns passages, judge whether they already answer the task.
    If they do, call generate_report immediately — do NOT search further.

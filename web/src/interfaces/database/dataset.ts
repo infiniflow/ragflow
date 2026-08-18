@@ -189,6 +189,7 @@ export interface ITestingChunk {
   positions: number[][];
   docnm_kwd: string;
   doc_type_kwd: string;
+  document_metadata?: Record<string, any>;
 }
 
 export interface ITestingDocument {
@@ -278,8 +279,10 @@ export interface IArtifactGraphEntity {
 export interface IArtifactAlteration {
   removed: number;
   newly_uploaded: number;
+  changed: number;
   removed_doc_ids: string[];
   newly_uploaded_doc_ids: string[];
+  changed_doc_ids: string[];
   involved_doc_ids: string[];
   eligible_doc_ids: string[];
 }

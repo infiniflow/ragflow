@@ -34,6 +34,9 @@ const (
 // SyncTaskContext contains the database rows needed to execute a task.
 type SyncTaskContext = dao.SyncTaskContext
 
+// ScheduledSyncTask contains one scheduled task and its connector schedule settings.
+type ScheduledSyncTask = dao.ScheduledSyncTask
+
 // SyncStats accumulates task-level document results.
 type SyncStats struct {
 	Added      int64
@@ -79,30 +82,14 @@ func NewSyncTaskService(taskDAO *dao.SyncTaskDAO) *SyncTaskService {
 	return &SyncTaskService{taskDAO: taskDAO}
 }
 
-// ListDueTasks returns due schedule tasks.
-func (s *SyncTaskService) ListDueTasks(ctx context.Context, now time.Time) ([]dao.SyncTask, error) {
-	tasks, err := s.taskDAO.ListDueTasks(ctx, now, 128)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]dao.SyncTask, 0, len(tasks))
-	for _, task := range tasks {
-		out = append(out, dao.SyncTask{SyncLogs: task})
-	}
-	return out, nil
+// ListScheduledTasks returns scheduled tasks for one-time timer reconciliation.
+func (s *SyncTaskService) ListScheduledTasks(ctx context.Context) ([]ScheduledSyncTask, error) {
+	return s.taskDAO.ListScheduledTasks(ctx, 4096)
 }
 
-// ListStartupTasks returns scheduled tasks for NATS startup reconciliation.
-func (s *SyncTaskService) ListStartupTasks(ctx context.Context) ([]dao.SyncTask, error) {
-	tasks, err := s.taskDAO.ListStartupTasks(ctx, 128)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]dao.SyncTask, 0, len(tasks))
-	for _, task := range tasks {
-		out = append(out, dao.SyncTask{SyncLogs: task})
-	}
-	return out, nil
+// GetScheduledTask returns one scheduled task for timer registration.
+func (s *SyncTaskService) GetScheduledTask(ctx context.Context, taskID string) (ScheduledSyncTask, error) {
+	return s.taskDAO.GetScheduledTask(ctx, taskID)
 }
 
 // Claim marks a scheduled task running if no other scanner claimed it first.
@@ -144,14 +131,23 @@ func (s *SyncTaskService) Fail(ctx context.Context, taskID, connectorID string, 
 	return s.taskDAO.FailTask(ctx, taskID, connectorID, message, 1)
 }
 
+// HandleTransientFailure retries a running task until maxRetries is reached.
+func (s *SyncTaskService) HandleTransientFailure(ctx context.Context, taskID, connectorID string, err error, maxRetries int64) (int64, bool, error) {
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	return s.taskDAO.HandleTransientFailure(ctx, taskID, connectorID, message, maxRetries)
+}
+
 // CompleteSync commits a successful SYNC task and schedules the next one.
-func (s *SyncTaskService) CompleteSync(ctx context.Context, taskContext SyncTaskContext, pollRangeEnd time.Time, stats SyncStats) error {
+func (s *SyncTaskService) CompleteSync(ctx context.Context, taskContext SyncTaskContext, pollRangeEnd time.Time, stats SyncStats) (string, error) {
 	changed := stats.Added + stats.Updated
-	return s.taskDAO.CompleteSyncTask(ctx, taskContext, pollRangeEnd, changed, changed, stats.ErrorCount, stats.ErrorMsg)
+	return s.taskDAO.CompleteSyncTask(ctx, taskContext, pollRangeEnd, stats.Added, changed, stats.ErrorCount, stats.ErrorMsg)
 }
 
 // CompletePrune commits a successful PRUNE task and schedules the next one.
-func (s *SyncTaskService) CompletePrune(ctx context.Context, taskContext SyncTaskContext, removed int64) error {
+func (s *SyncTaskService) CompletePrune(ctx context.Context, taskContext SyncTaskContext, removed int64) (string, error) {
 	return s.taskDAO.CompletePruneTask(ctx, taskContext, removed)
 }
 

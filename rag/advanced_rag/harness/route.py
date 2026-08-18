@@ -7,6 +7,7 @@ import re
 from rag.advanced_rag.harness.types import RouteDecision
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.prompts.route_prompt import ROUTE_PROMPT
+from rag.advanced_rag.harness.stats import in_phase
 
 _LOG = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ def _extract_json(text: str) -> dict:
     return parsed
 
 
+@in_phase("route")
 async def route_node(state: dict, tools) -> dict:
     """Route node — analyze the question, produce RouteDecision."""
     question = state.get("question", "")
