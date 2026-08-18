@@ -42,6 +42,13 @@ func CalSpans(rows [][]pdf.TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 			if strings.Contains(cell.Label, "spanning") {
 				continue
 			}
+			// Cells without position data (e.g. the zero-coordinate cells
+			// padded by MergeTablesAcrossPages to align per-page column
+			// counts) must not define column/row geometry, or they would drag
+			// boundaries to the origin and corrupt span detection.
+			if cell.X0 == 0 && cell.X1 == 0 && cell.Y0 == 0 && cell.Y1 == 0 {
+				continue
+			}
 			if cell.X0 < colLeft[j] {
 				colLeft[j] = cell.X0
 			}
