@@ -67,6 +67,65 @@ func TestGoogleCloudStorageConnectorOpenSyncUsesFingerprintAndFetch(t *testing.T
 	}
 }
 
+func TestGoogleCloudStorageConnectorOpenSyncDefersListingUntilNextBatch(t *testing.T) {
+	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
+		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+	})
+	var listCalls int
+	baseListObjects := connector.listObjects
+	connector.listObjects = func(ctx context.Context, startAfter string, maxKeys int32) ([]googleCloudStorageObject, string, bool, error) {
+		listCalls++
+		return baseListObjects(ctx, startAfter, maxKeys)
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	if listCalls != 0 {
+		t.Fatalf("OpenSync list calls = %d, want 0", listCalls)
+	}
+	if _, err := session.NextBatch(context.Background()); err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if listCalls != 1 {
+		t.Fatalf("NextBatch list calls = %d, want 1", listCalls)
+	}
+}
+
+func TestGoogleCloudStorageConnectorOpenSyncFiltersImagesUnlessAllowed(t *testing.T) {
+	objects := []googleCloudStorageObject{
+		{Key: "docs/a.png", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+		{Key: "docs/b.txt", LastModified: mustTime(t, "2026-01-02T00:00:00Z"), Size: 1, ETag: "b"},
+	}
+	connector := newTestGoogleCloudStorageConnector(t, objects)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != googleCloudStorageSourceID("bucket", "docs/b.txt") {
+		t.Fatalf("documents = %+v", batch.Documents)
+	}
+
+	allowed := newTestGoogleCloudStorageConnector(t, objects)
+	allowed.allowImages = true
+	session, err = allowed.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("allow images OpenSync: %v", err)
+	}
+	batch, err = session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("allow images NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 2 {
+		t.Fatalf("allow images documents len = %d, want 2", len(batch.Documents))
+	}
+}
+
 func TestGoogleCloudStorageConnectorOpenPruneReturnsSlimSnapshot(t *testing.T) {
 	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
 		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},

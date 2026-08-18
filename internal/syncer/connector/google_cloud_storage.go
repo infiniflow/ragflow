@@ -95,8 +95,7 @@ func (c *GoogleCloudStorageConnector) Validate(ctx context.Context) error {
 	if _, err := c.ensureClient(ctx); err != nil {
 		return err
 	}
-	_, _, _, err := c.listObjectPage(ctx, "", 1)
-	return err
+	return nil
 }
 
 // ValidateConnectorSetting validates Google Cloud Storage settings from an
@@ -112,27 +111,10 @@ func (c *GoogleCloudStorageConnector) OpenSync(ctx context.Context, request Sync
 	if err := c.Validate(ctx); err != nil {
 		return nil, err
 	}
-	objects, err := c.collectObjects(ctx)
-	if err != nil {
-		return nil, err
-	}
-	filenameCounts := googleCloudStorageFilenameCounts(objects)
-	documents := make([]SourceDocument, 0, len(objects))
-	for _, object := range objects {
-		if object.Key == "" || strings.HasSuffix(object.Key, "/") {
-			continue
-		}
-		sourceID := googleCloudStorageSourceID(c.bucketName, object.Key)
-		if !includeGoogleCloudStorageObject(request, sourceID, object) {
-			continue
-		}
-		documents = append(documents, c.sourceDocument(sourceID, object, filenameCounts))
-	}
 	session := &googleCloudStorageSyncSession{
-		connector:  c,
-		documents:  documents,
-		batchSize:  c.batchSize,
-		batchIndex: 0,
+		connector: c,
+		request:   request,
+		batchSize: c.batchSize,
 	}
 	if request.Resume != nil {
 		session.applyResume(request.Resume)
@@ -287,32 +269,58 @@ func googleCloudStorageObjectFromS3(object types.Object) googleCloudStorageObjec
 
 type googleCloudStorageSyncSession struct {
 	connector  *GoogleCloudStorageConnector
-	documents  []SourceDocument
+	request    SyncRequest
 	batchSize  int
-	batchIndex int
+	startAfter string
+	done       bool
 }
 
 // NextBatch returns the next Google Cloud Storage document batch.
 func (s *googleCloudStorageSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	if s.batchIndex >= len(s.documents) {
-		return SyncBatch{}, io.EOF
+	for {
+		if s.done {
+			return SyncBatch{}, io.EOF
+		}
+		previousStartAfter := s.startAfter
+		objects, nextStartAfter, hasMore, err := s.connector.listObjectPage(ctx, s.startAfter, int32(s.batchSize))
+		if err != nil {
+			return SyncBatch{}, err
+		}
+		if !hasMore {
+			s.done = true
+		}
+		if nextStartAfter != "" {
+			s.startAfter = strings.TrimPrefix(nextStartAfter, googleCloudStorageSourceID(s.connector.bucketName, ""))
+		}
+		if hasMore && s.startAfter == previousStartAfter {
+			return SyncBatch{}, fmt.Errorf("Google Cloud Storage listing did not advance from %q", previousStartAfter)
+		}
+
+		documents := make([]SourceDocument, 0, len(objects))
+		for _, object := range objects {
+			sourceID := googleCloudStorageSourceID(s.connector.bucketName, object.Key)
+			if !includeGoogleCloudStorageObject(s.request, sourceID, object) {
+				continue
+			}
+			document, ok := s.connector.sourceDocument(sourceID, object)
+			if ok {
+				documents = append(documents, document)
+			}
+		}
+		if len(documents) == 0 {
+			continue
+		}
+		last := documents[len(documents)-1]
+		updatedAt := last.UpdatedAt
+		return SyncBatch{
+			Documents: documents,
+			Checkpoint: &SyncCheckpoint{
+				Cursor:    last.SourceID,
+				SourceID:  last.SourceID,
+				UpdatedAt: &updatedAt,
+			},
+		}, nil
 	}
-	end := s.batchIndex + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
-	}
-	documents := s.documents[s.batchIndex:end]
-	s.batchIndex = end
-	last := documents[len(documents)-1]
-	updatedAt := last.UpdatedAt
-	return SyncBatch{
-		Documents: documents,
-		Checkpoint: &SyncCheckpoint{
-			Cursor:    last.SourceID,
-			SourceID:  last.SourceID,
-			UpdatedAt: &updatedAt,
-		},
-	}, nil
 }
 
 // Close closes the Google Cloud Storage sync session.
@@ -327,24 +335,23 @@ func (s *googleCloudStorageSyncSession) Fetch(ctx context.Context, ref FetchRefe
 
 func (s *googleCloudStorageSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
-	if sourceID == "" {
+	prefix := googleCloudStorageSourceID(s.connector.bucketName, "")
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
 		return
 	}
-	for index, document := range s.documents {
-		if document.SourceID == sourceID {
-			s.batchIndex = index + 1
-			return
-		}
-	}
+	s.startAfter = strings.TrimPrefix(sourceID, prefix)
 }
 
-func (c *GoogleCloudStorageConnector) sourceDocument(sourceID string, object googleCloudStorageObject, filenameCounts map[string]int) SourceDocument {
+func (c *GoogleCloudStorageConnector) sourceDocument(sourceID string, object googleCloudStorageObject) (SourceDocument, bool) {
+	if object.Key == "" || strings.HasSuffix(object.Key, "/") || (!c.allowImages && object.isImage()) {
+		return SourceDocument{}, false
+	}
 	fileName := path.Base(object.Key)
 	fetch := googleCloudStorageFetchReference{Key: object.Key}
 	fetchKey, _ := json.Marshal(fetch)
 	return SourceDocument{
 		SourceID:           sourceID,
-		SemanticIdentifier: c.semanticIdentifier(object.Key, fileName, filenameCounts),
+		SemanticIdentifier: c.semanticIdentifier(object.Key, fileName),
 		Extension:          strings.ToLower(filepath.Ext(fileName)),
 		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: object.Size},
 		UpdatedAt:          object.LastModified,
@@ -353,13 +360,10 @@ func (c *GoogleCloudStorageConnector) sourceDocument(sourceID string, object goo
 			"url": googleCloudStorageConsoleURL(c.bucketName, object.Key),
 		},
 		Fingerprint: normalizedGoogleCloudStorageETag(object.ETag),
-	}
+	}, true
 }
 
-func (c *GoogleCloudStorageConnector) semanticIdentifier(key, fileName string, filenameCounts map[string]int) string {
-	if filenameCounts[fileName] <= 1 {
-		return fileName
-	}
+func (c *GoogleCloudStorageConnector) semanticIdentifier(key, fileName string) string {
 	relativePath := key
 	if c.prefix != "" {
 		relativePath = strings.TrimPrefix(key, c.prefix)
@@ -368,6 +372,15 @@ func (c *GoogleCloudStorageConnector) semanticIdentifier(key, fileName string, f
 		return fileName
 	}
 	return strings.ReplaceAll(relativePath, "/", " / ")
+}
+
+func (o googleCloudStorageObject) isImage() bool {
+	switch strings.ToLower(filepath.Ext(o.Key)) {
+	case ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif":
+		return true
+	default:
+		return false
+	}
 }
 
 type googleCloudStoragePruneSession struct {
@@ -412,14 +425,6 @@ func includeGoogleCloudStorageObject(request SyncRequest, sourceID string, objec
 		return fingerprint == "" || !ok || stored == "" || stored != fingerprint
 	}
 	return !beforeOrAtWindowStart(object.LastModified, request.WindowStart) && !afterWindowEnd(object.LastModified, request.WindowEnd)
-}
-
-func googleCloudStorageFilenameCounts(objects []googleCloudStorageObject) map[string]int {
-	counts := make(map[string]int)
-	for _, object := range objects {
-		counts[path.Base(object.Key)]++
-	}
-	return counts
 }
 
 func normalizeGoogleCloudStoragePrefix(prefix string) string {
