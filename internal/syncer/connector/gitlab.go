@@ -33,7 +33,6 @@ import (
 
 const (
 	defaultGitlabBatchSize = 32
-	gitlabItemsPerPage     = 100
 	gitlabRequestTimeout   = 60 * time.Second
 )
 
@@ -46,7 +45,6 @@ type GitlabConnector struct {
 	gitlabURL        string
 	token            string
 	batchSize        int
-	stateFilter      string
 	includeMRs       bool
 	includeIssues    bool
 	includeCodeFiles bool
@@ -69,7 +67,6 @@ func NewGitlabConnector(config map[string]any) (*GitlabConnector, error) {
 		gitlabURL:        gitlabURL,
 		token:            strings.TrimSpace(token),
 		batchSize:        configInt(config["batch_size"], defaultGitlabBatchSize),
-		stateFilter:      "all",
 		includeMRs:       configBoolDefault(config["include_mrs"], true),
 		includeIssues:    configBoolDefault(config["include_issues"], true),
 		includeCodeFiles: configBoolDefault(config["include_code_files"], true),
@@ -388,8 +385,6 @@ type gitlabSyncSession struct {
 	resumePage     int
 	resumeOffset   int
 	resumeSourceID string
-	resumeTreePath string
-	resumePending  []string
 }
 
 // NextBatch returns the next GitLab document batch.
@@ -637,8 +632,6 @@ func (s *gitlabSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	if cursor.Stage == gitlabStageCodeFiles {
 		s.treeQueue = append([]string{cursor.TreePath}, cursor.PendingPaths...)
 		s.treePage = cursor.Page
-		s.resumeTreePath = cursor.TreePath
-		s.resumePending = append([]string(nil), cursor.PendingPaths...)
 	} else {
 		s.page = cursor.Page
 	}
@@ -676,8 +669,6 @@ func (s *gitlabSyncSession) clearResume() {
 	s.resumePage = 0
 	s.resumeOffset = 0
 	s.resumeSourceID = ""
-	s.resumeTreePath = ""
-	s.resumePending = nil
 }
 
 // gitlabPruneSession streams a complete GitLab slim snapshot.
