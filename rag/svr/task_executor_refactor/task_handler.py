@@ -767,6 +767,7 @@ class TaskHandler:
             "compile_kwd",
         ]
         order_by = OrderByExpr()
+        order_by.asc("chunk_order_int")
         order_by.asc("page_num_int")
         order_by.asc("top_int")
 

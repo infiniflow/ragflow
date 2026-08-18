@@ -38,6 +38,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "mysql", NewMySQLConnector)
 	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
+	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
