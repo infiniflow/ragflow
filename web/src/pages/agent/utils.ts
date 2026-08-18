@@ -453,8 +453,32 @@ export function transformExtractorParams(
   const tagFileId =
     params.tags?.tag_file_id ?? (params as any).tag_file_id ?? '';
 
+  const {
+    // Legacy flat fields — consumed above as fallbacks, dropped from the
+    // canonical API payload so obsolete and nested fields never coexist.
+    prompts: _prompts,
+    sys_prompt: _sys_prompt,
+    keywords_sys_prompt: _keywords_sys_prompt,
+    questions_sys_prompt: _questions_sys_prompt,
+    auto_keywords: _auto_keywords,
+    auto_questions: _auto_questions,
+    auto_tags: _auto_tags,
+    tag_file_id: _tag_file_id,
+    enable_summary: _enable_summary,
+    enable_metadata: _enable_metadata,
+    metadata_config: _metadata_config,
+    // Canonical nested fields — recomputed below.
+    keywords: _keywords,
+    questions: _questions,
+    tags: _tags,
+    summary: _summary,
+    metadata: _metadata,
+    field_name: _field_name,
+    ...llmSettings
+  } = params as Record<string, any>;
+
   return {
-    ...params,
+    ...llmSettings,
     keywords: {
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,

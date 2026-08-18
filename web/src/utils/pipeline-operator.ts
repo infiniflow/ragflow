@@ -166,6 +166,20 @@ export function transformExtractorConfigToForm(
     built_in_metadata: rawBuiltInList,
   };
 
+  // Drop legacy flat fields once their values have populated the nested
+  // config, so callers never see obsolete and canonical fields together.
+  delete result.enable_summary;
+  delete result.sys_prompt;
+  delete result.enable_metadata;
+  delete result.metadata_config;
+  delete result.auto_keywords;
+  delete result.auto_questions;
+  delete result.auto_tags;
+  delete result.tag_file_id;
+  delete result.keywords_sys_prompt;
+  delete result.questions_sys_prompt;
+  delete result.prompts;
+
   return result;
 }
 

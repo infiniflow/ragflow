@@ -363,8 +363,13 @@ const useGraphStore = create<RFState>()(
         }
       },
       duplicateNode: (id: string, name: string) => {
-        const { getNode, addNode, generateNodeName, duplicateIterationNode } =
-          get();
+        const {
+          getNode,
+          addNode,
+          generateNodeName,
+          duplicateIterationNode,
+          nodes,
+        } = get();
         const node = getNode(id);
 
         if (
@@ -375,6 +380,15 @@ const useGraphStore = create<RFState>()(
         }
 
         if (node?.data.label === Operator.Iteration) {
+          const hasExtractor = nodes.some(
+            (x) =>
+              x.parentId === node.id &&
+              (x.data?.label === Operator.Extractor ||
+                x.id.startsWith(`${Operator.Extractor}:`)),
+          );
+          if (hasExtractor) {
+            return;
+          }
           duplicateIterationNode(id, name);
           return;
         }
@@ -534,7 +548,10 @@ const useGraphStore = create<RFState>()(
         });
       },
       findNodeByName: (name: Operator) => {
-        return get().nodes.find((x) => x.data.label === name);
+        return get().nodes.find(
+          (x) =>
+            x.data.label === name || x.id.startsWith(`${name}:`),
+        );
       },
       updateNodeForm: (
         nodeId: string,

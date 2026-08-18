@@ -369,9 +369,8 @@ type CanvasMouseEvent = Pick<
 >;
 
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
-  const { edges, nodes, addEdge, addNode, getNode } = useGraphStore(
-    (state) => state,
-  );
+  const { edges, nodes, addEdge, addNode, getNode, findNodeByName } =
+    useGraphStore((state) => state);
   const getNodeName = useGetNodeName();
   const { initializeOperatorParams } = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
@@ -396,12 +395,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     ) =>
       (event?: CanvasMouseEvent): string | undefined => {
         if (type === Operator.Extractor) {
-          const hasExtractor = nodes.some(
-            (n) =>
-              n.data?.label === Operator.Extractor ||
-              n.id.startsWith(`${Operator.Extractor}:`),
-          );
-          if (hasExtractor) {
+          if (findNodeByName(Operator.Extractor)) {
             return undefined;
           }
         }
@@ -521,6 +515,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       nodes,
       reactFlowInstance,
       resizeIterationNode,
+      findNodeByName,
     ],
   );
 

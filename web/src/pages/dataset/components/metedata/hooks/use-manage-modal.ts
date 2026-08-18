@@ -414,7 +414,6 @@ export const useManageMetaDataModal = (
       const { data: res } = await kbUpdateMetaData(id || '', {
         metadata: data,
         built_in_metadata: builtInMetadata || [],
-        builtInMetadata: builtInMetadata || [],
       });
       if (res.code === 0) {
         message.success(t('message.operated'));
@@ -439,7 +438,6 @@ export const useManageMetaDataModal = (
           data: {
             metadata: data,
             built_in_metadata: builtInMetadata || [],
-            builtInMetadata: builtInMetadata || [],
           },
         });
         if (res.code === 0) {

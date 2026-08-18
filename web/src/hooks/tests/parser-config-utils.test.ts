@@ -60,5 +60,7 @@ describe('extractParserConfigExt', () => {
     expect(result?.llm_id).toBe('llm-123');
     expect(result?.ext).not.toHaveProperty('metadata');
     expect(result?.ext).not.toHaveProperty('built_in_metadata');
+    expect(result?.ext).not.toHaveProperty('enable_metadata');
+    expect(result?.ext).not.toHaveProperty('llm_id');
   });
 });

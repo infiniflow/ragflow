@@ -84,6 +84,44 @@ describe('Extractor parameter transformations & precedence', () => {
       const result = transformExtractorParams(input);
       expect(result.field_name).toBe('custom_chunk_field');
     });
+
+    it('omits obsolete flat fields from a legacy input payload', () => {
+      const input: any = {
+        enable_summary: 1,
+        sys_prompt: 'Old summary prompt',
+        enable_metadata: 1,
+        metadata: [{ key: 'author', type: 'string' }],
+        built_in_metadata: [{ key: 'file_name', type: 'string' }],
+        auto_keywords: 4,
+        keywords_sys_prompt: 'Old KW prompt',
+        auto_questions: 2,
+        questions_sys_prompt: 'Old Q prompt',
+        auto_tags: 1,
+        tag_file_id: 'tag-file-1',
+        prompts: 'Old user prompt',
+      };
+
+      const result = transformExtractorParams(input);
+
+      expect(result.enable_summary).toBeUndefined();
+      expect(result.enable_metadata).toBeUndefined();
+      expect(result.metadata_config).toBeUndefined();
+      expect(result.sys_prompt).toBeUndefined();
+      expect(result.prompts).toBeUndefined();
+      expect(result.auto_keywords).toBeUndefined();
+      expect(result.keywords_sys_prompt).toBeUndefined();
+      expect(result.auto_questions).toBeUndefined();
+      expect(result.questions_sys_prompt).toBeUndefined();
+      expect(result.auto_tags).toBeUndefined();
+      expect(result.tag_file_id).toBeUndefined();
+      expect(result.summary).toEqual({
+        enabled: true,
+        system_prompt: 'Old summary prompt',
+      });
+      expect(result.metadata.enabled).toBe(true);
+      expect(result.metadata.metadata).toHaveLength(1);
+      expect(result.metadata.built_in_metadata).toHaveLength(1);
+    });
   });
 
   describe('transformExtractorConfigToForm', () => {

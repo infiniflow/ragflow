@@ -83,14 +83,11 @@ export const FormSchema = z.object({
     })
     .optional(),
   metadata: z
-    .union([
-      z.object({
-        enabled: z.union([z.number(), z.boolean()]).optional(),
-        metadata: z.any().optional(),
-        built_in_metadata: z.any().optional(),
-      }),
-      z.array(z.any()),
-    ])
+    .object({
+      enabled: z.union([z.number(), z.boolean()]).optional(),
+      metadata: z.any().optional(),
+      built_in_metadata: z.any().optional(),
+    })
     .optional(),
   field_name: z.string().optional(),
   ...LlmSettingSchema,
@@ -121,13 +118,9 @@ function ExtractorAutoMetadata() {
   } = useManageMetadata();
 
   const handleOpen = useCallback(() => {
-    const rawMeta = form.getValues('metadata');
-    const customList = Array.isArray(rawMeta)
-      ? rawMeta
-      : (rawMeta?.metadata || []);
-    const builtInList = Array.isArray(rawMeta)
-      ? []
-      : (rawMeta?.built_in_metadata || []);
+    const rawMeta = form.getValues('metadata') || {};
+    const customList = rawMeta.metadata || [];
+    const builtInList = rawMeta.built_in_metadata || [];
 
     showManageMetadataModal({
       metadata: util.metaDataSettingJSONToMetaDataTableData(customList),
@@ -157,6 +150,13 @@ function ExtractorAutoMetadata() {
     [form],
   );
 
+  const handleMetadataChange = useCallback(
+    (checked: boolean) => {
+      form.setValue('metadata.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
   return (
     <>
       <RAGFlowFormItem
@@ -178,9 +178,7 @@ function ExtractorAutoMetadata() {
             </Button>
             <Switch
               checked={field.value === 1 || field.value === true}
-              onCheckedChange={(checked) => {
-                field.onChange(checked);
-              }}
+              onCheckedChange={handleMetadataChange}
               data-testid="extractor-metadata-switch"
             />
           </div>
@@ -239,6 +237,16 @@ const ExtractorForm = ({
 
   const [activeTab, setActiveTab] = useState<ExtractorSubTab>(
     ExtractorSubTab.Keywords,
+  );
+
+  const handleSummaryChange = useCallback(
+    (checked: boolean) => {
+      form.setValue('summary.enabled', checked, { shouldDirty: true });
+      form.setValue('field_name', checked ? 'summary' : '', {
+        shouldDirty: true,
+      });
+    },
+    [form],
   );
 
   useWatchFormChange(node?.id, form);
@@ -370,12 +378,7 @@ const ExtractorForm = ({
               {(field) => (
                 <Switch
                   checked={field.value === 1 || field.value === true}
-                  onCheckedChange={(checked) => {
-                    field.onChange(checked);
-                    form.setValue('field_name', checked ? 'summary' : '', {
-                      shouldDirty: true,
-                    });
-                  }}
+                  onCheckedChange={handleSummaryChange}
                   data-testid="extractor-summary-switch"
                 />
               )}
