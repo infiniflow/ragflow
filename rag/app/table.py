@@ -427,9 +427,13 @@ def column_data_type(arr):
             # dropping to None. The column-level type is a majority vote, and
             # cells the winning converter cannot represent (N/A, TBD, '-' in a
             # numeric column) were silently discarded — absent from both the
-            # chunk body and the stored field, with only a log line.
-            # chunk()'s consumer branch for strings in non-text columns
-            # already expects this shape.
+            # chunk body and the stored field. Covers both the raising
+            # converters and the return-None ones (bool/datetime), which never
+            # hit the warning below otherwise.
+            logging.info(
+                "Column %d: value %r not representable as %s; preserving original",
+                i, arr[i], ty,
+            )
             continue
         arr[i] = converted
     # if ty == "text":

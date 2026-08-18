@@ -28,9 +28,13 @@ written against (that branch was unreachable dead code before)."""
 import sys
 from unittest.mock import MagicMock
 
+import pytest
+
 # Same shape as test_table_chunk_column_roles.py: keep optional
-# storage/parser backends out of the import path.
-for _name in (
+# storage/parser backends out of the import path. Installed (and torn
+# down) per test so the stubs never leak into a sibling module's import
+# of the real dependency tree.
+_STUB_NAMES = (
     "api.db.services.knowledgebase_service",
     "deepdoc.parser",
     "deepdoc.parser.figure_parser",
@@ -38,15 +42,32 @@ for _name in (
     "deepdoc.vision.ocr",
     "rag.app.picture",
     "common.settings",
-):
-    _m = MagicMock()
-    _m.__path__ = []
-    sys.modules[_name] = _m
-sys.modules["common.settings"].DOC_ENGINE_INFINITY = False
+)
 
-import pytest
 
-from rag.app.table import column_data_type
+@pytest.fixture(autouse=True)
+def _import_table_module():
+    saved = {name: sys.modules.get(name) for name in _STUB_NAMES}
+    try:
+        for name in _STUB_NAMES:
+            m = MagicMock()
+            m.__path__ = []
+            sys.modules[name] = m
+        sys.modules["common.settings"].DOC_ENGINE_INFINITY = False
+        yield
+    finally:
+        for name, original in saved.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
+
+def column_data_type(arr):
+    """Late-bound: the module import needs the stubs the fixture installs."""
+    from rag.app.table import column_data_type as _fn
+
+    return _fn(arr)
 
 
 @pytest.mark.p1
@@ -96,9 +117,30 @@ def test_fully_convertible_columns_are_unchanged():
 
 
 @pytest.mark.p1
-def test_nan_and_nat_still_normalize_to_none():
+def test_nan_input_still_normalizes_to_none():
     import math
 
+    out, ty = column_data_type(["1", "2", "3", float("nan")])
+    assert ty == "int"
+    assert out == [1, 2, 3, None]
+
+
+@pytest.mark.p1
+def test_nat_input_still_normalizes_to_none():
+    from datetime import datetime
+
+    import pandas as pd
+
+    out, ty = column_data_type(
+        [pd.Timestamp("2025-01-01"), pd.Timestamp("2025-02-01"), pd.NaT]
+    )
+    assert ty == "datetime"
+    assert str(out[0]).startswith("2025-01-01")
+    assert out[2] is None
+
+
+@pytest.mark.p1
+def test_none_input_still_normalizes_to_none():
     out, ty = column_data_type(["1", "2", "3", None])
     assert ty == "int"
     assert out == [1, 2, 3, None]
