@@ -260,6 +260,7 @@ def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypa
     assert by_id["kb-a"]["unstart_count"] == 3
     assert by_id["kb-a"]["running_count"] == 1
     assert by_id["kb-a"]["done_count"] == 7
+    assert by_id["kb-a"]["fail_count"] == 2
     assert by_id["kb-b"]["cancel_count"] == 1
     assert by_id["kb-b"]["done_count"] == 4
 
