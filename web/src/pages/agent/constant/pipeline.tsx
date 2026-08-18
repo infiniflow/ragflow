@@ -92,13 +92,6 @@ export const InitialOutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat.Text,
 };
 
-export enum ContextGeneratorFieldName {
-  Summary = 'summary',
-  Keywords = 'keywords',
-  Questions = 'questions',
-  Metadata = 'metadata',
-}
-
 export const FileId = 'File'; // BeginId
 
 export enum TokenizerSearchMethod {

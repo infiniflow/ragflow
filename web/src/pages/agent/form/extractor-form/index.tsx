@@ -52,6 +52,7 @@ import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
+import { transformExtractorConfigToForm } from '@/utils/pipeline-operator';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { canSelectTagFile, useTagFileTree } from './use-tag-file-tree';
@@ -228,63 +229,9 @@ const outputList = buildOutputList(initialExtractorValues.outputs);
 const useNormalizedExtractorFormValues = (node?: RAGFlowNodeType) => {
   return useMemo(() => {
     const raw = (node?.data?.form as Record<string, any>) || {};
-    const base = { ...initialExtractorValues, ...raw };
-
-    const isSummaryEnabled =
-      raw.summary?.enabled !== undefined
-        ? Boolean(raw.summary?.enabled)
-        : raw.enable_summary === 1 || raw.enable_summary === true;
-
-    const isMetadataEnabled =
-      raw.metadata_config?.enabled !== undefined
-        ? Boolean(raw.metadata_config?.enabled)
-        : raw.enable_metadata === 1 || raw.enable_metadata === true;
-
-    const metaList = raw.metadata_config?.metadata ?? raw.metadata ?? [];
-    const builtInList =
-      raw.metadata_config?.built_in_metadata ??
-      raw.built_in_metadata ??
-      [];
-
     return {
-      ...base,
-      keywords: {
-        top_n:
-          raw.keywords?.top_n ??
-          raw.auto_keywords ??
-          initialExtractorValues.keywords.top_n,
-        system_prompt:
-          raw.keywords?.system_prompt ?? raw.keywords_sys_prompt ?? '',
-      },
-      questions: {
-        top_n:
-          raw.questions?.top_n ??
-          raw.auto_questions ??
-          initialExtractorValues.questions.top_n,
-        system_prompt:
-          raw.questions?.system_prompt ?? raw.questions_sys_prompt ?? '',
-      },
-      tags: {
-        top_n:
-          raw.tags?.top_n ?? raw.auto_tags ?? initialExtractorValues.tags.top_n,
-        tag_file_id: raw.tags?.tag_file_id ?? raw.tag_file_id ?? '',
-      },
-      summary: {
-        enabled: isSummaryEnabled,
-        system_prompt: raw.summary?.system_prompt ?? raw.sys_prompt ?? '',
-      },
-      enable_summary: isSummaryEnabled ? 1 : 0,
-      field_name: isSummaryEnabled
-        ? (raw.field_name || 'summary')
-        : (raw.field_name === 'summary' ? '' : (raw.field_name || '')),
-      metadata_config: {
-        enabled: isMetadataEnabled,
-        metadata: metaList,
-        built_in_metadata: builtInList,
-      },
-      enable_metadata: isMetadataEnabled ? 1 : 0,
-      metadata: metaList,
-      built_in_metadata: builtInList,
+      ...initialExtractorValues,
+      ...transformExtractorConfigToForm(raw),
     };
   }, [node?.data?.form]);
 };
