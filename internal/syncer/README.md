@@ -559,3 +559,12 @@ Tests that need real MySQL, MinIO, Elasticsearch, Infinity, LLMs, or external Sa
 - `FetchRef` must contain everything needed for the download, because the runner only has the `SourceDocument` and the session when processing documents.
 - The `Fingerprint` algorithm must be stable across processes for the same document.
 - The incremental window lower bound is open, i.e. `WindowStart < UpdatedAt <= WindowEnd`.
+
+## External
+
+For more info, you can review these PR:
+- [x] [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
+- [x] [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
+- [x] [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
+
+
