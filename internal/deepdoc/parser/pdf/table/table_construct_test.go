@@ -697,7 +697,8 @@ func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 }
 
 func TestCleanupOrphanColumns(t *testing.T) {
-	// Test 1: Less than 4 rows - no cleanup
+	// Test 1: column cleanup is gated on >=4 rows, so a 3-row table is
+	// skipped; even if it ran, this single-column grid has no orphan column.
 	t.Run("less than 4 rows", func(t *testing.T) {
 		rows := [][]pdf.TSRCell{
 			{{Text: "a"}},
