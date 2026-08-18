@@ -97,10 +97,8 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if tsrErr != nil {
 		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 	}
-	w := tm.Region.X1 - tm.Region.X0
-	h := tm.Region.Y1 - tm.Region.Y0
-	cropOffX := math.Max(0, tm.Region.X0-w*0.03)
-	cropOffY := math.Max(0, tm.Region.Y0-h*0.03)
+	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
+	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {
 		if bestAngle != 0 {

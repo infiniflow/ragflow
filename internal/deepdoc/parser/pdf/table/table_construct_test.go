@@ -143,13 +143,14 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	// Simulate 公司差旅费 page 0 table coordinates.
 	// DLA region: X0=217, X1=1584, Y0=985, Y1=1599 at 216 DPI → PDF: 72-528 x 328-533
 	// Scale = 216/72 = 3.0
-	// cropOff ≈ region.X - region.W*0.03
+	// cropOff = region.X - 10pt*ZM = region.X - 30px (fixed margin, matches
+	// Python's MARGIN=10; NOT the old Go 3% proportional margin).
 	const scale = 3.0
-	const cropOffX = 176.0
-	const cropOffY = 967.0
+	const cropOffX = 187.0
+	const cropOffY = 955.0
 
 	// Post-merge boxes in PDF point space (inside the table region).
-	// PDF Y=470 → crop Top = 470*3-967 = 443 → overlaps crop cell at Y0=441.
+	// PDF Y=470 → crop Top = 470*3-955 = 455 → overlaps crop cell at Y0=441.
 	// Boxes must have R (row) and C (col) annotations matching cells,
 	// matching Python's construct_table which assigns boxes to cells by R/C.
 	boxes := []pdf.TextBox{
