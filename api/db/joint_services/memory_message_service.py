@@ -194,8 +194,8 @@ async def extract_by_llm(
         return [
             {
                 "content": extracted_content["content"],
-                "valid_at": format_iso_8601_to_ymd_hms(extracted_content["valid_at"]),
-                "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"]) if extracted_content.get("invalid_at") else "",
+                "valid_at": format_iso_8601_to_ymd_hms(extracted_content.get("valid_at", ""), fallback=conversation_time),
+                "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"], fallback="") if extracted_content.get("invalid_at") else "",
                 "message_type": message_type,
             }
             for message_type, extracted_content_list in res_json.items()
