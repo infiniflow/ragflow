@@ -147,7 +147,7 @@ func TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders(t *testing.T
 	}
 }
 
-// TestHeaderSetWithBlockType_NonNumericUnlabeledMissesHeaders verifies the
+// TestHeaderSetWithBlockType_NonNumericUnlabeledDetectsHeaders verifies the
 // geometric gap is fixed end-to-end: a non-numeric table whose header row
 // carries no TSR "header" label and whose content is non-Nu. Py flags the header
 // row via the geometric H signal (box overlaps header region ≥0.3); Go's
@@ -155,9 +155,9 @@ func TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders(t *testing.T
 //
 // Before the fix, HeaderSetWithBlockType had no access to geometric overlap and
 // yielded ZERO headers for this table (parity #4, geometric gap). After the fix,
-// the geometric signal (box.H > 0, set by AnnotateTableBoxes at 0.3) is combined
-// additively with blockType + label, so row 0 is detected.
-func TestHeaderSetWithBlockType_NonNumericUnlabeledMissesHeaders(t *testing.T) {
+// the geometric signal (box.H > 0, set by AnnotateTableBoxes against the first
+// grid row) is combined additively with blockType + label, so row 0 is detected.
+func TestHeaderSetWithBlockType_NonNumericUnlabeledDetectsHeaders(t *testing.T) {
 	rows := [][]pdf.TSRCell{
 		{
 			{Text: "姓名", Label: "table row"},
@@ -195,4 +195,58 @@ func TestHeaderSetWithBlockType_NonNumericUnlabeledMissesHeaders(t *testing.T) {
 		t.Errorf("PARITY #4: data rows 1/2 must NOT be headers. header set=%v", hdrs)
 	}
 	t.Logf("header set=%v", hdrs)
+}
+
+// TestAnnotateTableBoxes_FirstHeaderCellEncoded covers the box.H = idx+1
+// encoding in AnnotateTableBoxes (table_layout.go): a single-column table whose
+// header is the FIRST header cell (idx==0).
+//
+// Before the fix AnnotateTableBoxes stored boxes[i].H = idx. For the first
+// header cell idx==0, that wrote H==0, which every reader treats as "no header
+// overlap" (b.H > 0). So single-column / first-column header tables were
+// silently dropped by the geometric signal. The fix stores idx+1, so a match on
+// the first header cell yields H==1 (>0).
+//
+// This test fails on the old code (expects H==1, old code yields H==0) and turns
+// green with the encoding fix. It also confirms the boolean reader BoxHeaderSet
+// now flags the row.
+func TestAnnotateTableBoxes_FirstHeaderCellEncoded(t *testing.T) {
+	// Single-column, two-row table. grid[0] is the header row and contains
+	// exactly one cell at index 0.
+	cells := []pdf.TSRCell{
+		{X0: 10, Y0: 10, X1: 90, Y1: 30, Label: "table column header"}, // header, idx 0
+		{X0: 10, Y0: 30, X1: 90, Y1: 50, Label: "table row"},           // data
+	}
+	// Box exactly overlaps the header cell → R=0 and, against headers (grid[0]),
+	// findOverlappedWithThreshold returns idx==0.
+	boxes := []pdf.TextBox{
+		{X0: 10, X1: 90, Top: 10, Bottom: 30, LayoutType: pdf.LayoutTypeTable, Text: "姓名"},
+		{X0: 10, X1: 90, Top: 30, Bottom: 50, LayoutType: pdf.LayoutTypeTable, Text: "张三"}, // data box, no header overlap
+	}
+
+	AnnotateTableBoxes(boxes, GroupTSRCellsToRows(cells))
+
+	// The header box matches the FIRST header cell (idx==0); the fix encodes it
+	// as H == idx+1 == 1. The old code wrote H == 0 here.
+	if boxes[0].H != 1 {
+		t.Errorf("PARITY #4 (idx+1 encoding) REGRESSED: box matching the first header cell (idx==0) should be stored as H=1, got H=%d. Old code wrote H=0 and was dropped by the b.H>0 readers.", boxes[0].H)
+	}
+	if boxes[0].H <= 0 {
+		t.Errorf("header box must read as overlapped via BoxHeaderSet's b.H>0 rule; got H=%d", boxes[0].H)
+	}
+	// The data box does not overlap the header region, so it must stay H==0.
+	if boxes[1].H != 0 {
+		t.Errorf("data box must NOT be flagged as header overlap; got H=%d", boxes[1].H)
+	}
+
+	// Tie it to the production reader: BoxHeaderSet must now flag row 0.
+	rows := GroupTSRCellsToRows(cells)
+	hdrs := BoxHeaderSet(rows, boxes)
+	if !hdrs[0] {
+		t.Errorf("BoxHeaderSet should flag row 0 via box.H>0 (idx+1 encoding); header set=%v", hdrs)
+	}
+	if hdrs[1] {
+		t.Errorf("BoxHeaderSet must NOT flag data row 1; header set=%v", hdrs)
+	}
+	t.Logf("header box H=%d data box H=%d header set=%v", boxes[0].H, boxes[1].H, hdrs)
 }

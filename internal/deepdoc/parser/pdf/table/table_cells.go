@@ -410,10 +410,14 @@ func containsCJK(s string) bool {
 // THREE additive signals to match Python's construct_table header detection
 // (table_structure_recognizer.py:336-348):
 //
-//  1. Geometric (Python: any(a.get("H") for a in arr)). A text box that overlaps
-//     a detected header region by ≥0.3 sets box.H>0 (pdf_parser.py:616 sets b["H"];
-//     Go's AnnotateTableBoxes sets box.H at table_layout.go:189). A row whose
-//     boxes carry H is a header.
+//  1. Geometric (approximates Python: any(a.get("H") for a in arr)). A text box
+//     that overlaps the header region by ≥0.3 has box.H>0 (Go's
+//     AnnotateTableBoxes sets box.H at table_layout.go:194 against grid[0], the
+//     first grid row). A row whose boxes carry H is a header.
+//     CAVEAT: in Go the "header region" is hardcoded to grid[0] (the first grid
+//     row), not a model-detected header region as in Python, so this signal is
+//     effectively "box overlaps the first grid row". For the common case (header
+//     on row 0) this matches Python; it is an approximation, not a 1:1 port.
 //  2. blockType (Python: max_type == "Nu" and btype != "Nu"). Only contributes
 //     for numeric-dominant tables; per-cell, then row majority.
 //  3. TSR label (Python has no exact equivalent; Go uses it as a model-agnostic
@@ -426,6 +430,12 @@ func containsCJK(s string) bool {
 // a data row that merely contained one mislabeled cell (parity #4, asymmetry 2).
 // The geometric signal was absent from the production path entirely (parity #4,
 // asymmetry 1).
+//
+// NOTE on Python divergence: Python applies a per-row >0.5 majority AND stops at
+// the first row that fails it (a contiguous header prefix). Go here scores each
+// row independently and adds the signals, so a later row that independently
+// clears the majority is still flagged as a header. This is a known, scoped
+// divergence from Python's prefix/break rule (tracked separately).
 //
 // boxes may be nil (e.g. the test-only cell-grouping path); the geometric signal
 // is then skipped and only blockType + label are consulted, degrading to the
