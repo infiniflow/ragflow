@@ -232,13 +232,19 @@ func TestMergeTablesAcrossPages_RebuildsGridAcrossPages(t *testing.T) {
 }
 
 // TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid verifies
-// that when a continuation page's grid has a different number of columns than
-// the anchor (a jagged cross-page stack), MergeTablesAcrossPages does NOT
-// rebuild a non-uniform Grid. Instead it keeps the anchor-only Grid, so
-// ConstructTable emits a structurally valid (if continuation-dropping) table
-// rather than malformed HTML. This is the same safe degrade as the
-// len(anchor.Grid)==0 path, and keeps the merge decision (and the appended
-// continuation Cells) unchanged.
+// that when a continuation page's grid is not column-uniform with the anchor
+// (a jagged cross-page stack), MergeTablesAcrossPages does NOT rebuild a
+// non-uniform Grid. Instead it keeps the anchor-only Grid, so ConstructTable
+// emits a structurally valid (if continuation-dropping) table rather than
+// malformed HTML. This is the same safe degrade as the len(anchor.Grid)==0
+// path, and keeps the merge decision (and the appended continuation Cells)
+// unchanged.
+//
+// Each case below is a jagged stack the OLD guard (which only compared the
+// first row of each continuation grid) would have wrongly allowed to rebuild.
+// The first case differs on the first row; the second matches on the first
+// row but narrows on an interior row — exactly the gap the per-row
+// uniformColCount check closes.
 func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testing.T) {
 	pageGrid := func(rows [][]string) [][]pdf.TSRCell {
 		g := make([][]pdf.TSRCell, len(rows))
@@ -267,44 +273,66 @@ func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testi
 		}
 		return cs
 	}
-	// Anchor: 3 columns. Continuation: 2 columns (jagged).
-	pg0 := pdf.TableItem{
-		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 300, Top: 0, Bottom: 60}},
-		Scale:     1.0,
-		Grid:      pageGrid([][]string{{"a", "b", "c"}, {"d", "e", "f"}}),
-		Cells:     cells([][]string{{"a", "b", "c"}, {"d", "e", "f"}}),
+	cases := []struct {
+		name         string
+		anchorRows   [][]string
+		contRows     [][]string
+		contCellText string
+	}{
+		{
+			name:         "first row column count differs",
+			anchorRows:   [][]string{{"a", "b", "c"}, {"d", "e", "f"}},
+			contRows:     [][]string{{"g", "h"}, {"i", "j"}},
+			contCellText: "g",
+		},
+		{
+			name:         "interior row column count differs",
+			anchorRows:   [][]string{{"a", "b", "c"}, {"d", "e", "f"}},
+			contRows:     [][]string{{"g", "h", "i"}, {"j", "k"}},
+			contCellText: "g",
+		},
 	}
-	pg1 := pdf.TableItem{
-		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 200, Top: 0, Bottom: 60}},
-		Scale:     1.0,
-		Grid:      pageGrid([][]string{{"g", "h"}, {"i", "j"}}),
-		Cells:     cells([][]string{{"g", "h"}, {"i", "j"}}),
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pg0 := pdf.TableItem{
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 300, Top: 0, Bottom: 60}},
+				Scale:     1.0,
+				Grid:      pageGrid(tc.anchorRows),
+				Cells:     cells(tc.anchorRows),
+			}
+			pg1 := pdf.TableItem{
+				Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 300, Top: 0, Bottom: 60}},
+				Scale:     1.0,
+				Grid:      pageGrid(tc.contRows),
+				Cells:     cells(tc.contRows),
+			}
 
-	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil)
-	if len(merged) != 1 {
-		t.Fatalf("expected 1 merged table, got %d", len(merged))
-	}
-	// Columns differ (3 vs 2) → rebuild must be skipped → Grid stays
-	// anchor-only (2 rows), NOT a 4-row jagged grid.
-	if len(merged[0].Grid) != 2 {
-		t.Fatalf("jagged continuation must fall back to anchor-only Grid (want 2 rows), got %d", len(merged[0].Grid))
-	}
-	// Anchor rows preserved; continuation NOT stacked into the Grid.
-	if merged[0].Grid[0][0].Text != "a" || merged[0].Grid[1][0].Text != "d" {
-		t.Errorf("anchor rows corrupted after jagged fallback: %s / %s", merged[0].Grid[0][0].Text, merged[0].Grid[1][0].Text)
-	}
-	// Continuation Cells are still appended (pre-fix behaviour) — the merge
-	// decision is unchanged; only the Grid stays uniform so HTML is valid.
-	hasCont := false
-	for _, c := range merged[0].Cells {
-		if c.Text == "g" {
-			hasCont = true
-			break
-		}
-	}
-	if !hasCont {
-		t.Errorf("continuation Cells should still be appended even when Grid rebuild is skipped")
+			merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil)
+			if len(merged) != 1 {
+				t.Fatalf("expected 1 merged table, got %d", len(merged))
+			}
+			// Columns differ (anchor 3 vs continuation jagged) → rebuild must
+			// be skipped → Grid stays anchor-only, NOT a 4-row jagged grid.
+			if len(merged[0].Grid) != len(tc.anchorRows) {
+				t.Fatalf("jagged continuation must fall back to anchor-only Grid (want %d rows), got %d", len(tc.anchorRows), len(merged[0].Grid))
+			}
+			// Anchor rows preserved; continuation NOT stacked into the Grid.
+			if merged[0].Grid[0][0].Text != tc.anchorRows[0][0] || merged[0].Grid[1][0].Text != tc.anchorRows[1][0] {
+				t.Errorf("anchor rows corrupted after jagged fallback: %s / %s", merged[0].Grid[0][0].Text, merged[0].Grid[1][0].Text)
+			}
+			// Continuation Cells are still appended (pre-fix behaviour) — the
+			// merge decision is unchanged; only the Grid stays uniform.
+			hasCont := false
+			for _, c := range merged[0].Cells {
+				if c.Text == tc.contCellText {
+					hasCont = true
+					break
+				}
+			}
+			if !hasCont {
+				t.Errorf("continuation Cells should still be appended even when Grid rebuild is skipped")
+			}
+		})
 	}
 }
 
