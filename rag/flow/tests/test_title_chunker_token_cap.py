@@ -20,7 +20,7 @@ chunk. This suite pins the new behaviour:
   * A single boundary-less run that still exceeds the cap is hard-split so the
     ceiling always holds (fallback only).
   * Table/image chunks are atomic and never split.
-  * ``chunk_token_cap == 0`` disables the ceiling (backward-compatible).
+  * ``chunk_token_cap == 0`` disables the ceiling.
 
 Token counting is faked as 1 token == 1 character so the assertions are fully
 deterministic (mirrors the stub approach in test_title_chunker_position_int.py,
@@ -313,14 +313,14 @@ def test_split_keeps_sentence_boundaries():
 
 
 # --------------------------------------------------------------------------- #
-# 4. chunk_token_cap == 0 disables the ceiling (backward compatible)          #
+# 4. chunk_token_cap == 0 disables the ceiling                               #
 # --------------------------------------------------------------------------- #
 def test_cap_zero_disables_splitting():
     body = "。".join(f"S{i:02d}" for i in range(12)) + "。"
     items = [{"text": body, "doc_type_kwd": "text"}]
     chunks = _run("hierarchy", _json_upstream(items), levels=[], chunk_token_cap=0)
 
-    assert len(chunks) == 1, "cap=0 must keep the legacy single-chunk behaviour"
+    assert len(chunks) == 1, "cap=0 must keep the single-chunk behaviour"
     assert chunks[0]["text"].rstrip("\n") == body
 
 
@@ -452,3 +452,50 @@ def test_chunk_token_cap_range_validation():
         param.check()
         param.chunk_token_cap = 8000
         param.check()
+
+
+# --------------------------------------------------------------------------- #
+# 9. hard split is lossless: sub-chunks concatenate back to the original text  #
+# --------------------------------------------------------------------------- #
+def test_hard_split_is_lossless():
+    # A boundary-less run is hard-split; concatenating every sub-chunk must
+    # reproduce the original built chunk text exactly (no characters dropped
+    # or duplicated across the token-prefix truncation).
+    body = "x" * 100
+    items = [{"text": body, "doc_type_kwd": "text"}]
+
+    disabled = _run("hierarchy", _json_upstream(items), levels=[], chunk_token_cap=0)
+    original = disabled[0]["text"]
+
+    capped = _run("hierarchy", _json_upstream(items), levels=[], chunk_token_cap=20)
+    assert len(capped) > 1, "expected the oversized chunk to be hard-split"
+    assert "".join(ck["text"] for ck in capped) == original
+
+
+# --------------------------------------------------------------------------- #
+# 10. tokenizer failure still enforces the cap via character-count fallback    #
+# --------------------------------------------------------------------------- #
+def test_tokenizer_failure_falls_back_to_char_count():
+    # Simulate an unavailable tokenizer: num_tokens_from_string returns 0 for
+    # every text. The cap must still apply (via the character-count fallback)
+    # instead of silently leaving a giant chunk intact.
+    body = "x" * 100
+    items = [{"text": body, "doc_type_kwd": "text"}]
+
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _group_module):
+        # Override the stubbed tokenizer to always report 0 tokens.
+        common_module.num_tokens_from_string = lambda text: 0
+
+        param = common_module.TitleChunkerParam()
+        param.method = "hierarchy"
+        param.chunk_token_cap = 20
+        process = common_module.ProcessBase(None, "title_chunker", param)
+        process._canvas = types.SimpleNamespace(_doc_id="doc", _tenant_id="tenant")
+        process._outputs = {}
+
+        chunker = hierarchy_module.HierarchyTitleChunker(process, _json_upstream(items))
+        asyncio.run(chunker.invoke())
+        chunks = process._outputs.get("chunks", [])
+
+    assert len(chunks) > 1, "cap must still apply when the tokenizer reports 0"
+    assert "".join(ck["text"] for ck in chunks) == "x" * 100 + "\n"

@@ -23,6 +23,8 @@ MIN_GROUP_TOKENS = 32
 
 
 def _build_section_ids(levels, target_level):
+    """Assign a stable section id that increments whenever a title at or above
+    ``target_level`` starts a new section."""
     sec_ids = []
     sid = 0
     for i, level in enumerate(levels):
@@ -33,18 +35,30 @@ def _build_section_ids(levels, target_level):
 
 
 def _resolve_group_target_level(levels, hierarchy, most_level):
+    """Pick the level used as the grouping target for the group method."""
     if hierarchy and int(hierarchy) > 0:
         return resolve_target_level(levels, hierarchy)
     return most_level
 
 
 class GroupTitleChunker(BaseTitleChunker):
+    """Group consecutive records under the same title into one chunk."""
+
     start_message = "Start to group by title levels."
 
     def resolve_levels(self, line_records):
+        """Resolve title levels via the shared outline/frequency strategy."""
         return self.resolve_title_levels(line_records)
 
     def build_chunks(self, line_records, resolved):
+        """Build chunks by merging records inside the same logical section.
+
+        The merge ceiling uses the configurable ``chunk_token_cap`` (0/None
+        means "no ceiling"). The post-build ``_enforce_token_cap`` in
+        BaseTitleChunker is the single hard guarantee, so any residual over-cap
+        chunk (e.g. a single record bigger than the cap) is still re-split
+        there.
+        """
         target_level = _resolve_group_target_level(
             resolved["levels"],
             self.param.hierarchy,
@@ -55,11 +69,6 @@ class GroupTitleChunker(BaseTitleChunker):
         tk_cnt = 0
         last_sid = -2
 
-        # The merge ceiling uses the configurable chunk_token_cap (0/None means
-        # "no ceiling" -> legacy behaviour). The post-build _enforce_token_cap
-        # in BaseTitleChunker is the single hard guarantee, so any residual
-        # over-cap chunk (e.g. a single record bigger than the cap) is still
-        # re-split there.
         cap = self.param.chunk_token_cap or 0
 
         # The merge state is driven by (current section id, current token size).
