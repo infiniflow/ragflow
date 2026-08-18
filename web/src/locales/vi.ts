@@ -224,6 +224,12 @@ export default {
         'Để giúp bạn hiểu rõ hơn, chúng tôi đã cung cấp ảnh chụp màn hình liên quan để tham khảo.',
       dialogueExamplesTitle: 'Ví dụ hội thoại',
       methodEmpty: 'Mô tả bằng hình ảnh các danh mục cơ sở kiến thức',
+      audio: `<p>Các định dạng tệp được hỗ trợ là <b>WAV, MP3, AAC, FLAC, OGG</b> và các định dạng âm thanh phổ biến khác.</p>
+<p>Phương pháp này phiên âm các tệp âm thanh thành văn bản bằng mô hình chuyển giọng nói thành văn bản.</p>`,
+      email: `<p>Các định dạng tệp được hỗ trợ là <b>EML</b> và <b>MSG</b>.</p>
+<p>Phương pháp này phân tích các tệp email, trích xuất các trường tiêu đề (như Từ, Đến, CC, Chủ đề và Ngày), nội dung thân thư và tệp đính kèm.</p>`,
+      knowledgeCompiler: `<p>Pipeline này phân tích và chia nhỏ tệp thành các chunk, sau đó biên dịch các chunk thành các đơn vị tri thức có cấu trúc (đồ thị tri thức, wiki, RAPTOR, sơ đồ tư duy hoặc điều hướng tập dữ liệu) thông qua thành phần Knowledge Compiler.</p>
+<p>Các đơn vị tri thức đã biên dịch được xuất dưới dạng chunk hợp nhất vào luồng chunk, rất lý tưởng để xây dựng lớp tri thức có thể truy xuất trên các tài liệu đã chia nhỏ.</p>`,
       book: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Đối với mỗi sách trong PDF, vui lòng đặt <i>phạm vi trang</i> để loại bỏ thông tin không mong muốn và giảm thời gian phân tích.</p>`,
       laws: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>

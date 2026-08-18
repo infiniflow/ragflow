@@ -737,6 +737,12 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         'Aşağıdaki ekran görüntüleri açıklama amacıyla sunulmuştur.',
       dialogueExamplesTitle: 'görüntüle',
       methodEmpty: 'Bu, dataset kategorilerinin görsel açıklamasını gösterecek',
+      audio: `<p>Desteklenen dosya formatları: <b>WAV, MP3, AAC, FLAC, OGG</b> ve diğer yaygın ses formatları.</p>
+<p>Bu yöntem, konuşmayı metne dönüştüren bir model kullanarak ses dosyalarını metne dönüştürür.</p>`,
+      email: `<p>Desteklenen dosya formatları: <b>EML</b> ve <b>MSG</b>.</p>
+<p>Bu yöntem e-posta dosyalarını ayrıştırarak başlık alanlarını (Kimden, Kime, CC, Konu ve Tarih gibi), ileti gövdesini ve ekleri çıkarır.</p>`,
+      knowledgeCompiler: `<p>Bu işlem hattı dosyaları ayrıştırıp parçalara böler, ardından parçaları Knowledge Compiler bileşeni aracılığıyla yapılandırılmış bilgi birimlerine (bilgi grafiği, wiki, RAPTOR, zihin haritası veya veri kümesi gezintisi) derler.</p>
+<p>Derlenen bilgi birimleri, parça akışına birleştirilmiş parçalar olarak çıktılanır; bu da parçalanmış belgelerin üzerinde alınabilir bir bilgi katmanı oluşturmak için idealdir.</p>`,
       book: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Her PDF kitap için, istenmeyen bilgileri kaldırmak ve analiz süresini azaltmak için lütfen <i>sayfa aralıklarını</i> ayarlayın.</p>`,
       laws: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
