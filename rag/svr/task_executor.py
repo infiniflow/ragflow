@@ -196,7 +196,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         if to_page > 0:
             if msg:
                 if from_page < to_page:
-                    msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
+                    msg = f"Page({from_page + 1}~{to_page}): " + msg
         if msg:
             msg = datetime.now().strftime("%H:%M:%S") + " " + msg
         d = {"progress_msg": msg}

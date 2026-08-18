@@ -12,14 +12,21 @@ import (
 )
 
 // EvaluateTableOrientation tests 4 rotation angles (0/90/180/270) and picks
-// the best orientation based on OCR detect-region count and area coverage.
+// the best orientation based on OCR recognition confidence, matching Python's
+// pdf_parser.py:367 _evaluate_table_orientation().
+//
+// For each angle the table image is rotated and recognized; the combined score
+// is avg_conf * (1 + 0.1*min(regions, 50)/50). Recognition legibility is the
+// signal, NOT detection geometry: detection box count and axis-aligned area are
+// rotation-invariant (a 90°-rotated text line yields the same boxes and area as
+// at 0°), so they cannot tell a table's true orientation apart.
 //
 // Returns bestAngle (0/90/180/270), the rotated image, and per-angle scores.
 //
 // Absolute threshold: non-0° wins only if its combined score exceeds 0° by
-// more than 1.4× AND the 0° score is below 6.0.
+// more than 0.2 AND the 0° score is below 0.8.
 //
-// Python: pdf_parser.py:314 _evaluate_table_orientation()
+// Python: pdf_parser.py:367 _evaluate_table_orientation()
 func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf.DocAnalyzer) (bestAngle int, bestImg image.Image, scores map[int]float64) {
 	rotations := []struct {
 		angle int
@@ -46,40 +53,28 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 			}
 		}
 
-		detectBoxes, err := doc.OCRDetect(ctx, rotated)
-		if err != nil || len(detectBoxes) == 0 {
+		// Score by recognition confidence (legibility), matching Python's
+		// _evaluate_table_orientation: avg_conf * (1 + 0.1*min(regions,50)/50).
+		texts, err := doc.OCRRecognize(ctx, rotated)
+		if err != nil || len(texts) == 0 {
 			scores[rot.angle] = 0
 			continue
 		}
 
-		// Score by detect-region count (primary) + area (tiebreaker).
-		imageArea := float64(rotated.Bounds().Dx() * rotated.Bounds().Dy())
-		totalRegions := 0
-		var totalArea float64
-		for _, box := range detectBoxes {
-			x0 := math.Min(box.X0, math.Min(box.X1, math.Min(box.X2, box.X3)))
-			y0 := math.Min(box.Y0, math.Min(box.Y1, math.Min(box.Y2, box.Y3)))
-			x1 := math.Max(box.X0, math.Max(box.X1, math.Max(box.X2, box.X3)))
-			y1 := math.Max(box.Y0, math.Max(box.Y1, math.Max(box.Y2, box.Y3)))
-			if x0 >= x1 || y0 >= y1 {
-				continue
-			}
-			totalRegions++
-			totalArea += (x1 - x0) * (y1 - y0)
+		var confSum float64
+		for _, t := range texts {
+			confSum += t.Confidence
 		}
-		if totalRegions == 0 {
-			scores[rot.angle] = 0
-			continue
-		}
-		areaRatio := totalArea / imageArea
-		combined := float64(totalRegions) * (1 + 0.06*areaRatio)
+		avgConf := confSum / float64(len(texts))
+		regions := len(texts)
+		combined := avgConf * (1 + 0.1*math.Min(float64(regions), 50)/50)
 		scores[rot.angle] = combined
 
 		slog.Debug("table orientation",
 			"angle", rot.angle,
-			"regions", totalRegions,
-			"area_ratio", fmt.Sprintf("%.4f", areaRatio),
-			"combined", fmt.Sprintf("%.2f", combined))
+			"regions", regions,
+			"avg_conf", fmt.Sprintf("%.4f", avgConf),
+			"combined", fmt.Sprintf("%.4f", combined))
 
 		if combined > bestScore {
 			bestScore = combined
@@ -88,11 +83,13 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 		}
 	}
 
-	// Absolute threshold: only accept non-0° if region count is clearly
-	// higher (≥1.4×) AND 0° has few regions (< 6).
+	// Absolute threshold: only accept non-0° if its combined score exceeds
+	// 0° by more than 0.2 AND the 0° score is below 0.8. Mirrors Python's
+	// `score_0 is not None` (not score_0 > 0): when 0° has no recognized text
+	// (score_0 == 0) the margin clause still gates acceptance.
 	score0 := scores[0]
-	if bestAngle != 0 && score0 > 0 {
-		if !(bestScore > score0*1.4 && score0 < 6.0) {
+	if bestAngle != 0 {
+		if !(bestScore-score0 > 0.2 && score0 < 0.8) {
 			bestAngle = 0
 			bestImg = tableImg
 			bestScore = score0
