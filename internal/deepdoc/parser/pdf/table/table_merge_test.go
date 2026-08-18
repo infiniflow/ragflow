@@ -1,6 +1,7 @@
 package table
 
 import (
+	"fmt"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -231,21 +232,15 @@ func TestMergeTablesAcrossPages_RebuildsGridAcrossPages(t *testing.T) {
 	}
 }
 
-// TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid verifies
-// that when a continuation page's grid is not column-uniform with the anchor
-// (a jagged cross-page stack), MergeTablesAcrossPages does NOT rebuild a
-// non-uniform Grid. Instead it keeps the anchor-only Grid, so ConstructTable
-// emits a structurally valid (if continuation-dropping) table rather than
-// malformed HTML. This is the same safe degrade as the len(anchor.Grid)==0
-// path, and keeps the merge decision (and the appended continuation Cells)
-// unchanged.
-//
-// Each case below is a jagged stack the OLD guard (which only compared the
-// first row of each continuation grid) would have wrongly allowed to rebuild.
-// The first case differs on the first row; the second matches on the first
-// row but narrows on an interior row — exactly the gap the per-row
-// uniformColCount check closes.
-func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testing.T) {
+// TestMergeTablesAcrossPages_JaggedContinuationPreservesRows verifies that
+// when a continuation page's grid is not column-uniform with the anchor (a
+// jagged cross-page stack), MergeTablesAcrossPages still preserves every
+// continuation row. It aligns both per-page grids to a shared column model
+// (the max column count, padding shorter rows by index) and stacks all rows,
+// instead of dropping the continuation page's Grid. Regression test for the
+// bug where a non-uniform cross-page grid silently deleted an entire
+// continuation page from the output.
+func TestMergeTablesAcrossPages_JaggedContinuationPreservesRows(t *testing.T) {
 	pageGrid := func(rows [][]string) [][]pdf.TSRCell {
 		g := make([][]pdf.TSRCell, len(rows))
 		for r, row := range rows {
@@ -311,17 +306,32 @@ func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testi
 			if len(merged) != 1 {
 				t.Fatalf("expected 1 merged table, got %d", len(merged))
 			}
-			// Columns differ (anchor 3 vs continuation jagged) → rebuild must
-			// be skipped → Grid stays anchor-only, NOT a 4-row jagged grid.
-			if len(merged[0].Grid) != len(tc.anchorRows) {
-				t.Fatalf("jagged continuation must fall back to anchor-only Grid (want %d rows), got %d", len(tc.anchorRows), len(merged[0].Grid))
+			// Columns differ (anchor 3 vs continuation jagged) → aligned to
+			// uniCols=3, rows still stacked: anchor + continuation (no drop).
+			wantRows := len(tc.anchorRows) + len(tc.contRows)
+			if len(merged[0].Grid) != wantRows {
+				t.Fatalf("jagged continuation must preserve all rows (want %d), got %d", wantRows, len(merged[0].Grid))
 			}
-			// Anchor rows preserved; continuation NOT stacked into the Grid.
+			// Aligned width is the max column count (3) for every row.
+			for r, row := range merged[0].Grid {
+				if len(row) != 3 {
+					t.Errorf("row %d: aligned grid width must be max cols (3), got %d", r, len(row))
+				}
+			}
+			// Anchor rows preserved first.
 			if merged[0].Grid[0][0].Text != tc.anchorRows[0][0] || merged[0].Grid[1][0].Text != tc.anchorRows[1][0] {
-				t.Errorf("anchor rows corrupted after jagged fallback: %s / %s", merged[0].Grid[0][0].Text, merged[0].Grid[1][0].Text)
+				t.Errorf("anchor rows corrupted after alignment: %s / %s", merged[0].Grid[0][0].Text, merged[0].Grid[1][0].Text)
 			}
-			// Continuation Cells are still appended (pre-fix behaviour) — the
-			// merge decision is unchanged; only the Grid stays uniform.
+			// Continuation rows appended in page order, padded by index.
+			base := len(tc.anchorRows)
+			for r, crow := range tc.contRows {
+				for c, txt := range crow {
+					if merged[0].Grid[base+r][c].Text != txt {
+						t.Errorf("continuation cell lost after alignment: Grid[%d][%d]=%q want %q", base+r, c, merged[0].Grid[base+r][c].Text, txt)
+					}
+				}
+			}
+			// Continuation Cells are still appended (merge decision unchanged).
 			hasCont := false
 			for _, c := range merged[0].Cells {
 				if c.Text == tc.contCellText {
@@ -330,9 +340,68 @@ func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testi
 				}
 			}
 			if !hasCont {
-				t.Errorf("continuation Cells should still be appended even when Grid rebuild is skipped")
+				t.Errorf("continuation Cells should still be appended after alignment")
 			}
 		})
+	}
+}
+
+// TestMergeTablesAcrossPages_MixedColumnCountsPreservesAllRows reproduces the
+// 中加纯债 cross-page table: page 0 has 27 rows × 6 cols and page 1 has 35
+// rows × 7 cols (TSR detects one extra spurious column on page 1). The merged
+// table must contain ALL 62 rows (27 + 35) at the shared width of 7 columns.
+func TestMergeTablesAcrossPages_MixedColumnCountsPreservesAllRows(t *testing.T) {
+	gridWithTag := func(rows, cols int, tag string) [][]pdf.TSRCell {
+		g := make([][]pdf.TSRCell, rows)
+		for r := 0; r < rows; r++ {
+			g[r] = make([]pdf.TSRCell, cols)
+			for c := 0; c < cols; c++ {
+				g[r][c] = pdf.TSRCell{
+					X0: float64(c) * 100, Y0: float64(r) * 30,
+					X1: float64(c)*100 + 100, Y1: float64(r)*30 + 30,
+					Text: fmt.Sprintf("%s_r%d_c%d", tag, r, c),
+				}
+			}
+		}
+		return g
+	}
+	pg0 := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 600, Top: 0, Bottom: 810}},
+		Scale:     1.0,
+		Grid:      gridWithTag(27, 6, "p0"),
+	}
+	pg1 := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 700, Top: 0, Bottom: 1050}},
+		Scale:     1.0,
+		Grid:      gridWithTag(35, 7, "p1"),
+	}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	// All 62 rows (27 + 35) must survive the cross-page merge.
+	if len(merged[0].Grid) != 62 {
+		t.Fatalf("merged Grid must contain all rows from both pages (want 62), got %d", len(merged[0].Grid))
+	}
+	// Shared width is the max column count (7) for every row.
+	for r, row := range merged[0].Grid {
+		if len(row) != 7 {
+			t.Errorf("row %d: aligned grid width must be max cols (7), got %d", r, len(row))
+		}
+	}
+	// Anchor rows first, continuation rows appended, both complete.
+	if merged[0].Grid[0][0].Text != "p0_r0_c0" {
+		t.Errorf("first anchor row lost: %s", merged[0].Grid[0][0].Text)
+	}
+	if merged[0].Grid[26][5].Text != "p0_r26_c5" {
+		t.Errorf("last anchor row lost: %s", merged[0].Grid[26][5].Text)
+	}
+	if merged[0].Grid[27][0].Text != "p1_r0_c0" {
+		t.Errorf("first continuation row lost: %s", merged[0].Grid[27][0].Text)
+	}
+	if merged[0].Grid[61][6].Text != "p1_r34_c6" {
+		t.Errorf("last continuation row lost: %s", merged[0].Grid[61][6].Text)
 	}
 }
 
