@@ -50,31 +50,40 @@ def _response():
 
 
 @pytest.mark.p1
-def test_tushare_filters_with_upstream_keyword_when_param_empty():
-    cpn = _tushare()
-
-    with patch.object(TuShare, "get_input", return_value={"content": ["Apple"]}):
-        with patch("agent.tools.tushare.requests.post", return_value=_response()):
-            result = cpn._run([])
-
-    text = result.iloc[0]["content"]
-    assert "Apple" in text
-    assert "Google" not in text
+def test_tushare_param_exposes_tool_descriptor():
+    # The Agent runtime builds each tool's function descriptor via get_meta();
+    # without it, constructing an Agent with the tool crashes (#18448).
+    meta = TuShareParam().get_meta()
+    assert meta["function"]["name"] == "tushare_quick_news"
+    query = meta["function"]["parameters"]["properties"]["query"]
+    assert query["type"] == "string"
+    assert query["required"] is True
 
 
 @pytest.mark.p1
-def test_tushare_prefers_explicit_param_keyword_over_upstream_input():
+def test_tushare_filters_with_invoked_query_when_param_empty():
+    cpn = _tushare()
+
+    with patch.object(TuShare, "get_input", return_value={"content": ["ignored"]}):
+        with patch("agent.tools.tushare.requests.post", return_value=_response()):
+            result = cpn._invoke(query="Apple")
+
+    assert "Apple" in result
+    assert "Google" not in result
+
+
+@pytest.mark.p1
+def test_tushare_prefers_explicit_param_keyword_over_invoked_query():
     param = TuShareParam()
     param.keyword = "Google"
     cpn = _tushare(param)
 
-    with patch.object(TuShare, "get_input", return_value={"content": ["Apple"]}):
+    with patch.object(TuShare, "get_input", return_value={"content": ["ignored"]}):
         with patch("agent.tools.tushare.requests.post", return_value=_response()):
-            result = cpn._run([])
+            result = cpn._invoke(query="Apple")
 
-    text = result.iloc[0]["content"]
-    assert "Google" in text
-    assert "Apple" not in text
+    assert "Google" in result
+    assert "Apple earnings" not in result
 
 
 @pytest.mark.p1
@@ -85,7 +94,32 @@ def test_tushare_treats_keyword_as_literal_text():
 
     with patch.object(TuShare, "get_input", return_value={"content": ["ignored"]}):
         with patch("agent.tools.tushare.requests.post", return_value=_response()):
-            result = cpn._run([])
+            result = cpn._invoke(query="ignored")
 
-    text = result.iloc[0]["content"]
-    assert "C++ regex special chars should not break filtering" in text
+    assert "C++ regex special chars should not break filtering" in result
+
+
+@pytest.mark.p1
+def test_tushare_nonzero_code_is_surfaced_as_error_not_content():
+    cpn = _tushare()
+    bad = MagicMock()
+    bad.json.return_value = {"code": 40001, "msg": "token is invalid"}
+
+    with patch.object(TuShare, "get_input", return_value={"content": []}):
+        with patch("agent.tools.tushare.requests.post", return_value=bad):
+            result = cpn._invoke(query="anything")
+
+    assert "token is invalid" in result
+    assert cpn.error() == "token is invalid"
+
+
+@pytest.mark.p1
+def test_tushare_exception_is_surfaced_as_error_not_content():
+    cpn = _tushare()
+
+    with patch.object(TuShare, "get_input", return_value={"content": []}):
+        with patch("agent.tools.tushare.requests.post", side_effect=OSError("network unreachable")):
+            result = cpn._invoke(query="anything")
+
+    assert "network unreachable" in result
+    assert cpn.error() == "network unreachable"
