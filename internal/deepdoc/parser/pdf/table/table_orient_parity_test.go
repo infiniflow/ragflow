@@ -32,15 +32,18 @@ import (
 
 // orientConfMock implements DocAnalyzer with per-angle recognition confidence
 // as ground truth — the signal EvaluateTableOrientation consumes to choose the
-// best rotation. Detection output is unused by that function (returned empty
-// to satisfy the interface).
+// best rotation. It mirrors the real path: OCRDetect returns `regions` line
+// boxes per angle, then OCRRecognize returns one text per line carrying the
+// angle's avgConf, so the aggregated score equals
+// avgConf * (1 + 0.1*min(regions,50)/50) — exactly the Python formula.
 type orientConfMock struct {
 	// angle → {regions, avgConf}
 	angles map[int]struct {
 		regions int
 		avgConf float64
 	}
-	seq int
+	seq          int
+	currentAngle int
 }
 
 func (m *orientConfMock) DLA(context.Context, image.Image) ([]pdf.DLARegion, error) {
@@ -53,20 +56,20 @@ func (m *orientConfMock) OCR(image.Image) (string, error) { return "", nil }
 func (m *orientConfMock) Health() bool                    { return true }
 
 func (m *orientConfMock) OCRDetect(_ context.Context, _ image.Image) ([]pdf.OCRBox, error) {
-	// EvaluateTableOrientation scores by OCRRecognize; detection output is
-	// unused here. Return empty to satisfy the DocAnalyzer interface.
-	return nil, nil
+	angle := rotationOrder[m.seq%len(rotationOrder)]
+	m.seq++
+	m.currentAngle = angle
+	cfg := m.angles[angle]
+	boxes := make([]pdf.OCRBox, cfg.regions)
+	for i := 0; i < cfg.regions; i++ {
+		y := float64(i * 10)
+		boxes[i] = pdf.OCRBox{X0: 0, Y0: y, X1: 100, Y1: y, X2: 100, Y2: y + 8, X3: 0, Y3: y + 8}
+	}
+	return boxes, nil
 }
 
 func (m *orientConfMock) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
-	angle := rotationOrder[m.seq%len(rotationOrder)]
-	m.seq++
-	cfg := m.angles[angle]
-	texts := make([]pdf.OCRText, cfg.regions)
-	for i := range texts {
-		texts[i] = pdf.OCRText{Text: "X", Confidence: cfg.avgConf}
-	}
-	return texts, nil
+	return []pdf.OCRText{{Text: "X", Confidence: m.angles[m.currentAngle].avgConf}}, nil
 }
 
 // TestEvaluateTableOrientation_MatchesPythonRecognitionConfidence verifies that
