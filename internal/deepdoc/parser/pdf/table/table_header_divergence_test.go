@@ -119,25 +119,27 @@ func TestHeaderSetWithBlockType_NumericCellsSkipped(t *testing.T) {
 // Both boxes overlap the header row and carry H>0, so the row must be a header.
 // Go (trusting stale C) drops the C=2 box and only counts 1/2 -> misses it.
 func TestHeaderSetWithBlockType_BoxRCStaleAfterCleanup(t *testing.T) {
-	// POST-cleanup grid: 2 columns. Row 0 is the header, but its cells carry NO
-	// "header" label, so only the geometric signal (box.H>0) can detect it — this
-	// isolates the R/C-stale bug from the label fallback.
+	// POST-cleanup grid: 2 columns with real coordinates. Row 0 is the header,
+	// but its cells carry NO "header" label, so only the geometric signal
+	// (box.H>0) can detect it — this isolates the R/C-stale bug from the label
+	// fallback.
 	rows := [][]pdf.TSRCell{
 		{
-			{Text: "H0", Label: "table row"},
-			{Text: "H1", Label: "table row"},
+			{X0: 0, X1: 50, Y0: 10, Y1: 30, Text: "H0", Label: "table row"},
+			{X0: 50, X1: 100, Y0: 10, Y1: 30, Text: "H1", Label: "table row"},
 		},
 		{
-			{Text: "D0", Label: "table row"},
-			{Text: "D1", Label: "table row"},
+			{X0: 0, X1: 50, Y0: 30, Y1: 50, Text: "D0", Label: "table row"},
+			{X0: 50, X1: 100, Y0: 30, Y1: 50, Text: "D1", Label: "table row"},
 		},
 	}
 	// PRE-cleanup boxes: column 0 was an orphan and removed, so the original
 	// columns 1 and 2 are now cleaned columns 0 and 1. The boxes still carry the
-	// old C (1 and 2) and H>0 (they overlapped the header region).
+	// old C (1 and 2) and H>0 (they overlapped the header region), but their
+	// geometry correctly overlaps the cleaned columns.
 	boxes := []pdf.TextBox{
-		{Text: "H0", R: 0, C: 1, H: 1},
-		{Text: "H1", R: 0, C: 2, H: 1},
+		{X0: 5, X1: 45, Top: 12, Bottom: 28, Text: "H0", R: 0, C: 1, H: 1},
+		{X0: 55, X1: 95, Top: 12, Bottom: 28, Text: "H1", R: 0, C: 2, H: 1},
 	}
 
 	hdrs := HeaderSetWithBlockType(rows, boxes)

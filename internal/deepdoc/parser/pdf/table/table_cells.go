@@ -426,38 +426,72 @@ func containsCJK(s string) bool {
 // boxes may be nil (e.g. the test-only cell-grouping path); the geometric signal
 // is then skipped and only blockType + label are consulted.
 func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]bool {
-	// Compute dominant block type across all cells (Python: max_type).
+	// Compute dominant block type across all cells (Python: max_type, derived
+	// from box btype with first-seen tie-breaking). Track first-seen order so
+	// the tie rule matches Python's Counter+max (first max wins on ties).
 	typeCounts := make(map[string]int)
+	order := []string{}
+	seen := make(map[string]bool)
 	for _, row := range rows {
 		for _, cell := range row {
 			if t := strings.TrimSpace(cell.Text); t != "" {
-				typeCounts[BlockType(t)]++
+				bt := BlockType(t)
+				if !seen[bt] {
+					seen[bt] = true
+					order = append(order, bt)
+				}
+				typeCounts[bt]++
 			}
 		}
 	}
 	maxType := ""
-	maxCount := 0
-	for t, c := range typeCounts {
-		if c > maxCount {
-			maxType, maxCount = t, c
+	maxCount := -1
+	for _, t := range order {
+		if typeCounts[t] > maxCount {
+			maxType, maxCount = t, typeCounts[t]
 		}
 	}
 
 	// Geometric H per cell, from boxes overlapping the header region (box.H > 0).
 	// colHit[row][col] = true when that column's cell has such a box.
+	//
+	// The boxes' R/C may have been assigned against the PRE-cleanup grid while
+	// `rows` here is POST-cleanup (CleanupOrphanColumns/Rows in ConstructTable
+	// removes empty rows/columns). So we re-derive (row, column) from geometry
+	// instead of trusting the stale R/C — matching Python, which keys the
+	// geometric H off the box itself and never re-indexes by a stale coordinate.
 	colHit := make(map[int]map[int]bool)
 	for i := range boxes {
 		b := boxes[i]
-		if b.H <= 0 || b.R < 0 || b.R >= len(rows) {
+		if b.H <= 0 {
 			continue
 		}
-		if b.C < 0 || b.C >= len(rows[b.R]) {
-			continue
+		bestRi, bestCi, bestOv := -1, -1, 0.0
+		for ri, row := range rows {
+			for ci, cell := range row {
+				if tsrBoxOverlap(b, cell) {
+					continue // no overlap with this cell
+				}
+				if ov := util.OverlapInter(&b, &cell); ov > bestOv {
+					bestOv, bestRi, bestCi = ov, ri, ci
+				}
+			}
 		}
-		if colHit[b.R] == nil {
-			colHit[b.R] = make(map[int]bool)
+		if bestRi >= 0 {
+			// Geometry resolved the cell against the (post-cleanup) rows.
+			if colHit[bestRi] == nil {
+				colHit[bestRi] = make(map[int]bool)
+			}
+			colHit[bestRi][bestCi] = true
+		} else if b.R >= 0 && b.R < len(rows) && b.C >= 0 && b.C < len(rows[b.R]) {
+			// No geometric overlap (e.g. boxes supplied without coordinates):
+			// fall back to the box's own R/C when it is in range, so callers
+			// that pre-assigned a correct R/C still work.
+			if colHit[b.R] == nil {
+				colHit[b.R] = make(map[int]bool)
+			}
+			colHit[b.R][b.C] = true
 		}
-		colHit[b.R][b.C] = true
 	}
 
 	hdrs := make(map[int]bool)
