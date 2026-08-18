@@ -738,9 +738,6 @@ export default {
       dataSource: 'Source de données',
       linkSourceSetTip: 'Gérer la liaison de source de données avec cette base',
       linkDataSource: 'Lier une source de données',
-      tocExtraction: 'IndexPage',
-      tocExtractionTip:
-        "Pour les segments existants, génère une table des matières hiérarchique (un répertoire par fichier). Lors des requêtes, avec la Mise en valeur des répertoires activée, le système utilise un grand modèle pour déterminer quels éléments du répertoire sont pertinents à la question de l'utilisateur.",
       deleteGenerateModalContent: `
   <p>La suppression des résultats générés <strong class='text-text-primary'>{{type}}</strong>
   supprimera toutes les entités et relations dérivées de cette base de connaissances.

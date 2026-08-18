@@ -619,8 +619,6 @@ export default {
       dataSource: '数据源',
       linkSourceSetTip: '管理与此知识库的数据源链接',
       linkDataSource: '链接数据源',
-      tocExtractionTip:
-        '对于已有的 Chunk 生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`PageIndex`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的 Chunk。',
       deleteGenerateModalContent: `
         <p>删除生成的 <strong class='text-text-primary'>{{type}}</strong> 结果
           将从此知识库中移除所有派生 Entities 和 Relations。

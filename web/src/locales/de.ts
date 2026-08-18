@@ -474,9 +474,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       linkSourceSetTip:
         'Verknüpfung der Datenquelle mit diesem Datensatz verwalten',
       linkDataSource: 'Datenquelle verknüpfen',
-      tocExtraction: 'Inhaltsverzeichnis verbessern',
-      tocExtractionTip:
-        'Für vorhandene Chunks, generieren Sie ein hierarchisches Inhaltsverzeichnis (ein Verzeichnis pro Datei). Bei Abfragen, wenn die Verzeichnisverbesserung aktiviert ist, verwendet das System ein großes Modell, um zu bestimmen, welche Verzeichniselemente für die Frage des Benutzers relevant sind, und identifiziert so die relevanten Chunks.',
       deleteGenerateModalContent: `
         <p>Das Löschen der generierten <strong class='text-text-primary'>{{type}}</strong> Ergebnisse
         entfernt alle abgeleiteten Entitäten und Beziehungen aus diesem Datensatz.

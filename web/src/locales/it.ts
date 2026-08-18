@@ -668,9 +668,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       linkSourceSetTip:
         'Gestisci il collegamento della fonte dati con questo dataset',
       linkDataSource: 'Collega fonte dati',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        " Per i chunk esistenti, genera un indice gerarchico (una directory per file). Durante le query, quando il Miglioramento Directory è attivato, il sistema userà un modello grande per determinare quali elementi della directory sono rilevanti per la domanda dell'utente, identificando così i chunk rilevanti.",
       deleteGenerateModalContent: `
         <p>Eliminando i risultati <strong class='text-text-primary'>{{type}}</strong> generati
         rimuoverai tutte le entità e relazioni derivate da questo dataset.
