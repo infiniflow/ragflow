@@ -294,3 +294,29 @@ func TestFillCellTextFromBoxes_RowSelectionIgnores2DCellOverlap(t *testing.T) {
 			cells[1].Text, cells[2].Text, cells[3].Text)
 	}
 }
+
+// TestFillCellTextFromBoxes_RowSelectionTiebreak guards the row-selection
+// _ov tie-break (inter/rowArea) in FillCellTextFromBoxes. When a box overlaps
+// two rows with the SAME vertical-overlap ratio (ov), the row with the higher
+// _ov (smaller row area for equal vertical overlap) wins — mirroring Python's
+// (ov, _ov) ordering in find_overlapped_with_threshold.
+//
+// row0 y[0,40] (height 40), row1 y[40,100] (height 60). Box y[0,80] (height 80)
+// overlaps BOTH rows by 40 → ov = 40/80 = 0.5 for each. _ov: row0 = 40/40 = 1.0,
+// row1 = 40/60 ≈ 0.667. Python keeps row0; Go must too.
+func TestFillCellTextFromBoxes_RowSelectionTiebreak(t *testing.T) {
+	cells := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 40},   // row0 (higher _ov)
+		{X0: 0, Y0: 40, X1: 100, Y1: 100}, // row1 (lower _ov)
+	}
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 80, Text: "row0"},
+	}
+	FillCellTextFromBoxes(cells, boxes)
+	if cells[0].Text != "row0" {
+		t.Errorf("row tiebreak: box should land in row0 (higher _ov), got cell0=%q", cells[0].Text)
+	}
+	if cells[1].Text != "" {
+		t.Errorf("row tiebreak: box leaked into row1 (lower _ov), got %q", cells[1].Text)
+	}
+}
