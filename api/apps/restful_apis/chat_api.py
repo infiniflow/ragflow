@@ -1304,6 +1304,7 @@ async def session_completion(chat_id_in_arg=""):
             if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
+            dia.tenant_llm_id = None
             dia.llm_setting = chat_model_config
         elif not dia.llm_id:
             logging.info("empty chat_model_id in req, use default chat model.")
