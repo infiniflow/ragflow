@@ -589,7 +589,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         and "to_page" in task
         and (int(task["to_page"]) - int(task["from_page"]) >= 10**6 or (int(task["from_page"]) == MAXIMUM_TASK_PAGE_NUMBER and int(task["to_page"]) == MAXIMUM_TASK_PAGE_NUMBER))
     ):
-        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
+        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page'] - 1}): "
     else:
         task["progress_msg"] = ""
     task["progress_msg"] = " ".join([datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])
