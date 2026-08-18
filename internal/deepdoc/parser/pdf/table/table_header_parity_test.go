@@ -2,42 +2,28 @@ package table
 
 import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"reflect"
 	"testing"
 )
 
 // =============================================================================
-// Parity #4: header 行判定机制不同 (registered in project_table_parity_triage.md)
+// Table header-detection parity with Python (deepdoc/vision/
+// table_structure_recognizer.py:336-348). Pure functions, no external deps →
+// unit tier (no build tag).
 //
-// 纯函数测试，无外部依赖 → unit 层（无 build tag）。
+// Python marks a header row when, over its columns, more than half carry a
+// geometric H flag (box overlaps the header region ≥0.3) OR, for numeric tables,
+// a non-numeric blockType — each with a per-row h/cnt > 0.5 majority.
 //
-// Python (deepdoc/vision/table_structure_recognizer.py:336-348) 主路径 =
-//   any(a.get("H") for a in arr)            # 单元格内任一 box 与 header 区域
-//                                           # 重叠 ≥0.3 (pdf_parser.py:616 打 H)
-//   + (max_type=="Nu" && arr[0]["btype"]!="Nu")   # blockType 仅数值表
-//   行级 h/cnt > 0.5 多数决。
-//
-// Go 生产路径 (table_cells.go HeaderSetWithBlockType, table_construct.go:55)
-//   主路径仅 maxType=="Nu" && bt!="Nu"；非数值表主路径 0 header；
-//   靠 fallback 查 cell.Label 含 "header"(table_cells.go 的 label 信号块)。
-//
-// 以下测试暴露三条不对称：
-//   (1) 生产路径无 0.3 几何口径 —— box 几何路径(BoxHeaderSet, 0.3)与 TSR grid
-//       路径(HeaderSetWithBlockType)对同一张表得出不同 header 集。
-//   (2) label fallback 无 0.5 多数决 —— 数据行内 1 个 cell 被打 header 标签即整行抬成 header。
-//   (3) fallback 为互斥门控 —— blockType 已找到 ≥1 header 时 label fallback 被关闭，
-//       纯 label 可识别的 header 行被漏掉。
+// Go's HeaderSetWithBlockType combines THREE additive signals (geometric,
+// blockType, TSR label), each with the same >0.5 row-majority, so a row is a
+// header if ANY signal flags it.
 // =============================================================================
 
-// TestHeaderDetection_GeometricPathVsProductionPathDiverge guards against
-// asymmetry (1): the box-geometric path (BoxHeaderSet, 0.3 overlap) and the
-// production TSR-grid path (HeaderSetWithBlockType) must agree on the SAME table.
-//
-// Py uses the geometric H flag (box overlaps header region ≥0.3) as a primary
-// signal. Before the fix, Go's production path never saw geometric overlap — it
-// only read TSRCell.Label from GroupCells Y-intersection propagation (no 0.3
-// threshold), so a non-numeric header row with no TSR "header" label was detected
-// by the geometric path but missed by the production path. After the fix the
-// production path reuses BoxHeaderSet, so the two paths agree.
+// TestHeaderDetection_GeometricPathVsProductionPathDiverge verifies the
+// production TSR-grid path (HeaderSetWithBlockType) and the box-geometric path
+// (BoxHeaderSet) agree on the same table: a non-numeric, unlabeled header row
+// whose boxes overlap the header region must be detected by both.
 func TestHeaderDetection_GeometricPathVsProductionPathDiverge(t *testing.T) {
 	// Same 2-row, 2-col table, two views:
 	//  - TSR grid: row 0 cells have NO "header" label (TSR missed them).
@@ -60,25 +46,24 @@ func TestHeaderDetection_GeometricPathVsProductionPathDiverge(t *testing.T) {
 		{Text: "25", R: 1, C: 1, H: -1},
 	}
 
-	gridHdrs := HeaderSetWithBlockType(rows, boxes) // production path (now geometric-aware)
+	gridHdrs := HeaderSetWithBlockType(rows, boxes) // production path (geometric-aware)
 	boxHdrs := BoxHeaderSet(rows, boxes)            // geometric path
 
-	if boxHdrs[0] && !gridHdrs[0] {
-		t.Errorf("PARITY #4 (asym 1) REGRESSED: box-geometric path flags row 0 (H>0, 0.3 overlap) but production HeaderSetWithBlockType misses it. Same table, divergent header sets: box=%v grid=%v. Py would flag row 0 via geometric H.", boxHdrs, gridHdrs)
+	// The table is all-or-nothing per row (row 0 fully overlaps, row 1 none),
+	// so the column-majority production path and the any-box geometric path must
+	// agree exactly. Assert equality and that the data row is not a header.
+	if !reflect.DeepEqual(boxHdrs, gridHdrs) {
+		t.Errorf("geometric path and production path disagree on header set: box=%v grid=%v", boxHdrs, gridHdrs)
+	}
+	if gridHdrs[1] {
+		t.Errorf("data row 1 must not be a header: %v", gridHdrs)
 	}
 	t.Logf("box-geometric header set=%v production header set=%v", boxHdrs, gridHdrs)
 }
 
-// TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority guards against
-// asymmetry (2): before the fix, Go's label fallback had NO 0.5 majority vote.
-// Py requires h/cnt > 0.5 (majority of non-empty cells) before a row becomes a
-// header.
-//
-// Scenario: row 0 is a real header (all cells labeled). Row 1 is a DATA row,
-// but exactly ONE cell was mislabeled "table column header" (e.g. a GroupCells
-// Y-intersection false positive). Py keeps row 1 as data (1/2 < 0.5); before the
-// fix Go flipped the ENTIRE row to header because the fallback marked any row
-// with ≥1 header cell.
+// TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority verifies the
+// TSR-label signal uses a per-row >0.5 majority: a data row with a single
+// mislabeled cell must stay data, not be promoted to a header.
 func TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority(t *testing.T) {
 	rows := [][]pdf.TSRCell{
 		{
@@ -108,22 +93,10 @@ func TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority(t *testing.T
 	t.Logf("header set=%v", hdrs)
 }
 
-// TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders guards against
-// asymmetry (3): before the fix, Go's label fallback only ran when len(hdrs)==0
-// (it was a mutually-exclusive gate). Py combines geometric H and blockType
-// per-cell, then takes a row-level majority — the two signals are ADDITIVE, not
-// gated.
-//
-// Scenario: a numeric-dominant (Nu) table. Row 0 header = non-Nu text, detected
-// by blockType (maxType==Nu && bt!="Nu"). Row 2 is a header row whose cells are
-// NUMERIC, so blockType skips them (correct per Py's Nu rule); it is only
-// identifiable via its "header" label. Before the fix, because blockType
-// already populated hdrs (row 0), the label fallback was SUPPRESSED, so row 2
-// was dropped.
-//
-// NOTE: Py would flag row 2 via geometric H (its boxes overlap the header
-// region ≥0.3). Even setting Py aside, Go's two signals being exclusive rather
-// than additive is a structural divergence that drops label-only headers.
+// TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders verifies the
+// three signals are additive: a numeric-dominant table whose row 0 is found by
+// blockType must still let a numeric-but-labeled header row (row 2) be detected
+// by the label signal.
 func TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders(t *testing.T) {
 	rows := [][]pdf.TSRCell{
 		{
@@ -145,23 +118,16 @@ func TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders(t *testing.T
 	if !hdrs[0] {
 		t.Errorf("expected row 0 to be a header (blockType)")
 	}
-	// Row 2: blockType skips numeric cells; label flags it. Before the fix the
-	// mutually-exclusive gate disabled the label fallback once row 0 was found.
+	// Row 2: blockType skips numeric cells, but the label signal must still flag it.
 	if !hdrs[2] {
 		t.Errorf("PARITY #4 (asym 3) REGRESSED: Go misses row 2 header. blockType found row 0 (len(hdrs)!=0) so the label fallback was suppressed; row 2's numeric-but-labeled cells are skipped by blockType. Py would flag row 2 via geometric H. header set=%v", hdrs)
 	}
 }
 
-// TestHeaderSetWithBlockType_NonNumericUnlabeledDetectsHeaders verifies the
-// geometric gap is fixed end-to-end: a non-numeric table whose header row
-// carries no TSR "header" label and whose content is non-Nu. Py flags the header
-// row via the geometric H signal (box overlaps header region ≥0.3); Go's
-// production path must now do the same by accepting the annotated boxes.
-//
-// Before the fix, HeaderSetWithBlockType had no access to geometric overlap and
-// yielded ZERO headers for this table (parity #4, geometric gap). After the fix,
-// the geometric signal (box.H > 0, set by AnnotateTableBoxes against the first
-// grid row) is combined additively with blockType + label, so row 0 is detected.
+// TestHeaderSetWithBlockType_NonNumericUnlabeledDetectsHeaders verifies a
+// non-numeric, unlabeled header row is detected via the geometric signal (box
+// overlaps the header region ≥0.3) even when blockType and label contribute
+// nothing.
 func TestHeaderSetWithBlockType_NonNumericUnlabeledDetectsHeaders(t *testing.T) {
 	rows := [][]pdf.TSRCell{
 		{
@@ -202,19 +168,74 @@ func TestHeaderSetWithBlockType_NonNumericUnlabeledDetectsHeaders(t *testing.T) 
 	t.Logf("header set=%v", hdrs)
 }
 
-// TestAnnotateTableBoxes_FirstHeaderCellEncoded covers the box.H = idx+1
-// encoding in AnnotateTableBoxes (table_layout.go): a single-column table whose
-// header is the FIRST header cell (idx==0).
-//
-// Before the fix AnnotateTableBoxes stored boxes[i].H = idx. For the first
-// header cell idx==0, that wrote H==0, which every reader treats as "no header
-// overlap" (b.H > 0). So single-column / first-column header tables were
-// silently dropped by the geometric signal. The fix stores idx+1, so a match on
-// the first header cell yields H==1 (>0).
-//
-// This test fails on the old code (expects H==1, old code yields H==0) and turns
-// green with the encoding fix. It also confirms the boolean reader BoxHeaderSet
-// now flags the row.
+// TestHeaderSetWithBlockType_GeometricColumnMajority verifies the geometric
+// signal applies Python's per-row column-majority (>0.5), not the old any-box
+// rule: a row with a minority of overlapping boxes must NOT be a header, while a
+// row with a majority must.
+func TestHeaderSetWithBlockType_GeometricColumnMajority(t *testing.T) {
+	t.Run("one of two overlapping is not a header", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{
+				{Text: "HeaderA", Label: "table row"},
+				{Text: "HeaderB", Label: "table row"},
+			},
+			{
+				{Text: "DataA", Label: "table row"},
+				{Text: "DataB", Label: "table row"},
+			},
+		}
+		// Row 0: both boxes overlap the header region. Row 1: only ONE of two
+		// boxes overlaps (1/2 = 0.5, not > 0.5).
+		boxes := []pdf.TextBox{
+			{Text: "HeaderA", R: 0, C: 0, H: 1},
+			{Text: "HeaderB", R: 0, C: 1, H: 1},
+			{Text: "DataA", R: 1, C: 0, H: 1}, // single stray overlap
+			{Text: "DataB", R: 1, C: 1, H: -1},
+		}
+		hdrs := HeaderSetWithBlockType(rows, boxes)
+		if !hdrs[0] {
+			t.Errorf("row 0 (2/2 overlap) should be a header: %v", hdrs)
+		}
+		if hdrs[1] {
+			t.Errorf("row 1 (1/2 overlap) must NOT be a header: %v", hdrs)
+		}
+	})
+
+	t.Run("two of three overlapping is a header", func(t *testing.T) {
+		rows := [][]pdf.TSRCell{
+			{
+				{Text: "HeaderA", Label: "table row"},
+				{Text: "HeaderB", Label: "table row"},
+				{Text: "HeaderC", Label: "table row"},
+			},
+			{
+				{Text: "DataA", Label: "table row"},
+				{Text: "DataB", Label: "table row"},
+				{Text: "DataC", Label: "table row"},
+			},
+		}
+		// Row 1: two of three boxes overlap (2/3 > 0.5 → header).
+		boxes := []pdf.TextBox{
+			{Text: "HeaderA", R: 0, C: 0, H: 1},
+			{Text: "HeaderB", R: 0, C: 1, H: 1},
+			{Text: "HeaderC", R: 0, C: 2, H: 1},
+			{Text: "DataA", R: 1, C: 0, H: 1},
+			{Text: "DataB", R: 1, C: 1, H: 1},
+			{Text: "DataC", R: 1, C: 2, H: -1},
+		}
+		hdrs := HeaderSetWithBlockType(rows, boxes)
+		if !hdrs[0] {
+			t.Errorf("row 0 (3/3 overlap) should be a header: %v", hdrs)
+		}
+		if !hdrs[1] {
+			t.Errorf("row 1 (2/3 overlap) should be a header: %v", hdrs)
+		}
+	})
+}
+
+// TestAnnotateTableBoxes_FirstHeaderCellEncoded verifies AnnotateTableBoxes
+// encodes a box matching the FIRST header cell (idx==0) as H==1 (not H==0), so
+// single-column / first-column header tables are not dropped by the H>0 readers.
 func TestAnnotateTableBoxes_FirstHeaderCellEncoded(t *testing.T) {
 	// Single-column, two-row table. grid[0] is the header row and contains
 	// exactly one cell at index 0.
@@ -231,8 +252,8 @@ func TestAnnotateTableBoxes_FirstHeaderCellEncoded(t *testing.T) {
 
 	AnnotateTableBoxes(boxes, GroupTSRCellsToRows(cells))
 
-	// The header box matches the FIRST header cell (idx==0); the fix encodes it
-	// as H == idx+1 == 1. The old code wrote H == 0 here.
+	// The header box matches the FIRST header cell (idx==0); AnnotateTableBoxes
+	// encodes it as H == idx+1 == 1.
 	if boxes[0].H != 1 {
 		t.Errorf("PARITY #4 (idx+1 encoding) REGRESSED: box matching the first header cell (idx==0) should be stored as H=1, got H=%d. Old code wrote H=0 and was dropped by the b.H>0 readers.", boxes[0].H)
 	}
