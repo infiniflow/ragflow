@@ -66,7 +66,11 @@ func (m *mockRotationDoc) OCRDetect(_ context.Context, img image.Image) ([]pdf.O
 }
 
 func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
-	angle := rotationOrder[(m.callSeq-1)%len(rotationOrder)] // use angle from last Detect call
+	// EvaluateTableOrientation calls OCRRecognize once per angle in order
+	// 0°, 90°, 180°, 270°. Track the sequence here (independent of OCRDetect)
+	// so each call returns the recognition result for the corresponding angle.
+	angle := rotationOrder[m.callSeq%len(rotationOrder)]
+	m.callSeq++
 	cfg, ok := m.angles[angle]
 	if !ok {
 		cfg = m.angles[0]
@@ -162,16 +166,16 @@ func TestEvaluateTableOrientation(t *testing.T) {
 		}
 	})
 
-	t.Run("threshold protection — 0° keeps when diff too small", func(t *testing.T) {
-		// Region-count scoring: 8 vs 9 is too close (< 1.4×) → 0° wins.
+	t.Run("threshold protection — 0° keeps when confidence diff too small", func(t *testing.T) {
+		// Recognition scores 0.50 vs 0.55 are too close (< 0.2 margin) → 0° wins.
 		doc := &mockRotationDoc{
 			angles: map[int]struct {
 				regions int
 				avgConf float64
 				err     error
 			}{
-				0:  {regions: 8},
-				90: {regions: 9},
+				0:  {regions: 8, avgConf: 0.50},
+				90: {regions: 8, avgConf: 0.55},
 			},
 		}
 		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
@@ -180,21 +184,40 @@ func TestEvaluateTableOrientation(t *testing.T) {
 		}
 	})
 
-	t.Run("threshold pass — 90° wins when region count is clearly higher", func(t *testing.T) {
-		// 0° has few regions AND 90° has ≥1.4× more → 90° wins.
+	t.Run("threshold pass — 90° wins when recognition confidence is clearly higher", func(t *testing.T) {
+		// 0° reads poorly (0.30) AND 90° reads well (0.90) → 90° wins.
 		doc := &mockRotationDoc{
 			angles: map[int]struct {
 				regions int
 				avgConf float64
 				err     error
 			}{
-				0:  {regions: 4},
-				90: {regions: 10},
+				0:  {regions: 4, avgConf: 0.30},
+				90: {regions: 10, avgConf: 0.90},
 			},
 		}
 		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90° (threshold passed), got %d°", angle)
+		}
+	})
+
+	t.Run("threshold guard — 0° already reads well, do not rotate", func(t *testing.T) {
+		// 0° confidence 0.90 (>= 0.8 guard) even though 90° is slightly higher
+		// (0.95): the absolute threshold must still keep 0° because score0 >= 0.8.
+		doc := &mockRotationDoc{
+			angles: map[int]struct {
+				regions int
+				avgConf float64
+				err     error
+			}{
+				0:  {regions: 8, avgConf: 0.90},
+				90: {regions: 8, avgConf: 0.95},
+			},
+		}
+		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		if angle != 0 {
+			t.Errorf("expected 0° (score_0 >= 0.8 guard), got %d°", angle)
 		}
 	})
 
