@@ -3332,8 +3332,11 @@ The Indexer will store the content in the corresponding data structures for the 
       summary: 'Summary',
       keywords: 'Keywords',
       questions: 'Questions',
+      tags: 'Tags',
       metadata: 'Metadata',
       fieldName: 'Result destination',
+      enableSummary: 'Enable Summary',
+      useBuiltInTemplate: 'Use built-in template',
       prompts: {
         system: {
           keywords: `Role

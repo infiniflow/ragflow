@@ -2914,8 +2914,11 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       summary: '增强上下文',
       keywords: '关键词',
       questions: '问题',
+      tags: '标签',
       metadata: '元数据',
       fieldName: '结果目的地',
+      enableSummary: '启用增强上下文',
+      useBuiltInTemplate: '使用内置模板',
       prompts: {
         system: {
           keywords: `角色

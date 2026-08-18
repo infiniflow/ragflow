@@ -74,18 +74,52 @@ type ExtractorFromUpstream struct {
 // chunk from the LLM call).
 func (ExtractorFromUpstream) Validate() error { return nil }
 
+// KeywordExtractConfig configures automatic keyword extraction.
+type KeywordExtractConfig struct {
+	TopN         int    `json:"top_n,omitempty"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
+}
+
+// QuestionExtractConfig configures automatic question generation.
+type QuestionExtractConfig struct {
+	TopN         int    `json:"top_n,omitempty"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
+}
+
+// TagExtractConfig configures automatic tag extraction.
+type TagExtractConfig struct {
+	TopN      int    `json:"top_n,omitempty"`
+	TagFileID string `json:"tag_file_id,omitempty"`
+}
+
+// SummaryExtractConfig configures summary / enhanced context extraction.
+type SummaryExtractConfig struct {
+	Enabled      bool   `json:"enabled,omitempty"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
+}
+
+// MetadataExtractConfig configures structured metadata extraction.
+type MetadataExtractConfig struct {
+	Enabled         bool                      `json:"enabled,omitempty"`
+	Metadata        []common.MetadataFieldDef `json:"metadata,omitempty"`
+	BuiltInMetadata []common.MetadataFieldDef `json:"built_in_metadata,omitempty"`
+}
+
 // ExtractorParam is the static configuration for the Extractor
-// component. Mirrors rag/flow/extractor/extractor.py:ExtractorParam,
-// which extends both ProcessParamBase and LLMParam. The LLM fields
-// (`llm_id`, `parameters`, `system_prompt`, `prompt`, `messages`,
-// etc.) live on the agent-side `LLMParam`; the Go port captures only
-// the Extractor-specific field plus a pointer to the LLM config so
-// the wiring is explicit.
+// component. Supports modular sub-configs (Keywords, Questions, Tags,
+// Summary, Metadata) as well as legacy flat fields for backward compatibility.
 type ExtractorParam struct {
+	// Modular sub-configs
+	Keywords       KeywordExtractConfig  `json:"keywords,omitempty"`
+	Questions      QuestionExtractConfig `json:"questions,omitempty"`
+	Tags           TagExtractConfig      `json:"tags,omitempty"`
+	Summary        SummaryExtractConfig  `json:"summary,omitempty"`
+	MetadataConfig MetadataExtractConfig `json:"metadata_config,omitempty"`
+
 	// FieldName is the chunk key the LLM extraction result is written
 	// to (Python: `self._param.field_name`). Optional — when empty,
 	// auto_keywords or auto_questions may still be used.
-	FieldName string `json:"field_name"`
+	FieldName string `json:"field_name,omitempty"`
 
 	// LLMID identifies the LLM model used for extraction. This is the
 	// agent-side LLMParam.llm_id; on the ingestion side it is
@@ -99,29 +133,24 @@ type ExtractorParam struct {
 	Prompt string `json:"prompt,omitempty"`
 
 	// AutoKeywords enables automatic keyword extraction with a fixed
-	// prompt. The value determines the top-N count.
+	// prompt. The value determines the top-N count. Legacy flat field.
 	AutoKeywords int `json:"auto_keywords,omitempty"`
 
 	// AutoQuestions enables automatic question generation with a fixed
-	// prompt. The value determines the top-N count.
+	// prompt. The value determines the top-N count. Legacy flat field.
 	AutoQuestions int `json:"auto_questions,omitempty"`
 
-	// AutoTags enables tag assignment on chunks. When > 0, the
-	// component runs a two-phase tagger: Phase 1 uses Jaccard
-	// matching against tag source examples; Phase 2 uses the LLM
-	// for unmatched chunks. The value determines the top-N tags.
+	// AutoTags enables tag assignment on chunks. Legacy flat field.
 	AutoTags int `json:"auto_tags,omitempty"`
 
 	// TagFileID references a tag-definition file stored in object
-	// storage. Used only when AutoTags > 0 and no inline tag
-	// source text is wired in.
-	TagFileID string `json:"tag_file_id"`
+	// storage. Legacy flat field.
+	TagFileID string `json:"tag_file_id,omitempty"`
 
-	// EnableMetadata enables automatic structured metadata extraction
-	// with a fixed prompt. When > 0, runEnableMetadata asks the LLM to
-	// fill the fields listed in Metadata as a JSON object and
-	// merges the result into chunk["metadata"] (mirrors Python's
-	// gen_metadata_task path; see doc_metadata_go_port_research.md).
+	// EnableSummary enables summary extraction. Legacy flat field.
+	EnableSummary int `json:"enable_summary,omitempty"`
+
+	// EnableMetadata enables automatic structured metadata extraction. Legacy flat field.
 	EnableMetadata int `json:"enable_metadata,omitempty"`
 
 	// Metadata lists the target field definitions for
@@ -142,6 +171,7 @@ func (ExtractorParam) Defaults() ExtractorParam {
 		AutoQuestions:  0,
 		AutoTags:       0,
 		TagFileID:      "",
+		EnableSummary:  0,
 		EnableMetadata: 0,
 		Metadata:       nil,
 	}
