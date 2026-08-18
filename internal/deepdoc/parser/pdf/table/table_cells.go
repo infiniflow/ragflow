@@ -317,7 +317,7 @@ func CaptionKind(s pdf.Section) string {
 	if reFigureCaptionText.MatchString(t) {
 		return pdf.LayoutTypeFigure
 	}
-	// "图表" pattern could be either — check if isCaptionBox matches.
+	// The chart/figure pattern is ambiguous (matches both) — fall back to isCaptionBox.
 	if IsCaptionBox(t, "") {
 		return pdf.LayoutTypeTable
 	}
@@ -406,10 +406,32 @@ func containsCJK(s string) bool {
 	return false
 }
 
-// headerSetWithBlockType returns rows that should be header rows, using both
-// TSR cell labels AND block-type classification.  Matches Python's
-// construct_table header detection (table_structure_recognizer.py:370-384).
-func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
+// HeaderSetWithBlockType returns the set of rows that are header rows, combining
+// THREE additive signals to match Python's construct_table header detection
+// (table_structure_recognizer.py:336-348):
+//
+//  1. Geometric: a box overlapping the header region by ≥0.3 has box.H>0
+//     (AnnotateTableBoxes sets it against grid[0], the first grid row). A row is
+//     a header when more than half of its columns have such a box — the same
+//     column-majority Python applies (per-column any(a.get("H") for a in arr),
+//     then per-row h/cnt > 0.5). Go hardcodes the header region to grid[0], so
+//     this matches Python for the common header-on-row-0 case but is an
+//     approximation, not a 1:1 port.
+//  2. blockType (Python: max_type == "Nu" and btype != "Nu"): only contributes
+//     for numeric-dominant tables, then per-row majority.
+//  3. TSR label (Go-only model-agnostic fallback; Python has no exact
+//     equivalent): a cell whose Label contains "header" counts, then per-row
+//     majority.
+//
+// A row is a header if ANY signal flags it (no mutually-exclusive gate).
+//
+// Python divergence: Python stops at the first row that fails the majority (a
+// contiguous header prefix); Go scores each row independently and adds signals,
+// so a later row that independently clears the majority is still flagged.
+//
+// boxes may be nil (e.g. the test-only cell-grouping path); the geometric signal
+// is then skipped and only blockType + label are consulted.
+func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]bool {
 	// Compute dominant block type across all cells.
 	typeCounts := make(map[string]int)
 	for _, row := range rows {
@@ -430,6 +452,8 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
 	}
 
 	hdrs := make(map[int]bool)
+
+	// Signal 2: blockType (numeric-dominant tables only).
 	for ri, row := range rows {
 		cnt, h := 0, 0
 		for _, cell := range row {
@@ -439,7 +463,7 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
 			}
 			cnt++
 			bt := BlockType(t)
-			// Python: if max_type == "Nu" and cell btype == "Nu" → skip
+			// Python: max_type == "Nu" and cell btype == "Nu" → skip
 			if maxType == "Nu" && bt == "Nu" {
 				continue
 			}
@@ -452,17 +476,59 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
 			hdrs[ri] = true
 		}
 	}
-	// Fallback: if block-type found no headers, check for model-agnostic
-	// "header" substring in cell labels (works across different TSR models).
-	if len(hdrs) == 0 {
+
+	// Signal 3: TSR label "header" (additive, with 0.5 majority — fixes
+	// over-detection where a single mislabeled cell promoted a whole data row).
+	for ri, row := range rows {
+		cnt, h := 0, 0
+		for _, cell := range row {
+			t := strings.TrimSpace(cell.Text)
+			if t == "" {
+				continue
+			}
+			cnt++
+			if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
+				h++
+			}
+		}
+		if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
+			hdrs[ri] = true
+		}
+	}
+
+	// Signal 1: geometric H from boxes (additive, with the same column-majority
+	// Python uses). For each row, count how many of its columns have at least one
+	// box overlapping the header region (box.H > 0); mark the row when that
+	// fraction exceeds 0.5. This mirrors Python's per-column
+	// any(a.get("H") for a in arr) followed by its per-row h/cnt > 0.5 — distinct
+	// from the old BoxHeaderSet any-box rule, which flagged a whole row whenever a
+	// single stray box overlapped the header region (over-promotion).
+	if len(boxes) > 0 {
+		// colHit[row] = set of columns whose cell has an H>0 box.
+		colHit := make(map[int]map[int]bool)
+		for i := range boxes {
+			b := boxes[i]
+			if b.H <= 0 || b.R < 0 || b.R >= len(rows) {
+				continue
+			}
+			if b.C < 0 || b.C >= len(rows[b.R]) {
+				continue
+			}
+			if colHit[b.R] == nil {
+				colHit[b.R] = make(map[int]bool)
+			}
+			colHit[b.R][b.C] = true
+		}
 		for ri, row := range rows {
-			for _, cell := range row {
-				if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
-					hdrs[ri] = true
-					break
-				}
+			n := len(row)
+			if n == 0 {
+				continue
+			}
+			if float64(len(colHit[ri]))/float64(n) > 0.5 {
+				hdrs[ri] = true
 			}
 		}
 	}
+
 	return hdrs
 }

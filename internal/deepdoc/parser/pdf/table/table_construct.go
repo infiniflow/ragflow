@@ -60,7 +60,7 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		// CleanupOrphanRows returns a re-sliced header).
 		rows = CleanupOrphanColumns(rows)
 		rows = CleanupOrphanRows(rows)
-		hdrs := HeaderSetWithBlockType(rows)
+		hdrs := HeaderSetWithBlockType(rows, boxes)
 		if item != nil {
 			item.Grid = rows
 			item.Rows = RowsToStrings(rows)
