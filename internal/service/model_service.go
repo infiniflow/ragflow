@@ -1238,7 +1238,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(passedTypes) == 0 {
-		return modelVerifyResult, fmt.Errorf("all model verification attempts failed: %w", errors.Join(errs...))
+		return modelVerifyResult, fmt.Errorf("model verification attempts failed: %w", errors.Join(errs...))
 	}
 
 	return modelVerifyResult, nil
