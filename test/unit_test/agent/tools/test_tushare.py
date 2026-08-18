@@ -57,7 +57,8 @@ def test_tushare_param_exposes_tool_descriptor():
     assert meta["function"]["name"] == "tushare_quick_news"
     query = meta["function"]["parameters"]["properties"]["query"]
     assert query["type"] == "string"
-    assert query["required"] is True
+    # required is the normalized top-level array.
+    assert meta["function"]["parameters"]["required"] == ["query"]
 
 
 @pytest.mark.p1
