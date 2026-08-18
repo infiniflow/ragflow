@@ -73,6 +73,33 @@ def test_qwen3_preview_ignores_disabled_thinking():
     assert kwargs["extra_body"]["enable_thinking"] is True
 
 
+def test_qwen3_24t_a95b_forces_thinking_true():
+    """qwen3.8-2.4t-a95b (flagship reasoning model) only accepts enable_thinking=True."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3.8-2.4t-a95b",
+        backend="base",
+        gen_conf={},
+        request_kwargs={},
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"]["enable_thinking"] is True
+
+
+def test_qwen3_24t_a95b_ignores_disabled_thinking():
+    """Even with thinking=disabled, qwen3.8-2.4t-a95b still forces enable_thinking=True."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3.8-2.4t-a95b",
+        backend="base",
+        gen_conf={"thinking": "disabled", "temperature": 0.2},
+        request_kwargs={},
+    )
+
+    assert "thinking" not in gen_conf
+    assert gen_conf == {"temperature": 0.2}
+    assert kwargs["extra_body"]["enable_thinking"] is True
+
+
 @pytest.mark.parametrize(
     "provider",
     [SupportedLiteLLMProvider.Tongyi_Qianwen, SupportedLiteLLMProvider.Dashscope],
