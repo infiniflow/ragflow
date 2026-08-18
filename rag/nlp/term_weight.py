@@ -119,11 +119,12 @@ class Dealer:
         except Exception:
             logging.warning("Load ner.json FAIL!")
         freq_path = os.path.join(fnm, "term.freq")
-        if os.path.exists(freq_path):
-            try:
-                self.df = load_dict(freq_path)
-            except Exception:
-                logging.warning("Load term.freq FAIL!")
+        try:
+            self.df = load_dict(freq_path)
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            logging.warning("Load term.freq FAIL!", exc_info=True)
 
     def pretoken(self, txt, num=False, stpwd=True):
         patt = [r"[~—\t @#%!<>,\.\?\":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；‘’：“”【¥ 】…￥！、·（）×`&\\/「」\\]"]

@@ -15,9 +15,10 @@
 #
 
 import json
+import logging
 from pathlib import Path
 
-from rag.nlp import rag_tokenizer
+from rag.nlp import rag_tokenizer, term_weight
 from rag.nlp.term_weight import Dealer, _alphabetic_oov_frequency
 
 
@@ -44,3 +45,30 @@ def test_oov_weights_favor_longer_content_terms(monkeypatch):
     dealer.df["equipment"] = 1_000_000
     weights = dict(dealer.weights(["supplier", "equipment"], preprocess=False))
     assert weights["equipment"] < weights["supplier"]
+
+
+def test_missing_frequency_dictionary_is_silent(tmp_path, monkeypatch, caplog):
+    """Treat an absent optional frequency dictionary as an expected fallback."""
+    resource_dir = tmp_path / "rag" / "res"
+    resource_dir.mkdir(parents=True)
+    (resource_dir / "ner.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(term_weight, "get_project_base_directory", lambda: str(tmp_path))
+
+    with caplog.at_level(logging.WARNING):
+        Dealer()
+
+    assert "Load term.freq FAIL!" not in caplog.text
+
+
+def test_malformed_frequency_dictionary_logs_warning(tmp_path, monkeypatch, caplog):
+    """Expose malformed dictionaries instead of silently enabling the fallback."""
+    resource_dir = tmp_path / "rag" / "res"
+    resource_dir.mkdir(parents=True)
+    (resource_dir / "ner.json").write_text("{}", encoding="utf-8")
+    (resource_dir / "term.freq").write_text("term\tnot-a-number\n", encoding="utf-8")
+    monkeypatch.setattr(term_weight, "get_project_base_directory", lambda: str(tmp_path))
+
+    with caplog.at_level(logging.WARNING):
+        Dealer()
+
+    assert "Load term.freq FAIL!" in caplog.text
