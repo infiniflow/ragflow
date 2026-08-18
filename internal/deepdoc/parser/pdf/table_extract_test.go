@@ -7,6 +7,7 @@ import (
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 type orientationScoringDoc struct{}
@@ -93,5 +94,45 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 	}
 	if got.X0 > got.X1 || got.Y0 > got.Y1 {
 		t.Fatalf("cell bounds are inverted: (%.0f,%.0f,%.0f,%.0f)", got.X0, got.Y0, got.X1, got.Y1)
+	}
+}
+
+// TestProcessOneTable_CropOffUsesFixedMargin locks the parity contract that
+// the TSR crop offset is a fixed margin (TSRRegionMarginPx = 10pt * ZM = 30px),
+// not a proportional percentage of the region. processOneTable computes
+// cropOffX = max(0, region.X0 - TSRRegionMarginPx); for a region whose X0/Y0
+// lie beyond the margin the offset must equal region.X0 - 30 (nonzero), which
+// is exactly the inverse of CropImageRegion's forward 30px expansion. The
+// pre-fix code used w*0.03/h*0.03 here, diverging from Python.
+func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
+	autoRotate := true
+	cfg := pdf.DefaultParserConfig()
+	cfg.AutoRotateTables = &autoRotate
+	cfg.SkipOCR = true
+	p := NewParser(cfg)
+
+	pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
+	boxes := []pdf.TextBox{
+		{X0: 10, X1: 60, Top: 10, Bottom: 30, Text: "cell", LayoutType: pdf.LayoutTypeTable},
+	}
+	// Region beyond TSRRegionMarginPx (30px): offset must be X0-30 = 70,
+	// not the old proportional w*0.03 and not clamped to 0.
+	const regionX0, regionY0 = 100.0, 100.0
+	match := tbl.TableMatch{
+		Region: pdf.DLARegion{X0: regionX0, Y0: regionY0, X1: 210, Y1: 110, Label: pdf.LayoutTypeTable},
+		BoxIdx: []int{0},
+	}
+	builder := &staticTableBuilder{
+		cells: []pdf.TSRCell{
+			{X0: 10, Y0: 20, X1: 60, Y1: 80, Label: "table row"},
+		},
+	}
+
+	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+
+	const wantOff = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
+	if item.CropOffX != wantOff || item.CropOffY != wantOff {
+		t.Errorf("cropOff = (%.0f,%.0f), want (%.0f,%.0f) (region.X0 - fixed 30px margin)",
+			item.CropOffX, item.CropOffY, wantOff, wantOff)
 	}
 }
