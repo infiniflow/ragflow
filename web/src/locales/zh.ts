@@ -9,6 +9,7 @@ export default {
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       deleteThem: '确定要删除吗？',
+      removeModalTitle: '确定移除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',

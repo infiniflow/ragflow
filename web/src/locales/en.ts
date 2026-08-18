@@ -9,6 +9,7 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
+      removeModalTitle: 'Are you sure to remove it ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
