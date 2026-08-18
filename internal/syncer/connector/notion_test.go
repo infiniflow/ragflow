@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +23,7 @@ func TestNotionConnectorOpenSyncReadsRootPageChildrenAndAttachment(t *testing.T)
 		return notionPage{}, errors.New("unexpected page")
 	}
 	connector.fetchChildBlocks = func(ctx context.Context, blockID, cursor string) (notionBlockPage, error) {
+		t.Helper()
 		switch blockID {
 		case "page-1":
 			return notionBlockPage{Results: []notionBlock{
@@ -56,6 +60,38 @@ func TestNotionConnectorOpenSyncReadsRootPageChildrenAndAttachment(t *testing.T)
 	}
 	if batch.Documents[2].SourceID != "child-1" || string(batch.Documents[2].Blob) != "\n[x] Done" {
 		t.Fatalf("child doc = %+v body=%q", batch.Documents[2], batch.Documents[2].Blob)
+	}
+}
+
+func TestNotionConnectorOpenSyncDefersTraversalUntilNextBatch(t *testing.T) {
+	connector := newTestNotionConnector(t)
+	connector.rootPageID = "page-1"
+	var childBlockCalls int
+	var downloadCalls int
+	connector.fetchPage = func(ctx context.Context, pageID string) (notionPage, error) {
+		return notionTestPage(pageID, "Root", "2026-01-03T00:00:00Z"), nil
+	}
+	connector.fetchChildBlocks = func(ctx context.Context, blockID, cursor string) (notionBlockPage, error) {
+		childBlockCalls++
+		return notionBlockPage{Results: []notionBlock{notionTestFileBlock("file-1", "report.pdf", "https://files.example/report.pdf")}}, nil
+	}
+	connector.downloadFile = func(ctx context.Context, rawURL string) ([]byte, error) {
+		downloadCalls++
+		return []byte("pdf-body"), nil
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	if childBlockCalls != 0 || downloadCalls != 0 {
+		t.Fatalf("OpenSync traversed content: childBlockCalls=%d downloadCalls=%d", childBlockCalls, downloadCalls)
+	}
+	if _, err := session.NextBatch(context.Background()); err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if childBlockCalls == 0 || downloadCalls == 0 {
+		t.Fatalf("NextBatch did not traverse content: childBlockCalls=%d downloadCalls=%d", childBlockCalls, downloadCalls)
 	}
 }
 
@@ -99,6 +135,59 @@ func TestNotionConnectorOpenSyncUsesIncrementalWindowAndResume(t *testing.T) {
 	}
 }
 
+func TestNotionConnectorIncrementalSearchContinuesPastTooNewPages(t *testing.T) {
+	connector := newTestNotionConnector(t)
+	connector.searchPages = func(ctx context.Context, request notionSearchRequest) (notionSearchResponse, error) {
+		if request.PageSize == 1 {
+			return notionSearchResponse{}, nil
+		}
+		switch request.StartCursor {
+		case "":
+			return notionSearchResponse{
+				Results:    []notionPage{notionTestPage("future", "Future", "2026-01-05T00:00:00Z")},
+				NextCursor: "cursor-2",
+				HasMore:    true,
+			}, nil
+		case "cursor-2":
+			return notionSearchResponse{Results: []notionPage{notionTestPage("in-window", "Current", "2026-01-03T00:00:00Z")}}, nil
+		default:
+			return notionSearchResponse{}, nil
+		}
+	}
+	connector.fetchChildBlocks = func(ctx context.Context, blockID, cursor string) (notionBlockPage, error) {
+		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
+	}
+	start := mustTime(t, "2026-01-02T00:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "in-window" {
+		t.Fatalf("documents = %+v", batch.Documents)
+	}
+}
+
+func TestNotionConnectorFileRejectsOversizedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "12345")
+	}))
+	defer server.Close()
+
+	connector := newTestNotionConnector(t)
+	connector.fileMaxBytes = 4
+	_, err := connector.file(context.Background(), server.URL)
+	if err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("file err = %v, want maximum size error", err)
+	}
+}
+
 func TestNotionConnectorOpenPruneReturnsPageAndAttachmentIDs(t *testing.T) {
 	connector := newTestNotionConnector(t)
 	connector.rootPageID = "page-1"
@@ -118,6 +207,9 @@ func TestNotionConnectorOpenPruneReturnsPageAndAttachmentIDs(t *testing.T) {
 	batch, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 3 {
+		t.Fatalf("documents len = %d, want 3", len(batch.Documents))
 	}
 	got := []string{batch.Documents[0].SourceID, batch.Documents[1].SourceID, batch.Documents[2].SourceID}
 	want := []string{"page-1", "file-1", "child-1"}

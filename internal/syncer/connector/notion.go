@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,9 +33,10 @@ import (
 )
 
 const (
-	defaultNotionBatchSize = 32
-	notionAPIBaseURL       = "https://api.notion.com/v1"
-	notionVersion          = "2022-06-28"
+	defaultNotionBatchSize    = 32
+	defaultNotionFileMaxBytes = 100 * 1024 * 1024
+	notionAPIBaseURL          = "https://api.notion.com/v1"
+	notionVersion             = "2022-06-28"
 )
 
 // NotionConnector reads pages and attachments from Notion.
@@ -42,6 +44,7 @@ type NotionConnector struct {
 	rootPageID      string
 	integrationKey  string
 	batchSize       int
+	fileMaxBytes    int64
 	recursiveLookup bool
 	httpClient      *http.Client
 	indexedPages    map[string]bool
@@ -55,15 +58,17 @@ type NotionConnector struct {
 	downloadFile     func(ctx context.Context, rawURL string) ([]byte, error)
 }
 
-// NewNotionConnector creates a Notion connector from Python-compatible config.
+// NewNotionConnector creates a Notion connector from the connector config map.
 func NewNotionConnector(config map[string]any) (*NotionConnector, error) {
 	credentials := configAnyMap(config["credentials"])
 	batchSize := configInt(firstNonEmpty(stringConfig(config["sync_batch_size"]), stringConfig(config["batch_size"])), defaultNotionBatchSize)
+	fileMaxBytes := int64(configInt(firstNonEmpty(stringConfig(config["file_max_bytes"]), stringConfig(config["max_file_size"]), stringConfig(config["max_attachment_size"])), defaultNotionFileMaxBytes))
 	rootPageID := strings.TrimSpace(stringConfig(config["root_page_id"]))
 	return &NotionConnector{
 		rootPageID:      rootPageID,
 		integrationKey:  strings.TrimSpace(stringConfig(credentials["notion_integration_token"])),
 		batchSize:       batchSize,
+		fileMaxBytes:    fileMaxBytes,
 		recursiveLookup: true,
 		httpClient:      &http.Client{Timeout: 60 * time.Second},
 		indexedPages:    map[string]bool{},
@@ -107,12 +112,19 @@ func (c *NotionConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	}
 	c.indexedPages = map[string]bool{}
 	c.pagePathCache = map[string]string{}
-	documents, err := c.loadDocuments(ctx, request)
-	if err != nil {
-		return nil, err
+	session := &notionSyncSession{
+		connector:      c,
+		request:        request,
+		batchSize:      c.batchSize,
+		resumeSourceID: notionResumeSourceID(request.Resume),
+		searchRequest: notionSearchRequest{
+			Filter:   map[string]any{"property": "object", "value": "page"},
+			PageSize: 100,
+		},
 	}
-	session := &notionSyncSession{documents: documents, batchSize: c.batchSize}
-	session.applyResume(request.Resume)
+	if !request.FromBeginning {
+		session.searchRequest.Sort = map[string]any{"timestamp": "last_edited_time", "direction": "descending"}
+	}
 	return session, nil
 }
 
@@ -127,45 +139,6 @@ func (c *NotionConnector) OpenPrune(ctx context.Context, request PruneRequest) (
 		return nil, err
 	}
 	return &notionPruneSession{documents: documents, batchSize: c.batchSize}, nil
-}
-
-func (c *NotionConnector) loadDocuments(ctx context.Context, request SyncRequest) ([]SourceDocument, error) {
-	if c.recursiveLookup && c.rootPageID != "" {
-		page, err := c.getPage(ctx, c.rootPageID)
-		if err != nil {
-			return nil, err
-		}
-		return c.readPages(ctx, []notionPage{page}, request)
-	}
-
-	var documents []SourceDocument
-	searchRequest := notionSearchRequest{
-		Filter:   map[string]any{"property": "object", "value": "page"},
-		PageSize: 100,
-	}
-	if !request.FromBeginning {
-		searchRequest.Sort = map[string]any{"timestamp": "last_edited_time", "direction": "descending"}
-	}
-	for {
-		response, err := c.search(ctx, searchRequest)
-		if err != nil {
-			return nil, err
-		}
-		pages := filterNotionPages(response.Results, request)
-		if len(pages) == 0 && !request.FromBeginning {
-			break
-		}
-		pageDocs, err := c.readPages(ctx, pages, request)
-		if err != nil {
-			return nil, err
-		}
-		documents = append(documents, pageDocs...)
-		if !response.HasMore {
-			break
-		}
-		searchRequest.StartCursor = response.NextCursor
-	}
-	return documents, nil
 }
 
 func (c *NotionConnector) loadSlimDocuments(ctx context.Context) ([]SlimDocument, error) {
@@ -201,78 +174,54 @@ func (c *NotionConnector) loadSlimDocuments(ctx context.Context) ([]SlimDocument
 	return documents, nil
 }
 
-func (c *NotionConnector) readPages(ctx context.Context, pages []notionPage, request SyncRequest) ([]SourceDocument, error) {
-	var documents []SourceDocument
-	var childPageIDs []string
-	for _, page := range pages {
-		if c.indexedPages[page.ID] {
-			continue
-		}
-		updatedAt := parseNotionTime(page.LastEditedTime)
-		if !request.FromBeginning && !includeNotionUpdatedAt(updatedAt, request) {
-			continue
-		}
-		pagePath := c.buildPagePath(ctx, page, map[string]bool{})
-		blocks, children, attachments, err := c.readBlocks(ctx, page.ID, page.LastEditedTime, pagePath)
-		if err != nil {
-			return nil, err
-		}
-		childPageIDs = append(childPageIDs, children...)
-		c.indexedPages[page.ID] = true
-
-		title := c.pageTitle(page)
-		if title == "" {
-			title = "Untitled Page with ID " + page.ID
-		}
-		semanticIdentifier := pagePath
-		if semanticIdentifier == "" {
-			semanticIdentifier = title
-		}
-		semanticIdentifier += "_" + page.ID
-
-		text := title
-		if len(blocks) > 0 {
-			parts := make([]string, 0, len(blocks))
-			for _, block := range blocks {
-				parts = append(parts, block.Prefix+block.Text)
-			}
-			text = strings.Join(parts, "\n")
-		} else if len(page.Properties) > 0 {
-			text += "\n\n" + notionPropertiesToText(page.Properties)
-		}
-		blob := []byte(text)
-		documents = append(documents, SourceDocument{
-			SourceID:           page.ID,
-			SemanticIdentifier: semanticIdentifier,
-			Extension:          ".txt",
-			Blob:               blob,
-			UpdatedAt:          updatedAt,
-			SizeBytes:          int64(len(blob)),
-			Metadata:           map[string]any{"url": page.URL},
-			Fingerprint:        stableFingerprint(map[string]any{"id": page.ID, "last_edited_time": page.LastEditedTime}),
-		})
-		documents = append(documents, attachments...)
+func (c *NotionConnector) readPage(ctx context.Context, page notionPage, request SyncRequest) ([]SourceDocument, []string, error) {
+	if c.indexedPages[page.ID] {
+		return nil, nil, nil
 	}
-
-	if c.recursiveLookup && len(childPageIDs) > 0 {
-		childPages := make([]notionPage, 0, len(childPageIDs))
-		for _, pageID := range childPageIDs {
-			if c.indexedPages[pageID] {
-				continue
-			}
-			page, err := c.getPage(ctx, pageID)
-			if err != nil {
-				return nil, err
-			}
-			childPages = append(childPages, page)
-		}
-		childDocs, err := c.readPages(ctx, childPages, request)
-		if err != nil {
-			return nil, err
-		}
-		documents = append(documents, childDocs...)
+	updatedAt := parseNotionTime(page.LastEditedTime)
+	if !request.FromBeginning && !includeNotionUpdatedAt(updatedAt, request) {
+		return nil, nil, nil
 	}
-	return documents, nil
+	pagePath := c.buildPagePath(ctx, page, map[string]bool{})
+	blocks, children, attachments, err := c.readBlocks(ctx, page.ID, page.LastEditedTime, pagePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	c.indexedPages[page.ID] = true
+
+	title := c.pageTitle(page)
+	if title == "" {
+		title = "Untitled Page with ID " + page.ID
+	}
+	semanticIdentifier := pagePath
+	if semanticIdentifier == "" {
+		semanticIdentifier = title
+	}
+	semanticIdentifier += "_" + page.ID
+
+	text := title
+	if len(blocks) > 0 {
+		parts := make([]string, 0, len(blocks))
+		for _, block := range blocks {
+			parts = append(parts, block.Prefix+block.Text)
+		}
+		text = strings.Join(parts, "\n")
+	} else if len(page.Properties) > 0 {
+		text += "\n\n" + notionPropertiesToText(page.Properties)
+	}
+	blob := []byte(text)
+	documents := []SourceDocument{{
+		SourceID:           page.ID,
+		SemanticIdentifier: semanticIdentifier,
+		Extension:          ".txt",
+		Blob:               blob,
+		UpdatedAt:          updatedAt,
+		SizeBytes:          int64(len(blob)),
+		Metadata:           map[string]any{"url": page.URL},
+		Fingerprint:        stableFingerprint(map[string]any{"id": page.ID, "last_edited_time": page.LastEditedTime}),
+	}}
+	documents = append(documents, attachments...)
+	return documents, children, nil
 }
 
 func (c *NotionConnector) readBlocks(ctx context.Context, blockID, pageLastEditedTime, pagePath string) ([]notionTextBlock, []string, []SourceDocument, error) {
@@ -564,12 +513,12 @@ func (c *NotionConnector) children(ctx context.Context, blockID, cursor string) 
 	if c.fetchChildBlocks != nil {
 		return c.fetchChildBlocks(ctx, blockID, cursor)
 	}
-	url := notionAPIBaseURL + "/blocks/" + blockID + "/children"
+	endpoint := notionAPIBaseURL + "/blocks/" + blockID + "/children"
 	if cursor != "" {
-		url += "?start_cursor=" + cursor
+		endpoint += "?" + url.Values{"start_cursor": {cursor}}.Encode()
 	}
 	var response notionBlockPage
-	err := c.doJSON(ctx, http.MethodGet, url, nil, &response)
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &response)
 	return response, err
 }
 
@@ -602,7 +551,17 @@ func (c *NotionConnector) file(ctx context.Context, rawURL string) ([]byte, erro
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("notion file download failed with HTTP %d", response.StatusCode)
 	}
-	return io.ReadAll(response.Body)
+	if response.ContentLength > c.fileMaxBytes {
+		return nil, fmt.Errorf("notion file exceeds maximum size: %d > %d bytes", response.ContentLength, c.fileMaxBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, c.fileMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > c.fileMaxBytes {
+		return nil, fmt.Errorf("notion file exceeds maximum size: > %d bytes", c.fileMaxBytes)
+	}
+	return data, nil
 }
 
 func (c *NotionConnector) doJSON(ctx context.Context, method, url string, body any, target any) error {
@@ -633,21 +592,39 @@ func (c *NotionConnector) doJSON(ctx context.Context, method, url string, body a
 }
 
 type notionSyncSession struct {
-	documents []SourceDocument
-	batchSize int
-	index     int
+	connector      *NotionConnector
+	request        SyncRequest
+	batchSize      int
+	pageQueue      []notionPage
+	buffer         []SourceDocument
+	rootFetched    bool
+	searchRequest  notionSearchRequest
+	searchDone     bool
+	resumeSourceID string
+	resumeMatched  bool
 }
 
 func (s *notionSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	if s.index >= len(s.documents) {
-		return SyncBatch{}, io.EOF
+	documents := make([]SourceDocument, 0, s.batchSize)
+	for len(documents) < s.batchSize {
+		if len(s.buffer) > 0 {
+			n := min(s.batchSize-len(documents), len(s.buffer))
+			documents = append(documents, s.buffer[:n]...)
+			s.buffer = s.buffer[n:]
+			continue
+		}
+		pageDocs, err := s.nextPageDocuments(ctx)
+		if errors.Is(err, io.EOF) {
+			if len(documents) == 0 {
+				return SyncBatch{}, io.EOF
+			}
+			break
+		}
+		if err != nil {
+			return SyncBatch{}, err
+		}
+		s.buffer = append(s.buffer, s.applyResume(pageDocs)...)
 	}
-	end := s.index + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
-	}
-	documents := s.documents[s.index:end]
-	s.index = end
 	last := documents[len(documents)-1]
 	updatedAt := last.UpdatedAt
 	return SyncBatch{Documents: documents, Checkpoint: &SyncCheckpoint{Cursor: last.SourceID, SourceID: last.SourceID, UpdatedAt: &updatedAt}}, nil
@@ -655,17 +632,80 @@ func (s *notionSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 
 func (s *notionSyncSession) Close() error { return nil }
 
-func (s *notionSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil {
-		return
-	}
-	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
-	for index, document := range s.documents {
-		if document.SourceID == sourceID {
-			s.index = index + 1
-			return
+func (s *notionSyncSession) nextPageDocuments(ctx context.Context) ([]SourceDocument, error) {
+	for {
+		if len(s.pageQueue) == 0 {
+			if err := s.loadMorePages(ctx); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		page := s.pageQueue[0]
+		s.pageQueue = s.pageQueue[1:]
+		documents, children, err := s.connector.readPage(ctx, page, s.request)
+		if err != nil {
+			return nil, err
+		}
+		if s.connector.recursiveLookup {
+			for _, childID := range children {
+				if s.connector.indexedPages[childID] {
+					continue
+				}
+				childPage, err := s.connector.getPage(ctx, childID)
+				if err != nil {
+					return nil, err
+				}
+				s.pageQueue = append(s.pageQueue, childPage)
+			}
+		}
+		if len(documents) > 0 {
+			return documents, nil
 		}
 	}
+}
+
+func (s *notionSyncSession) loadMorePages(ctx context.Context) error {
+	if s.connector.recursiveLookup && s.connector.rootPageID != "" {
+		if s.rootFetched {
+			return io.EOF
+		}
+		page, err := s.connector.getPage(ctx, s.connector.rootPageID)
+		if err != nil {
+			return err
+		}
+		s.rootFetched = true
+		s.pageQueue = append(s.pageQueue, page)
+		return nil
+	}
+	for len(s.pageQueue) == 0 {
+		if s.searchDone {
+			return io.EOF
+		}
+		response, err := s.connector.search(ctx, s.searchRequest)
+		if err != nil {
+			return err
+		}
+		s.pageQueue = append(s.pageQueue, filterNotionPages(response.Results, s.request)...)
+		if !response.HasMore || notionSearchResultsOlderThanWindowStart(response.Results, s.request) {
+			s.searchDone = true
+			continue
+		}
+		s.searchRequest.StartCursor = response.NextCursor
+	}
+	return nil
+}
+
+func (s *notionSyncSession) applyResume(documents []SourceDocument) []SourceDocument {
+	if s.resumeSourceID == "" || s.resumeMatched {
+		return documents
+	}
+	for index, document := range documents {
+		if document.SourceID == s.resumeSourceID {
+			s.resumeMatched = true
+			return documents[index+1:]
+		}
+	}
+	return nil
 }
 
 type notionPruneSession struct {
@@ -806,6 +846,26 @@ func filterNotionPages(pages []notionPage, request SyncRequest) []notionPage {
 		}
 	}
 	return out
+}
+
+func notionSearchResultsOlderThanWindowStart(pages []notionPage, request SyncRequest) bool {
+	if request.FromBeginning || request.WindowStart == nil || len(pages) == 0 {
+		return false
+	}
+	for _, page := range pages {
+		updatedAt := parseNotionTime(page.LastEditedTime)
+		if updatedAt.IsZero() || !beforeOrAtWindowStart(updatedAt, request.WindowStart) {
+			return false
+		}
+	}
+	return true
+}
+
+func notionResumeSourceID(checkpoint *SyncCheckpoint) string {
+	if checkpoint == nil {
+		return ""
+	}
+	return firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 }
 
 func includeNotionUpdatedAt(updatedAt time.Time, request SyncRequest) bool {
