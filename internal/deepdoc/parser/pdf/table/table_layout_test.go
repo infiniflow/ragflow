@@ -426,7 +426,8 @@ func TestFillCellTextFromBoxes_PreservesTSRText(t *testing.T) {
 // has NO existing text, even a box with partial overlap (< 85% of box
 // area inside the cell) fills the cell.  Simulates real DeepDoc TSR
 // where cell boundaries are approximate and box coordinates may have
-// slight offsets.  Regression test for qa.pdf SKIP_OCR empty cells.
+// slight offsets.  Regression test for qa.pdf empty cells with approximate
+// TSR boundaries (no image OCR required).
 func TestFillCellTextFromBoxes_PartialOverlap(t *testing.T) {
 	// Empty cell (no TSR text).  Box only has ~55% of its area inside
 	// the cell (spills across the boundary).  Python's 0.3 threshold

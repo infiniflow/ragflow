@@ -648,7 +648,6 @@ func TestIntegration_TableRotation(t *testing.T) {
 		// pages (regions and characters are in different coordinate
 		// spaces post-rotation).  Character extraction and rotation are
 		// verified via the lyt.CharsToBoxes path.
-		cfg.SkipOCR = true
 		p := NewParser(cfg)
 		result, err := p.Parse(context.Background(), data, client)
 		if err != nil {

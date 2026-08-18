@@ -12,10 +12,10 @@ import (
 )
 
 // TestDumpTextOutput runs Parse on real PDFs and saves per-PDF text
-// to testdata/output/go/noocr/text/{pdf}.txt. Set DUMP_COUNT env to limit first N PDFs.
+// to testdata/output/go/ocr/text/{pdf}.txt. Set DUMP_COUNT env to limit first N PDFs.
 func TestDumpTextOutput(t *testing.T) {
 	pdfDir := filepath.Join("testdata", "real_pdfs")
-	outDir := filepath.Join("testdata", "output", "go", "noocr", "text")
+	outDir := filepath.Join("testdata", "output", "go", "ocr", "text")
 	os.MkdirAll(outDir, 0755)
 
 	entries, err := os.ReadDir(pdfDir)

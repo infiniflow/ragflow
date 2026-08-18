@@ -69,7 +69,6 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 	autoRotate := true
 	cfg := pdf.DefaultParserConfig()
 	cfg.AutoRotateTables = &autoRotate
-	cfg.SkipOCR = true
 	p := NewParser(cfg)
 
 	pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
@@ -129,7 +128,6 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 // pre-fix code used w*0.03/h*0.03 here, diverging from Python.
 func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 	cfg := pdf.DefaultParserConfig()
-	cfg.SkipOCR = true
 	p := NewParser(cfg)
 
 	pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
@@ -188,7 +186,6 @@ func TestProcessOneTable_NoPerCellOCR(t *testing.T) {
 		t.Run(fmt.Sprintf("autoRotate=%v", autoRotate), func(t *testing.T) {
 			cfg := pdf.DefaultParserConfig()
 			cfg.AutoRotateTables = &autoRotate
-			cfg.SkipOCR = false
 			p := NewParser(cfg)
 
 			pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
