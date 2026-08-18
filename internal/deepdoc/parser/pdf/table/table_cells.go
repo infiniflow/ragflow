@@ -507,9 +507,11 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]b
 
 	// Signal 1: geometric H from boxes (additive). Reuses BoxHeaderSet so the
 	// production TSR path applies the same geometric rule as the box-fallback
-	// path (box overlaps header region by ≥0.3 → its row is a header), mirroring
-	// Python's any(a.get("H") for a in arr). Robust to column-index misalignment
-	// because it keys on box.R (row) only.
+	// path. Like the top-of-file note, this APPROXIMATES Python's
+	// any(a.get("H") for a in arr): Go's AnnotateTableBoxes sets box.H against
+	// grid[0] (the first grid row), not a model-detected header region, so this
+	// is effectively "box overlaps the first grid row by ≥0.3". Robust to
+	// column-index misalignment because it keys on box.R (row) only.
 	if len(boxes) > 0 {
 		for ri := range BoxHeaderSet(rows, boxes) {
 			hdrs[ri] = true

@@ -16,9 +16,9 @@ import (
 //   + (max_type=="Nu" && arr[0]["btype"]!="Nu")   # blockType 仅数值表
 //   行级 h/cnt > 0.5 多数决。
 //
-// Go 生产路径 (table_cells.go:248 HeaderSetWithBlockType, table_construct.go:55)
+// Go 生产路径 (table_cells.go HeaderSetWithBlockType, table_construct.go:55)
 //   主路径仅 maxType=="Nu" && bt!="Nu"；非数值表主路径 0 header；
-//   靠 fallback 查 cell.Label 含 "header"(table_cells.go:293-301)。
+//   靠 fallback 查 cell.Label 含 "header"(table_cells.go 的 label 信号块)。
 //
 // 以下测试暴露三条不对称：
 //   (1) 生产路径无 0.3 几何口径 —— box 几何路径(BoxHeaderSet, 0.3)与 TSR grid
@@ -28,15 +28,16 @@ import (
 //       纯 label 可识别的 header 行被漏掉。
 // =============================================================================
 
-// TestHeaderDetection_GeometricPathVsProductionPathDiverge exposes asymmetry (1):
-// the box-geometric path (BoxHeaderSet, 0.3 IoU threshold) and the production
-// TSR-grid path (HeaderSetWithBlockType) disagree on the SAME table.
+// TestHeaderDetection_GeometricPathVsProductionPathDiverge guards against
+// asymmetry (1): the box-geometric path (BoxHeaderSet, 0.3 overlap) and the
+// production TSR-grid path (HeaderSetWithBlockType) must agree on the SAME table.
 //
 // Py uses the geometric H flag (box overlaps header region ≥0.3) as a primary
-// signal. Go's production path never sees geometric overlap — it only reads
-// TSRCell.Label from GroupCells Y-intersection propagation (no 0.3 threshold).
-// The result: a non-numeric header row with no TSR "header" label is detected by
-// the geometric path but missed by the production path.
+// signal. Before the fix, Go's production path never saw geometric overlap — it
+// only read TSRCell.Label from GroupCells Y-intersection propagation (no 0.3
+// threshold), so a non-numeric header row with no TSR "header" label was detected
+// by the geometric path but missed by the production path. After the fix the
+// production path reuses BoxHeaderSet, so the two paths agree.
 func TestHeaderDetection_GeometricPathVsProductionPathDiverge(t *testing.T) {
 	// Same 2-row, 2-col table, two views:
 	//  - TSR grid: row 0 cells have NO "header" label (TSR missed them).
@@ -63,19 +64,21 @@ func TestHeaderDetection_GeometricPathVsProductionPathDiverge(t *testing.T) {
 	boxHdrs := BoxHeaderSet(rows, boxes)            // geometric path
 
 	if boxHdrs[0] && !gridHdrs[0] {
-		t.Errorf("PARITY #4 (asym 1) EXPOSED: box-geometric path flags row 0 (H>0, 0.3 overlap) but production HeaderSetWithBlockType misses it. Same table, divergent header sets: box=%v grid=%v. Py would flag row 0 via geometric H.", boxHdrs, gridHdrs)
+		t.Errorf("PARITY #4 (asym 1) REGRESSED: box-geometric path flags row 0 (H>0, 0.3 overlap) but production HeaderSetWithBlockType misses it. Same table, divergent header sets: box=%v grid=%v. Py would flag row 0 via geometric H.", boxHdrs, gridHdrs)
 	}
 	t.Logf("box-geometric header set=%v production header set=%v", boxHdrs, gridHdrs)
 }
 
-// TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority exposes
-// asymmetry (2): Go's label fallback has NO 0.5 majority vote. Py requires
-// h/cnt > 0.5 (majority of non-empty cells) before a row becomes a header.
+// TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority guards against
+// asymmetry (2): before the fix, Go's label fallback had NO 0.5 majority vote.
+// Py requires h/cnt > 0.5 (majority of non-empty cells) before a row becomes a
+// header.
 //
 // Scenario: row 0 is a real header (all cells labeled). Row 1 is a DATA row,
 // but exactly ONE cell was mislabeled "table column header" (e.g. a GroupCells
-// Y-intersection false positive). Py keeps row 1 as data (1/2 < 0.5); Go flips
-// the ENTIRE row to header because the fallback marks any row with ≥1 header cell.
+// Y-intersection false positive). Py keeps row 1 as data (1/2 < 0.5); before the
+// fix Go flipped the ENTIRE row to header because the fallback marked any row
+// with ≥1 header cell.
 func TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority(t *testing.T) {
 	rows := [][]pdf.TSRCell{
 		{
@@ -98,23 +101,25 @@ func TestHeaderSetWithBlockType_LabelFallbackOverDetects_NoMajority(t *testing.T
 		t.Errorf("expected row 0 to be a header")
 	}
 	// Py: row 1 has 1/2 header-labeled cells → 0.5 not exceeded → still data.
-	// Go: label fallback flags ANY row with ≥1 header cell → row 1 IS header.
+	// Before fix: label fallback flagged ANY row with ≥1 header cell → row 1 IS header.
 	if hdrs[1] {
-		t.Errorf("PARITY #4 (asym 2) EXPOSED: Go marks data row 1 as header because the label fallback has no 0.5 majority vote. Py keeps row 1 as data (1/2 < 0.5). header set=%v", hdrs)
+		t.Errorf("PARITY #4 (asym 2) REGRESSED: Go marks data row 1 as header because the label fallback lost its 0.5 majority vote. Py keeps row 1 as data (1/2 < 0.5). header set=%v", hdrs)
 	}
 	t.Logf("header set=%v", hdrs)
 }
 
-// TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders exposes
-// asymmetry (3): Go's label fallback only runs when len(hdrs)==0 (it is a
-// mutually-exclusive gate). Py combines geometric H and blockType per-cell, then
-// takes a row-level majority — the two signals are ADDITIVE, not gated.
+// TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders guards against
+// asymmetry (3): before the fix, Go's label fallback only ran when len(hdrs)==0
+// (it was a mutually-exclusive gate). Py combines geometric H and blockType
+// per-cell, then takes a row-level majority — the two signals are ADDITIVE, not
+// gated.
 //
 // Scenario: a numeric-dominant (Nu) table. Row 0 header = non-Nu text, detected
 // by blockType (maxType==Nu && bt!="Nu"). Row 2 is a header row whose cells are
 // NUMERIC, so blockType skips them (correct per Py's Nu rule); it is only
-// identifiable via its "header" label. Because blockType already populated hdrs
-// (row 0), the label fallback is SUPPRESSED, so row 2 is dropped.
+// identifiable via its "header" label. Before the fix, because blockType
+// already populated hdrs (row 0), the label fallback was SUPPRESSED, so row 2
+// was dropped.
 //
 // NOTE: Py would flag row 2 via geometric H (its boxes overlap the header
 // region ≥0.3). Even setting Py aside, Go's two signals being exclusive rather
@@ -140,10 +145,10 @@ func TestHeaderSetWithBlockType_ExclusiveGateSuppressesLabelHeaders(t *testing.T
 	if !hdrs[0] {
 		t.Errorf("expected row 0 to be a header (blockType)")
 	}
-	// Row 2: blockType skips numeric cells; label would flag it but the
+	// Row 2: blockType skips numeric cells; label flags it. Before the fix the
 	// mutually-exclusive gate disabled the label fallback once row 0 was found.
 	if !hdrs[2] {
-		t.Errorf("PARITY #4 (asym 3) EXPOSED: Go misses row 2 header. blockType found row 0 (len(hdrs)!=0) so the label fallback is suppressed; row 2's numeric-but-labeled cells are skipped by blockType. Py would flag row 2 via geometric H. header set=%v", hdrs)
+		t.Errorf("PARITY #4 (asym 3) REGRESSED: Go misses row 2 header. blockType found row 0 (len(hdrs)!=0) so the label fallback was suppressed; row 2's numeric-but-labeled cells are skipped by blockType. Py would flag row 2 via geometric H. header set=%v", hdrs)
 	}
 }
 
