@@ -369,9 +369,10 @@ func TestCropSectionByDLA(t *testing.T) {
 	// Decode and verify.
 	decoded, _ := base64.StdEncoding.DecodeString(result)
 	img := decodePNG(t, decoded)
-	// The DLA figure region is (30,60)-(270,420) with 3% margin.
-	// Expected: ~(30-7.2, 60-10.8)-(270+7.2, 420+10.8) ≈ (22.8, 49.2)-(277.2, 430.8)
-	// width ≈ 254px, height ≈ 381px
+	// The DLA figure region is (30,60)-(270,420). CropImageRegion now adds a
+	// fixed 30px margin (TSRRegionMarginPx = 10pt * ZM), so the crop is
+	// (0,30)-(300,450) → 300x420. The assertions below only check the crop is
+	// reasonably large, not exact pixels.
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	t.Logf("cropSectionByDLA result: %dx%d", w, h)
 	if w < 200 || h < 300 {
