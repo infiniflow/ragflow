@@ -782,6 +782,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dialogueExamplesTitle: 'view',
       methodEmpty:
         'This will display a visual explanation of the dataset categories',
+      audio: `<p>Supported file formats are <b>WAV, MP3, AAC, FLAC, OGG</b> and other common audio formats.</p>
+<p>This method transcribes audio files into text using a speech-to-text model.</p>`,
+      email: `<p>Supported file formats are <b>EML</b> and <b>MSG</b>.</p>
+<p>This method parses email files, extracting header fields (such as From, To, CC, Subject, and Date), the body content, and attachments.</p>`,
+      knowledgeCompiler: `<p>This pipeline parses and chunks files, then compiles the chunks into structured knowledge units (knowledge graph, wiki, RAPTOR, mind map, or dataset navigation) via the Knowledge Compiler component.</p>
+<p>The compiled knowledge units are emitted as chunks merged into the chunk stream, making it ideal for building a retrievable knowledge layer on top of chunked documents.</p>`,
       book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       For each book in PDF, please set the <i>page ranges</i> to remove unwanted information and reduce analysis time.</p>`,
       laws: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
