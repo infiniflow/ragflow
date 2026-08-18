@@ -19,26 +19,28 @@ func (d *orientationScoringDoc) TSR(_ context.Context, _ image.Image) ([]pdf.TSR
 	return nil, nil
 }
 
-func (d *orientationScoringDoc) OCRDetect(_ context.Context, img image.Image) ([]pdf.OCRBox, error) {
-	regions := 1
-	if img.Bounds().Dy() > img.Bounds().Dx() {
-		regions = 5
-	}
-	boxes := make([]pdf.OCRBox, regions)
-	for i := range boxes {
-		x0 := float64((i + 1) * 10)
-		boxes[i] = pdf.OCRBox{
-			X0: x0, Y0: 10,
-			X1: x0 + 5, Y1: 10,
-			X2: x0 + 5, Y2: 30,
-			X3: x0, Y3: 30,
-		}
-	}
-	return boxes, nil
+func (d *orientationScoringDoc) OCRDetect(_ context.Context, _ image.Image) ([]pdf.OCRBox, error) {
+	// EvaluateTableOrientation now scores by OCRRecognize confidence, so
+	// detection output is unused by this test. Return empty.
+	return nil, nil
 }
 
-func (d *orientationScoringDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
-	return nil, nil
+func (d *orientationScoringDoc) OCRRecognize(_ context.Context, img image.Image) ([]pdf.OCRText, error) {
+	// Encode the orientation signal via recognition confidence: a portrait
+	// (rotated) crop reads as more legible text, so it should score higher.
+	// This mirrors the region-count-vs-orientation intent the mock previously
+	// expressed through OCRDetect.
+	regions := 1
+	conf := 0.1
+	if img.Bounds().Dy() > img.Bounds().Dx() {
+		regions = 5
+		conf = 0.9
+	}
+	texts := make([]pdf.OCRText, regions)
+	for i := range texts {
+		texts[i] = pdf.OCRText{Text: "cell", Confidence: conf}
+	}
+	return texts, nil
 }
 
 func (d *orientationScoringDoc) Health() bool { return true }
