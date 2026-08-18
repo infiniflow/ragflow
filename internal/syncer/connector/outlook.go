@@ -108,6 +108,13 @@ func (c *OutlookConnector) Validate(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates Outlook settings from an unsaved config.
+func (c *OutlookConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
+}
+
 func (c *OutlookConnector) effectiveBatchSize() int {
 	if c.batchSize > 0 {
 		return c.batchSize

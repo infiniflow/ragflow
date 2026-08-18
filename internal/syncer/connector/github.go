@@ -75,7 +75,7 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("github connector is nil")
 	}
 	if c.owner == "" {
-		return fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided")
+		return fmt.Errorf("Invalid connector settings: 'repository_owner' must be provided")
 	}
 	if c.token == "" {
 		return fmt.Errorf("Missing github_access_token in credentials")
@@ -89,6 +89,29 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 	}
 	if len(repos) == 0 {
 		return fmt.Errorf("found no repos for GitHub owner %s", c.owner)
+	}
+	return nil
+}
+
+// ValidateConnectorSetting validates GitHub settings from an unsaved config.
+func (c *GitHubConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	if c == nil {
+		return fmt.Errorf("github connector is nil")
+	}
+	if c.owner == "" {
+		return fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided")
+	}
+	if c.token == "" {
+		return fmt.Errorf("Missing github_access_token in credentials")
+	}
+	if c.batchSize <= 0 {
+		return fmt.Errorf("batch_size must be a positive integer")
+	}
+	var user map[string]any
+	if _, err := c.getJSON(ctx, c.apiURL("/user", nil), &user); err != nil {
+		return err
 	}
 	return nil
 }

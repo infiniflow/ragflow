@@ -39,10 +39,21 @@ import {
   IDataSourceLog,
 } from './interface';
 
+const DataSourceKeys = {
+  list: () => ['data-source'] as const,
+  detail: (id?: string | null) => ['data-source-detail', id] as const,
+  logs: (
+    id: string | null,
+    pagination: ReturnType<typeof useGetPaginationWithRouter>['pagination'],
+    autoRefresh: boolean,
+  ) => ['data-source-logs', id, pagination, autoRefresh] as const,
+  logsPrefix: (id?: string | null) => ['data-source-logs', id] as const,
+};
+
 export const useListDataSource = () => {
   const { dataSourceInfo } = useDataSourceInfo();
   const { data: list, isFetching } = useQuery<IDataSource[]>({
-    queryKey: ['data-source'],
+    queryKey: DataSourceKeys.list(),
     queryFn: async () => {
       const { data } = await dataSourceService.dataSourceList();
       return data.data;
@@ -83,9 +94,8 @@ export const useListDataSource = () => {
       }
     });
 
-    console.log('🚀 ~ useListDataSource ~ sourceList:', sourceList);
     return sourceList;
-  }, [list]);
+  }, [dataSourceInfo, list]);
 
   return { list, categorizedList: updatedDataSourceTemplates, isFetching };
 };
@@ -112,28 +122,32 @@ export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const handleAddOk = useCallback(
     async (data: any) => {
       setAddLoading(true);
-      const { data: res } = isEdit
-        ? await dataSourceUpdate(data.id, {
-            ...data,
-            reschedule: true,
-          })
-        : await dataSourceService.dataSourceSet(data);
-      console.log('🚀 ~ handleAddOk ~ code:', res.code);
-      if (res.code === 0) {
-        if (isEdit && res.data?.id) {
-          queryClient.setQueryData(
-            ['data-source-detail', res.data.id],
-            res.data,
-          );
-          queryClient.invalidateQueries({
-            queryKey: ['data-source-detail', res.data.id],
-          });
+      try {
+        const { data: res } = isEdit
+          ? await dataSourceUpdate(data.id, {
+              ...data,
+              reschedule: true,
+            })
+          : await dataSourceService.dataSourceSet(data);
+        if (res.code === 0) {
+          if (isEdit && res.data?.id) {
+            queryClient.setQueryData(
+              DataSourceKeys.detail(res.data.id),
+              res.data,
+            );
+            queryClient.invalidateQueries({
+              queryKey: DataSourceKeys.detail(res.data.id),
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: DataSourceKeys.list() });
+          message.success(t(`message.operated`));
+          hideAddingModal();
+          return true;
         }
-        queryClient.invalidateQueries({ queryKey: ['data-source'] });
-        message.success(t(`message.operated`));
-        hideAddingModal();
+        return false;
+      } finally {
+        setAddLoading(false);
       }
-      setAddLoading(false);
     },
     [hideAddingModal, isEdit, queryClient],
   );
@@ -158,7 +172,7 @@ export const useLogListDataSource = (autoRefresh: boolean) => {
     logs: IDataSourceLog[];
     total: number;
   }>({
-    queryKey: ['data-source-logs', id, pagination, autoRefresh],
+    queryKey: DataSourceKeys.logs(id, pagination, autoRefresh),
     refetchInterval: autoRefresh ? 15 * 1000 : false,
     queryFn: async () => {
       const { data } = await getDataSourceLogs(id as string, {
@@ -186,7 +200,7 @@ export const useDeleteDataSource = () => {
       const { data } = await deleteDataSource(id);
       if (data.code === 0) {
         message.success(t(`message.deleted`));
-        queryClient.invalidateQueries({ queryKey: ['data-source'] });
+        queryClient.invalidateQueries({ queryKey: DataSourceKeys.list() });
       }
       setDeleteLoading(false);
     },
@@ -199,7 +213,7 @@ export const useFetchDataSourceDetail = () => {
   const [currentQueryParameters] = useSearchParams();
   const id = currentQueryParameters.get('id');
   const { data } = useQuery<IDataSource>({
-    queryKey: ['data-source-detail', id],
+    queryKey: DataSourceKeys.detail(id),
     enabled: !!id,
     queryFn: async () => {
       const { data } = await featchDataSourceDetail(id as string);
@@ -228,7 +242,7 @@ export const useUpdateDataSourceStatus = () => {
         });
         if (data.code === 0) {
           queryClient.setQueryData(
-            ['data-source-detail', id],
+            DataSourceKeys.detail(id),
             (previous?: IDataSource) => ({
               ...(previous || {}),
               ...(data.data || {}),
@@ -238,11 +252,11 @@ export const useUpdateDataSourceStatus = () => {
 
           await Promise.all([
             queryClient.invalidateQueries({
-              queryKey: ['data-source-detail', id],
+              queryKey: DataSourceKeys.detail(id),
             }),
-            queryClient.invalidateQueries({ queryKey: ['data-source'] }),
+            queryClient.invalidateQueries({ queryKey: DataSourceKeys.list() }),
             queryClient.invalidateQueries({
-              queryKey: ['data-source-logs', id],
+              queryKey: DataSourceKeys.logsPrefix(id),
             }),
           ]);
 
@@ -267,7 +281,6 @@ export const useDataSourceRebuild = () => {
         kb_id: id as string,
       });
       if (data.code === 0) {
-        // queryClient.invalidateQueries({ queryKey: ['data-source-detail', id] });
         message.success(t(`message.operated`));
       }
     },
@@ -280,12 +293,18 @@ export const useTestDataSource = (
   formRef: RefObject<DynamicFormRef | null>,
   connectorId?: string,
 ) => {
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
   const [loading, setLoading] = useState(false);
 
   const handleTest = useCallback(async () => {
     const values = formRef.current?.getFilteredValues();
     const source = values?.source;
-    if (!source) return;
+    const connectorID = id || values?.id || connectorId || source;
+    if (!connectorID || !source) return;
+
+    const isValid = await formRef.current?.trigger();
+    if (!isValid) return;
 
     setLoading(true);
     try {
@@ -293,17 +312,21 @@ export const useTestDataSource = (
         values?.config && typeof values.config === 'object'
           ? values.config
           : {};
-      const { data } = await testDataSource(connectorId || source, {
+      const { data } = await testDataSource(connectorID, {
         source,
         config,
       });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
+      } else {
+        message.error(data.message || t('setting.dataSourceTestFailed'));
       }
+    } catch {
+      message.error(t('setting.dataSourceTestFailed'));
     } finally {
       setLoading(false);
     }
-  }, [formRef, connectorId]);
+  }, [connectorId, formRef, id]);
 
   return { loading, handleTest };
 };
