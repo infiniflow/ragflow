@@ -179,15 +179,17 @@ func (c *NotionConnector) readPage(ctx context.Context, page notionPage, request
 		return nil, nil, nil
 	}
 	updatedAt := parseNotionTime(page.LastEditedTime)
-	if !request.FromBeginning && !includeNotionUpdatedAt(updatedAt, request) {
-		return nil, nil, nil
-	}
+	inWindow := request.FromBeginning || includeNotionUpdatedAt(updatedAt, request)
 	pagePath := c.buildPagePath(ctx, page, map[string]bool{})
 	blocks, children, attachments, err := c.readBlocks(ctx, page.ID, page.LastEditedTime, pagePath)
 	if err != nil {
 		return nil, nil, err
 	}
 	c.indexedPages[page.ID] = true
+
+	if !inWindow {
+		return nil, children, nil
+	}
 
 	title := c.pageTitle(page)
 	if title == "" {
@@ -615,6 +617,9 @@ func (s *notionSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		pageDocs, err := s.nextPageDocuments(ctx)
 		if errors.Is(err, io.EOF) {
+			if s.resumeSourceID != "" && !s.resumeMatched {
+				return SyncBatch{}, fmt.Errorf("notion sync resume checkpoint %q was not found in the source; refusing to discard unprocessed documents", s.resumeSourceID)
+			}
 			if len(documents) == 0 {
 				return SyncBatch{}, io.EOF
 			}
@@ -624,6 +629,9 @@ func (s *notionSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			return SyncBatch{}, err
 		}
 		s.buffer = append(s.buffer, s.applyResume(pageDocs)...)
+	}
+	if len(documents) == 0 {
+		return SyncBatch{}, io.EOF
 	}
 	last := documents[len(documents)-1]
 	updatedAt := last.UpdatedAt
@@ -686,7 +694,7 @@ func (s *notionSyncSession) loadMorePages(ctx context.Context) error {
 			return err
 		}
 		s.pageQueue = append(s.pageQueue, filterNotionPages(response.Results, s.request)...)
-		if !response.HasMore || notionSearchResultsOlderThanWindowStart(response.Results, s.request) {
+		if !response.HasMore || response.NextCursor == "" || notionSearchResultsOlderThanWindowStart(response.Results, s.request) {
 			s.searchDone = true
 			continue
 		}

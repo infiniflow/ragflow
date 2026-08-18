@@ -135,6 +135,28 @@ func TestNotionConnectorOpenSyncUsesIncrementalWindowAndResume(t *testing.T) {
 	}
 }
 
+func TestNotionConnectorResumeMissingCheckpointFails(t *testing.T) {
+	connector := newTestNotionConnector(t)
+	connector.searchPages = func(ctx context.Context, request notionSearchRequest) (notionSearchResponse, error) {
+		return notionSearchResponse{Results: []notionPage{notionTestPage("a", "A", "2026-01-03T00:00:00Z")}}, nil
+	}
+	connector.fetchChildBlocks = func(ctx context.Context, blockID, cursor string) (notionBlockPage, error) {
+		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
+	}
+	start := mustTime(t, "2026-01-02T00:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+		Resume:      &SyncCheckpoint{SourceID: "missing"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	if _, err = session.NextBatch(context.Background()); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch = %v, want missing checkpoint error", err)
+	}
+}
+
 func TestNotionConnectorIncrementalSearchContinuesPastTooNewPages(t *testing.T) {
 	connector := newTestNotionConnector(t)
 	connector.searchPages = func(ctx context.Context, request notionSearchRequest) (notionSearchResponse, error) {
