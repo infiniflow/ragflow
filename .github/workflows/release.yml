@@ -272,13 +272,51 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Build and push image
+      # Multi-arch image so docker-compose deployments on aarch64 hosts
+      # (Kunpeng-920, Graviton, Apple-Silicon Linux VMs, etc.) can pull the
+      # same tag the README documents — see #15747.
+      - name: Build and push image (linux/amd64, linux/arm64)
         run: |
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
-          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker push infiniflow/ragflow:latest
+          # Register QEMU so amd64 runners can cross-build the arm64 layer.
+          # tonistiigi/binfmt is the docker/setup-qemu-action upstream and is
+          # safe to re-run; it's a no-op when emulators are already registered.
+          # Pin to a specific qemu-vX.Y.Z tag for reproducibility rather than
+          # :latest, so a future binfmt regression can't break the release.
+          sudo docker run --privileged --rm tonistiigi/binfmt:qemu-v8.1.5 --install arm64,amd64
+          # Use (or create) a buildx builder capable of multi-platform output.
+          if ! sudo docker buildx inspect ragflow-multiarch >/dev/null 2>&1; then
+            sudo docker buildx create --name ragflow-multiarch --driver docker-container --bootstrap
+          fi
+          sudo docker buildx use ragflow-multiarch
+          sudo docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag infiniflow/ragflow:${RELEASE_TAG} \
+            --tag infiniflow/ragflow:latest \
+            --file Dockerfile \
+            --push \
+            .
+
+      # Fail loudly if a platform silently went missing from the push (e.g. a
+      # build-context bind-mount image lacks an arm64 variant and buildx
+      # produced an amd64-only manifest). Without this, an incomplete release
+      # would only be noticed by aarch64 users at `docker compose pull` time.
+      - name: Verify multi-arch manifest
+        run: |
+          set -euo pipefail
+          for tag in "${RELEASE_TAG}" "latest"; do
+            ref="infiniflow/ragflow:${tag}"
+            echo "Inspecting manifest for ${ref} ..."
+            inspection=$(sudo docker buildx imagetools inspect "${ref}")
+            echo "${inspection}"
+            for platform in linux/amd64 linux/arm64; do
+              if ! grep -qE "Platform:[[:space:]]*${platform}\b" <<< "${inspection}"; then
+                echo "ERROR: ${platform} missing from ${ref} manifest" >&2
+                exit 1
+              fi
+            done
+          done
+          echo "Both linux/amd64 and linux/arm64 confirmed in the pushed manifest list."
 
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
