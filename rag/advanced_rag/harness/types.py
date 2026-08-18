@@ -56,6 +56,14 @@ class ExecutionStrategy:
     # Whether the mode can force a re-investigation (RECONCILE). medium=False so
     # RECONCILE degrades to CONTINUE; high/ultra=True.
     allows_reconcile: bool = False
+    # Terminal-tool shortcut: when True, the outer tool loop treats ``rag`` as a
+    # terminal tool and short-circuits after its first successful call — the
+    # produced (cited) answer is returned immediately instead of being fed back
+    # for another outer round. Mirrors the ``_terminal`` short-circuit that
+    # already exists in the streaming tool loops. When False, the outer loop
+    # keeps its multi-round re-ask behaviour (research more evidence between
+    # rounds). Default False keeps legacy behaviour unless a mode opts in.
+    terminal_tool_shortcut: bool = False
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -72,6 +80,22 @@ class ClaimTarget:
     confidence: float = 0.0
     suggested_tools: list[str] = field(default_factory=list)
     agent_result: AgentResult | None = None
+    # Multi-hop: an OPEN query for a bridge entity/relationship that must be
+    # retrieved BEFORE this claim can be answered (e.g. "Who is Brian Bergstein's
+    # employer?"). decompose resolves the prerequisite first, then uses the found
+    # entity to target this claim. Empty when not multi-hop.
+    prerequisite: str = ""
+    # Reasoning structure the planner assigned to this claim:
+    #   flat       — single-hop fact, independent
+    #   chain      — depends on a prerequisite (bridge entity/relationship)
+    #   aggregate  — requires enumerating all members of a set and combining
+    #                them (count/sum/average/max/min)
+    #   temporal   — answer depends on a specific year/period or cross-time link
+    #   comparative/procedural — retained for compatibility
+    claim_type: str = "flat"
+    # For aggregate claims: the full set of members to enumerate (e.g. "all MLB
+    # stadiums with a retractable roof"), used to guide exhaustive retrieval.
+    target: str = ""
 
 
 @dataclass

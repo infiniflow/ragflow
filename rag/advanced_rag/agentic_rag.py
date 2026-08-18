@@ -263,6 +263,15 @@ class RAGTools:
         # threshold (≥0.85 n-gram Jaccard) so near-identical phrasing is caught
         # without confusing genuinely different questions.
         self._rag_cache: dict[str, tuple[str, set[str]]] = {}
+        # Sufficiency verdict of the most recent agentic-graph run, used by the outer
+        # loop (via `rag`) to decide whether to re-run research and how to rephrase
+        # the next question. Set in run_agentic_rag.
+        self._rag_verdict: dict | None = None
+        # Outer-loop guardrail: count of consecutive rag calls that ended
+        # UNANSWERABLE / INSUFFICIENT (evidence conflicts or missing). Once this
+        # exceeds a threshold, `rag` tells the outer LLM to stop re-running, so we
+        # keep the outer loop's question-rewrite value while bounding useless retries.
+        self._consecutive_unanswerable = 0
 
         # Per-request retrieval cache keyed by the effective query + scope, so
         # the same question is never retrieved twice within one turn (e.g.
@@ -374,11 +383,16 @@ class RAGTools:
             "2. Extract keywords ONLY from the wording of the STANDALONE QUESTION itself — the "
             "salient content words and phrases that literally appear in it (key nouns, named "
             "entities, domain terms). Do NOT answer the question, and do NOT include any term that "
-            "would be part of the answer or is not present in the question. Then, for each extracted "
-            "term, you MAY add 1-2 close synonyms or alternative phrasings OF THAT SAME TERM. Output "
+            "would be part of the answer or is not present in the question. Then, for EACH extracted "
+            "term, add 2-3 close synonyms, abbreviations, aliases, plural/singular forms or "
+            "alternative phrasings OF THAT SAME TERM (e.g. for a person include full name, last "
+            "name and common nickname; for an acronym include the expansion; for a concept include "
+            "near-synonyms). The goal is to maximize recall in a keyword search, so be generous "
+            "with valid alternative spellings. Output "
             "them all together as one comma-separated list, in the SAME language as the question.\n"
             '   Example — question "In which year did Apple acquire Beats?": keywords = '
-            '"Apple, Apple Inc., acquire, acquisition, Beats" (terms from the question + synonyms; '
+            '"Apple, Apple Inc., AAPL, acquire, acquisition, acquired, takeover, Beats, '
+            'Beats Electronics" (terms from the question + synonyms; '
             "the year is the ANSWER, so it must NOT appear).\n\n"
             "Output ONLY JSON, no prose, no code fences: "
             '{"question": "<standalone question>", "keywords": "<term1, term2, synonym1, ...>"}'
@@ -489,11 +503,14 @@ class RAGTools:
             return ""
         system = (
             "Extract the search terms for a knowledge-base query from the "
-            "question below. Output 3-8 of the most important content terms, "
-            "plus 1-2 close synonyms or alternative phrasings for any ambiguous "
-            "term. Single words or short noun phrases, space-separated, in the "
-            "SAME language as the question. Output ONLY the terms — no labels, "
-            "no punctuation lists, no explanation."
+            "question below. Output 3-10 of the most important content terms, "
+            "plus 2-3 close synonyms, abbreviations, aliases or alternative "
+            "phrasings for each (e.g. a person's full name and last name, an "
+            "acronym and its expansion, near-synonyms of a concept). The goal "
+            "is to maximize recall in a keyword search, so include valid "
+            "alternative spellings. Single words or short noun phrases, "
+            "space-separated, in the SAME language as the question. Output "
+            "ONLY the terms — no labels, no punctuation lists, no explanation."
         )
         try:
             _, msg = message_fit_in(form_message(system, question), self.chat_mdl.max_length)
@@ -728,7 +745,16 @@ class RAGTools:
             # the cache (their content is appended to the question message below).
             if question and not self.text_attachments_content:
                 qk = _question_keywords(question)
-                if self._rag_cache:
+                # If the last research round was not sufficient, do not reuse a cached
+                # (similarly-worded) answer — the outer loop asked again because it
+                # needs more evidence, so re-run the graph instead of returning the
+                # same incomplete answer (Google "iteration" phase).
+                last_status = ""
+                v = getattr(self, "_rag_verdict", None)
+                if isinstance(v, dict):
+                    last_status = str(v.get("status") or "")
+                _cache_ok = not last_status or last_status == "SUFFICIENT"
+                if _cache_ok and self._rag_cache:
                     for cached_q, (cached_answer, cached_gram) in list(self._rag_cache.items()):
                         if cached_gram and _cache_similar(qk, cached_gram):
                             shared = len(qk[0] & cached_gram[0])
@@ -749,6 +775,46 @@ class RAGTools:
             # Cache the freshly produced answer for later near-identical questions.
             if question and final and not self.text_attachments_content:
                 self._rag_cache[question] = (final, _question_keywords(question))
+
+            # Expose the sufficiency verdict to the outer LLM so it can decide whether
+            # to re-run `rag` from the reported gaps (Google "missing pieces" feedback)
+            # instead of guessing from the answer text. This is appended to the tool
+            # result — it does NOT change the final answer (the graph's formalize_answer
+            # composes that independently from kbinfos).
+            #
+            # Outer-loop guardrail: bound useless re-runs. If consecutive rag calls keep
+            # ending insufficient (UNANSWERABLE / INSUFFICIENT / CONFLICTING), tell the
+            # outer LLM to STOP re-running and answer from the existing evidence — the
+            # corpus likely lacks the data, so re-querying different angles won't help
+            # and only inflates latency / risks timeout.
+            verdict = getattr(self, "_rag_verdict", None)
+            insufficient_statuses = {"UNANSWERABLE", "INSUFFICIENT", "CONFLICTING"}
+            if isinstance(verdict, dict):
+                status = verdict.get("status")
+                missing = verdict.get("missing_claims") or []
+                feedback = verdict.get("feedback") or ""
+                hard = verdict.get("hard_violations") or []
+                conf = verdict.get("agent_confidence")
+                if status and status != "SUFFICIENT":
+                    status_hint = {
+                        "USEFUL_BUT_INCOMPLETE": "evidence is partially sufficient (gaps remain)",
+                        "INSUFFICIENT": "evidence is not yet sufficient",
+                        "CONFLICTING": "evidence contains conflicts",
+                    }.get(status, f"sufficiency status: {status}")
+                    missing_txt = ("; missing: " + "; ".join(missing[:3])) if missing else ""
+                    hard_txt = ("; hard gaps: " + ", ".join(str(x) for x in hard[:3])) if hard else ""
+                    conf_txt = f"; agent confidence: {conf:.2f}" if isinstance(conf, (int, float)) else ""
+                    fb_txt = f"; feedback: {feedback[:200]}" if feedback else ""
+                    # Guardrail counter.
+                    if status in insufficient_statuses:
+                        self._consecutive_unanswerable += 1
+                    else:
+                        self._consecutive_unanswerable = 0
+                    _GUA = 2  # consecutive-insufficient threshold
+                    if self._consecutive_unanswerable >= _GUA:
+                        final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. STOP calling rag again: {self._consecutive_unanswerable} consecutive research rounds returned insufficient evidence. The sources likely lack the required data. Give your best answer from the evidence already gathered; do not re-run rag."
+                    else:
+                        final = f"{final}\n\n[Research status] {status_hint}{missing_txt}{hard_txt}{conf_txt}{fb_txt}. If these gaps are material, call rag again with a question focused on them."
             call_stats.log()
             return final
 

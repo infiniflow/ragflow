@@ -84,10 +84,38 @@ def _split_sentences(text: str) -> list[str]:
     return sents
 
 
-def _narrow_content(content: str, kwds: list[str]) -> str | None:
-    """Return ``content`` narrowed to keyword sentences +/- 1 neighbour.
+_FACT_RE = re.compile(
+    r"(\d[\d,\.]*(?:st|nd|rd|th)?%?)"
+    r"|(19|20)\d{2}"  # years
+    r"|\b(percent|percentage|million|billion|thousand|km|km2|sq\s*km|m\s*above|m)"
+    r"\b",
+    re.IGNORECASE,
+)
+_PROPER_NOUN_RE = re.compile(r"(?<![.!?]\.)\b[A-Z][a-z]{2,}\b")
 
-    Returns ``None`` when no keyword occurs anywhere in ``content``.
+
+def _is_fact_dense_sentence(sent: str) -> bool:
+    """Heuristically flag a sentence that carries a fact the answer may hinge on
+    but which does not necessarily contain the query keywords — a number, a year,
+    a percentage, or a proper noun / named entity. Such sentences are kept during
+    narrowing even when they sit far from any keyword hit, so a numeric or
+    entity answer is never dropped just because it lacks the keyword phrasing.
+    """
+    low = sent.lower()
+    if _FACT_RE.search(sent) or _FACT_RE.search(low):
+        return True
+    if _PROPER_NOUN_RE.search(sent):
+        return True
+    return False
+
+
+def _narrow_content(content: str, kwds: list[str]) -> str | None:
+    """Return ``content`` narrowed to keyword sentences +/- 2 neighbours.
+
+    Sentences that are fact-dense (numbers / years / percentages / proper nouns)
+    are kept regardless of keyword distance, so numeric or named-entity answers
+    survive narrowing. Returns ``None`` when no keyword occurs anywhere in
+    ``content``.
     """
     sents = _split_sentences(content)
     if not sents:
@@ -98,11 +126,13 @@ def _narrow_content(content: str, kwds: list[str]) -> str | None:
         low = s.lower()
         if any(kw in low for kw in kwds):
             matched = True
-            if i > 0:
-                keep.add(i - 1)
-            keep.add(i)
-            if i + 1 < len(sents):
-                keep.add(i + 1)
+            for j in range(max(0, i - 2), min(len(sents), i + 3)):
+                keep.add(j)
+        elif _is_fact_dense_sentence(s):
+            # Keep fact-dense sentences even without a keyword hit so the answer
+            # value (a bare figure, a date, a proper noun) is never lost.
+            for j in range(max(0, i - 1), min(len(sents), i + 2)):
+                keep.add(j)
     if not matched:
         return None
     narrowed = "".join(sents[i] for i in sorted(keep)).strip()
@@ -240,7 +270,12 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Hybrid search")
+    # Narrow-or-keep: if the query keywords match any chunk, keep only the
+    # matching passages (shrinking the evidence handed to the LLM so a single
+    # full-context call stays small and fast); if nothing matches, keep ALL
+    # chunks intact so no evidence is silently dropped. This bounds per-claim
+    # analysis size without losing the numeric/entity rows when keywords hit.
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "hybrid_search")
     if use_compiled and kbinfos.get("chunks"):
         _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
         await _expand_with_compiled(tools, query, keywords, kbinfos, doc_scope)

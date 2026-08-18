@@ -39,7 +39,7 @@ internal/cli/
 └── filesystem/         # Virtual Filesystem
     ├── engine.go       # Core engine: path resolution, command routing
     ├── types.go        # Node, Command, Result types
-    ├── base.go         # Provider interface definition    
+    ├── base.go         # Provider interface definition
     ├── dataset.go      # Dataset provider implementation
     ├── file.go         # File manager provider implementation
     └── utils.go        # Helper functions

@@ -30,7 +30,7 @@ In `Conversational` mode, you can set the first message that the Agent says to t
 
 Example:
 
-> Hello, I can help you query product materials, compare models, and generate installation suggestions.  
+> Hello, I can help you query product materials, compare models, and generate installation suggestions.
 > Please describe your question, or upload the files that need to be analyzed.
 
 ![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_1.jpg)

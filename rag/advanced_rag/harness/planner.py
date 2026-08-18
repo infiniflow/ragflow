@@ -7,16 +7,59 @@ import re
 from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _snip
 from rag.advanced_rag.harness.config import get_mode
-from rag.advanced_rag.harness.prompts.decompose_prompts import (
-    DECOMPOSE_COMPARATIVE,
-    DECOMPOSE_EXPLORATORY,
-    DECOMPOSE_FACTUAL,
-    DECOMPOSE_PROCEDURAL,
-)
+from rag.advanced_rag.harness.prompts.decompose_prompts import DECOMPOSE_UNIFIED
 from rag.advanced_rag.harness.stats import in_phase
 from rag.advanced_rag.harness.types import ClaimTarget, RouteDecision, WorkflowPlan
 
 _LOG = logging.getLogger(__name__)
+
+# Grounding budget for the planner. The planner decomposes the question into
+# claims — for most questions that is a pure structural reasoning task that does
+# NOT need the full preliminary corpus. Benchmark logs show planner grounding was
+# the single largest token sink (~5.2K-113K tokens/call, ~54% of all prompt
+# tokens) because REPLAN fed it EVERY accumulated chunk and it grew each round.
+# We bound it to the top-N most-relevant chunks AND dedupe across rounds so it
+# stays small without dropping the facts (coordinates/names/years) that a few
+# questions genuinely need. Claim research is untouched — it searches on its own.
+_PLAN_GROUNDING_TOP_N = 5
+
+
+def _plan_chunk_key(ck: dict) -> str:
+    return ck.get("chunk_id") or ck.get("id") or str(id(ck))
+
+
+def _select_plan_grounding(seed_chunks, state: dict) -> list[dict]:
+    """Return the top-N most-relevant chunks not yet grounded this conversation.
+
+    - Cross-round dedup: chunks already shown to the planner in an earlier round
+      are skipped, so REPLAN does not re-bill the same grounding verbatim.
+    - Top-N: among the fresh chunks keep only the ``_PLAN_GROUNDING_TOP_N`` with
+      the highest similarity, so grounding never balloons as kbinfos grows.
+
+    The set of seen keys is stored on ``state["plan_seen"]`` and carried across
+    rounds by the orchestrator (the same state dict is reused for REPLAN).
+    """
+    seen = set(state.get("plan_seen") or [])
+    fresh = []
+    for c in seed_chunks:
+        k = _plan_chunk_key(c)
+        if k not in seen:
+            fresh.append(c)
+    # Top-N by similarity (highest relevance first). kbinfos chunks carry a
+    # similarity from their originating search; ties keep insertion order.
+    if len(fresh) > _PLAN_GROUNDING_TOP_N:
+        fresh.sort(key=lambda c: float(c.get("similarity") or 0.0), reverse=True)
+        fresh = fresh[:_PLAN_GROUNDING_TOP_N]
+    # Safety net: if every chunk was already grounded (corpus unchanged between
+    # rounds), fall back to the single most-relevant seen chunk so the planner
+    # never gets an empty grounding — an empty context can silently degrade a
+    # REPLAN that still needs the top passage as a reference point.
+    if not fresh and seen:
+        best = max(seed_chunks, key=lambda c: float(c.get("similarity") or 0.0))
+        fresh = [best]
+    # Record what we are about to show so later rounds skip it.
+    state["plan_seen"] = sorted(seen | {_plan_chunk_key(c) for c in fresh})
+    return fresh
 
 
 def _extract_json(text: str) -> dict:
@@ -25,13 +68,26 @@ def _extract_json(text: str) -> dict:
     try:
         import json_repair
 
-        return json_repair.loads(text)
+        parsed = json_repair.loads(text)
     except Exception:
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except Exception:
             _LOG.warning("planner: failed to parse LLM output: %s", text[:200])
             return {}
+    if not isinstance(parsed, dict):
+        # json_repair can return a bare string / list / primitive when the LLM
+        # emits non-object JSON. Coerce to {} so callers can safely use
+        # ``result.get("claims")`` — otherwise ``planner_node`` crashes with
+        # AttributeError and the whole agentic graph dies (rag tool returns
+        # "internal error"), producing 0-score answers. Mirrors route.py.
+        _LOG.warning(
+            "planner: LLM returned non-object JSON (%s), coercing to {}: %s",
+            type(parsed).__name__,
+            str(parsed)[:200],
+        )
+        return {}
+    return parsed
 
 
 @in_phase("planner")
@@ -47,20 +103,20 @@ async def planner_node(state: dict, tools) -> dict:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
 
-    # Select decompose prompt by question type
-    prompt_map = {
-        "factual": DECOMPOSE_FACTUAL,
-        "comparative": DECOMPOSE_COMPARATIVE,
-        "procedural": DECOMPOSE_PROCEDURAL,
-        "analytical": DECOMPOSE_EXPLORATORY,
-        "exploratory": DECOMPOSE_EXPLORATORY,
-    }
-    decompose_prompt = prompt_map.get(route.question_type, DECOMPOSE_FACTUAL)
-
+    # Unified structure-aware decomposition: ONE prompt asks the LLM to judge the
+    # question's reasoning structure (flat / chain / aggregate / temporal) and
+    # emit typed claims, instead of a brittle regex picking a per-type template.
+    # This covers aggregate (Q90: average across all members), temporal (Q678:
+    # cross-year link), chain (Q309: bridge entity) and flat — none of which a
+    # keyword regex could reliably detect.
+    decompose_prompt = DECOMPOSE_UNIFIED
     mode = get_mode(route.thinking_mode)
     max_claims = _get_max_claims(mode.label)
     detail_level = _get_detail_level(mode.label)
-    retrieved = _format_seed_chunks(state.get("seed_chunks"), tools)
+    # Bound grounding: top-N most-relevant chunks, deduped across rounds.
+    # Claim research is NOT affected — it searches on its own per claim.
+    grounding_chunks = _select_plan_grounding(state.get("seed_chunks") or [], state)
+    retrieved = _format_seed_chunks(grounding_chunks, tools)
 
     try:
         prompt = decompose_prompt.format(
@@ -107,11 +163,19 @@ async def planner_node(state: dict, tools) -> dict:
                     description=c["description"],
                     priority=c.get("priority", 0),
                     suggested_tools=c.get("suggested_tools", []),
+                    prerequisite=str(c.get("prerequisite") or "").strip(),
+                    claim_type=str(c.get("claim_type") or "flat").strip().lower() or "flat",
+                    target=str(c.get("target") or "").strip(),
                 )
             )
 
     if not claims:
         return _direct_plan(route.question)
+
+    # Post-validation: guarantee aggregate questions carry an enumeration +
+    # combine structure (the LLM may split aggregation into per-member claims or
+    # emit the enumeration without the combine step). Back-fills missing claims.
+    claims = _ensure_aggregate_structure(route.question, claims)
 
     plan = WorkflowPlan(
         plan_type=plan_type,
@@ -144,6 +208,123 @@ def _format_seed_chunks(seed_chunks, tools) -> str:
     except Exception:
         _LOG.exception("planner: failed to format seed chunks")
         return "(no preliminary results)"
+
+
+# ═══════════════════════════════════════════════════════════════
+# Aggregate structure enforcement (planner post-validation)
+#
+# The unified decompose prompt asks the LLM to emit an aggregate claim (a single
+# ENUMERATION over ALL members) PLUS a combine claim (the count/sum/average/
+# max/min over the enumerated values). The LLM does not always honour this:
+# it may split into independent per-member claims (which can never be
+# aggregated), emit the enumeration without the combine step, or miss the
+# aggregate shape entirely. This post-validation guarantees an aggregate+
+# combine structure whenever the question signals aggregation, so exhaustive
+# enumeration is actually performed and then combined.
+# ═══════════════════════════════════════════════════════════════
+
+_AGGREGATE_RE = re.compile(
+    # English aggregate words (the primary backstop language).
+    r"\b(how many|how much|average|mean|sum|total|count|every|all|most|"
+    r"maximum|minimum|max|min|combined|overall|each|per|aggregate)\b"
+    # CJK aggregate words. Word-boundary \b is meaningless for CJK, so these
+    # match as plain substrings. Note the LLM is the PRIMARY aggregate signal
+    # (it emits claim_type="aggregate" in DECOMPOSE_UNIFIED); this regex is only
+    # a secondary backstop for when the LLM missed the aggregate shape.
+    r"|合计|平均|总共|所有|每个|一共|总和|总数|多少人|多少个|人均|每条|每个|全体"
+    # Common non-English aggregate words (secondary backstop, best-effort).
+    r"|combien|quel nombre|gesamt|durchschnitt|jeder|alle|summe"
+    r"|media|promedio|totale|ogni|tutti|quantos|cada",
+    re.IGNORECASE,
+)
+
+
+def _is_aggregate_question(question: str) -> bool:
+    return bool(_AGGREGATE_RE.search(question or ""))
+
+
+def _ensure_aggregate_structure(question: str, claims: list) -> list:
+    """Guarantee an aggregate claim + a combine claim for aggregate questions.
+
+    If the question signals aggregation but the plan lacks an ``aggregate``
+    enumeration claim (with a non-empty ``target``), back-fill one whose
+    description is the question itself and whose target is the full member set.
+    If an enumeration claim exists but no combine claim follows it, back-fill a
+    combine claim that asks for the aggregate over the enumerated values. The
+    fallback claims are appended with a stable ``claim_id`` so existing claim
+    references never break.
+    """
+    # The primary aggregate signal is the LLM's structure judgement in
+    # DECOMPOSE_UNIFIED (it emits claim_type="aggregate" language-independently,
+    # covering German/Japanese/French aggregate questions that the regex word
+    # list below would miss). The regex rule is only a secondary backstop for
+    # when the LLM missed the aggregate shape entirely. Triggering on EITHER
+    # keeps the enumerate+combine structure intact for every aggregate question,
+    # no matter the language.
+    llm_said_aggregate = any(getattr(c, "claim_type", "") == "aggregate" for c in claims)
+    if not (llm_said_aggregate or _is_aggregate_question(question)):
+        return claims
+    existing_desc = {c.description.strip().lower() for c in claims if getattr(c, "description", None)}
+    existing_ids = {c.claim_id for c in claims if getattr(c, "claim_id", None)}
+    next_id = 0
+    while f"c{next_id}" in existing_ids:
+        next_id += 1
+
+    def _new_claim_id() -> str:
+        nonlocal next_id
+        cid = f"c{next_id}"
+        next_id += 1
+        return cid
+
+    enumerator = next((c for c in claims if getattr(c, "claim_type", "") == "aggregate"), None)
+
+    if enumerator is None:
+        # No enumeration claim — add one covering the full member set so an
+        # aggregate question actually enumerates all members instead of being
+        # answered from a single chunk.
+        desc = (question or "").strip()
+        enumerator = ClaimTarget(
+            claim_id=_new_claim_id(),
+            description=desc,
+            claim_type="aggregate",
+            target=desc or "all relevant members",
+            priority=1,
+        )
+        claims.append(enumerator)
+        existing_desc.add(desc.lower())
+        _LOG.info("[Planner] Post-validation: back-filled aggregate enumeration claim %s (target=%r)", enumerator.claim_id, enumerator.target)
+    elif not (enumerator.target or "").strip():
+        # Enumeration claim exists but has no member set — default it so the
+        # exhaustive-retrieval path knows what to enumerate.
+        enumerator.target = (question or "").strip() or "all relevant members"
+        _LOG.info("[Planner] Post-validation: set aggregate claim %s target=%r", enumerator.claim_id, enumerator.target)
+
+    # A combine claim must follow the enumeration: the aggregate value is
+    # computed over the enumerated member values. Detect by a claim that is
+    # distinct from the enumerator and whose description mentions an aggregate
+    # operation OR a combining word over "those/every/all/them/each".
+    def _looks_like_combine(c) -> bool:
+        desc = (getattr(c, "description", "") or "").strip().lower()
+        return bool(re.search(r"\b(average|mean|sum|total|count|maximum|minimum|max|min|combined|overall)\b", desc))
+
+    has_combine = any(
+        c.claim_id != enumerator.claim_id
+        and _looks_like_combine(c)
+        and any(w in (getattr(c, "description", "") or "").lower() for w in ("those", "every", "all", "them", "each", "listed", "above", "these"))
+        for c in claims
+    )
+    if not has_combine:
+        combine_desc = f"Combine the enumerated values from {enumerator.claim_id} into the final aggregate answer."
+        claims.append(
+            ClaimTarget(
+                claim_id=_new_claim_id(),
+                description=combine_desc,
+                claim_type="flat",
+                priority=2,
+            )
+        )
+        _LOG.info("[Planner] Post-validation: back-filled combine claim over enumeration claim %s", enumerator.claim_id)
+    return claims
 
 
 def _direct_plan(question: str) -> dict:

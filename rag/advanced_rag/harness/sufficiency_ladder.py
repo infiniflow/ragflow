@@ -136,6 +136,16 @@ def sufficiency_ladder(
     if not auto_sufficient:
         if missing:
             return LadderOutput(action=GAP, should_continue=True, missing=missing)
+        # Paper (§3): models often still answer correctly on insufficient context
+        # (35-62%). When the agent's self-confidence is decent, don't hard-abstain —
+        # answer with a caveat instead, so we don't lose queries we could get right.
+        if agent_confidence >= c_low:
+            return LadderOutput(
+                action=ANSWER_WITH_CAVEAT,
+                should_continue=False,
+                caveat="available evidence is limited; answer is partly inferred",
+                missing=missing,
+            )
         return LadderOutput(action=UNANSWERABLE, should_continue=False, missing=missing)
 
     # 3. AutoRater is not confident in its own sufficiency call.

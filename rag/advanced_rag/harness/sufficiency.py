@@ -24,6 +24,14 @@ _LOG = logging.getLogger(__name__)
 # trial "LLM draft instead of NER".
 _ENABLE_NER_GROUNDED = False
 
+# Enumeration-completeness floor for aggregate claims. An aggregate (count/sum/
+# average/max/min over ALL members) must be derived from MORE than a couple of
+# evidence passages — a single or pair of chunks cannot cover "every member" and
+# the aggregate would silently under-count. A self-verified aggregate claim whose
+# cited evidence falls below this floor is treated as an incomplete enumeration
+# (hard veto), not averaged away by stronger siblings.
+_AGGREGATE_MIN_EVIDENCE = 3
+
 
 # ═══════════════════════════════════════════════════════════════
 # Cross-check: code-only
@@ -142,30 +150,60 @@ def _resolve_spacy_model(language: str) -> str:
     return _LANG_TO_SPACY_MODEL.get(key, "en_core_web_sm")
 
 
+def _spacy_model_for_text(text: str) -> str:
+    """Return the spaCy model to run ``text`` through.
+
+    langdetect is unreliable on very short / single-entity strings and can
+    return a language with no spaCy model (e.g. ``東京``/``北京`` -> ``ko``,
+    ``NVIDIA`` -> ``vi``, ``Glyn Harper`` -> ``cy``). When that happens, a CJK
+    string still carries Han characters, so we fall back to the zh model (which
+    recognises the vast majority of Han person/place names as entities) rather
+    than the English default — otherwise a bare CJK bridge entity is never
+    stripped and gets misread as a content word.
+    """
+    lang = _detect_language(text)
+    model = _LANG_TO_SPACY_MODEL.get(lang)
+    if model:
+        return model
+    if _is_cjk(text):
+        return "zh_core_web_sm"
+    return "en_core_web_sm"
+
+
+def _load_spacy(language: str):
+    """Load (or return from the per-process cache) the spaCy model for a language.
+
+    Accepts either an ISO language code (resolved via ``_resolve_spacy_model``)
+    or an explicit model name. Returns ``None`` on any failure (missing model /
+    spacy import error) so callers can degrade gracefully without crashing.
+    """
+    model_name = language if language in _LANG_TO_SPACY_MODEL.values() else _resolve_spacy_model(language)
+    if model_name in _spacy_nlp_cache:
+        return _spacy_nlp_cache[model_name]
+    try:
+        import spacy
+
+        nlp = spacy.load(model_name)
+        _spacy_nlp_cache[model_name] = nlp
+        return nlp
+    except Exception as exc:  # model not installed / spacy unavailable
+        _LOG.info("[multilingual-ner] spaCy model %s unavailable: %s", model_name, exc)
+        return None
+
+
 def _spacy_ner_entities(text: str, language: str) -> list[str]:
     """Extract named entities via spaCy NER, with per-process model caching.
 
     Returns [] on any failure (missing model, spacy import error) so the caller
     can fall back to the regex path without crashing.
     """
-    model_name = _resolve_spacy_model(language)
-    if model_name in _spacy_nlp_cache:
-        nlp = _spacy_nlp_cache[model_name]
-    else:
-        try:
-            import spacy
-
-            nlp = spacy.load(model_name)
-            _spacy_nlp_cache[model_name] = nlp
-        except Exception as exc:  # model not installed / spacy unavailable
-            _LOG.info("[multilingual-ner] spaCy model %s unavailable, falling back to regex: %s", model_name, exc)
-            return []
+    nlp = _load_spacy(language)
     if nlp is None:
         return []
     try:
         doc = nlp(text)
     except Exception as exc:
-        _LOG.info("[multilingual-ner] spaCy inference failed for %s: %s", model_name, exc)
+        _LOG.info("[multilingual-ner] spaCy inference failed for %s: %s", language, exc)
         return []
     seen: set[str] = set()
     out: list[str] = []
@@ -194,6 +232,56 @@ def extract_named_entities(text: str) -> list[str]:
         return []
     lang = _detect_language(text)
     return _spacy_ner_entities(text, lang)
+
+
+# spaCy POS tags that carry relationship/target meaning. A token with one of
+# these, outside a named-entity span, makes a query "relation-aware". Tags are
+# language-neutral (spaCy assigns them for en/zh/de/fr/es/pt/ja), so no
+# per-language stopword lists are needed.
+#
+# PROPN is deliberately EXCLUDED: a proper noun (Google, Normandy, 北京) is the
+# entity itself, not a relationship/target word. The minimal core-sm models do
+# not tag every proper noun as an NER entity, so counting PROPN as "content"
+# would misread a bare bridge entity like "Google" (PROPN, no NER label) as a
+# relation-aware query and skip merging it with the claim description. Only
+# ordinary content words (nouns/verbs/adjs) signal a real relationship.
+_CONTENT_POS = {"NOUN", "VERB", "ADJ", "ADV", "NUM"}
+
+
+def content_words_after_entities(text: str) -> list[str]:
+    """Return the content-bearing tokens of ``text`` once named-entity spans are
+    removed, judged by spaCy POS tags (language-agnostic).
+
+    A bare bridge query is one whose text, after stripping the NER entities, has
+    no remaining content word — i.e. this returns [] (e.g. "Glyn Harper",
+    "福楼拜", "Apple"). A relation-aware query keeps content words outside its
+    entities (e.g. "children book", "写了", "population"), so this returns them.
+
+    Using spaCy POS (not an English stopword list) keeps the rule identical
+    across languages; NUM is included so a bare year/quantity like "2019" is not
+    mistaken for a bridge. Returns [] on any failure (spaCy unavailable) so the
+    caller can fall back to a no-merge decision without crashing.
+    """
+    if not text:
+        return []
+    nlp = _load_spacy(_spacy_model_for_text(text))
+    if nlp is None:
+        return []
+    try:
+        doc = nlp(text)
+    except Exception as exc:
+        _LOG.info("[multilingual-ner] spaCy inference failed for content words: %s", exc)
+        return []
+    spans = [(e.start_char, e.end_char) for e in doc.ents]
+    out: list[str] = []
+    for tok in doc:
+        if not tok.text.strip():
+            continue
+        if any(start <= tok.idx < end for start, end in spans):
+            continue  # token lies inside a named-entity span
+        if tok.pos_ in _CONTENT_POS:
+            out.append(tok.text.strip())
+    return out
 
 
 def _detect_numeric_conflict(disclosed: list[str]) -> list[str]:
@@ -594,6 +682,56 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
 # ═══════════════════════════════════════════════════════════════
 
 
+def _incomplete_aggregates(
+    claims: list | None,
+    agent_results: list[AgentResult],
+    all_chunks: dict | None,
+) -> list[str]:
+    """Find aggregate claims whose enumeration is likely incomplete.
+
+    An aggregate claim must enumerate ALL members before combining them. We
+    judge completeness at the code level with zero LLM cost: a self-verified
+    aggregate that cites fewer than ``_AGGREGATE_MIN_EVIDENCE`` passages cannot
+    have covered a full member set, so its aggregate value risks under-counting.
+    Claims that are not self-verified are already handled by the agent-confidence
+    gate, so we only flag verified-but-thin aggregates.
+
+    Returns the claim IDs to hard-veto.
+    """
+    if not claims or not all_chunks:
+        return []
+    agg_by_id: dict[str, object] = {}
+    for c in claims:
+        cid = getattr(c, "claim_id", None)
+        if cid and getattr(c, "claim_type", "") == "aggregate":
+            agg_by_id[cid] = c
+    if not agg_by_id:
+        return []
+    # Map each claim's cited evidence IDs to the number of distinct passages.
+    evidence_count: dict[str, int] = {}
+    for r in agent_results:
+        eid = getattr(r, "claim_id", None)
+        if eid in agg_by_id:
+            ids = getattr(r, "evidence_ids", None) or []
+            evidence_count[eid] = sum(1 for i in ids if i in all_chunks)
+    incomplete: list[str] = []
+    for cid, c in agg_by_id.items():
+        # A claim the agent itself did not verify is already vetoed by the
+        # agent-confidence gate; only flag verified-but-thin aggregates.
+        if not getattr(c, "is_verified", False):
+            continue
+        n = evidence_count.get(cid, 0)
+        if n < _AGGREGATE_MIN_EVIDENCE:
+            _LOG.warning(
+                "[Sufficiency] Aggregate claim %s cites only %d evidence passage(s) (< %d) — enumeration likely incomplete; vetoing.",
+                cid,
+                n,
+                _AGGREGATE_MIN_EVIDENCE,
+            )
+            incomplete.append(cid)
+    return incomplete
+
+
 def compute_fusion_score(
     agent_results: list[AgentResult],
     cross_check_results: list[ClaimCrossCheckResult],
@@ -716,9 +854,17 @@ def compute_fusion_score(
     # alone missed: c2/c3 self-verified with score 0.83/0.80 (padded by Mike
     # Tyson's digits) yet Tyson Fury's entities were absent from every chunk.
     weak += [cid for cid in gapped_ids if cid not in weak]
+
+    # ── Aggregate enumeration completeness (hard veto) ──
+    # An aggregate claim (count/sum/average/max/min over ALL members) is only
+    # sufficient when the enumeration actually covered the member set. A
+    # self-verified aggregate backed by too little evidence (fewer than
+    # ``_AGGREGATE_MIN_EVIDENCE`` passages) is an incomplete enumeration that
+    # would under-count — veto it rather than averaging it away.
+    weak += [cid for cid in _incomplete_aggregates(claims, agent_results, all_chunks) if cid not in weak]
     if weak:
         _LOG.info(
-            "[Sufficiency] Hard-veto: %d self-verified claim(s) below floor %.2f OR missing a required entity: %s",
+            "[Sufficiency] Hard-veto: %d self-verified claim(s) below floor %.2f OR missing a required entity OR incomplete aggregate enumeration: %s",
             len(weak),
             min_cross_floor,
             weak,
@@ -779,12 +925,24 @@ def compute_fusion_score(
 
 
 def _build_feedback(missing: list[str], results: list[ClaimCrossCheckResult]) -> str:
+    """Build replan feedback that names the SPECIFIC missing evidence.
+
+    A generic "claim c1: N mismatches" cannot drive a better plan — the replanner
+    needs to know *what* is missing (which entity / number / grounded fact) so it
+    can emit a targeted new claim. We surface the first few concrete mismatch
+    strings per failed claim (they already carry the useful detail, e.g. "entity
+    'Glyn Harper' not found in any evidence chunk").
+    """
     if not missing:
         return "all claims verified"
     hints = []
     for r in results:
         if not r.cross_check_passed:
-            hints.append(f"claim {r.claim_id}: {len(r.mismatches)} mismatch(es)")
+            detail = "; ".join(r.mismatches[:4])
+            if detail:
+                hints.append(f"claim {r.claim_id}: {detail}")
+            else:
+                hints.append(f"claim {r.claim_id}: cross-check failed")
     return "missing: " + "; ".join(hints)
 
 
