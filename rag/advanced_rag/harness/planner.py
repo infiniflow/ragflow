@@ -157,13 +157,22 @@ async def planner_node(state: dict, tools) -> dict:
     claims = []
     for i, c in enumerate(claims_raw):
         if isinstance(c, dict) and c.get("description"):
+            # Ordered multi-hop prerequisites (each an atomic open query). Backward
+            # compatible: fall back to the single `prerequisite` field when absent.
+            prereqs_raw = c.get("prerequisites")
+            if isinstance(prereqs_raw, list):
+                prerequisites = [str(x).strip() for x in prereqs_raw if str(x).strip()]
+            else:
+                prereqs_raw = str(c.get("prerequisite") or "").strip()
+                prerequisites = [prereqs_raw] if prereqs_raw else []
             claims.append(
                 ClaimTarget(
                     claim_id=c.get("claim_id", f"c{i}"),
                     description=c["description"],
                     priority=c.get("priority", 0),
                     suggested_tools=c.get("suggested_tools", []),
-                    prerequisite=str(c.get("prerequisite") or "").strip(),
+                    prerequisite=prerequisites[0] if prerequisites else "",
+                    prerequisites=prerequisites,
                     claim_type=str(c.get("claim_type") or "flat").strip().lower() or "flat",
                     target=str(c.get("target") or "").strip(),
                 )

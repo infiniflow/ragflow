@@ -42,6 +42,7 @@ _MAX_NEXT_QUERIES = 3
 _EVIDENCE_MAX_CHUNKS = 8  # keep only the top-N most similar retrieved chunks
 _EVIDENCE_MAX_CHARS_PER_CHUNK = 2000  # hard per-chunk cap (tail-only, preserves the head)
 _EVIDENCE_MAX_TOTAL_CHARS = 16_000  # global ceiling for the concatenated evidence
+_EVIDENCE_PLAN_CAP = 64  # cap on per-claim accumulated plan.evidence entries (F4)
 # Cross-round evidence dedup: benchmark logs show consecutive rounds for the same
 # claim re-search and re-send nearly identical chunk sets (avg 56% overlap, 18%
 # byte-identical). Sending the same full chunks every round is the dominant token
@@ -51,6 +52,10 @@ _EVIDENCE_MAX_TOTAL_CHARS = 16_000  # global ceiling for the concatenated eviden
 _EVIDENCE_DEDUP = True
 # Cap for the previous-round report injected into the analysis prompt.
 _EVIDENCE_PREV_REPORT_CAP = 1200
+# Cap on the number of resolved bridge values injected into the analysis prompt.
+# These are anchor values (e.g. "1921"), not full sentences — a handful suffices
+# to anchor the chain without bloating the prompt.
+_EVIDENCE_BRIDGE_INJECT_CAP = 6
 
 _EVIDENCE_ANALYSIS_SYSTEM = """You are controlling a multi-hop RAG retrieval loop.
 Judge whether the retrieved passages verify the claim using only the provided evidence.
@@ -79,7 +84,7 @@ Return JSON:
 {{
   "is_verified": true,
   "confidence": 0.0,
-  "report": "A precise, self-contained evidence-backed finding for this claim. MUST preserve every exact number, year, percentage, proper noun (person/place/org/product), and specific relationship verbatim from the evidence — do not paraphrase away or generalize away the concrete values. This report is the primary material for the final answer, so it must carry the answerable fact (e.g. '1,429,475 residents of Markazi in the 2016 census', 'the 1978 Academy Award for Best Picture went to The Deer Hunter'). If the evidence is incomplete, say what is known so far and what is still missing.",
+  "report": "A precise, self-contained evidence-backed finding for this claim. MUST preserve every exact number, year, percentage, proper noun (person/place/org/product), and specific relationship verbatim from the evidence — do not paraphrase away or generalize away the concrete values. This report is the primary material for the final answer, so it must carry the answerable fact (e.g. '1,429,475 residents of Markazi in the 2016 census', 'the 1978 Academy Award for Best Picture went to The Deer Hunter'). If the evidence is incomplete, say what is known so far and what is still missing. For a MULTI-HOP claim (one with established bridge values or an intermediate), the report MUST trace the full reasoning chain from bridge value to final answer (e.g. 'the 6th deadliest single-structure attack in US history was the Tulsa race riot (1921) -> the King of Siam in 1921 was Rama VI'), so the final answer can follow the hops instead of seeing a bare conclusion.",
   "gaps": ["specific missing fact or relationship"],
   "intermediate": "ONE bridge entity or relationship that must be retrieved BEFORE the claim can be answered, e.g. for 'company that Brian Bergstein is employed by violates which law' the intermediate is 'Who is Brian Bergstein's employer?'. Empty string if none / not a multi-hop bridge.",
   "next_queries": [
@@ -93,7 +98,10 @@ Return JSON:
     "intent_covered": true,
     "target_entity_found": true,
     "issue": "",
-    "refined_query": ""
+    "refined_query": "",
+    "missing": ["specific entity/time/enumeration item still needed to answer"],
+    "resolved": ["bridge value(s) confirmed from the evidence this round, e.g. 'the attack occurred in 1921'"],
+    "next_hop": "the single next atomic fact to retrieve, e.g. 'Who was the King of Siam in 1921?'"
   }}
 }}
 Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one. The report must be long enough to carry the full answerable fact — prefer completeness over brevity.
@@ -104,6 +112,11 @@ query_check ASSESSMENT (diagnoses THIS round's search quality, not the claim):
 - intent_covered=false means the query retrieved a different intent than it asked (e.g. searched "Emmy nominations" but only got biography text); set issue="intent_mismatch".
 - If the query is aligned, the entity is found, and the intent is covered, set issue="" (the evidence is genuinely insufficient — a different search direction is needed, not a fix to this query).
 - When issue is non-empty, provide refined_query = a precise rewrite of THIS query that fixes the problem (re-anchor to the claim for drifted, add the missing entity for entity_missing, narrow the intent for intent_mismatch/too_broad). When issue is empty, refined_query must be empty.
+- PLAN STATE (for iterative, plan-anchored search): always fill these to drive the next round:
+    - missing = what is STILL needed to answer this claim (a specific entity, a specific time/year, or an enumeration item), even if you are not sure it exists in the corpus.
+    - resolved = any bridge value you CONFIRMED from the evidence this round (e.g. an intermediate entity or year that an earlier hop depended on). Empty if none.
+    - next_hop = the single next atomic fact to retrieve next (one entity/relation/time only), or empty if the plan is complete. For a multi-hop chain, next_hop should reference resolved values (e.g. "Who was the King of Siam in {{the resolved year}}?").
+- resolved is especially important for multi-hop bridging: it lets the next hop anchor to what you already established, instead of re-searching from scratch.
 
 next_queries FORMAT (MANDATORY):
 - Each element MUST be a JSON object {{"query": "...", "is_bridge": true|false}}. NEVER output plain strings.
@@ -177,7 +190,12 @@ async def decompose_and_search(state: dict, tools) -> dict:
         unverified = [c for c in ctx.claims if not c.is_verified]
         if not unverified:
             break
-
+        # NOTE: the innermost claim-search loop is terminated ONLY by the
+        # sufficiency decision ladder (GAP -> continue, ANSWER/CAVEAT/UNANSWERABLE
+        # -> stop), `if not unverified`, and the max_cycles backstop. There is NO
+        # plan-state based early termination: it proved unreliable (0-round + early
+        # over-termination regressions) because it depended on LLM-free-form plan
+        # fields instead of the actual retrieval-driven sufficiency verdict.
         _LOG.info(
             "[Decompose search] Round %d of %d: researching %d unresolved claim(s).",
             cycle + 1,
@@ -221,6 +239,22 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 continue
             attempted_queries[c.claim_id].add(_normalize_query(query))
             searched_claims.append((c, query))
+            # Multi-hop trace: log the chosen query and the claim's resolved-bridge
+            # state so a post-benchmark log analysis can tell WHY a hop was picked
+            # (which prerequisite hop, whether the pending bridge was anchored) and
+            # whether the cross-round bridge accumulation is advancing. This is the
+            # only visibility into the multi-hop state machine without per-round
+            # instrumentation in _pick_next_query.
+            _rb = []
+            if c.plan is not None:
+                _rb = [str(b) for b in c.plan.resolved_bridge]
+            _LOG.info(
+                "[Decompose search] Claim %s (type=%s) query='%s' resolved_bridge=%s",
+                c.claim_id,
+                getattr(c, "claim_type", "?"),
+                _snip(query),
+                _rb if _rb else "[]",
+            )
             # SmartSearch / PL-Search: when this query is a refined (plan-anchored)
             # query from the last round's query_check, do NOT append the global
             # formalize keywords — the refined query already carries the corrected
@@ -302,6 +336,72 @@ async def decompose_and_search(state: dict, tools) -> dict:
             # and consumed once.
             qc = analysis.get("query_check") or {}
             refined = (qc.get("refined_query") or "").strip()
+            # Plan-anchored iteration: fold this round's findings back into the
+            # claim's cross-round plan state so the next round searches ONLY the
+            # missing part (evidence accumulates; bridge values resolve; next hop
+            # anchors to resolved values) instead of re-searching from scratch.
+            if c.plan is not None:
+                c.plan.evidence.extend(analysis.get("grounded", []) or [])
+                c.plan.evidence.extend(analysis.get("numbers", []) or [])
+                # F4: cap accumulated evidence so the plan state cannot balloon
+                # without bound across rounds.
+                if len(c.plan.evidence) > _EVIDENCE_PLAN_CAP:
+                    c.plan.evidence = c.plan.evidence[-_EVIDENCE_PLAN_CAP:]
+                # Bridge-value accumulation. The ONLY reliable, semantically-correct
+                # source is query_check.resolved — the model is explicitly instructed
+                # to output "bridge value(s) you CONFIRMED from the evidence" there.
+                # We deliberately do NOT add `intermediate` (that is an open NEXT-hop
+                # query to search, not a confirmed value) nor `grounded` (full
+                # assertion sentences, not bare bridge values) — adding either would
+                # pollute the resolved_bridge anchor with question/assertion text and
+                # mislead the final-hop analysis into thinking a hop was resolved
+                # when it was only proposed.
+                for r in qc.get("resolved") or []:
+                    if r not in c.plan.resolved_bridge:
+                        c.plan.resolved_bridge.append(r)
+                # Cap resolved_bridge so a chain cannot balloon across rounds.
+                if len(c.plan.resolved_bridge) > _EVIDENCE_PLAN_CAP:
+                    c.plan.resolved_bridge = c.plan.resolved_bridge[-_EVIDENCE_PLAN_CAP:]
+                # Multi-hop trace: log bridge-value accumulation (from
+                # query_check.resolved) so a post-benchmark log analysis can see
+                # whether the cross-round chain is actually advancing. This is the
+                # write-side complement to the per-round query trace above.
+                if qc.get("resolved"):
+                    _LOG.info(
+                        "[Decompose search] Claim %s bridge accumulation: +%s -> resolved_bridge=%s",
+                        c.claim_id,
+                        _snip(" | ".join(str(r) for r in qc["resolved"])),
+                        [str(b) for b in c.plan.resolved_bridge],
+                    )
+                if qc.get("missing"):
+                    c.plan.missing = list(qc["missing"])
+                # NOTE: multi-hop hardening relies on the ALREADY-existing
+                # fallback chain — the analyzer's `intermediate` (pending bridge),
+                # query_check `refined` (re-anchor a failed hop), and AutoRater
+                # sufficiency (evidence too thin -> feedback -> replan). We do NOT
+                # manually inject a "resolve the intermediate step" missing item
+                # here: a count/attempted heuristic on resolved_bridge proved
+                # unreliable (one hop may yield 0 or many resolved values), and it
+                # risked triggering replan too early while the chain was still
+                # advancing normally. Sufficiency/replan handles a genuinely stuck
+                # chain on its own.
+                if qc.get("next_hop"):
+                    c.plan.next_target = qc["next_hop"]
+            # next_hop is the model's structured "next atomic fact to retrieve"
+            # (SmartSearch next-step / multi-hop bridge). Queue it as the highest
+            # priority search target for the next round — like refined — unless a
+            # refined query already takes precedence (refined fixes THIS round's
+            # search; next_hop advances to the next atomic fact).
+            _next_hop = (qc.get("next_hop") or "").strip()
+            if not c.is_verified and _next_hop and not refined:
+                _norm_h = _normalize_query(_next_hop)
+                if _norm_h and _norm_h not in attempted_queries.setdefault(c.claim_id, set()):
+                    refined_queries[c.claim_id] = _next_hop
+                    _LOG.info(
+                        "[Decompose search] Claim %s: query_check next_hop='%s' -> queued as next atomic target.",
+                        c.claim_id,
+                        _next_hop,
+                    )
             if not c.is_verified and refined:
                 _norm_r = _normalize_query(refined)
                 if _norm_r and _norm_r not in attempted_queries.setdefault(c.claim_id, set()):
@@ -685,6 +785,27 @@ async def _analyze_from_summary(
             + prev_report[:_EVIDENCE_PREV_REPORT_CAP]
             + ("\n(No new evidence this round — re-confirm or refine the finding above using the retrieved evidence list; if still incomplete, say so.)" if all_deduped else "")
         )
+    # Multi-hop bridge anchoring: inject the claim's already-resolved bridge
+    # values (from query_check.resolved) so this round's analysis can see the
+    # established chain context even when cross-round dedup dropped the chunks
+    # that produced them. Without this, the final-hop analysis could reason about
+    # a bridge value that is not in the current evidence window, breaking the
+    # multi-hop chain. Only short values (bare entities / years) are injected —
+    # long sentences would pollute the anchor signal.
+    bridge_section = ""
+    resolved_bridge = (claim.plan.resolved_bridge if claim.plan is not None else []) or []
+    short_bridge = [str(b).strip() for b in resolved_bridge if len(str(b).strip()) <= 80][:_EVIDENCE_BRIDGE_INJECT_CAP]
+    if short_bridge:
+        bridge_section = "\n\nEstablished multi-hop bridge values (resolved in earlier rounds):\n" + "; ".join(short_bridge)
+        # Multi-hop trace: record which bridge values were injected into this round's
+        # analysis prompt. This lets a post-benchmark log analysis confirm the
+        # cross-round chain context reached the final-hop analyzer, even when
+        # cross-round evidence dedup dropped the source chunks.
+        _LOG.info(
+            "[Decompose search] Claim %s bridge context injected into analysis: %s",
+            claim.claim_id,
+            short_bridge,
+        )
     user = _EVIDENCE_ANALYSIS_USER.format(
         question=question,
         claim=claim.description,
@@ -697,6 +818,8 @@ async def _analyze_from_summary(
         # Append the prior-round context after the JSON spec block. We inject it
         # via the closing instruction so it does not disturb the JSON template.
         user = user + prev_section
+    if bridge_section:
+        user = user + bridge_section
     try:
         msg = await tools._fit_messages(_EVIDENCE_ANALYSIS_SYSTEM, user)
         ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.1})
@@ -847,11 +970,24 @@ def _normalize_query_check(raw) -> dict:
     round's search quality (whether the query stayed aligned to the claim, the
     claim's target entity appeared in the evidence, and the query's intent was
     covered). When a fixable problem exists, ``issue`` is set and ``refined_query``
-    carries a precise rewrite to re-search next round. Unknown issues degrade
-    gracefully to an empty (no-problem) assessment.
+    carries a precise rewrite to re-search next round. It additionally emits
+    STRUCTURED plan updates for plan-anchored iteration:
+      - ``missing``:   what is still needed (entity / time / enumeration item).
+      - ``resolved``:  bridge values confirmed from the evidence this round.
+      - ``next_hop``:  the next atomic retrieval target (drives plan.next_target).
+    Unknown issues degrade gracefully to an empty (no-problem) assessment.
     """
     if not isinstance(raw, dict):
-        return {"aligned_to_claim": True, "intent_covered": True, "target_entity_found": True, "issue": "", "refined_query": ""}
+        return {
+            "aligned_to_claim": True,
+            "intent_covered": True,
+            "target_entity_found": True,
+            "issue": "",
+            "refined_query": "",
+            "missing": [],
+            "resolved": [],
+            "next_hop": "",
+        }
     valid_issues = {"drifted", "entity_missing", "intent_mismatch", "too_broad"}
     issue = str(raw.get("issue") or "").strip()
     if issue not in valid_issues:
@@ -865,6 +1001,9 @@ def _normalize_query_check(raw) -> dict:
         "target_entity_found": bool(raw.get("target_entity_found", True)),
         "issue": issue,
         "refined_query": refined,
+        "missing": _string_list(raw.get("missing")),
+        "resolved": _string_list(raw.get("resolved")),
+        "next_hop": str(raw.get("next_hop") or "").strip(),
     }
 
 
@@ -887,7 +1026,16 @@ def _fallback_analysis(
         "next_queries": next_queries,
         "grounded": [],
         "numbers": [],
-        "query_check": {"aligned_to_claim": True, "intent_covered": True, "target_entity_found": True, "issue": "", "refined_query": ""},
+        "query_check": {
+            "aligned_to_claim": True,
+            "intent_covered": True,
+            "target_entity_found": True,
+            "issue": "",
+            "refined_query": "",
+            "missing": [],
+            "resolved": [],
+            "next_hop": "",
+        },
     }
 
 
@@ -970,15 +1118,49 @@ def _pick_next_query(
                         return anchored
                 return query
 
-    # 1. Multi-hop: resolve the claim's prerequisite (bridge entity/relationship)
-    # before targeting the claim itself. The first time the claim is researched, the
-    # prerequisite OPEN query is searched; the found entity feeds back through the
-    # evidence the next round (the analyzer then re-targets the claim).
-    prereq = (claim.prerequisite or "").strip()
-    if prereq and not attempted:
-        normalized = _normalize_query(prereq)
-        if normalized and normalized not in attempted:
-            return prereq
+    # 1. Multi-hop: resolve the claim's prerequisite(s) (bridge entity/relationship)
+    # before targeting the claim itself. Ordered multi-hop claims carry a
+    # `prerequisites` list; we walk them hop-by-hop, anchoring each later hop to the
+    # already-resolved bridge values. Single-hop claims fall back to the legacy
+    # single `prerequisite` OPEN query.
+    prereqs = list(claim.prerequisites or [])
+    if not prereqs:
+        _p = (claim.prerequisite or "").strip()
+        if _p:
+            prereqs = [_p]
+    if prereqs:
+        # Multi-hop bridge: walk the ordered `prerequisites` hop-by-hop. Each hop is
+        # an atomic open query. We walk the ordered hops as a CLEAN sequence:
+        #   - A hop that has already been attempted (in `attempted`) is skipped —
+        #     its fix is delegated to the query_check refined/next_hop fallback
+        #     rather than re-searching it forever.
+        #   - A hop that still carries a `{0}/{1}` bridge placeholder is a LATER
+        #     hop whose value depends on an earlier hop's result; the static
+        #     placeholder fill is intentionally NOT attempted here (it couples to a
+        #     stable resolved_bridge order we do not control). Such hops are left
+        #     to the runtime discovery path (query_check next_hop / intermediate /
+        #     pending bridge), which resolves the bridge at runtime.
+        #   - We return the plain hop text WITHOUT appending the resolved_bridge
+        #     anchor: dedup against `attempted` must be stable across rounds, and a
+        #     hop that gains an anchor becomes a different string the next round
+        #     (so it would be re-searched). Bridge anchoring is handled exclusively
+        #     by the pending-bridge path below. This keeps prerequisites = clean
+        #     ordered hop sequence and pending = bridge-anchored follow-up.
+        for raw in prereqs:
+            raw = (raw or "").strip()
+            if not raw:
+                continue
+            # Skip hops that carry a bridge placeholder — they reference an earlier
+            # hop's not-yet-positionally-fillable value; dynamic discovery handles
+            # them. Only plain atomic hops are walked here.
+            if re.search(r"\{\d+\}", raw):
+                continue
+            normalized = _normalize_query(raw)
+            if normalized and normalized not in attempted:
+                return raw
+            # This hop already attempted -> try the next hop.
+        # All walkable hops attempted -> fall through to the pending-bridge /
+        # claim-target / dynamic-discovery search below.
 
     # 1. claim-specific pending follow-ups (from _analyze_claim_evidence).
     #    Multi-hop strengthening: when the pending query is a BRIDGE query (the
@@ -1003,10 +1185,24 @@ def _pick_next_query(
             # to the language-agnostic spaCy NER heuristic in ``_is_bridge_query``.
             desc = (claim.description or "").strip()
             is_bridge = flag if flag is not None else (bool(desc) and _is_bridge_query(query))
+            # Anchor every pending-bridge search to the claim AND any already
+            # resolved multi-hop bridge values, so the next hop deterministically
+            # carries the established chain (e.g. after resolving "1921", the
+            # bridge "King of Siam" searches "King of Siam <claim> 1921") instead
+            # of re-searching from scratch. Only short values are used so the
+            # anchor stays a clean set of entities/years, not full sentences.
+            _short_bridge = []
+            if claim.plan is not None:
+                _short_bridge = [str(b).strip() for b in claim.plan.resolved_bridge if len(str(b).strip()) <= 80][:_EVIDENCE_BRIDGE_INJECT_CAP]
+            _anchor = " ".join(_short_bridge)
             if is_bridge:
-                combined = f"{query} {desc}"
+                combined = f"{query} {desc}{(' ' + _anchor) if _anchor else ''}".strip()
                 if _normalize_query(combined) not in attempted:
                     return combined
+            if _anchor:
+                anchored_q = f"{query} {_anchor}".strip()
+                if _normalize_query(anchored_q) not in attempted:
+                    return anchored_q
             return query
 
     # 2. AutoRater follow-ups (missing-information queries) — a global pool for the
@@ -1068,10 +1264,18 @@ def _is_bridge_query(query: str) -> bool:
 
 def _fallback_queries(question: str, claim: ClaimTarget) -> list[str]:
     candidates = []
+    # Multi-hop hardening: when the claim already resolved some intermediate bridge
+    # values, anchor the fallback retrieval to them so the claim-target search stays
+    # on the resolved chain instead of drifting (e.g. after resolving the year 1921,
+    # the claim "King of Siam in that year" searches "King of Siam 1921 ...").
+    _anchor = ""
+    if claim.plan is not None and claim.plan.resolved_bridge:
+        _anchor = " " + " ".join(claim.plan.resolved_bridge)
     for gap in _agent_result_gaps(claim.agent_result):
-        candidates.append(f"{claim.description} {gap}")
+        candidates.append(f"{claim.description} {gap}{_anchor}")
     if question:
-        candidates.append(f"{question} {claim.description}")
+        candidates.append(f"{question} {claim.description}{_anchor}")
+    candidates.append(f"{claim.description}{_anchor}")
     candidates.append(claim.description)
     return candidates[:_MAX_NEXT_QUERIES]
 

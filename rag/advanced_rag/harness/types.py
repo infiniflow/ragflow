@@ -72,6 +72,32 @@ class ExecutionStrategy:
 
 
 @dataclass
+class ClaimPlan:
+    """Cross-round, per-claim plan state driving iterative, plan-anchored search.
+
+    Unlike the old `while cycle < max_cycles` re-search loop, this keeps what a
+    claim has learned and what it still needs across rounds, so each round only
+    searches the missing part instead of blindly re-searching everything.
+    """
+
+    # Evidence accumulated across rounds (grounded facts + numbers).
+    evidence: list[str] = field(default_factory=list)
+    # Structured missing information (which entity / time / enumeration item).
+    missing: list[str] = field(default_factory=list)
+    # Bridge entities already resolved from prior hops (e.g. ["Tulsa", "1921"]).
+    resolved_bridge: list[str] = field(default_factory=list)
+    # Ordered hops still to resolve (each an atomic open query; later hops may
+    # reference earlier resolved values via {0}, {1}, ...).
+    pending_hops: list[str] = field(default_factory=list)
+    # Next retrieval target for this round (entity+time anchored), or "".
+    next_target: str = ""
+
+    # Whether any retrieval target remains (refined / hop / next_target / missing).
+    def actionable(self) -> bool:
+        return bool(self.missing or self.pending_hops or self.next_target)
+
+
+@dataclass
 class ClaimTarget:
     claim_id: str
     description: str
@@ -85,6 +111,11 @@ class ClaimTarget:
     # employer?"). decompose resolves the prerequisite first, then uses the found
     # entity to target this claim. Empty when not multi-hop.
     prerequisite: str = ""
+    # Ordered list of hops for multi-hop claims (each an atomic open query, in
+    # dependency order). When present, bridge resolution walks these hops and
+    # stores resolved values in `plan.resolved_bridge`. Backward compatible: when
+    # empty, we fall back to the single `prerequisite`.
+    prerequisites: list[str] = field(default_factory=list)
     # Reasoning structure the planner assigned to this claim:
     #   flat       — single-hop fact, independent
     #   chain      — depends on a prerequisite (bridge entity/relationship)
@@ -96,6 +127,8 @@ class ClaimTarget:
     # For aggregate claims: the full set of members to enumerate (e.g. "all MLB
     # stadiums with a retractable roof"), used to guide exhaustive retrieval.
     target: str = ""
+    # Cross-round plan state (evidence / missing / bridge / hops).
+    plan: ClaimPlan = field(default_factory=ClaimPlan)
 
 
 @dataclass
