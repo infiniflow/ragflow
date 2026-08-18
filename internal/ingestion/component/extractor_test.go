@@ -2787,7 +2787,7 @@ func TestExtractor_NestedPrecedenceOverFlat(t *testing.T) {
 		},
 		"auto_questions": 0,
 		"tags": map[string]any{
-			"top_n": 3,
+			"top_n":       3,
 			"tag_file_id": "file-123",
 		},
 		"auto_tags": 0,
