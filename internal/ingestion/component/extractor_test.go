@@ -967,6 +967,151 @@ func TestExtractorComponent_runEnableMetadata_DegradesGracefully(t *testing.T) {
 	}
 }
 
+// TestResolveMetadataCacheModel_NonEmptyShortCircuits pins that a non-empty
+// llm_id is returned unchanged (D25): the ingestion path always injects
+// llm_id, so its cache key must not be perturbed by the tenant-default
+// resolution. This is the guard that keeps the fix from touching the hot path.
+func TestResolveMetadataCacheModel_NonEmptyShortCircuits(t *testing.T) {
+	got := resolveMetadataCacheModel(t.Context(), nil, "model-uuid")
+	if got != "model-uuid" {
+		t.Fatalf("resolveMetadataCacheModel(non-empty) = %q, want the input unchanged", got)
+	}
+}
+
+// TestResolveMetadataCacheModel_EmptyNoState_ReturnsEmpty pins the safe
+// degenerate path (D25): with no CanvasState / tenant context the resolver
+// must return "" rather than panic or invent a model — the same case that
+// would leave the extraction with no model to call anyway.
+func TestResolveMetadataCacheModel_EmptyNoState_ReturnsEmpty(t *testing.T) {
+	if got := resolveMetadataCacheModel(t.Context(), nil, ""); got != "" {
+		t.Fatalf("resolveMetadataCacheModel(empty, no state) = %q, want empty", got)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_UsesCacheModel verifies the
+// per-invocation cache model identity (populated by runAutoExtractions) is
+// consumed by the metadata path without breaking extraction: a cacheModel that
+// differs from llmID must still produce a normal extraction (D25).
+func TestExtractorComponent_runEnableMetadata_UsesCacheModel(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil,
+		extractorInputs{llmID: "m", cacheModel: "tenant-default-ref"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata = %v, want category=finance", meta)
+	}
+}
+
+// TestResolveMetadataCacheModel_EmptyWithPinnedDefault verifies the core D25
+// fix path: an empty llm_id resolves to the tenant's pinned default chat
+// model (tenant_model UUID) when CanvasState carries tenant_id — the identity
+// that must be hashed into the cache key instead of an empty segment.
+func TestResolveMetadataCacheModel_EmptyWithPinnedDefault(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "0123456789abcdef0123456789abcdef")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := resolveMetadataCacheModel(ctx, db, ""); got != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("resolveMetadataCacheModel(empty, pinned default) = %q, want the tenant_model UUID", got)
+	}
+}
+
+// TestResolveMetadataCacheModel_EmptyWithCompositeDefault verifies the D25
+// fix path for a tenant whose default chat model is the composite
+// "model@provider" ref (no tenant_model pinned).
+func TestResolveMetadataCacheModel_EmptyWithCompositeDefault(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := resolveMetadataCacheModel(ctx, db, ""); got != "gpt-4o@openai" {
+		t.Fatalf("resolveMetadataCacheModel(empty, composite default) = %q, want gpt-4o@openai", got)
+	}
+}
+
+// TestResolveMetadataCacheModel_CrossTenantDefaultsDiffer pins the D25
+// isolation guarantee at the resolver level: two tenants with different
+// default chat models resolve to different cache model refs, so identical
+// chunk text + schema can no longer collide on one Redis key.
+func TestResolveMetadataCacheModel_CrossTenantDefaultsDiffer(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "0123456789abcdef0123456789abcdef")
+	// Second tenant with a different composite default (no tenant_model pinned).
+	status := "1"
+	if err := db.Create(&entity.Tenant{ID: "tenant-2", LLMID: "claude-3@anthropic", Status: &status}).Error; err != nil {
+		t.Fatalf("create second tenant: %v", err)
+	}
+	ctxA := extractorStateCtx(t, "tenant-1")
+	ctxB := extractorStateCtx(t, "tenant-2")
+
+	refA := resolveMetadataCacheModel(ctxA, db, "")
+	refB := resolveMetadataCacheModel(ctxB, db, "")
+	if refA == "" || refB == "" {
+		t.Fatalf("both tenants must resolve a default model, got refA=%q refB=%q", refA, refB)
+	}
+	if refA == refB {
+		t.Fatalf("tenants with different defaults must resolve different refs, both = %q", refA)
+	}
+}
+
+// TestResolveMetadataCacheModel_EmptyNoDefaultModel pins the fallback when a
+// tenant has no default chat model at all: the resolver returns "" and
+// runEnableMetadata falls back to the raw llm_id (pre-D25 behavior) rather
+// than inventing a model — matching the live call, which would have no model
+// to run either.
+func TestResolveMetadataCacheModel_EmptyNoDefaultModel(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	status := "1"
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "", Status: &status}).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	ctx := extractorStateCtx(t, "tenant-1")
+
+	if got := resolveMetadataCacheModel(ctx, db, ""); got != "" {
+		t.Fatalf("resolveMetadataCacheModel(empty, no default model) = %q, want empty", got)
+	}
+}
+
+// TestMetadataLLMCacheKey_ModelIsolation pins the D25 cache-key contract at
+// the key level: the model segment must isolate entries, so a resolved model
+// ref produces a different key than another ref or than the empty pre-fix
+// segment, while identical inputs stay deterministic. get/setMetadataLLMCache
+// are thin wrappers around this key, so the isolation holds for both cache
+// reads and writes.
+func TestMetadataLLMCacheKey_ModelIsolation(t *testing.T) {
+	const (
+		schema = `{"type":"object","properties":{"category":{"type":"string"}}}`
+		text   = "identical chunk text across tenants"
+	)
+
+	keyA := metadataLLMCacheKey("tenant-a-default-ref", schema, text)
+	keyB := metadataLLMCacheKey("tenant-b-default-ref", schema, text)
+	if keyA == keyB {
+		t.Fatalf("different model refs must not share a cache key (D25 cross-tenant collision): both %q", keyA)
+	}
+	if got := metadataLLMCacheKey("", schema, text); got == keyA {
+		t.Fatalf("empty model segment (pre-D25) must differ from resolved ref key %q", keyA)
+	}
+	// Determinism: same model + text + schema always hashes identically.
+	if got := metadataLLMCacheKey("tenant-a-default-ref", schema, text); got != keyA {
+		t.Fatalf("cache key not deterministic: %q vs %q", got, keyA)
+	}
+	// Text and schema remain key dimensions too.
+	if got := metadataLLMCacheKey("tenant-a-default-ref", schema, text+" extra"); got == keyA {
+		t.Fatalf("different chunk text must not share a cache key")
+	}
+	if got := metadataLLMCacheKey("tenant-a-default-ref", schema+" extra", text); got == keyA {
+		t.Fatalf("different schema must not share a cache key")
+	}
+}
+
 // TestExtractorComponent_runEnableMetadata_CrossChunkUnion simulates two chunks
 // whose extraction returns overlapping list values for the same key. Aggregating
 // the chunk metadata maps with utility.UpdateMetadataTo (as mergeChunkMetadata
