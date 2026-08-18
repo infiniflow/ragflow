@@ -824,6 +824,7 @@ class GaussDBConnection(GaussDBConnectionBase):
             vector_dim=parsed["vector_dim"],
             vector_weight=parsed["vector_weight"],
             similarity_threshold=parsed["similarity_threshold"],
+            minimum_should_match=parsed["minimum_should_match"],
             topn=parsed["topn"],
             offset=offset,
             limit=limit,
@@ -845,6 +846,7 @@ class GaussDBConnection(GaussDBConnectionBase):
             vector_dim=parsed["vector_dim"],
             vector_weight=parsed["vector_weight"],
             similarity_threshold=parsed["similarity_threshold"],
+            minimum_should_match=parsed["minimum_should_match"],
             topn=parsed["topn"],
             offset=0,
             limit=1,
@@ -897,12 +899,14 @@ class GaussDBConnection(GaussDBConnectionBase):
         topn = None
         vector_weight = None
         similarity_threshold = None
+        minimum_should_match = None
         pagerank_weight = 10.0
 
         for expr in match_expressions or []:
             if isinstance(expr, MatchTextExpr):
                 query_text = (expr.extra_options or {}).get("original_query") or expr.matching_text or ""
                 keywords = _tokenize_query_terms(query_text)
+                minimum_should_match = (expr.extra_options or {}).get("minimum_should_match")
                 topn = expr.topn if topn is None else min(topn, expr.topn)
             elif isinstance(expr, MatchDenseExpr):
                 if expr.embedding_data_type != "float":
@@ -931,6 +935,7 @@ class GaussDBConnection(GaussDBConnectionBase):
             "vector_dim": vector_dim,
             "vector_weight": vector_weight,
             "similarity_threshold": similarity_threshold,
+            "minimum_should_match": minimum_should_match,
             "topn": topn,
             "pagerank_weight": pagerank_weight,
         }
