@@ -21,15 +21,17 @@ from rag.nlp import term_weight
 
 
 def test_dealer_loads_resource_files_as_utf8(monkeypatch, tmp_path):
+    """Load non-ASCII term-weight resources with an explicit UTF-8 encoding."""
     resource_dir = tmp_path / "rag" / "res"
     resource_dir.mkdir(parents=True)
-    (resource_dir / "ner.json").write_text('{"北京": "loca"}', encoding="utf-8")
-    (resource_dir / "term.freq").write_text("café\t42\n", encoding="utf-8")
+    (resource_dir / "ner.json").write_text('{"\u5317\u4eac": "loca"}', encoding="utf-8")
+    (resource_dir / "term.freq").write_text("caf\u00e9\t42\n", encoding="utf-8")
 
     monkeypatch.setattr(term_weight, "get_project_base_directory", lambda: str(tmp_path))
     real_open = builtins.open
 
     def require_explicit_utf8(file, *args, **kwargs):
+        """Reject resource reads that rely on the platform default encoding."""
         if Path(file).parent == resource_dir:
             assert kwargs.get("encoding") == "utf-8"
         return real_open(file, *args, **kwargs)
@@ -38,5 +40,5 @@ def test_dealer_loads_resource_files_as_utf8(monkeypatch, tmp_path):
 
     dealer = term_weight.Dealer()
 
-    assert dealer.ne == {"北京": "loca"}
-    assert dealer.df == {"café": 42}
+    assert dealer.ne == {"\u5317\u4eac": "loca"}
+    assert dealer.df == {"caf\u00e9": 42}
