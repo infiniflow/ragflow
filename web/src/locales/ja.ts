@@ -607,9 +607,6 @@ export default {
       dataSource: 'データソース',
       linkSourceSetTip: 'このデータセットとのデータソース連携を管理します',
       linkDataSource: 'データソースを連携',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        ' 既存のチャンクに対して、階層的な目次（ファイルごとに1つのディレクトリ）を生成します。クエリ時にディレクトリ拡張が有効になっている場合、システムは大規模モデルを使用してユーザーの質問に関連するディレクトリ項目を判定し、関連するチャンクを特定します。',
       deleteGenerateModalContent:
         "\n        <p>生成された<strong class='text-text-primary'>{{type}}</strong>の結果を削除すると、\n        このデータセットから派生したすべてのエンティティと関係性が削除されます。\n        元のファイルはそのまま残ります。<p>\n        <br/>\n        続行しますか？\n      ",
       extractRaptor: 'RAPTORを抽出',

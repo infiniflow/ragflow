@@ -683,9 +683,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataSource: 'Data source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link data source',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
       deleteGenerateModalContent: `
         <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
         will remove all derived entities and relationships from this dataset.

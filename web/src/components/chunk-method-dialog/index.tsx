@@ -38,7 +38,6 @@ import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
   AutoMetadata,
   ChunkMethodItem,
-  EnableTocToggle,
   ImageContextWindow,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -128,7 +127,6 @@ export function ChunkMethodDialog({
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
-        toc_extraction: z.boolean().optional(),
         image_table_context_window: z.coerce.number().optional(),
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
@@ -388,10 +386,7 @@ export function ChunkMethodDialog({
 
                 <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {selectedTag === DocumentParserType.Naive && (
-                    <>
-                      <EnableTocToggle />
-                      <ImageContextWindow />
-                    </>
+                    <ImageContextWindow />
                   )}
 
                   {showAutoKeywords(selectedTag) && (

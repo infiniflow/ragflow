@@ -659,9 +659,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       dataSource: 'Veri kaynağı',
       linkSourceSetTip: 'Bu dataset ile veri kaynağı bağlantısını yönetin',
       linkDataSource: 'Veri kaynağını bağla',
-      tocExtraction: 'SayfaDizini',
-      tocExtractionTip:
-        'Mevcut parçalar için hiyerarşik bir içindekiler tablosu oluşturur (dosya başına bir dizin). Sorgularda Dizin Geliştirme etkinleştirildiğinde, sistem kullanıcının sorusuyla ilgili dizin öğelerini belirlemek için büyük bir model kullanır ve böylece ilgili parçaları tespit eder.',
       deleteGenerateModalContent: `
         <p>Oluşturulan <strong class='text-text-primary'>{{type}}</strong> sonuçlarını silmek,
         bu dataset içindeki tüm türetilmiş varlıkları ve ilişkileri kaldıracak.

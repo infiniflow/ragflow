@@ -75,7 +75,6 @@ export default function DatasetSettings() {
         auto_questions: 0,
         html4excel: false,
         topn_tags: 3,
-        toc_extraction: false,
         image_table_context_window: 0,
         overlapped_percent: 0,
         // MinerU-specific defaults

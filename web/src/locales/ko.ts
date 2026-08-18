@@ -652,9 +652,6 @@ export default {
       dataSource: '데이터 소스',
       linkSourceSetTip: '이 데이터셋과 데이터 소스 간의 연결을 관리합니다',
       linkDataSource: '데이터 소스 연결',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        '기존 chunk에 대해 계층적 목차(파일당 하나의 디렉토리)를 생성합니다. 쿼리 시 디렉토리 향상이 활성화되면 시스템이 대형 모델을 사용하여 사용자 질문과 관련된 디렉토리 항목을 결정하고 관련 chunk를 식별합니다.',
       deleteGenerateModalContent: `
         <p>생성된 <strong class='text-text-primary'>{{type}}</strong> 결과를 삭제하면
         이 데이터셋에서 파생된 모든 엔티티와 관계가 제거됩니다.
