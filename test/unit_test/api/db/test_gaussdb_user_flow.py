@@ -88,6 +88,8 @@ fields = [
     Tenant.rerank_id,
     File.source_type,
     Knowledgebase.embd_id,
+    Dialog.description,
+    Dialog.icon,
     Dialog.llm_id,
     Dialog.rerank_id,
     Memory.embd_id,
@@ -146,6 +148,8 @@ fields = [
     (Tenant.rerank_id, False),
     (File.source_type, False),
     (Knowledgebase.embd_id, False),
+    (Dialog.description, True),
+    (Dialog.icon, True),
     (Dialog.llm_id, False),
     (Dialog.rerank_id, False),
     (Memory.embd_id, False),
@@ -163,6 +167,9 @@ for field, expected_null in fields:
     assert field.null is expected_null
     assert field.db_value("") == ""
 
+for field in (Dialog.description, Dialog.icon):
+    assert field.python_value(None) is None
+
 assert Task.chunk_ids.field_type == "LONGTEXT"
 sql, params = File.select().where(File.source_type == "").sql()
 assert "IS NULL" not in sql
@@ -175,6 +182,29 @@ print("mysql-nullability-ok")
         },
     )
     assert "mysql-nullability-ok" in mysql_result.stdout
+
+    postgres_result = run_isolated_flow(
+        """
+from common import settings
+from api.db.db_models import Dialog
+
+settings.DATABASE_TYPE = "postgres"
+for field in (Dialog.description, Dialog.icon):
+    assert field.null is True
+    assert field.db_value("") == ""
+    assert field.python_value(None) is None
+
+sql, params = Dialog.select().where(Dialog.icon == "").sql()
+assert "IS NULL" not in sql
+assert "LENGTH" not in sql
+assert params == [""]
+print("postgres-empty-string-behavior-ok")
+""",
+        {
+            "DB_TYPE": "mysql",
+        },
+    )
+    assert "postgres-empty-string-behavior-ok" in postgres_result.stdout
 
 
 def test_live_gaussdb_init_lock_and_user_crud_flow():
