@@ -87,9 +87,23 @@ Return JSON:
     {{"query": "another standalone follow-up search query", "is_bridge": false}}
   ],
   "grounded": ["key asserted facts that ARE directly supported by the cited evidence, atomically and verbatim enough to match; keep the exact numbers and entity names"],
-  "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"]
+  "numbers": ["for numerical/multi-hop answers: each figure used + its source, e.g. '2,161,000 from Wikipedia Demographics of Paris'; list ALL conflicting figures if several sources disagree"],
+  "query_check": {{
+    "aligned_to_claim": true,
+    "intent_covered": true,
+    "target_entity_found": true,
+    "issue": "",
+    "refined_query": ""
+  }}
 }}
 Only list in grounded the facts you actually SAW in the evidence; prior-knowledge guesses go in gaps. If the claim is numerical or multi-hop and the evidence has multiple close-but-different figures, disclose all of them in numbers rather than silently picking one. The report must be long enough to carry the full answerable fact — prefer completeness over brevity.
+
+query_check ASSESSMENT (diagnoses THIS round's search quality, not the claim):
+- aligned_to_claim=false means the search query drifted away from the claim (it targeted a different topic/entity than what the claim asks); set issue="drifted".
+- target_entity_found=false means the claim's required entity (person/work/year/place the answer depends on) does NOT appear in the retrieved evidence; set issue="entity_missing".
+- intent_covered=false means the query retrieved a different intent than it asked (e.g. searched "Emmy nominations" but only got biography text); set issue="intent_mismatch".
+- If the query is aligned, the entity is found, and the intent is covered, set issue="" (the evidence is genuinely insufficient — a different search direction is needed, not a fix to this query).
+- When issue is non-empty, provide refined_query = a precise rewrite of THIS query that fixes the problem (re-anchor to the claim for drifted, add the missing entity for entity_missing, narrow the intent for intent_mismatch/too_broad). When issue is empty, refined_query must be empty.
 
 next_queries FORMAT (MANDATORY):
 - Each element MUST be a JSON object {{"query": "...", "is_bridge": true|false}}. NEVER output plain strings.
@@ -155,6 +169,9 @@ async def decompose_and_search(state: dict, tools) -> dict:
     # ``while cycle < max_cycles`` loop, so it is valid). ``cycle`` is reset on
     # replan so the new claims get the full budget.
     cycle = 0
+    # SmartSearch/PL-Search plan anchoring: per-claim refined query from the last
+    # round's query_check (highest priority for the next _pick_next_query).
+    refined_queries: dict[str, str] = {}
     while cycle < max_cycles:
         ctx.iteration = cycle
         unverified = [c for c in ctx.claims if not c.is_verified]
@@ -185,22 +202,35 @@ async def decompose_and_search(state: dict, tools) -> dict:
             if q:
                 global_pool.append(q)
         for c in unverified:
+            # Pass the claim's refined query (if any) as a one-shot list; it is
+            # consumed (popped) inside _pick_next_query and cleared below so it is
+            # not retried on every round.
+            _refined = refined_queries.get(c.claim_id, "")
             query = _pick_next_query(
                 question,
                 c,
                 attempted_queries.setdefault(c.claim_id, set()),
                 pending_queries.setdefault(c.claim_id, []),
                 global_pool=global_pool,
+                refined=[_refined] if _refined else None,
             )
+            if _refined:
+                refined_queries.pop(c.claim_id, None)
             if not query:
                 _LOG.info("[Decompose search] No unused follow-up query remains for claim %s.", c.claim_id)
                 continue
             attempted_queries[c.claim_id].add(_normalize_query(query))
             searched_claims.append((c, query))
+            # SmartSearch / PL-Search: when this query is a refined (plan-anchored)
+            # query from the last round's query_check, do NOT append the global
+            # formalize keywords — the refined query already carries the corrected
+            # direction and re-appending the old global keywords would re-introduce
+            # the drift / pollution the refinement was meant to fix.
+            _ref_kw = "" if _refined else keywords
             # NOTE: top_n deliberately NOT adjusted per claim-type. All claims
             # share the default hybrid_search top-k; an aggregate claim's breadth
             # comes from its enumeration-variant queries, not a wider top-k.
-            tasks.append(hybrid_search(tools, query=query, keywords=keywords, use_compiled=True))
+            tasks.append(hybrid_search(tools, query=query, keywords=_ref_kw, use_compiled=True))
 
         if not tasks:
             break
@@ -264,6 +294,29 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 analysis.get("next_queries", []),
                 attempted_queries.setdefault(c.claim_id, set()),
             )
+            # SmartSearch Process Reward / PL-Search plan anchoring: when the
+            # model diagnosed a fixable search problem this round, re-search with
+            # its precise refined query FIRST on the next round (highest priority
+            # via the `refined` argument to _pick_next_query, before the follow-up
+            # pool and brand-new directions). The refined query is stored per-claim
+            # and consumed once.
+            qc = analysis.get("query_check") or {}
+            refined = (qc.get("refined_query") or "").strip()
+            if not c.is_verified and refined:
+                _norm_r = _normalize_query(refined)
+                if _norm_r and _norm_r not in attempted_queries.setdefault(c.claim_id, set()):
+                    refined_queries[c.claim_id] = refined
+                    _LOG.info(
+                        "[Decompose search] Claim %s: query_check issue='%s' -> queued refined query (highest priority).",
+                        c.claim_id,
+                        qc.get("issue", ""),
+                    )
+                else:
+                    _LOG.info(
+                        "[Decompose search] Claim %s: query_check issue='%s' but refined query already attempted; skipped.",
+                        c.claim_id,
+                        qc.get("issue", ""),
+                    )
             if not c.is_verified and next_queries:
                 pending_queries.setdefault(c.claim_id, []).extend(next_queries)
                 _LOG.info(
@@ -730,6 +783,11 @@ def _normalize_analysis(
         next_queries = next_queries[:_MAX_NEXT_QUERIES]
     grounded = _string_list(parsed.get("grounded"))
     numbers = _string_list(parsed.get("numbers"))
+    # SmartSearch Process Reward / PL-Search plan anchoring: the model diagnoses
+    # THIS round's search quality (drifted / entity_missing / intent_mismatch) and,
+    # when a fixable problem exists, supplies a precise refined_query to re-search
+    # next round (instead of falling through to a brand-new direction).
+    query_check = _normalize_query_check(parsed.get("query_check"))
 
     if is_verified:
         gaps = []
@@ -749,6 +807,7 @@ def _normalize_analysis(
         "next_queries": next_queries,
         "grounded": grounded,
         "numbers": numbers,
+        "query_check": query_check,
     }
 
 
@@ -781,6 +840,34 @@ def _parse_next_queries(raw) -> list[tuple[str, bool | None]]:
     return out
 
 
+def _normalize_query_check(raw) -> dict:
+    """Normalise the LLM's ``query_check`` into a fixed-shape dict.
+
+    SmartSearch-style Process Reward / PL-Search plan anchoring: diagnoses THIS
+    round's search quality (whether the query stayed aligned to the claim, the
+    claim's target entity appeared in the evidence, and the query's intent was
+    covered). When a fixable problem exists, ``issue`` is set and ``refined_query``
+    carries a precise rewrite to re-search next round. Unknown issues degrade
+    gracefully to an empty (no-problem) assessment.
+    """
+    if not isinstance(raw, dict):
+        return {"aligned_to_claim": True, "intent_covered": True, "target_entity_found": True, "issue": "", "refined_query": ""}
+    valid_issues = {"drifted", "entity_missing", "intent_mismatch", "too_broad"}
+    issue = str(raw.get("issue") or "").strip()
+    if issue not in valid_issues:
+        issue = ""
+    refined = str(raw.get("refined_query") or "").strip()
+    if issue and not refined:
+        refined = ""
+    return {
+        "aligned_to_claim": bool(raw.get("aligned_to_claim", True)),
+        "intent_covered": bool(raw.get("intent_covered", True)),
+        "target_entity_found": bool(raw.get("target_entity_found", True)),
+        "issue": issue,
+        "refined_query": refined,
+    }
+
+
 def _fallback_analysis(
     result: dict,
     cycle: int,
@@ -800,6 +887,7 @@ def _fallback_analysis(
         "next_queries": next_queries,
         "grounded": [],
         "numbers": [],
+        "query_check": {"aligned_to_claim": True, "intent_covered": True, "target_entity_found": True, "issue": "", "refined_query": ""},
     }
 
 
@@ -856,8 +944,33 @@ def _pick_next_query(
     attempted: set[str],
     pending: list,
     global_pool: list | None = None,
+    refined: list | None = None,
 ) -> str:
-    # 0. Multi-hop: resolve the claim's prerequisite (bridge entity/relationship)
+    # 0. SmartSearch Process Reward / PL-Search plan anchoring: when THIS round's
+    #    query_check diagnosed a fixable search problem (drifted / entity_missing /
+    #    intent_mismatch), re-search with the model's precise refined query FIRST,
+    #    instead of falling through to a brand-new direction. This keeps the plan
+    #    anchored to the claim instead of drifting to unrelated content.
+    #
+    #    PL-Search plan anchoring: the refined query is combined with the claim
+    #    description so the retrieval stays anchored to what the claim actually asks
+    #    (re-anchor a drifted query, keep the missing entity / target intent in view),
+    #    rather than drifting to a bare, context-free keyword search.
+    if refined:
+        _desc = (claim.description or "").strip()
+        while refined:
+            query = (refined.pop(0) or "").strip()
+            normalized = _normalize_query(query)
+            if normalized and normalized not in attempted:
+                if _desc and _normalize_query(query) != _normalize_query(_desc):
+                    # Combine the refined query with the claim anchor so the search
+                    # targets the claim's intent + entity, not the bare refined terms.
+                    anchored = f"{query} {_desc}"
+                    if _normalize_query(anchored) not in attempted:
+                        return anchored
+                return query
+
+    # 1. Multi-hop: resolve the claim's prerequisite (bridge entity/relationship)
     # before targeting the claim itself. The first time the claim is researched, the
     # prerequisite OPEN query is searched; the found entity feeds back through the
     # evidence the next round (the analyzer then re-targets the claim).
