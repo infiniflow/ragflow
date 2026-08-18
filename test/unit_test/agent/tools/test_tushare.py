@@ -21,22 +21,23 @@ import pytest
 from agent.tools.tushare import TuShare, TuShareParam
 
 
-class _Canvas:
-    def is_canceled(self):
-        return False
+def _make_tool(param=None):
+    # Bypass the canvas-bound __init__ (mirrors test_akshare.py) and stub the
+    # canvas-touching helpers so we can exercise _invoke's execution path.
+    tool = TuShare.__new__(TuShare)
+    tool._param = param or TuShareParam()
+    tool.check_if_canceled = lambda *a, **k: False
+    out = {}
+    tool.set_output = lambda k, v: out.__setitem__(k, v)
+    tool.output = lambda k=None: out.get(k) if k else out
+    return tool, out
 
 
-def _tushare(param=None):
-    cpn = TuShare.__new__(TuShare)
-    cpn._canvas = _Canvas()
-    cpn._param = param or TuShareParam()
-    return cpn
-
-
-def _response():
+def _response(code=0, msg=""):
     response = MagicMock()
     response.json.return_value = {
-        "code": 0,
+        "code": code,
+        "msg": msg,
         "data": {
             "items": [
                 [1, "Apple earnings beat expectations"],
@@ -49,43 +50,95 @@ def _response():
     return response
 
 
+def test_param_instantiates():
+    TuShareParam()
+
+
+def test_check_passes_with_defaults():
+    TuShareParam().check()
+
+
+def test_check_rejects_invalid_src():
+    param = TuShareParam()
+    param.src = "nope"
+    with pytest.raises(ValueError):
+        param.check()
+
+
+def test_meta_exposes_query_parameter():
+    # Regression: TuShare extended ComponentBase and defined no `meta`, so it
+    # had no get_meta() and crashed agent_with_tools when added to an Agent.
+    meta = TuShareParam().get_meta()
+    params = meta["function"]["parameters"]
+    assert "query" in params["properties"]
+    assert "query" in params["required"]
+
+
 @pytest.mark.p1
-def test_tushare_filters_with_upstream_keyword_when_param_empty():
-    cpn = _tushare()
+def test_tushare_filters_with_tool_query_when_param_empty():
+    # Regression for the restored runtime path: TuShare only implemented the
+    # legacy _run, so _invoke fell through to ComponentBase._invoke and raised
+    # NotImplementedError.
+    tool, out = _make_tool()
 
-    with patch.object(TuShare, "get_input", return_value={"content": ["Apple"]}):
-        with patch("agent.tools.tushare.requests.post", return_value=_response()):
-            result = cpn._run([])
+    with patch("agent.tools.tushare.requests.post", return_value=_response()):
+        res = tool._invoke(query="Apple")
 
-    text = result.iloc[0]["content"]
-    assert "Apple" in text
-    assert "Google" not in text
+    assert "Apple" in res
+    assert "Google" not in res
+    assert out["formalized_content"] == res
 
 
 @pytest.mark.p1
-def test_tushare_prefers_explicit_param_keyword_over_upstream_input():
+def test_tushare_prefers_explicit_param_keyword_over_tool_query():
     param = TuShareParam()
     param.keyword = "Google"
-    cpn = _tushare(param)
+    tool, _ = _make_tool(param)
 
-    with patch.object(TuShare, "get_input", return_value={"content": ["Apple"]}):
-        with patch("agent.tools.tushare.requests.post", return_value=_response()):
-            result = cpn._run([])
+    with patch("agent.tools.tushare.requests.post", return_value=_response()):
+        res = tool._invoke(query="Apple")
 
-    text = result.iloc[0]["content"]
-    assert "Google" in text
-    assert "Apple" not in text
+    assert "Google" in res
+    assert "Apple" not in res
 
 
 @pytest.mark.p1
 def test_tushare_treats_keyword_as_literal_text():
     param = TuShareParam()
     param.keyword = "C++"
-    cpn = _tushare(param)
+    tool, _ = _make_tool(param)
 
-    with patch.object(TuShare, "get_input", return_value={"content": ["ignored"]}):
-        with patch("agent.tools.tushare.requests.post", return_value=_response()):
-            result = cpn._run([])
+    with patch("agent.tools.tushare.requests.post", return_value=_response()):
+        res = tool._invoke(query="ignored")
 
-    text = result.iloc[0]["content"]
-    assert "C++ regex special chars should not break filtering" in text
+    assert "C++ regex special chars should not break filtering" in res
+
+
+def test_invoke_empty_query_returns_empty():
+    # Empty query short-circuits without calling the TuShare API.
+    tool, out = _make_tool()
+    with patch("agent.tools.tushare.requests.post") as post:
+        assert tool._invoke(query="") == ""
+    assert out.get("formalized_content") == ""
+    post.assert_not_called()
+
+
+def test_invoke_surfaces_api_error_message():
+    tool, out = _make_tool()
+
+    with patch("agent.tools.tushare.requests.post", return_value=_response(code=2002, msg="token invalid")):
+        res = tool._invoke(query="Apple")
+
+    assert res == "token invalid"
+    assert out["_ERROR"] == "token invalid"
+
+
+@pytest.mark.p1
+def test_invoke_surfaces_error_on_request_failure():
+    tool, out = _make_tool()
+
+    with patch("agent.tools.tushare.requests.post", side_effect=RuntimeError("boom")):
+        res = tool._invoke(query="Apple")
+
+    assert "boom" in res
+    assert "boom" in out["_ERROR"]
