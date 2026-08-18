@@ -32,43 +32,16 @@ func (m *mockRotationDoc) TSR(_ context.Context, _ image.Image) ([]pdf.TSRCell, 
 func (m *mockRotationDoc) OCR(_ image.Image) (string, error) { return "", nil }
 func (m *mockRotationDoc) Health() bool                      { return true }
 
-func (m *mockRotationDoc) currentAngle() int {
-	idx := m.callSeq % len(rotationOrder)
-	return rotationOrder[idx]
-}
-
-func (m *mockRotationDoc) OCRDetect(_ context.Context, img image.Image) ([]pdf.OCRBox, error) {
-	defer func() { m.callSeq++ }()
-	angle := m.currentAngle()
-	cfg, ok := m.angles[angle]
-	if !ok {
-		cfg = m.angles[0] // fallback to 0° config
-	}
-	if cfg.err != nil {
-		return nil, cfg.err
-	}
-	if cfg.regions == 0 {
-		return nil, nil
-	}
-	w, h := img.Bounds().Dx(), img.Bounds().Dy()
-	boxes := make([]pdf.OCRBox, cfg.regions)
-	step := w / (cfg.regions + 1)
-	for i := 0; i < cfg.regions; i++ {
-		x := step * (i + 1)
-		boxes[i] = pdf.OCRBox{
-			X0: float64(x), Y0: float64(h / 4),
-			X1: float64(x + 20), Y1: float64(h / 4),
-			X2: float64(x + 20), Y2: float64(h * 3 / 4),
-			X3: float64(x), Y3: float64(h * 3 / 4),
-		}
-	}
-	return boxes, nil
+func (m *mockRotationDoc) OCRDetect(_ context.Context, _ image.Image) ([]pdf.OCRBox, error) {
+	// EvaluateTableOrientation scores by OCRRecognize; detection output is
+	// unused here. Return empty to satisfy the DocAnalyzer interface.
+	return nil, nil
 }
 
 func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
 	// EvaluateTableOrientation calls OCRRecognize once per angle in order
-	// 0°, 90°, 180°, 270°. Track the sequence here (independent of OCRDetect)
-	// so each call returns the recognition result for the corresponding angle.
+	// 0°, 90°, 180°, 270°. Track the call sequence here so each call returns
+	// the recognition result for the corresponding angle.
 	angle := rotationOrder[m.callSeq%len(rotationOrder)]
 	m.callSeq++
 	cfg, ok := m.angles[angle]

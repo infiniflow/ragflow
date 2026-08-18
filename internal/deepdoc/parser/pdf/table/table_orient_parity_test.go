@@ -31,9 +31,9 @@ import (
 )
 
 // orientConfMock implements DocAnalyzer with per-angle recognition confidence
-// as ground truth (the signal EvaluateTableOrientation now consumes) plus an
-// angle-independent OCR *detection* output kept only to satisfy the interface
-// and to document that detection geometry is rotation-invariant.
+// as ground truth — the signal EvaluateTableOrientation consumes to choose the
+// best rotation. Detection output is unused by that function (returned empty
+// to satisfy the interface).
 type orientConfMock struct {
 	// angle → {regions, avgConf}
 	angles map[int]struct {
@@ -53,14 +53,9 @@ func (m *orientConfMock) OCR(image.Image) (string, error) { return "", nil }
 func (m *orientConfMock) Health() bool                    { return true }
 
 func (m *orientConfMock) OCRDetect(_ context.Context, _ image.Image) ([]pdf.OCRBox, error) {
-	// Identical boxes for every rotation: OCR detection is rotation-invariant.
-	cfg := m.angles[0]
-	boxes := make([]pdf.OCRBox, cfg.regions)
-	for i := 0; i < cfg.regions; i++ {
-		x0, y0, x1, y1 := float64(10*i), 10.0, float64(10*i+8), 30.0
-		boxes[i] = pdf.OCRBox{X0: x0, Y0: y0, X1: x1, Y1: y0, X2: x1, Y2: y1, X3: x0, Y3: y1}
-	}
-	return boxes, nil
+	// EvaluateTableOrientation scores by OCRRecognize; detection output is
+	// unused here. Return empty to satisfy the DocAnalyzer interface.
+	return nil, nil
 }
 
 func (m *orientConfMock) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
