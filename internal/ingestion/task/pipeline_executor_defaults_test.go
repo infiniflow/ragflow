@@ -234,3 +234,39 @@ func TestDocNameValue(t *testing.T) {
 		t.Errorf("docNameValue(nil) = %q, want empty", got)
 	}
 }
+
+func TestBuiltInMetadataFromParserConfig_MultiExtractorDeterministic(t *testing.T) {
+	// Multiple Extractor nodes with different built_in_metadata.
+	// Since keys are sorted alphabetically ("Extractor:A" before "Extractor:B"),
+	// Extractor:A must deterministically win regardless of Go map iteration order.
+	pc := entity.JSONMap{
+		"Extractor:B": map[string]any{
+			"enable_metadata": 1,
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+		"Extractor:A": map[string]any{
+			"metadata_config": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "update_time", "type": "time"},
+				},
+			},
+		},
+	}
+
+	for i := 0; i < 20; i++ {
+		cfg, enabled := builtInMetadataFromParserConfig(pc)
+		if !enabled {
+			t.Fatalf("iteration %d: expected enabled=true", i)
+		}
+		if len(cfg) != 1 {
+			t.Fatalf("iteration %d: expected 1 item, got %d", i, len(cfg))
+		}
+		item, ok := cfg[0].(map[string]any)
+		if !ok || item["key"] != "update_time" {
+			t.Fatalf("iteration %d: expected Extractor:A item update_time, got %v", i, cfg[0])
+		}
+	}
+}

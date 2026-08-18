@@ -2713,3 +2713,104 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 		t.Errorf("expected no summary key in chunk, got %v", chunks[0]["summary"])
 	}
 }
+
+func TestExtractor_NestedPrecedenceOverFlat(t *testing.T) {
+	// Case A: Nested explicitly disabled (enabled=false) while legacy flat has enabled=1/5.
+	// Nested MUST win and disable the features.
+	paramsDisabled := map[string]any{
+		"metadata_config": map[string]any{
+			"enabled": false,
+			"metadata": []any{
+				map[string]any{"key": "category", "type": "string"},
+			},
+		},
+		"enable_metadata": 1,
+		"summary": map[string]any{
+			"enabled": false,
+		},
+		"enable_summary": 1,
+		"keywords": map[string]any{
+			"top_n": 0,
+		},
+		"auto_keywords": 5,
+		"questions": map[string]any{
+			"top_n": 0,
+		},
+		"auto_questions": 3,
+		"tags": map[string]any{
+			"top_n": 0,
+		},
+		"auto_tags": 2,
+	}
+
+	compRawA, err := NewExtractorComponent(paramsDisabled)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent A: %v", err)
+	}
+	compA := compRawA.(*ExtractorComponent)
+	if compA.Param.MetadataConfig.Enabled != false || compA.Param.EnableMetadata != 0 {
+		t.Errorf("expected metadata disabled, got nested=%v flat=%v", compA.Param.MetadataConfig.Enabled, compA.Param.EnableMetadata)
+	}
+	if compA.Param.Summary.Enabled != false || compA.Param.EnableSummary != 0 {
+		t.Errorf("expected summary disabled, got nested=%v flat=%v", compA.Param.Summary.Enabled, compA.Param.EnableSummary)
+	}
+	if compA.Param.Keywords.TopN != 0 || compA.Param.AutoKeywords != 0 {
+		t.Errorf("expected keywords disabled (0), got nested=%v flat=%v", compA.Param.Keywords.TopN, compA.Param.AutoKeywords)
+	}
+	if compA.Param.Questions.TopN != 0 || compA.Param.AutoQuestions != 0 {
+		t.Errorf("expected questions disabled (0), got nested=%v flat=%v", compA.Param.Questions.TopN, compA.Param.AutoQuestions)
+	}
+	if compA.Param.Tags.TopN != 0 || compA.Param.AutoTags != 0 {
+		t.Errorf("expected tags disabled (0), got nested=%v flat=%v", compA.Param.Tags.TopN, compA.Param.AutoTags)
+	}
+
+	// Case B: Nested explicitly enabled (enabled=true) while legacy flat has 0.
+	// Nested MUST win and enable the features.
+	paramsEnabled := map[string]any{
+		"metadata_config": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+		},
+		"enable_metadata": 0,
+		"summary": map[string]any{
+			"enabled": true,
+		},
+		"enable_summary": 0,
+		"keywords": map[string]any{
+			"top_n": 4,
+		},
+		"auto_keywords": 0,
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"auto_questions": 0,
+		"tags": map[string]any{
+			"top_n": 3,
+			"tag_file_id": "file-123",
+		},
+		"auto_tags": 0,
+	}
+
+	compRawB, err := NewExtractorComponent(paramsEnabled)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent B: %v", err)
+	}
+	compB := compRawB.(*ExtractorComponent)
+	if compB.Param.MetadataConfig.Enabled != true || compB.Param.EnableMetadata != 1 {
+		t.Errorf("expected metadata enabled, got nested=%v flat=%v", compB.Param.MetadataConfig.Enabled, compB.Param.EnableMetadata)
+	}
+	if compB.Param.Summary.Enabled != true || compB.Param.EnableSummary != 1 {
+		t.Errorf("expected summary enabled, got nested=%v flat=%v", compB.Param.Summary.Enabled, compB.Param.EnableSummary)
+	}
+	if compB.Param.Keywords.TopN != 4 || compB.Param.AutoKeywords != 4 {
+		t.Errorf("expected keywords 4, got nested=%v flat=%v", compB.Param.Keywords.TopN, compB.Param.AutoKeywords)
+	}
+	if compB.Param.Questions.TopN != 2 || compB.Param.AutoQuestions != 2 {
+		t.Errorf("expected questions 2, got nested=%v flat=%v", compB.Param.Questions.TopN, compB.Param.AutoQuestions)
+	}
+	if compB.Param.Tags.TopN != 3 || compB.Param.AutoTags != 3 {
+		t.Errorf("expected tags 3, got nested=%v flat=%v", compB.Param.Tags.TopN, compB.Param.AutoTags)
+	}
+}

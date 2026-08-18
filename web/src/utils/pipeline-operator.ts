@@ -86,7 +86,7 @@ function transformLevelsToRules(
  * DSL:  { prompts: [{ content: "text", role: "user" }] }
  * Form: { prompts: "text" }
  */
-function transformExtractorConfigToForm(
+export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   if (!config) return {};

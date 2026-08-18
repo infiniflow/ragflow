@@ -305,19 +305,26 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 // modular metadata_config sub-objects as well as legacy flat fields on
 // Extractor nodes and top-level parser_config.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
-	for k, nodeRaw := range parserConfig {
+	var extractorKeys []string
+	for k := range parserConfig {
 		if strings.HasPrefix(k, "Extractor") {
-			if node, ok := nodeRaw.(map[string]any); ok {
-				if metaConf, ok := node["metadata_config"].(map[string]any); ok {
-					enabled := parserConfigBool(metaConf["enabled"])
-					if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-						return arr, enabled
-					}
-				}
-				enabled := parserConfigBool(node["enable_metadata"])
-				if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
+			extractorKeys = append(extractorKeys, k)
+		}
+	}
+	sort.Strings(extractorKeys)
+
+	for _, k := range extractorKeys {
+		nodeRaw := parserConfig[k]
+		if node, ok := nodeRaw.(map[string]any); ok {
+			if metaConf, ok := node["metadata_config"].(map[string]any); ok {
+				enabled := parserConfigBool(metaConf["enabled"])
+				if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
 					return arr, enabled
 				}
+			}
+			enabled := parserConfigBool(node["enable_metadata"])
+			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
+				return arr, enabled
 			}
 		}
 	}
