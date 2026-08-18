@@ -78,6 +78,23 @@ func TestGitlabFingerprintStable(t *testing.T) {
 	}
 }
 
+func TestGitlabCodeFileFingerprintUsesTreeItemID(t *testing.T) {
+	item := gitlabTreeItem{ID: "abc", Name: "main.go", Type: "blob", Path: "main.go"}
+	base := gitlabCodeFileFingerprint(item, "main")
+	if base == "" {
+		t.Fatalf("fingerprint is empty")
+	}
+	if got := gitlabCodeFileFingerprint(item, "main"); got != base {
+		t.Fatalf("fingerprint unstable: %q %q", base, got)
+	}
+
+	changed := item
+	changed.ID = "def"
+	if got := gitlabCodeFileFingerprint(changed, "main"); got == base {
+		t.Fatalf("fingerprint did not change after tree item ID update")
+	}
+}
+
 // TestGitlabConnectorOpenPrune verifies PRUNE returns correct web_url IDs.
 func TestGitlabConnectorOpenPrune(t *testing.T) {
 	connector, err := NewGitlabConnector(map[string]any{

@@ -529,6 +529,8 @@ func (s *gitlabSyncSession) nextCodeFilesPage(ctx context.Context) ([]gitlabBuff
 		if item.Type != "blob" {
 			continue
 		}
+		// The tree API does not expose a committed date, so this request still
+		// supplies the update time used by window filtering.
 		commit, err := s.connector.fetchLastCommit(ctx, s.project.ID, s.project.DefaultBranch, item.Path)
 		if err != nil {
 			return nil, err
@@ -559,13 +561,7 @@ func (s *gitlabSyncSession) nextCodeFilesPage(ctx context.Context) ([]gitlabBuff
 				"project": s.connector.projectFullName(),
 				"web_url": fileURL,
 			},
-			Fingerprint: stableFingerprint(map[string]any{
-				"type":           "CodeFile",
-				"path":           item.Path,
-				"ref":            s.project.DefaultBranch,
-				"last_commit_id": commit.ID,
-				"committed_date": updatedAt,
-			}),
+			Fingerprint: gitlabCodeFileFingerprint(item, s.project.DefaultBranch),
 		}
 		pageOffset++
 		cursor := gitlabSyncCursor{
@@ -973,6 +969,15 @@ type gitlabTreeItem struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
 	Mode string `json:"mode"`
+}
+
+func gitlabCodeFileFingerprint(item gitlabTreeItem, ref string) string {
+	return stableFingerprint(map[string]any{
+		"type": "CodeFile",
+		"path": item.Path,
+		"ref":  ref,
+		"id":   item.ID,
+	})
 }
 
 type gitlabCommit struct {
