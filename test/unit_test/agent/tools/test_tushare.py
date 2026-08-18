@@ -100,6 +100,20 @@ def test_tushare_treats_keyword_as_literal_text():
 
 
 @pytest.mark.p1
+def test_tushare_declared_query_input_is_the_third_fallback():
+    cpn = _tushare()
+
+    # get_input("query") returns the resolved value (or None); the no-key
+    # form returns the whole dict.
+    with patch.object(TuShare, "get_input", side_effect=lambda key=None: "Google" if key == "query" else {"content": []}):
+        with patch("agent.tools.tushare.requests.post", return_value=_response()):
+            result = cpn._invoke()
+
+    assert "Google" in result
+    assert "Apple earnings" not in result
+
+
+@pytest.mark.p1
 def test_tushare_nonzero_code_is_surfaced_as_error_not_content():
     cpn = _tushare()
     bad = MagicMock()

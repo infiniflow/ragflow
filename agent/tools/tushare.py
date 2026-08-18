@@ -68,12 +68,14 @@ class TuShare(ToolBase, ABC):
         if self.check_if_canceled("TuShare processing"):
             return ""
 
-        # Keyword precedence matches the legacy behavior: an explicit
-        # param.keyword wins; otherwise the invoked query (or upstream
-        # content) filters the feed.
+        # Keyword precedence: an explicit param.keyword wins; then the
+        # invoked query kwarg; then the tool's DECLARED query input (the
+        # form field get_input() resolves, including {sys.query}); then any
+        # upstream component content.
         upstream = self.get_input()
         upstream_content = ",".join(upstream["content"]) if "content" in upstream else ""
-        keyword = self._param.keyword or kwargs.get("query") or upstream_content
+        declared_query = self.get_input("query")
+        keyword = self._param.keyword or kwargs.get("query") or declared_query or upstream_content
 
         try:
             if self.check_if_canceled("TuShare processing"):
@@ -98,6 +100,7 @@ class TuShare(ToolBase, ABC):
                 return ""
             if response["code"] != 0:
                 # A non-zero code is an error, not ordinary content.
+                logging.warning("TuShare API returned code %s: %s", response["code"], response["msg"])
                 self.set_output("_ERROR", response["msg"])
                 return f"TuShare error: {response['msg']}"
 
@@ -119,6 +122,7 @@ class TuShare(ToolBase, ABC):
         except Exception as e:
             if self.check_if_canceled("TuShare processing"):
                 return ""
+            logging.exception("TuShare request failed: %s", e)
             self.set_output("_ERROR", str(e))
             return f"TuShare error: {e}"
 
@@ -126,5 +130,8 @@ class TuShare(ToolBase, ABC):
         return res
 
     def thoughts(self) -> str:
-        keyword = self._param.keyword or self.get_input().get("query", "-_-!")
+        # kwargs are not persisted across invoke(), so report the same
+        # precedence _invoke uses minus its kwarg leg (the declared input
+        # carries the invoked value in practice).
+        keyword = self._param.keyword or self.get_input("query") or "-_-!"
         return "Looking up TuShare quick news for: {}".format(keyword)
