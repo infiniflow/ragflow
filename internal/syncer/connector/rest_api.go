@@ -520,6 +520,13 @@ func (c *RestAPIConnector) ValidateLive(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates REST API settings from an unsaved config.
+func (c *RestAPIConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.ValidateLive(ctx)
+}
+
 // OpenSync opens one sync session. Incremental runs filter documents to the
 // request window (start <= updated_at < end).
 func (c *RestAPIConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
