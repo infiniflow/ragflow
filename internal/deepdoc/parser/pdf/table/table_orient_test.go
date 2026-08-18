@@ -8,9 +8,13 @@ import (
 )
 
 // mockRotationDoc implements DocAnalyzer with deterministic OCR results per angle.
-// The mock tracks the call sequence: EvaluateTableOrientation calls OCRRecognize
-// once per angle in order 0°, 90°, 180°, 270°. Each call to OCRRecognize
-// increments an internal counter and returns data for the corresponding angle.
+// It mirrors the real orientation path: EvaluateTableOrientation calls
+// OCRDetect once per angle (returning `regions` text-line boxes), then
+// OCRRecognize once per detected line. Each OCRRecognize returns a single
+// text with that angle's average confidence, so the aggregated score is
+// avgConf * (1 + 0.1*min(regions,50)/50) — identical to the formula tests'
+// expectations. The mock records call counts so tests can assert the
+// detect-then-recognize pattern is actually used.
 type mockRotationDoc struct {
 	// angle → {regions count, average confidence, error}
 	angles map[int]struct {
@@ -18,7 +22,10 @@ type mockRotationDoc struct {
 		avgConf float64
 		err     error
 	}
-	callSeq int // incremented per OCRDetect call, selects the angle's data
+	detectSeq    int // incremented per OCRDetect call, selects the angle's data
+	currentAngle int
+	detectCalls  int
+	recCalls     int
 }
 
 var rotationOrder = []int{0, 90, 180, 270}
@@ -33,17 +40,10 @@ func (m *mockRotationDoc) OCR(_ image.Image) (string, error) { return "", nil }
 func (m *mockRotationDoc) Health() bool                      { return true }
 
 func (m *mockRotationDoc) OCRDetect(_ context.Context, _ image.Image) ([]pdf.OCRBox, error) {
-	// EvaluateTableOrientation scores by OCRRecognize; detection output is
-	// unused here. Return empty to satisfy the DocAnalyzer interface.
-	return nil, nil
-}
-
-func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
-	// EvaluateTableOrientation calls OCRRecognize once per angle in order
-	// 0°, 90°, 180°, 270°. Track the call sequence here so each call returns
-	// the recognition result for the corresponding angle.
-	angle := rotationOrder[m.callSeq%len(rotationOrder)]
-	m.callSeq++
+	angle := rotationOrder[m.detectSeq%len(rotationOrder)]
+	m.detectSeq++
+	m.currentAngle = angle
+	m.detectCalls++
 	cfg, ok := m.angles[angle]
 	if !ok {
 		cfg = m.angles[0]
@@ -51,14 +51,30 @@ func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.
 	if cfg.err != nil {
 		return nil, cfg.err
 	}
-	if cfg.regions == 0 {
-		return nil, nil
-	}
-	texts := make([]pdf.OCRText, cfg.regions)
+	boxes := make([]pdf.OCRBox, cfg.regions)
+	// Give each line a non-degenerate axis-aligned quad so WarpCrop produces a
+	// valid crop. Exact geometry is irrelevant to the mock's scoring.
 	for i := 0; i < cfg.regions; i++ {
-		texts[i] = pdf.OCRText{Text: "X", Confidence: cfg.avgConf}
+		y := float64(i * 10)
+		boxes[i] = pdf.OCRBox{
+			X0: 0, Y0: y, X1: 100, Y1: y,
+			X2: 100, Y2: y + 8, X3: 0, Y3: y + 8,
+		}
 	}
-	return texts, nil
+	return boxes, nil
+}
+
+func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
+	m.recCalls++
+	cfg, ok := m.angles[m.currentAngle]
+	if !ok {
+		cfg = m.angles[0]
+	}
+	if cfg.err != nil {
+		return nil, cfg.err
+	}
+	// One recognized text per detected line, carrying the angle's avgConf.
+	return []pdf.OCRText{{Text: "X", Confidence: cfg.avgConf}}, nil
 }
 
 func makeTestTableImage() image.Image {
