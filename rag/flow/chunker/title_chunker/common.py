@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from copy import deepcopy
 
+from common.token_utils import num_tokens_from_string, truncate
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
 from rag.flow.base import ProcessBase, ProcessParamBase
@@ -34,6 +35,12 @@ from rag.nlp import not_bullet, not_title
 
 BODY_LEVEL = sys.maxsize - 1
 
+# Sentence-boundary punctuation used to re-split an oversized title chunk.
+# Covers Chinese/English period, exclamation mark, question mark, the Chinese
+# variants, and the newline. The capturing group keeps the delimiter attached
+# to the preceding sentence so re-merged text preserves original boundaries.
+_SENTENCE_BOUNDARY_RE = re.compile(r"([。!?？；！\n]|\. )", re.DOTALL)
+
 
 class TitleChunkerParam(ProcessParamBase):
     def __init__(self):
@@ -42,12 +49,21 @@ class TitleChunkerParam(ProcessParamBase):
         self.hierarchy = None
         self.include_heading_content = False
         self.root_chunk_as_heading = False
+        # Hard ceiling on each text chunk's token count. A built chunk that
+        # exceeds it is re-split on sentence boundaries into <= cap sub-chunks
+        # (see BaseTitleChunker._enforce_token_cap). 0/None disables the
+        # ceiling for full backward compatibility.
+        self.chunk_token_cap = 512
 
     def check(self):
         if self.method in {"hierarchy", "group"}:
             self.check_empty(self.levels, "Hierarchical setups.")
         if self.method == "hierarchy":
             self.check_empty(self.hierarchy, "Hierarchy number.")
+        if self.chunk_token_cap:
+            self.check_positive_integer(self.chunk_token_cap, "Chunk token cap.")
+            if not (128 <= int(self.chunk_token_cap) <= 8000):
+                raise ValueError("Chunk token cap must be between 128 and 8000.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -67,8 +83,104 @@ class BaseTitleChunker(ABC):
         line_records = self.extract_line_records()
         resolved = self.resolve_levels(line_records)
         chunks = self.build_chunks(line_records, resolved)
+        chunks = self._enforce_token_cap(chunks)
         await self.set_chunks(chunks)
         self.process.callback(1, "Done.")
+
+    @staticmethod
+    def _split_text_by_sentences(text):
+        # Split on sentence boundaries, keeping the delimiter attached to the
+        # preceding sentence so re-merged text preserves original punctuation.
+        if not text:
+            return []
+        raw = re.split(_SENTENCE_BOUNDARY_RE, text)
+        sentences = []
+        for i in range(0, len(raw), 2):
+            piece = raw[i]
+            if i + 1 < len(raw):
+                piece += raw[i + 1]
+            if piece:
+                sentences.append(piece)
+        return sentences
+
+    @staticmethod
+    def _hard_split_by_tokens(text, cap):
+        # Fallback for a single boundary-less run that still exceeds the cap:
+        # truncate at token boundaries until every piece is within the cap.
+        # Mirrors common.token_utils.truncate semantics (prefix <= cap tokens).
+        out = []
+        rest = text or ""
+        while rest:
+            head = truncate(rest, cap)
+            if not head:
+                out.append(rest)
+                break
+            out.append(head)
+            if head == rest:
+                break
+            rest = rest[len(head):]
+        return out
+
+    def _split_text_chunk_by_cap(self, chunk, cap):
+        # Re-split one oversized text chunk into <= cap sub-chunks. Sentence
+        # boundaries first; any remaining over-cap segment is hard-split.
+        text = chunk.get("text") or ""
+        sentences = self._split_text_by_sentences(text)
+        if not sentences:
+            return [chunk]
+
+        groups = []
+        current = ""
+        for sentence in sentences:
+            candidate = current + sentence if current else sentence
+            if current and num_tokens_from_string(candidate) > cap:
+                groups.append(current)
+                current = sentence
+            else:
+                current = candidate
+        if current:
+            groups.append(current)
+
+        final_groups = []
+        for group in groups:
+            if num_tokens_from_string(group) <= cap:
+                final_groups.append(group)
+            else:
+                final_groups.extend(self._hard_split_by_tokens(group, cap))
+        if not final_groups:
+            return [chunk]
+
+        has_positions = PDF_POSITIONS_KEY in chunk
+        orig_positions = chunk.get(PDF_POSITIONS_KEY)
+        out = []
+        for i, group in enumerate(final_groups):
+            sub = dict(chunk)
+            sub["text"] = group
+            # Plan A: the original (coarse, page-level) coordinates attach to the
+            # first sub-chunk only; subsequent sub-chunks carry none.
+            if has_positions:
+                sub[PDF_POSITIONS_KEY] = orig_positions if i == 0 else []
+            out.append(sub)
+        return out
+
+    def _enforce_token_cap(self, chunks):
+        # Hard token ceiling applied to every text chunk after build_chunks,
+        # so both hierarchy and group methods honour chunk_token_cap. Table and
+        # image chunks are atomic and skipped. cap == 0/None disables it.
+        cap = self.param.chunk_token_cap
+        if not cap or cap <= 0:
+            return chunks
+
+        out = []
+        for chunk in chunks:
+            if chunk.get("doc_type_kwd", "text") != "text":
+                out.append(chunk)
+                continue
+            if num_tokens_from_string(chunk.get("text") or "") <= cap:
+                out.append(chunk)
+                continue
+            out.extend(self._split_text_chunk_by_cap(chunk, cap))
+        return out
 
     def extract_line_records(self):
         """
@@ -168,7 +280,7 @@ class BaseTitleChunker(ABC):
 
     @staticmethod
     def match_layout_level(text, layout, fallback_level):
-        if re.search(r"(section|title|head)", layout, re.I) and not not_title(text.split("@")[0].strip()):
+        if re.search(r"(section|title|head)", layout, re.IGNORECASE) and not not_title(text.split("@")[0].strip()):
             return fallback_level
         return BODY_LEVEL
 

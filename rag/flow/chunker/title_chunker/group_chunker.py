@@ -20,7 +20,6 @@ from rag.flow.chunker.title_chunker.common import (
 )
 
 MIN_GROUP_TOKENS = 32
-MAX_GROUP_TOKENS = 1024
 
 
 def _build_section_ids(levels, target_level):
@@ -56,6 +55,13 @@ class GroupTitleChunker(BaseTitleChunker):
         tk_cnt = 0
         last_sid = -2
 
+        # The merge ceiling uses the configurable chunk_token_cap (0/None means
+        # "no ceiling" -> legacy behaviour). The post-build _enforce_token_cap
+        # in BaseTitleChunker is the single hard guarantee, so any residual
+        # over-cap chunk (e.g. a single record bigger than the cap) is still
+        # re-split there.
+        cap = self.param.chunk_token_cap or 0
+
         # The merge state is driven by (current section id, current token size).
         # A chunk stays open while records remain in the same logical section,
         # except that very small chunks are allowed to absorb the next record
@@ -72,7 +78,8 @@ class GroupTitleChunker(BaseTitleChunker):
                 continue
 
             token_count = num_tokens_from_string(text)
-            should_merge = record_groups and record_groups[-1][0]["doc_type_kwd"] == "text" and (tk_cnt < MIN_GROUP_TOKENS or (tk_cnt < MAX_GROUP_TOKENS and sec_id == last_sid))
+            merge_ceiling_ok = cap <= 0 or tk_cnt < cap
+            should_merge = record_groups and record_groups[-1][0]["doc_type_kwd"] == "text" and (tk_cnt < MIN_GROUP_TOKENS or (merge_ceiling_ok and sec_id == last_sid))
 
             if should_merge:
                 record_groups[-1].append(record)
