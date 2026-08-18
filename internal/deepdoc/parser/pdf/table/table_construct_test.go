@@ -392,8 +392,10 @@ func TestExtractTableAndReplace_OnlyTableBoxes(t *testing.T) {
 }
 
 func TestFillCellText_RCOverSpatial(t *testing.T) {
-	// Box at X=30-270 overlaps all 3 cells (>30% each — spatial fills ALL).
-	// With R/C, it belongs only to cell[1] (R=0, C=1).
+	// Box at X=30-270 overlaps all 3 cells, but Python assigns it to exactly
+	// ONE cell via greedy best row + tightest column. With R/C it belongs to
+	// cell[1] (R=0, C=1); spatial fill must now agree (single assignment, the
+	// go_bug #1 fix) instead of duplicating across all overlapping cells.
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 30, Label: "table"},
 		{X0: 90, Y0: 0, X1: 200, Y1: 30, Label: "table"},
@@ -403,7 +405,7 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 		{X0: 30, X1: 270, Top: 0, Bottom: 30, Text: "TEXT", LayoutType: "table", R: 0, C: 1},
 	}
 
-	// Spatial fill: fills ALL overlapping cells → duplication.
+	// Spatial fill: assigns the box to the single tightest column (cell[1]).
 	cellsCopy := make([]pdf.TSRCell, 3)
 	copy(cellsCopy, cells)
 	FillCellTextFromBoxes(cellsCopy, boxes)
@@ -413,10 +415,10 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 			spatialCount++
 		}
 	}
-	if spatialCount <= 1 {
-		t.Errorf("spatial fill: expected >1 cells with text, got %d", spatialCount)
+	if spatialCount != 1 {
+		t.Errorf("spatial fill: expected exactly 1 cell with text, got %d", spatialCount)
 	}
-	t.Logf("spatial fill: %d cells (WRONG — duplication)", spatialCount)
+	t.Logf("spatial fill: %d cell (single assignment, matches R/C)", spatialCount)
 
 	// R/C fill: only cell matching box.R/C gets text.
 	cellsRC := make([]pdf.TSRCell, 3)
