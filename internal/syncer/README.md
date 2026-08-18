@@ -94,14 +94,14 @@ The connector package is only responsible for "reading the external source and n
 Key defaults:
 
 | Config | Default | Purpose |
-| --- | ---: | --- |
-| `file_syncer.max_concurrent_syncs` | 5 | task concurrency passed by the syncer server to `NewSyncer` |
-| `Config.TaskWorkerCount` | 5 | number of `TaskWorker` goroutines |
-| `Config.TaskQueueSize` | 10 | in-process `TaskEnvelope` queue length |
-| `Config.JobWorkerCount` | 400 | global batch job worker count |
-| `Config.JobQueueSize` | 400 | global batch job queue length |
-| `Config.ItemRetryCount` | 3 | per-document processing retry count |
-| `Config.ItemRetryBaseDelay` | 1s | per-document exponential backoff base |
+| --- |--------:| --- |
+| `file_syncer.max_concurrent_syncs` |       5 | task concurrency passed by the syncer server to `NewSyncer` |
+| `Config.TaskWorkerCount` |       5 | number of `TaskWorker` goroutines |
+| `Config.TaskQueueSize` |      10 | in-process `TaskEnvelope` queue length |
+| `Config.JobWorkerCount` |     400 | global batch job worker count |
+| `Config.JobQueueSize` |     450 | global batch job queue length |
+| `Config.ItemRetryCount` |       3 | per-document processing retry count |
+| `Config.ItemRetryBaseDelay` |      1s | per-document exponential backoff base |
 
 ### NATS subscription
 
@@ -562,9 +562,10 @@ Tests that need real MySQL, MinIO, Elasticsearch, Infinity, LLMs, or external Sa
 
 ## External
 
-For more info, you can review these PR:
-- [x] [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
-- [x] [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
-- [x] [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
+> [!TIP]
+> For more info, you can review these PR:
+> + [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
+> + [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
+> + [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
 
 
