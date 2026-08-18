@@ -122,27 +122,32 @@ export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const handleAddOk = useCallback(
     async (data: any) => {
       setAddLoading(true);
-      const { data: res } = isEdit
-        ? await dataSourceUpdate(data.id, {
-            ...data,
-            reschedule: true,
-          })
-        : await dataSourceService.dataSourceSet(data);
-      if (res.code === 0) {
-        if (isEdit && res.data?.id) {
-          queryClient.setQueryData(
-            DataSourceKeys.detail(res.data.id),
-            res.data,
-          );
-          queryClient.invalidateQueries({
-            queryKey: DataSourceKeys.detail(res.data.id),
-          });
+      try {
+        const { data: res } = isEdit
+          ? await dataSourceUpdate(data.id, {
+              ...data,
+              reschedule: true,
+            })
+          : await dataSourceService.dataSourceSet(data);
+        if (res.code === 0) {
+          if (isEdit && res.data?.id) {
+            queryClient.setQueryData(
+              DataSourceKeys.detail(res.data.id),
+              res.data,
+            );
+            queryClient.invalidateQueries({
+              queryKey: DataSourceKeys.detail(res.data.id),
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: DataSourceKeys.list() });
+          message.success(t(`message.operated`));
+          hideAddingModal();
+          return true;
         }
-        queryClient.invalidateQueries({ queryKey: DataSourceKeys.list() });
-        message.success(t(`message.operated`));
-        hideAddingModal();
+        return false;
+      } finally {
+        setAddLoading(false);
       }
-      setAddLoading(false);
     },
     [hideAddingModal, isEdit, queryClient],
   );

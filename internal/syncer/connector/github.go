@@ -75,7 +75,7 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("github connector is nil")
 	}
 	if c.owner == "" {
-		return fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided")
+		return fmt.Errorf("Invalid connector settings: 'repository_owner' must be provided")
 	}
 	if c.token == "" {
 		return fmt.Errorf("Missing github_access_token in credentials")

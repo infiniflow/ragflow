@@ -30,6 +30,7 @@ import {
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
+  isDataSourceTestConnectionSupported,
   mergeDataSourceFormValues,
 } from './constant';
 import { useTestDataSource } from './hooks';
@@ -48,6 +49,7 @@ const AddDataSourceModal = ({
     formRef,
     sourceData?.id,
   );
+  const canTestConnection = isDataSourceTestConnectionSupported(sourceData?.id);
   const fields = useMemo<FormFieldConfig[]>(() => {
     if (!sourceData) {
       return [];
@@ -69,10 +71,15 @@ const AddDataSourceModal = ({
     [sourceData],
   );
 
-  const handleOk = useCallback(async (values?: FieldValues) => {
-    await onOk?.(values);
-    hideModal?.();
-  }, [hideModal, onOk]);
+  const handleOk = useCallback(
+    async (values?: FieldValues) => {
+      const success = await onOk?.(values);
+      if (success) {
+        hideModal?.();
+      }
+    },
+    [hideModal, onOk],
+  );
 
   const handleCancel = useCallback(() => {
     hideModal?.();
@@ -112,15 +119,17 @@ const AddDataSourceModal = ({
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
           <DynamicForm.CancelButton handleCancel={handleCancel} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleTest}
-            disabled={testLoading}
-            loading={testLoading}
-          >
-            {t('setting.dataSourceTestConnection')}
-          </Button>
+          {canTestConnection && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testLoading}
+              loading={testLoading}
+            >
+              {t('setting.dataSourceTestConnection')}
+            </Button>
+          )}
           <DynamicForm.SavingButton
             submitLoading={loading || false}
             buttonText={t('common.confirm')}
