@@ -14,12 +14,20 @@
 #  limitations under the License.
 #
 
+import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+
+
+ROUTE_PASSWORD_SENTINEL = "cfg703-password-'quoted![]{}'"
+ROUTE_DSN_SENTINEL = "postgresql://cfg703-user:cfg703-dsn%27%22@db.example:19995/private"
+ROUTE_TOKEN_SENTINEL = "cfg703-token-'quoted![]{}'"
 
 
 class _DummyManager:
@@ -43,27 +51,20 @@ class _DummyAPITokenModel:
     token = _ExprField("token")
 
 
-@pytest.fixture(scope="session")
-def auth():
-    return "unit-auth"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info():
-    return None
-
-
-def _load_system_module(monkeypatch):
+def _load_system_module(monkeypatch, *, apps_module=None, manager=None):
     repo_root = Path(__file__).resolve().parents[4]
 
     api_pkg = ModuleType("api")
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
-    apps_mod = ModuleType("api.apps")
-    apps_mod.__path__ = [str(repo_root / "api" / "apps")]
-    apps_mod.login_required = lambda fn: fn
-    apps_mod.current_user = SimpleNamespace(id="user-1")
+    if apps_module is None:
+        apps_mod = ModuleType("api.apps")
+        apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+        apps_mod.login_required = lambda fn: fn
+        apps_mod.current_user = SimpleNamespace(id="user-1")
+    else:
+        apps_mod = apps_module
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
 
     common_pkg = ModuleType("common")
@@ -156,79 +157,129 @@ def _load_system_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     module_path = repo_root / "api" / "apps" / "restful_apis" / "system_api.py"
-    spec = importlib.util.spec_from_file_location("test_system_routes_unit_module", module_path)
+    spec = importlib.util.spec_from_file_location("test_gaussdb_system_routes_module", module_path)
     module = importlib.util.module_from_spec(spec)
-    module.manager = _DummyManager()
-    monkeypatch.setitem(sys.modules, "test_system_routes_unit_module", module)
+    module.manager = manager or _DummyManager()
+    monkeypatch.setitem(sys.modules, "test_gaussdb_system_routes_module", module)
     spec.loader.exec_module(module)
     return module
 
 
-@pytest.mark.p2
-def test_status_branch_matrix_unit(monkeypatch):
+def _load_system_http_app(monkeypatch):
+    from test.testcases.test_web_api.test_system_app.test_apps_init_unit import _load_apps_module
+
+    quart_app, apps_module = _load_apps_module(monkeypatch)
+    module = _load_system_module(monkeypatch, apps_module=apps_module, manager=quart_app)
+    return quart_app, module
+
+
+def _get_without_auth(quart_app, path):
+    async def request():
+        response = await quart_app.test_client().get(path)
+        return response.status_code, await response.get_json()
+
+    return asyncio.run(request())
+
+
+@pytest.mark.p1
+def test_tc_cfg_704_status_branch_matrix_unit(monkeypatch):
     module = _load_system_module(monkeypatch)
+    expected = {
+        "db": "ok",
+        "redis": "ok",
+        "doc_engine": "ok",
+        "storage": "ok",
+        "status": "ok",
+    }
+    monkeypatch.setattr(module, "run_health_checks", lambda: (expected, True))
 
-    monkeypatch.setattr(module.settings, "docStoreConn", SimpleNamespace(health=lambda: {"type": "es", "status": "green"}))
-    monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(health=lambda: True))
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: True)
-    monkeypatch.setattr(module.REDIS_CONN, "health", lambda: True)
-    monkeypatch.setattr(module.REDIS_CONN, "smembers", lambda _key: {"executor-1"})
-    monkeypatch.setattr(module.REDIS_CONN, "zrangebyscore", lambda *_args, **_kwargs: ['{"beat": 1}'])
+    payload, status_code = module.healthz()
 
-    res = module.status()
-    assert res["code"] == 0
-    assert res["data"]["doc_engine"]["status"] == "green"
-    assert res["data"]["storage"]["status"] == "green"
-    assert res["data"]["database"]["status"] == "green"
-    assert res["data"]["redis"]["status"] == "green"
-    assert res["data"]["task_executor_heartbeats"]["executor-1"][0]["beat"] == 1
-
-    monkeypatch.setattr(
-        module.settings,
-        "docStoreConn",
-        SimpleNamespace(health=lambda: (_ for _ in ()).throw(RuntimeError("doc down"))),
-    )
-    monkeypatch.setattr(
-        module.settings,
-        "STORAGE_IMPL",
-        SimpleNamespace(health=lambda: (_ for _ in ()).throw(RuntimeError("storage down"))),
-    )
-    monkeypatch.setattr(
-        module.KnowledgebaseService,
-        "get_by_id",
-        lambda _kb_id: (_ for _ in ()).throw(RuntimeError("db down")),
-    )
-    monkeypatch.setattr(module.REDIS_CONN, "health", lambda: False)
-    monkeypatch.setattr(module.REDIS_CONN, "smembers", lambda _key: (_ for _ in ()).throw(RuntimeError("hb down")))
-
-    res = module.status()
-    assert res["code"] == 0
-    assert res["data"]["doc_engine"]["status"] == "red"
-    assert "doc down" in res["data"]["doc_engine"]["error"]
-    assert res["data"]["storage"]["status"] == "red"
-    assert "storage down" in res["data"]["storage"]["error"]
-    assert res["data"]["database"]["status"] == "red"
-    assert "db down" in res["data"]["database"]["error"]
-    assert res["data"]["redis"]["status"] == "red"
-    assert "Lost connection!" in res["data"]["redis"]["error"]
-    assert res["data"]["task_executor_heartbeats"] == {}
+    assert status_code == 200
+    assert payload == expected
 
 
-@pytest.mark.p2
-def test_get_config_returns_register_enabled_unit(monkeypatch):
+@pytest.mark.p1
+def test_tc_cfg_705_healthz_returns_500_when_any_check_is_not_ok(monkeypatch):
     module = _load_system_module(monkeypatch)
-    monkeypatch.setattr(module.settings, "REGISTER_ENABLED", False)
-    res = module.get_config()
-    assert res["code"] == 0
-    assert res["data"]["registerEnabled"] is False
+    expected = {
+        "db": "ok",
+        "redis": "ok",
+        "doc_engine": "nok",
+        "storage": "ok",
+        "status": "nok",
+        "_meta": {"doc_engine": {"error": "doc down"}},
+    }
+    monkeypatch.setattr(module, "run_health_checks", lambda: (expected, False))
+
+    payload, status_code = module.healthz()
+
+    assert status_code == 500
+    assert payload == expected
 
 
-@pytest.mark.p2
-def test_gaussdb_status_route_unit(monkeypatch):
+@pytest.mark.p1
+def test_tc_cfg_706_healthz_route_allows_real_unauthenticated_request(monkeypatch):
+    quart_app, module = _load_system_http_app(monkeypatch)
+    expected = {"status": "ok", "doc_engine": "ok"}
+    monkeypatch.setattr(module, "run_health_checks", lambda: (expected, True))
+
+    status_code, payload = _get_without_auth(quart_app, "/system/healthz")
+
+    assert status_code == 200
+    assert payload == expected
+
+
+@pytest.mark.p0
+def test_tc_cfg_702_gaussdb_status_route_rejects_real_unauthenticated_request(monkeypatch):
+    quart_app, module = _load_system_http_app(monkeypatch)
+    probe = Mock(return_value={"status": "alive"})
+    monkeypatch.setattr(module, "get_gaussdb_status", probe)
+
+    status_code, payload = _get_without_auth(quart_app, "/system/gaussdb/status")
+
+    assert status_code == 401
+    assert payload["code"] == 401
+    assert "Unauthorized" in payload["message"]
+    probe.assert_not_called()
+
+
+@pytest.mark.p1
+def test_tc_cfg_712_gaussdb_status_route_returns_probe_payload(monkeypatch):
     module = _load_system_module(monkeypatch)
     monkeypatch.setattr(module, "get_gaussdb_status", lambda: {"status": "alive"})
 
     res = module.gaussdb_status()
 
     assert res["code"] == 0
-    assert res["data"]["status"] == "alive"
+    assert res == {"code": 0, "message": "success", "data": {"status": "alive"}}
+
+
+@pytest.mark.p1
+def test_tc_cfg_703_gaussdb_status_route_returns_500_when_probe_raises(monkeypatch, caplog):
+    module = _load_system_module(monkeypatch)
+
+    def raise_probe_error():
+        raise RuntimeError(f"probe failed password=\"{ROUTE_PASSWORD_SENTINEL}\" dsn={ROUTE_DSN_SENTINEL} access_token='{ROUTE_TOKEN_SENTINEL}'")
+
+    monkeypatch.setattr(module, "get_gaussdb_status", raise_probe_error)
+    caplog.set_level("ERROR")
+
+    res = module.gaussdb_status()
+    serialized = json.dumps(res, sort_keys=True)
+    log_text = caplog.text
+
+    assert res["code"] == 500
+    assert res["data"]["status"] == "error"
+    assert res["data"]["message"].startswith("Failed to get GaussDB status: probe failed")
+    assert "***" in res["data"]["message"]
+    assert ROUTE_PASSWORD_SENTINEL not in serialized
+    assert ROUTE_DSN_SENTINEL not in serialized
+    assert ROUTE_TOKEN_SENTINEL not in serialized
+    assert "postgresql://" not in serialized
+    assert "cfg703-user" not in serialized
+    assert "GaussDB status route failed (RuntimeError)" in log_text
+    assert "***" in log_text
+    assert ROUTE_PASSWORD_SENTINEL not in log_text
+    assert ROUTE_DSN_SENTINEL not in log_text
+    assert ROUTE_TOKEN_SENTINEL not in log_text
