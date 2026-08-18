@@ -615,14 +615,14 @@ func TestNewExtractorComponent_StrictSystemPrompt(t *testing.T) {
 
 func TestExtractorComponent_NewExtractorComponent_LegacyParamsFallback(t *testing.T) {
 	comp, err := NewExtractorComponent(map[string]any{
-		"auto_keywords":       5,
-		"keywords_sys_prompt": "legacy kw prompt",
-		"auto_questions":      3,
+		"auto_keywords":        5,
+		"keywords_sys_prompt":  "legacy kw prompt",
+		"auto_questions":       3,
 		"questions_sys_prompt": "legacy q prompt",
-		"auto_tags":           2,
-		"tag_file_id":         "tag-1",
-		"enable_summary":      1,
-		"sys_prompt":          "legacy sum prompt",
+		"auto_tags":            2,
+		"tag_file_id":          "tag-1",
+		"enable_summary":       1,
+		"sys_prompt":           "legacy sum prompt",
 		"metadata_config": map[string]any{
 			"enabled": true,
 			"metadata": []any{

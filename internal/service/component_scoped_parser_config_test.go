@@ -105,8 +105,8 @@ func TestApplyComponentScopedParserConfig_AcceptsTypedMetadataSlices(t *testing.
 
 func TestApplyComponentScopedParserConfig_ClearsExtractorMetadataWhenDisabled(t *testing.T) {
 	parserConfig := entity.JSONMap{
-		"enable_metadata": false,
-		"metadata":        []map[string]interface{}{},
+		"enable_metadata":   false,
+		"metadata":          []map[string]interface{}{},
 		"built_in_metadata": []map[string]interface{}{},
 		"Extractor:AutoExtractDefault": map[string]any{
 			"metadata": map[string]any{
@@ -167,8 +167,8 @@ func TestApplyComponentScopedParserConfig_FiltersInvalidMetadataEntries(t *testi
 		"metadata": []any{
 			map[string]any{"key": "valid_custom", "type": "string"},
 			map[string]any{"key": "   ", "type": "string"}, // blank key should be filtered
-			"invalid_string_entry",                           // non-map should be filtered
-			123,                                              // non-map should be filtered
+			"invalid_string_entry",                         // non-map should be filtered
+			123,                                            // non-map should be filtered
 		},
 		"built_in_metadata": []any{
 			map[string]any{"key": "doc_name", "type": "string"},
