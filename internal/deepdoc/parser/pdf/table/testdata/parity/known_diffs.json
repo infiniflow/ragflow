@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "table-cell-fill-filled-threshold-0.85",
+      "tag": "go_intentional",
+      "kind": "threshold",
+      "applies_to": ["*"],
+      "fields": ["BoxMatchesCell"],
+      "permanent": true,
+      "reason": "BoxMatchesCell (internal/deepdoc/parser/pdf/table/table_cells.go) uses a two-stage overlap threshold: empty cell -> inter/boxArea >= 0.3 (matches Python find_overlapped_with_threshold default thr=0.3, which fills cells from overlapping PDF boxes uniformly); filled cell -> >= 0.85. The 0.85 branch has NO Python equivalent. It is reached only in the rotated-table path: table_extract.go calls ocrTableCells (parser_ocr.go) to pre-fill each cell with per-cell OCR text BEFORE FillCellTextFromBoxes runs (table_extract.go), and the 0.85 bar stops a weakly-overlapping detected text box from corrupting/overriding that OCR result. Python has no per-cell OCR at this stage, so it never raises the threshold and would join a 30-85%-overlapping secondary box (e.g. cell='Total' + a box '元' overlapping 60% -> Python 'Total 元', Go 'Total'). This is a deliberate go_intentional divergence, not a regression target. It is locked by TestFillCellTextFromBoxes_PrefilledCellDropsSecondaryBox and TestBoxMatchesCell_FilledCellWeakOverlapRejected in table_cell_spatial_test.go; the Go-only rationale is documented in the BoxMatchesCell doc comment (table_cells.go). NOTE: if we later unify the pipeline to always run FillCellTextFromBoxes (empty cell, 0.3) before ocrTableCells fills only remaining empties — matching the non-rotated path — this threshold can be removed entirely and full parity with Python restored. Until then it stays permanent."
+    },
+    {
+      "id": "table-cell-fill-multi-assignment",
+      "tag": "go_bug",
+      "kind": "assignment_cardinality",
+      "applies_to": ["*"],
+      "fields": ["FillCellTextFromBoxes", "BoxMatchesCell"],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "FillCellTextFromBoxes now assigns each box to exactly ONE cell (best row by vertical-overlap ratio >= 0.3, tie-broken by inter/rowArea; then tightest column by horizontal edge/center distance). The many-to-many 2-D cell-overlap filter was removed. Regression: TestFillCellTextFromBoxes_BoxOverlappingTwoCells_SingleAssignment.",
+      "tracking": "Replicate Python's one-box-to-one-cell greedy assignment: for each box pick the best row (vertical overlap >= 0.3) and the tightest column, then assign to that single (row,column) cell.",
+      "reason": "FillCellTextFromBoxes (table_cells.go) matched each box against EVERY cross-product cell where inter/boxArea >= 0.3 and injected the box text into ALL of them (many-to-many threshold filter). Python's construct_table assigns each box to exactly ONE cell via greedy best row (find_overlapped_with_threshold, inter/boxArea >= 0.3) intersected with tightest column (find_horizontally_tightest_fit). A box straddling two cell boundaries was therefore DUPLICATED into both cells in Go, but appears once in Python. This was an implementation divergence in the box→cell assignment step (NOT an architecture difference — both sides build the grid from TSR rows×columns via cross-product; see deepdoc_table_builder.go GroupCells vs Python construct_table). Exposed by the now-fixed TestFillCellTextFromBoxes_BoxOverlappingTwoCells_SingleAssignment."
+    },
+    {
+      "id": "table-cell-fill-column-algorithm",
+      "tag": "go_bug",
+      "kind": "match_primitive",
+      "applies_to": ["*"],
+      "fields": ["FillCellTextFromBoxes", "BoxMatchesCell"],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "FillCellTextFromBoxes selects the target cell via best row (vertical-overlap ratio >= 0.3 on the full-width row strip) intersected with tightest column (find_horizontally_tightest_fit, no threshold). The single 2-D cell-intersection 0.3 test is gone. Regression: TestFillCellTextFromBoxes_PythonAssignsGoRejects_2DThreshold_FIXED.",
+      "tracking": "Replace the single 2-D cell-overlap test with Python's two-step assignment: best row by vertical overlap (inter/boxArea >= 0.3, since rows span full width) AND tightest column by horizontal edge/center distance (find_horizontally_tightest_fit, no threshold), then assign to that (row,column) cell.",
+      "reason": "Go tested the 0.3 threshold against the 2-D cell intersection (inter/boxArea on the cell rectangle). Python tests 0.3 against the 1-D VERTICAL overlap with the row (rows span the full table width, so overlapped_area(box,row)/boxArea ≈ vertical fraction) and chooses the column by find_horizontally_tightest_fit (vertical overlap required + minimal horizontal edge/center distance, NO threshold). Consequently a box Python assigns to (row,column) was REJECTED by Go when its 2-D cell intersection was < 30% of box area even though its vertical row overlap was >= 30% (e.g. a tall narrow box: row overlap 30%, column tightest, but 2-D = 30% * horizontal_fraction < 30%). Implementation divergence only (same grid construction on both sides). Exposed by the now-fixed TestFillCellTextFromBoxes_PythonAssignsGoRejects_2DThreshold_FIXED."
+    },
+    {
+      "id": "table-cell-fill-no-best-match-tiebreak",
+      "tag": "go_bug",
+      "kind": "selection",
+      "applies_to": ["*"],
+      "fields": ["FillCellTextFromBoxes", "BoxMatchesCell"],
+      "owner_fix_side": "go",
+      "status": "resolved",
+      "resolution": "FillCellTextFromBoxes assigns each box to the single tightest column, so a box overlapping several cells lands in only the tightest one (matching Python, which keeps the single best via its ov/_ov ordering). Regression: TestFillCellTextFromBoxes_EqualBoxRatioSingleAssignment.",
+      "tracking": "When several cells qualify for a box at equal box-area ratio, keep only the single best (max inter/boxArea, tie-broken by inter/cellArea, mirroring Python's ov/_ov ordering) instead of filling all.",
+      "reason": "Python's find_overlapped_with_threshold orders candidates by (ov=inter/boxArea, _ov=inter/cellArea) and returns the single best, using cell-area ratio as a tie-break. Go's FillCellTextFromBoxes filled EVERY qualifying cell and never considered inter/cellArea. So a box overlapping several cells at the same box-area ratio was duplicated into all of them in Go, whereas Python keeps only the one it best fills (highest cell-area ratio). Implementation divergence only (same grid construction on both sides). Exposed by the now-fixed TestFillCellTextFromBoxes_EqualBoxRatioSingleAssignment."
+    }
+  ]
+}
