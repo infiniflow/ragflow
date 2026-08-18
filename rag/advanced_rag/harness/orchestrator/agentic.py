@@ -324,6 +324,17 @@ async def _run_claim_research(
     except asyncio.CancelledError:
         raise
     except TimeoutError:
+        if getattr(pipeline, "_active_phase", None) == "locate":
+            if pipeline._round_had_evidence or pipeline._round_had_routed_scope_progress:
+                claim.locate_empty_streak = 0
+            else:
+                claim.locate_empty_streak += 1
+            _LOG.warning(
+                "[Agentic research] claim=%s timed out in locate (progress=%s, locate_empty_streak=%d).",
+                claim.claim_id,
+                pipeline._round_had_evidence or pipeline._round_had_routed_scope_progress,
+                claim.locate_empty_streak,
+            )
         _LOG.warning(
             '[Agentic research] Gave up on "%s" — it took longer than %ss.',
             _snip(claim.description),
