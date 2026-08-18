@@ -69,22 +69,6 @@ export enum DataSourceKey {
   SHAREPOINT = 'sharepoint',
 }
 
-const DataSourceTestConnectionSupportedSet = new Set<DataSourceKey>([
-  DataSourceKey.RSS,
-  DataSourceKey.GITHUB,
-  DataSourceKey.GMAIL,
-  DataSourceKey.GOOGLE_DRIVE,
-  DataSourceKey.OUTLOOK,
-  DataSourceKey.REST_API,
-  DataSourceKey.MYSQL,
-  DataSourceKey.POSTGRESQL,
-  DataSourceKey.DISCORD,
-]);
-
-export const isDataSourceTestConnectionSupported = (
-  source?: DataSourceKey,
-) => Boolean(source && DataSourceTestConnectionSupportedSet.has(source));
-
 type DataSourceFeatureVisibility = {
   syncDeletedFiles?: boolean;
 };

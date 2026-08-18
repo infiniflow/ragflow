@@ -35,7 +35,6 @@ import {
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
-  isDataSourceTestConnectionSupported,
   mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
@@ -165,7 +164,6 @@ const SourceDetailPage = () => {
     formRef,
     connectorId,
   );
-  const canTestConnection = isDataSourceTestConnectionSupported(detail?.source);
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
@@ -255,17 +253,15 @@ const SourceDetailPage = () => {
             />
           </div>
           <div className="max-w-[1200px] flex justify-end gap-2">
-            {canTestConnection && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleTest}
-                disabled={testLoading}
-                loading={testLoading}
-              >
-                {t('setting.dataSourceTestConnection')}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testLoading}
+              loading={testLoading}
+            >
+              {t('setting.dataSourceTestConnection')}
+            </Button>
             <Button
               type="button"
               onClick={handlePrimaryAction}
