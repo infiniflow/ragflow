@@ -553,11 +553,20 @@ func TestWebDAVConnectorFiltersAndImages(t *testing.T) {
 	}
 }
 
-// TestWebDAVConnectorOpenSyncRejectsExternalHref verifies that a PROPFIND response
-// containing an absolute href to a different origin is rejected at URL resolution
-// time, preventing any GET to the external host.
+// TestWebDAVConnectorOpenSyncRejectsExternalHref verifies that PROPFIND responses
+// containing absolute or protocol-relative hrefs to a different origin are rejected
+// at URL resolution time, preventing any GET to the external host.
 func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+
+	var externalRequests int
+	externalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		externalRequests++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(externalServer.Close)
+	externalHost := strings.TrimPrefix(externalServer.URL, "http://")
+
 	var getPaths []string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
@@ -569,12 +578,13 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/xml")
 		w.WriteHeader(http.StatusMultiStatus)
-		_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?>
+		_, _ = io.WriteString(w, fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <D:multistatus xmlns:D="DAV:">
 <D:response><D:href>/</D:href><D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
 <D:response><D:href>/notes/alpha.txt</D:href><D:propstat><D:prop><D:getcontentlength>11</D:getcontentlength><D:getlastmodified>Fri, 02 Jan 2026 00:00:00 GMT</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
-<D:response><D:href>http://evil.example.com/secret.txt</D:href><D:propstat><D:prop><D:getcontentlength>5</D:getcontentlength><D:getlastmodified>Fri, 02 Jan 2026 00:00:00 GMT</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
-</D:multistatus>`)
+<D:response><D:href>%s/secret.txt</D:href><D:propstat><D:prop><D:getcontentlength>5</D:getcontentlength><D:getlastmodified>Fri, 02 Jan 2026 00:00:00 GMT</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
+<D:response><D:href>//%s/secret.txt</D:href><D:propstat><D:prop><D:getcontentlength>5</D:getcontentlength><D:getlastmodified>Fri, 02 Jan 2026 00:00:00 GMT</D:getlastmodified></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
+</D:multistatus>`, externalServer.URL, externalHost))
 	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -604,16 +614,16 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 			t.Fatalf("NextBatch failed: %v", batchErr)
 		}
 		for _, doc := range batch.Documents {
-			if strings.Contains(doc.SourceID, "evil.example.com") {
+			if strings.Contains(doc.SourceID, externalHost) {
 				t.Fatalf("external href leaked into sync results: %s", doc.SourceID)
 			}
 		}
 	}
 
-	// The only GET should be for /notes/alpha.txt, never evil.example.com.
-	for _, p := range getPaths {
-		if strings.Contains(p, "evil") {
-			t.Fatalf("GET issued to external host: %s", p)
-		}
+	if externalRequests != 0 {
+		t.Fatalf("external server received %d request(s), want 0", externalRequests)
+	}
+	if len(getPaths) == 0 {
+		t.Fatalf("expected GET for the legitimate file")
 	}
 }
