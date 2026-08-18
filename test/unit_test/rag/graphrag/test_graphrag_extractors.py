@@ -76,10 +76,7 @@ class TestCommunityReportsExtractor:
 
         async def slow_async_chat(*_args, **_kwargs):
             await asyncio.sleep(0.02)
-            return (
-                '{"title":"Community","summary":"Summary","findings":[],'
-                '"rating":1.0,"rating_explanation":"Clear"}'
-            )
+            return '{"title":"Community","summary":"Summary","findings":[],"rating":1.0,"rating_explanation":"Clear"}'
 
         monkeypatch.setattr(community_reports_module, "timeout", fake_timeout, raising=False)
         monkeypatch.setattr(

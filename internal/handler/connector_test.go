@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	syncerconnector "ragflow/internal/syncer/connector"
 )
 
 type fakeConnectorService struct {
@@ -21,49 +24,217 @@ type fakeConnectorService struct {
 	total     int64
 	code      common.ErrorCode
 	err       error
+	html      string
+	capture   *logListCapture
 }
 
-func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsResponse, error) {
+type logListCapture struct {
+	page     int
+	pageSize int
+}
+
+func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{}, nil
 }
 
-func (s fakeConnectorService) TestConnector(string, string) error {
+func (s fakeConnectorService) TestConnector(context.Context, string, string) error {
 	return s.err
 }
 
-func (s fakeConnectorService) CreateConnector(string, *service.CreateConnectorRequest) (*entity.Connector, error) {
+func (s fakeConnectorService) CreateConnector(context.Context, string, *service.CreateConnectorRequest) (*entity.Connector, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.connector, nil
 }
 
-func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, common.ErrorCode, error) {
+func (s fakeConnectorService) GetConnector(context.Context, string, string) (*entity.Connector, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return s.connector, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ListLog(string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s fakeConnectorService) UpdateConnector(context.Context, string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return s.connector, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) StartGoogleWebOAuth(context.Context, string, string, *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.StartGoogleWebOAuthResponse{}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) GoogleWebOAuthCallback(context.Context, string, string, string, string, string) string {
+	return ""
+}
+
+func (s fakeConnectorService) PollGoogleWebOAuthResult(context.Context, string, string, *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.PollGoogleWebOAuthResultResponse{}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) StartBoxWebOAuth(context.Context, string, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.StartBoxWebOAuthResponse{
+		FlowID:           "flow-1",
+		AuthorizationURL: "https://account.box.com/api/oauth2/authorize?state=flow-1",
+		ExpiresIn:        900,
+	}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) BoxWebOAuthCallback(context.Context, string, string, string, string) string {
+	if s.html != "" {
+		return s.html
+	}
+	return "<html>box</html>"
+}
+
+func (s fakeConnectorService) PollBoxWebOAuthResult(context.Context, string, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.PollBoxWebOAuthResultResponse{}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) ListLog(context.Context, string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err
 	}
 	return s.logs, s.total, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) DeleteConnector(string, string) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) ListLogs(_ context.Context, _, _ string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, 0, s.code, s.err
+	}
+	if s.capture != nil {
+		s.capture.page = page
+		s.capture.pageSize = pageSize
+	}
+	return s.logs, s.total, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) DeleteConnector(context.Context, string, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) RebuildConnector(string, string, string) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) RebuildConnector(context.Context, string, string, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) ResumeFailedSync(context.Context, string, string, *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
+	if s.err != nil {
+		return false, s.code, s.err
+	}
+	return true, common.CodeSuccess, nil
+}
+
+func TestConnectorHandlerStartBoxWebOAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{}}
+	router := gin.New()
+	router.POST("/api/v1/connectors/box/oauth/web/start", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.StartBoxWebOAuth(c)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/connectors/box/oauth/web/start",
+		strings.NewReader(`{"client_id":"client-1","client_secret":"secret-1"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("code=%v want=%v body=%v", body["code"], common.CodeSuccess, body)
+	}
+	data, ok := body["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data=%#v", body["data"])
+	}
+	if data["flow_id"] != "flow-1" {
+		t.Fatalf("flow_id=%v", data["flow_id"])
+	}
+}
+
+func TestConnectorHandlerBoxWebOAuthCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{html: "<html>box callback</html>"}}
+	router := gin.New()
+	router.GET("/api/v1/connectors/box/oauth/web/callback", h.BoxWebOAuthCallback)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/box/oauth/web/callback?state=flow-1&code=code-1", nil)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type=%q", got)
+	}
+	if resp.Body.String() != "<html>box callback</html>" {
+		t.Fatalf("body=%q", resp.Body.String())
+	}
+}
+
+func TestConnectorHandlerPollBoxWebOAuthResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	h := &ConnectorHandler{connectorService: fakeConnectorService{}}
+	router := gin.New()
+	router.POST("/api/v1/connectors/box/oauth/web/result", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.PollBoxWebOAuthResult(c)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/connectors/box/oauth/web/result",
+		strings.NewReader(`{"flow_id":"flow-1"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("code=%v want=%v body=%v", body["code"], common.CodeSuccess, body)
+	}
 }
 
 func TestConnectorHandlerTestConnector(t *testing.T) {
@@ -95,9 +266,19 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			wantCode: common.CodeArgumentError,
 		},
 		{
-			name:     "validation failure",
-			err:      fmt.Errorf("connector credentials are missing"),
+			name:     "schema validation failure",
+			err:      &syncerconnector.ConnectorValidationError{Message: "At least one content field must be configured (content_fields)."},
 			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "missing credential failure",
+			err:      &syncerconnector.ConnectorMissingCredentialError{Message: "REST API (bearer) requires 'token' in credentials"},
+			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "unexpected failure",
+			err:      fmt.Errorf("boom"),
+			wantCode: common.CodeServerError,
 		},
 	}
 
@@ -146,10 +327,10 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 		},
 		{
 			name:     "unauthorized",
-			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("no authorization")},
 			wantCode: common.CodeAuthenticationError,
 			wantData: nil,
-			wantMsg:  "No authorization.",
+			wantMsg:  "no authorization",
 		},
 	}
 
@@ -240,9 +421,9 @@ func TestConnectorHandlerListLogs(t *testing.T) {
 		},
 		{
 			name:     "unauthorized",
-			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("no authorization")},
 			wantCode: common.CodeAuthenticationError,
-			wantMsg:  "No authorization.",
+			wantMsg:  "no authorization",
 		},
 	}
 
@@ -293,6 +474,96 @@ func TestConnectorHandlerListLogs(t *testing.T) {
 				logs := data["logs"].([]interface{})
 				if len(logs) != tt.wantLogs {
 					t.Fatalf("logs=%v body=%v", logs, body)
+				}
+			}
+		})
+	}
+}
+
+func TestConnectorHandlerListSyncLogs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name         string
+		query        string
+		wantCode     common.ErrorCode
+		wantMsg      string
+		wantPage     int
+		wantPageSize int
+	}{
+		{
+			name:         "no pagination params uses defaults",
+			query:        "",
+			wantCode:     common.CodeSuccess,
+			wantPage:     1,
+			wantPageSize: 15,
+		},
+		{
+			name:         "page only defaults page_size",
+			query:        "?page=3",
+			wantCode:     common.CodeSuccess,
+			wantPage:     3,
+			wantPageSize: 15,
+		},
+		{
+			name:         "page_size only defaults page",
+			query:        "?page_size=50",
+			wantCode:     common.CodeSuccess,
+			wantPage:     1,
+			wantPageSize: 50,
+		},
+		{
+			name:         "both params",
+			query:        "?page=2&page_size=10",
+			wantCode:     common.CodeSuccess,
+			wantPage:     2,
+			wantPageSize: 10,
+		},
+		{
+			name:     "bad page",
+			query:    "?page=abc",
+			wantCode: common.CodeArgumentError,
+			wantMsg:  "page must be an integer",
+		},
+		{
+			name:     "bad page_size",
+			query:    "?page_size=xyz",
+			wantCode: common.CodeArgumentError,
+			wantMsg:  "page_size must be an integer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			capture := &logListCapture{}
+			h := &ConnectorHandler{connectorService: fakeConnectorService{
+				logs:    []*entity.ConnectorSyncLog{{ID: "log-1"}},
+				total:   1,
+				capture: capture,
+			}}
+			router := gin.New()
+			router.GET("/api/v1/connectors/sync_logs", func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "tenant-1"})
+				h.ListSyncLogs(c)
+			})
+
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/sync_logs"+tt.query, nil)
+			router.ServeHTTP(resp, req)
+
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v body=%v", body["code"], body)
+			}
+			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
+				t.Fatalf("message=%v body=%v", body["message"], body)
+			}
+			if tt.wantCode == common.CodeSuccess {
+				if capture.page != tt.wantPage || capture.pageSize != tt.wantPageSize {
+					t.Fatalf("service called with page=%d page_size=%d, want %d/%d", capture.page, capture.pageSize, tt.wantPage, tt.wantPageSize)
 				}
 			}
 		})

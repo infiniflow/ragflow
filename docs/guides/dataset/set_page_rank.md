@@ -1,11 +1,13 @@
 ---
 sidebar_position: -2
+title: Set Page Rank
+sidebar_label: Set Page Rank
 slug: /set_page_rank
 sidebar_custom_props: {
   categoryIcon: LucideStickyNote
 }
 ---
-# Set page rank
+# Set Page Rank
 
 Create a step-retrieval strategy using page rank.
 
@@ -34,7 +36,7 @@ The page rank value must be an integer. Range: [0,100]
 If you set the page rank value to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 
-## Scoring mechanism
+## Scoring Mechanism
 
 If you configure a chat assistant's **similarity threshold** to 0.2, only chunks with a hybrid score greater than 0.2 x 100 = 20 will be retrieved and sent to the chat model for content generation. This initial filtering step is crucial for narrowing down relevant information.
 

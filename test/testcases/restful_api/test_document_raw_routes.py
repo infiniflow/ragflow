@@ -16,12 +16,13 @@
 
 import pytest
 from test.testcases.configs import INVALID_API_TOKEN
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 
 
 @pytest.mark.p2
-def test_document_image_invalid_id_contract(rest_client_noauth):
-    res = rest_client_noauth.get("/documents/images/not-a-valid-image-id")
+def test_document_image_invalid_id_contract(rest_client):
+    res = rest_client.get("/documents/images/not-a-valid-image-id")
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
@@ -35,8 +36,7 @@ def test_document_download_by_id_requires_auth(create_document):
         res = client.get(f"/documents/{document_id}")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -45,7 +45,7 @@ def test_document_download_by_id_invalid_id_contract(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "The dataset not own the document invalid_document_id.", payload
+    assert payload["message"] == "document not found", payload
 
 
 @pytest.mark.p2
@@ -62,4 +62,4 @@ def test_document_artifact_rejects_unsafe_filename(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "Invalid file type.", payload
+    assert payload["message"] == "invalid file type", payload

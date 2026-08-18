@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -42,10 +44,11 @@ import (
 // URLSuffix, while honouring an operator override (e.g. fronting
 // Bedrock through a corporate VPC endpoint at a non-AWS path).
 const (
-	defaultBedrockChatSuffix          = "converse"
-	defaultBedrockStreamSuffix        = "converse-stream"
-	defaultBedrockListModelsSuffix    = "foundation-models"
-	bedrockStreamSuffixSuffix         = "-stream"
+	defaultBedrockChatSuffix       = "converse"
+	defaultBedrockStreamSuffix     = "converse-stream"
+	defaultBedrockListModelsSuffix = "foundation-models"
+	defaultBedrockEmbeddingSuffix  = "invoke"
+	bedrockStreamSuffixSuffix      = "-stream"
 )
 
 // Bedrock signing services and endpoint hostnames.
@@ -93,36 +96,16 @@ const bedrockAssumeRoleSession = "BedrockSession"
 // has its own endpoint and the URL is fully determined by the region
 // in the API key.
 type BedrockModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewBedrockModel creates a new Bedrock model instance.
-//
-// We clone http.DefaultTransport to keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no overall Timeout because Bedrock
-// Converse-Stream is long-lived. http.Client.Timeout would also cap
-// time spent reading the response body, cutting off mid-stream.
-// Non-streaming callers wrap each request in context.WithTimeout
-// instead, and ResponseHeaderTimeout still caps connection setup.
 func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &BedrockModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -132,7 +115,7 @@ func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockMod
 // instance with a custom endpoint override (e.g. a VPC endpoint
 // fronting Bedrock for compliance reasons).
 func (b *BedrockModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewBedrockModel(baseURL, b.URLSuffix)
+	return NewBedrockModel(baseURL, b.baseModel.URLSuffix)
 }
 
 // Name returns the canonical lower-case provider name used by the
@@ -280,8 +263,8 @@ func assumeBedrockRole(ctx context.Context, key *bedrockKey, region string) (aws
 // the AWS-defined "converse" path when conf/models/bedrock.json does
 // not override it.
 func (b *BedrockModel) chatSuffix() string {
-	if b.URLSuffix.Chat != "" {
-		return b.URLSuffix.Chat
+	if b.baseModel.URLSuffix.Chat != "" {
+		return b.baseModel.URLSuffix.Chat
 	}
 	return defaultBedrockChatSuffix
 }
@@ -291,11 +274,11 @@ func (b *BedrockModel) chatSuffix() string {
 // stream path from the chat suffix rather than carrying a separate
 // configuration field that would have to stay in sync.
 func (b *BedrockModel) streamSuffix() string {
-	if b.URLSuffix.AsyncChat != "" {
-		return b.URLSuffix.AsyncChat
+	if b.baseModel.URLSuffix.AsyncChat != "" {
+		return b.baseModel.URLSuffix.AsyncChat
 	}
-	if b.URLSuffix.Chat != "" {
-		return b.URLSuffix.Chat + bedrockStreamSuffixSuffix
+	if b.baseModel.URLSuffix.Chat != "" {
+		return b.baseModel.URLSuffix.Chat + bedrockStreamSuffixSuffix
 	}
 	return defaultBedrockStreamSuffix
 }
@@ -303,10 +286,18 @@ func (b *BedrockModel) streamSuffix() string {
 // modelsSuffix returns the list-models URL suffix on the control
 // plane, falling back to the AWS-defined "foundation-models" path.
 func (b *BedrockModel) modelsSuffix() string {
-	if b.URLSuffix.Models != "" {
-		return b.URLSuffix.Models
+	if b.baseModel.URLSuffix.Models != "" {
+		return b.baseModel.URLSuffix.Models
 	}
 	return defaultBedrockListModelsSuffix
+}
+
+// embeddingSuffix returns the runtime InvokeModel operation path.
+func (b *BedrockModel) embeddingSuffix() string {
+	if b.baseModel.URLSuffix.Embedding != "" {
+		return b.baseModel.URLSuffix.Embedding
+	}
+	return defaultBedrockEmbeddingSuffix
 }
 
 // bedrockRuntimeURL builds the per-region runtime endpoint URL for a
@@ -315,7 +306,7 @@ func (b *BedrockModel) modelsSuffix() string {
 // wins so on-premises proxies (e.g. CloudFront-fronted VPC endpoints)
 // keep working.
 func (b *BedrockModel) bedrockRuntimeURL(region, modelID, op string) string {
-	if override, ok := b.BaseURL[region]; ok && override != "" {
+	if override, ok := b.baseModel.BaseURL[region]; ok && override != "" {
 		return joinBedrockPath(override, "model", modelID, op)
 	}
 	host := fmt.Sprintf(bedrockRuntimeHostTmpl, region)
@@ -326,7 +317,7 @@ func (b *BedrockModel) bedrockRuntimeURL(region, modelID, op string) string {
 // for a given operation (typically "foundation-models" for the model
 // catalog).
 func (b *BedrockModel) bedrockControlURL(region, op string) string {
-	if override, ok := b.BaseURL["control:"+region]; ok && override != "" {
+	if override, ok := b.baseModel.BaseURL["control:"+region]; ok && override != "" {
 		return joinBedrockPath(override, op)
 	}
 	host := fmt.Sprintf(bedrockControlHostTmpl, region)
@@ -385,7 +376,6 @@ type bedrockConverseRequest struct {
 }
 
 // bedrockConverseResponse is the relevant subset of a Converse response.
-// Bedrock returns much more (usage, metrics) which we currently ignore.
 type bedrockConverseResponse struct {
 	Output struct {
 		Message struct {
@@ -393,7 +383,73 @@ type bedrockConverseResponse struct {
 			Content []bedrockContentBlock `json:"content"`
 		} `json:"message"`
 	} `json:"output"`
-	StopReason string `json:"stopReason"`
+	StopReason string        `json:"stopReason"`
+	Usage      *bedrockUsage `json:"usage,omitempty"`
+}
+
+// bedrockUsage mirrors Bedrock's Converse / Converse-Stream usage
+// shape. JSON keys are camelCase because that's the wire format. The
+// fields are plain ints because the AWS service always emits numbers
+// (not strings) for token counts; distinguishing absent from zero
+// happens at the JSON layer (omitempty on the parent) rather than via
+// pointer fields.
+type bedrockUsage struct {
+	InputTokens  int `json:"inputTokens"`
+	OutputTokens int `json:"outputTokens"`
+	TotalTokens  int `json:"totalTokens"`
+}
+
+// bedrockUsageFromMap converts a JSON-decoded Bedrock usage payload
+// into the package's TokenUsage. Returns nil when no token counts are
+// present so callers can pass the result directly to
+// recordResponseUsage without a separate presence check.
+func bedrockUsageFromMap(raw map[string]any) *TokenUsage {
+	if len(raw) == 0 {
+		return nil
+	}
+	get := func(key string) int {
+		v, ok := raw[key]
+		if !ok {
+			return 0
+		}
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case int64:
+			return int(n)
+		}
+		return 0
+	}
+	in, out := get("inputTokens"), get("outputTokens")
+	total := get("totalTokens")
+	if in == 0 && out == 0 && total == 0 {
+		return nil
+	}
+	if total == 0 {
+		total = in + out
+	}
+	return &TokenUsage{
+		PromptTokens:     in,
+		CompletionTokens: out,
+		TotalTokens:      total,
+	}
+}
+
+// bedrockUsageToMap is the inverse of bedrockUsageFromMap, used by the
+// non-streaming path that has a typed *bedrockUsage from JSON
+// unmarshaling. When the source is nil the result is the empty map,
+// which the helper treats as "no usage".
+func bedrockUsageToMap(u *bedrockUsage) map[string]any {
+	if u == nil {
+		return nil
+	}
+	return map[string]any{
+		"inputTokens":  u.InputTokens,
+		"outputTokens": u.OutputTokens,
+		"totalTokens":  u.TotalTokens,
+	}
 }
 
 // buildConverseRequest translates the driver's neutral Messages slice
@@ -443,10 +499,6 @@ func mapChatConfigToInference(cfg *ChatConfig) *bedrockInferenceConfig {
 	}
 	inf := &bedrockInferenceConfig{}
 	hasField := false
-	if cfg.MaxTokens != nil {
-		inf.MaxTokens = cfg.MaxTokens
-		hasField = true
-	}
 	if cfg.Temperature != nil {
 		inf.Temperature = cfg.Temperature
 		hasField = true
@@ -514,10 +566,11 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 // the joined assistant answer. ReasonContent is always non-nil per the
 // driver contract; Bedrock surfaces no reasoning channel today, so it
 // is left empty rather than nil.
-func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return nil, fmt.Errorf("api key is required")
+func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
+
 	if modelName == "" {
 		return nil, fmt.Errorf("bedrock: model id is required")
 	}
@@ -539,7 +592,7 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("bedrock: marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -558,7 +611,11 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)
 	}
@@ -578,6 +635,9 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 	answer := extractAnswer(&parsed)
 	reason := ""
+	if usage := bedrockUsageFromMap(bedrockUsageToMap(parsed.Usage)); usage != nil {
+		recordResponseUsage(modelUsage, "", usage, "chat")
+	}
 	return &ChatResponse{
 		Answer:        &answer,
 		ReasonContent: &reason,
@@ -593,10 +653,11 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 // payload. For chat we only need messageStart, contentBlockDelta,
 // messageStop, and (for error propagation) exception frames; other
 // events are ignored.
-func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return fmt.Errorf("api key is required")
+func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
+
 	if modelName == "" {
 		return fmt.Errorf("bedrock: model id is required")
 	}
@@ -628,7 +689,6 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	// Background context: event streams are long-lived so we attach
 	// no overall deadline. ResponseHeaderTimeout (set in the
 	// constructor) still caps connection setup.
-	ctx := context.Background()
 	creds, err := resolveBedrockCredentials(ctx, key, region)
 	if err != nil {
 		return err
@@ -645,7 +705,11 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("bedrock: send request: %w", err)
 	}
@@ -656,19 +720,42 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("bedrock: API request failed with status %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	if err := decodeBedrockEventStream(resp.Body, sender); err != nil {
+	// Bedrock sends final token usage inside a "metadata" event frame
+	// at end-of-stream. We capture the last seen usage via this closure
+	// and route it through applyStreamUsage so chatConfig.UsageResult
+	// and the clickhouse collection path are both populated, matching
+	// the unified streaming behaviour used by other drivers.
+	var streamUsage *TokenUsage
+	onMetadata := func(meta map[string]any) error {
+		if u, ok := meta["usage"].(map[string]any); ok {
+			streamUsage = bedrockUsageFromMap(u)
+		}
+		return nil
+	}
+	if err := decodeBedrockEventStream(resp.Body, sender, onMetadata); err != nil {
 		return err
 	}
+	applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	done := "[DONE]"
 	return sender(&done, nil)
 }
 
 // decodeBedrockEventStream reads vnd.amazon.eventstream frames off the
 // supplied reader and dispatches each to the supplied sender. The
-// loop exits cleanly on a messageStop event or on EOF; an exception
-// frame is surfaced as a Go error so partial streams cannot be
-// mistaken for successful ones.
-func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error) error {
+// loop exits cleanly on EOF after a messageStop has been seen; an
+// exception frame is surfaced as a Go error so partial streams
+// cannot be mistaken for successful ones.
+//
+// messageStop is recorded as the terminal marker but does NOT return
+// from the loop, because the AWS Bedrock Converse-Stream protocol
+// sends a final "metadata" frame carrying token usage AFTER
+// messageStop. Returning early would drop that metadata and the
+// caller would never see the usage block.
+//
+// onMetadata is invoked with the JSON-decoded payload of each
+// "metadata" lifecycle frame. Bedrock sends final token usage inside
+// such a frame; pass nil when the caller does not need that data.
+func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error, onMetadata func(map[string]any) error) error {
 	dec := eventstream.NewDecoder()
 	payload := make([]byte, 0, 8*1024)
 	sawTerminal := false
@@ -701,9 +788,22 @@ func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error) 
 				return err
 			}
 		case "messageStop":
+			// Mark the stream terminal but keep decoding so the
+			// post-messageStop "metadata" frame (which carries
+			// final token usage) still reaches onMetadata.
 			sawTerminal = true
-			return nil
-		case "messageStart", "contentBlockStart", "contentBlockStop", "metadata":
+		case "metadata":
+			if onMetadata == nil {
+				continue
+			}
+			var meta map[string]any
+			if err := json.Unmarshal(msg.Payload, &meta); err != nil {
+				return fmt.Errorf("bedrock: invalid metadata payload: %w", err)
+			}
+			if err := onMetadata(meta); err != nil {
+				return err
+			}
+		case "messageStart", "contentBlockStart", "contentBlockStop":
 			// Lifecycle events with no caller-visible payload.
 		default:
 			// Ignore unknown events rather than hard-failing so new
@@ -766,10 +866,11 @@ type bedrockListModelsResponse struct {
 // configured credentials. The control plane lives at
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return nil, fmt.Errorf("api key is required")
+func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
+
 	key, err := parseBedrockKey(*apiConfig.ApiKey)
 	if err != nil {
 		return nil, err
@@ -779,7 +880,7 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -793,11 +894,15 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("bedrock: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if err := signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
+	if err = signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
 		return nil, err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)
 	}
@@ -812,15 +917,17 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var parsed bedrockListModelsResponse
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
+	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("bedrock: parse ListModels response: %w", err)
 	}
-	models := make([]string, 0, len(parsed.ModelSummaries))
+	models := make([]ListModelResponse, 0, len(parsed.ModelSummaries))
 	for _, m := range parsed.ModelSummaries {
 		if m.ModelID == "" {
 			continue
 		}
-		models = append(models, m.ModelID)
+		models = append(models, ListModelResponse{
+			Name: m.ModelID,
+		})
 	}
 	return models, nil
 }
@@ -828,65 +935,242 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 // CheckConnection delegates to ListModels: a successful catalog query
 // proves credentials, region, and network reachability in one round
 // trip without burning a chat completion.
-func (b *BedrockModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := b.ListModels(apiConfig)
+func (b *BedrockModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := b.ListModels(ctx, apiConfig)
 	return err
 }
 
-// Embed is not exposed by Bedrock through the Converse API; the
-// embeddings surface is per-model (Titan, Cohere) and ships in a
-// follow-on PR alongside conf/models/bedrock.json embedding entries.
-func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+type bedrockTitanEmbeddingRequest struct {
+	InputText  string `json:"inputText"`
+	Dimensions *int   `json:"dimensions,omitempty"`
+}
+
+type bedrockTitanEmbeddingResponse struct {
+	Embedding []float64 `json:"embedding"`
+}
+
+type bedrockCohereEmbeddingRequest struct {
+	Texts           []string `json:"texts"`
+	InputType       string   `json:"input_type"`
+	OutputDimension *int     `json:"output_dimension,omitempty"`
+}
+
+type bedrockCohereEmbeddingResponse struct {
+	Embeddings json.RawMessage `json:"embeddings"`
+}
+
+// Embed sends text embedding requests through Bedrock Runtime
+// InvokeModel. Titan's embedding API accepts one inputText per call,
+// while Cohere accepts a texts batch and returns vectors in input
+// order.
+func (b *BedrockModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if len(request.Texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	modelID := strings.TrimSpace(*modelName)
+	key, err := parseBedrockKey(*apiConfig.ApiKey)
+	if err != nil {
+		return nil, err
+	}
+	region, err := resolveBedrockRegion(apiConfig, key)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	creds, err := resolveBedrockCredentials(ctx, key, region)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasPrefix(modelID, "amazon.titan-embed-text-") {
+		return b.embedTitan(ctx, modelID, request.Texts, region, creds, embeddingConfig, modelUsage)
+	}
+	if strings.HasPrefix(modelID, "cohere.embed-") {
+		return b.embedCohere(ctx, modelID, request.Texts, region, creds, embeddingConfig, modelUsage)
+	}
+	return nil, fmt.Errorf("bedrock: unsupported embedding model %q", modelID)
+}
+
+func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string, body interface{}, region string, creds awssdk.Credentials) ([]byte, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: marshal embedding request: %w", err)
+	}
+	url := b.bedrockRuntimeURL(region, modelID, b.embeddingSuffix())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: build embedding request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if err := signBedrockRequest(ctx, req, raw, creds, bedrockRuntimeService, region); err != nil {
+		return nil, err
+	}
+
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
+	// derived from the AWS region (operator config, see AWSConfig above),
+	// not from user input. The signed request enforces the destination
+	// via sigv4 — a tampered URL would fail signature verification.
+	resp, err := b.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: send embedding request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock: read embedding response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("bedrock: embedding request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return respBody, nil
+}
+
+func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	embeddings := make([]EmbeddingData, 0, len(texts))
+	for i, text := range texts {
+		req := bedrockTitanEmbeddingRequest{
+			InputText: text,
+		}
+		if embeddingConfig != nil && embeddingConfig.Dimension > 0 && strings.HasPrefix(modelID, "amazon.titan-embed-text-v2") {
+			req.Dimensions = &embeddingConfig.Dimension
+		}
+		respBody, err := b.invokeEmbeddingModel(ctx, modelID, req, region, creds)
+		if err != nil {
+			return nil, err
+		}
+		var parsed bedrockTitanEmbeddingResponse
+		if err = json.Unmarshal(respBody, &parsed); err != nil {
+			return nil, fmt.Errorf("bedrock: parse Titan embedding response: %w", err)
+		}
+		if len(parsed.Embedding) == 0 {
+			return nil, fmt.Errorf("bedrock: Titan embedding response missing embedding for input index %d", i)
+		}
+		embeddings = append(embeddings, EmbeddingData{
+			Embedding: parsed.Embedding,
+			Index:     i,
+		})
+	}
+	return embeddings, nil
+}
+
+func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	req := bedrockCohereEmbeddingRequest{
+		Texts:     texts,
+		InputType: "search_document",
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 && strings.HasPrefix(modelID, "cohere.embed-v4") {
+		req.OutputDimension = &embeddingConfig.Dimension
+	}
+	respBody, err := b.invokeEmbeddingModel(ctx, modelID, req, region, creds)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed bedrockCohereEmbeddingResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("bedrock: parse Cohere embedding response: %w", err)
+	}
+	vectors, err := decodeCohereEmbeddingVectors(parsed.Embeddings)
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) != len(texts) {
+		return nil, fmt.Errorf("bedrock: Cohere returned %d embeddings for %d inputs", len(vectors), len(texts))
+	}
+
+	embeddings := make([]EmbeddingData, len(vectors))
+	for i, vector := range vectors {
+		if len(vector) == 0 {
+			return nil, fmt.Errorf("bedrock: Cohere embedding response missing embedding for input index %d", i)
+		}
+		embeddings[i] = EmbeddingData{
+			Embedding: vector,
+			Index:     i,
+		}
+	}
+	return embeddings, nil
+}
+
+func decodeCohereEmbeddingVectors(raw json.RawMessage) ([][]float64, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("bedrock: Cohere embedding response missing embeddings")
+	}
+
+	var vectors [][]float64
+	if err := json.Unmarshal(raw, &vectors); err == nil {
+		return vectors, nil
+	}
+
+	var byType map[string][][]float64
+	if err := json.Unmarshal(raw, &byType); err != nil {
+		return nil, fmt.Errorf("bedrock: parse Cohere embeddings: %w", err)
+	}
+	vectors, ok := byType["float"]
+	if !ok {
+		return nil, fmt.Errorf("bedrock: Cohere embedding response missing float embeddings")
+	}
+	return vectors, nil
 }
 
 // Rerank is not exposed by Bedrock.
-func (b *BedrockModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (b *BedrockModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // Balance is not exposed by Bedrock.
-func (b *BedrockModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (b *BedrockModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // TranscribeAudio is not exposed by Bedrock. Speech-to-text on AWS
 // lives in Amazon Transcribe, a separate service.
-func (b *BedrockModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (b *BedrockModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BedrockModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // AudioSpeech is not exposed by Bedrock. Text-to-speech on AWS lives
 // in Amazon Polly, a separate service.
-func (b *BedrockModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (b *BedrockModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BedrockModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // OCRFile is not exposed by Bedrock. OCR on AWS lives in Amazon
 // Textract, a separate service.
-func (b *BedrockModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (b *BedrockModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ParseFile is not exposed by Bedrock.
-func (b *BedrockModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (b *BedrockModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ListTasks is not exposed by Bedrock through the Converse API.
-func (b *BedrockModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (b *BedrockModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ShowTask is not exposed by Bedrock through the Converse API.
-func (b *BedrockModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (b *BedrockModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }

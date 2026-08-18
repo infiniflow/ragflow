@@ -9,7 +9,21 @@
   "class": "paddleocr.net",
   "models": [
     {
+      "name": "PaddleOCR-VL-1.6",
+      "max_tokens": 16384,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
       "name": "PaddleOCR-VL-1.5",
+      "max_tokens": 16384,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PP-OCRv6",
       "max_tokens": 16384,
       "model_types": [
         "ocr"

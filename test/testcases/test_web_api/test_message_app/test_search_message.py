@@ -18,6 +18,7 @@ from test_common import search_message, list_memory_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -35,7 +36,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_multiple_type_message_func")
 class TestSearchMessage:
-
     @pytest.mark.p1
     def test_query(self, WebApiAuth):
         memory_id = self.memory_id
@@ -71,11 +71,7 @@ class TestSearchMessage:
         assert list_res["data"]["messages"]["total_count"] > 0
 
         query = "Coriander is a versatile herb with two main edible parts. What's its name can refer to?"
-        params = {
-            "similarity_threshold": 0.1,
-            "keywords_similarity_weight": 0.6,
-            "top_n": 4
-        }
+        params = {"similarity_threshold": 0.1, "keywords_similarity_weight": 0.6, "top_n": 4}
         res = search_message(WebApiAuth, {"memory_id": memory_id, "query": query, **params})
         assert res["code"] == 0, res
         assert len(res["data"]) > 0

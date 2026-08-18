@@ -30,6 +30,7 @@ try:
 except Exception:
     logging.warning("Fail to load wordnet.ensure_loaded()")
 
+
 class Dealer:
     def __init__(self, redis=None):
 
@@ -38,17 +39,16 @@ class Dealer:
         self.dictionary = None
         path = os.path.join(get_project_base_directory(), "rag/res", "synonym.json")
         try:
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 self.dictionary = json.load(f)
 
-            self.dictionary = { (k.lower() if isinstance(k, str) else k): v for k, v in self.dictionary.items() }
+            self.dictionary = {(k.lower() if isinstance(k, str) else k): v for k, v in self.dictionary.items()}
         except Exception:
             logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
-            logging.warning(
-                "Realtime synonym is disabled, since no redis connection.")
+            logging.warning("Realtime synonym is disabled, since no redis connection.")
         if not len(self.dictionary.keys()):
             logging.warning("Fail to load synonym")
 
@@ -76,7 +76,6 @@ class Dealer:
         except Exception as e:
             logging.error("Fail to load synonym!" + str(e))
 
-
     def lookup(self, tk, topn=8):
         if not tk or not isinstance(tk, str):
             return []
@@ -93,18 +92,15 @@ class Dealer:
 
         # 2) If not found and tk is purely alphabetical → fallback to WordNet
         if re.fullmatch(r"[a-z]+", tk):
-            wn_set = {
-                re.sub("_", " ", syn.name().split(".")[0])
-                for syn in wordnet.synsets(tk)
-            }
+            wn_set = {re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)}
             wn_set.discard(tk)  # Remove the original token itself
             wn_res = [t for t in wn_set if t]
             return wn_res[:topn]
 
         # 3) Nothing found in either source
         return []
-    
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     dl = Dealer()
     print(dl.dictionary)

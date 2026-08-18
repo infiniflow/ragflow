@@ -134,7 +134,7 @@ func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
 		tokenized = txt
 	}
 
-	for _, t := range strings.Fields(tokenized) {
+	for t := range strings.FieldsSeq(tokenized) {
 		tk := t
 		// Check stop words
 		if stpwd {
@@ -258,7 +258,7 @@ func (d *TermWeightDealer) Split(txt string) []string {
 	txt = regexp.MustCompile("[ \\t]+").ReplaceAllString(txt, " ")
 	txt = strings.TrimSpace(txt)
 
-	for _, t := range strings.Split(txt, " ") {
+	for t := range strings.SplitSeq(txt, " ") {
 		t = strings.TrimSpace(t)
 		if t == "" {
 			continue
@@ -343,12 +343,20 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		}
 		if s == 0 && len([]rune(t)) >= 4 {
 			// Try fine-grained tokenization
-			fgTokens, _ := tokenizer.Tokenize(t)
+			fgTokens, _ := tokenizer.FineGrainedTokenize(t)
 			tokens := strings.Fields(fgTokens)
 
+			// Filter: only keep tokens with length > 1
+			var filteredTokens []string
+			for _, tt := range tokens {
+				if len([]rune(tt)) > 1 {
+					filteredTokens = append(filteredTokens, tt)
+				}
+			}
+
 			var validTokens []float64
-			if len(tokens) > 1 {
-				for _, tt := range tokens {
+			if len(filteredTokens) > 1 {
+				for _, tt := range filteredTokens {
 					f := freq(tt)
 					validTokens = append(validTokens, f)
 				}
@@ -381,12 +389,21 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 			return 300
 		}
 		if len([]rune(t)) >= 4 {
-			fgTokens, _ := tokenizer.Tokenize(t)
+			// Use fine-grained tokenization
+			fgTokens, _ := tokenizer.FineGrainedTokenize(t)
 			tokens := strings.Fields(fgTokens)
 
+			// Filter: only keep tokens with length > 1
+			var filteredTokens []string
+			for _, tt := range tokens {
+				if len([]rune(tt)) > 1 {
+					filteredTokens = append(filteredTokens, tt)
+				}
+			}
+
 			var validTokens []float64
-			if len(tokens) > 1 {
-				for _, tt := range tokens {
+			if len(filteredTokens) > 1 {
+				for _, tt := range filteredTokens {
 					f := df(tt)
 					validTokens = append(validTokens, f)
 				}
@@ -404,8 +421,14 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	}
 
 	// idf function
+	// Uses common.PyLog10 (C library's log10 via cgo) instead of
+	// math.Log10 to match Python's math.log10 exactly. Go's pure-Go
+	// math.Log10 can differ by 1 ULP from glibc's log10, causing parity
+	// test failures.
 	idf := func(s, N float64) float64 {
-		return math.Log10(10 + ((N - s + 0.5) / (s + 0.5)))
+		arg := 10 + ((N - s + 0.5) / (s + 0.5))
+		result := common.PyLog10(arg)
+		return result
 	}
 
 	tw := []TermWeight{}
@@ -466,10 +489,12 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		return tw
 	}
 
-	S := 0.0
-	for _, twItem := range tw {
-		S += twItem.Weight
+	// Use PairwiseSum to match Python's np.sum() which uses pairwise summation
+	weightBuf := make([]float64, len(tw))
+	for i, twItem := range tw {
+		weightBuf[i] = twItem.Weight
 	}
+	S := common.PairwiseSum(weightBuf)
 
 	if S > 0 {
 		for i := range tw {

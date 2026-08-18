@@ -1,123 +1,78 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 // OllamaModel implements ModelDriver for Ollama AI
 type OllamaModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewOllamaModel creates a new Ollama AI model instance
 func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
 	return &OllamaModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }
 
 func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &OllamaModel{
-		BaseURL:   baseURL,
-		URLSuffix: o.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewOllamaModel(baseURL, o.baseModel.URLSuffix)
 }
 
 func (o *OllamaModel) Name() string {
-	return "ollama"
+	return "Ollama"
 }
 
-func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("message is nil")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "_")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
-	}
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": text,
-		}
+		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
 			if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
 				reqBody["think"] = *chatModelConfig.Effort
@@ -129,123 +84,31 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	message, ok := result["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: message not found")
-	}
-
-	content, ok := message["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: content not found")
-	}
-
-	reasonContent, ok := message["thinking"].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: thinking not found")
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
-	}
-
-	// Convert messages to API format (supporting multimodal content)
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": text,
-		}
+		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-	}
-
-	if modelConfig.Stream != nil {
-		reqBody["stream"] = *modelConfig.Stream
-	}
-
-	if modelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *modelConfig.MaxTokens
-	}
-
-	if modelConfig.Temperature != nil {
-		reqBody["temperature"] = *modelConfig.Temperature
-	}
-
-	if modelConfig.DoSample != nil {
-		reqBody["do_sample"] = *modelConfig.DoSample
-	}
-
-	if modelConfig.TopP != nil {
-		reqBody["top_p"] = *modelConfig.TopP
-	}
-
-	if modelConfig.Stop != nil {
-		reqBody["stop"] = *modelConfig.Stop
-	}
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig.Effort != nil && *modelConfig.Effort != "" {
 		if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
@@ -257,75 +120,19 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		// ignore the blank
-		if line == "" {
-			continue
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(line), &event); err != nil {
-			continue
-		}
-
-		if messageMap, ok := event["message"].(map[string]interface{}); ok {
-			if reasoningContent, exists := messageMap["thinking"].(string); exists && reasoningContent != "" {
-				if err := sender(nil, &reasoningContent); err != nil {
-					return err
-				}
-			}
-			if content, exists := messageMap["content"].(string); exists && content != "" {
-				if err := sender(&content, nil); err != nil {
-					return err
-				}
-			}
-		}
-
-		if done, ok := event["done"].(bool); ok && done {
-			break
-		}
-	}
-
-	// Send [DONE] marker for OpenAI compatibility with RAGFlow frontend
-	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
-func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
+func (o *OllamaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -333,24 +140,23 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	baseURL := o.BaseURL[region]
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = o.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -361,7 +167,7 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -370,11 +176,11 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -418,69 +224,61 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	return embeddings, nil
 }
 
-func (o *OllamaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (o *OllamaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // TranscribeAudio transcribe audio
-func (o *OllamaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (o *OllamaModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (z *OllamaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (o *OllamaModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", o.Name())
 }
 
 // AudioSpeech convert text to audio
-func (o *OllamaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (o *OllamaModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (z *OllamaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (o *OllamaModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", o.Name())
 }
 
 // OCRFile OCR file
-func (m *OllamaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (o *OllamaModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
 // ParseFile parse file
-func (z *OllamaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OllamaModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
+func (o *OllamaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL := o.BaseURL[region]
-	if baseURL == "" {
-		baseURL = o.BaseURL["default"]
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
-	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434)")
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.baseModel.URLSuffix.Models)
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -495,37 +293,50 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	// Ollama's /api/tags returns {"models":[{"name":...,"model":...}]}, a shape
+	// that differs from the OpenAI list. Decode it into a local struct, map the
+	// names into ModelList, then enrich through the shared ParseListModel helper
+	// (issue #15853). Using a typed struct also avoids the previous unchecked
+	// type assertions, which panicked when "models" was absent or malformed.
+	var result struct {
+		Models []struct {
+			Name  string `json:"name"`
+			Model string `json:"model"`
+		} `json:"models"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["models"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["name"].(string)
-		models = append(models, modelName)
+	modelList := ModelList{Object: "list"}
+	for _, m := range result.Models {
+		name := strings.TrimSpace(m.Name)
+		if name == "" {
+			name = strings.TrimSpace(m.Model)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, ModelListItem{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
-func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (o *OllamaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // CheckConnection verifies that the configured Ollama base URL is reachable
-func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := o.ListModels(apiConfig)
+func (o *OllamaModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := o.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (z *OllamaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OllamaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (z *OllamaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OllamaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }

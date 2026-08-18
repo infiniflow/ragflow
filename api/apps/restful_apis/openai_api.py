@@ -20,27 +20,29 @@ import time
 from quart import Response, jsonify
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
 
+
 def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
     model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
+    if model_type not in {"chat", "vision"}:
         model_type = "chat"
 
     try:
-        get_model_config_from_provider_instance(
+        resolve_model_config(
             tenant_id=tenant_id,
-            model_name=llm_id,
+            model_ref=llm_id,
             model_type=model_type,
         )
     except Exception as e:
@@ -51,6 +53,7 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
 
 import logging
 from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
+
 
 def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
     chunks = chunks_format(reference)
@@ -89,6 +92,109 @@ def _build_sse_response(body):
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
     return resp
+
+
+async def _stream_chat_completion_sse(
+    ans_iter,
+    *,
+    completion_id,
+    requested_model,
+    prompt,
+    need_reference,
+    include_reference_metadata=False,
+    metadata_fields=None,
+):
+    """Translate RAGFlow's chat event stream into OpenAI-compatible SSE chunks.
+
+    ``ans_iter`` yields RAGFlow dialog events. The body is streamed
+    incrementally as ``delta.content`` chunks; the terminating ``final`` event
+    carries the complete (decorated) answer, which is surfaced only via the
+    trailing chunk's ``final_content`` / ``reference`` fields and must NOT be
+    re-emitted as content — doing so duplicates the whole message (#15286).
+    """
+    token_used = 0
+    last_ans = {}
+    full_content = ""
+    final_answer = None
+    final_reference = None
+    in_think = False
+    response = {
+        "id": completion_id,
+        "choices": [
+            {
+                "delta": {
+                    "content": "",
+                    "role": "assistant",
+                    "function_call": None,
+                    "tool_calls": None,
+                    "reasoning_content": "",
+                },
+                "finish_reason": None,
+                "index": 0,
+                "logprobs": None,
+            }
+        ],
+        "created": int(time.time()),
+        "model": requested_model,
+        "object": "chat.completion.chunk",
+        "system_fingerprint": "",
+        "usage": None,
+    }
+
+    try:
+        async for ans in ans_iter:
+            last_ans = ans
+            if ans.get("final"):
+                # The `final` event carries the complete, decorated answer.
+                # Do NOT re-emit it as a content delta — the body was already
+                # streamed incrementally above, so echoing the whole answer
+                # here duplicates the entire message in the stream (#15286).
+                # Surface it only through the trailing chunk's `final_content`
+                # and `reference` fields.
+                final_answer = ans.get("answer") or full_content
+                final_reference = ans.get("reference", {})
+                continue
+            if ans.get("start_to_think"):
+                in_think = True
+                continue
+            if ans.get("end_to_think"):
+                in_think = False
+                continue
+            delta = ans.get("answer") or ""
+            if not delta:
+                continue
+            token_used += num_tokens_from_string(delta)
+            if in_think:
+                response["choices"][0]["delta"]["reasoning_content"] = delta
+                response["choices"][0]["delta"]["content"] = None
+            else:
+                full_content += delta
+                response["choices"][0]["delta"]["content"] = delta
+                response["choices"][0]["delta"]["reasoning_content"] = None
+            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+    except Exception as e:
+        response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
+        yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+
+    response["choices"][0]["delta"]["content"] = None
+    response["choices"][0]["delta"]["reasoning_content"] = None
+    response["choices"][0]["finish_reason"] = "stop"
+    prompt_tokens = num_tokens_from_string(prompt)
+    response["usage"] = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": token_used,
+        "total_tokens": prompt_tokens + token_used,
+    }
+    if need_reference:
+        reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
+        response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
+            reference_payload,
+            include_metadata=include_reference_metadata,
+            metadata_fields=metadata_fields,
+        )
+        response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
+    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+    yield "data:[DONE]\n\n"
 
 
 def _normalize_message_content(content):
@@ -176,6 +282,7 @@ async def openai_chat_completions(chat_id):
         dia.llm_id = requested_model
         if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
+    merge_generation_config(dia, extract_generation_config(req))
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):
@@ -206,94 +313,21 @@ async def openai_chat_completions(chat_id):
     stream_mode = bool(req.get("stream", False))
 
     if stream_mode:
-        async def streamed_response_generator():
-            token_used = 0
-            last_ans = {}
-            full_content = ""
-            final_answer = None
-            final_reference = None
-            in_think = False
-            response = {
-                "id": completion_id,
-                "choices": [
-                    {
-                        "delta": {
-                            "content": "",
-                            "role": "assistant",
-                            "function_call": None,
-                            "tool_calls": None,
-                            "reasoning_content": "",
-                        },
-                        "finish_reason": None,
-                        "index": 0,
-                        "logprobs": None,
-                    }
-                ],
-                "created": int(time.time()),
-                "model": requested_model,
-                "object": "chat.completion.chunk",
-                "system_fingerprint": "",
-                "usage": None,
-            }
-
-            try:
-                chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
-                if doc_ids_str:
-                    chat_kwargs["doc_ids"] = doc_ids_str
-                async for ans in async_chat(dia, msg, True, **chat_kwargs):
-                    last_ans = ans
-                    if ans.get("final"):
-                        if ans.get("answer"):
-                            full_content = ans["answer"]
-                            response["choices"][0]["delta"]["content"] = full_content
-                            response["choices"][0]["delta"]["reasoning_content"] = None
-                            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-                        final_answer = full_content
-                        final_reference = ans.get("reference", {})
-                        continue
-                    if ans.get("start_to_think"):
-                        in_think = True
-                        continue
-                    if ans.get("end_to_think"):
-                        in_think = False
-                        continue
-                    delta = ans.get("answer") or ""
-                    if not delta:
-                        continue
-                    token_used += num_tokens_from_string(delta)
-                    if in_think:
-                        response["choices"][0]["delta"]["reasoning_content"] = delta
-                        response["choices"][0]["delta"]["content"] = None
-                    else:
-                        full_content += delta
-                        response["choices"][0]["delta"]["content"] = delta
-                        response["choices"][0]["delta"]["reasoning_content"] = None
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-            except Exception as e:
-                response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-
-            response["choices"][0]["delta"]["content"] = None
-            response["choices"][0]["delta"]["reasoning_content"] = None
-            response["choices"][0]["finish_reason"] = "stop"
-            prompt_tokens = num_tokens_from_string(prompt)
-            response["usage"] = {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": token_used,
-                "total_tokens": prompt_tokens + token_used,
-            }
-            if need_reference:
-                reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
-                response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
-                    reference_payload,
-                    include_metadata=include_reference_metadata,
-                    metadata_fields=metadata_fields,
-                )
-                response["choices"][0]["delta"]["final_content"] = final_answer if final_answer is not None else full_content
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-            yield "data:[DONE]\n\n"
-
-        return _build_sse_response(streamed_response_generator())
+        chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+        if doc_ids_str:
+            chat_kwargs["doc_ids"] = doc_ids_str
+        ans_iter = async_chat(dia, msg, True, **chat_kwargs)
+        return _build_sse_response(
+            _stream_chat_completion_sse(
+                ans_iter,
+                completion_id=completion_id,
+                requested_model=requested_model,
+                prompt=prompt,
+                need_reference=need_reference,
+                include_reference_metadata=include_reference_metadata,
+                metadata_fields=metadata_fields,
+            )
+        )
 
     answer = None
     chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}

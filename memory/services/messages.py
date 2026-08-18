@@ -21,8 +21,10 @@ from common import settings
 from common.constants import MemoryType
 from common.doc_store.doc_store_base import OrderByExpr, MatchExpr
 
+
 def _es_index_prefix() -> str:
     return os.environ.get("ES_INDEX_PREFIX", "").strip()
+
 
 def index_name(uid: str):
     prefix = _es_index_prefix()
@@ -30,7 +32,6 @@ def index_name(uid: str):
 
 
 class MessageService:
-
     @classmethod
     def has_index(cls, uid: str, memory_id: str):
         index = index_name(uid)
@@ -49,10 +50,7 @@ class MessageService:
     @classmethod
     def insert_message(cls, messages: List[dict], uid: str, memory_id: str):
         index = index_name(uid)
-        [m.update({
-            "id": f'{memory_id}_{m["message_id"]}',
-            "status": 1 if m["status"] else 0
-        }) for m in messages]
+        [m.update({"id": f"{memory_id}_{m['message_id']}", "status": 1 if m["status"] else 0}) for m in messages]
         return settings.msgStoreConn.insert(messages, index, memory_id)
 
     @classmethod
@@ -68,32 +66,31 @@ class MessageService:
         return settings.msgStoreConn.delete(condition, index, memory_id)
 
     @classmethod
-    def list_message(cls, uid: str, memory_id: str, agent_ids: List[str]=None, keywords: str=None, page: int=1, page_size: int=50):
+    def list_message(cls, uid: str, memory_id: str, agent_ids: List[str] = None, keywords: str = None, page: int = 1, page_size: int = 50):
         index = index_name(uid)
         filter_dict = {}
         if agent_ids:
             filter_dict["agent_id"] = agent_ids
         if keywords:
             filter_dict["session_id"] = keywords
-        select_fields = [
-            "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
-            "invalid_at", "forget_at", "status"
-        ]
+        select_fields = ["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status"]
         order_by = OrderByExpr()
         order_by.desc("valid_at")
         res, total_count = settings.msgStoreConn.search(
             select_fields=select_fields,
             highlight_fields=[],
             condition={**filter_dict, "message_type": MemoryType.RAW.name.lower()},
-            match_expressions=[], order_by=order_by,
-            offset=(page-1)*page_size, limit=page_size,
-            index_names=index, memory_ids=[memory_id], agg_fields=[], hide_forgotten=False
+            match_expressions=[],
+            order_by=order_by,
+            offset=(page - 1) * page_size,
+            limit=page_size,
+            index_names=index,
+            memory_ids=[memory_id],
+            agg_fields=[],
+            hide_forgotten=False,
         )
         if not total_count:
-            return {
-            "message_list": [],
-            "total_count": 0
-        }
+            return {"message_list": [], "total_count": 0}
 
         raw_msg_mapping = settings.msgStoreConn.get_fields(res, select_fields)
         raw_messages = list(raw_msg_mapping.values())
@@ -102,9 +99,14 @@ class MessageService:
             select_fields=select_fields,
             highlight_fields=[],
             condition=extract_filter,
-            match_expressions=[], order_by=order_by,
-            offset=0, limit=512,
-            index_names=index, memory_ids=[memory_id], agg_fields=[], hide_forgotten=False
+            match_expressions=[],
+            order_by=order_by,
+            offset=0,
+            limit=512,
+            index_names=index,
+            memory_ids=[memory_id],
+            agg_fields=[],
+            hide_forgotten=False,
         )
         extract_msg = settings.msgStoreConn.get_fields(extract_res, select_fields)
         grouped_extract_msg = {}
@@ -117,42 +119,36 @@ class MessageService:
         for raw_msg in raw_messages:
             raw_msg["extract"] = grouped_extract_msg.get(raw_msg["message_id"], [])
 
-        return {
-            "message_list": raw_messages,
-            "total_count": total_count
-        }
+        return {"message_list": raw_messages, "total_count": total_count}
 
     @classmethod
     def get_recent_messages(cls, uid_list: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int):
         index_names = [index_name(uid) for uid in uid_list]
-        condition_dict = {
-            "agent_id": agent_id,
-            "session_id": session_id
-        }
+        condition_dict = {"agent_id": agent_id, "session_id": session_id}
         order_by = OrderByExpr()
         order_by.desc("valid_at")
         res, total_count = settings.msgStoreConn.search(
-            select_fields=[
-                "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
-                "invalid_at", "forget_at", "status", "content"
-            ],
+            select_fields=["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"],
             highlight_fields=[],
             condition=condition_dict,
-            match_expressions=[], order_by=order_by,
-            offset=0, limit=limit,
-            index_names=index_names, memory_ids=memory_ids, agg_fields=[]
+            match_expressions=[],
+            order_by=order_by,
+            offset=0,
+            limit=limit,
+            index_names=index_names,
+            memory_ids=memory_ids,
+            agg_fields=[],
         )
         if not total_count:
             return []
 
-        doc_mapping = settings.msgStoreConn.get_fields(res, [
-            "message_id", "message_type", "source_id", "memory_id","user_id", "agent_id", "session_id",
-            "valid_at", "invalid_at", "forget_at", "status", "content"
-        ])
+        doc_mapping = settings.msgStoreConn.get_fields(
+            res, ["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"]
+        )
         return list(doc_mapping.values())
 
     @classmethod
-    def search_message(cls, memory_ids: List[str], condition_dict: dict, uid_list: List[str], match_expressions:list[MatchExpr], top_n: int):
+    def search_message(cls, memory_ids: List[str], condition_dict: dict, uid_list: List[str], match_expressions: list[MatchExpr], top_n: int):
         index_names = [index_name(uid) for uid in uid_list]
         # filter only valid messages by default
         if "status" not in condition_dict:
@@ -161,35 +157,29 @@ class MessageService:
         order_by = OrderByExpr()
         order_by.desc("valid_at")
         res, total_count = settings.msgStoreConn.search(
-            select_fields=[
-                "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id",
-                "valid_at",
-                "invalid_at", "forget_at", "status", "content"
-            ],
+            select_fields=["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"],
             highlight_fields=[],
             condition=condition_dict,
             match_expressions=match_expressions,
             order_by=order_by,
-            offset=0, limit=top_n,
-            index_names=index_names, memory_ids=memory_ids, agg_fields=[]
+            offset=0,
+            limit=top_n,
+            index_names=index_names,
+            memory_ids=memory_ids,
+            agg_fields=[],
         )
         if not total_count:
             return []
 
-        docs = settings.msgStoreConn.get_fields(res, [
-            "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
-            "invalid_at", "forget_at", "status", "content"
-        ])
+        docs = settings.msgStoreConn.get_fields(
+            res, ["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"]
+        )
         return list(docs.values())
 
     @staticmethod
     def calculate_message_size(message: dict):
         content_embed = message.get("content_embed")
-        embed_size = (
-            sys.getsizeof(content_embed[0]) * len(content_embed)
-            if content_embed is not None and len(content_embed) > 0
-            else 0
-        )
+        embed_size = sys.getsizeof(content_embed[0]) * len(content_embed) if content_embed is not None and len(content_embed) > 0 else 0
         return sys.getsizeof(message.get("content", "")) + embed_size
 
     @classmethod
@@ -204,8 +194,12 @@ class MessageService:
             condition={},
             match_expressions=[],
             order_by=order_by,
-            offset=0, limit=2048*len(memory_ids),
-            index_names=index_names, memory_ids=memory_ids, agg_fields=[], hide_forgotten=False
+            offset=0,
+            limit=2048 * len(memory_ids),
+            index_names=index_names,
+            memory_ids=memory_ids,
+            agg_fields=[],
+            hide_forgotten=False,
         )
 
         if count == 0:
@@ -246,8 +240,11 @@ class MessageService:
             condition={},
             match_expressions=[],
             order_by=order_by,
-            offset=0, limit=512,
-            index_names=[_index_name], memory_ids=[memory_id], agg_fields=[]
+            offset=0,
+            limit=512,
+            index_names=[_index_name],
+            memory_ids=[memory_id],
+            agg_fields=[],
         )
         docs = settings.msgStoreConn.get_fields(res, select_fields)
         for doc in docs.values():
@@ -262,12 +259,7 @@ class MessageService:
     def get_missing_field_messages(cls, memory_id: str, uid: str, field_name: str):
         select_fields = ["message_id", "content"]
         _index_name = index_name(uid)
-        res = settings.msgStoreConn.get_missing_field_message(
-            select_fields=select_fields,
-            index_name=_index_name,
-            memory_id=memory_id,
-            field_name=field_name
-        )
+        res = settings.msgStoreConn.get_missing_field_message(select_fields=select_fields, index_name=_index_name, memory_id=memory_id, field_name=field_name)
         if not res:
             return []
         docs = settings.msgStoreConn.get_fields(res, select_fields)
@@ -276,7 +268,7 @@ class MessageService:
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):
         index = index_name(uid)
-        doc_id = f'{memory_id}_{message_id}'
+        doc_id = f"{memory_id}_{message_id}"
         return settings.msgStoreConn.get(doc_id, index, [memory_id])
 
     @classmethod
@@ -290,9 +282,12 @@ class MessageService:
             condition={},
             match_expressions=[],
             order_by=order_by,
-            offset=0, limit=1,
-            index_names=index_names, memory_ids=memory_ids,
-            agg_fields=[], hide_forgotten=False
+            offset=0,
+            limit=1,
+            index_names=index_names,
+            memory_ids=memory_ids,
+            agg_fields=[],
+            hide_forgotten=False,
         )
         if not total_count:
             return 1

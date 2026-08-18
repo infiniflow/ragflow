@@ -475,7 +475,7 @@ export const useManageMetaDataModal = (
           return handleSaveSettings(callback, builtInMetadata);
 
         case MetadataType.SingleFileSetting:
-          return handleSaveSingleFileSettings(callback);
+          return handleSaveSingleFileSettings(callback, builtInMetadata);
         default:
           handleSaveManage(callback);
           break;

@@ -58,6 +58,7 @@ def _redact(value: str | None) -> str:
 
 class OutlookCheckpoint(ConnectorCheckpoint):
     """Outlook-specific checkpoint tracking delta links per user mailbox."""
+
     delta_links: dict[str, str] | None = None
 
 
@@ -129,10 +130,7 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         client_secret = credentials.get("client_secret")
 
         if not all([tenant_id, client_id, client_secret]):
-            raise ConnectorMissingCredentialError(
-                "Outlook credentials are incomplete (tenant_id, client_id, "
-                "client_secret required)"
-            )
+            raise ConnectorMissingCredentialError("Outlook credentials are incomplete (tenant_id, client_id, client_secret required)")
 
         self._tenant_id = tenant_id
 
@@ -145,9 +143,7 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
 
         if "access_token" not in result:
             error = result.get("error_description", result.get("error", "unknown"))
-            raise ConnectorMissingCredentialError(
-                f"Failed to acquire Outlook access token: {error}"
-            )
+            raise ConnectorMissingCredentialError(f"Failed to acquire Outlook access token: {error}")
 
         self._access_token = result["access_token"]
         return None
@@ -161,32 +157,17 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
             raise ConnectorMissingCredentialError("Outlook")
 
         # Probe: list one user (or check explicit user mailbox).
-        probe_url = (
-            f"{_GRAPH_BASE}/users/{self.user_ids[0]}"
-            if self.user_ids
-            else f"{_GRAPH_BASE}/users?$top=1"
-        )
+        probe_url = f"{_GRAPH_BASE}/users/{self.user_ids[0]}" if self.user_ids else f"{_GRAPH_BASE}/users?$top=1"
         resp = self._get(probe_url)
 
         if resp.status_code == 401:
-            raise ConnectorMissingCredentialError(
-                "Outlook access token is invalid or expired."
-            )
+            raise ConnectorMissingCredentialError("Outlook access token is invalid or expired.")
         if resp.status_code == 403:
-            raise InsufficientPermissionsError(
-                "The service principal lacks the 'Mail.Read' (and possibly "
-                "'User.Read.All') permission required by the Outlook connector."
-            )
+            raise InsufficientPermissionsError("The service principal lacks the 'Mail.Read' (and possibly 'User.Read.All') permission required by the Outlook connector.")
         if resp.status_code == 404 and self.user_ids:
-            raise ConnectorValidationError(
-                f"Configured Outlook mailbox '{self.user_ids[0]}' does not exist "
-                "in this tenant."
-            )
+            raise ConnectorValidationError(f"Configured Outlook mailbox '{self.user_ids[0]}' does not exist in this tenant.")
         if not resp.ok:
-            raise UnexpectedValidationError(
-                f"Outlook validation failed (HTTP {resp.status_code}): "
-                f"{resp.text[:200]}"
-            )
+            raise UnexpectedValidationError(f"Outlook validation failed (HTTP {resp.status_code}): {resp.text[:200]}")
 
     # ------------------------------------------------------------------
     # Checkpoint helpers
@@ -205,9 +186,7 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     # Core data loading
     # ------------------------------------------------------------------
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Any:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Any:
         """Return messages received at or after *start* (epoch seconds).
 
         Kept for callers that prefer the time-window interface; internally
@@ -305,16 +284,11 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                 resp.status_code,
                 body_snippet,
             )
-            raise UnexpectedValidationError(
-                f"Outlook Graph request failed ({context}): "
-                f"HTTP {resp.status_code} {body_snippet}"
-            )
+            raise UnexpectedValidationError(f"Outlook Graph request failed ({context}): HTTP {resp.status_code} {body_snippet}")
         try:
             return resp.json()
         except ValueError as exc:
-            raise UnexpectedValidationError(
-                f"Outlook Graph response is not JSON ({context}): {exc}"
-            )
+            raise UnexpectedValidationError(f"Outlook Graph response is not JSON ({context}): {exc}")
 
     def _list_user_ids(self) -> list[str]:
         """Return mailbox identifiers to sync."""
@@ -335,14 +309,9 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     def _delta_url(self, user_id: str, delta_link: str | None = None) -> str:
         if delta_link:
             return delta_link
-        return (
-            f"{_GRAPH_BASE}/users/{user_id}/mailFolders/"
-            f"{self.folder}/messages/delta"
-        )
+        return f"{_GRAPH_BASE}/users/{user_id}/mailFolders/{self.folder}/messages/delta"
 
-    def _message_to_document(
-        self, msg: dict[str, Any], user_id: str
-    ) -> Document | None:
+    def _message_to_document(self, msg: dict[str, Any], user_id: str) -> Document | None:
         subject: str = msg.get("subject") or "(no subject)"
 
         body_obj = msg.get("body") or {}
@@ -357,25 +326,13 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         received_dt: datetime | None = None
         if received_str:
             try:
-                received_dt = datetime.fromisoformat(
-                    received_str.replace("Z", "+00:00")
-                )
+                received_dt = datetime.fromisoformat(received_str.replace("Z", "+00:00"))
             except ValueError:
                 pass
 
-        from_addr = (
-            msg.get("from", {}).get("emailAddress", {}) if msg.get("from") else {}
-        )
-        to_recipients: list[str] = [
-            r.get("emailAddress", {}).get("address", "")
-            for r in (msg.get("toRecipients") or [])
-            if r.get("emailAddress", {}).get("address")
-        ]
-        cc_recipients: list[str] = [
-            r.get("emailAddress", {}).get("address", "")
-            for r in (msg.get("ccRecipients") or [])
-            if r.get("emailAddress", {}).get("address")
-        ]
+        from_addr = msg.get("from", {}).get("emailAddress", {}) if msg.get("from") else {}
+        to_recipients: list[str] = [r.get("emailAddress", {}).get("address", "") for r in (msg.get("toRecipients") or []) if r.get("emailAddress", {}).get("address")]
+        cc_recipients: list[str] = [r.get("emailAddress", {}).get("address", "") for r in (msg.get("ccRecipients") or []) if r.get("emailAddress", {}).get("address")]
 
         header_lines = [
             f"From: {from_addr.get('name', '')} <{from_addr.get('address', '')}>",
@@ -436,9 +393,7 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
             next_delta: str | None = None
 
             while url:
-                data = self._get_json(
-                    url, context=f"delta user={_redact(user_id)}"
-                )
+                data = self._get_json(url, context=f"delta user={_redact(user_id)}")
 
                 for msg in data.get("value", []):
                     # Skip removed/deleted messages signalled by delta semantics
@@ -449,9 +404,7 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                     received_ts: float | None = None
                     if received_str:
                         try:
-                            received_ts = datetime.fromisoformat(
-                                received_str.replace("Z", "+00:00")
-                            ).timestamp()
+                            received_ts = datetime.fromisoformat(received_str.replace("Z", "+00:00")).timestamp()
                         except ValueError:
                             pass
 

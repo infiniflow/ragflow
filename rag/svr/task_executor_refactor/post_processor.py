@@ -28,10 +28,11 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from common.metadata_utils import update_metadata_to
 from rag.svr.task_executor_refactor.task_context import TaskContext
 from rag.utils.table_es_metadata import (
-    aggregate_table_manual_doc_metadata,
+    aggregate_table_doc_metadata,
     merge_table_parser_config_from_kb,
     table_parser_strip_doc_metadata_keys,
 )
+
 
 class PostProcessor:
     """Service for post-indexing operations.
@@ -69,15 +70,10 @@ class PostProcessor:
             return
 
         eff_pc = merge_table_parser_config_from_kb(ctx.raw_task)
-        logging.debug(
-            f"[TABLE_META_DEBUG] table post-index: table_column_mode={eff_pc.get('table_column_mode')!r}"
-        )
-
-        if eff_pc.get("table_column_mode") != "manual":
-            return
+        logging.debug(f"[TABLE_META_DEBUG] table post-index: table_column_mode={eff_pc.get('table_column_mode')!r}")
 
         try:
-            agg = aggregate_table_manual_doc_metadata(chunks, ctx.raw_task)
+            agg = aggregate_table_doc_metadata(chunks, ctx.raw_task)
             logging.debug(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
 
             strip_keys = table_parser_strip_doc_metadata_keys(eff_pc)

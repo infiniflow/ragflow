@@ -44,7 +44,7 @@ def user_list(tenant_id):
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 
@@ -64,7 +64,7 @@ async def create(tenant_id):
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 
@@ -82,9 +82,7 @@ async def create(tenant_id):
             return get_data_error_result(message=f"{invite_user_email} is already in the team.")
         if user_tenant_role == UserTenantRole.OWNER:
             return get_data_error_result(message=f"{invite_user_email} is the owner of the team.")
-        return get_data_error_result(
-            message=f"{invite_user_email} is in the team, but the role: {user_tenant_role} is invalid."
-        )
+        return get_data_error_result(message=f"{invite_user_email} is in the team, but the role: {user_tenant_role} is invalid.")
 
     UserTenantService.save(
         id=get_uuid(),
@@ -143,7 +141,7 @@ async def rm(tenant_id):
     if current_user.id != tenant_id and current_user.id != user_id:
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 

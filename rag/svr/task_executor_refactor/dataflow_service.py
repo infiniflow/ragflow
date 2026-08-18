@@ -38,7 +38,8 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_model_config_by_id
+from common.connection_utils import timeout
 from common.constants import LLMType, PipelineTaskType
 from common.metadata_utils import update_metadata_to
 from common.misc_utils import thread_pool_exec
@@ -102,14 +103,19 @@ class DataflowService:
             task_dataset_id = ctx.kb_id
 
             # Load DSL
-            dsl = await self._load_dsl(dataflow_id)
+            dsl, corrected_id = await self._load_dsl(dataflow_id)
             if dsl is None:
                 return
+            dataflow_id = corrected_id
 
             # Run pipeline
             pipeline = Pipeline(
-                dsl, tenant_id=ctx.tenant_id, doc_id=doc_id,
-                task_id=task_id, flow_id=dataflow_id
+                dsl,
+                tenant_id=ctx.tenant_id,
+                doc_id=doc_id,
+                task_id=task_id,
+                flow_id=dataflow_id,
+                language=ctx.language,
             )
             chunks = await pipeline.run(file=ctx.file) if ctx.file else await pipeline.run()
 
@@ -138,9 +144,7 @@ class DataflowService:
             # Embed chunks if needed
             keys = [k for o in chunks for k in list(o.keys())]
             if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
-                chunks, embedding_token_consumption = await self._embed_chunks(
-                    chunks, embedding_token_consumption
-                )
+                chunks, embedding_token_consumption = await self._embed_chunks(chunks, embedding_token_consumption)
                 if chunks is None:
                     self._record_pipeline_log(doc_id, dataflow_id, pipeline)
                     return
@@ -155,33 +159,30 @@ class DataflowService:
             # Insert chunks
             start_ts = timer()
             self._progress(prog=0.82, msg="[DOC Engine]:\nStart to index...")
-            e = await self._insert_chunks(
-                task_id, ctx.tenant_id, ctx.kb_id, chunks
-            )
+            e = await self._insert_chunks(task_id, ctx.tenant_id, ctx.kb_id, chunks)
             if not e:
                 self._record_pipeline_log(doc_id, dataflow_id, pipeline)
                 return
 
             time_cost = timer() - start_ts
             task_time_cost = timer() - task_start_ts
-            self._progress(
-                prog=1.,
-                msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost)
-            )
 
-            # Update document stats
+            # Update document stats (chunk counters) BEFORE marking the task
+            # as done, so the async _sync_progress loop never observes DONE
+            # with stale chunk_num=0.  If the stats update fails, the task
+            # is still marked DONE — chunk counters are not critical to the
+            # parse result.
             if ctx.write_interceptor:
                 ctx.write_interceptor.intercept("DocumentService.increment_chunk_num")
             else:
-                DocumentService.increment_chunk_num(
-                    doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost
-                )
+                try:
+                    DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+                except Exception:
+                    logging.exception("increment_chunk_num failed for doc %s", doc_id)
 
-            logging.info(
-                "[Done], chunks({}), token({}), elapsed:{:.2f}".format(
-                    len(chunks), embedding_token_consumption, task_time_cost
-                )
-            )
+            self._progress(prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
+
+            logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
             ctx.recording_context.record("dataflow_chunks", chunks)
             self._record_pipeline_log(doc_id, dataflow_id, pipeline)
 
@@ -193,17 +194,23 @@ class DataflowService:
                 await self._billing_hook.on_pipeline_error()
             raise
 
-    async def _load_dsl(self, dataflow_id: str) -> Optional[str]:
-        """Load dataflow DSL from service."""
+    async def _load_dsl(self, dataflow_id: str) -> tuple:
+        """Load dataflow DSL from service.
+
+        Returns:
+            Tuple of (dsl, corrected_dataflow_id).
+            When task_type is not 'dataflow', the dataflow_id is corrected
+            from the pipeline log's pipeline_id.
+        """
         ctx = self._task_context
         if ctx.task_type == "dataflow":
             e, cvs = UserCanvasService.get_by_id(dataflow_id)
             assert e, "User pipeline not found."
-            return cvs.dsl
+            return cvs.dsl, dataflow_id
         else:
             e, pipeline_log = PipelineOperationLogService.get_by_id(dataflow_id)
             assert e, "Pipeline log not found."
-            return pipeline_log.dsl
+            return pipeline_log.dsl, pipeline_log.pipeline_id
 
     @staticmethod
     def _get_output_type(chunks: Dict) -> str:
@@ -235,21 +242,24 @@ class DataflowService:
             return [{"text": [chunks["html"]]}] if chunks["html"] else []
         return []
 
-    async def _embed_chunks(
-        self, chunks: List[Dict], token_consumption: int
-    ) -> Tuple[Optional[List[Dict]], int]:
+    @timeout(60)
+    async def _embed_chunks(self, chunks: List[Dict], token_consumption: int) -> Tuple[Optional[List[Dict]], int]:
         """Embed chunks using the embedding model."""
         ctx = self._task_context
         try:
             self._progress(prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = self._get_kb_by_id(ctx.kb_id)
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_from_provider_instance(
-                ctx.tenant_id, LLMType.EMBEDDING, embedding_id
-            )
+            if kb.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(ctx.tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
+            else:
+                embd_model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING, embedding_id)
             from api.db.services.llm_service import LLMBundle
-            with LLMBundle(ctx.tenant_id, embd_model_config) as embedding_model:
 
+            with LLMBundle(ctx.tenant_id, embd_model_config) as embedding_model:
                 # Prepare texts for embedding using EmbeddingUtils
                 texts = EmbeddingUtils.prepare_texts_for_dataflow_embedding(chunks)
                 delta = 0.20 / (len(texts) // self._embedding_batch_size + 1)
@@ -258,19 +268,14 @@ class DataflowService:
                 # Batch encode using EmbeddingUtils
                 vects_batches = []
                 for i in range(0, len(texts), self._embedding_batch_size):
-                    batch = texts[i: i + self._embedding_batch_size]
+                    batch = texts[i : i + self._embedding_batch_size]
                     async with ctx.embed_limiter:
-                        vts, c = await thread_pool_exec(
-                            self._encode_batch, batch, embedding_model
-                        )
+                        vts, c = await thread_pool_exec(self._encode_batch, batch, embedding_model)
                     vects_batches.append(vts)
                     token_consumption += c
                     prog += delta
                     if i % (len(texts) // self._embedding_batch_size / 100 + 1) == 1:
-                        self._progress(
-                            prog=prog,
-                            msg=f"{i + 1} / {len(texts) // self._embedding_batch_size}"
-                        )
+                        self._progress(prog=prog, msg=f"{i + 1} / {len(texts) // self._embedding_batch_size}")
 
                 # Stack vectors using EmbeddingUtils
                 vects = EmbeddingUtils.stack_vectors(vects_batches)
@@ -329,7 +334,7 @@ class DataflowService:
                 del ck["metadata"]
 
             if "content_with_weight" not in ck:
-                ck["content_with_weight"] = ck["text"]
+                ck["content_with_weight"] = ck["text"] or ""
             del ck["text"]
 
             if "positions" in ck:
@@ -349,11 +354,10 @@ class DataflowService:
         else:
             DocMetadataService.update_document_metadata(doc_id, metadata)
 
-    async def _insert_chunks(
-        self, task_id: str, tenant_id: str, kb_id: str, chunks: List[Dict]
-    ) -> bool:
+    async def _insert_chunks(self, task_id: str, tenant_id: str, kb_id: str, chunks: List[Dict]) -> bool:
         """Insert chunks into document store."""
         from rag.svr.task_executor_refactor.chunk_service import ChunkService
+
         chunk_service = ChunkService(self._task_context)
         return await chunk_service.insert_chunks(task_id, tenant_id, kb_id, chunks)
 
@@ -362,15 +366,13 @@ class DataflowService:
         if self._task_context.write_interceptor:
             self._task_context.write_interceptor.intercept("PipelineOperationLogService.create")
         else:
-            PipelineOperationLogService.create(
-                document_id=doc_id, pipeline_id=dataflow_id,
-                task_type=PipelineTaskType.PARSE, dsl=str(pipeline)
-            )
+            PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
 
     @classmethod
     def _get_kb_by_id(cls, kb_id: str):
         """Get knowledge base by ID."""
         from api.db.services.knowledgebase_service import KnowledgebaseService
+
         return KnowledgebaseService.get_by_id(kb_id)
 
     def _progress(self, prog=None, msg=None):

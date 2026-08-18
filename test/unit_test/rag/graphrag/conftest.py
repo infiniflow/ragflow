@@ -43,7 +43,7 @@ for mod_name in _modules_to_mock:
         sys.modules[mod_name] = MagicMock()
 
 # Ensure `from common.connection_utils import timeout` returns a no-op decorator
-sys.modules["common.connection_utils"].timeout = lambda *a, **kw: (lambda fn: fn)
+sys.modules["common.connection_utils"].timeout = lambda *a, **kw: lambda fn: fn
 sys.modules["api.db.services.task_service"].has_canceled = lambda *_a, **_kw: False
 sys.modules["rag.graphrag.general.leiden"].run = lambda *_a, **_kw: {}
 sys.modules["rag.graphrag.general.leiden"].add_community_info2graph = lambda *_a, **_kw: None

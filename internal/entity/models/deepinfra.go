@@ -1,8 +1,24 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,97 +31,47 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type DeepInfraModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewDeepInfraModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepInfraModel {
 	return &DeepInfraModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
 
 func (d *DeepInfraModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &DeepInfraModel{
-		BaseURL:   baseURL,
-		URLSuffix: d.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewDeepInfraModel(baseURL, d.baseModel.URLSuffix)
 }
 
 func (d *DeepInfraModel) Name() string {
 	return "deepinfra"
 }
 
-func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (d *DeepInfraModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Chat)
-
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   false,
-	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 
 		if chatModelConfig.Effort != nil {
 			reqBody["reasoning_effort"] = *chatModelConfig.Effort
@@ -122,125 +88,31 @@ func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, 
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := d.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := d.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Parse result
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = rc
-	}
-
-	chatResponse := &ChatResponse{
-		Answer: &content,
-	}
-	if reasonContent != "" {
-		chatResponse.ReasonContent = &reasonContent
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (d *DeepInfraModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Chat)
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
-
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
-		}
-
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
-		}
-
-		if modelConfig.DoSample != nil {
-			reqBody["do_sample"] = *modelConfig.DoSample
-		}
-
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
-		}
-
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
-		}
-
 		if modelConfig.Effort != nil {
 			reqBody["reasoning_effort"] = *modelConfig.Effort
 		}
@@ -256,115 +128,31 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := d.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		common.Info(line)
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
-	}
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return d.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
-func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
+func (d *DeepInfraModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	if embeddingConfig != nil && embeddingConfig.Dimension >= 32 {
@@ -376,7 +164,10 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -384,7 +175,7 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -410,7 +201,6 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// 组装 RAGFlow 需要的返回格式
 	var embeddings []EmbeddingData
 	for _, data := range parsed.Data {
 		embeddings = append(embeddings, EmbeddingData{
@@ -428,37 +218,27 @@ type deepinfraRerankResponse struct {
 }
 
 // Rerank scores documents against a query using DeepInfra's inference endpoint.
-// The model id is part of the URL path (e.g. Qwen/Qwen3-Reranker-4B). The API
-// returns one score per input document; RerankConfig.TopN is enforced client-side
-// by keeping the highest-scoring entries when TopN is less than len(documents).
-func (d *DeepInfraModel) Rerank(
-	modelName *string,
-	query string,
-	documents []string,
-	apiConfig *APIConfig,
-	rerankConfig *RerankConfig,
-) (*RerankResponse, error) {
+func (d *DeepInfraModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-	baseURL := d.BaseURL[region]
-	if baseURL == "" {
-		return nil, fmt.Errorf("deepinfra: no base URL configured for region %q", region)
-	}
+	baseURL := resolvedBaseURL
 
 	// Reranker model ids may contain slashes (e.g. Qwen/Qwen3-Reranker-4B).
-	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.URLSuffix.Rerank, *modelName)
+	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Rerank, *modelName)
 
 	reqBody := map[string]interface{}{
 		"query":     query,
@@ -470,14 +250,17 @@ func (d *DeepInfraModel) Rerank(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -525,9 +308,9 @@ func (d *DeepInfraModel) Rerank(
 	return &RerankResponse{Data: results}, nil
 }
 
-func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("DeepInfra API key is missing")
+func (d *DeepInfraModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if file == nil || *file == "" {
@@ -538,12 +321,11 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 		return nil, fmt.Errorf("model name is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -553,6 +335,8 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 	}
 
 	// Open File
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -600,7 +384,10 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, &body)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -609,7 +396,7 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -638,22 +425,17 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 	}, nil
 }
 
-func (d *DeepInfraModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (d *DeepInfraModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", d.Name())
 }
 
-func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("DeepInfra API key is missing")
+func (d *DeepInfraModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is missing")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
 	}
 
 	reqBody := map[string]interface{}{
@@ -680,7 +462,11 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 	}
 
 	// URL: https://api.deepinfra.com/v1/text-to-speech/{voice_id}
-	url := fmt.Sprintf("%s/%s/%s", d.BaseURL[region], d.URLSuffix.TTS, voiceID)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.TTS, voiceID)
 
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["output_format"] = ttsConfig.Format
@@ -691,7 +477,10 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -699,7 +488,7 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -717,18 +506,13 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("DeepInfra API key is missing")
+func (d *DeepInfraModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is missing")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
 	}
 
 	voiceID := ""
@@ -756,7 +540,11 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	}
 
 	// URL: https://api.deepinfra.com/v1/text-to-speech/{voice_id}/stream
-	url := fmt.Sprintf("%s/%s/%s/stream", d.BaseURL[region], d.URLSuffix.TTS, voiceID)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s/%s/stream", resolvedBaseURL, d.baseModel.URLSuffix.TTS, voiceID)
 
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["output_format"] = ttsConfig.Format
@@ -767,7 +555,10 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -775,7 +566,7 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -813,21 +604,21 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	return nil
 }
 
-func (d *DeepInfraModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (d *DeepInfraModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s no such method", d.Name())
 }
 
-func (d *DeepInfraModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (d *DeepInfraModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s no such method", d.Name())
 }
 
-func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (d *DeepInfraModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -836,14 +627,17 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -866,29 +660,34 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]string, 0)
+	models := make([]ModelListItem, 0, len(result))
 	for _, model := range result {
 		if model.ModelName != "" {
-			models = append(models, model.ModelName)
+			models = append(models, ModelListItem{
+				ID:      model.ModelName,
+				OwnedBy: d.Name(),
+			})
 		}
 	}
 
-	return models, nil
+	return ParseListModel(ModelList{Models: models}), nil
 }
 
-func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (d *DeepInfraModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	url := fmt.Sprintf("%s/%s", baseURL, d.baseModel.URLSuffix.Balance)
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Balance)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -896,7 +695,7 @@ func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -925,15 +724,15 @@ func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 	}, nil
 }
 
-func (d *DeepInfraModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := d.ListModels(apiConfig)
+func (d *DeepInfraModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := d.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (d *DeepInfraModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (d *DeepInfraModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s no such method", d.Name())
 }
 
-func (d *DeepInfraModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (d *DeepInfraModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", d.Name())
 }

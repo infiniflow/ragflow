@@ -76,10 +76,10 @@ def validate_tag_features(raw):
         if not key:
             raise ValueError("keys must be non-empty strings")
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError("values must be finite numbers")
+            raise ValueError("values must be finite numbers greater than 0")
         numeric = float(value)
-        if not math.isfinite(numeric):
-            raise ValueError("values must be finite numbers")
+        if not math.isfinite(numeric) or numeric <= 0:
+            raise ValueError("values must be finite numbers greater than 0")
         cleaned[key] = numeric
 
     return cleaned

@@ -20,7 +20,7 @@ class TestMigrationProgress:
             es_index="ragflow_test",
             ob_table="ragflow_test",
         )
-        
+
         assert progress.es_index == "ragflow_test"
         assert progress.ob_table == "ragflow_test"
         assert progress.total_documents == 0
@@ -37,7 +37,7 @@ class TestMigrationProgress:
             total_documents=1000,
             migrated_documents=500,
         )
-        
+
         assert progress.total_documents == 1000
         assert progress.migrated_documents == 500
 
@@ -47,7 +47,7 @@ class TestMigrationProgress:
             es_index="test_index",
             ob_table="test_table",
         )
-        
+
         assert progress.failed_documents == 0
         assert progress.last_sort_values == []
         assert progress.last_batch_ids == []
@@ -99,7 +99,7 @@ class TestProgressManager:
             ob_table="ragflow_abc123",
             total_documents=1000,
         )
-        
+
         assert progress.es_index == "ragflow_abc123"
         assert progress.ob_table == "ragflow_abc123"
         assert progress.total_documents == 1000
@@ -116,10 +116,10 @@ class TestProgressManager:
         progress.migrated_documents = 250
         progress.last_sort_values = ["doc_250", 1234567890]
         manager.save_progress(progress)
-        
+
         # Load
         loaded = manager.load_progress("ragflow_test", "ragflow_test")
-        
+
         assert loaded is not None
         assert loaded.es_index == "ragflow_test"
         assert loaded.total_documents == 500
@@ -139,13 +139,13 @@ class TestProgressManager:
             ob_table="ragflow_delete_test",
             total_documents=100,
         )
-        
+
         # Verify it exists
         assert manager.load_progress("ragflow_delete_test", "ragflow_delete_test") is not None
-        
+
         # Delete
         manager.delete_progress("ragflow_delete_test", "ragflow_delete_test")
-        
+
         # Verify it's gone
         assert manager.load_progress("ragflow_delete_test", "ragflow_delete_test") is None
 
@@ -156,7 +156,7 @@ class TestProgressManager:
             ob_table="ragflow_update",
             total_documents=1000,
         )
-        
+
         # Update
         manager.update_progress(
             progress,
@@ -164,7 +164,7 @@ class TestProgressManager:
             last_sort_values=["doc_100", 9999],
             last_batch_ids=["id1", "id2", "id3"],
         )
-        
+
         assert progress.migrated_documents == 100
         assert progress.last_sort_values == ["doc_100", 9999]
         assert progress.last_batch_ids == ["id1", "id2", "id3"]
@@ -176,11 +176,11 @@ class TestProgressManager:
             ob_table="ragflow_multi",
             total_documents=1000,
         )
-        
+
         # Update multiple times
         for i in range(1, 11):
             manager.update_progress(progress, migrated_count=100)
-        
+
         assert progress.migrated_documents == 1000
 
     def test_mark_completed(self, manager):
@@ -191,9 +191,9 @@ class TestProgressManager:
             total_documents=100,
         )
         progress.migrated_documents = 100
-        
+
         manager.mark_completed(progress)
-        
+
         assert progress.status == "completed"
 
     def test_mark_failed(self, manager):
@@ -203,9 +203,9 @@ class TestProgressManager:
             ob_table="ragflow_fail",
             total_documents=100,
         )
-        
+
         manager.mark_failed(progress, "Connection timeout")
-        
+
         assert progress.status == "failed"
         assert progress.error_message == "Connection timeout"
 
@@ -217,9 +217,9 @@ class TestProgressManager:
             total_documents=1000,
         )
         progress.migrated_documents = 500
-        
+
         manager.mark_paused(progress)
-        
+
         assert progress.status == "paused"
 
     def test_can_resume_running(self, manager):
@@ -229,7 +229,7 @@ class TestProgressManager:
             ob_table="ragflow_resume_running",
             total_documents=1000,
         )
-        
+
         assert manager.can_resume("ragflow_resume_running", "ragflow_resume_running") is True
 
     def test_can_resume_paused(self, manager):
@@ -240,7 +240,7 @@ class TestProgressManager:
             total_documents=1000,
         )
         manager.mark_paused(progress)
-        
+
         assert manager.can_resume("ragflow_resume_paused", "ragflow_resume_paused") is True
 
     def test_can_resume_completed(self, manager):
@@ -252,7 +252,7 @@ class TestProgressManager:
         )
         progress.migrated_documents = 100
         manager.mark_completed(progress)
-        
+
         # Completed migrations should not be resumed
         assert manager.can_resume("ragflow_resume_complete", "ragflow_resume_complete") is False
 
@@ -272,9 +272,9 @@ class TestProgressManager:
         progress.schema_converted = True
         progress.table_created = True
         manager.save_progress(progress)
-        
+
         info = manager.get_resume_info("ragflow_info", "ragflow_info")
-        
+
         assert info is not None
         assert info["migrated_documents"] == 500
         assert info["total_documents"] == 1000
@@ -295,7 +295,7 @@ class TestProgressManager:
             ob_table="ragflow_abc123",
             total_documents=100,
         )
-        
+
         expected_file = manager.progress_dir / "ragflow_abc123_to_ragflow_abc123.json"
         assert expected_file.exists()
 
@@ -308,12 +308,12 @@ class TestProgressManager:
         )
         progress.migrated_documents = 50
         manager.save_progress(progress)
-        
+
         # Read file directly
         progress_file = manager.progress_dir / "ragflow_json_to_ragflow_json.json"
         with open(progress_file) as f:
             data = json.load(f)
-        
+
         assert data["es_index"] == "ragflow_json"
         assert data["ob_table"] == "ragflow_json"
         assert data["total_documents"] == 100

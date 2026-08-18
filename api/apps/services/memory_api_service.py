@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from api.apps import current_user
 from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
@@ -20,6 +22,7 @@ from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
@@ -79,8 +82,8 @@ async def create_memory(memory_info: dict):
         "memory_type": list[str],
         "embd_id": str,
         "llm_id": str,
-        "tenant_embd_id": str,
-        "tenant_llm_id": str
+        "tenant_embd_id": str | None,
+        "tenant_llm_id": str | None
     }
     """
     # check name length
@@ -103,7 +106,9 @@ async def create_memory(memory_info: dict):
         name=memory_name,
         memory_type=memory_type,
         embd_id=memory_info["embd_id"],
-        llm_id=memory_info["llm_id"]
+        llm_id=memory_info["llm_id"],
+        tenant_embd_id=memory_info.get("tenant_embd_id"),
+        tenant_llm_id=memory_info.get("tenant_llm_id"),
     )
     if success:
         return True, format_ret_data_from_memory(res)
@@ -130,6 +135,20 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     }
     """
     current_memory = _require_memory_access(memory_id)
+
+    def _normalize_memory_type(value):
+        if value is None:
+            return []
+        if isinstance(value, int):
+            return sorted(get_memory_type_human(value))
+        if isinstance(value, list):
+            return sorted(str(v).strip().lower() for v in value if str(v).strip())
+        return sorted(str(value).strip().lower().split(","))
+
+    def _normalize_str(value):
+        if value is None:
+            return ""
+        return str(value).strip()
 
     update_dict = {}
     # check name length
@@ -186,8 +205,21 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     memory_dict.update({"memory_type": get_memory_type_human(current_memory.memory_type)})
     to_update = {}
     for k, v in update_dict.items():
-        if isinstance(v, list) and set(memory_dict[k]) != set(v):
-            to_update[k] = v
+        if k == "memory_type":
+            current_value = _normalize_memory_type(memory_dict.get(k))
+            new_value = _normalize_memory_type(v)
+            if current_value != new_value:
+                to_update[k] = new_value
+        elif k == "embd_id":
+            current_value = _normalize_str(memory_dict.get(k))
+            new_value = _normalize_str(v)
+            if current_value != new_value:
+                to_update[k] = new_value
+        elif isinstance(v, list):
+            current_value = sorted(str(item).strip() for item in memory_dict.get(k, []))
+            new_value = sorted(str(item).strip() for item in v)
+            if current_value != new_value:
+                to_update[k] = v
         elif memory_dict[k] != v:
             to_update[k] = v
 
@@ -216,11 +248,12 @@ async def delete_memory(memory_id):
     return True
 
 
-async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size: int = 50):
+async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_size: int = 50):
     """
     :param filter_params: {
         "memory_type": list[str],
         "tenant_id": list[str],
+        "ids": list[str],
         "storage_type": str
     }
     :param keywords: str
@@ -229,6 +262,18 @@ async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size
     """
     filter_dict: dict = {"storage_type": filter_params.get("storage_type"), "accessible_user_id": current_user.id}
     allowed_tenant_ids = _joined_tenant_ids(current_user.id)
+
+    memory_ids = _split_filter_values(filter_params.get("ids"))
+    if memory_ids:
+        accessible_memories = _filter_accessible_memories(memory_ids)
+        accessible_memory_ids = [m.id for m in accessible_memories]
+        denied_ids = [mid for mid in memory_ids if mid not in accessible_memory_ids]
+        if denied_ids:
+            logging.warning("User '%s' lacks permission for memories: '%s'", current_user.id, ", ".join(denied_ids))
+        filter_dict["ids"] = accessible_memory_ids
+        if not accessible_memory_ids:
+            return {"memory_list": [], "total_count": 0}
+
     tenant_ids = _split_filter_values(filter_params.get("tenant_id") or filter_params.get("owner_ids"))
     if tenant_ids:
         filter_dict["tenant_id"] = [tenant_id for tenant_id in tenant_ids if tenant_id in allowed_tenant_ids]
@@ -240,10 +285,10 @@ async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size
     filter_dict["memory_type"] = memory_types
 
     memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
-    [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
-    return {
-        "memory_list": memory_list, "total_count": count
-    }
+    embd_name_map = get_composite_model_name_by_ids([memory["embd_id"] for memory in memory_list])
+    [memory.update({"memory_type": get_memory_type_human(memory["memory_type"]), "embd_name": embd_name_map.get(memory["embd_id"], "")}) for memory in memory_list]
+    memory_list.sort(key=lambda m: m["create_time"], reverse=True)
+    return {"memory_list": memory_list, "total_count": count}
 
 
 async def get_memory_config(memory_id):
@@ -253,10 +298,9 @@ async def get_memory_config(memory_id):
     return format_ret_data_from_memory(memory)
 
 
-async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, page: int=1, page_size: int = 50):
+async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, page: int = 1, page_size: int = 50):
     memory = _require_memory_access(memory_id)
-    messages = MessageService.list_message(
-        memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
+    messages = MessageService.list_message(memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
     agent_name_mapping = {}
     extract_task_mapping = {}
     if messages["message_list"]:
@@ -264,7 +308,7 @@ async def get_memory_messages(memory_id, agent_ids: list[str], keywords: str, pa
         agent_name_mapping = {agent["id"]: agent["title"] for agent in agent_list}
         task_list = TaskService.get_tasks_progress_by_doc_ids([memory_id])
         if task_list:
-            task_list.sort(key=lambda t: t["create_time"]) # asc, use newer when exist more than one task
+            task_list.sort(key=lambda t: t["create_time"])  # asc, use newer when exist more than one task
             for task in task_list:
                 # the 'digest' field carries the source_id when a task is created, so use 'digest' as key
                 extract_task_mapping.update({int(task["digest"]): task})
@@ -297,10 +341,7 @@ async def forget_message(memory_id: str, message_id: int):
     memory = _require_memory_access(memory_id)
 
     forget_time = timestamp_to_date(current_timestamp())
-    update_succeed = MessageService.update_message(
-        {"memory_id": memory_id, "message_id": int(message_id)},
-        {"forget_at": forget_time},
-        memory.tenant_id, memory_id)
+    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": int(message_id)}, {"forget_at": forget_time}, memory.tenant_id, memory_id)
     if update_succeed:
         return True
     raise Exception(f"Failed to forget message '{message_id}' in memory '{memory_id}'.")
@@ -309,10 +350,7 @@ async def forget_message(memory_id: str, message_id: int):
 async def update_message_status(memory_id: str, message_id: int, status: bool):
     memory = _require_memory_access(memory_id)
 
-    update_succeed = MessageService.update_message(
-        {"memory_id": memory_id, "message_id": int(message_id)},
-        {"status": status},
-        memory.tenant_id, memory_id)
+    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": int(message_id)}, {"status": status}, memory.tenant_id, memory_id)
     if update_succeed:
         return True
     raise Exception(f"Failed to set status for message '{message_id}' in memory '{memory_id}'.")
@@ -356,13 +394,7 @@ async def get_messages(memory_ids: list[str], agent_id: str = "", session_id: st
         return []
     uids = [memory.tenant_id for memory in memory_list]
     accessible_memory_ids = [memory.id for memory in memory_list]
-    res = MessageService.get_recent_messages(
-        uids,
-        accessible_memory_ids,
-        agent_id,
-        session_id,
-        limit
-    )
+    res = MessageService.get_recent_messages(uids, accessible_memory_ids, agent_id, session_id, limit)
     return res
 
 

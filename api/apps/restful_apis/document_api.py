@@ -14,46 +14,115 @@
 #  limitations under the License.
 #
 from io import BytesIO
+from datetime import datetime
 import logging
 import json
 import os
 import re
 from pathlib import Path
 
-from quart import request, make_response,send_file
+from quart import request, make_response, send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps import login_required
+from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
-from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
-    map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
-    reset_document_for_reparse
+from api.apps.services.document_api_service import (
+    validate_document_update_fields,
+    map_doc_keys,
+    map_doc_keys_with_run_status,
+    update_document_name_only,
+    update_chunk_method,
+    update_document_status_only,
+    reset_document_for_reparse,
+)
 from api.db import VALID_FILE_TYPES, FileType
+from api.db.db_models import API4Conversation, DB
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.canvas_service import UserCanvasService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
-    server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.api_utils import (
+    construct_json_result,
+    get_data_error_result,
+    get_error_data_result,
+    get_result,
+    get_json_result,
+    server_error_response,
+    add_tenant_id_to_kwargs,
+    get_request_json,
+    get_error_argument_result,
+    check_duplicate_ids,
+)
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
-    UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
+    UpdateDocumentReq,
+    format_validation_error_message,
+    validate_and_parse_json_request,
+    DeleteDocumentReq,
 )
 
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 from api.utils.file_utils import filename_type, thumbnail
+from api.utils.file_response import apply_preview_file_response_headers
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
+
+
+def _normalize_legacy_raptor_config(req: dict) -> None:
+    """Drop RAPTOR fields removed from the current parser-config schema."""
+    parser_config = req.get("parser_config")
+    if not isinstance(parser_config, dict):
+        return
+    raptor = parser_config.get("raptor")
+    if not isinstance(raptor, dict):
+        return
+
+    normalized_fields = []
+    legacy_ext = raptor.pop("ext", None)
+    if legacy_ext is not None:
+        normalized_fields.append("ext")
+        if isinstance(legacy_ext, dict) and "clustering_threshold" in legacy_ext and "clustering_threshold" not in raptor:
+            raptor["clustering_threshold"] = legacy_ext["clustering_threshold"]
+            normalized_fields.append("ext.clustering_threshold")
+    for field in ("threshold", "clustering_method", "tree_builder"):
+        if field in raptor:
+            raptor.pop(field)
+            normalized_fields.append(field)
+    max_token = raptor.get("max_token")
+    if isinstance(max_token, (int, float)) and not isinstance(max_token, bool) and max_token < 512:
+        raptor["max_token"] = 512
+        normalized_fields.append("max_token")
+    if normalized_fields:
+        logging.debug("Document RAPTOR config normalized legacy fields: %s", sorted(normalized_fields))
+
+
+def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
+    )
+
+    if not isinstance(parser_config, dict):
+        return False
+    if "compilation_template_group_id" not in parser_config and not (isinstance(parser_config.get("ext"), dict) and "compilation_template_group_id" in parser_config["ext"]):
+        return False
+    group_ids = _parser_config_compilation_template_group_ids(parser_config)
+    parser_config["compilation_template_group_id"] = group_ids
+    ext = parser_config.get("ext")
+    if isinstance(ext, dict) and "compilation_template_group_id" in ext:
+        ext["compilation_template_group_id"] = group_ids
+    return True
 
 
 @manager.route("/documents/upload", methods=["POST"])  # noqa: F821
@@ -119,7 +188,7 @@ async def upload_info(tenant_id: str):
         return server_error_response(e)
 
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_document(tenant_id, dataset_id, document_id):
@@ -172,10 +241,15 @@ async def update_document(tenant_id, dataset_id, document_id):
           type: object
     """
     req = await get_request_json()
+    _normalize_legacy_raptor_config(req)
+
+    # An explicit null name is a type error, not an unset field.
+    if "name" in req and req["name"] is None:
+        return get_error_data_result(message="Field: <name> - Message: <Input should be a valid string> - Value: <None>")
 
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         return get_error_data_result(message="Can't find this dataset!")
@@ -183,7 +257,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     # Prepare data for validation
     docs = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not docs:
-        return get_error_data_result(message="The dataset doesn't own the document.")
+        return get_error_data_result(message="the dataset doesn't own the document")
 
     # Validate document update request parameters
     try:
@@ -209,25 +283,28 @@ async def update_document(tenant_id, dataset_id, document_id):
             return error
 
     # "parser_id" provided but does not match with existing doc's file type
-    if "parser_id" in req and ((doc.type == FileType.VISUAL and req["parser_id"] != "picture")
-            or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
+    if "parser_id" in req and ((doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
         return get_data_error_result(message="Not supported yet!")
 
-    # parser config provided (already validated in UpdateDocumentReq), update it
+    # parser config provided (already validated in UpdateDocumentReq), update it.
+    # Changing the document-scoped knowledge compilation template group must
+    # not remove the existing chunks.
     if update_doc_req.parser_config:
         req["parser_config"].update(update_doc_req.parser_config.ext)
+        _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
-    # pipeline_id provided - reset document for reparse
-    if update_doc_req.pipeline_id:
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id):
+    # A non-empty pipeline_id selects pipeline parsing; an explicitly empty
+    # value clears it and switches back to the direct parser path.
+    if "pipeline_id" in req:
+        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id or ""):
             return error
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
         if error := update_chunk_method(req, doc, tenant_id):
             return error
 
-    if "enabled" in req: # already checked in UpdateDocumentReq - it's int if present
+    if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present
         # "enabled" flag provided, the update method will check if it's changed and then update if so
         if error := update_document_status_only(int(req["enabled"]), doc, kb):
             return error
@@ -275,6 +352,11 @@ async def metadata_summary(dataset_id, tenant_id):
     # Get doc_ids from query parameters (comma-separated string)
     doc_ids_param = request.args.get("doc_ids", "")
     doc_ids = doc_ids_param.split(",") if doc_ids_param else None
+    try:
+        validate_rest_api_ids(doc_ids, "doc_ids")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+
     try:
         summary = DocMetadataService.get_metadata_summary(dataset_id, doc_ids)
         return get_result(data={"summary": summary})
@@ -441,8 +523,8 @@ async def upload_document(dataset_id, tenant_id):
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
 
     if not check_kb_team_permission(kb, tenant_id):
-        logging.error("No authorization.")
-        return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        logging.error("no authorization")
+        return get_error_data_result(message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     if upload_type == "web":
         return await _upload_web_document(dataset_id, kb, tenant_id)
@@ -476,7 +558,11 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
     if not is_valid_url(url):
         return get_error_data_result(message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
 
-    blob = html2pdf(url)
+    try:
+        blob = await thread_pool_exec(html2pdf, url)
+    except Exception as e:
+        logging.warning("html2pdf failed for %s, %s", dataset_id, str(e))
+        return get_error_data_result(message=str(e), code=RetCode.SERVER_ERROR)
     if not blob:
         return server_error_response(ValueError("Download failure."))
 
@@ -602,11 +688,18 @@ async def _upload_local_documents(kb, tenant_id):
             parser_config_override = None
 
     err, files = await thread_pool_exec(
-        FileService.upload_document, kb, file_objs, tenant_id,
+        FileService.upload_document,
+        kb,
+        file_objs,
+        tenant_id,
         parent_path=form.get("parent_path"),
         parser_config_override=parser_config_override,
     )
-    if err:
+
+    # Handle partial success: some files uploaded successfully, some had errors
+    is_partial_success = err and files
+
+    if err and not is_partial_success:
         msg = "\n".join(err)
         logging.error(msg)
         return get_error_data_result(message=msg, code=RetCode.SERVER_ERROR)
@@ -620,10 +713,17 @@ async def _upload_local_documents(kb, tenant_id):
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
 
     if return_raw_files:
-        return get_result(data=files)
+        doc_data = files
+    else:
+        doc_data = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
 
-    renamed_doc_list = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
-    return get_result(data=renamed_doc_list)
+    # For partial success, include error message along with successful uploads
+    if is_partial_success:
+        msg = "\n".join(err)
+        logging.warning(f"Partial upload success: {len(files)} succeeded, {len(err)} failed - {msg}")
+        return construct_json_result(code=RetCode.SERVER_ERROR, message=msg, data=doc_data)
+
+    return get_result(data=doc_data)
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
@@ -759,7 +859,7 @@ def list_docs(dataset_id, tenant_id):
     return get_json_result(data={"total": total, "docs": renamed_doc_list})
 
 
-def _get_docs_with_request(req, dataset_id:str):
+def _get_docs_with_request(req, dataset_id: str):
     """Get documents with request parameters from a dataset.
 
     This function extracts filtering parameters from the request and returns
@@ -795,10 +895,14 @@ def _get_docs_with_request(req, dataset_id:str):
     """
     q = req.args
 
-    page = int(q.get("page", 1))
-    page_size = validate_rest_api_page_size(int(q.get("page_size", 30)))
+    # Invalid or negative pagination values fall back to defaults
+    # instead of leaking internal conversion/SQL errors.
+    page = validate_rest_api_page(q.get("page", DEFAULT_PAGE))
+    page_size = validate_rest_api_page_size(q.get("page_size", DEFAULT_PAGE_SIZE))
 
     orderby = q.get("orderby", "create_time")
+    if orderby not in ("create_time", "update_time", "name"):
+        return RetCode.ARGUMENT_ERROR, f"invalid orderby field: {orderby}", [], 0
     desc = str(q.get("desc", "true")).strip().lower() != "false"
     keywords = q.get("keywords", "")
 
@@ -825,19 +929,24 @@ def _get_docs_with_request(req, dataset_id:str):
     doc_id = q.get("id")
     if doc_id:
         if not DocumentService.query(id=doc_id, kb_id=dataset_id):
-            return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
-        doc_ids_filter = [doc_id] # id provided, ignore other filters
+            return RetCode.DATA_ERROR, f"you don't own the document {doc_id}", [], 0
+        doc_ids_filter = [doc_id]  # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
-        return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
+        return RetCode.DATA_ERROR, f"you don't own the document {doc_name}", [], 0
 
     doc_ids = q.getlist("ids")
+    try:
+        validate_rest_api_ids(doc_ids)
+    except ValueError as e:
+        return RetCode.ARGUMENT_ERROR, str(e), [], 0
     if doc_id and len(doc_ids) > 0:
         return RetCode.DATA_ERROR, f"Should not provide both 'id':{doc_id} and 'ids'{doc_ids}"
     if len(doc_ids) > 0:
         doc_ids_filter = doc_ids
 
-    docs, total = DocumentService.get_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix,
-                                               name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata)
+    docs, total = DocumentService.get_by_kb_id(
+        dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix, name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata
+    )
 
     # time range filter (0 means no bound)
     create_time_from = int(q.get("create_time_from", 0))
@@ -893,6 +1002,7 @@ def _parse_run_status_filter(req_args):
     converted = [status_text_to_numeric.get(status.upper(), status) for status in raw_statuses]
     invalid_statuses = {status for status in converted if status not in valid_statuses}
     return converted, invalid_statuses
+
 
 def _parse_doc_id_filter_with_metadata(req, kb_id):
     """Parse document ID filter based on metadata conditions from the request.
@@ -963,12 +1073,12 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
     try:
         metadata_condition = json.loads(req.get("metadata_condition", "{}"))
     except json.JSONDecodeError:
-        msg = f'metadata_condition must be valid JSON: {req.get("metadata_condition")}.'
+        msg = f"metadata_condition must be valid JSON: {req.get('metadata_condition')}."
         return RetCode.DATA_ERROR, msg, [], return_empty_metadata
     try:
         metadata = json.loads(req.get("metadata", "{}"))
     except json.JSONDecodeError:
-        logging.error(msg=f'metadata must be valid JSON: {req.get("metadata")}.')
+        logging.error(msg=f"metadata must be valid JSON: {req.get('metadata')}.")
         return RetCode.DATA_ERROR, "metadata must be valid JSON.", [], return_empty_metadata
 
     if isinstance(metadata, dict) and metadata.get("empty_metadata"):
@@ -1093,9 +1203,7 @@ async def delete_documents(tenant_id, dataset_id):
         dataset_doc_ids = {doc.id for doc in DocumentService.query(kb_id=dataset_id)}
         invalid_ids = [doc_id for doc_id in doc_ids if doc_id not in dataset_doc_ids]
         if invalid_ids:
-            return get_error_data_result(
-                message=f"These documents do not belong to dataset {dataset_id} or Document not found: {', '.join(invalid_ids)}"
-            )
+            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id} or Document not found: {', '.join(invalid_ids)}")
 
         # make sure each id is unique
         unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_ids, "document")
@@ -1105,7 +1213,7 @@ async def delete_documents(tenant_id, dataset_id):
             doc_ids = unique_doc_ids
 
         # Delete documents using existing FileService.delete_docs
-        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
+        errors = await thread_pool_exec_long_time(FileService.delete_docs, doc_ids, tenant_id)
 
         if errors:
             return get_error_data_result(message=str(errors))
@@ -1114,6 +1222,7 @@ async def delete_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
@@ -1158,12 +1267,12 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
     # Verify ownership and existence of dataset
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        msg = f"document {document_id} not found in dataset {dataset_id}"
         return get_error_data_result(message=msg)
     doc = doc[0]
 
@@ -1183,7 +1292,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     try:
         e, doc = DocumentService.get_by_id(doc.id)
         if not e:
-            return get_data_error_result(message="Document not found!")
+            return get_data_error_result(message="document not found")
     except Exception as e:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
@@ -1191,6 +1300,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 def list_thumbnails():
     """
     Get thumbnails for documents.
@@ -1217,8 +1327,12 @@ def list_thumbnails():
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
 
     try:
-        docs = DocumentService.get_thumbnails(doc_ids)
+        validate_rest_api_ids(doc_ids, "doc_ids")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
 
+    try:
+        docs = DocumentService.get_thumbnails(doc_ids)
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
@@ -1335,17 +1449,13 @@ async def update_metadata(tenant_id, dataset_id):
         kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
         invalid_ids = set(document_ids) - set(kb_doc_ids)
         if invalid_ids:
-            return get_error_data_result(
-                message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}"
-            )
+            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
         target_doc_ids = set(document_ids)
 
     # Apply metadata_condition filtering if provided
     if metadata_condition:
         metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
-        filtered_ids = set(
-            meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
-        )
+        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         target_doc_ids = target_doc_ids & filtered_ids
         if metadata_condition.get("conditions") and not target_doc_ids:
             return get_result(data={"updated": 0, "matched_docs": 0})
@@ -1375,10 +1485,11 @@ async def ingest(tenant_id):
         logging.exception("document ingest/run failed")
         return server_error_response(e)
 
-def _run_sync(user_id:str, req):
+
+def _run_sync(user_id: str, req):
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, user_id):
-            return RetCode.AUTHENTICATION_ERROR, "No authorization."
+            return RetCode.AUTHENTICATION_ERROR, "no authorization"
 
     kb_table_num_map = {}
     for doc_id in req["doc_ids"]:
@@ -1394,13 +1505,18 @@ def _run_sync(user_id:str, req):
             return RetCode.DATA_ERROR, "Tenant not found!"
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
-            return RetCode.DATA_ERROR, "Document not found!"
+            return RetCode.DATA_ERROR, "document not found"
 
         if str(req["run"]) == TaskStatus.CANCEL.value:
             tasks = list(TaskService.query(doc_id=doc_id))
             has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
             if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
                 cancel_all_task_of(doc_id)
+                # Append a "stopped by user" marker so the history is preserved and
+                # the document no longer looks like it is still waiting in the queue.
+                cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
+                info["progress_msg"] = (doc.progress_msg or "") + cancel_doc_msg
+                logging.debug("Appended cancellation marker to progress_msg on cancel for doc %s", doc_id)
             else:
                 return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
@@ -1409,6 +1525,9 @@ def _run_sync(user_id:str, req):
         DocumentService.update_by_id(doc_id, info)
         if req.get("delete", False):
             TaskService.filter_delete([Task.doc_id == doc_id])
+            from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+            remove_dataset_nav_doc_sync(doc_tenant_id, doc.kb_id, doc.id)
             if settings.docStoreConn.index_exist(search.index_name(doc_tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(doc_tenant_id), doc.kb_id)
 
@@ -1499,6 +1618,7 @@ async def parse_documents(tenant_id, dataset_id):
             return get_error_data_result(message=f"Documents not found: {not_found_ids}")
 
     try:
+
         def _run_sync():
             kb_table_num_map = {}
             success_count = 0
@@ -1518,6 +1638,9 @@ async def parse_documents(tenant_id, dataset_id):
 
                 DocumentService.update_by_id(doc_id, info)
                 TaskService.filter_delete([Task.doc_id == doc_id])
+                from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+                remove_dataset_nav_doc_sync(tenant_id, doc.kb_id, doc.id)
                 if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 
@@ -1608,6 +1731,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
         return get_error_data_result(message=f"Documents not found: {not_found_ids}")
 
     try:
+
         def _run_sync():
             success_count = 0
             for doc_id in valid_doc_ids:
@@ -1624,7 +1748,29 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
-                DocumentService.update_by_id(doc_id, {"run": str(TaskStatus.CANCEL.value)})
+                # Release the document's partial chunk/token counts from the
+                # knowledgebase aggregate under the row lock (see
+                # release_reparse_counters). This is the sole counter adjustment,
+                # so the status update below must not touch chunk_num.
+                try:
+                    release_reparse_counters(doc_id)
+                except LookupError:
+                    logging.exception("Failed to release counters for document %s during stop-parse", doc_id)
+                    errors.append(f"Document not found: {doc_id}")
+                    continue
+                cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
+                DocumentService.update_by_id(
+                    doc_id,
+                    {
+                        "run": str(TaskStatus.CANCEL.value),
+                        "progress": 0,
+                        "progress_msg": (doc.progress_msg or "") + cancel_doc_msg,
+                    },
+                )
+                logging.debug("Appended cancellation marker to progress_msg on stop-parse for doc %s", doc_id)
+                index_name = search.index_name(tenant_id)
+                if settings.docStoreConn.index_exist(index_name, doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)
                 success_count += 1
 
             result = {"success_count": success_count}
@@ -1687,6 +1833,7 @@ def _content_type_for_document_image(object_name, data):
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 async def get_document_image(image_id):
     """
     Get a document image by ID.
@@ -1737,6 +1884,43 @@ ARTIFACT_CONTENT_TYPES = {
 }
 
 
+@DB.connection_context()
+def _sandbox_artifact_dialog_ids_for_user(filename: str, user_id: str) -> list[str]:
+    """Return agent dialog IDs for sessions owned by *user_id* that reference *filename*."""
+    if not filename:
+        return []
+    artifact_ref = f"documents/artifact/{filename}"
+    rows = (
+        API4Conversation.select(API4Conversation.dialog_id)
+        .where(
+            ((API4Conversation.user_id == user_id) | (API4Conversation.exp_user_id == user_id)),
+            (API4Conversation.message.contains(filename) | API4Conversation.message.contains(artifact_ref)),
+        )
+        .distinct()
+    )
+    return [row.dialog_id for row in rows if row.dialog_id]
+
+
+def _sandbox_artifact_accessible(filename: str, user_id: str) -> bool:
+    """True when a CodeExec sandbox artifact belongs to an agent session the user may access."""
+    for dialog_id in _sandbox_artifact_dialog_ids_for_user(filename, user_id):
+        if UserCanvasService.accessible(dialog_id, user_id):
+            return True
+    return False
+
+
+@DB.connection_context()
+def _sandbox_artifact_session_accessible(session_id: str, user_id: str) -> bool:
+    if not session_id:
+        return False
+    conv = API4Conversation.get_or_none(API4Conversation.id == session_id)
+    if not conv:
+        return False
+    if str(conv.user_id) != str(user_id) and str(conv.exp_user_id or "") != str(user_id):
+        return False
+    return UserCanvasService.accessible(conv.dialog_id, user_id)
+
+
 @manager.route("/documents/artifact/<filename>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_artifact(filename):
@@ -1772,7 +1956,10 @@ async def get_artifact(filename):
             return get_data_error_result(message="Invalid filename.")
         ext = os.path.splitext(basename)[1].lower()
         if ext not in ARTIFACT_CONTENT_TYPES:
-            return get_data_error_result(message="Invalid file type.")
+            return get_data_error_result(message="invalid file type")
+        session_id = request.args.get("session_id", "")
+        if not await thread_pool_exec(_sandbox_artifact_accessible, basename, current_user.id) and not await thread_pool_exec(_sandbox_artifact_session_accessible, session_id, current_user.id):
+            return get_data_error_result(message="Artifact not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
         if not data:
             return get_data_error_result(message="Artifact not found.")
@@ -1846,7 +2033,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
 
     # Verify dataset ownership
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
@@ -1907,8 +2094,9 @@ async def batch_update_document_status(tenant_id, dataset_id):
         return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
     return get_json_result(data=result)
 
+
 @manager.route("/documents/<doc_id>/preview", methods=["GET"])  # noqa: F821
-@login_required
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 async def get(doc_id):
     """Return the raw file bytes for a document the requesting user is authorized to read.
 
@@ -1917,13 +2105,17 @@ async def get(doc_id):
     enumeration.
     """
     try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="document not found")
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
-            return get_data_error_result(message="Document not found!")
+            return get_data_error_result(message="document not found")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        if not data:
+            return get_data_error_result(message="This file is empty.")
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
@@ -1932,10 +2124,20 @@ async def get(doc_id):
         if ext:
             fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
             content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
-        apply_safe_file_response_headers(response, content_type, ext)
+        apply_preview_file_response_headers(response, content_type, ext, doc.name)
         return response
     except Exception as e:
         return server_error_response(e)
+
+
+def _mimetype_for_document(doc) -> str:
+    match = re.search(r"\.([^.]+)$", (doc.name or "").lower())
+    if not match:
+        return "application/octet-stream"
+    ext = match.group(1)
+    fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+    return CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -1977,6 +2179,10 @@ async def download(dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=current_user.id):
+        return get_data_error_result(message="document not found")
+    if not DocumentService.accessible(document_id, current_user.id):
+        return get_data_error_result(message="document not found")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -1991,8 +2197,9 @@ async def download(dataset_id, document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )
+
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -2034,6 +2241,8 @@ async def download_document(document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not DocumentService.accessible(document_id, current_user.id):
+        return get_data_error_result(message="document not found")
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -2048,5 +2257,5 @@ async def download_document(document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )

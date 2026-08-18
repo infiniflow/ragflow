@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
@@ -6,6 +22,8 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
@@ -16,16 +34,22 @@ import { SearchCard } from './search-card';
 export default function SearchList() {
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('search');
+  const { t: tc } = useTranslate('common');
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
+    isLoading,
     pagination,
     searchString,
     handleInputChange,
     setPagination,
     refetch: refetchList,
+    filterValue,
+    handleFilterSubmit,
   } = useFetchSearchList();
-
+  const owners = [
+    buildOwnersFilter(list?.data?.search_apps ?? [], undefined, tc('owner')),
+  ];
   const {
     openCreateModal,
     showSearchRenameModal,
@@ -53,6 +77,7 @@ export default function SearchList() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(list?.data?.search_apps?.length, isLoading);
 
   const [searchUrl, setSearchUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';
@@ -67,14 +92,19 @@ export default function SearchList() {
   return (
     <>
       {list?.data?.search_apps?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="search-list">
-          <header className="px-5 pt-8 mb-4">
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="search-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               icon="searches"
               title={t('searchApps')}
-              showFilter={false}
               searchString={searchString}
               onSearchChange={handleInputChange}
+              value={filterValue}
+              onChange={handleFilterSubmit}
+              filters={owners}
             >
               <Button
                 data-testid="create-search"
