@@ -417,7 +417,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             add_positions(d, [[ii] * 5])
 
         if child_delimiters_pattern:
-            d["mom_with_weight"] = ck
+            d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
 
@@ -440,7 +440,7 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
 
         if ck.get("ck_type") == "text":
             if child_delimiters_pattern:
-                d["mom_with_weight"] = text
+                d["mom_with_weight"] = text.removeprefix("\n")
                 res.extend(split_with_pattern(d, child_delimiters_pattern, text, eng, language=language))
                 continue
         elif ck.get("ck_type") == "image":
@@ -463,7 +463,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
         d["image"] = image
         add_positions(d, [[ii] * 5])
         if child_delimiters_pattern:
-            d["mom_with_weight"] = ck
+            d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
         tokenize(d, ck, eng, language=language)
