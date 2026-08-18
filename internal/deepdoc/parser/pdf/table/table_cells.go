@@ -406,10 +406,31 @@ func containsCJK(s string) bool {
 	return false
 }
 
-// headerSetWithBlockType returns rows that should be header rows, using both
-// TSR cell labels AND block-type classification.  Matches Python's
-// construct_table header detection (table_structure_recognizer.py:370-384).
-func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
+// HeaderSetWithBlockType returns rows that should be header rows, combining
+// THREE additive signals to match Python's construct_table header detection
+// (table_structure_recognizer.py:336-348):
+//
+//  1. Geometric (Python: any(a.get("H") for a in arr)). A text box that overlaps
+//     a detected header region by ≥0.3 sets box.H>0 (pdf_parser.py:616 sets b["H"];
+//     Go's AnnotateTableBoxes sets box.H at table_layout.go:189). A row whose
+//     boxes carry H is a header.
+//  2. blockType (Python: max_type == "Nu" and btype != "Nu"). Only contributes
+//     for numeric-dominant tables; per-cell, then row majority.
+//  3. TSR label (Python has no exact equivalent; Go uses it as a model-agnostic
+//     fallback). A cell whose Label contains "header" counts; row majority.
+//
+// All three signals are ADDITIVE (a row is a header if ANY signal flags it) —
+// there is no mutually-exclusive gate. Previously the label fallback only ran
+// when blockType found nothing, which dropped label-only headers (parity #4,
+// asymmetry 3), and the label fallback had no 0.5 majority vote, over-promoting
+// a data row that merely contained one mislabeled cell (parity #4, asymmetry 2).
+// The geometric signal was absent from the production path entirely (parity #4,
+// asymmetry 1).
+//
+// boxes may be nil (e.g. the test-only cell-grouping path); the geometric signal
+// is then skipped and only blockType + label are consulted, degrading to the
+// previous behavior for those cases.
+func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]bool {
 	// Compute dominant block type across all cells.
 	typeCounts := make(map[string]int)
 	for _, row := range rows {
@@ -430,6 +451,8 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
 	}
 
 	hdrs := make(map[int]bool)
+
+	// Signal 2: blockType (numeric-dominant tables only).
 	for ri, row := range rows {
 		cnt, h := 0, 0
 		for _, cell := range row {
@@ -439,7 +462,7 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
 			}
 			cnt++
 			bt := BlockType(t)
-			// Python: if max_type == "Nu" and cell btype == "Nu" → skip
+			// Python: max_type == "Nu" and cell btype == "Nu" → skip
 			if maxType == "Nu" && bt == "Nu" {
 				continue
 			}
@@ -452,17 +475,36 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell) map[int]bool {
 			hdrs[ri] = true
 		}
 	}
-	// Fallback: if block-type found no headers, check for model-agnostic
-	// "header" substring in cell labels (works across different TSR models).
-	if len(hdrs) == 0 {
-		for ri, row := range rows {
-			for _, cell := range row {
-				if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
-					hdrs[ri] = true
-					break
-				}
+
+	// Signal 3: TSR label "header" (additive, with 0.5 majority — fixes
+	// over-detection where a single mislabeled cell promoted a whole data row).
+	for ri, row := range rows {
+		cnt, h := 0, 0
+		for _, cell := range row {
+			t := strings.TrimSpace(cell.Text)
+			if t == "" {
+				continue
+			}
+			cnt++
+			if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
+				h++
 			}
 		}
+		if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
+			hdrs[ri] = true
+		}
 	}
+
+	// Signal 1: geometric H from boxes (additive). Reuses BoxHeaderSet so the
+	// production TSR path applies the same geometric rule as the box-fallback
+	// path (box overlaps header region by ≥0.3 → its row is a header), mirroring
+	// Python's any(a.get("H") for a in arr). Robust to column-index misalignment
+	// because it keys on box.R (row) only.
+	if len(boxes) > 0 {
+		for ri := range BoxHeaderSet(rows, boxes) {
+			hdrs[ri] = true
+		}
+	}
+
 	return hdrs
 }

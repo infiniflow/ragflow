@@ -186,7 +186,12 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 			boxes[i].HBott = headers[idx].Y1
 			boxes[i].HLeft = headers[idx].X0
 			boxes[i].HRight = headers[idx].X1
-			boxes[i].H = idx
+			// Offset by 1: store idx+1 so a box matching the FIRST header cell
+			// (idx == 0) is distinguishable from "no header overlap" (the
+			// default H == 0). All readers check H > 0, so this keeps the
+			// boolean semantics while fixing single-column / first-column
+			// header detection (parity #4, asymmetry 1).
+			boxes[i].H = idx + 1
 		}
 		if len(clmns) > 1 {
 			if idx := findHorizontallyTightestFit(boxes[i], clmns); idx >= 0 {
