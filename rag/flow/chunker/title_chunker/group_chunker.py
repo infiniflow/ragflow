@@ -20,10 +20,11 @@ from rag.flow.chunker.title_chunker.common import (
 )
 
 MIN_GROUP_TOKENS = 32
-MAX_GROUP_TOKENS = 1024
 
 
 def _build_section_ids(levels, target_level):
+    """Assign a stable section id that increments whenever a title at or above
+    ``target_level`` starts a new section."""
     sec_ids = []
     sid = 0
     for i, level in enumerate(levels):
@@ -34,18 +35,30 @@ def _build_section_ids(levels, target_level):
 
 
 def _resolve_group_target_level(levels, hierarchy, most_level):
+    """Pick the level used as the grouping target for the group method."""
     if hierarchy and int(hierarchy) > 0:
         return resolve_target_level(levels, hierarchy)
     return most_level
 
 
 class GroupTitleChunker(BaseTitleChunker):
+    """Group consecutive records under the same title into one chunk."""
+
     start_message = "Start to group by title levels."
 
     def resolve_levels(self, line_records):
+        """Resolve title levels via the shared outline/frequency strategy."""
         return self.resolve_title_levels(line_records)
 
     def build_chunks(self, line_records, resolved):
+        """Build chunks by merging records inside the same logical section.
+
+        The merge ceiling uses the configurable ``chunk_token_cap`` (0/None
+        means "no ceiling"). The post-build ``_enforce_token_cap`` in
+        BaseTitleChunker is the single hard guarantee, so any residual over-cap
+        chunk (e.g. a single record bigger than the cap) is still re-split
+        there.
+        """
         target_level = _resolve_group_target_level(
             resolved["levels"],
             self.param.hierarchy,
@@ -55,6 +68,8 @@ class GroupTitleChunker(BaseTitleChunker):
         record_groups = []
         tk_cnt = 0
         last_sid = -2
+
+        cap = self.param.chunk_token_cap or 0
 
         # The merge state is driven by (current section id, current token size).
         # A chunk stays open while records remain in the same logical section,
@@ -72,7 +87,8 @@ class GroupTitleChunker(BaseTitleChunker):
                 continue
 
             token_count = num_tokens_from_string(text)
-            should_merge = record_groups and record_groups[-1][0]["doc_type_kwd"] == "text" and (tk_cnt < MIN_GROUP_TOKENS or (tk_cnt < MAX_GROUP_TOKENS and sec_id == last_sid))
+            merge_ceiling_ok = cap <= 0 or tk_cnt < cap
+            should_merge = record_groups and record_groups[-1][0]["doc_type_kwd"] == "text" and (tk_cnt < MIN_GROUP_TOKENS or (merge_ceiling_ok and sec_id == last_sid))
 
             if should_merge:
                 record_groups[-1].append(record)
