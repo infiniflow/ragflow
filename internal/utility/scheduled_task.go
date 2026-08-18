@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -38,7 +39,6 @@ func NewStatusMessage(id int, version string, nodeName string, extInfo string) *
 	return &StatusMessage{
 		ID:        id,
 		Version:   version,
-		Timestamp: time.Now(),
 		NodeName:  nodeName,
 		ExtInfo:   extInfo,
 	}
@@ -76,13 +76,23 @@ func StatusMessageSending() {
 	}
 }
 
-// ScheduledTask represents a periodic task
+// ScheduledTask represents a periodic task.
+//
+// Lifecycle contract (#18468): Start may be called again after Stop (each
+// successful Start runs a fresh worker on a fresh stop channel); Stop is
+// idempotent and safe under concurrent calls (the close happens exactly
+// once); Stop waits for the worker to observe the stop signal, so a job
+// already in flight may still finish but no new tick fires after Stop
+// returns.
 type ScheduledTask struct {
-	Name      string
-	Interval  time.Duration
-	Job       func()
-	stop      chan struct{}
+	Name     string
+	Interval time.Duration
+	Job      func()
+
+	mu        sync.Mutex
 	running   bool
+	stop      chan struct{}
+	done      chan struct{}
 	executing int32 // atomic flag: 0 - not executed, 1 running
 }
 
@@ -92,18 +102,26 @@ func NewScheduledTask(name string, interval time.Duration, job func()) *Schedule
 		Name:     name,
 		Interval: interval,
 		Job:      job,
-		stop:     make(chan struct{}),
 	}
 }
 
-// Start begins the periodic task
+// Start begins the periodic task. A task that was stopped can be started
+// again; each run gets its own stop channel, so a previously-closed channel
+// never leaks into the new worker (#18468).
 func (t *ScheduledTask) Start() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.running {
 		return
 	}
 	t.running = true
+	t.stop = make(chan struct{})
+	t.done = make(chan struct{})
+	stop := t.stop
+	done := t.done
 
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()
 
@@ -113,7 +131,7 @@ func (t *ScheduledTask) Start() {
 			select {
 			case <-ticker.C:
 				t.runSafely()
-			case <-t.stop:
+			case <-stop:
 				common.Info("Task stopped", zap.String("name", t.Name))
 				return
 			}
@@ -141,13 +159,31 @@ func (t *ScheduledTask) runSafely() {
 	t.Job()
 }
 
-// Stop stops the periodic task
+// Stop stops the periodic task. Idempotent and concurrency-safe: the close
+// runs exactly once no matter how many goroutines race here, and the method
+// waits for the worker to observe the signal before returning (#18468). A
+// job already executing may still finish; no new tick fires afterwards.
 func (t *ScheduledTask) Stop() {
+	t.mu.Lock()
 	if !t.running {
+		t.mu.Unlock()
 		return
 	}
 	t.running = false
 	close(t.stop)
+	done := t.done
+	t.mu.Unlock()
+
+	if done != nil {
+		<-done
+	}
+}
+
+// IsRunning reports whether a worker is currently active.
+func (t *ScheduledTask) IsRunning() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.running
 }
 
 // IsExecuting returns whether the task is currently executing
