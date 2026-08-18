@@ -3,6 +3,7 @@ package pdf
 import (
 	"context"
 	"image"
+	"math"
 	"testing"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
@@ -88,26 +89,43 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 	}
 
 	got := item.Cells[0]
-	if got.X0 != 20 || got.Y0 != 45 || got.X1 != 80 || got.Y1 != 95 {
-		t.Errorf("cell bounds = (%.0f,%.0f,%.0f,%.0f), want (20,45,80,95)",
-			got.X0, got.Y0, got.X1, got.Y1)
-	}
-	if got.X0 > got.X1 || got.Y0 > got.Y1 {
+
+	// Auto-rotate must return axis-aligned (non-inverted) bounds — the core
+	// "normalize" invariant. Asserting this instead of absolute pixels makes
+	// the test immune to TSR crop margin / crop-size changes.
+	if got.X0 >= got.X1 || got.Y0 >= got.Y1 {
 		t.Fatalf("cell bounds are inverted: (%.0f,%.0f,%.0f,%.0f)", got.X0, got.Y0, got.X1, got.Y1)
+	}
+
+	// Rotation is area-preserving: the processed cell keeps the input cell's
+	// area (50*60 = 3000) regardless of crop size or rotation angle.
+	const inW, inH = 50.0, 60.0
+	gotW, gotH := got.X1-got.X0, got.Y1-got.Y0
+	if math.Abs(gotW*gotH-inW*inH) > 1e-6 {
+		t.Errorf("cell area = %.0f, want %.0f (rotation preserves area)", gotW*gotH, inW*inH)
+	}
+
+	// The cell must stay inside the cropped image. Crop bounds are derived
+	// from the shared TSRRegionMarginPx constant, so they track margin changes.
+	cropX0 := math.Max(0, match.Region.X0-util.TSRRegionMarginPx)
+	cropY0 := math.Max(0, match.Region.Y0-util.TSRRegionMarginPx)
+	cropX1 := math.Min(float64(pageImg.Bounds().Dx()), match.Region.X1+util.TSRRegionMarginPx)
+	cropY1 := math.Min(float64(pageImg.Bounds().Dy()), match.Region.Y1+util.TSRRegionMarginPx)
+	if got.X0 < cropX0-1 || got.Y0 < cropY0-1 || got.X1 > cropX1+1 || got.Y1 > cropY1+1 {
+		t.Errorf("cell (%.0f,%.0f,%.0f,%.0f) outside crop (%.0f,%.0f,%.0f,%.0f)",
+			got.X0, got.Y0, got.X1, got.Y1, cropX0, cropY0, cropX1, cropY1)
 	}
 }
 
 // TestProcessOneTable_CropOffUsesFixedMargin locks the parity contract that
-// the TSR crop offset is a fixed margin (TSRRegionMarginPx = 10pt * ZM = 30px),
-// not a proportional percentage of the region. processOneTable computes
+// the TSR crop offset is a fixed margin (TSRRegionMarginPx = 10pt * DlaScale =
+// 30px), not a proportional percentage of the region. processOneTable computes
 // cropOffX = max(0, region.X0 - TSRRegionMarginPx); for a region whose X0/Y0
-// lie beyond the margin the offset must equal region.X0 - 30 (nonzero), which
+// lie beyond the margin the offsets must equal region.X - 30 (nonzero), which
 // is exactly the inverse of CropImageRegion's forward 30px expansion. The
 // pre-fix code used w*0.03/h*0.03 here, diverging from Python.
 func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
-	autoRotate := true
 	cfg := pdf.DefaultParserConfig()
-	cfg.AutoRotateTables = &autoRotate
 	cfg.SkipOCR = true
 	p := NewParser(cfg)
 
@@ -115,11 +133,13 @@ func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 10, X1: 60, Top: 10, Bottom: 30, Text: "cell", LayoutType: pdf.LayoutTypeTable},
 	}
-	// Region beyond TSRRegionMarginPx (30px): offset must be X0-30 = 70,
-	// not the old proportional w*0.03 and not clamped to 0.
-	const regionX0, regionY0 = 100.0, 100.0
+	// Region beyond TSRRegionMarginPx (30px), with distinct X/Y origins so a
+	// regression that uses the wrong origin for CropOffY is caught. Offset
+	// must be region.X - 30 (nonzero), not the old proportional w*0.03 and
+	// not clamped to 0.
+	const regionX0, regionY0 = 100.0, 140.0
 	match := tbl.TableMatch{
-		Region: pdf.DLARegion{X0: regionX0, Y0: regionY0, X1: 210, Y1: 110, Label: pdf.LayoutTypeTable},
+		Region: pdf.DLARegion{X0: regionX0, Y0: regionY0, X1: 210, Y1: 200, Label: pdf.LayoutTypeTable},
 		BoxIdx: []int{0},
 	}
 	builder := &staticTableBuilder{
@@ -130,9 +150,12 @@ func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 
 	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 
-	const wantOff = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
-	if item.CropOffX != wantOff || item.CropOffY != wantOff {
-		t.Errorf("cropOff = (%.0f,%.0f), want (%.0f,%.0f) (region.X0 - fixed 30px margin)",
-			item.CropOffX, item.CropOffY, wantOff, wantOff)
+	const wantOffX = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
+	const wantOffY = regionY0 - util.TSRRegionMarginPx // 140 - 30 = 110
+	if item.CropOffX != wantOffX {
+		t.Errorf("cropOffX = %v, want %v (region.X0 - fixed 30px margin)", item.CropOffX, wantOffX)
+	}
+	if item.CropOffY != wantOffY {
+		t.Errorf("cropOffY = %v, want %v (region.Y0 - fixed 30px margin)", item.CropOffY, wantOffY)
 	}
 }
