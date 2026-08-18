@@ -172,9 +172,12 @@ export function PipelineAccordionOperators({
 
   const operators = useMemo(() => {
     const list = [
-      ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
+      ...restrictSingleOperatorOnCanvas([
+        Operator.Parser,
+        Operator.Tokenizer,
+        Operator.Extractor,
+      ]),
     ];
-    list.push(Operator.Extractor);
     if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
       list.push(Operator.Compiler);
     }

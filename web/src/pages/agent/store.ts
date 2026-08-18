@@ -367,6 +367,13 @@ const useGraphStore = create<RFState>()(
           get();
         const node = getNode(id);
 
+        if (
+          node?.data?.label === Operator.Extractor ||
+          id.startsWith(`${Operator.Extractor}:`)
+        ) {
+          return;
+        }
+
         if (node?.data.label === Operator.Iteration) {
           duplicateIterationNode(id, name);
           return;

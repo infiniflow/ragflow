@@ -130,13 +130,16 @@ export const useManageValues = (props: IManageValuesProps) => {
   useEffect(() => {
     if (shouldSave) {
       const timer = setTimeout(() => {
-        onSave(metaData);
+        onSave({
+          ...metaData,
+          values: tempValues.filter((v) => v !== undefined && v !== ''),
+        });
         setShouldSave(false);
-        clearTimeout(timer);
         handleHideModal();
       }, 100);
+      return () => clearTimeout(timer);
     }
-  }, [shouldSave, onSave, handleHideModal, metaData]);
+  }, [shouldSave, onSave, handleHideModal, metaData, tempValues]);
 
   // Handle blur event, synchronize to main state
   const handleValueBlur = useCallback(

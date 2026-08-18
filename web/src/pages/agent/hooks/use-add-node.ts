@@ -184,8 +184,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.Extractor]: {
         ...initialExtractorValues,
         llm_id: llmId,
-        sys_prompt: t('flow.prompts.system.summary'),
-        prompts: t('flow.prompts.user.summary'),
+        summary: {
+          ...initialExtractorValues.summary,
+          system_prompt: t('flow.prompts.system.summary'),
+        },
       },
       [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,
@@ -393,6 +395,17 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       },
     ) =>
       (event?: CanvasMouseEvent): string | undefined => {
+        if (type === Operator.Extractor) {
+          const hasExtractor = nodes.some(
+            (n) =>
+              n.data?.label === Operator.Extractor ||
+              n.id.startsWith(`${Operator.Extractor}:`),
+          );
+          if (hasExtractor) {
+            return undefined;
+          }
+        }
+
         const nodeId = params.nodeId;
         const node = getNode(nodeId);
 

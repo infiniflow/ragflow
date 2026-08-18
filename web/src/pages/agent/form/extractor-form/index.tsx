@@ -82,28 +82,17 @@ export const FormSchema = z.object({
       system_prompt: z.string().optional(),
     })
     .optional(),
-  metadata_config: z
-    .object({
-      enabled: z.union([z.number(), z.boolean()]).optional(),
-      metadata: z.any().optional(),
-      built_in_metadata: z.any().optional(),
-    })
+  metadata: z
+    .union([
+      z.object({
+        enabled: z.union([z.number(), z.boolean()]).optional(),
+        metadata: z.any().optional(),
+        built_in_metadata: z.any().optional(),
+      }),
+      z.array(z.any()),
+    ])
     .optional(),
-
-  // Legacy flat fields for backward compatibility
   field_name: z.string().optional(),
-  sys_prompt: z.string().optional(),
-  prompts: z.string().optional(),
-  keywords_sys_prompt: z.string().optional(),
-  questions_sys_prompt: z.string().optional(),
-  auto_keywords: z.number().optional(),
-  auto_questions: z.number().optional(),
-  auto_tags: z.number().optional(),
-  tag_file_id: z.string().optional(),
-  enable_summary: z.union([z.number(), z.boolean()]).optional(),
-  enable_metadata: z.number().optional(),
-  metadata: z.any().optional(),
-  built_in_metadata: z.any().optional(),
   ...LlmSettingSchema,
 });
 
@@ -118,9 +107,8 @@ enum ExtractorSubTab {
 }
 
 // ExtractorAutoMetadata mirrors Python's dataset "Auto metadata" control: an
-// enable_metadata switch plus a field-schema editor (custom + built-in).
-// Values are stored on the node params (enable_metadata / metadata /
-// built_in_metadata) and drive the Go extractor's runEnableMetadata.
+// enable switch plus a field-schema editor (custom + built-in).
+// Values are stored on the node params (metadata) and drive the Go extractor's runEnableMetadata.
 function ExtractorAutoMetadata() {
   const { t } = useTranslation();
   const form = useFormContext<ExtractorFormSchemaType>();
@@ -133,18 +121,19 @@ function ExtractorAutoMetadata() {
   } = useManageMetadata();
 
   const handleOpen = useCallback(() => {
+    const rawMeta = form.getValues('metadata');
+    const customList = Array.isArray(rawMeta)
+      ? rawMeta
+      : (rawMeta?.metadata || []);
+    const builtInList = Array.isArray(rawMeta)
+      ? []
+      : (rawMeta?.built_in_metadata || []);
+
     showManageMetadataModal({
-      metadata: util.metaDataSettingJSONToMetaDataTableData(
-        form.getValues('metadata_config.metadata') ||
-          form.getValues('metadata') ||
-          [],
-      ),
+      metadata: util.metaDataSettingJSONToMetaDataTableData(customList),
       isCanAdd: true,
       type: MetadataType.Setting,
-      builtInMetadata:
-        form.getValues('metadata_config.built_in_metadata') ||
-        form.getValues('built_in_metadata') ||
-        [],
+      builtInMetadata: builtInList,
     });
   }, [form, showManageMetadataModal]);
 
@@ -155,17 +144,15 @@ function ExtractorAutoMetadata() {
     }) => {
       const metaList = data?.metadata || [];
       const builtInList = data?.builtInMetadata || [];
-      form.setValue('metadata_config.metadata', metaList, {
-        shouldDirty: true,
-      });
-      form.setValue('metadata_config.built_in_metadata', builtInList, {
-        shouldDirty: true,
-      });
-      form.setValue('metadata_config.enabled', true, { shouldDirty: true });
-      // Also keep flat fields for backward compatibility
-      form.setValue('metadata', metaList, { shouldDirty: true });
-      form.setValue('built_in_metadata', builtInList, { shouldDirty: true });
-      form.setValue('enable_metadata', 1, { shouldDirty: true });
+      form.setValue(
+        'metadata',
+        {
+          enabled: true,
+          metadata: metaList,
+          built_in_metadata: builtInList,
+        },
+        { shouldDirty: true },
+      );
     },
     [form],
   );
@@ -174,7 +161,7 @@ function ExtractorAutoMetadata() {
     <>
       <RAGFlowFormItem
         label={t('knowledgeConfiguration.autoMetadata')}
-        name="metadata_config.enabled"
+        name="metadata.enabled"
       >
         {(field) => (
           <div className="flex items-center justify-between">
@@ -193,9 +180,6 @@ function ExtractorAutoMetadata() {
               checked={field.value === 1 || field.value === true}
               onCheckedChange={(checked) => {
                 field.onChange(checked);
-                form.setValue('enable_metadata', checked ? 1 : 0, {
-                  shouldDirty: true,
-                });
               }}
               data-testid="extractor-metadata-switch"
             />
@@ -262,8 +246,7 @@ const ExtractorForm = ({
 
   const ownerTenantId = useOwnerTenantId();
 
-  const tagFileIdWatch =
-    form.watch('tags.tag_file_id') || form.watch('tag_file_id');
+  const tagFileIdWatch = form.watch('tags.tag_file_id');
   const { treeData, loadData } = useTagFileTree(tagFileIdWatch);
 
   useEffect(() => {
@@ -390,9 +373,6 @@ const ExtractorForm = ({
                   onCheckedChange={(checked) => {
                     field.onChange(checked);
                     form.setValue('field_name', checked ? 'summary' : '', {
-                      shouldDirty: true,
-                    });
-                    form.setValue('enable_summary', checked ? 1 : 0, {
                       shouldDirty: true,
                     });
                   }}

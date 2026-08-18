@@ -3,13 +3,13 @@ import { transformExtractorParams } from '../../utils';
 
 describe('Extractor parameter transformations & precedence', () => {
   describe('transformExtractorParams', () => {
-    it('synchronizes nested modular configs to flat fields and preserves nested objects', () => {
+    it('transforms nested modular configs to clean API payload', () => {
       const input: any = {
         summary: {
           enabled: true,
           system_prompt: 'Custom summary prompt',
         },
-        metadata_config: {
+        metadata: {
           enabled: true,
           metadata: [{ key: 'category', type: 'string' }],
           built_in_metadata: [{ key: 'update_time', type: 'time' }],
@@ -31,41 +31,45 @@ describe('Extractor parameter transformations & precedence', () => {
 
       const result = transformExtractorParams(input);
 
-      expect(result.enable_summary).toBe(1);
       expect(result.summary).toEqual({
         enabled: true,
         system_prompt: 'Custom summary prompt',
       });
-      expect(result.enable_metadata).toBe(1);
-      expect(result.metadata_config.enabled).toBe(true);
-      expect(result.metadata_config.metadata).toHaveLength(1);
-      expect(result.auto_keywords).toBe(5);
-      expect(result.auto_questions).toBe(3);
-      expect(result.auto_tags).toBe(2);
-      expect(result.tag_file_id).toBe('tag-123');
+      expect(result.metadata.enabled).toBe(true);
+      expect(result.metadata.metadata).toHaveLength(1);
+      expect(result.metadata.built_in_metadata).toHaveLength(1);
+      expect(result.keywords).toEqual({
+        top_n: 5,
+        system_prompt: 'KW prompt',
+      });
+      expect(result.questions).toEqual({
+        top_n: 3,
+        system_prompt: 'Q prompt',
+      });
+      expect(result.tags).toEqual({
+        top_n: 2,
+        tag_file_id: 'tag-123',
+      });
+      expect(result.field_name).toBe('summary');
     });
 
-    it('gives nested modular enabled: false precedence over legacy flat enable_*: 1', () => {
+    it('correctly handles disabled summary and metadata', () => {
       const input: any = {
         summary: {
           enabled: false,
           system_prompt: '',
         },
-        enable_summary: 1,
-        metadata_config: {
+        metadata: {
           enabled: false,
           metadata: [],
           built_in_metadata: [],
         },
-        enable_metadata: 1,
       };
 
       const result = transformExtractorParams(input);
 
       expect(result.summary.enabled).toBe(false);
-      expect(result.enable_summary).toBe(0);
-      expect(result.metadata_config.enabled).toBe(false);
-      expect(result.enable_metadata).toBe(0);
+      expect(result.metadata.enabled).toBe(false);
     });
 
     it('preserves custom field_name when summary is disabled', () => {
@@ -83,33 +87,94 @@ describe('Extractor parameter transformations & precedence', () => {
   });
 
   describe('transformExtractorConfigToForm', () => {
-    it('normalizes legacy flat API format into nested form schema', () => {
+    it('normalizes API format into nested form schema', () => {
       const config = {
-        enable_summary: 1,
-        sys_prompt: 'Old summary prompt',
-        enable_metadata: 1,
-        metadata: [{ key: 'author', type: 'string' }],
-        built_in_metadata: [{ key: 'file_name', type: 'string' }],
-        auto_keywords: 4,
-        auto_questions: 2,
-        auto_tags: 1,
-        tag_file_id: 'tag-file-1',
+        summary: {
+          enabled: true,
+          system_prompt: 'Standard summary prompt',
+        },
+        metadata: {
+          enabled: true,
+          metadata: [{ key: 'author', type: 'string' }],
+          built_in_metadata: [{ key: 'file_name', type: 'string' }],
+        },
+        keywords: {
+          top_n: 4,
+          system_prompt: 'KW prompt',
+        },
+        questions: {
+          top_n: 2,
+          system_prompt: 'Q prompt',
+        },
+        tags: {
+          top_n: 1,
+          tag_file_id: 'tag-file-1',
+        },
       };
 
       const result = transformExtractorConfigToForm(config);
 
       expect(result.summary).toEqual({
         enabled: true,
-        system_prompt: 'Old summary prompt',
+        system_prompt: 'Standard summary prompt',
       });
-      expect(result.metadata_config).toEqual({
+      expect(result.metadata).toEqual({
         enabled: true,
         metadata: [{ key: 'author', type: 'string' }],
         built_in_metadata: [{ key: 'file_name', type: 'string' }],
       });
-      expect(result.keywords.top_n).toBe(4);
-      expect(result.questions.top_n).toBe(2);
-      expect(result.tags.top_n).toBe(1);
+      expect(result.keywords).toEqual({
+        top_n: 4,
+        system_prompt: 'KW prompt',
+      });
+      expect(result.questions).toEqual({
+        top_n: 2,
+        system_prompt: 'Q prompt',
+      });
+      expect(result.tags).toEqual({
+        top_n: 1,
+        tag_file_id: 'tag-file-1',
+      });
+    });
+
+    it('normalizes legacy flat API format into nested form schema', () => {
+      const legacyConfig = {
+        enable_summary: 1,
+        sys_prompt: 'Old summary prompt',
+        enable_metadata: 1,
+        metadata: [{ key: 'author', type: 'string' }],
+        built_in_metadata: [{ key: 'file_name', type: 'string' }],
+        auto_keywords: 4,
+        keywords_sys_prompt: 'Old KW prompt',
+        auto_questions: 2,
+        questions_sys_prompt: 'Old Q prompt',
+        auto_tags: 1,
+        tag_file_id: 'tag-file-1',
+      };
+
+      const result = transformExtractorConfigToForm(legacyConfig);
+
+      expect(result.summary).toEqual({
+        enabled: true,
+        system_prompt: 'Old summary prompt',
+      });
+      expect(result.metadata).toEqual({
+        enabled: true,
+        metadata: [{ key: 'author', type: 'string' }],
+        built_in_metadata: [{ key: 'file_name', type: 'string' }],
+      });
+      expect(result.keywords).toEqual({
+        top_n: 4,
+        system_prompt: 'Old KW prompt',
+      });
+      expect(result.questions).toEqual({
+        top_n: 2,
+        system_prompt: 'Old Q prompt',
+      });
+      expect(result.tags).toEqual({
+        top_n: 1,
+        tag_file_id: 'tag-file-1',
+      });
     });
   });
 });

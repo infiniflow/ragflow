@@ -320,13 +320,9 @@ export const useManageMetaDataModal = (
 
   useEffect(() => {
     if (!fetchTypeList.includes(type)) {
-      if (metaData) {
-        setTableData(metaData);
-      } else {
-        setTableData([]);
-      }
+      setTableData(metaData || []);
     }
-  }, [metaData, type]);
+  }, [type, metaData]);
 
   const handleDeleteSingleValue = useCallback(
     (field: string, value: string) => {
@@ -417,6 +413,7 @@ export const useManageMetaDataModal = (
       const data = util.tableDataToMetaDataSettingJSON(tableData);
       const { data: res } = await kbUpdateMetaData(id || '', {
         metadata: data,
+        built_in_metadata: builtInMetadata || [],
         builtInMetadata: builtInMetadata || [],
       });
       if (res.code === 0) {
@@ -439,7 +436,11 @@ export const useManageMetaDataModal = (
         const { data: res } = await updateDocumentMetaDataConfig({
           kb_id: id || '',
           doc_id: otherData.documentId,
-          data: { metadata: data, builtInMetadata: builtInMetadata || [] },
+          data: {
+            metadata: data,
+            built_in_metadata: builtInMetadata || [],
+            builtInMetadata: builtInMetadata || [],
+          },
         });
         if (res.code === 0) {
           message.success(t('message.operated'));

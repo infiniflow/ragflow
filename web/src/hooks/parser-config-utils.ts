@@ -106,6 +106,10 @@ export const extractParserConfigExt = (
     children_delimiter,
     use_parent_child,
     enable_children,
+    metadata,
+    built_in_metadata,
+    enable_metadata,
+    llm_id,
     ext,
     ...parserExt
   } = parserConfig;
@@ -125,6 +129,10 @@ export const extractParserConfigExt = (
     pages,
     children_delimiter,
     enable_children,
+    metadata,
+    built_in_metadata,
+    enable_metadata,
+    llm_id,
     parent_child: enable_children
       ? {
           children_delimiter,

@@ -1,7 +1,3 @@
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
 import { act, renderHook } from '@testing-library/react';
 import { MetadataType, metadataValueTypeEnum } from '../../constant';
 import { IManageValuesProps, IMetaDataTableData } from '../../interface';
@@ -474,5 +470,47 @@ describe('useManageValues - add value row', () => {
     });
 
     expect(result.current.tempValues).toEqual(['']);
+  });
+
+  it('filters empty values and passes merged metadata to onSave in Setting mode', () => {
+    jest.useFakeTimers();
+    try {
+      const onSave = jest.fn();
+      const props = makeProps({
+        type: MetadataType.Setting,
+        onSave,
+        data: {
+          field: 'category',
+          description: 'doc category',
+          values: ['tech'],
+          valueType: metadataValueTypeEnum.string,
+        },
+      });
+
+      const { result } = renderHook(() => useManageValues(props));
+
+      act(() => {
+        result.current.handleAddValue();
+        result.current.handleValueChange(1, 'finance', false);
+        result.current.handleAddValue(); // extra empty slot
+      });
+
+      act(() => {
+        result.current.handleSave();
+      });
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(onSave).toHaveBeenCalledWith({
+        field: 'category',
+        description: 'doc category',
+        values: ['tech', 'finance'],
+        valueType: metadataValueTypeEnum.string,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

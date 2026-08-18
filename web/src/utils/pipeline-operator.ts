@@ -83,8 +83,6 @@ function transformLevelsToRules(
 
 /**
  * Converts Extractor config from API/DSL format to form format.
- * DSL:  { prompts: [{ content: "text", role: "user" }] }
- * Form: { prompts: "text" }
  */
 export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
@@ -92,19 +90,32 @@ export function transformExtractorConfigToForm(
   if (!config) return {};
 
   const result = { ...config };
-  if (Array.isArray(config.prompts) && config.prompts.length > 0) {
-    result.prompts = config.prompts[0]?.content ?? '';
-  }
 
   const isSummaryEnabled =
     config.summary?.enabled !== undefined
       ? Boolean(config.summary?.enabled)
-      : config.enable_summary === 1 || config.enable_summary === true;
+      : config.enable_summary === 1 ||
+        config.enable_summary === true ||
+        config.field_name === 'summary';
 
   const isMetadataEnabled =
-    config.metadata_config?.enabled !== undefined
+    config.metadata?.enabled !== undefined
+      ? Boolean(config.metadata?.enabled)
+      : config.metadata_config?.enabled !== undefined
       ? Boolean(config.metadata_config?.enabled)
-      : config.enable_metadata === 1 || config.enable_metadata === true;
+      : config.enable_metadata === 1 ||
+        config.enable_metadata === true ||
+        (Array.isArray(config.metadata) && config.metadata.length > 0);
+
+  const rawMetadataList = Array.isArray(config.metadata)
+    ? config.metadata
+    : (config.metadata?.metadata ?? config.metadata_config?.metadata ?? []);
+
+  const rawBuiltInList =
+    config.metadata?.built_in_metadata ??
+    config.metadata_config?.built_in_metadata ??
+    config.built_in_metadata ??
+    [];
 
   result.keywords = {
     top_n:
@@ -114,6 +125,7 @@ export function transformExtractorConfigToForm(
     system_prompt:
       config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
   };
+
   result.questions = {
     top_n:
       config.questions?.top_n ??
@@ -122,6 +134,7 @@ export function transformExtractorConfigToForm(
     system_prompt:
       config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
   };
+
   result.tags = {
     top_n:
       config.tags?.top_n ??
@@ -129,26 +142,29 @@ export function transformExtractorConfigToForm(
       initialExtractorValues.tags.top_n,
     tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
   };
+
+  const legacyPrompt =
+    config.prompts?.[0]?.content ?? (typeof config.prompt === 'string' ? config.prompt : '');
+
   result.summary = {
     enabled: isSummaryEnabled,
-    system_prompt: config.summary?.system_prompt ?? config.sys_prompt ?? '',
+    system_prompt:
+      config.summary?.system_prompt ??
+      config.sys_prompt ??
+      config.system_prompt ??
+      legacyPrompt ??
+      '',
   };
-  result.enable_summary = isSummaryEnabled ? 1 : 0;
+
   result.field_name = isSummaryEnabled
     ? (config.field_name || 'summary')
     : (config.field_name === 'summary' ? '' : (config.field_name || ''));
 
-  result.metadata_config = {
+  result.metadata = {
     enabled: isMetadataEnabled,
-    metadata: config.metadata_config?.metadata ?? config.metadata ?? [],
-    built_in_metadata:
-      config.metadata_config?.built_in_metadata ??
-      config.built_in_metadata ??
-      [],
+    metadata: rawMetadataList,
+    built_in_metadata: rawBuiltInList,
   };
-  result.enable_metadata = isMetadataEnabled ? 1 : 0;
-  result.metadata = result.metadata_config.metadata;
-  result.built_in_metadata = result.metadata_config.built_in_metadata;
 
   return result;
 }
