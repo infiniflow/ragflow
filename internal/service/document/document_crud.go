@@ -194,11 +194,41 @@ func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string
 // progress_msg) reflects in-flight Go pipeline progress. Best-effort by
 // design; callers log and continue on error.
 func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
-	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"progress":     progress,
 		"run":          run,
 		"progress_msg": progressMsg,
-	})
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
+}
+
+// UpdateRunState mirrors live progress and status into the document row when
+// the existing progress log cannot be read. It intentionally leaves the log
+// untouched so a later event can retry seeding and append it safely.
+func (s *DocumentService) UpdateRunState(ctx context.Context, docID string, progress float64, run string) error {
+	updates := map[string]interface{}{
+		"progress": progress,
+		"run":      run,
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
 }
 
 // DeleteDocument delete document — delegates to full cleanup logic.

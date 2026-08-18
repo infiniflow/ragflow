@@ -667,11 +667,25 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}
 
 		if len(in.chunks) == 0 {
-			ans, callErr := c.callText(timeoutCtx, db, in, "")
+			// Render the prompt with an empty chunk map so body placeholders
+			// resolve (or fall back to appending nothing) before the LLM call.
+			// Without this, a template containing {text} would be forwarded
+			// to the model unsubstituted.
+			callIn := in
+			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(
+				in.systemPrompt, in.prompt, map[string]any{}, "",
+			)
+			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
 				return callErr
 			}
-			in.chunks = []map[string]any{{in.fieldName: ans}}
+			ck := map[string]any{}
+			if in.fieldName == "metadata" {
+				mergeExtractionIntoMetadata(ck, ans)
+			} else {
+				ck[in.fieldName] = ans
+			}
+			in.chunks = []map[string]any{ck}
 			return nil
 		}
 		// Auto keyword / question / metadata extraction runs with
@@ -698,23 +712,16 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			// buildExtractorMessages appends chunkText to the user message
-			// unconditionally. Substitute first; if a content-bearing
-			// placeholder ({text}/{chunks}/{content_with_weight}) was actually
-			// replaced, the chunk body is already in the prompt — suppress
-			// the append to avoid duplication.
-			var subP, subS bool
-			callIn.prompt, subP = substituteChunkPlaceholders(in.prompt, ck, text)
-			callIn.systemPrompt, subS = substituteChunkPlaceholders(in.systemPrompt, ck, text)
-			callChunkText := text
-			if subP || subS {
-				callChunkText = ""
-			}
-			ans, callErr := c.callText(timeoutCtx, db, callIn, callChunkText)
+			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(in.systemPrompt, in.prompt, ck, text)
+			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
 				return fmt.Errorf("chunk %d: %w", i, callErr)
 			}
-			ck[in.fieldName] = ans
+			if in.fieldName == "metadata" {
+				mergeExtractionIntoMetadata(ck, ans)
+			} else {
+				ck[in.fieldName] = ans
+			}
 		}
 		return nil
 	}); err != nil {
@@ -728,6 +735,29 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		"chunks":        in.chunks,
 		"output_format": "chunks",
 	}, nil
+}
+
+// mergeExtractionIntoMetadata merges the field_name="metadata" extraction
+// result into the chunk's metadata map (enable_metadata's output) instead of
+// overwriting it. ck["metadata"] stays a map[string]any — the unified contract
+// for document metadata produced by this component. A non-JSON / empty result
+// is ignored (no string fallback), so it can never clobber or corrupt the
+// metadata map. On overlapping keys the field_name result wins (it runs later).
+func mergeExtractionIntoMetadata(ck map[string]any, ans string) {
+	parsed, ok := tryParseJSONObject(ans)
+	if !ok {
+		return
+	}
+	existing, _ := ck["metadata"].(map[string]any)
+	if existing == nil {
+		existing = make(map[string]any, len(parsed))
+	}
+	for k, v := range parsed {
+		if v != nil {
+			existing[k] = v
+		}
+	}
+	ck["metadata"] = existing
 }
 
 // runAutoKeywords extracts keywords for the current chunk and stores
@@ -1131,7 +1161,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	if err != nil {
 		return nil, err
 	}
-	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
+	msgs := buildExtractorMessages(in.systemPrompt, in.prompt)
 	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
 	if fitErr != nil {
 		return nil, fitErr
@@ -1516,155 +1546,108 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	return fitted, nil
 }
 
-// buildExtractorMessages assembles system + user messages for
-// one extraction call. The user prompt is rendered as
-// "<prompt>\n\n<chunkText>" so the python behavior of
-// substituting the chunk text into the args dict is preserved
-// without invoking a template engine.
-//
-// Prompt placeholders of the form `{ComponentName:ParamName@chunks}`
-// are substituted with the joined text of all upstream chunks
-// when chunks is non-empty. The python rag/flow/extractor/extractor.py
-// build_existing_prompt path performs the same substitution at
-// runtime; the Go port surfaces it as a regex on the prompt
-// template so the reference resolves without invoking a template engine.
-//
-// Substitution is opt-in: when chunks is nil/empty the placeholder
-// is left intact so a misconfigured template surfaces as a
-// clear pattern rather than silently disappearing.
-func buildExtractorMessages(system, prompt, chunkText string, chunks []map[string]any) []eschema.Message {
+// buildExtractorMessages assembles system + user messages for one extraction
+// call. Prompt rendering (placeholder substitution, chunk-text injection, and
+// empty-prompt normalization) is performed upstream by renderExtractorPrompts;
+// this function is a pure structural assembler with no rendering logic.
+func buildExtractorMessages(system, user string) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
 	if system != "" {
 		out = append(out, eschema.Message{Role: eschema.System, Content: system})
 	}
-	user := prompt
-	if chunkText != "" {
-		if user != "" {
-			user += "\n\n"
-		}
-		user += chunkText
-	}
-	if user == "" {
-		// An empty prompt + empty chunk is a degenerate call.
-		// The LLM driver returns an error; we surface that
-		// unchanged.
-		user = " "
-	}
-	user = substitutePromptPlaceholders(user, chunks)
 	out = append(out, eschema.Message{Role: eschema.User, Content: user})
 	return out
 }
 
-// substitutePromptPlaceholders replaces `{ComponentName:ParamName@chunks}`
-// patterns in the user prompt with the joined text of all upstream
-// chunks. The python rag/flow/extractor/extractor.py:build_existing_prompt
-// path performs the same substitution at runtime using a Jinja
-// template; the Go port keeps the regex form because the LLM
-// driver does not require Jinja and the surface is small enough to
-// avoid pulling in a template engine.
-//
-// Pattern grammar:
-//
-//	{CmpName:ParamName@chunks}
-//
-// The CmpName and ParamName are both matched but ignored — the
-// substitute is always "the joined chunk text" today. The
-// CmpName/ParamName parsing exists so a future per-component
-// substitution can extend the function without breaking the
-// existing call sites.
-func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string {
-	if prompt == "" || len(chunks) == 0 {
-		return prompt
-	}
-	// Build the substitution payload once. Each chunk's text is
-	// joined with a blank line so a downstream LLM sees clear
-	// chunk boundaries.
-	var b strings.Builder
-	for i, ck := range chunks {
-		t, _ := ck["text"].(string)
-		if t == "" {
-			t, _ = ck["content_with_weight"].(string)
-		}
-		if t == "" {
-			continue
-		}
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(t)
-	}
-	repl := b.String()
-	if repl == "" {
-		return prompt
-	}
-	return placeholderRE.ReplaceAllString(prompt, repl)
-}
+// unifiedPlaceholderRE matches plain field placeholders {fieldName} and
+// canvas macro placeholders {ComponentName:ParamName@fieldName}.
+var unifiedPlaceholderRE = regexp.MustCompile(`\{([A-Za-z0-9_]+(:[A-Za-z0-9_]+)?@[A-Za-z0-9_]+|[A-Za-z_][A-Za-z0-9_]*)\}`)
 
-// placeholderRE matches `{CmpName:ParamName@chunks}` patterns in
-// Extractor user prompts. The CMP / Param groups are ignored for
-// the @chunks variant but kept so the regex rejects arbitrary
-// placeholders (a future per-component substitution extends here).
-var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
-
-// simplePlaceholderRE matches simple {field_name} placeholders
-// (no colons, no @chunks). Used by substituteChunkPlaceholders to
-// replace {text}, {content_with_weight}, etc. with the current
-// chunk's field values, mirroring Python's string_format
-// (agent/component/base.py:602-609).
-var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
-
-// contentPlaceholders are the simple placeholders that resolve to the
-// chunk body. Substituting any of them indicates the chunk body is
-// already embedded in the prompt — so the automatic append in
-// buildExtractorMessages must be suppressed to avoid duplication.
-// "text" and "chunks" both map to chunkText (the primary chunk body);
-// "content_with_weight" is a chunk field carrying the weighted body.
-var contentPlaceholders = map[string]bool{
+// bodyPlaceholderAliases lists plain placeholder names that resolve to chunk body content.
+var bodyPlaceholderAliases = map[string]bool{
 	"text":                true,
 	"chunks":              true,
 	"content_with_weight": true,
 }
 
-// substituteChunkPlaceholders replaces {field_name} placeholders in
-// the prompt with values from the current chunk map. The special
-// aliases "text" and "chunks" map to chunkText (the current chunk's
-// primary text), matching Python's `args[chunks_key] = ck["text"]` at
-// extractor.py:102. Unmatched placeholders are left as-is.
-//
-// The "text" placeholder falls back to chunkText when the chunk has no
-// explicit "text" field — e.g. when only content_with_weight is present.
-// This makes {text}'s resolved value match the append path's `text`
-// variable (which also falls back content_with_weight → text).
-//
-// Returns the substituted prompt and whether any content-bearing
-// placeholder was replaced (i.e. the chunk body is now in the prompt).
-func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) (string, bool) {
-	if prompt == "" || ck == nil {
-		return prompt, false
+// isBodyPlaceholder reports whether key represents chunk body content
+// (including upstream output references such as @chunks, @text, @markdown).
+func isBodyPlaceholder(key string) bool {
+	if bodyPlaceholderAliases[key] {
+		return true
 	}
-	// Build lookup: chunk fields + "chunks" alias + "text" fallback.
-	lookup := make(map[string]string, len(ck)+2)
-	for k, v := range ck {
-		lookup[k] = fmt.Sprintf("%v", v)
-	}
-	if _, has := lookup["text"]; !has {
-		lookup["text"] = chunkText
-	}
-	if _, has := lookup["chunks"]; !has {
-		lookup["chunks"] = chunkText
-	}
-	var substituted bool
-	out := simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
-		key := match[1 : len(match)-1] // strip { }
-		if val, ok := lookup[key]; ok {
-			if contentPlaceholders[key] {
-				substituted = true
-			}
-			return val
+	return strings.HasSuffix(key, "@chunks") ||
+		strings.HasSuffix(key, "@text") ||
+		strings.HasSuffix(key, "@markdown")
+}
+
+// renderExtractorPrompts performs single-pass rendering of system and user
+// prompt templates for one chunk:
+//  1. Content placeholders ({text}, {chunks}, {content_with_weight},
+//     {ComponentName:ParamName@chunks}, etc.) are resolved: first from the chunk
+//     map, falling back to chunkText. If a non-empty value is resolved,
+//     bodyInjected is marked true.
+//  2. Chunk metadata fields (such as {title}, {author}) are resolved from the
+//     chunk map.
+//  3. Unrecognized placeholders are preserved verbatim.
+//  4. If no non-empty chunk body was injected anywhere in the system or user
+//     prompt, chunkText is automatically appended to the user prompt as a fallback.
+func renderExtractorPrompts(sysTemplate, userTemplate string, ck map[string]any, chunkText string) (string, string) {
+	var bodyInjected bool
+
+	render := func(tmpl string) string {
+		if tmpl == "" {
+			return ""
 		}
-		return match // leave unknown placeholders as-is
-	})
-	return out, substituted
+		return unifiedPlaceholderRE.ReplaceAllStringFunc(tmpl, func(match string) string {
+			key := match[1 : len(match)-1] // strip { }
+
+			// A. Content placeholders: check chunk map first, fallback to chunkText
+			if isBodyPlaceholder(key) {
+				var val string
+				if raw, ok := ck[key]; ok {
+					val = fmt.Sprintf("%v", raw)
+				}
+				if strings.TrimSpace(val) == "" {
+					val = chunkText
+				}
+				if strings.TrimSpace(val) != "" {
+					bodyInjected = true
+				}
+				return val
+			}
+
+			// B. Chunk metadata fields
+			if val, ok := ck[key]; ok {
+				return fmt.Sprintf("%v", val)
+			}
+
+			// C. Leave unknown placeholders as-is
+			return match
+		})
+	}
+
+	renderedSys := render(sysTemplate)
+	renderedUser := render(userTemplate)
+
+	if !bodyInjected && strings.TrimSpace(chunkText) != "" {
+		// TrimSpace before testing emptiness is intentional: a user template
+		// that renders to pure whitespace (e.g. "   ") must not produce a
+		// leading "\n\n" separator — the result should be chunkText alone.
+		// A plain `if renderedUser != ""` check would fail that invariant.
+		trimmed := strings.TrimSpace(renderedUser)
+		if trimmed != "" {
+			renderedUser = trimmed + "\n\n" + chunkText
+		} else {
+			renderedUser = chunkText
+		}
+	}
+
+	if strings.TrimSpace(renderedUser) == "" {
+		renderedUser = " "
+	}
+
+	return renderedSys, renderedUser
 }
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns

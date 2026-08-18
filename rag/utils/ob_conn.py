@@ -52,6 +52,7 @@ column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table par
 column_raptor_kwd = Column("raptor_kwd", String(256), nullable=True, comment="RAPTOR summary marker")
 column_raptor_layer_int = Column("raptor_layer_int", Integer, nullable=True, comment="RAPTOR summary layer")
 column_n_hop_with_weight = Column("n_hop_with_weight", LONGTEXT, nullable=True, comment="JSON-encoded n-hop neighbour paths and weights for a graph entity")
+column_deleted_doc_id = Column("deleted_doc_id", String(256), nullable=True, index=True, comment="marker for incremental structure-merge ghost cleanup (#17685)")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -98,6 +99,7 @@ column_definitions: list[Column] = [
     column_order_id,
     column_group_id,
     column_mom_id,
+    column_deleted_doc_id,
 ]
 
 column_names: list[str] = [col.name for col in column_definitions]
@@ -141,6 +143,7 @@ EXTRA_COLUMNS: list[Column] = [
     column_raptor_kwd,
     column_raptor_layer_int,
     column_n_hop_with_weight,
+    column_deleted_doc_id,
 ]
 
 

@@ -34,18 +34,10 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"html"
-	"regexp"
 	"strings"
 )
 
-// Go port of Python's ILLEGAL_CHARACTERS_RE from
-// deepdoc/parser/excel_parser.py.
-// Pattern: [\000-\010]|[\013-\014]|[\016-\037]
-// Matches all control chars except TAB (\x09), LF (\x0A), CR (\x0D).
-var csvIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`)
-
-const csvDefaultChunkRows = 256
+const csvDefaultChunkRows = defaultTableChunkRows
 const csvSheetName = "Data"
 
 // CSVParser reads RFC-4180 CSV data and emits HTML <table> payloads.
@@ -157,7 +149,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	// Clean illegal control characters from all cells.
-	records = cleanCSVRecords(records)
+	records = cleanIllegalControlChars(records)
 
 	chunkRows := p.ChunkRows
 	if chunkRows <= 0 {
@@ -171,84 +163,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			"size":     len(data),
 			"encoding": "utf-8",
 		},
-		HTML: recordsToHTMLTableChunks(records, chunkRows),
+		HTML: recordsToHTMLTableChunks(records, chunkRows, csvSheetName),
 	}
-}
-
-// cleanCSVRecords replaces illegal control characters in all cells
-// with a single space, matching Python's ILLEGAL_CHARACTERS_RE.
-func cleanCSVRecords(records [][]string) [][]string {
-	out := make([][]string, len(records))
-	for i, row := range records {
-		out[i] = make([]string, len(row))
-		for j, cell := range row {
-			out[i][j] = csvIllegalCharsRe.ReplaceAllString(cell, " ")
-		}
-	}
-	return out
-}
-
-// recordsToHTMLTableChunks renders CSV records as one or more
-// self-contained HTML <table> chunks. The first row is always the
-// header (<th>). Data rows are split into chunks of chunkRows,
-// each chunk being a complete <table> with <caption> and a repeated
-// header row. Chunks are joined with newlines.
-//
-// Mirrors Python's RAGFlowExcelParser.html() chunking:
-//
-//	chunks = (n_data_rows + chunk_rows - 1) // chunk_rows
-func recordsToHTMLTableChunks(records [][]string, chunkRows int) string {
-	if len(records) == 0 {
-		return "<table><caption>" + csvSheetName + "</caption></table>"
-	}
-
-	// Build the header row once — repeated in every chunk.
-	headerHTML := buildCSVHeaderRow(records[0])
-	dataRows := records[1:]
-	nData := len(dataRows)
-
-	if nData == 0 {
-		// Only a header row exists.
-		return "<table><caption>" + csvSheetName + "</caption>\n" + headerHTML + "\n</table>"
-	}
-
-	nChunks := (nData + chunkRows - 1) / chunkRows
-	var b strings.Builder
-	for ci := 0; ci < nChunks; ci++ {
-		start := ci * chunkRows
-		end := start + chunkRows
-		if end > nData {
-			end = nData
-		}
-
-		b.WriteString("<table><caption>")
-		b.WriteString(csvSheetName)
-		b.WriteString("</caption>\n")
-		b.WriteString(headerHTML)
-
-		for _, row := range dataRows[start:end] {
-			b.WriteString("<tr>")
-			for _, cell := range row {
-				b.WriteString("<td>")
-				b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-				b.WriteString("</td>")
-			}
-			b.WriteString("</tr>\n")
-		}
-		b.WriteString("</table>\n")
-	}
-	return b.String()
-}
-
-// buildCSVHeaderRow renders the first row as an HTML <th> header row.
-func buildCSVHeaderRow(row []string) string {
-	var b strings.Builder
-	b.WriteString("<tr>")
-	for _, cell := range row {
-		b.WriteString("<th>")
-		b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		b.WriteString("</th>")
-	}
-	b.WriteString("</tr>\n")
-	return b.String()
 }

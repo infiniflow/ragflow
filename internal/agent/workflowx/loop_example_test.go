@@ -44,7 +44,7 @@ import (
 // uses the do-while contract via shouldQuit(next >= 3), so iterations
 // run as: in=0 -> 1, in=1 -> 2, in=2 -> 3 (quit). Final output: 3.
 func TestExample_AddLoopNode(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	sub := compose.NewWorkflow[int, int]()
 	inc := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {

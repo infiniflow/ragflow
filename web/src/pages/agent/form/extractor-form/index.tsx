@@ -10,12 +10,25 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { AsyncTreeSelect } from '@/components/ui/async-tree-select';
 import { Form } from '@/components/ui/form';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
+import { MetadataType } from '@/pages/dataset/components/metedata/constant';
+import {
+  useManageMetadata,
+  util,
+} from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
+import {
+  IBuiltInMetadataItem,
+  IMetaDataReturnJSONSettings,
+} from '@/pages/dataset/components/metedata/interface';
+import { ManageMetadataModal } from '@/pages/dataset/components/metedata/manage-modal';
 import { isGoBackend } from '@/utils/backend-runtime';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
-import { useForm } from 'react-hook-form';
+import { Settings } from 'lucide-react';
+import { memo, useCallback } from 'react';
+import { useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
@@ -43,10 +56,109 @@ export const FormSchema = z.object({
   auto_questions: z.number().optional(),
   auto_tags: z.number().optional(),
   tag_file_id: z.string().optional(),
+  // Builtin auto-metadata (mirrors Python's Auto metadata): enable_metadata
+  // toggle + metadata / built_in_metadata field schema, consumed by the Go
+  // extractor's runEnableMetadata at parse time.
+  enable_metadata: z.number().optional(),
+  metadata: z.any().optional(),
+  built_in_metadata: z.any().optional(),
   ...LlmSettingSchema,
 });
 
 export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
+
+// Builtin auto-extract node id hardcoded in every builtin ingestion DSL
+// template (internal/ingestion/pipeline/template/*.json). Only this node
+// shows the Auto metadata option; canvas / user-pipeline extractor nodes do
+// not.
+const BuiltinAutoExtractNodeId = 'Extractor:AutoExtractDefault';
+
+// ExtractorAutoMetadata mirrors Python's dataset "Auto metadata" control: an
+// enable_metadata switch plus a field-schema editor (custom + built-in).
+// Values are stored on the node params (enable_metadata / metadata /
+// built_in_metadata) and drive the Go extractor's runEnableMetadata.
+function ExtractorAutoMetadata() {
+  const { t } = useTranslation();
+  const form = useFormContext<ExtractorFormSchemaType>();
+  const {
+    manageMetadataVisible,
+    showManageMetadataModal,
+    hideManageMetadataModal,
+    tableData,
+    config: metadataConfig,
+  } = useManageMetadata();
+
+  const handleOpen = useCallback(() => {
+    showManageMetadataModal({
+      metadata: util.metaDataSettingJSONToMetaDataTableData(
+        form.getValues('metadata') || [],
+      ),
+      isCanAdd: true,
+      type: MetadataType.Setting,
+      builtInMetadata: form.getValues('built_in_metadata') || [],
+    });
+  }, [form, showManageMetadataModal]);
+
+  const handleSave = useCallback(
+    (data?: {
+      metadata?: IMetaDataReturnJSONSettings;
+      builtInMetadata?: IBuiltInMetadataItem[];
+    }) => {
+      form.setValue('metadata', data?.metadata || []);
+      form.setValue('built_in_metadata', data?.builtInMetadata || []);
+      form.setValue('enable_metadata', 1);
+    },
+    [form],
+  );
+
+  return (
+    <>
+      <RAGFlowFormItem
+        label={t('knowledgeConfiguration.autoMetadata')}
+        name="enable_metadata"
+      >
+        {(field) => (
+          <div className="flex items-center justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleOpen}
+              data-testid="extractor-metadata-open-modal-btn"
+            >
+              <div className="flex items-center gap-2">
+                <Settings />
+                {t('knowledgeConfiguration.settings')}
+              </div>
+            </Button>
+            <Switch
+              checked={field.value === 1 || field.value === true}
+              onCheckedChange={(checked) => field.onChange(checked ? 1 : 0)}
+              data-testid="extractor-metadata-switch"
+            />
+          </div>
+        )}
+      </RAGFlowFormItem>
+      {manageMetadataVisible && (
+        <ManageMetadataModal
+          title={t('knowledgeDetails.metadata.metadataGenerationSettings')}
+          visible={manageMetadataVisible}
+          hideModal={hideManageMetadataModal}
+          tableData={tableData}
+          isCanAdd={metadataConfig.isCanAdd}
+          isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+          type={metadataConfig.type}
+          otherData={metadataConfig.record}
+          isShowDescription
+          isShowValueSwitch
+          isVerticalShowValue={false}
+          builtInMetadata={metadataConfig.builtInMetadata}
+          secondTitle={metadataConfig.secondTitle}
+          success={handleSave}
+        />
+      )}
+    </>
+  );
+}
 
 const outputList = buildOutputList(initialExtractorValues.outputs);
 
@@ -129,6 +241,9 @@ const ExtractorForm = ({
             ></SelectWithSearch>
           )}
         </RAGFlowFormItem>
+
+        {(node?.data as Record<string, any>)?.operatorId ===
+          BuiltinAutoExtractNodeId && <ExtractorAutoMetadata />}
 
         <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
           <PromptEditor

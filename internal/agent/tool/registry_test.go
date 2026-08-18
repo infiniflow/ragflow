@@ -1,7 +1,6 @@
 package tool
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -14,14 +13,15 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("len(tools) = %d, want 2", len(tools))
 	}
-	info0, err := tools[0].Info(context.Background())
+	ctx := t.Context()
+	info0, err := tools[0].Info(ctx)
 	if err != nil {
 		t.Fatalf("tools[0].Info: %v", err)
 	}
 	if info0.Name != "search_my_dateset" {
 		t.Errorf("tools[0].Info().Name = %q, want search_my_dateset", info0.Name)
 	}
-	info1, err := tools[1].Info(context.Background())
+	info1, err := tools[1].Info(ctx)
 	if err != nil {
 		t.Fatalf("tools[1].Info: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestBuildByName_QueritAliases(t *testing.T) {
 		if querit.defaults.Count != 8 || querit.defaults.ChunksPerDoc == nil || *querit.defaults.ChunksPerDoc != 2 || len(querit.defaults.SiteInclude) != 1 {
 			t.Fatalf("BuildByName(%q) defaults = %#v", name, querit.defaults)
 		}
-		info, infoErr := built.Info(context.Background())
+		info, infoErr := built.Info(t.Context())
 		if infoErr != nil || info.Name != "querit_search" {
 			t.Fatalf("BuildByName(%q).Info() = %#v, %v", name, info, infoErr)
 		}
@@ -264,7 +264,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Schema-level checks per entry.
 	for i, name := range names {
-		info, err := tools[i].Info(context.Background())
+		info, err := tools[i].Info(t.Context())
 		if err != nil {
 			t.Errorf("tools[%d] (registry name %q).Info: %v", i, name, err)
 			continue
@@ -306,7 +306,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			continue
 		}
 		idx := indexOf(names, name)
-		info, err := tools[idx].Info(context.Background())
+		info, err := tools[idx].Info(t.Context())
 		if err != nil {
 			continue
 		}

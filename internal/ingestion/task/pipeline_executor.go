@@ -49,6 +49,12 @@ type PipelineResult struct {
 	ChunkCount       int
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
+	// DocName, BuiltInMetadataConfig and AutoMetadataEnabled carry what the
+	// document-state finalizer needs to apply built-in metadata
+	// (update_time / file_name), mirroring Python apply_built_in_metadata.
+	DocName               string
+	BuiltInMetadataConfig []any
+	AutoMetadataEnabled   bool
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -277,14 +283,62 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	chunkCount := countDistinctChunkIDs(chunks)
 
+	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
+		s.taskCtx.Doc.ParserConfig,
+	)
+
 	return &PipelineResult{
-		DocID:            s.taskCtx.Doc.ID,
-		KbID:             s.taskCtx.Doc.KbID,
-		Metadata:         metadata,
-		ChunkCount:       chunkCount,
-		TokenConsumption: embeddingTokenConsumption,
-		Duration:         time.Since(start).Seconds(),
+		DocID:                 s.taskCtx.Doc.ID,
+		KbID:                  s.taskCtx.Doc.KbID,
+		Metadata:              metadata,
+		ChunkCount:            chunkCount,
+		TokenConsumption:      embeddingTokenConsumption,
+		Duration:              time.Since(start).Seconds(),
+		DocName:               docNameValue(s.taskCtx.Doc.Name),
+		BuiltInMetadataConfig: builtInMetadata,
+		AutoMetadataEnabled:   autoMetaEnabled,
 	}, nil
+}
+
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled. The frontend
+// stores both on the builtin extractor node params (Extractor:AutoExtractDefault)
+// via the operator form; the top-level parser_config shape (Python dataset
+// settings) is supported as a fallback.
+func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
+	if nodeRaw, ok := parserConfig["Extractor:AutoExtractDefault"]; ok {
+		if node, ok := nodeRaw.(map[string]any); ok {
+			enabled := parserConfigBool(node["enable_metadata"])
+			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
+				return arr, enabled
+			}
+		}
+	}
+	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
+		return arr, parserConfigBool(parserConfig["enable_metadata"])
+	}
+	return nil, false
+}
+
+// parserConfigBool coerces a parser_config boolean-like value (bool / number)
+// to bool, mirroring the frontend's enable_metadata handling.
+func parserConfigBool(v any) bool {
+	switch typed := v.(type) {
+	case bool:
+		return typed
+	case float64:
+		return typed > 0
+	case int:
+		return typed > 0
+	}
+	return false
+}
+
+func docNameValue(name *string) string {
+	if name == nil {
+		return ""
+	}
+	return *name
 }
 
 // countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.
@@ -395,20 +449,70 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": dsl}
 	}
+
+	// The task context contains the document snapshot loaded when the task
+	// started. Reload it here so the operation log reflects the final progress
+	// state written by the progress sink, matching the Python operation-log
+	// creation path.
+	doc := s.taskCtx.Doc
+	if db != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, docID); err == nil && persisted != nil {
+			doc = *persisted
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", docID, err))
+		}
+	}
+
+	pipelineTitle := ""
+	var pipelineAvatar *string
+	if db != nil {
+		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+			if canvas.Title != nil {
+				pipelineTitle = *canvas.Title
+			}
+			pipelineAvatar = canvas.Avatar
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
+		}
+	}
+
+	operationStatus := status
+	if doc.Run != nil && *doc.Run != "" {
+		operationStatus = *doc.Run
+	}
+	statusValue := "1"
+	if doc.Status != nil && *doc.Status != "" {
+		statusValue = *doc.Status
+	}
+	sourceFrom := doc.SourceType
+	if parts := strings.SplitN(sourceFrom, "/", 2); len(parts) > 0 {
+		sourceFrom = parts[0]
+	}
+	documentName := ""
+	if doc.Name != nil {
+		documentName = *doc.Name
+	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
 		TenantID:        s.Tenant().ID,
 		KbID:            s.KB().ID,
 		DocumentID:      docID,
 		PipelineID:      &s.canvasID,
+		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,
-		ParserID:        s.taskCtx.Doc.ParserID,
-		DocumentName:    *s.Doc().Name,
-		DocumentSuffix:  s.taskCtx.Doc.Suffix,
-		DocumentType:    s.taskCtx.Doc.Type,
-		SourceFrom:      s.taskCtx.Doc.SourceType,
-		OperationStatus: status,
+		ParserID:        doc.ParserID,
+		DocumentName:    documentName,
+		DocumentSuffix:  doc.Suffix,
+		DocumentType:    doc.Type,
+		SourceFrom:      sourceFrom,
+		Progress:        doc.Progress,
+		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
+		ProcessDuration: doc.ProcessDuration,
+		OperationStatus: operationStatus,
+		Avatar:          pipelineAvatar,
+		Status:          &statusValue,
 	}
 	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))

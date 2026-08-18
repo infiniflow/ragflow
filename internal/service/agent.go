@@ -282,6 +282,19 @@ func splitInlineThink(answer, thinking string) (string, string) {
 	return answer, thinking
 }
 
+// agentSessionMessageContent mirrors how Python's canvas_service.completion
+// accumulates the persisted assistant message: reasoning streams first,
+// bracketed by start_to_think/end_to_think markers, so the stored content
+// keeps the thinking segment wrapped in <think> tags. The chat UI refetches
+// the session message list after streaming and needs those tags for
+// MarkdownContent to render the "thought" section (chat.thought).
+func agentSessionMessageContent(answer, thinking string) string {
+	if thinking == "" {
+		return answer
+	}
+	return "<think>" + thinking + "</think>" + answer
+}
+
 func splitMessageContent(content string) []string {
 	if content == "" {
 		return nil
@@ -2145,7 +2158,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				if answer != "" {
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
 				}
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
 					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
 				if answer != "" && shouldEmitMessage {
@@ -2162,7 +2175,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, assistantOutput)
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
@@ -2198,7 +2211,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		appendAssistantHistory(state, assistantOutput)
-		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 		}
@@ -2326,6 +2339,7 @@ func (s *AgentService) persistAgentRunSession(
 	agentID, userID, sessionID, messageID string,
 	userInput any,
 	answer string,
+	thinking string,
 	reference map[string]interface{},
 	runDSL map[string]any,
 	state *canvas.CanvasState,
@@ -2348,7 +2362,7 @@ func (s *AgentService) persistAgentRunSession(
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
 	if appendAssistantMessage {
-		messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+		messages = append(messages, map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now})
 	}
 	if raw, err := json.Marshal(messages); err == nil {
 		session.Message = raw
