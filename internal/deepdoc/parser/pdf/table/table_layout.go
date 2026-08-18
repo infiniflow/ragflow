@@ -2,6 +2,8 @@ package table
 
 import (
 	"math"
+	"strings"
+
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	"sort"
@@ -87,6 +89,12 @@ func notOverlapped(a, b pdf.TSRCell) bool {
 	return a.X1 < b.X0 || a.X0 > b.X1 || a.Y1 < b.Y0 || a.Y0 > b.Y1
 }
 
+// isHeaderLabel reports whether a TSR cell label denotes a header region,
+// matching Python's gather(r".*header$") in t_recognizer.py.
+func isHeaderLabel(label string) bool {
+	return strings.HasSuffix(strings.ToLower(label), "header")
+}
+
 // tsrBoxOverlap returns true if a pdf.TextBox and a pdf.TSRCell do NOT overlap.
 func tsrBoxOverlap(b pdf.TextBox, c pdf.TSRCell) bool {
 	return b.X1 < c.X0 || b.X0 > c.X1 || b.Bottom < c.Y0 || b.Top > c.Y1
@@ -153,8 +161,18 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 	// grid[0] is the header row.  Spans are computed by calSpans later.
 	var headers, spans []pdf.TSRCell
 	var clmns []pdf.TSRCell
+	// Python t_recognizer.py: headers = gather(r".*header$") — the set of layout
+	// cells whose label ends in "header", NOT the first grid row. Collect them
+	// from every grid row so a header that sits on a row other than 0 is still
+	// matched and tagged with H>0 (fixes the grid[0] approximation).
+	for _, row := range grid {
+		for _, cell := range row {
+			if isHeaderLabel(cell.Label) {
+				headers = append(headers, cell)
+			}
+		}
+	}
 	if len(grid) > 0 {
-		headers = grid[0]
 		clmns = append(clmns, grid[0]...)
 	}
 	SortYFirstly(headers, 10)
