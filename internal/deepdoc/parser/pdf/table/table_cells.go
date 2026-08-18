@@ -515,7 +515,7 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]b
 				continue
 			}
 			cnt++
-			if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
+			if isHeaderLabel(cell.Label) {
 				h++
 			}
 		}
