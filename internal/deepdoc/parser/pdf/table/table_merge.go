@@ -132,18 +132,19 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 		// len(anchor.Grid)==0 path (continuation rows dropped, but
 		// structurally valid HTML).
 		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
-			anchorCols := len(anchor.Grid[0])
-			uniform := true
-			for _, cg := range contGrids {
-				if len(cg) == 0 || len(cg[0]) != anchorCols {
-					uniform = false
-					break
-				}
-			}
-			if uniform {
-				allGrids := make([][][]pdf.TSRCell, 0, 1+len(contGrids))
-				allGrids = append(allGrids, anchor.Grid)
-				allGrids = append(allGrids, contGrids...)
+			// Stack the per-page grids the same way stackGrids expects them.
+			allGrids := make([][][]pdf.TSRCell, 0, 1+len(contGrids))
+			allGrids = append(allGrids, anchor.Grid)
+			allGrids = append(allGrids, contGrids...)
+			// Every row of every merged grid (anchor included) must share one
+			// column count, otherwise stacking yields a non-uniform grid that
+			// CalSpans / CleanupOrphanColumns / RowsToHTML would misalign or
+			// silently drop. uniformColCount checks each row of each grid, not
+			// just the first row of each continuation grid, so a continuation
+			// whose interior rows are narrower than its first row is caught.
+			// It returns 0 (skip rebuild, keep anchor-only Grid) on any
+			// mismatch — the same safe degrade as len(anchor.Grid)==0.
+			if uniformColCount(allGrids...) > 0 {
 				if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
 					anchor.Grid = rebuilt
 				}
@@ -205,6 +206,28 @@ func gridYExtent(g [][]pdf.TSRCell) (minY, maxY float64) {
 		}
 	}
 	return minY, maxY
+}
+
+// uniformColCount returns the shared column count if every non-empty row of
+// every given grid has the same number of columns, or 0 otherwise. Unlike a
+// first-row-only check, it inspects each row of each grid, so a grid whose
+// interior rows are narrower than its first row is reported non-uniform. Empty
+// rows are skipped so legitimate empty rows do not cause a false mismatch.
+func uniformColCount(grids ...[][]pdf.TSRCell) int {
+	cols := -1
+	for _, g := range grids {
+		for _, row := range g {
+			if len(row) == 0 {
+				continue
+			}
+			if cols == -1 {
+				cols = len(row)
+			} else if len(row) != cols {
+				return 0
+			}
+		}
+	}
+	return cols
 }
 
 // shiftGridY returns a copy of g with every cell's Y0/Y1 shifted by dy.

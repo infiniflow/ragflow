@@ -79,6 +79,9 @@ def show_configs():
     msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
     for k, v in CONFIGS.items():
         if isinstance(v, dict):
+            if k == "gaussdb" and isinstance(v.get("config"), dict) and "password" in v["config"]:
+                v = copy.deepcopy(v)
+                v["config"]["password"] = "*" * 8
             if "password" in v:
                 v = copy.deepcopy(v)
                 v["password"] = "*" * 8

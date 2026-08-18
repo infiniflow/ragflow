@@ -23,6 +23,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
+import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
 import {
@@ -199,13 +200,15 @@ export function SavedModeCard({
             resetOptions={{ keepDirtyValues: true }}
           />
 
-          <div className="pt-3">
-            <VerifyButton
-              onVerify={handleVerify}
-              isAbsolute={false}
-              formRef={formRef}
-            />
-          </div>
+          {providerName !== LLMFactory.OpenAiAPICompatible && (
+            <div className="pt-3">
+              <VerifyButton
+                onVerify={handleVerify}
+                isAbsolute={false}
+                formRef={formRef}
+              />
+            </div>
+          )}
 
           {open && (
             <div className="pt-3">

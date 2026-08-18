@@ -8,6 +8,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - cpu
     image: edwardelric233/ragflow:oc9
@@ -33,6 +34,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - gpu
     image: edwardelric233/ragflow:oc9
