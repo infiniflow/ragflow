@@ -230,6 +230,22 @@ const useNormalizedExtractorFormValues = (node?: RAGFlowNodeType) => {
     const raw = (node?.data?.form as Record<string, any>) || {};
     const base = { ...initialExtractorValues, ...raw };
 
+    const isSummaryEnabled =
+      raw.summary?.enabled !== undefined
+        ? Boolean(raw.summary?.enabled)
+        : raw.enable_summary === 1 || raw.enable_summary === true;
+
+    const isMetadataEnabled =
+      raw.metadata_config?.enabled !== undefined
+        ? Boolean(raw.metadata_config?.enabled)
+        : raw.enable_metadata === 1 || raw.enable_metadata === true;
+
+    const metaList = raw.metadata_config?.metadata ?? raw.metadata ?? [];
+    const builtInList =
+      raw.metadata_config?.built_in_metadata ??
+      raw.built_in_metadata ??
+      [];
+
     return {
       ...base,
       keywords: {
@@ -254,21 +270,21 @@ const useNormalizedExtractorFormValues = (node?: RAGFlowNodeType) => {
         tag_file_id: raw.tags?.tag_file_id ?? raw.tag_file_id ?? '',
       },
       summary: {
-        enabled:
-          raw.summary?.enabled ??
-          (raw.enable_summary === 1 || raw.field_name === 'summary'),
+        enabled: isSummaryEnabled,
         system_prompt: raw.summary?.system_prompt ?? raw.sys_prompt ?? '',
       },
+      enable_summary: isSummaryEnabled ? 1 : 0,
+      field_name: isSummaryEnabled
+        ? (raw.field_name || 'summary')
+        : (raw.field_name === 'summary' ? '' : (raw.field_name || '')),
       metadata_config: {
-        enabled:
-          raw.metadata_config?.enabled ??
-          (raw.enable_metadata === 1 || raw.enable_metadata === true),
-        metadata: raw.metadata_config?.metadata ?? raw.metadata ?? [],
-        built_in_metadata:
-          raw.metadata_config?.built_in_metadata ??
-          raw.built_in_metadata ??
-          [],
+        enabled: isMetadataEnabled,
+        metadata: metaList,
+        built_in_metadata: builtInList,
       },
+      enable_metadata: isMetadataEnabled ? 1 : 0,
+      metadata: metaList,
+      built_in_metadata: builtInList,
     };
   }, [node?.data?.form]);
 };
@@ -285,6 +301,10 @@ const ExtractorForm = ({
     defaultValues,
     resolver: zodResolver(FormSchema),
   });
+
+  useEffect(() => {
+    form.reset(defaultValues);
+  }, [defaultValues, form]);
 
   const [activeTab, setActiveTab] = useState<ExtractorSubTab>(
     ExtractorSubTab.Keywords,

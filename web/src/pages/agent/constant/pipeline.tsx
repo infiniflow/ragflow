@@ -366,11 +366,13 @@ export const initialExtractorValues = {
     enabled: false,
     system_prompt: '',
   },
-  metadata: {
+  metadata_config: {
     enabled: false,
     metadata: [],
     built_in_metadata: [],
   },
+  metadata: [],
+  built_in_metadata: [],
   field_name: '',
   auto_keywords: 0,
   auto_questions: 0,

@@ -402,8 +402,15 @@ export function transformTitleChunkerParams(
 export function transformExtractorParams(params: ExtractorFormSchemaType) {
   const isMetadataEnabled =
     params.metadata_config?.enabled !== undefined
-      ? params.metadata_config?.enabled
+      ? Boolean(params.metadata_config?.enabled)
       : params.enable_metadata === 1 || params.enable_metadata === true;
+
+  const isSummaryEnabled =
+    params.summary?.enabled !== undefined
+      ? Boolean(params.summary?.enabled)
+      : params.enable_summary === 1 ||
+        params.enable_summary === true ||
+        params.field_name === 'summary';
 
   const metadataList =
     params.metadata_config?.metadata ?? params.metadata ?? [];
@@ -412,23 +419,50 @@ export function transformExtractorParams(params: ExtractorFormSchemaType) {
     params.built_in_metadata ??
     [];
 
+  const summarySysPrompt =
+    params.summary?.system_prompt ?? params.sys_prompt ?? '';
+
+  const keywordsTopN = params.keywords?.top_n ?? params.auto_keywords ?? 0;
+  const keywordsSysPrompt =
+    params.keywords?.system_prompt ?? params.keywords_sys_prompt ?? '';
+
+  const questionsTopN = params.questions?.top_n ?? params.auto_questions ?? 0;
+  const questionsSysPrompt =
+    params.questions?.system_prompt ?? params.questions_sys_prompt ?? '';
+
+  const tagsTopN = params.tags?.top_n ?? params.auto_tags ?? 0;
+  const tagFileId = params.tags?.tag_file_id ?? params.tag_file_id ?? '';
+
   return {
     ...params,
     prompts: [{ content: params.prompts, role: 'user' }],
-    auto_keywords: params.keywords?.top_n ?? params.auto_keywords ?? 0,
-    auto_questions: params.questions?.top_n ?? params.auto_questions ?? 0,
-    auto_tags: params.tags?.top_n ?? params.auto_tags ?? 0,
-    tag_file_id: params.tags?.tag_file_id ?? params.tag_file_id ?? '',
-    enable_summary:
-      params.summary?.enabled !== undefined
-        ? params.summary?.enabled
-          ? 1
-          : 0
-        : params.enable_summary ?? 0,
-    sys_prompt: params.summary?.system_prompt ?? params.sys_prompt ?? '',
-    field_name: params.summary?.enabled
+    auto_keywords: keywordsTopN,
+    keywords_sys_prompt: keywordsSysPrompt,
+    keywords: {
+      top_n: keywordsTopN,
+      system_prompt: keywordsSysPrompt,
+    },
+    auto_questions: questionsTopN,
+    questions_sys_prompt: questionsSysPrompt,
+    questions: {
+      top_n: questionsTopN,
+      system_prompt: questionsSysPrompt,
+    },
+    auto_tags: tagsTopN,
+    tag_file_id: tagFileId,
+    tags: {
+      top_n: tagsTopN,
+      tag_file_id: tagFileId,
+    },
+    enable_summary: isSummaryEnabled ? 1 : 0,
+    sys_prompt: summarySysPrompt,
+    field_name: isSummaryEnabled
       ? (params.field_name || 'summary')
       : (params.field_name === 'summary' ? '' : (params.field_name || '')),
+    summary: {
+      enabled: isSummaryEnabled,
+      system_prompt: summarySysPrompt,
+    },
     enable_metadata: isMetadataEnabled ? 1 : 0,
     metadata: metadataList,
     built_in_metadata: builtInMetadataList,

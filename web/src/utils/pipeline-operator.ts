@@ -96,6 +96,16 @@ function transformExtractorConfigToForm(
     result.prompts = config.prompts[0]?.content ?? '';
   }
 
+  const isSummaryEnabled =
+    config.summary?.enabled !== undefined
+      ? Boolean(config.summary?.enabled)
+      : config.enable_summary === 1 || config.enable_summary === true;
+
+  const isMetadataEnabled =
+    config.metadata_config?.enabled !== undefined
+      ? Boolean(config.metadata_config?.enabled)
+      : config.enable_metadata === 1 || config.enable_metadata === true;
+
   result.keywords = {
     top_n:
       config.keywords?.top_n ??
@@ -120,21 +130,25 @@ function transformExtractorConfigToForm(
     tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
   };
   result.summary = {
-    enabled:
-      config.summary?.enabled ??
-      (config.enable_summary === 1 || config.enable_summary === true),
+    enabled: isSummaryEnabled,
     system_prompt: config.summary?.system_prompt ?? config.sys_prompt ?? '',
   };
+  result.enable_summary = isSummaryEnabled ? 1 : 0;
+  result.field_name = isSummaryEnabled
+    ? (config.field_name || 'summary')
+    : (config.field_name === 'summary' ? '' : (config.field_name || ''));
+
   result.metadata_config = {
-    enabled:
-      config.metadata_config?.enabled ??
-      (config.enable_metadata === 1 || config.enable_metadata === true),
+    enabled: isMetadataEnabled,
     metadata: config.metadata_config?.metadata ?? config.metadata ?? [],
     built_in_metadata:
       config.metadata_config?.built_in_metadata ??
       config.built_in_metadata ??
       [],
   };
+  result.enable_metadata = isMetadataEnabled ? 1 : 0;
+  result.metadata = result.metadata_config.metadata;
+  result.built_in_metadata = result.metadata_config.built_in_metadata;
 
   return result;
 }
