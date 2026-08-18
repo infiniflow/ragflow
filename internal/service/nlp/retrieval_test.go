@@ -253,7 +253,7 @@ func (e *captureSearchDocEngine) GetHighlight(_ []map[string]interface{}, _ []st
 
 type captureEmbeddingDriver struct{ modelModule.ModelDriver }
 
-func (d *captureEmbeddingDriver) Embed(_ context.Context, _ *string, _ []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+func (d *captureEmbeddingDriver) Embed(_ context.Context, _ *string, _ modelModule.EmbedRequest, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return []modelModule.EmbeddingData{{Embedding: []float64{0.1, 0.2}}}, nil
 }
 
