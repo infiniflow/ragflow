@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ type connectorServiceIface interface {
 	DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error)
 	RebuildConnector(ctx context.Context, connectorID, userID, kbID string) (bool, common.ErrorCode, error)
 	ResumeFailedSync(ctx context.Context, connectorID, userID string, req *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error)
-	TestConnector(ctx context.Context, connectorID, userID string) error
+	TestConnector(ctx context.Context, connectorID, userID string, config entity.JSONMap) error
 	UpdateConnector(ctx context.Context, connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error)
 	StartGoogleWebOAuth(ctx context.Context, userID, source string, req *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error)
 	GoogleWebOAuthCallback(ctx context.Context, source, stateID, oauthError, errorDescription, code string) string
@@ -334,7 +335,12 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	common.SuccessWithData(c, connector, "success")
 }
 
-// TestConnector validates an accessible connector's stored credentials.
+type testConnectorRequest struct {
+	Source string         `json:"source"`
+	Config entity.JSONMap `json:"config"`
+}
+
+// TestConnector validates connector settings.
 // @Summary Test Connector
 // @Description Validate connector credentials / connection (equivalent to Python's test_connector)
 // @Tags connector
@@ -342,6 +348,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 // @Param connector_id path string true "connector ID"
 // @Router /api/v1/connectors/{connector_id}/test [post]
 func (h *ConnectorHandler) TestConnector(c *gin.Context) {
+	// check user and connector
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -356,7 +363,24 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	err := h.connectorService.TestConnector(ctx, connectorID, user.ID)
+	// build request
+	var request entity.JSONMap
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		var body testConnectorRequest
+		if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
+			return
+		}
+		// get source and config from web
+		if body.Source != "" || body.Config != nil {
+			request = entity.JSONMap{
+				"source": body.Source,
+				"config": body.Config,
+			}
+		}
+	}
+
+	err := h.connectorService.TestConnector(ctx, connectorID, user.ID, request)
 	if errors.Is(err, service.ErrConnectorTestUnsupported) {
 		connectorErrorResponse(c, err)
 		return

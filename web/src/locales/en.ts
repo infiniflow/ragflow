@@ -9,6 +9,7 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
+      removeModalTitle: 'Are you sure to remove it ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -1800,6 +1801,10 @@ Example: Virtual Hosted Style`,
       restApiTestSuccess: 'REST API connector validated successfully.',
       restApiTestFailed:
         'REST API connector validation failed. Please check your configuration and logs.',
+      dataSourceTestConnection: 'Test connection',
+      dataSourceTestSuccess: 'Data source connection validated successfully.',
+      dataSourceTestFailed:
+        'Data source connection validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -3327,8 +3332,11 @@ The Indexer will store the content in the corresponding data structures for the 
       summary: 'Summary',
       keywords: 'Keywords',
       questions: 'Questions',
+      tags: 'Tags',
       metadata: 'Metadata',
       fieldName: 'Result destination',
+      enableSummary: 'Enable Summary',
+      useBuiltInTemplate: 'Use built-in template',
       prompts: {
         system: {
           keywords: `Role

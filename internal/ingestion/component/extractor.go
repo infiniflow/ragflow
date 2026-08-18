@@ -207,6 +207,18 @@ Propose questions about a given piece of text content.
 
 ## Content to analyze:
 %s`
+
+	autoSummaryPrompt = `## Role
+You are a precise and faithful text summarizer.
+
+## Task
+Create a concise and faithful summary of the provided text content.
+
+## Requirements
+- The summary MUST strictly rely on the provided text without hallucinating.
+- The summary MUST be in the same language as the original text content.
+- Be concise and focus on the main ideas, omitting redundant details.
+- Output summary ONLY.`
 )
 
 // ExtractorComponent performs LLM-based extraction over a chunk
@@ -265,49 +277,136 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				}
 			}
 		}
-		if v, ok := params["auto_keywords"]; ok {
-			p.AutoKeywords = mapInt(v)
-		}
-		if v, ok := params["auto_questions"]; ok {
-			p.AutoQuestions = mapInt(v)
-		}
-		if v, ok := params["auto_tags"]; ok {
-			p.AutoTags = mapInt(v)
-		}
-		if v, ok := params["enable_metadata"]; ok {
-			p.EnableMetadata = mapInt(v)
-		}
-		if v, ok := params["metadata"].([]any); ok {
-			fields := make([]common.MetadataFieldDef, 0, len(v))
-			for _, f := range v {
-				m, ok := f.(map[string]any)
-				if !ok {
-					continue
-				}
-				key, _ := m["key"].(string)
-				if key = strings.TrimSpace(key); key == "" {
-					continue
-				}
-				def := common.MetadataFieldDef{Key: key}
-				if t, ok := m["type"].(string); ok {
-					def.Type = t
-				}
-				if d, ok := m["description"].(string); ok {
-					def.Description = d
-				}
-				if e, ok := m["enum"].([]any); ok {
-					for _, ev := range e {
-						if s, ok := ev.(string); ok {
-							def.Enum = append(def.Enum, s)
-						}
-					}
-				}
-				fields = append(fields, def)
+		// 1. Keywords (modular or flat)
+		if kwRaw, ok := params["keywords"].(map[string]any); ok {
+			if v, ok := kwRaw["top_n"]; ok {
+				p.Keywords.TopN = mapInt(v)
 			}
-			p.Metadata = fields
+			if v, ok := kwRaw["system_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			} else if v, ok := kwRaw["sys_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			}
+		} else if v, ok := params["auto_keywords"]; ok {
+			p.Keywords.TopN = mapInt(v)
+			if v, ok := params["keywords_sys_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			}
 		}
-		if v, ok := params["tag_file_id"].(string); ok {
-			p.TagFileID = v
+		p.AutoKeywords = p.Keywords.TopN
+
+		// 2. Questions (modular or flat)
+		if qRaw, ok := params["questions"].(map[string]any); ok {
+			if v, ok := qRaw["top_n"]; ok {
+				p.Questions.TopN = mapInt(v)
+			}
+			if v, ok := qRaw["system_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			} else if v, ok := qRaw["sys_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			}
+		} else if v, ok := params["auto_questions"]; ok {
+			p.Questions.TopN = mapInt(v)
+			if v, ok := params["questions_sys_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
+			}
+		}
+		p.AutoQuestions = p.Questions.TopN
+
+		// 3. Tags (modular or flat)
+		if tagRaw, ok := params["tags"].(map[string]any); ok {
+			if v, ok := tagRaw["top_n"]; ok {
+				p.Tags.TopN = mapInt(v)
+			}
+			if v, ok := tagRaw["tag_file_id"].(string); ok {
+				p.Tags.TagFileID = v
+			}
+		} else {
+			if v, ok := params["auto_tags"]; ok {
+				p.Tags.TopN = mapInt(v)
+			}
+			if v, ok := params["tag_file_id"].(string); ok {
+				p.Tags.TagFileID = v
+			}
+		}
+		p.AutoTags = p.Tags.TopN
+		p.TagFileID = p.Tags.TagFileID
+
+		// 4. Summary (modular or flat)
+		if sumRaw, ok := params["summary"].(map[string]any); ok {
+			if v, ok := sumRaw["enabled"].(bool); ok {
+				p.Summary.Enabled = v
+			} else if v, ok := sumRaw["enabled"]; ok {
+				p.Summary.Enabled = mapInt(v) == 1
+			}
+			if v, ok := sumRaw["system_prompt"].(string); ok {
+				p.Summary.SystemPrompt = v
+			} else if v, ok := sumRaw["sys_prompt"].(string); ok {
+				p.Summary.SystemPrompt = v
+			}
+		} else {
+			if v, ok := params["enable_summary"].(bool); ok {
+				p.Summary.Enabled = v
+			} else if v, ok := params["enable_summary"]; ok {
+				p.Summary.Enabled = mapInt(v) == 1
+			} else if p.FieldName == "summary" {
+				p.Summary.Enabled = true
+			}
+			p.Summary.SystemPrompt = p.SystemPrompt
+		}
+		if p.Summary.Enabled {
+			p.EnableSummary = 1
+			if p.FieldName == "" {
+				p.FieldName = "summary"
+			}
+			if p.Summary.SystemPrompt != "" && p.SystemPrompt == "" {
+				p.SystemPrompt = p.Summary.SystemPrompt
+			}
+		} else {
+			p.EnableSummary = 0
+			// When summary is explicitly disabled, avoid legacy "summary" field_name default triggering open-ended calls
+			if p.FieldName == "summary" {
+				p.FieldName = ""
+			}
+		}
+
+		// Metadata sub-config parsing with legacy flat fallback
+		if metaRaw, ok := params["metadata_config"].(map[string]any); ok {
+			if v, ok := metaRaw["enabled"].(bool); ok {
+				p.MetadataConfig.Enabled = v
+			} else if v, ok := metaRaw["enabled"]; ok {
+				p.MetadataConfig.Enabled = mapInt(v) == 1
+			}
+			if v, ok := metaRaw["metadata"]; ok {
+				p.MetadataConfig.Metadata = parseMetadataFieldDefs(v)
+			}
+			if v, ok := metaRaw["built_in_metadata"]; ok {
+				p.MetadataConfig.BuiltInMetadata = parseMetadataFieldDefs(v)
+			}
+			if p.MetadataConfig.Enabled {
+				p.EnableMetadata = 1
+			} else {
+				p.EnableMetadata = 0
+			}
+			p.Metadata = p.MetadataConfig.Metadata
+		} else {
+			if v, ok := params["enable_metadata"].(bool); ok {
+				if v {
+					p.EnableMetadata = 1
+				} else {
+					p.EnableMetadata = 0
+				}
+			} else if v, ok := params["enable_metadata"]; ok {
+				p.EnableMetadata = mapInt(v)
+			}
+			if v, ok := params["metadata"]; ok {
+				p.Metadata = parseMetadataFieldDefs(v)
+			}
+			if v, ok := params["built_in_metadata"]; ok {
+				p.MetadataConfig.BuiltInMetadata = parseMetadataFieldDefs(v)
+			}
+			p.MetadataConfig.Enabled = p.EnableMetadata > 0
+			p.MetadataConfig.Metadata = p.Metadata
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -468,10 +567,10 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelName, cfg)
-	var chatCfg *models.ChatConfig
+	chatCfg := &models.ChatConfig{}
 	if req.Temperature != nil {
 		temp := *req.Temperature
-		chatCfg = &models.ChatConfig{Temperature: &temp}
+		chatCfg.Temperature = &temp
 	}
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
@@ -485,6 +584,7 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
 		return nil, err
 	}
+	common.Debug(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
 	return &extractorChatResponse{Content: out.Content}, nil
 }
 
@@ -672,19 +772,18 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// Without this, a template containing {text} would be forwarded
 			// to the model unsubstituted.
 			callIn := in
+			if in.fieldName == "summary" && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
+				callIn.systemPrompt = autoSummaryPrompt
+			}
 			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(
-				in.systemPrompt, in.prompt, map[string]any{}, "",
+				callIn.systemPrompt, in.prompt, map[string]any{}, "",
 			)
 			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
 				return callErr
 			}
 			ck := map[string]any{}
-			if in.fieldName == "metadata" {
-				mergeExtractionIntoMetadata(ck, ans)
-			} else {
-				ck[in.fieldName] = ans
-			}
+			ck[in.fieldName] = ans
 			in.chunks = []map[string]any{ck}
 			return nil
 		}
@@ -712,16 +811,15 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(in.systemPrompt, in.prompt, ck, text)
+			if in.fieldName == "summary" && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
+				callIn.systemPrompt = autoSummaryPrompt
+			}
+			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(callIn.systemPrompt, in.prompt, ck, text)
 			ans, callErr := c.callText(timeoutCtx, db, callIn, "")
 			if callErr != nil {
 				return fmt.Errorf("chunk %d: %w", i, callErr)
 			}
-			if in.fieldName == "metadata" {
-				mergeExtractionIntoMetadata(ck, ans)
-			} else {
-				ck[in.fieldName] = ans
-			}
+			ck[in.fieldName] = ans
 		}
 		return nil
 	}); err != nil {
@@ -737,29 +835,6 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
-// mergeExtractionIntoMetadata merges the field_name="metadata" extraction
-// result into the chunk's metadata map (enable_metadata's output) instead of
-// overwriting it. ck["metadata"] stays a map[string]any — the unified contract
-// for document metadata produced by this component. A non-JSON / empty result
-// is ignored (no string fallback), so it can never clobber or corrupt the
-// metadata map. On overlapping keys the field_name result wins (it runs later).
-func mergeExtractionIntoMetadata(ck map[string]any, ans string) {
-	parsed, ok := tryParseJSONObject(ans)
-	if !ok {
-		return
-	}
-	existing, _ := ck["metadata"].(map[string]any)
-	if existing == nil {
-		existing = make(map[string]any, len(parsed))
-	}
-	for k, v := range parsed {
-		if v != nil {
-			existing[k] = v
-		}
-	}
-	ck["metadata"] = existing
-}
-
 // runAutoKeywords extracts keywords for the current chunk and stores
 // them on ck["important_kwd"]. mu may be nil (sequential path); when
 // non-nil it serializes the shared chunk-map accesses so concurrent
@@ -771,11 +846,22 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if exists {
 		return nil
 	}
+	topN := c.Param.Keywords.TopN
+	if topN <= 0 {
+		topN = c.Param.AutoKeywords
+	}
+	var sysPrompt, userPrompt string
+	if strings.TrimSpace(c.Param.Keywords.SystemPrompt) != "" {
+		sysPrompt, userPrompt = renderExtractorPrompts(c.Param.Keywords.SystemPrompt, "Output: ", ck, chunkText)
+	} else {
+		sysPrompt = fmt.Sprintf(autoKeywordPrompt, topN, chunkText)
+		userPrompt = "Output: "
+	}
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
 		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
-		prompt:       "Output: ",
+		systemPrompt: sysPrompt,
+		prompt:       userPrompt,
 		temperature:  &kwTemp,
 	}
 	resultStr, err := c.callText(ctx, db, kwIn, "")
@@ -806,11 +892,22 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if exists {
 		return nil
 	}
+	topN := c.Param.Questions.TopN
+	if topN <= 0 {
+		topN = c.Param.AutoQuestions
+	}
+	var sysPrompt, userPrompt string
+	if strings.TrimSpace(c.Param.Questions.SystemPrompt) != "" {
+		sysPrompt, userPrompt = renderExtractorPrompts(c.Param.Questions.SystemPrompt, "Output: ", ck, chunkText)
+	} else {
+		sysPrompt = fmt.Sprintf(autoQuestionPrompt, topN, chunkText)
+		userPrompt = "Output: "
+	}
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
 		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
-		prompt:       "Output: ",
+		systemPrompt: sysPrompt,
+		prompt:       userPrompt,
 		temperature:  &qTemp,
 	}
 	resultStr, err := c.callText(ctx, db, qIn, "")
@@ -1701,10 +1798,42 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 	return out, true
 }
 
-// init registers Extractor under CategoryIngestion (per plan §4
-// Phase 2.5). Metadata is derived from the Inputs()/Outputs()
-// methods on ExtractorComponent so the API layer (Phase 4) can
-// enumerate the catalog without instantiating the component.
+// parseMetadataFieldDefs converts an any value (typically []any of maps)
+// to a typed []common.MetadataFieldDef slice.
+func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	fields := make([]common.MetadataFieldDef, 0, len(arr))
+	for _, f := range arr {
+		m, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := m["key"].(string)
+		if key = strings.TrimSpace(key); key == "" {
+			continue
+		}
+		def := common.MetadataFieldDef{Key: key}
+		if t, ok := m["type"].(string); ok {
+			def.Type = t
+		}
+		if d, ok := m["description"].(string); ok {
+			def.Description = d
+		}
+		if e, ok := m["enum"].([]any); ok {
+			for _, ev := range e {
+				if s, ok := ev.(string); ok {
+					def.Enum = append(def.Enum, s)
+				}
+			}
+		}
+		fields = append(fields, def)
+	}
+	return fields
+}
+
 // mapInt converts a JSON-compatible value to int.
 func mapInt(v interface{}) int {
 	switch n := v.(type) {

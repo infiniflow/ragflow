@@ -19,7 +19,6 @@ package syncer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -57,7 +56,7 @@ func NewSyncer(taskWorkerCount int) *Syncer {
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()
 
-	registerBuiltInConnectors(registry)
+	syncerconnector.RegisterBuiltIns(registry)
 
 	documentService := documentservice.NewDocumentService()
 	pruneService := service.NewSyncPruneService(documentService, nil)

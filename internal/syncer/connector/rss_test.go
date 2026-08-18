@@ -137,6 +137,17 @@ func TestRSSConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	}
 }
 
+func TestRSSConnectorValidateConnectorSetting(t *testing.T) {
+	connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml"})
+	if err != nil {
+		t.Fatalf("NewRSSConnector failed: %v", err)
+	}
+	connector.fetchFeed = staticRSSFeed
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting failed: %v", err)
+	}
+}
+
 // staticRSSFeed returns a fixed RSS feed for tests.
 func staticRSSFeed(ctx context.Context, feedURL string) ([]byte, error) {
 	return []byte(`<?xml version="1.0" encoding="UTF-8"?>

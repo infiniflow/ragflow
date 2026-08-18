@@ -80,6 +80,13 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         self._access_token: str | None = None
         self._tenant_id: str | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "OneDriveConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(batch_size=batch_size, folder_path=config.get("folder_path") or None)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------
