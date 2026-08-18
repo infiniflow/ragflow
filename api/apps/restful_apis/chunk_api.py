@@ -55,6 +55,7 @@ from api.utils.reference_metadata_utils import (
     resolve_reference_metadata_preferences,
 )
 from common import settings
+from common.i18n import msg
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
 from common.metadata_utils import convert_conditions, meta_filter
@@ -199,13 +200,13 @@ def _release_doc_counters(doc):
 @add_tenant_id_to_kwargs
 async def parse(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     if kb.pipeline_id:
         return get_error_data_result(
             message="Datasets configured with an ingestion pipeline cannot be parsed with `/datasets/{dataset_id}/chunks`. Use `/documents/ingest` instead.", code=RetCode.ARGUMENT_ERROR
@@ -225,7 +226,7 @@ async def parse(tenant_id, dataset_id):
             not_found.append(id)
             continue
         if not doc:
-            return get_error_data_result(message=f"you don't own the document {id}")
+            return get_error_data_result(message=msg.document.not_owned, id=id)
         info = {"run": "1", "progress": 0, "progress_msg": ""}
         if (
             DocumentService.filter_update(
@@ -276,10 +277,10 @@ async def parse(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     req = await get_request_json()
 
     if not req.get("document_ids"):
@@ -292,7 +293,7 @@ async def stop_parsing(tenant_id, dataset_id):
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
-            return get_error_data_result(message=f"you don't own the document {id}")
+            return get_error_data_result(message=msg.document.not_owned, id=id)
         if doc[0].run != TaskStatus.RUNNING.value:
             return construct_json_result(
                 code=RetCode.DATA_ERROR,
@@ -338,7 +339,7 @@ async def retrieval_test(tenant_id):
         return get_error_data_result("`dataset_ids` should be a list")
     for id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
-            return get_error_data_result(f"You don't own the dataset {id}.")
+            return get_error_data_result(message=msg.dataset.not_owned, id=id)
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embd_err = validate_dataset_embedding_models(kbs)
     if embd_err:
@@ -360,7 +361,7 @@ async def retrieval_test(tenant_id):
         doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
-                return get_error_data_result(f"The datasets don't own the document {doc_id}")
+                return get_error_data_result(message=msg.datasets.document_not_owned, id=doc_id)
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
@@ -463,13 +464,13 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
     doc = doc[0]
     req = request.args
     page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
@@ -557,13 +558,13 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
     try:
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
@@ -608,13 +609,13 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
 
     # Resolve the doc's configured template group → child template ids
     # so we can render tabs in the order the user picked them.
@@ -922,13 +923,13 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
 
     req = await get_request_json()
     template_id = str(req.get("template_id") or "").strip()
@@ -968,13 +969,13 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import rag_tokenizer, search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
     doc = doc[0]
     req = await get_request_json()
     if is_content_empty(req.get("content")):
@@ -1065,13 +1066,13 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
     req = await get_request_json()
     if not req:
         return get_result()
@@ -1119,17 +1120,17 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.nlp import rag_tokenizer, search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"you don't own the document {document_id}")
+        return get_error_data_result(message=msg.document.not_owned, id=document_id)
     doc = doc[0]
     chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
     if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
-        return get_error_data_result(f"Can't find this chunk {chunk_id}")
+        return get_error_data_result(message=msg.chunk.not_found, id=chunk_id)
     req = await get_request_json()
     content = req.get("content")
     if content is not None:
@@ -1206,10 +1207,10 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_error_data_result(message=msg.dataset.not_owned, id=dataset_id)
     req = await get_request_json()
     if not req.get("chunk_ids"):
         return get_error_data_result(message="`chunk_ids` is required.")

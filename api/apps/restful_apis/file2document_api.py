@@ -29,6 +29,7 @@ from api.apps import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import RetCode
+from common.i18n import msg
 from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services.document_service import DocumentService
@@ -135,7 +136,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="Can't find this dataset!")
+                return get_data_error_result(message=msg.dataset.not_found)
             kb_map[kb_id] = kb
 
         # Expand folders to their innermost file IDs

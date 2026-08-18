@@ -118,6 +118,7 @@ request.interceptors.request.use((url: string, options: any) => {
       data: dataWithTenantParams,
       params,
       headers: {
+        'Accept-Language': i18n.language,
         ...(options.skipToken
           ? undefined
           : { [Authorization]: getAuthorization() }),

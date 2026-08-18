@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/utility"
 	"strings"
 	"unicode/utf8"
@@ -389,14 +390,14 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 
 	for _, datasetID := range normalizedIDs {
 		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, tenantID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
+			return nil, i18n.Error(i18n.DatasetParsedFileNotOwned, i18n.KV("id", datasetID))
 		}
 		kbs = append(kbs, kb)
 	}
@@ -1037,14 +1038,14 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 		}
 		datasetID := fmt.Sprint(item)
 		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+			return nil, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
+			return nil, i18n.Error(i18n.DatasetParsedFileNotOwned, i18n.KV("id", datasetID))
 		}
 		kbs = append(kbs, kb)
 		kbIDs = append(kbIDs, datasetID)

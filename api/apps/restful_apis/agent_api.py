@@ -68,6 +68,7 @@ from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
+from common.i18n import msg, t
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
 
@@ -539,7 +540,7 @@ async def delete_agent_session(tenant_id, agent_id):
     req = await get_request_json()
     cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
     if not cvs:
-        return get_error_data_result(f"You don't own the agent {agent_id}")
+        return get_error_data_result(message=msg.agent.not_owned, id=agent_id)
 
     if not req:
         return get_result()
@@ -561,7 +562,7 @@ async def delete_agent_session(tenant_id, agent_id):
     for session_id in conv_list:
         conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
         if not conv:
-            errors.append(f"The agent doesn't own the session {session_id}")
+            errors.append(t(msg.agent.session_not_owned, id=session_id))
             continue
         await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
         success_count += 1

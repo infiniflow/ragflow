@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -406,7 +407,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		case "has no permission for this operation":
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "Has no permission for this operation.")
 		case "can't find this Search App!":
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Search App!")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.SearchNotFound)
 		default:
 			jsonInternalError(c, err)
 		}

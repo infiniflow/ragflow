@@ -32,6 +32,7 @@ from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.utils.pagination_utils import REST_API_MAX_IDS, validate_rest_api_page_size
 from common.constants import RetCode
+from common.i18n import t
 
 
 def _is_list_annotation(annotation: Any) -> bool:
@@ -236,7 +237,7 @@ def format_validation_error_message(e: ValidationError) -> str:
         if len(input_str) > 128:
             input_str = input_str[:125] + "..."
 
-        error_msg = f"Field: <{field}> - Message: <{msg}> - Value: <{input_str}>"
+        error_msg = t("error.validation_field", field=field, msg=msg, value=input_str)
         error_messages.append(error_msg)
 
     return "\n".join(error_messages)

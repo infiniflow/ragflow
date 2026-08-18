@@ -32,6 +32,7 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
 from common.constants import RetCode
+from common.i18n import t
 from common.connection_utils import construct_response
 from api.utils.api_utils import (
     get_data_error_result,
@@ -102,7 +103,7 @@ async def login():
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
-            message=f"Email: {email} is not registered!",
+            message=t("error.email_not_registered", email=email),
         )
 
     password = json_body.get("password")
@@ -129,7 +130,7 @@ async def login():
         user.update_date = datetime_format(datetime.now())
         user.save()
         logging.info("Login successful: user_id=%s", user.id)
-        msg = "Welcome back!"
+        msg = t("error.welcome_back")
 
         return await construct_response(data=user.to_safe_dict(for_self=True), auth=user.get_id(), message=msg)
     else:
@@ -511,7 +512,7 @@ async def user_add():
     if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address):
         return get_json_result(
             data=False,
-            message=f"Invalid email address: {email_address}!",
+            message=t("error.invalid_email_address", email=email_address),
             code=RetCode.OPERATING_ERROR,
         )
 
@@ -519,7 +520,7 @@ async def user_add():
     if UserService.query(email=email_address):
         return get_json_result(
             data=False,
-            message=f"Email: {email_address} has already registered!",
+            message=t("error.email_already_registered", email=email_address),
             code=RetCode.OPERATING_ERROR,
         )
 

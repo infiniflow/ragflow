@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
+	"ragflow/internal/i18n"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
@@ -584,7 +585,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if err := h.file2DocumentService.LinkToDatasets(ctx, user.ID, &req, mode); err != nil {
-		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
+		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, i18n.T(c, err.Error()))
 		return
 	}
 

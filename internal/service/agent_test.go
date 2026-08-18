@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/netip"
@@ -29,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 )
 
 func TestBuildAgentMessageEventsThinkingProtocol(t *testing.T) {
@@ -1138,6 +1140,32 @@ func TestDeleteAgentSessionsServiceMissingSessionError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "The agent doesn't own the session missing-session") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDeleteAgentSessionsServicePartialDeletionUsesRequestLocale(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
+
+	ctx := i18n.ContextWithLocale(context.Background(), "zh-Hans")
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"session-1", "missing-session"}, false)
+	if err != nil {
+		t.Fatalf("DeleteAgentSessions failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if result == nil || result.Data == nil {
+		t.Fatalf("expected partial result data, got %+v", result)
+	}
+	if result.Data.SuccessCount != 1 {
+		t.Fatalf("expected success_count 1, got %d", result.Data.SuccessCount)
+	}
+	want := i18n.Translate("zh-Hans", i18n.AgentSessionNotOwned, i18n.KV("id", "missing-session"))
+	if len(result.Data.Errors) != 1 || result.Data.Errors[0] != want {
+		t.Fatalf("unexpected nested errors: %v", result.Data.Errors)
 	}
 }
 

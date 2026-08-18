@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 )
 
 const (
@@ -441,7 +442,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 	// access, which is too permissive for this operation.
 	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, agentID)
 	if err != nil || canvas == nil || canvas.UserID != userID {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the agent %s", agentID)
+		return nil, common.CodeDataError, i18n.Error(i18n.AgentNotOwned, i18n.KV("id", agentID))
 	}
 
 	if len(ids) == 0 {
@@ -458,6 +459,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 		}
 	}
 
+	locale := i18n.LocaleFromStdContext(ctx)
 	sessionIDs, duplicateMessages := checkDuplicateSessionIDs(ids)
 	errorsList := make([]string, 0)
 	successCount := 0
@@ -474,7 +476,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 			return nil, common.CodeServerError, err
 		}
 		if conv == nil {
-			errorsList = append(errorsList, fmt.Sprintf("The agent doesn't own the session %s", sessionID))
+			errorsList = append(errorsList, i18n.Translate(locale, i18n.AgentSessionNotOwned, i18n.KV("id", sessionID)))
 			continue
 		}
 

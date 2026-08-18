@@ -54,6 +54,7 @@ from api.utils.api_utils import (
 from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
+from common.i18n import msg, t
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
@@ -376,13 +377,13 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
     kbs = []
     for dataset_id in normalized_ids:
         if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=dataset_id, user_id=tenant_id):
-            return f"You don't own the dataset {dataset_id}"
+            return t(msg.dataset.not_owned, id=dataset_id)
         matches = await thread_pool_exec(KnowledgebaseService.query, id=dataset_id)
         if not matches:
-            return f"You don't own the dataset {dataset_id}"
+            return t(msg.dataset.not_owned, id=dataset_id)
         kb = matches[0]
         if kb.chunk_num == 0:
-            return f"The dataset {dataset_id} doesn't own parsed file"
+            return t(msg.dataset.parsed_file_not_owned, id=dataset_id)
         kbs.append(kb)
 
     err = validate_dataset_embedding_models(kbs)
@@ -959,7 +960,7 @@ async def delete_sessions(chat_id):
         success_count = 0
         for sid in unique_ids:
             if not ConversationService.query(id=sid, dialog_id=chat_id):
-                errors.append(f"The chat doesn't own the session {sid}")
+                errors.append(t(msg.chat.session_not_owned, id=sid))
                 continue
             ok, conv = ConversationService.get_by_id(sid)
             if ok:

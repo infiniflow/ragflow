@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/service"
 )
 
@@ -17,7 +18,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
 	if !d.Accessible(ctx, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("you don't own the dataset")
+		return nil, common.CodeDataError, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)

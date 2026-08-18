@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/utility"
 )
 
@@ -38,8 +39,8 @@ import (
 var (
 	// ErrLinkFileNotFound mirrors Python "File not found!".
 	ErrLinkFileNotFound = errors.New("File not found!")
-	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
-	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
+	// ErrLinkDatasetNotFound is translated via error.dataset.not_found.
+	ErrLinkDatasetNotFound = errors.New(i18n.DatasetNotFound)
 	// ErrLinkNoAuthorization mirrors Python "no authorization".
 	ErrLinkNoAuthorization = errors.New("no authorization")
 	// ErrLinkInternal is a generic, safe-to-expose internal failure.

@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/i18n"
 	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/storage"
 
@@ -243,7 +244,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
 	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
+		return 0, i18n.Error(i18n.DatasetNotOwned, i18n.KV("id", datasetID))
 	}
 
 	// 2. Resolve document IDs

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"io"
 	"ragflow/internal/common"
+	"ragflow/internal/i18n"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -46,7 +47,7 @@ func NewOpenAIChatHandler(svc *service.OpenAIChatService) *OpenAIChatHandler {
 func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You don't own the chat "+chatID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, i18n.T(c, i18n.ChatNotOwned, i18n.KV("id", chatID)))
 		return
 	}
 

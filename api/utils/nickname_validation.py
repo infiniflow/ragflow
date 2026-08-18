@@ -18,6 +18,7 @@ import re
 
 from api.constants import NICKNAME_MAX_LENGTH
 from common.constants import RetCode
+from common.i18n import t
 
 # Match frontend NICKNAME_PATTERN: letters, numbers, space, and . _ ' -
 _NICKNAME_PATTERN = re.compile(r"^[\w ._'-]+$", re.UNICODE)
@@ -37,15 +38,15 @@ def validate_nickname(nickname: str | None) -> tuple[str | None, int | None]:
         or (None, None) if validation passes.
     """
     if not isinstance(nickname, (str, type(None))):
-        return _reject_nickname("Nickname must be a string.")
+        return _reject_nickname(t("error.nickname.not_string"))
     if nickname is None:
-        return _reject_nickname("Nickname is required.")
+        return _reject_nickname(t("error.nickname.required"))
 
     nickname = nickname.strip()
     if not nickname:
-        return _reject_nickname("Nickname cannot be empty.")
+        return _reject_nickname(t("error.nickname.empty"))
     if len(nickname) > NICKNAME_MAX_LENGTH:
-        return _reject_nickname(f"Nickname must be at most {NICKNAME_MAX_LENGTH} characters.")
+        return _reject_nickname(t("error.nickname.too_long", n=NICKNAME_MAX_LENGTH))
     if not _NICKNAME_PATTERN.fullmatch(nickname):
-        return _reject_nickname("Nickname contains invalid characters.")
+        return _reject_nickname(t("error.nickname.invalid"))
     return None, None
