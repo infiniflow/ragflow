@@ -53,10 +53,17 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		for pk, pv := range params {
 			if _, ok := validKeys[pk]; ok {
 				cleaned[pk] = pv
-			} else {
-				common.Warn("CleanComponentParams: dropping unknown param",
-					zap.String("cpnID", key), zap.String("param", pk))
+				continue
 			}
+			// Extractor params are valid even when a builtin template does
+			// not declare them explicitly in params: {} (the frontend stores
+			// them on the node params); keep them through the filter.
+			if isExtractorComponent(key) && isExtractorParam(pk) {
+				cleaned[pk] = pv
+				continue
+			}
+			common.Warn("CleanComponentParams: dropping unknown param",
+				zap.String("cpnID", key), zap.String("param", pk))
 		}
 		if len(cleaned) > 0 {
 			result[key] = cleaned
@@ -148,4 +155,29 @@ func ResolveComponentParamsDefaultsFromIDs(parserID string, pipelineID *string) 
 		out[k] = v
 	}
 	return out, nil
+}
+
+// isExtractorComponent reports whether a component id is an Extractor node
+// (component ids are "<ComponentName>:<name>" or "<ComponentName>_<name>").
+func isExtractorComponent(cpnID string) bool {
+	lower := strings.ToLower(cpnID)
+	return strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_")
+}
+
+// isExtractorParam reports whether a param belongs to the Extractor component
+// (modular sub-configs, legacy flat fields, LLM settings, or UI state flags).
+func isExtractorParam(param string) bool {
+	switch param {
+	case "keywords", "questions", "tags", "summary", "metadata_config",
+		"auto_keywords", "keywords_sys_prompt",
+		"auto_questions", "questions_sys_prompt",
+		"auto_tags", "tag_file_id",
+		"enable_summary", "sys_prompt", "system_prompt", "prompt", "prompts", "field_name",
+		"enable_metadata", "metadata", "built_in_metadata",
+		"llm_id", "temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty",
+		"temperatureEnabled", "topPEnabled", "maxTokensEnabled", "presencePenaltyEnabled", "frequencyPenaltyEnabled",
+		"outputs":
+		return true
+	}
+	return false
 }

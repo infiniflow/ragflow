@@ -308,3 +308,107 @@ func TestResolveComponentParamsDefaults_ResultIsMutable(t *testing.T) {
 
 // ensure entity.JSONMap is used (import used).
 var _ entity.JSONMap
+
+func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	checked := 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			t.Fatalf("registry.Get(%q) failed", ref)
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			if s.ComponentName != "Extractor" {
+				continue
+			}
+			checked++
+			overrides := map[string]any{
+				s.CpnID: map[string]any{
+					"built_in_metadata": []any{
+						map[string]any{"key": "update_time", "type": "time"},
+					},
+				},
+			}
+			result := BuildParserConfig(dslJSON, overrides)
+			params, ok := result[s.CpnID].(map[string]any)
+			if !ok {
+				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
+			}
+			if _, ok := params["built_in_metadata"]; !ok {
+				t.Errorf("template %q: built_in_metadata dropped by CleanComponentParams; add \"built_in_metadata\": [] to the extractor node params", ref)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("expected at least one builtin template with an Extractor component")
+	}
+}
+
+func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
+	// Builtin template with empty Extractor params: {}
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Extractor:AutoExtractDefault": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Extractor",
+					"params":         map[string]any{},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl: %v", err)
+	}
+
+	overrides := map[string]any{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"summary": map[string]any{
+				"enabled":       true,
+				"system_prompt": "summary prompt",
+			},
+			"metadata_config": map[string]any{
+				"enabled": true,
+				"metadata": []any{
+					map[string]any{"key": "category", "type": "string"},
+				},
+			},
+			"keywords": map[string]any{
+				"top_n": 5,
+			},
+			"enable_summary": 1,
+			"llm_id":         "gpt-4",
+			"temperature":    0.7,
+		},
+	}
+
+	result := CleanComponentParams(dslJSON, overrides)
+	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
+	}
+
+	if sum, ok := ext["summary"].(map[string]any); !ok || sum["enabled"] != true {
+		t.Errorf("expected summary.enabled == true, got: %v", ext["summary"])
+	}
+	if meta, ok := ext["metadata_config"].(map[string]any); !ok || meta["enabled"] != true {
+		t.Errorf("expected metadata_config.enabled == true, got: %v", ext["metadata_config"])
+	}
+	if kw, ok := ext["keywords"].(map[string]any); !ok || kw["top_n"] != 5 {
+		t.Errorf("expected keywords.top_n == 5, got: %v", ext["keywords"])
+	}
+	if ext["llm_id"] != "gpt-4" {
+		t.Errorf("expected llm_id == gpt-4, got: %v", ext["llm_id"])
+	}
+}

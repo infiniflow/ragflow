@@ -182,3 +182,91 @@ func TestBuildComponentParams_GoldenCoversAllTemplates(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltInMetadataFromParserConfig_ExtractorNodeParams(t *testing.T) {
+	pc := entity.JSONMap{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"enable_metadata": 1,
+			"built_in_metadata": []any{
+				map[string]any{"key": "update_time", "type": "time"},
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	}
+	cfg, enabled := builtInMetadataFromParserConfig(pc)
+	if !enabled {
+		t.Fatal("auto metadata should be enabled from extractor node params")
+	}
+	if len(cfg) != 2 {
+		t.Fatalf("built-in config len = %d, want 2", len(cfg))
+	}
+}
+
+func TestBuiltInMetadataFromParserConfig_TopLevelFallback(t *testing.T) {
+	pc := entity.JSONMap{
+		"enable_metadata": true,
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+	}
+	cfg, enabled := builtInMetadataFromParserConfig(pc)
+	if !enabled {
+		t.Fatal("auto metadata should be enabled from top-level config")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("built-in config len = %d, want 1", len(cfg))
+	}
+}
+
+func TestBuiltInMetadataFromParserConfig_None(t *testing.T) {
+	cfg, enabled := builtInMetadataFromParserConfig(entity.JSONMap{})
+	if enabled || len(cfg) != 0 {
+		t.Fatalf("got enabled=%v cfg=%v, want disabled empty", enabled, cfg)
+	}
+}
+
+func TestDocNameValue(t *testing.T) {
+	name := "report.pdf"
+	if got := docNameValue(&name); got != "report.pdf" {
+		t.Errorf("docNameValue = %q, want report.pdf", got)
+	}
+	if got := docNameValue(nil); got != "" {
+		t.Errorf("docNameValue(nil) = %q, want empty", got)
+	}
+}
+
+func TestBuiltInMetadataFromParserConfig_MultiExtractorDeterministic(t *testing.T) {
+	// Multiple Extractor nodes with different built_in_metadata.
+	// Since keys are sorted alphabetically ("Extractor:A" before "Extractor:B"),
+	// Extractor:A must deterministically win regardless of Go map iteration order.
+	pc := entity.JSONMap{
+		"Extractor:B": map[string]any{
+			"enable_metadata": 1,
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+		"Extractor:A": map[string]any{
+			"metadata_config": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "update_time", "type": "time"},
+				},
+			},
+		},
+	}
+
+	for i := 0; i < 20; i++ {
+		cfg, enabled := builtInMetadataFromParserConfig(pc)
+		if !enabled {
+			t.Fatalf("iteration %d: expected enabled=true", i)
+		}
+		if len(cfg) != 1 {
+			t.Fatalf("iteration %d: expected 1 item, got %d", i, len(cfg))
+		}
+		item, ok := cfg[0].(map[string]any)
+		if !ok || item["key"] != "update_time" {
+			t.Fatalf("iteration %d: expected Extractor:A item update_time, got %v", i, cfg[0])
+		}
+	}
+}

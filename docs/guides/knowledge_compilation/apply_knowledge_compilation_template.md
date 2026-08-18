@@ -21,6 +21,8 @@ Configuration steps:
 3. Open CompilerOperator and select the target CompilationTemplate from the template list.
 4. Check node connections and required parameters, and then save the Pipeline.
 
+![Configure Ingestion Pipeline with CompilerOperator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-configure-ingestion-pipeline.png)
+
 Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is generated only after the template is referenced in CompilerOperator and the document actually executes this Pipeline.
 
 ## Apply the Pipeline in Dataset
@@ -46,9 +48,27 @@ Knowledge artifacts can be divided by generation scope into document-level and k
 - **Document-level knowledge artifacts**: Graph, Tree, PageIndex, MindMap, and Timeline can generate corresponding document-level results during document knowledge compilation and can be viewed in Artifacts.
 - **Knowledge-base-level knowledge artifacts**: Some knowledge artifacts support further generation of knowledge-base-level results based on documents in the knowledge base. After executing a knowledge-base-level generation task, you can view the generated results in Artifacts. Wiki is generated as a knowledge-base-level artifact. After knowledge compilation for related documents is complete, you need to go to the Artifacts page of the knowledge base and click generate. The system then generates Wiki based on the compilation results in the current knowledge base.
 
-Graph can also be further generated as a knowledge-base-level knowledge artifact through knowledge-base-level generation operations after document-level knowledge compilation is complete.
+![Generate Wiki from Knowledge Artifacts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-view-knowledge-artifacts.png)
+
 
 When a knowledge-base-level knowledge artifact generation task is executed, the system generates corresponding knowledge-base-level logs. You can use the logs to view the task execution status and related runtime information. When a generation task fails or the result is abnormal, check it together with the log information.
+
+## Convert Knowledge Artifacts to Skills (To Skills)
+
+After viewing a knowledge artifact, you can use the **To Skills** feature to further organize and convert the artifact into reusable **Skills** that can be used by agents.
+
+**Steps:**
+
+- Go to the **Artifacts** page of the knowledge base and open the knowledge artifact you want to convert.
+- Select **To Skills** from the drop-down menu in the upper-right corner of the page.
+- The system extracts and organizes relevant content from the current knowledge artifact and generates corresponding **Skills**.
+- After generation is complete, the generated Skills are displayed in the **Skills** list. Click a Skill to view its details on the right.
+
+The generated Skill typically includes a name, description, and rules, methods, or instructions extracted and organized from the knowledge artifact, which can be used by agents when performing relevant tasks.
+
+> **Note**
+>
+> **To Skills** does not modify the original knowledge artifact. Instead, it generates reusable Skills based on the existing knowledge artifact.
 
 ## Knowledge Artifact Check
 
@@ -70,6 +90,8 @@ For different knowledge artifact types, focus on the following checks:
 After knowledge artifacts are generated, the system continuously detects document changes in the knowledge base. When documents are added to or removed from the knowledge base, the corresponding knowledge artifacts are not automatically regenerated. Instead, an update prompt is displayed to remind users to synchronize the latest knowledge base content.
 
 When document changes are detected, an **Update** button appears in the upper-left corner of the knowledge artifact page, and the number of documents to update is displayed next to the button.
+
+![Update Knowledge Artifacts prompt](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-update-knowledge-artifacts.png)
 
 Hover over the update prompt area to view the specific document changes:
 

@@ -108,6 +108,15 @@ export function replaceThinkToSection(
   return result;
 }
 
+// Strip <think> reasoning blocks so only the answer text remains.
+// The second replace handles a streaming message whose block is still unclosed.
+export function removeThinkSection(text: string = '') {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*$/, '')
+    .trim();
+}
+
 export function replaceRetrievingToSection(text: string = '') {
   const pattern = /<retrieving>([\s\S]*?)<\/retrieving>/g;
 

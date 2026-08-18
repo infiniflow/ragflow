@@ -134,7 +134,7 @@ func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
 		tokenized = txt
 	}
 
-	for _, t := range strings.Fields(tokenized) {
+	for t := range strings.FieldsSeq(tokenized) {
 		tk := t
 		// Check stop words
 		if stpwd {
@@ -258,7 +258,7 @@ func (d *TermWeightDealer) Split(txt string) []string {
 	txt = regexp.MustCompile("[ \\t]+").ReplaceAllString(txt, " ")
 	txt = strings.TrimSpace(txt)
 
-	for _, t := range strings.Split(txt, " ") {
+	for t := range strings.SplitSeq(txt, " ") {
 		t = strings.TrimSpace(t)
 		if t == "" {
 			continue

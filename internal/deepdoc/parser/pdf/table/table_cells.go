@@ -224,8 +224,8 @@ func simpleTokenCount(text string) int {
 		}
 	}
 	// Also count space-separated words.
-	words := strings.Fields(text)
-	for _, w := range words {
+	words := strings.FieldsSeq(text)
+	for w := range words {
 		if !containsCJK(w) {
 			count++
 		}

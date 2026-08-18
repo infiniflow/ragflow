@@ -21,6 +21,7 @@ import (
 
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	"ragflow/internal/deepdoc/parser/pdf/table"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -91,7 +92,7 @@ func variantFromEnv() string {
 }
 
 type outputDirs struct {
-	text, tables, dla string
+	text, tables, dla, tsr string
 }
 
 func mkOutputDirs(variant string) outputDirs {
@@ -99,10 +100,12 @@ func mkOutputDirs(variant string) outputDirs {
 		text:   filepath.Join("testdata", "output", "go", variant, "text"),
 		tables: filepath.Join("testdata", "output", "go", variant, "tables"),
 		dla:    filepath.Join("testdata", "output", "go", variant, "dla"),
+		tsr:    filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
 	}
 	os.MkdirAll(d.text, 0755)
 	os.MkdirAll(d.tables, 0755)
 	os.MkdirAll(d.dla, 0755)
+	os.MkdirAll(d.tsr, 0755)
 	return d
 }
 
@@ -344,9 +347,68 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 	}
 
 	// ── DLA layout intermediates ──
+	// DLA dump: post-filter regions (NMS + confidence filter + Y-sort +
+	// cleanup), matching Python's page_layout. This makes the Go dump
+	// comparable with the Python parity dump, which also writes post-filter
+	// regions.
+	//
+	// Coordinate space: Go dumps image-pixel coordinates (no scale division;
+	// see FilteredDLARegions), whereas Python's page_layout divides by
+	// scale_factor (typically 3, layout_recognizer.py:90-93). So the two
+	// dumps differ by ~3x in absolute coordinates — this is expected, and the
+	// parity comparison is count-only (CompareDLAWithPython), so it does not
+	// affect the match.
+	//
+	// Real DLA regions always carry a score, so cleanupLayouts' box-fallback
+	// never triggers and nil boxes are safe here (count-wise). If a score-0
+	// region were ever emitted, the area tie-break would fall back to keeping
+	// the first region rather than mirroring Python's area-based choice.
 	if parsed.DLARegions != nil {
-		if b, _ := json.MarshalIndent(parsed.DLARegions, "", "  "); b != nil {
+		filteredPages := make([]pdf.DLAPageRegions, 0, len(parsed.DLARegions))
+		for _, pr := range parsed.DLARegions {
+			filteredPages = append(filteredPages, pdf.DLAPageRegions{
+				Page:    pr.Page,
+				Regions: table.FilteredDLARegions(pr.Regions, nil),
+			})
+		}
+		if b, _ := json.MarshalIndent(filteredPages, "", "  "); b != nil {
 			os.WriteFile(filepath.Join(dirs.dla, name+".json"), b, 0644)
 		}
+	}
+
+	// ── TSR raw cells ── (matching Python's tsr_raw dump from parser.tb_cpns).
+	// Flat list of per-cell records so CompareTSRRawWithPython can diff labels
+	// and table counts against the Python reference.
+	type tsrRawCellDump struct {
+		TableIndex int     `json:"table_index"`
+		Page       int     `json:"page"`
+		Label      string  `json:"label"`
+		X0         float64 `json:"x0"`
+		Y0         float64 `json:"y0"`
+		X1         float64 `json:"x1"`
+		Y1         float64 `json:"y1"`
+		Text       string  `json:"text"`
+	}
+	var tsrCells []tsrRawCellDump
+	for ti, t := range parsed.Tables {
+		page := 0
+		if len(t.Positions) > 0 && len(t.Positions[0].PageNumbers) > 0 {
+			page = t.Positions[0].PageNumbers[0]
+		}
+		for _, c := range t.Cells {
+			tsrCells = append(tsrCells, tsrRawCellDump{
+				TableIndex: ti,
+				Page:       page,
+				Label:      c.Label,
+				X0:         c.X0,
+				Y0:         c.Y0,
+				X1:         c.X1,
+				Y1:         c.Y1,
+				Text:       c.Text,
+			})
+		}
+	}
+	if b, _ := json.MarshalIndent(tsrCells, "", "  "); b != nil {
+		os.WriteFile(filepath.Join(dirs.tsr, name+".json"), b, 0644)
 	}
 }

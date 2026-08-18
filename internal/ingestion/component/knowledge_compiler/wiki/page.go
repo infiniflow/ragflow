@@ -109,7 +109,7 @@ func ParseOutline(md string) []Section {
 			current = nil
 		}
 	}
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		trimmed := strings.TrimRight(line, "\r")
 		if lvl := headingLevel(trimmed); lvl > 0 {
 			flush()
@@ -275,7 +275,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 
 // firstHeading returns the first Markdown "# "-prefixed line, trimmed.
 func firstHeading(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		s := strings.TrimSpace(line)
 		if strings.HasPrefix(s, "# ") {
 			return strings.TrimSpace(strings.TrimPrefix(s, "# "))
@@ -286,7 +286,7 @@ func firstHeading(md string) string {
 
 // firstParagraph returns the first non-empty, non-heading line, capped.
 func firstParagraph(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		s := strings.TrimSpace(line)
 		if s == "" || strings.HasPrefix(s, "#") {
 			continue

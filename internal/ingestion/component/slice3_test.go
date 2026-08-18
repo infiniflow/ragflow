@@ -25,62 +25,51 @@ import (
 	"testing"
 )
 
-// TestSubstitutePromptPlaceholders_ReplacesAtChunks pins the
+// TestRenderExtractorPrompts_ReplacesAtChunks pins the
 // `{ComponentName:ParamName@chunks}` placeholder substitution.
-// The substitute is the joined chunk text.
-func TestSubstitutePromptPlaceholders_ReplacesAtChunks(t *testing.T) {
+func TestRenderExtractorPrompts_ReplacesAtChunks(t *testing.T) {
 	prompt := "Extract metadata from: {TitleChunker:FlatMiceFix@chunks}"
-	chunks := []map[string]any{
-		{"text": "First chunk."},
-		{"text": "Second chunk."},
-	}
-	got := substitutePromptPlaceholders(prompt, chunks)
+	ck := map[string]any{"text": "First chunk."}
+	_, got := renderExtractorPrompts("", prompt, ck, "First chunk.")
 	if strings.Contains(got, "{TitleChunker:FlatMiceFix@chunks}") {
 		t.Errorf("placeholder not substituted: %q", got)
 	}
-	if !strings.Contains(got, "First chunk.") || !strings.Contains(got, "Second chunk.") {
+	if !strings.Contains(got, "First chunk.") {
 		t.Errorf("substitute missing chunk content: %q", got)
 	}
-}
-
-// TestSubstitutePromptPlaceholders_LeavesPatternWhenNoChunks pins
-// the opt-in substitution rule. When chunks is empty the
-// placeholder is left intact so a misconfigured template surfaces
-// as a clear pattern rather than silently disappearing.
-func TestSubstitutePromptPlaceholders_LeavesPatternWhenNoChunks(t *testing.T) {
-	prompt := "Extract metadata from: {TitleChunker:FlatMiceFix@chunks}"
-	got := substitutePromptPlaceholders(prompt, nil)
-	if got != prompt {
-		t.Errorf("empty chunks: placeholder should be preserved\n  got: %q\n want: %q", got, prompt)
+	if n := strings.Count(got, "First chunk."); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1: %q", n, got)
 	}
 }
 
-// TestSubstitutePromptPlaceholders_NoPlaceholderInPrompt pins the
-// no-op behaviour when the prompt carries no @chunks pattern.
-func TestSubstitutePromptPlaceholders_NoPlaceholderInPrompt(t *testing.T) {
+// TestRenderExtractorPrompts_LeavesUnknownPattern pins that unrecognized
+// placeholders are preserved verbatim.
+func TestRenderExtractorPrompts_LeavesUnknownPattern(t *testing.T) {
+	prompt := "Extract metadata from: {unknown_placeholder}"
+	_, got := renderExtractorPrompts("", prompt, nil, "")
+	if got != prompt {
+		t.Errorf("unknown placeholder: pattern should be preserved\n  got: %q\n want: %q", got, prompt)
+	}
+}
+
+// TestRenderExtractorPrompts_NoPlaceholderAppendsChunkText pins the
+// fallback append behavior when the prompt carries no body placeholder.
+func TestRenderExtractorPrompts_NoPlaceholderAppendsChunkText(t *testing.T) {
 	prompt := "Plain prompt with no substitution."
-	chunks := []map[string]any{{"text": "x"}}
-	got := substitutePromptPlaceholders(prompt, chunks)
-	if got != prompt {
-		t.Errorf("no-placeholder prompt should be unchanged\n  got: %q\n want: %q", got, prompt)
+	ck := map[string]any{"text": "my chunk text"}
+	_, got := renderExtractorPrompts("", prompt, ck, "my chunk text")
+	want := "Plain prompt with no substitution.\n\nmy chunk text"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
-// TestSubstitutePromptPlaceholders_SkipsEmptyChunkText pins the
-// per-chunk text trim. A chunk with no text field does not
-// contribute a trailing blank line.
-func TestSubstitutePromptPlaceholders_SkipsEmptyChunkText(t *testing.T) {
-	prompt := "p {TitleChunker:FlatMiceFix@chunks} q"
-	chunks := []map[string]any{
-		{"text": ""},
-		{"text": "actual"},
-		{},
-	}
-	got := substitutePromptPlaceholders(prompt, chunks)
-	if strings.Contains(got, "{TitleChunker:FlatMiceFix@chunks}") {
-		t.Errorf("placeholder not substituted: %q", got)
-	}
-	if !strings.Contains(got, "actual") {
-		t.Errorf("chunk text missing: %q", got)
+// TestRenderExtractorPrompts_SkipsEmptyChunkText pins that an empty
+// chunkText does not append a trailing blank line.
+func TestRenderExtractorPrompts_SkipsEmptyChunkText(t *testing.T) {
+	prompt := "Plain prompt"
+	_, got := renderExtractorPrompts("", prompt, map[string]any{}, "")
+	if got != prompt {
+		t.Errorf("empty chunkText should not alter prompt\n  got: %q\n want: %q", got, prompt)
 	}
 }

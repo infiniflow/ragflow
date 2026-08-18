@@ -1182,7 +1182,7 @@ func wikiMarkdownDropsContent(mergedMD, sourceMD string) bool {
 }
 
 func wikiMarkdownTitle(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "# "))

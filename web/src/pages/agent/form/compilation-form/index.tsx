@@ -76,16 +76,16 @@ const CompilationForm = ({
         {backendLanguage === 'go' && (
           <RAGFlowFormItem
             name="mode"
-            label={t('setting.wikiMode')}
-            tooltip={t('setting.wikiModeTip')}
+            label={t('knowledgeCompilation.wikiMode')}
+            tooltip={t('knowledgeCompilation.wikiModeTip')}
           >
             {(field) => (
               <SelectWithSearch
                 value={field.value}
                 onChange={field.onChange}
                 options={[
-                  { label: t('setting.entityMode'), value: 'entity' },
-                  { label: t('setting.topicMode'), value: 'topic' },
+                  { label: t('knowledgeCompilation.entityMode'), value: 'entity' },
+                  { label: t('knowledgeCompilation.topicMode'), value: 'topic' },
                 ]}
               />
             )}

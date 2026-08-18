@@ -45,6 +45,10 @@ class LoadConnector(ABC):
         """Validate connector settings"""
         pass
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "LoadConnector":
+        raise NotImplementedError(f"{cls.__name__} must implement build_connector")
+
 
 class PollConnector(ABC):
     """Poll connector interface"""
@@ -238,6 +242,10 @@ class BaseConnector(abc.ABC, Generic[CT]):
 
         Default is a no-op (always successful).
         """
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "BaseConnector":
+        raise NotImplementedError(f"{cls.__name__} must implement build_connector")
 
     def validate_perm_sync(self) -> None:
         """
