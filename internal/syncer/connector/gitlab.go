@@ -286,7 +286,7 @@ func (c *GitlabConnector) fetchLastCommit(ctx context.Context, projectID int, br
 
 // fetchFileRaw downloads raw file content from GitLab.
 func (c *GitlabConnector) fetchFileRaw(ctx context.Context, projectID int, branch, path string) ([]byte, error) {
-	encoded := url.QueryEscape(path)
+	encoded := url.PathEscape(path)
 	apiURL := c.apiURL(fmt.Sprintf("/projects/%d/repository/files/%s/raw", projectID, encoded), url.Values{"ref": {branch}})
 	return c.getRaw(ctx, apiURL)
 }

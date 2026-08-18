@@ -278,6 +278,31 @@ func TestGitlabConnectorOpenSyncCodeFiles(t *testing.T) {
 	}
 }
 
+// TestGitlabFetchFileRawEscapesFilePath verifies raw file paths use path-safe %20/%2F encoding.
+func TestGitlabFetchFileRawEscapesFilePath(t *testing.T) {
+	connector := &GitlabConnector{baseURL: "https://gitlab.com/api/v4"}
+	connector.doRaw = func(ctx context.Context, apiURL string) ([]byte, error) {
+		parsed, err := url.Parse(apiURL)
+		if err != nil {
+			t.Fatalf("parse api url: %v", err)
+		}
+		if got := parsed.EscapedPath(); got != "/api/v4/projects/1/repository/files/src%20dir%2Fhelper%20one.go/raw" {
+			t.Fatalf("escaped path = %q", got)
+		}
+		if got := parsed.Query().Get("ref"); got != "main" {
+			t.Fatalf("ref = %q, want %q", got, "main")
+		}
+		return []byte("ok"), nil
+	}
+	body, err := connector.fetchFileRaw(context.Background(), 1, "main", "src dir/helper one.go")
+	if err != nil {
+		t.Fatalf("fetchFileRaw failed: %v", err)
+	}
+	if string(body) != "ok" {
+		t.Fatalf("body = %q, want %q", body, "ok")
+	}
+}
+
 // TestGitlabConnectorValidate verifies missing config returns clear errors.
 func TestGitlabConnectorValidate(t *testing.T) {
 	cases := []struct {
