@@ -42,7 +42,7 @@ func (a *dtTestAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...RunO
 // ---- tests ----
 
 func TestDeterministicTransfer_Basic(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	interruptData := "interrupt_data"
 	var runCount int
 
@@ -88,7 +88,7 @@ func TestDeterministicTransfer_Basic(t *testing.T) {
 }
 
 func TestDeterministicTransfer_RunPath(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	innerAgent := &dtTestAgent{
 		name: "inner",
@@ -114,7 +114,7 @@ func TestDeterministicTransfer_RunPath(t *testing.T) {
 }
 
 func TestDeterministicTransfer_ExitSkipsTransfer(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	innerAgent := &dtTestAgent{
 		name: "inner",
@@ -149,7 +149,7 @@ func TestDeterministicTransfer_ExitSkipsTransfer(t *testing.T) {
 }
 
 func TestDeterministicTransfer_NonFlowAgent(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	innerAgent := &dtTestAgent{
 		name: "simple",
@@ -186,7 +186,7 @@ func TestDeterministicTransfer_NonFlowAgent(t *testing.T) {
 }
 
 func TestDeterministicTransfer_InterruptSkipsTransfer(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	innerAgent := &dtTestAgent{
 		name: "interrupt_test",
@@ -221,7 +221,7 @@ func TestDeterministicTransfer_InterruptSkipsTransfer(t *testing.T) {
 }
 
 func TestDeterministicTransfer_NonResumableAgent(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	innerAgent := &dtTestAgent{
 		name: "non_resumable",

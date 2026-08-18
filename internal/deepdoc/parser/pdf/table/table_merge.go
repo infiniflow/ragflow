@@ -122,30 +122,46 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 		// production path); Grid-less tables fall back to the cells path
 		// and must be left untouched to avoid regression.
 		//
-		// Guard: all merged pages must share the anchor's column count. A
-		// jagged cross-page stack (continuation page with a different number
-		// of columns) would feed ConstructTable a non-uniform grid, causing
-		// CalSpans / CleanupOrphanColumns / RowsToHTML to misalign or
-		// silently drop continuation columns and possibly delete a
-		// legitimate anchor column. In that case we skip the rebuild and
-		// keep the anchor-only Grid — the same safe degrade as the
-		// len(anchor.Grid)==0 path (continuation rows dropped, but
-		// structurally valid HTML).
+		// The anchor and continuation pages form ONE logical table, but TSR
+		// can detect a slightly different number of columns per page (or even
+		// per row within a page). A non-uniform grid must NOT cause the
+		// continuation rows to be dropped — doing so silently deletes an
+		// entire continuation page from the output.
+		//
+		// We stack the unpadded per-page grids first, so the zero-coordinate
+		// padding cells never enter the Y-shift math in stackGrids /
+		// gridYExtent, then align the rebuilt grid to a shared column model:
+		// the maximum column count seen across all rows of all grids, padding
+		// shorter rows by index. Column i of a continuation page maps to
+		// column i of the anchor because they are the same logical column of
+		// one cross-page table, so padding keeps the grid uniform
+		// (CalSpans / CleanupOrphanColumns / RowsToHTML never see a jagged
+		// grid) while preserving every row.
 		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
-			anchorCols := len(anchor.Grid[0])
-			uniform := true
-			for _, cg := range contGrids {
-				if len(cg) == 0 || len(cg[0]) != anchorCols {
-					uniform = false
+			allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)
+			uniCols := 0
+			for _, g := range allGrids {
+				for _, row := range g {
+					if len(row) > uniCols {
+						uniCols = len(row)
+					}
+				}
+			}
+			keep := true
+			for _, g := range allGrids {
+				if len(g) == 0 {
+					// Degenerate grid with no rows: degrade to anchor-only so
+					// we don't build a malformed grid.
+					keep = false
 					break
 				}
 			}
-			if uniform {
-				allGrids := make([][][]pdf.TSRCell, 0, 1+len(contGrids))
-				allGrids = append(allGrids, anchor.Grid)
-				allGrids = append(allGrids, contGrids...)
+			if keep {
+				// Stack the unpadded grids first so the padded zero-coordinate
+				// cells stay out of the Y-shift calculation, then align the
+				// rebuilt grid to the shared column model.
 				if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
-					anchor.Grid = rebuilt
+					anchor.Grid = padGridCols(rebuilt, uniCols)
 				}
 			}
 		}
@@ -205,6 +221,29 @@ func gridYExtent(g [][]pdf.TSRCell) (minY, maxY float64) {
 		}
 	}
 	return minY, maxY
+}
+
+// padGridCols returns a copy of grid with every row extended to width uniCols
+// by appending zero-valued cells. Grids shorter than uniCols keep their
+// existing cells at the same column indices; column i of a continuation page
+// maps to column i of the anchor because they are the same logical column of
+// one cross-page table. Rows are never added or removed, so no content is
+// lost when per-page (or per-row) column counts differ.
+func padGridCols(grid [][]pdf.TSRCell, uniCols int) [][]pdf.TSRCell {
+	if uniCols <= 0 {
+		return grid
+	}
+	out := make([][]pdf.TSRCell, len(grid))
+	for i, row := range grid {
+		if len(row) >= uniCols {
+			out[i] = row
+			continue
+		}
+		nr := make([]pdf.TSRCell, uniCols)
+		copy(nr, row)
+		out[i] = nr
+	}
+	return out
 }
 
 // shiftGridY returns a copy of g with every cell's Y0/Y1 shifted by dy.

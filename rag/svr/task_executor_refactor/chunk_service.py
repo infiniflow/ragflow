@@ -91,6 +91,7 @@ class ChunkService:
     async def build_chunks(
         self,
         storage_binary: bytes,
+        on_chunking_start=None,
     ) -> List[Dict[str, Any]]:
         """Build chunks from document binary.
 
@@ -133,7 +134,7 @@ class ChunkService:
         ctx.recording_context.record("chunk_config", chunk_config)
 
         # Run chunking (delegated)
-        cks = await run_chunking(chunker, storage_binary, ctx)
+        cks = await run_chunking(chunker, storage_binary, ctx, on_chunking_start)
 
         # Record raw chunks
         self._task_context.recording_context.record("raw_chunks", cks)

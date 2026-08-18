@@ -48,7 +48,7 @@ func newFixtureMySQLConnector(t *testing.T, config map[string]any, expect func(m
 	if err != nil {
 		t.Fatalf("NewMySQLConnector failed: %v", err)
 	}
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("sqlmock.New failed: %v", err)
 	}
@@ -288,12 +288,10 @@ func TestMySQLConnectorMD5FallbackID(t *testing.T) {
 	}
 }
 
-// TestMySQLConnectorValidate verifies the SELECT 1 probe and failure paths.
+// TestMySQLConnectorValidate verifies the connection probe and failure paths.
 func TestMySQLConnectorValidate(t *testing.T) {
 	connector := newFixtureMySQLConnector(t, nil, func(mock sqlmock.Sqlmock) {
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT 1")).WillReturnRows(
-			sqlmock.NewRows([]string{"1"}).AddRow(1),
-		)
+		mock.ExpectPing()
 	})
 	if err := connector.Validate(context.Background()); err != nil {
 		t.Fatalf("Validate failed: %v", err)

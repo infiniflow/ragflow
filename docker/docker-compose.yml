@@ -26,6 +26,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
@@ -81,6 +82,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+        required: false
     profiles:
       - gpu
     image: ${RAGFLOW_IMAGE}

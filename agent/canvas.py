@@ -183,7 +183,7 @@ class Graph:
                         try:
                             session.close_sync(timeout=3)
                         except Exception:
-                            pass
+                            logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
     @staticmethod
     def _get_component_name(dsl, cid):

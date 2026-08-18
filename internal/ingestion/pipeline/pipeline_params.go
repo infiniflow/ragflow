@@ -55,10 +55,10 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 				cleaned[pk] = pv
 				continue
 			}
-			// Auto metadata params are valid extractor params even when a
-			// builtin template does not declare them (the frontend stores
+			// Extractor params are valid even when a builtin template does
+			// not declare them explicitly in params: {} (the frontend stores
 			// them on the node params); keep them through the filter.
-			if isExtractorComponent(key) && isAutoMetadataParam(pk) {
+			if isExtractorComponent(key) && isExtractorParam(pk) {
 				cleaned[pk] = pv
 				continue
 			}
@@ -164,11 +164,19 @@ func isExtractorComponent(cpnID string) bool {
 	return strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_")
 }
 
-// isAutoMetadataParam reports whether a param belongs to the Auto metadata
-// feature (enable_metadata toggle + metadata / built_in_metadata schemas).
-func isAutoMetadataParam(param string) bool {
+// isExtractorParam reports whether a param belongs to the Extractor component
+// (modular sub-configs, legacy flat fields, LLM settings, or UI state flags).
+func isExtractorParam(param string) bool {
 	switch param {
-	case "enable_metadata", "metadata", "built_in_metadata":
+	case "keywords", "questions", "tags", "summary", "metadata_config",
+		"auto_keywords", "keywords_sys_prompt",
+		"auto_questions", "questions_sys_prompt",
+		"auto_tags", "tag_file_id",
+		"enable_summary", "sys_prompt", "system_prompt", "prompt", "prompts", "field_name",
+		"enable_metadata", "metadata", "built_in_metadata",
+		"llm_id", "temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty",
+		"temperatureEnabled", "topPEnabled", "maxTokensEnabled", "presencePenaltyEnabled", "frequencyPenaltyEnabled",
+		"outputs":
 		return true
 	}
 	return false

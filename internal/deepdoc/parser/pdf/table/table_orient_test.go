@@ -8,9 +8,9 @@ import (
 )
 
 // mockRotationDoc implements DocAnalyzer with deterministic OCR results per angle.
-// The mock tracks the call sequence: evaluateTableOrientation tests angles in
-// order 0°, 90°, 180°, 270°. Each call to OCRDetect increments an internal
-// counter and returns data for the corresponding angle.
+// The mock tracks the call sequence: EvaluateTableOrientation calls OCRRecognize
+// once per angle in order 0°, 90°, 180°, 270°. Each call to OCRRecognize
+// increments an internal counter and returns data for the corresponding angle.
 type mockRotationDoc struct {
 	// angle → {regions count, average confidence, error}
 	angles map[int]struct {
@@ -32,41 +32,18 @@ func (m *mockRotationDoc) TSR(_ context.Context, _ image.Image) ([]pdf.TSRCell, 
 func (m *mockRotationDoc) OCR(_ image.Image) (string, error) { return "", nil }
 func (m *mockRotationDoc) Health() bool                      { return true }
 
-func (m *mockRotationDoc) currentAngle() int {
-	idx := m.callSeq % len(rotationOrder)
-	return rotationOrder[idx]
-}
-
-func (m *mockRotationDoc) OCRDetect(_ context.Context, img image.Image) ([]pdf.OCRBox, error) {
-	defer func() { m.callSeq++ }()
-	angle := m.currentAngle()
-	cfg, ok := m.angles[angle]
-	if !ok {
-		cfg = m.angles[0] // fallback to 0° config
-	}
-	if cfg.err != nil {
-		return nil, cfg.err
-	}
-	if cfg.regions == 0 {
-		return nil, nil
-	}
-	w, h := img.Bounds().Dx(), img.Bounds().Dy()
-	boxes := make([]pdf.OCRBox, cfg.regions)
-	step := w / (cfg.regions + 1)
-	for i := 0; i < cfg.regions; i++ {
-		x := step * (i + 1)
-		boxes[i] = pdf.OCRBox{
-			X0: float64(x), Y0: float64(h / 4),
-			X1: float64(x + 20), Y1: float64(h / 4),
-			X2: float64(x + 20), Y2: float64(h * 3 / 4),
-			X3: float64(x), Y3: float64(h * 3 / 4),
-		}
-	}
-	return boxes, nil
+func (m *mockRotationDoc) OCRDetect(_ context.Context, _ image.Image) ([]pdf.OCRBox, error) {
+	// EvaluateTableOrientation scores by OCRRecognize; detection output is
+	// unused here. Return empty to satisfy the DocAnalyzer interface.
+	return nil, nil
 }
 
 func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
-	angle := rotationOrder[(m.callSeq-1)%len(rotationOrder)] // use angle from last Detect call
+	// EvaluateTableOrientation calls OCRRecognize once per angle in order
+	// 0°, 90°, 180°, 270°. Track the call sequence here so each call returns
+	// the recognition result for the corresponding angle.
+	angle := rotationOrder[m.callSeq%len(rotationOrder)]
+	m.callSeq++
 	cfg, ok := m.angles[angle]
 	if !ok {
 		cfg = m.angles[0]
@@ -162,16 +139,16 @@ func TestEvaluateTableOrientation(t *testing.T) {
 		}
 	})
 
-	t.Run("threshold protection — 0° keeps when diff too small", func(t *testing.T) {
-		// Region-count scoring: 8 vs 9 is too close (< 1.4×) → 0° wins.
+	t.Run("threshold protection — 0° keeps when confidence diff too small", func(t *testing.T) {
+		// Recognition scores 0.50 vs 0.55 are too close (< 0.2 margin) → 0° wins.
 		doc := &mockRotationDoc{
 			angles: map[int]struct {
 				regions int
 				avgConf float64
 				err     error
 			}{
-				0:  {regions: 8},
-				90: {regions: 9},
+				0:  {regions: 8, avgConf: 0.50},
+				90: {regions: 8, avgConf: 0.55},
 			},
 		}
 		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
@@ -180,21 +157,41 @@ func TestEvaluateTableOrientation(t *testing.T) {
 		}
 	})
 
-	t.Run("threshold pass — 90° wins when region count is clearly higher", func(t *testing.T) {
-		// 0° has few regions AND 90° has ≥1.4× more → 90° wins.
+	t.Run("threshold pass — 90° wins when recognition confidence is clearly higher", func(t *testing.T) {
+		// 0° reads poorly (0.30) AND 90° reads well (0.90) → 90° wins.
 		doc := &mockRotationDoc{
 			angles: map[int]struct {
 				regions int
 				avgConf float64
 				err     error
 			}{
-				0:  {regions: 4},
-				90: {regions: 10},
+				0:  {regions: 4, avgConf: 0.30},
+				90: {regions: 10, avgConf: 0.90},
 			},
 		}
 		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90° (threshold passed), got %d°", angle)
+		}
+	})
+
+	t.Run("threshold guard — score_0 >= 0.8 blocks rotation despite large margin", func(t *testing.T) {
+		// Isolate the score_0 < 0.8 clause: 0° reads well (0.80) and 90° is
+		// clearly higher (1.00), so the margin clause (combined diff 0.22 > 0.2)
+		// passes, but score_0 = 0.88 >= 0.8 must still force keeping 0°.
+		doc := &mockRotationDoc{
+			angles: map[int]struct {
+				regions int
+				avgConf float64
+				err     error
+			}{
+				0:  {regions: 50, avgConf: 0.80},
+				90: {regions: 50, avgConf: 1.00},
+			},
+		}
+		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		if angle != 0 {
+			t.Errorf("expected 0° (score_0 >= 0.8 guard), got %d°", angle)
 		}
 	})
 
@@ -222,6 +219,46 @@ func TestEvaluateTableOrientation(t *testing.T) {
 			if s != 0 {
 				t.Error("all scores should be 0 on OCR failure")
 			}
+		}
+	})
+
+	t.Run("zero score_0 with low non-zero score — keep 0°", func(t *testing.T) {
+		// 0° has no recognized text (score_0 == 0). A non-zero angle with a
+		// low combined score must NOT be accepted, matching Python's
+		// `score_0 is not None` threshold (not `score_0 > 0`).
+		doc := &mockRotationDoc{
+			angles: map[int]struct {
+				regions int
+				avgConf float64
+				err     error
+			}{
+				0:  {regions: 0, avgConf: 0},
+				90: {regions: 2, avgConf: 0.05},
+			},
+		}
+		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		if angle != 0 {
+			t.Errorf("expected 0° (score_0 == 0, low non-zero score), got %d°", angle)
+		}
+	})
+
+	t.Run("zero score_0 with high non-zero score — accept rotation", func(t *testing.T) {
+		// 0° has no recognized text (score_0 == 0) but 90° reads clearly
+		// (combined 1.045 > 0.2). Mirrors Python: score_0 is not None, so the
+		// margin clause alone decides and 90° is accepted.
+		doc := &mockRotationDoc{
+			angles: map[int]struct {
+				regions int
+				avgConf float64
+				err     error
+			}{
+				0:  {regions: 0, avgConf: 0},
+				90: {regions: 50, avgConf: 0.95},
+			},
+		}
+		angle, _, _ := EvaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
+		if angle != 90 {
+			t.Errorf("expected 90° (score_0 == 0, high non-zero score), got %d°", angle)
 		}
 	})
 }

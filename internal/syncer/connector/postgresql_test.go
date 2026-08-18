@@ -48,7 +48,7 @@ func newFixturePostgresConnector(t *testing.T, config map[string]any, expect fun
 	if err != nil {
 		t.Fatalf("NewPostgreSQLConnector failed: %v", err)
 	}
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("sqlmock.New failed: %v", err)
 	}
@@ -319,9 +319,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 // TestPostgreSQLConnectorValidate verifies the probe and dialect-specific error message.
 func TestPostgreSQLConnectorValidate(t *testing.T) {
 	connector := newFixturePostgresConnector(t, nil, func(mock sqlmock.Sqlmock) {
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT 1")).WillReturnRows(
-			sqlmock.NewRows([]string{"1"}).AddRow(1),
-		)
+		mock.ExpectPing()
 	})
 	if err := connector.Validate(context.Background()); err != nil {
 		t.Fatalf("Validate failed: %v", err)

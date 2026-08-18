@@ -97,16 +97,11 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if tsrErr != nil {
 		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 	}
-	w := tm.Region.X1 - tm.Region.X0
-	h := tm.Region.Y1 - tm.Region.Y0
-	cropOffX := math.Max(0, tm.Region.X0-w*0.03)
-	cropOffY := math.Max(0, tm.Region.Y0-h*0.03)
+	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
+	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {
 		if bestAngle != 0 {
-			if !p.Config.SkipOCR {
-				p.ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
-			}
 			for i := range cells {
 				cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1 = util.MapRotatedRectToOriginal(
 					cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
@@ -149,16 +144,6 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 				for ci := range grid[ri] {
 					grid[ri][ci].Text = flat[idx].Text
 					idx++
-				}
-			}
-			if bestAngle == 0 && !p.Config.SkipOCR {
-				p.ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
-				idx = 0
-				for ri := range grid {
-					for ci := range grid[ri] {
-						grid[ri][ci].Text = flat[idx].Text
-						idx++
-					}
 				}
 			}
 		}

@@ -99,6 +99,16 @@ class YandexDiskConnector(LoadConnector, PollConnector, FingerprintConnector):
             raise ConnectorMissingCredentialError("Yandex Disk")
         self._token = token
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "YandexDiskConnector":
+        """Build a Yandex Disk connector from config and load its credentials."""
+        connector = cls(
+            path=config.get("path", "/"),
+            batch_size=int(config.get("batch_size") or INDEX_BATCH_SIZE),
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def _headers(self) -> dict[str, str]:
         # The Yandex Disk API only supports application/json; see
         # https://yandex.com/dev/disk-api/doc/en/concepts/quickstart.md
