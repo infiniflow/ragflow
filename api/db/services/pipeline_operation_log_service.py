@@ -234,6 +234,16 @@ class PipelineOperationLogService(CommonService):
         log["update_time"] = timestamp
         log["update_date"] = datetime_now
         with DB.atomic():
+            Document.select(Document.id).where(Document.id == document.id).for_update().first()
+            if document_id != GRAPH_RAPTOR_FAKE_DOC_ID and process_begin_at is not None:
+                existing = (
+                    cls.model.select()
+                    .where((cls.model.document_id == document_id) & (cls.model.pipeline_id == pipeline_id) & (cls.model.task_type == task_type) & (cls.model.process_begin_at == process_begin_at))
+                    .first()
+                )
+                if existing:
+                    return existing
+
             obj = cls.save(**log)
 
             limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1000))
