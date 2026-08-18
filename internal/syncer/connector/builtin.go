@@ -29,6 +29,7 @@ import (
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
+	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
 	registerBuiltIn(registry, "google-drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
