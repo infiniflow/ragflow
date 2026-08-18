@@ -94,6 +94,21 @@ def test_jin10_endpoint_filter_config_skips_client_side_filter():
 
 
 @pytest.mark.p1
+def test_jin10_failed_call_clears_prior_invocation_output():
+    cpn = _jin10()
+    # A prior successful invocation left its output behind.
+    cpn._param.outputs = {"formalized_content": {"value": "stale", "type": "<class 'str'>"}}
+
+    with patch("agent.tools.jin10.requests.get", side_effect=OSError("network unreachable")):
+        result = cpn._invoke()
+
+    assert "network unreachable" in result
+    assert "formalized_content" not in cpn._param.outputs, (
+        "a failed invocation must not leave the previous call's content live"
+    )
+
+
+@pytest.mark.p1
 def test_jin10_exception_is_surfaced_as_error_not_content():
     cpn = _jin10()
 

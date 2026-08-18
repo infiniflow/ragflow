@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 from abc import ABC
 
 import pandas as pd
@@ -70,6 +71,12 @@ class Jin10(ToolBase, ABC):
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Jin10 processing"):
             return ""
+
+        # invoke() never clears outputs, so a failed call would leave the
+        # PREVIOUS invocation's formalized_content live while _ERROR says
+        # this one failed. Start each invocation from a clean state.
+        self._param.outputs.pop("formalized_content", None)
+        self._param.outputs.pop("_ERROR", None)
 
         jin10_res = []
         headers = {"secret-key": self._param.secret_key}
@@ -146,6 +153,7 @@ class Jin10(ToolBase, ABC):
         except Exception as e:
             if self.check_if_canceled("Jin10 processing"):
                 return
+            logging.exception("Jin10 request failed: %s", e)
             self.set_output("_ERROR", str(e))
             return f"Jin10 error: {e}"
 
