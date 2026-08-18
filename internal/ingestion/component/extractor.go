@@ -584,7 +584,7 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
 		return nil, err
 	}
-	common.Info(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
+	common.Debug(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))
 	return &extractorChatResponse{Content: out.Content}, nil
 }
 
@@ -772,7 +772,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// Without this, a template containing {text} would be forwarded
 			// to the model unsubstituted.
 			callIn := in
-			if (in.fieldName == "summary" || c.Param.Summary.Enabled) && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
+			if in.fieldName == "summary" && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
 				callIn.systemPrompt = autoSummaryPrompt
 			}
 			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(
@@ -811,7 +811,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			// chunk field values, mirroring Python's
 			// string_format at extractor.py:103.
 			callIn := in
-			if (in.fieldName == "summary" || c.Param.Summary.Enabled) && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
+			if in.fieldName == "summary" && strings.TrimSpace(callIn.systemPrompt) == "" && strings.TrimSpace(c.Param.Summary.SystemPrompt) == "" {
 				callIn.systemPrompt = autoSummaryPrompt
 			}
 			callIn.systemPrompt, callIn.prompt = renderExtractorPrompts(callIn.systemPrompt, in.prompt, ck, text)
