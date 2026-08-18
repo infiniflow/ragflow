@@ -418,13 +418,16 @@ def column_data_type(arr):
             arr[i] = None
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
+            converted = trans[ty](str(arr[i]))
         except Exception as e:
-            arr[i] = None
             logging.warning(f"Column {i}: {e}")
             # Keep original value from openpyxl/pandas instead of dropping to None.
             # This preserves cells (e.g. text in numeric columns) that would
             # otherwise be silently discarded by forced column-level conversion.
+            continue
+        if converted is None:
+            continue
+        arr[i] = converted
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
