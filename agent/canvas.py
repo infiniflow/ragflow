@@ -168,19 +168,22 @@ class Graph:
             logging.exception(e)
 
     def close(self):
-        from common.mcp_tool_call_conn import MCPToolCallSession
+        from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession
 
         seen = set()
         for cpn in self.components.values():
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
-                        seen.add(id(tool))
+                    session = tool if isinstance(tool, MCPToolCallSession) else (
+                        tool.session if isinstance(tool, MCPToolBinding) else None
+                    )
+                    if isinstance(session, MCPToolCallSession) and id(session) not in seen:
+                        seen.add(id(session))
                         try:
-                            tool.close_sync(timeout=3)
+                            session.close_sync(timeout=3)
                         except Exception:
-                            pass
+                            logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
     @staticmethod
     def _get_component_name(dsl, cid):
