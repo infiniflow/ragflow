@@ -355,7 +355,7 @@ func TestIMAPParseMessageWithAttachment(t *testing.T) {
 		t.Fatalf("attachments = %d, want 1", len(attachments))
 	}
 	attr := attachments[0]
-	if attr.SourceID != "<msg3@example.com>#att:report.pdf" {
+	if attr.SourceID != "<msg3@example.com>#att:0:report.pdf" {
 		t.Fatalf("attachment SourceID = %q", attr.SourceID)
 	}
 	if attr.Extension != ".pdf" {
@@ -402,11 +402,51 @@ func TestIMAPParseMessageSkipsUnsupportedAttachment(t *testing.T) {
 		t.Fatalf("attachments = %d, want 1", len(attachments))
 	}
 	attr := attachments[0]
-	if attr.SourceID != "<msg4@example.com>#att:report.pdf" {
+	if attr.SourceID != "<msg4@example.com>#att:0:report.pdf" {
 		t.Fatalf("attachment SourceID = %q", attr.SourceID)
 	}
 	if attr.Extension != ".pdf" {
 		t.Fatalf("attachment extension = %q", attr.Extension)
+	}
+}
+
+func TestIMAPParseMessageAttachmentSourceIDsUnique(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("From: Sender <sender@example.com>\r\n")
+	b.WriteString("To: Recipient <recipient@example.com>\r\n")
+	b.WriteString("Subject: Duplicate att names\r\n")
+	b.WriteString("Date: Mon, 2 Jan 2026 09:00:00 +0000\r\n")
+	b.WriteString("Message-ID: <msg9@example.com>\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\r\n\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.WriteString("Hello body\r\n")
+	for _, content := range []string{"%PDF-1.4 first", "%PDF-1.4 second"} {
+		b.WriteString("--BOUNDARY\r\n")
+		b.WriteString("Content-Type: application/pdf\r\n")
+		b.WriteString("Content-Disposition: attachment; filename=\"report.pdf\"\r\n")
+		b.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+		b.WriteString(base64.StdEncoding.EncodeToString([]byte(content)) + "\r\n")
+	}
+	b.WriteString("--BOUNDARY--\r\n")
+
+	emailDoc, attachments, err := parseIMAPMessage([]byte(b.String()), defaultIMAPSizeThreshold)
+	if err != nil {
+		t.Fatalf("parseIMAPMessage failed: %v", err)
+	}
+	if emailDoc.SourceID != "<msg9@example.com>" {
+		t.Fatalf("email SourceID = %q", emailDoc.SourceID)
+	}
+	if len(attachments) != 2 {
+		t.Fatalf("attachments = %d, want 2", len(attachments))
+	}
+	want := []string{"<msg9@example.com>#att:0:report.pdf", "<msg9@example.com>#att:1:report.pdf"}
+	for i, attr := range attachments {
+		if attr.SourceID != want[i] {
+			t.Fatalf("attachment %d SourceID = %q, want %q", i, attr.SourceID, want[i])
+		}
 	}
 }
 
