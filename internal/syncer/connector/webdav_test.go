@@ -235,9 +235,8 @@ func TestWebDAVConnectorValidateConnectorSetting(t *testing.T) {
 		t.Fatalf("NewWebDAVConnector failed: %v", err)
 	}
 	err = missingCredentials.ValidateConnectorSetting(context.Background(), nil)
-	var valErr *ConnectorValidationError
-	if !errors.As(err, &valErr) || !strings.Contains(valErr.Message, "username and password") {
-		t.Fatalf("missing credentials error = %v, want *ConnectorValidationError", err)
+	if err == nil || !strings.Contains(err.Error(), "username and password") {
+		t.Fatalf("missing credentials error = %v", err)
 	}
 }
 

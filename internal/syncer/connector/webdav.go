@@ -138,7 +138,7 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 func (c *WebDAVConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return validationError(c.Validate(ctx))
+	return c.Validate(ctx)
 }
 
 // OpenSync opens one WebDAV sync session.

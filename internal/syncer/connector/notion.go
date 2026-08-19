@@ -102,7 +102,7 @@ func (c *NotionConnector) Validate(ctx context.Context) error {
 func (c *NotionConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return validationError(c.Validate(ctx))
+	return c.Validate(ctx)
 }
 
 // OpenSync opens one Notion sync session.

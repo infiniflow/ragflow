@@ -123,7 +123,7 @@ func (c *PostgreSQLConnector) Validate(ctx context.Context) error {
 func (c *PostgreSQLConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return validationError(c.Validate(ctx))
+	return c.Validate(ctx)
 }
 
 // OpenSync opens one PostgreSQL sync session.

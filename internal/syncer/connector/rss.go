@@ -139,7 +139,7 @@ func (c *RSSConnector) OpenPrune(ctx context.Context, request PruneRequest) (Pru
 func (c *RSSConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return validationError(c.Validate(ctx))
+	return c.Validate(ctx)
 }
 
 // loadEntries fetches and parses the configured feed.

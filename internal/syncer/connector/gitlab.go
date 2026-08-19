@@ -102,23 +102,23 @@ func (c *GitlabConnector) ValidateConnectorSetting(ctx context.Context, request 
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if c == nil {
-		return validationError(fmt.Errorf("gitlab connector is nil"))
+		return fmt.Errorf("gitlab connector is nil")
 	}
 	if c.projectOwner == "" {
-		return validationError(fmt.Errorf("Invalid connector settings: 'project_owner' must be provided"))
+		return fmt.Errorf("Invalid connector settings: 'project_owner' must be provided")
 	}
 	if c.projectName == "" {
-		return validationError(fmt.Errorf("Invalid connector settings: 'project_name' must be provided"))
+		return fmt.Errorf("Invalid connector settings: 'project_name' must be provided")
 	}
 	if c.token == "" {
-		return validationError(fmt.Errorf("Missing gitlab_access_token in credentials"))
+		return fmt.Errorf("Missing gitlab_access_token in credentials")
 	}
 	if c.batchSize <= 0 {
-		return validationError(fmt.Errorf("batch_size must be a positive integer"))
+		return fmt.Errorf("batch_size must be a positive integer")
 	}
 	var user map[string]any
 	if _, err := c.getJSON(ctx, c.apiURL("/user", nil), &user); err != nil {
-		return validationError(err)
+		return err
 	}
 	return nil
 }
