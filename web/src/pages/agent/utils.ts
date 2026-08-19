@@ -399,7 +399,15 @@ export function transformTitleChunkerParams(
   };
 }
 
-export function transformExtractorParams(params: ExtractorFormSchemaType) {
+export function transformExtractorParams(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  // The Python extractor only reads the legacy flat fields; the nested
+  // per-feature configs below are Go-only.
+  if (!isGoBackend()) {
+    return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+  }
+
   const isMetadataEnabled =
     params.metadata_config?.enabled !== undefined
       ? Boolean(params.metadata_config?.enabled)

@@ -253,7 +253,7 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	if next == nil {
 		next = entity.JSONMap{}
 	}
-	for _, key := range []string{"metadata", "built_in_metadata", "enable_metadata"} {
+	for _, key := range []string{"fields", "metadata", "built_in_metadata", "enable_metadata"} {
 		if incoming != nil {
 			if value, ok := incoming[key]; ok {
 				next[key] = value

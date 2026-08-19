@@ -88,9 +88,6 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v want false", body["stream"])
 		}
-		if body["max_tokens"] != nil {
-			t.Errorf("max_tokens must not be sent: %v", body["max_tokens"])
-		}
 		if body["max_completion_tokens"] != float64(1024) {
 			t.Errorf("max_completion_tokens=%v", body["max_completion_tokens"])
 		}

@@ -18,10 +18,12 @@ import { memoryModelFormSchema } from './memory-model-form';
 /**
  * Extends the static schema with an existence check against the added-model
  * list: a persisted value may reference a model that has since been deleted.
- * The model selects become read-only once messages exist, so a stale
- * persisted model can only be fixed while the memory is still empty —
- * blocking validation applies only then; afterwards the select's warning
- * marker is the only signal.
+ * llm_id is checked in every state — a stale chat model breaks the memory's
+ * chat flow, so the error surfaces (and blocks submit) even once messages
+ * exist and the select has turned read-only. embd_id is checked only while
+ * the memory is still empty: afterwards its select is read-only and the
+ * stale value is tolerated, so the select's warning marker is the only
+ * signal there.
  */
 export const useMemoryFormSchema = (tenantId?: string) => {
   const { t } = useTranslation();
@@ -46,7 +48,7 @@ export const useMemoryFormSchema = (tenantId?: string) => {
           ...advancedSettingsFormSchema,
         })
         .superRefine((values, ctx) => {
-          if (!modelsFetched || !modelsEditable) return;
+          if (!modelsFetched) return;
           if (values.llm_id && !validLlmIds.has(values.llm_id)) {
             ctx.addIssue({
               path: ['llm_id'],
@@ -54,7 +56,11 @@ export const useMemoryFormSchema = (tenantId?: string) => {
               code: z.ZodIssueCode.custom,
             });
           }
-          if (values.embd_id && !validEmbdIds.has(values.embd_id)) {
+          if (
+            modelsEditable &&
+            values.embd_id &&
+            !validEmbdIds.has(values.embd_id)
+          ) {
             ctx.addIssue({
               path: ['embd_id'],
               message: t('common.modelUnavailable'),
@@ -71,8 +77,9 @@ export const useMemoryFormSchema = (tenantId?: string) => {
 /**
  * A persisted model value never fires onChange validation, so revalidate
  * once the model list has loaded — it may reference a since-deleted model,
- * and the error should be visible before submit. When the selects turn
- * read-only (messages exist), drop any stale error instead.
+ * and the error should be visible before submit. llm_id revalidates in
+ * every state; embd_id only while the memory is still empty (read-only
+ * afterwards), where a stale error is dropped instead.
  */
 export const useRevalidatePersistedModels = ({
   control,
@@ -92,11 +99,11 @@ export const useRevalidatePersistedModels = ({
 
   useEffect(() => {
     if (!modelsFetched) return;
-    if (!modelsEditable) {
-      clearErrors(['llm_id', 'embd_id']);
-      return;
-    }
     if (llmId) trigger('llm_id');
-    if (embdId) trigger('embd_id');
+    if (modelsEditable) {
+      if (embdId) trigger('embd_id');
+    } else {
+      clearErrors('embd_id');
+    }
   }, [trigger, clearErrors, modelsFetched, modelsEditable, llmId, embdId]);
 };

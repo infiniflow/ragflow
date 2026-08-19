@@ -1113,8 +1113,8 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			out = append(out, ck)
 			continue
 		}
-		mom := ck.Text
-		parts := splitDroppingDelim(mom, pattern)
+		mom := strings.TrimPrefix(ck.Text, "\n")
+		parts := splitDroppingDelim(ck.Text, pattern)
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
 				continue
@@ -1160,7 +1160,7 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
-			out = append(out, schema.ChunkDoc{Text: child, Mom: t})
+			out = append(out, schema.ChunkDoc{Text: child, Mom: strings.TrimPrefix(t, "\n")})
 		}
 	}
 	return out

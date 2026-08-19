@@ -136,12 +136,8 @@ func TestOpenAI_MergeGenerationConfig_AddsNewKeys(t *testing.T) {
 // calls BuildChatConfig(dialog, nil) which reads the merged values.
 // Verifies that all 5 fields the Python server honors
 // (temperature, top_p, max_tokens, frequency_penalty, presence_penalty)
-// survive the merge. For 3 of them (temperature, top_p, max_tokens) the
-// ChatConfig fields exist and the test asserts the values. For the
-// other 2 (frequency_penalty, presence_penalty) the ChatConfig struct
-// doesn't have fields yet, so we just assert the dialog's LLMSetting
-// preserves them — the structural gap is documented in
-// openai_chat_completions.go::extractGenerationConfig.
+// survive the merge. For the fields ChatConfig supports, the values must
+// surface on the returned struct.
 //
 // The handler-side float64 coercion of max_tokens is verified by
 // TestExtractGenerationConfig_OnlyKnownFields in the handler package.
@@ -178,9 +174,6 @@ func TestOpenAI_MergeThenBuild_AllGenerationParamsReachChatConfig(t *testing.T) 
 		t.Fatalf("presence_penalty: expected 0.2, got %v", got)
 	}
 
-	// Now run the RAG-pipeline call: BuildChatConfig(dialog, nil).
-	// For the 3 fields ChatConfig supports, the values must surface
-	// on the returned struct.
 	cfg := BuildChatConfig(dialog, nil)
 	if cfg.Temperature == nil || *cfg.Temperature != 0.7 {
 		t.Fatalf("ChatConfig.Temperature: expected 0.7, got %v", cfg.Temperature)
