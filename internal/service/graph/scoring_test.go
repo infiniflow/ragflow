@@ -6,8 +6,10 @@ import "testing"
 // appears from multiple N-hop paths with different weights, the maximum weight
 // is kept (not the last-write-wins value).
 //
-// Regression test for #15695 — PageRank must use max-wins to match the
-// Python equivalent in rag/graphrag/search.py:186.
+// Regression test for #15695 — AnalyzeNHopPaths must take the max
+// PageRank over all hops for the same edge, not just overwrite it on
+// each hop. The earlier overwrite-only behaviour gave later hops
+// the final PageRank weight regardless of magnitude.
 func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"src": {
