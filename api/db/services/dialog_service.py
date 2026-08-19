@@ -1931,7 +1931,8 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 async def rag_agent(dialog, messages, stream=True, **kwargs):
     prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    if not prompt_config.get("reasoning", 0) and not kwargs.get("reasoning"):
+    reasoning = kwargs["reasoning"] if "reasoning" in kwargs else prompt_config.get("reasoning", 0)
+    if not reasoning or str(reasoning).strip() == "0":
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
