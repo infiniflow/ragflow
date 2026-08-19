@@ -28,6 +28,7 @@ import (
 // and the raw-config factory (used by the test-connection endpoint).
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "rss", NewRSSConnector)
+	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
