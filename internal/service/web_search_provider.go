@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -30,10 +31,15 @@ import (
 const (
 	webSearchProviderTavily = "tavily"
 	webSearchProviderQuerit = "querit"
+	webSearchProviderSerply = "serply"
 	queritWebSearchEndpoint = "https://api.querit.ai/v1/search"
+	serplyWebSearchEndpoint = "https://api.serply.io/v1/search/"
 )
 
-var queritWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var (
+	queritWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	serplyWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
+)
 
 type webSearchProviderConfig struct {
 	Provider string
@@ -60,6 +66,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "tavily_api_key"
 	case webSearchProviderQuerit:
 		apiKeyField = "querit_api_key"
+	case webSearchProviderSerply:
+		apiKeyField = "serply_api_key"
 	default:
 		return nil
 	}
@@ -94,6 +102,14 @@ func (s *ChatPipelineService) retrieveWebSearch(
 			provider.APIKey,
 			question,
 		)
+	case webSearchProviderSerply:
+		return retrieveSerplyWebSearch(
+			ctx,
+			serplyWebSearchHTTPClient,
+			serplyWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported web search provider %q", provider.Provider)
 	}
@@ -115,6 +131,14 @@ func (dr *DeepResearcher) retrieveWebSearch(
 			ctx,
 			queritWebSearchHTTPClient,
 			queritWebSearchEndpoint,
+			provider.APIKey,
+			query,
+		)
+	case webSearchProviderSerply:
+		return retrieveSerplyWebSearch(
+			ctx,
+			serplyWebSearchHTTPClient,
+			serplyWebSearchEndpoint,
 			provider.APIKey,
 			query,
 		)
@@ -241,6 +265,114 @@ func decodeQueritWebSearchResults(responseBody []byte) ([]queritWebSearchResult,
 	var results []queritWebSearchResult
 	if err := json.Unmarshal(resultValue, &results); err != nil {
 		return nil, fmt.Errorf("querit: response field results.result must be an array: %w", err)
+	}
+	return results, nil
+}
+
+type serplyWebSearchResult struct {
+	Title       string `json:"title"`
+	Link        string `json:"link"`
+	Description string `json:"description"`
+}
+
+func retrieveSerplyWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	parameters := url.Values{}
+	parameters.Set("q", query)
+	parameters.Set("num", "6")
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+parameters.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("serply: new request: %w", err)
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("X-Api-Key", apiKey)
+	// Serply sits behind Cloudflare, which rejects requests without an
+	// explicit User-Agent, so always send one.
+	request.Header.Set("User-Agent", "ragflow-web-search")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("serply: do request: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("serply: status %d", response.StatusCode)
+	}
+
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("serply: read response: %w", err)
+	}
+	results, err := decodeSerplyWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	chunks := make([]map[string]interface{}, 0, len(results))
+	docAggs := make([]interface{}, 0, len(results))
+	for _, result := range results {
+		description := strings.TrimSpace(result.Description)
+		if description == "" {
+			continue
+		}
+		chunkID := "serply-" + result.Link
+		chunks = append(chunks, map[string]interface{}{
+			"chunk_id":            chunkID,
+			"content_ltks":        tokenizeText(description),
+			"content_with_weight": description,
+			"doc_id":              chunkID,
+			"docnm_kwd":           result.Title,
+			"kb_id":               []interface{}{},
+			"important_kwd":       []interface{}{},
+			"image_id":            "",
+			"similarity":          float64(1),
+			"vector_similarity":   float64(1),
+			"term_similarity":     float64(0),
+			"vector":              []float64{},
+			"positions":           []interface{}{},
+			"url":                 result.Link,
+		})
+		docAggs = append(docAggs, map[string]interface{}{
+			"doc_name": result.Title,
+			"doc_id":   chunkID,
+			"count":    1,
+			"url":      result.Link,
+		})
+	}
+
+	return map[string]interface{}{
+		"chunks":   chunks,
+		"doc_aggs": docAggs,
+	}, nil
+}
+
+func decodeSerplyWebSearchResults(responseBody []byte) ([]serplyWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("serply: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("serply: response must be an object")
+	}
+
+	resultsValue, exists := envelope["results"]
+	if !exists {
+		return []serplyWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("serply: response field results must be an array")
+	}
+
+	var results []serplyWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("serply: response field results must be an array: %w", err)
 	}
 	return results, nil
 }

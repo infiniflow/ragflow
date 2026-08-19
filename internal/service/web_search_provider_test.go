@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -92,6 +93,24 @@ func TestResolveWebSearchProviderTrimsSelectedKey(t *testing.T) {
 	}
 }
 
+func TestResolveWebSearchProviderUsesSelectedSerplyConfig(t *testing.T) {
+	provider := resolveWebSearchProvider(map[string]interface{}{
+		"web_search_provider": "serply",
+		"serply_api_key":      "serply-test",
+		"tavily_api_key":      "tvly-test",
+	})
+
+	if provider == nil {
+		t.Fatal("provider is nil")
+	}
+	if provider.Provider != webSearchProviderSerply {
+		t.Fatalf("provider = %q, want %q", provider.Provider, webSearchProviderSerply)
+	}
+	if provider.APIKey != "serply-test" {
+		t.Fatalf("api key = %q, want %q", provider.APIKey, "serply-test")
+	}
+}
+
 func TestResolveWebSearchProviderRequiresKeyForSelectedProvider(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -99,6 +118,14 @@ func TestResolveWebSearchProviderRequiresKeyForSelectedProvider(t *testing.T) {
 	}{
 		{name: "tavily", config: map[string]interface{}{"web_search_provider": "tavily"}},
 		{name: "querit", config: map[string]interface{}{"web_search_provider": "querit"}},
+		{name: "serply", config: map[string]interface{}{"web_search_provider": "serply"}},
+		{
+			name: "serply does not fall back to tavily",
+			config: map[string]interface{}{
+				"web_search_provider": "serply",
+				"tavily_api_key":      "tvly-test",
+			},
+		},
 		{
 			name: "querit whitespace key",
 			config: map[string]interface{}{
@@ -218,5 +245,129 @@ func TestDecodeQueritWebSearchResultsRejectsMalformedContainers(t *testing.T) {
 				t.Fatal("error is nil")
 			}
 		})
+	}
+}
+
+func TestRetrieveSerplyWebSearchSendsHeadersAndReturnsReferenceShape(t *testing.T) {
+	ctx := t.Context()
+	var requestQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if got := request.Header.Get("X-Api-Key"); got != "serply-test" {
+			t.Errorf("X-Api-Key = %q, want %q", got, "serply-test")
+		}
+		if got := request.Header.Get("User-Agent"); got == "" {
+			t.Error("User-Agent is empty; Serply rejects requests without one")
+		}
+		requestQuery = request.URL.Query()
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{
+			"results": [{
+				"title": "RAGFlow",
+				"link": "https://example.com/ragflow",
+				"description": "RAGFlow is an open-source RAG engine."
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSerplyWebSearch(
+		ctx,
+		server.Client(),
+		server.URL,
+		"serply-test",
+		"What is RAGFlow?",
+	)
+	if err != nil {
+		t.Fatalf("retrieve Serply web search: %v", err)
+	}
+
+	if got := requestQuery.Get("q"); got != "What is RAGFlow?" {
+		t.Fatalf("q = %q, want %q", got, "What is RAGFlow?")
+	}
+	if got := requestQuery.Get("num"); got != "6" {
+		t.Fatalf("num = %q, want %q", got, "6")
+	}
+
+	chunks, ok := result["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", result["chunks"])
+	}
+	if chunks[0]["content_with_weight"] != "RAGFlow is an open-source RAG engine." {
+		t.Fatalf("content = %#v", chunks[0]["content_with_weight"])
+	}
+	if chunks[0]["docnm_kwd"] != "RAGFlow" {
+		t.Fatalf("title = %#v", chunks[0]["docnm_kwd"])
+	}
+	if chunks[0]["url"] != "https://example.com/ragflow" {
+		t.Fatalf("url = %#v", chunks[0]["url"])
+	}
+	if chunks[0]["similarity"] != float64(1) {
+		t.Fatalf("similarity = %#v, want 1", chunks[0]["similarity"])
+	}
+
+	aggs, ok := result["doc_aggs"].([]interface{})
+	if !ok || len(aggs) != 1 {
+		t.Fatalf("doc_aggs = %#v, want one aggregate", result["doc_aggs"])
+	}
+}
+
+func TestRetrieveSerplyWebSearchSkipsResultsWithoutDescription(t *testing.T) {
+	ctx := t.Context()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{
+			"results": [
+				{"title": "No snippet", "link": "https://example.com/empty", "description": ""},
+				{"title": "Blank snippet", "link": "https://example.com/blank", "description": " \t\n"},
+				{"title": "RAGFlow", "link": "https://example.com/ragflow", "description": " \tAn open-source RAG engine.\n"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSerplyWebSearch(ctx, server.Client(), server.URL, "serply-test", "ragflow")
+	if err != nil {
+		t.Fatalf("retrieve Serply web search: %v", err)
+	}
+
+	chunks, ok := result["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", result["chunks"])
+	}
+	if chunks[0]["docnm_kwd"] != "RAGFlow" {
+		t.Fatalf("title = %#v", chunks[0]["docnm_kwd"])
+	}
+	if chunks[0]["content_with_weight"] != "An open-source RAG engine." {
+		t.Fatalf("content = %#v", chunks[0]["content_with_weight"])
+	}
+}
+
+func TestDecodeSerplyWebSearchResultsRejectsMalformedContainers(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "null response", body: `null`},
+		{name: "null results", body: `{"results":null}`},
+		{name: "object results", body: `{"results":{}}`},
+		{name: "string results", body: `{"results":"nope"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeSerplyWebSearchResults([]byte(tc.body)); err == nil {
+				t.Fatal("error is nil")
+			}
+		})
+	}
+}
+
+func TestDecodeSerplyWebSearchResultsAcceptsMissingResults(t *testing.T) {
+	results, err := decodeSerplyWebSearchResults([]byte(`{"total": 0}`))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %#v, want empty", results)
 	}
 }

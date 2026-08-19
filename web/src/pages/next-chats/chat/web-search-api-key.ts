@@ -6,7 +6,8 @@ export function getWebSearchProvider(promptConfig?: PromptConfig) {
 
   if (
     provider === WebSearchProvider.Tavily ||
-    provider === WebSearchProvider.Querit
+    provider === WebSearchProvider.Querit ||
+    provider === WebSearchProvider.Serply
   ) {
     return provider;
   }
@@ -32,6 +33,9 @@ export function getWebSearchApiKey(promptConfig?: PromptConfig) {
       break;
     case WebSearchProvider.Querit:
       apiKey = promptConfig?.querit_api_key;
+      break;
+    case WebSearchProvider.Serply:
+      apiKey = promptConfig?.serply_api_key;
       break;
     default:
       return undefined;

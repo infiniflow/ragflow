@@ -22,6 +22,7 @@ export interface PromptConfig {
   cross_languages?: Array<string>;
   tavily_api_key?: string;
   querit_api_key?: string;
+  serply_api_key?: string;
   web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
   reference_metadata?: {

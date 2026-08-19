@@ -35,8 +35,13 @@ export function useChatSettingSchema(staleDatasetIds: Set<string>) {
       .optional(),
     tavily_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
+    serply_api_key: z.string().optional(),
     web_search_provider: z
-      .enum([WebSearchProvider.Tavily, WebSearchProvider.Querit])
+      .enum([
+        WebSearchProvider.Tavily,
+        WebSearchProvider.Querit,
+        WebSearchProvider.Serply,
+      ])
       .optional(),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
