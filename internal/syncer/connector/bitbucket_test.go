@@ -646,6 +646,9 @@ func bitbucketPagedFixtureDoJSON(t *testing.T) func(ctx context.Context, apiURL 
 
 func cloneBitbucketCheckpointWithoutSourceID(t *testing.T, checkpoint *SyncCheckpoint) *SyncCheckpoint {
 	t.Helper()
+	if checkpoint == nil {
+		t.Fatalf("checkpoint is nil")
+	}
 	var cursor bitbucketSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
 		t.Fatalf("decode checkpoint cursor: %v", err)
