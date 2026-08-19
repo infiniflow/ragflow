@@ -826,12 +826,18 @@ func (c *ExtractorComponent) autoExtractionJob(ctx context.Context, db *gorm.DB,
 // runAutoKeywords/runAutoQuestions shape but parses a JSON object and
 // merges into the chunk's metadata map.
 func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
-	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
+	if !c.Param.Metadata.Enabled {
+		return nil
+	}
+	fields := make([]common.MetadataFieldDef, 0, len(c.Param.Metadata.Metadata)+len(c.Param.Metadata.BuiltInMetadata))
+	fields = append(fields, c.Param.Metadata.Metadata...)
+	fields = append(fields, c.Param.Metadata.BuiltInMetadata...)
+	if len(fields) == 0 {
 		return nil
 	}
 	// Render the field schema into the prompt, mirroring Python's
 	// turn2jsonschema(metadata_conf) rendered into the META_DATA template.
-	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
+	schemaMap := common.Turn2JSONSchema(fields)
 	if len(schemaMap) == 0 {
 		return nil
 	}
