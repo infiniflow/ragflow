@@ -23,6 +23,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -762,8 +763,13 @@ func dialRealIMAPClient(ctx context.Context, host string, port int, username, pa
 	if _, err := runIMAPCommand(ctx, client, func() (struct{}, error) {
 		return struct{}{}, client.Login(username, password).Wait()
 	}); err != nil {
-		_ = client.Logout().Wait()
-		_ = client.Close()
+		if errors.Is(err, context.DeadlineExceeded) {
+			// runIMAPCommand already closed the client on timeout; skip LOGOUT.
+			_ = client.Close()
+		} else {
+			_ = client.Logout().Wait()
+			_ = client.Close()
+		}
 		return nil, err
 	}
 	return &realIMAPClient{client: client}, nil
@@ -836,7 +842,10 @@ func (c *realIMAPClient) Fetch(ctx context.Context, seqNum uint32) ([]byte, erro
 }
 
 func (c *realIMAPClient) Close() error {
-	logoutErr := c.client.Logout().Wait()
+	_, logoutErr := runIMAPCommand(context.Background(), c.client, func() (struct{}, error) {
+		return struct{}{}, c.client.Logout().Wait()
+	})
+	// Always close the connection even when LOGOUT times out or fails.
 	_ = c.client.Close()
 	return logoutErr
 }
