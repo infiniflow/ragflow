@@ -1491,8 +1491,10 @@ func TestExtractorModularMetadataConfig(t *testing.T) {
 	if ext.Param.Metadata.Metadata[0].Key != "author" || ext.Param.Metadata.Metadata[0].Description != "The author name" || len(ext.Param.Metadata.Metadata[0].Enum) != 2 {
 		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata.Metadata[0])
 	}
-	if len(ext.Param.Metadata.BuiltInMetadata) != 1 || ext.Param.Metadata.BuiltInMetadata[0].Key != "file_name" {
-		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.Metadata.BuiltInMetadata)
+	// built_in_metadata is intentionally not consumed by the extractor: it is
+	// applied directly by the ingestion task finalizer (update_time/file_name).
+	if ext.Param.Metadata.Metadata[1].Key != "year" {
+		t.Errorf("Metadata field 1 mismatch: %+v", ext.Param.Metadata.Metadata[1])
 	}
 }
 

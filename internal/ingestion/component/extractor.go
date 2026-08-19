@@ -265,9 +265,6 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := metaRaw["metadata"]; ok {
 				p.Metadata.Metadata = parseMetadataFieldDefs(v)
 			}
-			if v, ok := metaRaw["built_in_metadata"]; ok {
-				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
-			}
 		}
 	}
 	if err := p.Validate(); err != nil {
