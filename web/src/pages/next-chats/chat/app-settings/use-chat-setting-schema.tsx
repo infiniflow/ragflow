@@ -13,7 +13,7 @@ import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { z } from 'zod';
 
-export function useChatSettingSchema() {
+export function useChatSettingSchema(staleDatasetIds: Set<string>) {
   const { t } = useTranslate('chat');
 
   const promptConfigSchema = z.object({
@@ -65,5 +65,15 @@ export function useChatSettingSchema() {
     ...MetadataFilterSchema,
   });
 
-  return formSchema;
+  // A persisted dataset_ids value may reference datasets that have since been
+  // deleted or emptied of chunks — those stale ids are flagged here.
+  return formSchema.superRefine((data, ctx) => {
+    if (data.dataset_ids.some((id) => staleDatasetIds.has(id))) {
+      ctx.addIssue({
+        path: ['dataset_ids'],
+        message: t('datasetUnavailable'),
+        code: z.ZodIssueCode.custom,
+      });
+    }
+  });
 }
