@@ -894,7 +894,7 @@ class Markdown(MarkdownParser):
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
-        if binary:
+        if binary is not None:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
