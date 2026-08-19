@@ -249,6 +249,53 @@ func TestIMAPSyncInitialBatchAndResume(t *testing.T) {
 	}
 }
 
+func TestIMAPSyncResumeSelectsMailboxBeforeFetch(t *testing.T) {
+	start := mustTime(t, "2026-01-02T12:00:00Z")
+	end := mustTime(t, "2026-01-03T00:00:00Z")
+	cursorData, err := json.Marshal(imapCursor{
+		TodoMailboxes: []string{},
+		HasMore:       true,
+		CurrentMailbox: &imapMailboxCursor{
+			Mailbox:      "INBOX",
+			TodoEmailIDs: []string{"2"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+
+	// Use a fresh connection so the resumed session can only rely on its own
+	// select call before fetching, matching a real resumed IMAP connection.
+	client := &fakeIMAPClient{
+		mailboxes: []string{"INBOX"},
+		rawBySeq: map[uint32][]byte{
+			2: rawIMAPEmail("msg2", "Hello two", "Mon, 2 Jan 2026 22:00:00 +0000", "body two"),
+		},
+	}
+	connector := newTestIMAPConnector(client, 32)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   end,
+		Resume:      &SyncCheckpoint{Cursor: string(cursorData)},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync on resume failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resumed NextBatch failed: %v", err)
+	}
+	if len(client.selected) == 0 || client.selected[0] != "INBOX" {
+		t.Fatalf("resumed select = %v, want INBOX selected before fetch", client.selected)
+	}
+	if len(client.fetched) != 1 || client.fetched[0] != 2 {
+		t.Fatalf("resumed fetch = %v, want [2]", client.fetched)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "<msg2@example.com>" {
+		t.Fatalf("resumed documents = %v", batch.Documents)
+	}
+}
+
 func TestIMAPSyncFiltersOutsideWindow(t *testing.T) {
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	end := mustTime(t, "2026-01-03T00:00:00Z")

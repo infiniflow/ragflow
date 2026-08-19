@@ -163,6 +163,7 @@ type imapSyncSession struct {
 	todoMailboxes  []string
 	currentMailbox string
 	todoEmailIDs   []string
+	selected       string
 	hasMore        bool
 }
 
@@ -224,21 +225,32 @@ func (s *imapSyncSession) ensureCurrentEmail(ctx context.Context) error {
 			return nil
 		}
 	}
-	for s.currentMailbox == "" || len(s.todoEmailIDs) == 0 {
-		if len(s.todoMailboxes) == 0 {
-			s.hasMore = false
+	for {
+		for s.currentMailbox == "" || len(s.todoEmailIDs) == 0 {
+			if len(s.todoMailboxes) == 0 {
+				s.hasMore = false
+				return nil
+			}
+			mailbox := s.todoMailboxes[0]
+			s.todoMailboxes = s.todoMailboxes[1:]
+			emailIDs, err := s.searchMailbox(ctx, mailbox)
+			if err != nil {
+				return err
+			}
+			s.currentMailbox = mailbox
+			s.todoEmailIDs = emailIDs
+		}
+		if s.selected == s.currentMailbox {
 			return nil
 		}
-		mailbox := s.todoMailboxes[0]
-		s.todoMailboxes = s.todoMailboxes[1:]
-		emailIDs, err := s.searchMailbox(ctx, mailbox)
-		if err != nil {
-			return err
+		if err := s.client.SelectMailbox(ctx, s.currentMailbox); err != nil {
+			s.currentMailbox = ""
+			s.todoEmailIDs = nil
+			continue
 		}
-		s.currentMailbox = mailbox
-		s.todoEmailIDs = emailIDs
+		s.selected = s.currentMailbox
+		return nil
 	}
-	return nil
 }
 
 // listMailboxes returns configured mailboxes or discovers all mailboxes.
@@ -262,6 +274,7 @@ func (s *imapSyncSession) searchMailbox(ctx context.Context, mailbox string) ([]
 	if err := s.client.SelectMailbox(ctx, mailbox); err != nil {
 		return nil, nil
 	}
+	s.selected = mailbox
 	start := time.Time{}
 	if s.windowStart != nil {
 		start = *s.windowStart
