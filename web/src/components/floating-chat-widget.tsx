@@ -20,6 +20,7 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
+import { IAnswer } from '@/interfaces/database/chat';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { removeThinkSection } from '@/utils/chat';
@@ -164,6 +165,12 @@ const FloatingChatWidget = () => {
     hasError,
   } = hookResult;
   const findReferenceByMessageId = (hookResult as any).findReferenceByMessageId;
+  // Only the agent flow exposes these. The chat flow receives its prologue
+  // through the completions handshake instead.
+  const { addNewestOneAnswer, isTaskMode } = hookResult as {
+    addNewestOneAnswer?: (answer: IAnswer) => void;
+    isTaskMode?: boolean;
+  };
 
   // Sync our local input with the hook's value when needed
   useEffect(() => {
@@ -175,6 +182,24 @@ const FloatingChatWidget = () => {
   const { data } = (
     isFromAgent ? useFetchExternalAgentInputs : useFetchExternalChatInfo
   )();
+
+  // Seed the agent's opening statement. The agent send hook derives the
+  // prologue from the agent canvas graph store, which is never populated on
+  // the widget page, so mirror pages/agent/share and take the prologue from
+  // the agentbots inputs endpoint instead. The chat flow already gets its
+  // prologue from the completions handshake.
+  useEffect(() => {
+    if (!isFromAgent || isTaskMode) {
+      return;
+    }
+    if (data?.prologue) {
+      addNewestOneAnswer?.({
+        answer: data.prologue,
+        // Stable id so a re-invoked effect merges instead of duplicating.
+        id: 'prologue',
+      });
+    }
+  }, [isFromAgent, isTaskMode, data?.prologue, addNewestOneAnswer]);
 
   const title = data.title;
   const displayTitle = widgetTitle || title || t('chat.chatSupport');
