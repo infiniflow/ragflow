@@ -73,6 +73,30 @@ func TestConnectorServiceTestConnectorAllowsUnsavedConnectorWithSource(t *testin
 	}
 }
 
+func TestConnectorServiceTestConnectorSurfacesRawValidationError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate connector tables: %v", err)
+	}
+
+	registry := syncerconnector.NewRegistry()
+	registry.RegisterConfigFactory("mock", func(config map[string]any) (syncerconnector.Connector, error) {
+		return &connectormock.Connector{ValidateConnectorSettingErr: errors.New("raw validation failure")}, nil
+	})
+	svc := NewConnectorService()
+	svc.connectorRegistry = registry
+
+	err := svc.TestConnector(context.Background(), "missing", "tenant-1", entity.JSONMap{
+		"source": "mock",
+		"config": entity.JSONMap{"ok": true},
+	})
+	var valErr *syncerconnector.ConnectorValidationError
+	if !errors.As(err, &valErr) || !strings.Contains(valErr.Message, "raw validation failure") {
+		t.Fatalf("error = %v, want *ConnectorValidationError with raw message", err)
+	}
+}
+
 func TestConnectorServiceTestConnectorRejectsMissingConfigForMissingConnector(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
