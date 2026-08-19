@@ -2600,13 +2600,6 @@ func TestExtractor_ModularConfiguration(t *testing.T) {
 	}
 }
 
-func TestMetadataLLMCacheKey_V2Namespace(t *testing.T) {
-	key := metadataLLMCacheKey("llm-1", `{"type":"object"}`, "chunk content")
-	if !strings.HasPrefix(key, "kc:meta:v2:") {
-		t.Fatalf("expected key with kc:meta:v2: prefix, got %q", key)
-	}
-}
-
 func TestExtractor_Precedence_ModularBeatsLegacy(t *testing.T) {
 	// Mixed config: both modular objects and legacy flat fields present
 	mixedParams := map[string]any{

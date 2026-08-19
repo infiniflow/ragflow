@@ -259,39 +259,11 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 				next[key] = value
 				continue
 			}
-			if ext, ok := incoming["ext"].(map[string]interface{}); ok {
-				if value, ok := ext[key]; ok {
-					next[key] = value
-					continue
-				}
-			}
 		}
 		if existing != nil {
 			if value, ok := existing[key]; ok {
 				next[key] = value
 			}
-		}
-	}
-	if incoming != nil {
-		hasExtractorEnabled := false
-		anyExtractorEnabled := false
-		for cpnID, raw := range incoming {
-			cpnLower := strings.ToLower(cpnID)
-			if strings.HasPrefix(cpnLower, "extractor:") || strings.HasPrefix(cpnLower, "extractor_") {
-				if params, ok := raw.(map[string]any); ok {
-					if meta, ok := params["metadata"].(map[string]any); ok {
-						if enabled, ok := meta["enabled"]; ok {
-							hasExtractorEnabled = true
-							if service.ParserConfigTruthy(enabled) {
-								anyExtractorEnabled = true
-							}
-						}
-					}
-				}
-			}
-		}
-		if hasExtractorEnabled {
-			next["enable_metadata"] = anyExtractorEnabled
 		}
 	}
 	return next

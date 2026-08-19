@@ -1065,19 +1065,18 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 // metadataLLMCacheTTL mirrors Python get_llm_cache/set_llm_cache 24h TTL.
 const metadataLLMCacheTTL = 24 * time.Hour
 
-// metadataLLMCacheKey builds a Redis key from (llm id, chunk text, "metadata:v2",
+// metadataLLMCacheKey builds a Redis key from (llm id, chunk text, "metadata",
 // schema), mirroring Python get_llm_cache's xxh64(llmnm + txt + history + genconf).
-// The v2 namespace isolates cache entries under the single-pass prompt contract.
 func metadataLLMCacheKey(llmID, schemaJSON, chunkText string) string {
 	h := xxhash.New()
 	h.WriteString(llmID)
 	h.WriteString("\x00")
 	h.WriteString(chunkText)
 	h.WriteString("\x00")
-	h.WriteString("metadata:v2")
+	h.WriteString("metadata")
 	h.WriteString("\x00")
 	h.WriteString(schemaJSON)
-	return fmt.Sprintf("kc:meta:v2:%x", h.Sum64())
+	return fmt.Sprintf("kc:meta:%x", h.Sum64())
 }
 
 // getMetadataLLMCache returns a cached extraction for the given chunk, or
