@@ -72,7 +72,7 @@ class TuShare(ToolBase, ABC):
 
         try:
             params = {"api_name": "news", "token": self._param.token, "params": {"src": self._param.src, "start_date": self._param.start_date, "end_date": self._param.end_date}}
-            response = requests.post(url="http://api.tushare.pro", data=json.dumps(params).encode("utf-8"), timeout=DEFAULT_TIMEOUT)
+            response = requests.post(url="https://api.tushare.pro", data=json.dumps(params).encode("utf-8"), timeout=DEFAULT_TIMEOUT)
             response = response.json()
 
             if self.check_if_canceled("TuShare processing"):
@@ -83,8 +83,10 @@ class TuShare(ToolBase, ABC):
                 self.set_output("_ERROR", msg)
                 return msg
 
-            df = pd.DataFrame(response["data"]["items"])
-            df.columns = response["data"]["fields"]
+            # Pass the field names to the constructor rather than assigning
+            # `df.columns` afterwards: when TuShare returns no rows the frame
+            # has zero columns and the assignment raises a length mismatch.
+            df = pd.DataFrame(response["data"]["items"], columns=response["data"]["fields"])
 
             if self.check_if_canceled("TuShare processing"):
                 return

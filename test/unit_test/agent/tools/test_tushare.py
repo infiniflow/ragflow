@@ -142,3 +142,32 @@ def test_invoke_surfaces_error_on_request_failure():
 
     assert "boom" in res
     assert "boom" in out["_ERROR"]
+
+
+def test_invoke_handles_empty_result_set():
+    # TuShare returns `items: []` whenever the src/date window has no news.
+    # Assigning `df.columns` after building a zero-column frame raised
+    # `ValueError: Length mismatch`, turning an ordinary empty result into a
+    # tool error.
+    tool, out = _make_tool()
+    response = _response()
+    response.json.return_value["data"]["items"] = []
+
+    with patch("agent.tools.tushare.requests.post", return_value=response):
+        res = tool._invoke(query="Apple")
+
+    assert "_ERROR" not in out
+    assert res == out["formalized_content"]
+    # An empty frame still renders its headers, so the columns survived.
+    assert "content" in res
+
+
+@pytest.mark.p1
+def test_invoke_sends_token_over_https():
+    # The token is a credential: it must never travel over cleartext HTTP.
+    tool, _ = _make_tool()
+
+    with patch("agent.tools.tushare.requests.post", return_value=_response()) as post:
+        tool._invoke(query="Apple")
+
+    assert post.call_args.kwargs["url"].startswith("https://")
