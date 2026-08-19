@@ -337,27 +337,42 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 			}
 		}
 	}
-	topLevelEnabled := false
+	topLevelSet, topLevelEnabled := false, false
 	if v, exists := parserConfig["enable_metadata"]; exists {
+		topLevelSet = true
 		topLevelEnabled = parserConfigBool(v)
+	}
+
+	// resolveEnabled decides whether built-in metadata applies when it lives
+	// inside a modular metadata / metadata_config sub-object. An explicit
+	// top-level enable_metadata=false is the authoritative off switch and
+	// cannot be re-opened by a sub-object's enabled; otherwise the sub-object's
+	// enabled decides, defaulting to true under an explicit top-level true and
+	// to off when no top-level flag is present.
+	resolveEnabled := func(sub map[string]any) bool {
+		if topLevelSet {
+			if !topLevelEnabled {
+				return false
+			}
+			if v, exists := sub["enabled"]; exists {
+				return parserConfigBool(v)
+			}
+			return true
+		}
+		if v, exists := sub["enabled"]; exists {
+			return parserConfigBool(v)
+		}
+		return false
 	}
 
 	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
 		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			enabled := topLevelEnabled
-			if v, exists := metaObj["enabled"]; exists {
-				enabled = parserConfigBool(v)
-			}
-			return arr, enabled
+			return arr, resolveEnabled(metaObj)
 		}
 	}
 	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
 		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			enabled := topLevelEnabled
-			if v, exists := metaConf["enabled"]; exists {
-				enabled = parserConfigBool(v)
-			}
-			return arr, enabled
+			return arr, resolveEnabled(metaConf)
 		}
 	}
 	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
