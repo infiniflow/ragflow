@@ -18,7 +18,7 @@
 // upstream payload. The `mode` parameter selects how each record is
 // turned into a chunk.
 //
-// Only mode "qa" (question-answer pairs, the default) is implemented today:
+// Only mode "qa" (question-answer pairs, the default) is implemented:
 //   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
 //   - Markdown (md)    → heading-based Q&A
 //   - HTML (xlsx/xls)  → table-based Q&A (first two columns)
@@ -50,7 +50,7 @@ const ComponentNamePairChunker = "PairChunker"
 
 type pairChunkerParam struct {
 	// Mode selects the pair output schema. Only "qa" is implemented;
-	// future modes (e.g. "tag") will add their own output builders.
+	// any other mode fails at construction.
 	Mode string `json:"mode,omitempty"`
 	Lang string `json:"lang,omitempty"`
 }

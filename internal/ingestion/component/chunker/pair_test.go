@@ -293,7 +293,7 @@ func TestPairChunker_ModeDefaultsToQA(t *testing.T) {
 }
 
 func TestPairChunker_ModeRejectsUnknown(t *testing.T) {
-	// The generic two-column chunker exposes a `mode` selector; today only
+	// The generic two-column chunker exposes a `mode` selector; only
 	// "qa" is implemented, so any other mode must fail fast at construction
 	// instead of silently producing QA output. An explicit empty mode
 	// defaults to "qa".
