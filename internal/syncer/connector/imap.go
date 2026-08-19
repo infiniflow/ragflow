@@ -36,6 +36,8 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
 	xhtml "golang.org/x/net/html"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -512,6 +514,9 @@ func parseIMAPMessage(raw []byte, sizeThreshold int64) (SourceDocument, []Source
 
 	attachmentDocs := make([]SourceDocument, 0, len(attachments))
 	for _, attachment := range attachments {
+		if utility.FilenameType(attachment.filename) == utility.FileTypeOTHER {
+			continue
+		}
 		attachmentDocs = append(attachmentDocs, SourceDocument{
 			SourceID:           messageID + "#att:" + attachment.filename,
 			SemanticIdentifier: attachment.filename,

@@ -349,6 +349,50 @@ func TestIMAPParseMessageWithAttachment(t *testing.T) {
 	}
 }
 
+func TestIMAPParseMessageSkipsUnsupportedAttachment(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("From: Sender <sender@example.com>\r\n")
+	b.WriteString("To: Recipient <recipient@example.com>\r\n")
+	b.WriteString("Subject: Mixed att\r\n")
+	b.WriteString("Date: Mon, 2 Jan 2026 09:00:00 +0000\r\n")
+	b.WriteString("Message-ID: <msg4@example.com>\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\r\n\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.WriteString("Hello body\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: application/pdf\r\n")
+	b.WriteString("Content-Disposition: attachment; filename=\"report.pdf\"\r\n")
+	b.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+	b.WriteString(base64.StdEncoding.EncodeToString([]byte("%PDF-1.4 fake")) + "\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: application/zip\r\n")
+	b.WriteString("Content-Disposition: attachment; filename=\"archive.zip\"\r\n")
+	b.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+	b.WriteString(base64.StdEncoding.EncodeToString([]byte("PK\x03\x04fake")) + "\r\n")
+	b.WriteString("--BOUNDARY--\r\n")
+
+	emailDoc, attachments, err := parseIMAPMessage([]byte(b.String()), defaultIMAPSizeThreshold)
+	if err != nil {
+		t.Fatalf("parseIMAPMessage failed: %v", err)
+	}
+	if emailDoc.SourceID != "<msg4@example.com>" {
+		t.Fatalf("email SourceID = %q", emailDoc.SourceID)
+	}
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(attachments))
+	}
+	attr := attachments[0]
+	if attr.SourceID != "<msg4@example.com>#att:report.pdf" {
+		t.Fatalf("attachment SourceID = %q", attr.SourceID)
+	}
+	if attr.Extension != ".pdf" {
+		t.Fatalf("attachment extension = %q", attr.Extension)
+	}
+}
+
 func TestIMAPPruneReturnsSlimDocs(t *testing.T) {
 	client := &fakeIMAPClient{
 		mailboxes: []string{"INBOX"},
