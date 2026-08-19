@@ -38,8 +38,9 @@ func LoadPythonChars(jsonPath string) (*PythonCharEngine, error) {
 		} `json:"pages"`
 		// dims carries per-page image dimensions in ZM/image pixels, written
 		// by the Phase 3 dump script so image-only pages (no embedded chars)
-		// get a correctly sized placeholder page image. Optional: older dumps
-		// omit it and RenderPageImage falls back to the char bounding box.
+		// get a correctly sized placeholder page image. REQUIRED: a missing
+		// dim would fall back to a 1x1 placeholder, corrupting pageHeight and
+		// pushing every box off-page — LoadPythonChars fails fast instead.
 		Dims [][]int `json:"dims"`
 		// IsEnglish is the document-level english verdict from the SAME Python
 		// run that produced the text golden. Capturing it (instead of
@@ -49,6 +50,17 @@ func LoadPythonChars(jsonPath string) (*PythonCharEngine, error) {
 	}
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("parse charspy json: %w", err)
+	}
+	// dims are required (1:1 with pages) so image-only pages never fall back
+	// to a degenerate placeholder that corrupts pageHeight. Fail fast on a bad
+	// dump instead of silently degrading parity.
+	if len(wrapper.Dims) != len(wrapper.Pages) {
+		return nil, fmt.Errorf("charspy json dims count %d != pages %d (regenerate with dump_py_results.py)", len(wrapper.Dims), len(wrapper.Pages))
+	}
+	for i, d := range wrapper.Dims {
+		if len(d) < 2 || d[0] <= 0 || d[1] <= 0 {
+			return nil, fmt.Errorf("charspy json page %d invalid dims: %v", i, d)
+		}
 	}
 
 	chars := make(map[int][]pdf.TextChar, len(wrapper.Pages))
@@ -69,11 +81,9 @@ func LoadPythonChars(jsonPath string) (*PythonCharEngine, error) {
 		}
 		chars[pg] = result
 	}
-	if len(wrapper.Dims) > 0 {
-		for pg, d := range wrapper.Dims {
-			if len(d) >= 2 {
-				dims[pg] = [2]int{d[0], d[1]}
-			}
+	for pg, d := range wrapper.Dims {
+		if len(d) >= 2 {
+			dims[pg] = [2]int{d[0], d[1]}
 		}
 	}
 	return &PythonCharEngine{chars: chars, dims: dims, isEnglish: wrapper.IsEnglish, pages: len(wrapper.Pages)}, nil
@@ -122,43 +132,19 @@ func (e *PythonCharEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) 
 	return nil, nil
 }
 
-// RenderPageImage returns a blank placeholder image (no error). This engine
-// has no PDF bytes to rasterize; the DocAnalyzer (mock for char-only parity,
-// or a Python-intermediate adapter for full replay) ignores the pixels
-// anyway. Returning a non-nil image is required so processPage invokes
-// processPageBoxes and falls back to CharsToBoxes from the pre-loaded Python
-// chars — returning an error would abort Parse, and returning (nil, nil)
-// would skip char assembly entirely. No real PDF rendering occurs here, so
-// the parity test still consumes Python intermediates rather than the PDF.
-//
-// The placeholder is sized from the pre-loaded chars' bounding box (scaled
-// by DlaScale) so processPage derives an accurate pageHeight/pageWidth.
-// processPageBoxes uses these only for layout/rotation math; a wrong size
-// would confound the assembly-parity measurement with bogus geometry.
+// RenderPageImage returns a blank placeholder image (no error) sized from the
+// dumped per-page image dims. This engine has no PDF bytes to rasterize; the
+// DocAnalyzer ignores the pixels anyway, but processPage derives
+// pageHeight/pageWidth from the placeholder size, so a wrong size would
+// confound the assembly-parity measurement with bogus geometry. dims are
+// required (LoadPythonChars fails fast when a dump omits them); a missing page
+// here is a hard error, never a degenerate 1x1 placeholder.
 func (e *PythonCharEngine) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
-	// Prefer the dumped per-page image dims (image-only pages carry no chars
-	// to derive a size from), else fall back to the char bounding box.
-	if d, ok := e.dims[pageNum]; ok && d[0] > 0 && d[1] > 0 {
-		return image.NewRGBA(image.Rect(0, 0, d[0], d[1])), nil
+	d, ok := e.dims[pageNum]
+	if !ok || d[0] <= 0 || d[1] <= 0 {
+		return nil, fmt.Errorf("page %d has no valid image dims (regenerate dump with dump_py_results.py)", pageNum)
 	}
-	maxX, maxY := 0.0, 0.0
-	for _, c := range e.chars[pageNum] {
-		if c.X1 > maxX {
-			maxX = c.X1
-		}
-		if c.Bottom > maxY {
-			maxY = c.Bottom
-		}
-	}
-	w := int(maxX*pdf.DlaScale) + 4
-	h := int(maxY*pdf.DlaScale) + 4
-	if w < 1 {
-		w = 1
-	}
-	if h < 1 {
-		h = 1
-	}
-	return image.NewRGBA(image.Rect(0, 0, w, h)), nil
+	return image.NewRGBA(image.Rect(0, 0, d[0], d[1])), nil
 }
 
 // PageCount returns the number of pages.

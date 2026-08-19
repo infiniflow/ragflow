@@ -6,11 +6,12 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// TestDedupIdenticalText locks that boxes carrying byte-identical text on the
-// SAME page with DISJOINT Y bands are collapsed to one. OCR repeatedly detects
-// the same text at different Y positions (09_crosspage_paragraph detects each
-// paragraph 5-6x per page, all disjoint), and Python's downstream merge
-// collapses these; Go must too, or the replay output duplicates paragraphs.
+// TestDedupIdenticalText locks that boxes carrying TRIM-EQUAL text (identical
+// after strings.TrimSpace — trailing whitespace normalized) on the SAME page
+// with DISJOINT Y bands are collapsed to one. OCR repeatedly detects the same
+// text at different Y positions (09_crosspage_paragraph detects each paragraph
+// 5-6x per page, all disjoint), and Python's downstream merge collapses these;
+// Go must too, or the replay output duplicates paragraphs.
 func TestDedupIdenticalText(t *testing.T) {
 	long := "paragraph one with enough words to qualify as a real paragraph duplicate text for collapsing"
 	boxes := []pdf.TextBox{
@@ -192,6 +193,25 @@ func TestDedupSubstringOverlaps_AdjacentLinesKept(t *testing.T) {
 	got := DedupSubstringOverlaps([]pdf.TextBox{a, b})
 	if len(got) != 2 {
 		t.Fatalf("adjacent-line substring must be kept, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_PartialYOverlapKept locks the Y-containment
+// boundary: a substring box that PARTIALLY overlaps the containing box in Y
+// (extends below it) is KEPT — it is an adjacent-line fragment, not a contained
+// duplicate. Only a fragment FULLY inside the containing box (boxInside) is
+// collapsed. With the height-vs-text decoupled guard this case is also kept;
+// the test pins the boundary against future over-collapsing.
+func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
+	full := pdf.TextBox{
+		Text: "the quick brown fox jumps over the lazy dog near the river bank", PageNumber: 0, Top: 100, Bottom: 130, X0: 60, X1: 520, IsOCR: true,
+	}
+	frag := pdf.TextBox{
+		Text: "near the river", PageNumber: 0, Top: 120, Bottom: 150, X0: 60, X1: 520, IsOCR: true, // extends below full -> not inside
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, frag})
+	if len(got) != 2 {
+		t.Fatalf("partial-Y-overlap substring must be kept (not fully inside), got %d boxes", len(got))
 	}
 }
 

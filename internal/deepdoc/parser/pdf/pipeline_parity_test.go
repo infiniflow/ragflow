@@ -86,7 +86,7 @@ func TestPipelineParity(t *testing.T) {
 	// keyed on the analyzer type, so non-replay parses are unaffected.
 	RegisterReplayTableBuilder()
 
-	total, passed, htmlDivergent, failed := 0, 0, 0, 0
+	total, passed, htmlDivergent, intentional, failed := 0, 0, 0, 0, 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -165,7 +165,7 @@ func TestPipelineParity(t *testing.T) {
 		// (which differs in whitespace/join/header markup). Grid content parity
 		// isolates Go's GroupCells + FillCellTextFromBoxes assembly; HTML-only
 		// differences are expected and not a Go logic bug.
-		pyRows, pyHasTables := loadPythonTables(filepath.Join(tablesDir, name+".json"))
+		pyRows, pyHasTables := loadPythonTables(t, filepath.Join(tablesDir, name+".json"))
 		goRows := goTableRows(result)
 		goHasTables := len(goRows) > 0
 
@@ -195,6 +195,7 @@ func TestPipelineParity(t *testing.T) {
 				// Python, e.g. table segmentation), so it is reported as
 				// INTENTIONAL and not counted as a content failure. It is
 				// still logged so a reader can see the gap.
+				intentional++
 				status = "INTENTIONAL"
 				detail = fmt.Sprintf("gridSim=%.1f%% textSim=%.1f%% (go_intentional: %s)", gridSim, sim, intentionalRuleID(knownDiffRules, name))
 			} else {
@@ -220,7 +221,7 @@ func TestPipelineParity(t *testing.T) {
 	if total == 0 {
 		t.Skip("no charspy/ files found")
 	}
-	t.Logf("Pipeline parity: aligned=%d html-divergent=%d failed=%d total=%d", passed, htmlDivergent, failed, total)
+	t.Logf("Pipeline parity: aligned=%d html-divergent=%d intentional=%d failed=%d total=%d", passed, htmlDivergent, intentional, failed, total)
 	if failed > 0 {
 		t.Errorf("%d parity failures — Go pipeline content differs from Python (grid/text)", failed)
 	}
@@ -312,13 +313,20 @@ type pyTableDump struct {
 
 // loadPythonTables returns the flattened concatenation of every table's row
 // grid from output/py/ocr/tables/{name}.json, plus whether any table exists.
-func loadPythonTables(jsonPath string) ([][]string, bool) {
+// loadPythonTables reads Python's dumped table grid for a PDF. A missing golden
+// and a corrupt golden are reported distinctly so neither silently masquerades
+// as a Go content failure (both return (nil, false) so the table branch treats
+// them as 'no Python tables').
+func loadPythonTables(t *testing.T, jsonPath string) ([][]string, bool) {
+	t.Helper()
 	data, err := os.ReadFile(jsonPath)
 	if err != nil {
+		t.Errorf("%s: missing Python tables golden (environment gap, NOT a Go content fail): %v", jsonPath, err)
 		return nil, false
 	}
 	var td pyTableDump
 	if err := json.Unmarshal(data, &td); err != nil {
+		t.Errorf("%s: corrupt Python tables golden (bad input, NOT a Go content fail): %v", jsonPath, err)
 		return nil, false
 	}
 	var rows [][]string
