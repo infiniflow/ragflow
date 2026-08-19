@@ -1,6 +1,10 @@
 package models
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -70,11 +74,11 @@ func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 		call func() error
 	}{
 		{"Embed", func() error {
-			_, err := driver.Embed(ctx, &modelName, []string{text}, &APIConfig{}, nil, nil)
+			_, err := driver.Embed(ctx, &modelName, EmbedRequest{Texts: []string{text}}, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"Rerank", func() error {
-			_, err := driver.Rerank(ctx, &modelName, text, []string{text}, &APIConfig{}, nil, nil)
+			_, err := driver.Rerank(ctx, &modelName, RerankRequest{Query: text, Documents: []string{text}}, &APIConfig{}, nil, nil)
 			return err
 		}},
 		{"TranscribeAudio", func() error {
@@ -117,5 +121,121 @@ func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 		t.Run(check.name, func(t *testing.T) {
 			requireNoSuchMethod(t, check.name, check.call())
 		})
+	}
+}
+
+func newXunFeiForTest(baseURL string) *XunFeiModel {
+	return NewXunFeiModel(
+		map[string]string{"default": baseURL},
+		URLSuffix{Chat: "v1/chat/completions", Models: "v1/models"},
+	)
+}
+
+func TestXunFeiChatUsesResolvedBearerToken(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+		}
+		// The Spark credential bundle is stored as JSON; the request must
+		// authenticate with the extracted spark_api_password.
+		if got := r.Header.Get("Authorization"); got != "Bearer pwd" {
+			t.Errorf("Authorization=%q, want Bearer pwd", got)
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		if body["model"] != "lite" {
+			t.Errorf("model=%v, want lite (resolved Spark-Lite)", body["model"])
+		}
+		if body["stream"] != false {
+			t.Errorf("stream=%v, want false", body["stream"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content":           "pong",
+					"reasoning_content": "\nthought",
+				},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	bundle := `{"spark_api_password":"pwd","spark_app_id":"app","spark_api_secret":"secret","spark_api_key":"key"}`
+	resp, err := newXunFeiForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"Spark-Lite",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &bundle},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Errorf("Answer=%v, want pong", resp.Answer)
+	}
+	if resp.ReasonContent == nil || *resp.ReasonContent != "thought" {
+		t.Errorf("ReasonContent=%v, want thought", resp.ReasonContent)
+	}
+}
+
+func TestXunFeiStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-plain" {
+			t.Errorf("Authorization=%q, want Bearer sk-plain", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, strings.Join([]string{
+			`data: {"choices":[{"delta":{"reasoning_content":"step "}}]}`,
+			`data: {"choices":[{"delta":{"content":"Hello"}}]}`,
+			`data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}`,
+			// XunFei carries usage in the final chunk without requiring
+			// stream_options.include_usage.
+			`data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`,
+			`data: [DONE]`,
+			``,
+		}, "\n"))
+	}))
+	defer srv.Close()
+
+	apiKey := "sk-plain"
+	var content, reasoning []string
+	config := &ChatConfig{}
+	err := newXunFeiForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"Spark-Lite",
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: &apiKey},
+		config,
+		nil,
+		func(answer, reason *string) error {
+			if answer != nil {
+				content = append(content, *answer)
+			}
+			if reason != nil {
+				reasoning = append(reasoning, *reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if strings.Join(reasoning, "") != "step " {
+		t.Errorf("reasoning=%q", strings.Join(reasoning, ""))
+	}
+	if got := strings.Join(content, ""); got != "Hello world[DONE]" {
+		t.Errorf("content=%q, want Hello world[DONE]", got)
+	}
+	if config.UsageResult == nil || config.UsageResult.TotalTokens != 8 {
+		t.Errorf("UsageResult=%#v, want total tokens 8", config.UsageResult)
 	}
 }

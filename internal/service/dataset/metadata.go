@@ -38,6 +38,14 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 		parserConfig = entity.JSONMap{}
 	}
 	parserConfig["metadata"] = metadata
+	if kb, kbErr := d.kbDAO.GetByID(ctx, dao.DB, datasetID); kbErr == nil && kb != nil {
+		if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
+			parserConfig = service.ApplyComponentScopedParserConfig(
+				parserConfig,
+				tenant.LLMID,
+			)
+		}
+	}
 
 	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
@@ -69,8 +77,10 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
+	metadata := parserConfigValueOrEmptyList(kb.ParserConfig, "metadata")
+
 	return map[string]interface{}{
-		"metadata":          parserConfigValueOrEmptyList(kb.ParserConfig, "metadata"),
+		"metadata":          metadata,
 		"built_in_metadata": parserConfigValueOrEmptyList(kb.ParserConfig, "built_in_metadata"),
 	}, common.CodeSuccess, nil
 }
@@ -114,6 +124,24 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}
 	parserConfig["metadata"] = metadata
 	parserConfig["built_in_metadata"] = builtInMetadata
+	// enable_metadata state machine:
+	// - If req.Enabled is explicitly set: use *req.Enabled.
+	// - If nil (uninitialized dataset): auto-enable if metadata fields exist.
+	// - If false (explicitly disabled by user): preserve false even when fields are added.
+	// - If fields are empty: auto-disable to avoid invoking extractor on empty schema.
+	if req.Enabled != nil {
+		parserConfig["enable_metadata"] = *req.Enabled
+	} else if parserConfig["enable_metadata"] == nil {
+		parserConfig["enable_metadata"] = len(metadata) > 0 || len(builtInMetadata) > 0
+	} else if len(metadata) == 0 && len(builtInMetadata) == 0 {
+		parserConfig["enable_metadata"] = false
+	}
+	if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
+		parserConfig = service.ApplyComponentScopedParserConfig(
+			parserConfig,
+			tenant.LLMID,
+		)
+	}
 
 	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("update auto-metadata error.(Database error)")

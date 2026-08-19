@@ -118,12 +118,13 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 	}
 
 	weight := a.weight
+	similarityThreshold := 0.2
 	req := RetrievalRequest{
 		Query:                    strings.TrimSpace(args.Query + " " + args.Keywords),
 		DatasetIDs:               datasetIDs,
 		TopN:                     args.TopN,
 		TopK:                     args.TopN * 4,
-		SimilarityThreshold:      0.2,
+		SimilarityThreshold:      &similarityThreshold,
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
 	}
@@ -172,14 +173,14 @@ func splitKeywords(keywords string) []string {
 		return nil
 	}
 	kwds := make([]string, 0, 8)
-	for _, k := range strings.Split(keywords, ",") {
+	for k := range strings.SplitSeq(keywords, ",") {
 		if k = strings.TrimSpace(k); k != "" {
 			kwds = append(kwds, strings.ToLower(k))
 		}
 	}
 	if len(kwds) < 3 {
 		words := make([]string, 0, 8)
-		for _, w := range strings.Split(keywords, " ") {
+		for w := range strings.SplitSeq(keywords, " ") {
 			if w = strings.TrimSpace(w); w != "" {
 				words = append(words, strings.ToLower(w))
 			}

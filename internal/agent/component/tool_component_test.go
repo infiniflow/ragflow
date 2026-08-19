@@ -194,6 +194,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			inputKey:  "to_email",
 		},
 		{
+			name:      "QueritContents",
+			toolName:  "QueritContents",
+			params:    map[string]any{"api_key": "stored-key", "format": "markdown", "crawl_timeout": float64(10), "extras_meta": true, "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "urls",
+		},
+		{
 			name:      "QueritSearch",
 			toolName:  "QueritSearch",
 			params:    map[string]any{"api_key": "stored-key", "count": float64(10), "chunks_per_doc": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
@@ -283,7 +290,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritSearch", "SearXNG", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "SearXNG", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{

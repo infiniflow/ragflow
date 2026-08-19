@@ -417,7 +417,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}
           >
-            <ChatSheet hideModal={hideRunOrChatDrawer}></ChatSheet>
+            <ChatSheet
+              hideModal={() => {
+                hideRunOrChatDrawer();
+                hideLogSheet();
+              }}
+            ></ChatSheet>
           </AgentChatLogContext.Provider>
         </AgentChatContext.Provider>
       )}

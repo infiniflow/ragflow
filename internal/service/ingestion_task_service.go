@@ -229,7 +229,16 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		}
 		return task, nil
 	case common.STOPPING:
-		return s.transition(ctx, taskID, common.STOPPED)
+		task, err = s.transition(ctx, taskID, common.STOPPED)
+		if err != nil {
+			return nil, err
+		}
+		// The stop is finalized here without a worker (e.g. MQ redelivery of
+		// a task that was nacked before execution), so the Redis cancel flag
+		// that RequestStop set would otherwise leak until TTL and cancel the
+		// next run of this task at the worker's pre-start check.
+		clearCancelFlag(ctx, taskID)
+		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
 	default:
@@ -387,6 +396,11 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			if err != nil {
 				return nil, err
 			}
+			// The previous run is terminal, so any leftover Redis cancel flag
+			// is stale: a genuine cancel of the new run can only come through
+			// RequestStop once the task is RUNNING again. Clear it so the
+			// re-queued task is not cancelled at the worker's pre-start check.
+			clearCancelFlag(ctx, existing.ID)
 			if err = s.enqueueTask(existing.ID); err != nil {
 				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
 					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
@@ -427,6 +441,15 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 	return err
 }
 
+// clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that
+// RequestStop sets for a RUNNING task. No-op when Redis is unavailable —
+// the DB STOPPING status remains the fallback cancel signal.
+func clearCancelFlag(ctx context.Context, taskID string) {
+	if rc := redis2.Get(); rc != nil {
+		rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
+	}
+}
+
 func (s *IngestionTaskService) enqueueTask(taskID string) error {
 	taskMessage := common.TaskMessage{
 		TaskID:   taskID,
@@ -454,6 +477,13 @@ func (s *IngestionTaskService) RecordComponentProgress(ctx context.Context, task
 		Message:    message,
 	}
 	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
+}
+
+// ClearComponentProgress removes lifecycle rows left by a previous attempt of
+// the same reusable ingestion task. Run-count checkpoint rows are retained.
+func (s *IngestionTaskService) ClearComponentProgress(ctx context.Context, taskID string) error {
+	_, err := s.ingestionTaskLogDAO.DeleteComponentLogsByTaskID(ctx, dao.DB, taskID)
+	return err
 }
 
 // AggregateTaskProgress returns the SQL-aggregated component progress for a

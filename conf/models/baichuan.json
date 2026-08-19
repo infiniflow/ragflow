@@ -11,7 +11,8 @@
   "models": [
     {
       "name": "Baichuan4",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -21,7 +22,8 @@
     },
     {
       "name": "Baichuan4-Air",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -31,7 +33,8 @@
     },
     {
       "name": "Baichuan4-Turbo",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -41,7 +44,8 @@
     },
     {
       "name": "Baichuan-M3",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -51,7 +55,8 @@
     },
     {
       "name": "Baichuan-M3-plus",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -61,7 +66,8 @@
     },
     {
       "name": "Baichuan-M2-plus",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -71,7 +77,8 @@
     },
     {
       "name": "Baichuan-M2",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -81,7 +88,8 @@
     },
     {
       "name": "Baichuan3-Turbo",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -91,7 +99,8 @@
     },
     {
       "name": "Baichuan3-Turbo-128k",
-      "max_tokens": 131072,
+      "content_length": 131072,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -101,7 +110,8 @@
     },
     {
       "name": "Baichuan2-Turbo",
-      "max_tokens": 32768,
+      "content_length": 32768,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -114,7 +124,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 16
     }
   ]
 }

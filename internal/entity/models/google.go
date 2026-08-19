@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"strings"
 
 	"google.golang.org/genai"
@@ -44,10 +45,60 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 
 		models = append(models, page.items...)
 		if page.nextPageToken == "" {
-			return ParseListModel(ModelList{Models: models}), nil
+			return finalizeGoogleModelList(ParseListModel(ModelList{Models: models})), nil
 		}
 		pageToken = page.nextPageToken
 	}
+}
+
+// googleUsableActions lists the Gemini supportedActions RAGFlow can serve:
+// generateContent covers chat/vision/tts, embedContent covers embedding.
+var googleUsableActions = []string{"generateContent", "embedContent", "batchEmbedContents"}
+
+// googleSupportsUsableAction reports whether the model supports at least one
+// action RAGFlow can use. Models limited to other actions (image/video/music
+// generation, question answering, etc.) are filtered out while listing so
+// the list never offers models whose model type is unknown or unsupported.
+func googleSupportsUsableAction(actions []string) bool {
+	for _, action := range actions {
+		for _, usable := range googleUsableActions {
+			if action == usable {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// finalizeGoogleModelList resolves model types for listed models and filters
+// out unknown or unsupported model_type values at list-generation time,
+// rather than letting them flow into AddModel where they would be stored as
+// model_type = 0 and repaired later. Catalog types win; models missing from
+// the static catalog fall back to name-hint inference; models that still
+// have no supported type are dropped.
+func finalizeGoogleModelList(list []ListModelResponse) []ListModelResponse {
+	if list == nil {
+		return nil
+	}
+	filtered := make([]ListModelResponse, 0, len(list))
+	for _, item := range list {
+		types := item.ModelTypes
+		if len(types) == 0 {
+			types = InferModelTypes(item.Name)
+		}
+		supported := make([]string, 0, len(types))
+		for _, t := range types {
+			if entity.ModelTypeFromString(t) != 0 {
+				supported = append(supported, t)
+			}
+		}
+		if len(supported) == 0 {
+			continue
+		}
+		item.ModelTypes = supported
+		filtered = append(filtered, item)
+	}
+	return filtered
 }
 
 var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
@@ -64,14 +115,25 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 
 		var modelNames []ModelListItem
 		for _, m := range models.Items {
-			modelName := strings.TrimSpace(m.DisplayName)
+			// Skip models limited to actions RAGFlow cannot serve
+			// (e.g. imagen/veo generation-only models); see
+			// finalizeGoogleModelList.
+			if len(m.SupportedActions) > 0 && !googleSupportsUsableAction(m.SupportedActions) {
+				continue
+			}
+			// Use the API model ID ("models/gemini-2.5-flash" →
+			// "gemini-2.5-flash") so listed models match the static
+			// catalog (model types / max_tokens) and are directly
+			// usable in chat requests. Display names ("Gemini 2.5
+			// Flash") are not accepted by the Gemini API.
+			modelName := strings.TrimSpace(strings.TrimPrefix(m.Name, "models/"))
 			if modelName == "" {
-				modelName = strings.TrimSpace(m.Name)
+				modelName = strings.TrimSpace(m.DisplayName)
 			}
 			if modelName != "" {
 				modelNames = append(modelNames, ModelListItem{
 					ID:      modelName,
-					OwnedBy: "Google",
+					OwnedBy: "Gemini",
 				})
 			}
 		}
@@ -110,9 +172,8 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		defaultConfig := &APIConfig{}
-		if apiConfig != nil {
-			defaultConfig.BaseURL = apiConfig.BaseURL
-		}
+		defaultConfig.BaseURL = apiConfig.BaseURL
+
 		baseURL, err = g.baseModel.GetBaseURL(defaultConfig)
 		if err != nil {
 			return ""
@@ -377,6 +438,36 @@ func googleToolCalls(functionCalls []*genai.FunctionCall) []map[string]interface
 	return toolCalls
 }
 
+// googleUsageFromMetadata converts the SDK's
+// GenerateContentResponseUsageMetadata into the package's TokenUsage.
+// It returns nil when the metadata is absent so callers can pass the
+// result directly to recordResponseUsage without a separate presence
+// check. Per the SDK, TotalTokenCount is the authoritative sum of
+// prompt + candidates + tool-use prompt + thoughts, so we sum the
+// per-bucket counts the same way and use TotalTokenCount as-is when
+// it is present. ToolUsePromptTokenCount is treated as part of the
+// prompt (it is input billed to the user even though the SDK counts
+// it separately from PromptTokenCount).
+func googleUsageFromMetadata(m *genai.GenerateContentResponseUsageMetadata) *TokenUsage {
+	if m == nil {
+		return nil
+	}
+	in := int(m.PromptTokenCount + m.ToolUsePromptTokenCount)
+	out := int(m.CandidatesTokenCount + m.ThoughtsTokenCount)
+	total := int(m.TotalTokenCount)
+	if in == 0 && out == 0 && total == 0 {
+		return nil
+	}
+	if total == 0 {
+		total = in + out
+	}
+	return &TokenUsage{
+		PromptTokens:     in,
+		CompletionTokens: out,
+		TotalTokens:      total,
+	}
+}
+
 func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -415,6 +506,7 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 
 	// Extract text from response
 	answer := response.Text()
+	recordResponseUsage(modelUsage, response.ResponseID, googleUsageFromMetadata(response.UsageMetadata), "chat")
 
 	return &ChatResponse{Answer: &answer, ToolCalls: googleToolCalls(response.FunctionCalls())}, nil
 }
@@ -454,6 +546,11 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 	var toolCalls []map[string]interface{}
 
+	// Capture the most recent UsageMetadata across the stream so we
+	// can record it once after the iterator finishes. Each chunk may
+	// carry partial counts; the SDK's authoritative total is in the
+	// final chunk's UsageMetadata.
+	var streamUsage *TokenUsage
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
@@ -490,6 +587,18 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 				return err
 			}
 		}
+
+		if u := googleUsageFromMetadata(response.UsageMetadata); u != nil {
+			streamUsage = u
+		}
+	}
+
+	if streamUsage != nil {
+		// Use the shared applyStreamUsage path so chatConfig.UsageResult
+		// and the clickhouse collection happen together — matching the
+		// behaviour of every other streaming driver — and so we do
+		// not collect the same usage twice.
+		applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	}
 
 	if chatModelConfig != nil && len(toolCalls) > 0 {
@@ -501,14 +610,14 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 // Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
-func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (g *GoogleModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return nil, fmt.Errorf("texts is empty")
 	}
 
@@ -520,8 +629,8 @@ func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	contents := make([]*genai.Content, len(texts))
-	for i, text := range texts {
+	contents := make([]*genai.Content, len(request.Texts))
+	for i, text := range request.Texts {
 		contents[i] = genai.NewContentFromText(text, genai.RoleUser)
 	}
 
@@ -536,8 +645,8 @@ func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("failed to embed content: %w", err)
 	}
 
-	if len(resp.Embeddings) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Embeddings))
+	if len(resp.Embeddings) != len(request.Texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(request.Texts), len(resp.Embeddings))
 	}
 
 	result := make([]EmbeddingData, len(resp.Embeddings))
@@ -573,7 +682,7 @@ func (g *GoogleModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity scores between query and documents
-func (g *GoogleModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (g *GoogleModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", g.Name())
 }
 

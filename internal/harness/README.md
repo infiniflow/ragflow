@@ -1,7 +1,6 @@
 # Agent Harness Go
 
 [![Go Reference](https://pkg.go.dev/badge/ragflow/internal/harness.svg)](https://pkg.go.dev/ragflow/internal/harness)
-[![Go Report Card](https://goreportcard.com/badge/ragflow/internal/harness)](https://goreportcard.com/report/ragflow/internal/harness)
 
 A Go framework for building **stateful, multi-agent applications** with LLMs. It provides a **graph-based execution engine** (`graphengine/`) with Pregel-style BSP execution, plus a **full Agent Development Kit** (`agentcore/`) built on top of it — supporting ReAct agents, middleware, workflows, checkpointing, human-in-the-loop, and streaming.
 
@@ -88,7 +87,7 @@ package main
 
 import (
     "context"
-    "ragflow/internal/harness/core"
+    agentcore "ragflow/internal/harness/core"
     "ragflow/internal/harness/core/schema"
 )
 
@@ -1069,7 +1068,7 @@ builder.AddNodeWithOptions("risky_node", nodeFunc, harness.NodeOptions{
 
 ```go
 import (
-    "ragflow/internal/harness/core"
+    agentcore "ragflow/internal/harness/core"
     "ragflow/internal/harness/core/middlewares/filesystem"
     "ragflow/internal/harness/core/middlewares/summarization"
     "ragflow/internal/harness/core/middlewares/subagent"

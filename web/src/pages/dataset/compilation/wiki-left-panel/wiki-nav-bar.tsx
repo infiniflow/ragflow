@@ -71,7 +71,7 @@ export function WikiNavBar({
                       : 'text-text-primary cursor-default',
                   )}
                 >
-                  {t('knowledgeDetails.topics')}
+                  {t('knowledgeCompilation.topics')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
               {selectedTopic && (

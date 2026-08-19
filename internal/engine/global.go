@@ -17,15 +17,17 @@
 package engine
 
 import (
+	"context"
 	"fmt"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/nats"
-	"ragflow/internal/server"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
-
+	"ragflow/internal/engine/nats"
+	"ragflow/internal/engine/oceanbase"
+	"ragflow/internal/engine/serenedb"
+	"ragflow/internal/server"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -39,7 +41,7 @@ var (
 )
 
 // InitDocEngine initializes document engine
-func InitDocEngine() error {
+func InitDocEngine(ctx context.Context) error {
 
 	var initErr error
 	once.Do(func() {
@@ -49,9 +51,18 @@ func InitDocEngine() error {
 		var err error
 		switch engineType {
 		case "elasticsearch":
-			globalEngine, err = elasticsearch.NewEngine(globalConfig.GetElasticsearchConfig())
+			globalEngine, err = elasticsearch.NewEngine(ctx, globalConfig.GetElasticsearchConfig())
 		case "infinity":
-			globalEngine, err = infinity.NewEngine(globalConfig.GetInfinityConfig())
+			globalEngine, err = infinity.NewEngine(ctx, globalConfig.GetInfinityConfig())
+		case "oceanbase", "seekdb":
+			connectionConfig, resolveErr := globalConfig.ResolveOceanBaseConnection(engineType)
+			if resolveErr != nil {
+				err = resolveErr
+			} else {
+				globalEngine, err = oceanbase.NewEngine(engineType, connectionConfig)
+			}
+		case "serenedb":
+			globalEngine, err = serenedb.NewEngine(globalConfig.GetSereneDBConfig())
 		default:
 			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}

@@ -319,6 +319,30 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	}
 }
 
+// TestStartRunningFinalizesStoppingTask locks in the redelivery path: a
+// STOPPING task (cancelled after being nacked, before any worker ran it) is
+// moved to STOPPED by StartRunning, so the task reaches a terminal state and
+// a later re-parse can transition it back to CREATED.
+func TestStartRunningFinalizesStoppingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set STOPPING: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+	task, err := svc.StartRunning(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+}
+
 func TestIngestionTaskServiceRequestStopTransitionsCreatedTaskToStopped(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -848,6 +872,45 @@ func TestIngestionTaskServiceMarkStoppedIdempotentOnAlreadyStopped(t *testing.T)
 	ctx := t.Context()
 	if err := svc.MarkStopped(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkStopped on already STOPPED task should be idempotent, got: %v", err)
+	}
+}
+
+// TestIngestionTaskServiceRequestStopNeverReopensTerminalTask locks the invariant
+// that a terminal task (COMPLETED/STOPPED/FAILED) can never be moved back to
+// STOPPING. A terminal task whose message was already acked must not regress to
+// the in-flight STOPPING state (which has no settled worker and would be stuck
+// forever). RequestStop is a no-op for terminal states.
+func TestIngestionTaskServiceRequestStopNeverReopensTerminalTask(t *testing.T) {
+	for _, status := range []string{common.COMPLETED, common.STOPPED, common.FAILED} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
+			ctx := t.Context()
+
+			svc := NewIngestionTaskService()
+			task, err := svc.RequestStop(ctx, "task-1")
+			if err != nil {
+				t.Fatalf("RequestStop on %s task should be a no-op, got: %v", status, err)
+			}
+			if task.Status != status {
+				t.Fatalf("RequestStop moved %s task to %q, must stay %s", status, task.Status, status)
+			}
+		})
+	}
+}
+
+// TestValidateTransitionRejectsTerminalToStopping locks the state-machine
+// invariant directly: STOPPING is only reachable from RUNNING, never from a
+// terminal state (COMPLETED/STOPPED/FAILED) or from STOPPING itself.
+func TestValidateTransitionRejectsTerminalToStopping(t *testing.T) {
+	for _, from := range []string{common.COMPLETED, common.STOPPED, common.FAILED, common.STOPPING, common.CREATED} {
+		if err := validateTransition(from, common.STOPPING); err == nil {
+			t.Errorf("validateTransition(%s -> STOPPING) = nil, want error", from)
+		}
+	}
+	if err := validateTransition(common.RUNNING, common.STOPPING); err != nil {
+		t.Errorf("validateTransition(RUNNING -> STOPPING) = %v, want nil", err)
 	}
 }
 

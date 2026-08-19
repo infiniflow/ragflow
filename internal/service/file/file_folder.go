@@ -560,7 +560,7 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 
 		// Calculate new location
 		newLocation := effectiveName
-		for storageImpl.ObjExist(destFolder.ID, newLocation) {
+		for storageImpl.ObjExist(ctx, destFolder.ID, newLocation) {
 			newLocation += "_"
 		}
 
@@ -569,7 +569,7 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 			return fmt.Errorf("file location is empty")
 		}
 
-		if !storageImpl.Move(sourceFile.ParentID, *sourceFile.Location, destFolder.ID, newLocation) {
+		if !storageImpl.Move(ctx, sourceFile.ParentID, *sourceFile.Location, destFolder.ID, newLocation) {
 			return fmt.Errorf("move file failed at storage layer")
 		}
 

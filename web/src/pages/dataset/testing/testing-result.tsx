@@ -84,7 +84,9 @@ export function TestingResult({
                 <article key={x.chunk_id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
                     <ChunkTitle item={x}></ChunkTitle>
-                    <p className="!mt-2.5"> {x.content_with_weight}</p>
+                    <p className="!mt-2.5 whitespace-pre-wrap">
+                      {x.content_with_weight}
+                    </p>
                     <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
                       {x.doc_name || x.docnm_kwd}
                     </div>

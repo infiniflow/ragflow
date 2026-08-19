@@ -104,15 +104,15 @@ type StatusResponse struct {
 // GetStatus gets health status for core system dependencies.
 func (s *SystemService) GetStatus(ctx context.Context) (*StatusResponse, error) {
 	return &StatusResponse{
-		DocEngine:              s.getDocEngineStatus(),
-		Storage:                s.getStorageStatus(),
-		Database:               s.getDatabaseStatus(),
+		DocEngine:              s.getDocEngineStatus(ctx),
+		Storage:                s.getStorageStatus(ctx),
+		Database:               s.getDatabaseStatus(ctx),
 		Redis:                  s.getRedisStatus(ctx),
 		TaskExecutorHeartbeats: s.getTaskExecutorHeartbeats(ctx),
 	}, nil
 }
 
-func (s *SystemService) getDocEngineStatus() ComponentStatus {
+func (s *SystemService) getDocEngineStatus(ctx context.Context) ComponentStatus {
 	cfg := server.GetConfig()
 	docEngineType := ""
 	if cfg != nil {
@@ -130,9 +130,9 @@ func (s *SystemService) getDocEngineStatus() ComponentStatus {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeOutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := docEngine.Ping(ctx); err != nil {
+	if err := docEngine.Ping(timeOutCtx); err != nil {
 		return ComponentStatus{
 			"type":    docEngine.GetType(),
 			"status":  "red",
@@ -148,7 +148,7 @@ func (s *SystemService) getDocEngineStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getStorageStatus() ComponentStatus {
+func (s *SystemService) getStorageStatus(ctx context.Context) ComponentStatus {
 	cfg := server.GetConfig()
 	storageType := ""
 	if cfg != nil {
@@ -166,10 +166,10 @@ func (s *SystemService) getStorageStatus() ComponentStatus {
 		}
 	}
 
-	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeOutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if !factory.Health() {
+	if !factory.Health(timeOutCtx) {
 		return ComponentStatus{
 			"type":    storageType,
 			"status":  "red",
@@ -185,7 +185,7 @@ func (s *SystemService) getStorageStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getDatabaseStatus() ComponentStatus {
+func (s *SystemService) getDatabaseStatus(ctx context.Context) ComponentStatus {
 	cfg := server.GetConfig()
 	databaseType := ""
 	if cfg != nil {
@@ -212,7 +212,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 		}
 	}
 
-	if err = sqlDB.Ping(); err != nil {
+	if err = sqlDB.PingContext(ctx); err != nil {
 		return ComponentStatus{
 			"type":    databaseType,
 			"status":  "red",
@@ -351,7 +351,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 
 	storageOK, storageMeta := timedHealthCheck(func() error {
 		store := storage.GetStorageFactory().GetStorage()
-		if store == nil || !store.Health() {
+		if store == nil || !store.Health(ctx) {
 			return fmt.Errorf("storage is not healthy")
 		}
 		return nil
@@ -478,8 +478,10 @@ func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
 func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
+	globalConfig := server.GetConfig()
+
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := globalConfig.GetEnvDocumentEngineType()
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}

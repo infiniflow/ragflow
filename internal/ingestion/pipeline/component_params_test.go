@@ -237,3 +237,34 @@ func TestExtractAllComponentParams_AllBuiltinTemplates(t *testing.T) {
 	}
 	t.Logf("tested %d builtin templates", tested)
 }
+
+func TestExtractAllComponentParams_DisallowMultipleExtractors(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Extractor:One": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Extractor",
+					"params":         map[string]any{},
+				},
+			},
+			"Extractor:Two": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Extractor",
+					"params":         map[string]any{},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl: %v", err)
+	}
+
+	_, err = ExtractAllComponentParams(dslJSON)
+	if err == nil {
+		t.Fatal("expected error for multiple Extractor components, got nil")
+	}
+	if !strings.Contains(err.Error(), "at most 1 Extractor") {
+		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
+	}
+}

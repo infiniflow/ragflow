@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -285,10 +284,11 @@ func TestBuildMessagesWithImages_WithImages_UsesUserInputMultiContent(t *testing
 func TestLLM_Invoke_ForwardsImagesToInvoker(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
 	withStubInvoker(t, stub)
+	ctx := t.Context()
 
 	uri := "data:image/png;base64,iVBORw0KGgo="
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"user_prompt":  "what is this?",
 		"visual_files": []string{uri},
 	})
@@ -318,9 +318,10 @@ func TestLLM_Invoke_ForwardsImagesToInvoker(t *testing.T) {
 func TestLLM_Invoke_NoVisualFiles_BackwardCompat(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
 	withStubInvoker(t, stub)
+	ctx := t.Context()
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"user_prompt": "hi",
 	})
 	if err != nil {
@@ -347,10 +348,11 @@ func TestLLM_Invoke_NoVisualFiles_BackwardCompat(t *testing.T) {
 func TestLLM_Invoke_VisualFilesAsString(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
 	withStubInvoker(t, stub)
+	ctx := t.Context()
 
 	uri := "data:image/jpeg;base64,/9j/4AAQ"
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"user_prompt":  "describe",
 		"visual_files": "see " + uri,
 	})
@@ -369,5 +371,60 @@ func TestLLM_Invoke_VisualFilesAsString(t *testing.T) {
 		*user.UserInputMultiContent[1].Image.URL != uri {
 		t.Errorf("image not extracted from single-string visual_files; got %+v",
 			user.UserInputMultiContent[1])
+	}
+}
+
+// TestBuildAgentInputMessagesInjectsSysFiles guards the agent-side half of
+// the upload fix: buildAgentInputMessages must fold sys.files uploads into
+// the current user message (file text merged, images as multi-modal parts).
+// Without it a vision agent (e.g. qwen3-vl-plus) reports it cannot see the
+// attached image.
+func TestBuildAgentInputMessagesInjectsSysFiles(t *testing.T) {
+	uri := "data:image/png;base64,iVBORw0KGgo="
+	state := runtime.NewCanvasState("run-agent-files", "task-agent-files")
+	state.Sys["files"] = []string{"parsed document text", uri}
+	ctx := runtime.WithState(t.Context(), state)
+
+	messages := buildAgentInputMessages(ctx, AgentParam{UserPrompt: "描述图片内容"})
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	msg := messages[0]
+	if msg.Role != schema.User {
+		t.Fatalf("role = %v, want user", msg.Role)
+	}
+	if len(msg.UserInputMultiContent) != 2 {
+		t.Fatalf("parts = %d, want 2 (text + image)", len(msg.UserInputMultiContent))
+	}
+	textPart := msg.UserInputMultiContent[0]
+	if textPart.Type != schema.ChatMessagePartTypeText ||
+		textPart.Text != "描述图片内容\n\nparsed document text" {
+		t.Errorf("text part = %+v, want merged prompt+file text", textPart)
+	}
+	imagePart := msg.UserInputMultiContent[1]
+	if imagePart.Type != schema.ChatMessagePartTypeImageURL ||
+		imagePart.Image == nil || imagePart.Image.URL == nil || *imagePart.Image.URL != uri {
+		t.Errorf("image part = %+v, want image_url part carrying the upload URI", imagePart)
+	}
+}
+
+// TestBuildAgentInputMessagesSysFilesTextOnly: non-image uploads merge into
+// the plain string Content without creating multi-modal parts.
+func TestBuildAgentInputMessagesSysFilesTextOnly(t *testing.T) {
+	state := runtime.NewCanvasState("run-agent-text", "task-agent-text")
+	state.Sys["files"] = []string{"first file text", "second file text"}
+	ctx := runtime.WithState(t.Context(), state)
+
+	messages := buildAgentInputMessages(ctx, AgentParam{UserPrompt: "summarize"})
+	if len(messages) != 1 {
+		t.Fatalf("message count = %d, want 1", len(messages))
+	}
+	want := "summarize\n\nfirst file text\n\nsecond file text"
+	if messages[0].Content != want {
+		t.Errorf("Content = %q, want %q", messages[0].Content, want)
+	}
+	if len(messages[0].UserInputMultiContent) != 0 {
+		t.Errorf("text-only files must not create multi-modal parts, got %d",
+			len(messages[0].UserInputMultiContent))
 	}
 }

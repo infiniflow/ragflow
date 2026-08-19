@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
@@ -6,6 +22,7 @@ import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
+import { removeThinkSection } from '@/utils/chat';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -294,7 +311,7 @@ const FloatingChatWidget = () => {
     }, 50);
 
     if (locale && i18n.language !== locale) {
-      changeLanguageAsync(locale);
+      changeLanguageAsync(locale, { persist: false });
     }
 
     return () => clearTimeout(timer);
@@ -646,7 +663,7 @@ const FloatingChatWidget = () => {
                           role="toolbar"
                         >
                           <CopyToClipboard
-                            text={message.content}
+                            text={removeThinkSection(message.content)}
                             className="border-0"
                             size="icon-xs"
                           />
@@ -861,7 +878,7 @@ const FloatingChatWidget = () => {
                             role="toolbar"
                           >
                             <CopyToClipboard
-                              text={message.content}
+                              text={removeThinkSection(message.content)}
                               className="border-0"
                               size="icon-xs"
                             />

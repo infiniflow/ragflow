@@ -55,7 +55,7 @@ func TestRetrieval_DelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("Retrieval c.Name() = %q, want %q", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval Invoke errored: %v", err)
 	}
@@ -76,7 +76,9 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 	agenttool.SetSimpleRetrievalService()
 	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })
 
-	c, err := New("SearchMyDataset", nil)
+	c, err := New("SearchMyDataset", map[string]any{
+		"kb_ids": []any{"kb-1"},
+	})
 	if err != nil {
 		t.Fatalf("New(SearchMyDataset) errored: %v", err)
 	}

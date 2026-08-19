@@ -107,36 +107,9 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := g.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return HandleStreamingResponse(resp.Body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	return g.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type gpustackModelInfo struct {
@@ -213,7 +186,7 @@ type gpustackEmbeddingResponse struct {
 func (g *GPUStackModel) Embed(
 	ctx context.Context,
 	modelName *string,
-	texts []string,
+	request EmbedRequest,
 	apiConfig *APIConfig,
 	embeddingConfig *EmbeddingConfig,
 	modelUsage *common.ModelUsage,
@@ -222,7 +195,7 @@ func (g *GPUStackModel) Embed(
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
@@ -241,7 +214,7 @@ func (g *GPUStackModel) Embed(
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -283,15 +256,15 @@ func (g *GPUStackModel) Embed(
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	filled := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
 		if item.Index == nil {
 			return nil, fmt.Errorf("gpustack: missing embedding index in response item")
 		}
 		idx := *item.Index
-		if idx < 0 || idx >= len(texts) {
-			return nil, fmt.Errorf("gpustack: embedding response index %d out of range for %d inputs", idx, len(texts))
+		if idx < 0 || idx >= len(request.Texts) {
+			return nil, fmt.Errorf("gpustack: embedding response index %d out of range for %d inputs", idx, len(request.Texts))
 		}
 		if filled[idx] {
 			return nil, fmt.Errorf("gpustack: duplicate embedding index %d in response", idx)
@@ -313,7 +286,7 @@ func (g *GPUStackModel) Embed(
 	return embeddings, nil
 }
 
-func (g *GPUStackModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (g *GPUStackModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 

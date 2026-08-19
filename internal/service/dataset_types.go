@@ -1,10 +1,5 @@
 package service
 
-// TraceIndexRequest is the request structure for tracing an index task.
-type TraceIndexRequest struct {
-	Type string `json:"type" binding:"required"`
-}
-
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`
@@ -56,6 +51,7 @@ type SearchDatasetsRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
 	ForceRefresh           bool                   `json:"force_refresh"`
 }
 
@@ -82,6 +78,7 @@ type SearchDatasetRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -104,6 +101,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Keyword:                req.Keyword,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		IncludeCompiledChunks:  req.IncludeCompiledChunks,
 	}
 }
 
@@ -117,6 +115,7 @@ type MetadataConfigField struct {
 
 // MetadataConfigRequest mirrors PUT /datasets/:dataset_id/metadata/config.
 type MetadataConfigRequest struct {
+	Enabled         *bool                 `json:"enabled,omitempty"`
 	Metadata        []MetadataConfigField `json:"metadata"`
 	BuiltInMetadata []MetadataConfigField `json:"built_in_metadata"`
 }

@@ -264,7 +264,7 @@ type traceChunkComponent struct{}
 func (traceChunkComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Use the real component output shape ([]map[string]any as produced by
 	// ChunkDocsToMaps) so the end-to-end strip/recurse path for []map[string]any
-	// is actually exercised — a []any stub hides the deepCopyStrip type gap.
+	// is actually exercised — a []any stub hides the deepCopy type gap.
 	return map[string]any{
 		"chunks": []map[string]any{
 			{"text": "real chunk", "vector": []float64{0.5}},
@@ -408,7 +408,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
-	sink.SetResult(resultDSL)
+	sink.SetResult(resultDSL, output)
 	sink.Flush(ctx, nil)
 
 	raw := store.Get(ctx, "c-dsl-m-dsl-logs")
@@ -505,7 +505,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
-	sink.SetResult(resultDSL)
+	sink.SetResult(resultDSL, output)
 	sink.Flush(ctx, nil)
 
 	raw := store.Get(ctx, "c-chunk-m-chunk-logs")
@@ -561,6 +561,58 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	dParams := components["d"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
 	if _, exists := dParams["outputs"]; exists {
 		t.Errorf("d has no recognized output, outputs must be absent: %#v", dParams)
+	}
+
+	// The END marker MESSAGE must be the JSON dump of the LAST component's
+	// ("d") raw output — the contract the front-end "Export JSON" button
+	// relies on (use-download-output.ts findEndOutput JSON.parses it). A
+	// plain-text sentinel leaves the button permanently disabled.
+	endMsg, _ := endFirst["message"].(string)
+	var endOutput map[string]any
+	if err := json.Unmarshal([]byte(endMsg), &endOutput); err != nil {
+		t.Fatalf("END message must be the last component's output JSON, got %q", endMsg)
+	}
+	if endOutput["ok"] != true {
+		t.Errorf("END message output=%#v want d's raw output {ok:true}", endOutput)
+	}
+}
+
+// TestDebugLogSink_EndMessageFallsBackWithoutRunOutput pins the two cases
+// where the END marker message must NOT be a JSON dump: no run output was
+// handed to the sink (SetResult never called, e.g. the run failed before
+// producing output) and the run ended with an error. In both cases the
+// front-end export button stays disabled — matching Python, whose END message
+// is only the output JSON on success.
+func TestDebugLogSink_EndMessageFallsBackWithoutRunOutput(t *testing.T) {
+	ctx := t.Context()
+
+	// Case 1: successful run but SetResult was never called -> plain text.
+	store := &capturedStore{}
+	sink := NewDebugLogSink("c-nores", "m-nores", store)
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		Component: "A", Message: "A Done", Phase: phaseExit,
+	})
+	sink.Flush(ctx, nil)
+	arr := loadArray(t, store.Get(ctx, "c-nores-m-nores-logs"))
+	endFirst, _ := arr[len(arr)-1]["trace"].([]any)[0].(map[string]any)
+	if msg, _ := endFirst["message"].(string); msg != "Debug run completed" {
+		t.Errorf("END message without run output=%q want %q", msg, "Debug run completed")
+	}
+
+	// Case 2: run output IS available but the run failed -> error wins.
+	store2 := &capturedStore{}
+	sink2 := NewDebugLogSink("c-fail", "m-fail", store2)
+	sink2.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		Component: "A", Message: "A Done", Phase: phaseExit,
+	})
+	sink2.SetResult(map[string]any{"components": map[string]any{}},
+		map[string]any{"state": map[string]any{"A": map[string]any{"ok": true}}})
+	sink2.Flush(ctx, errors.New("boom"))
+	arr2 := loadArray(t, store2.Get(ctx, "c-fail-m-fail-logs"))
+	endFirst2, _ := arr2[len(arr2)-1]["trace"].([]any)[0].(map[string]any)
+	msg2, _ := endFirst2["message"].(string)
+	if !strings.HasPrefix(msg2, "[ERROR] ") {
+		t.Errorf("END message on failure must stay [ERROR]-prefixed, got %q", msg2)
 	}
 }
 

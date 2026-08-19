@@ -1,4 +1,4 @@
-export type WikiPageType = 'concept' | 'entity';
+export type WikiPageType = 'concept' | 'entity' | 'topic';
 
 /**
  * Parse an internal wiki link href into pageType and slug.
@@ -9,7 +9,7 @@ export type WikiPageType = 'concept' | 'entity';
  *   {pageType}/{slug}
  *   /{pageType}/{slug}
  *
- * Only entity/ and concept/ links are considered wiki navigation links.
+ * entity/, concept/ and topic/ links are all considered wiki navigation links.
  */
 export function parseWikiLinkHref(
   href: string,
@@ -19,7 +19,7 @@ export function parseWikiLinkHref(
 
   // Prefer the artifact/{datasetId}/{pageType}/{slug} form.
   const artifactMatch = normalized.match(
-    /(?:^|\/)artifact\/[^/]+\/(entity|concept)\/([^/\s"']+)/,
+    /(?:^|\/)artifact\/[^/]+\/(entity|concept|topic)\/([^/\s"']+)/,
   );
   if (artifactMatch) {
     return {
@@ -29,7 +29,9 @@ export function parseWikiLinkHref(
   }
 
   // Fallback to a plain {pageType}/{slug} form.
-  const simpleMatch = normalized.match(/(?:^|\/)(entity|concept)\/([^/\s"']+)/);
+  const simpleMatch = normalized.match(
+    /(?:^|\/)(entity|concept|topic)\/([^/\s"']+)/,
+  );
   if (simpleMatch) {
     return {
       pageType: simpleMatch[1] as WikiPageType,

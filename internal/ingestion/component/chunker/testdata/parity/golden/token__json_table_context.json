@@ -1,0 +1,13 @@
+{
+ "case_id": "token__json_table_context",
+ "chunks": [
+  {
+   "doc_type_kwd": "table",
+   "text": "A table caption."
+  },
+  {
+   "doc_type_kwd": "text",
+   "text": "The surrounding paragraph that gives the table its context and should stay near it."
+  }
+ ]
+}

@@ -250,7 +250,7 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 		if body["response_format"] != "wav" {
 			t.Errorf("response_format=%v, want wav", body["response_format"])
 		}
-		if body["speed"] != float64(1.25) {
+		if body["speed"] != 1.25 {
 			t.Errorf("speed=%v, want 1.25", body["speed"])
 		}
 

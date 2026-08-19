@@ -64,6 +64,27 @@ func TestNewEngine(t *testing.T) {
 	}
 }
 
+func TestEngine_TaskConstructionPreservesNodeRetryPolicy(t *testing.T) {
+	policy := &types.RetryPolicy{MaxAttempts: 1}
+	sg := graph.NewStateGraph(map[string]any{"value": ""})
+	node := sg.AddNodeWithOptions("work", func(_ context.Context, state any) (any, error) {
+		return state, nil
+	}, types.NodeOptions{RetryPolicy: policy})
+	engine := NewEngine(sg)
+
+	tests := map[string]*Task{
+		"execution":  engine.createTask(node, nil, nil, nil),
+		"inspection": engine.createTaskInfo(node, nil, nil, nil),
+	}
+	for name, task := range tests {
+		t.Run(name, func(t *testing.T) {
+			if task.RetryPolicy != policy {
+				t.Fatalf("RetryPolicy = %p, want %p", task.RetryPolicy, policy)
+			}
+		})
+	}
+}
+
 func TestEngine_RunSync(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))

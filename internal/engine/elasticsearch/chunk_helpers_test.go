@@ -1,7 +1,7 @@
 package elasticsearch
 
 import (
-	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -61,14 +61,130 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
-
+	ctx := t.Context()
 	engine := &Engine{client: client}
-	if err = engine.updateSingleMemoryMessage(context.Background(), "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
+	if err = engine.updateSingleMemoryMessage(ctx, "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
 		t.Fatalf("updateSingleMemoryMessage: %v", err)
 	}
 	if gotRefresh != "wait_for" {
 		t.Fatalf("refresh=%q, want wait_for", gotRefresh)
 	}
+}
+
+func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
+	var deleteQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodPost:
+			if r.URL.Path != "/ragflow_tenant/_delete_by_query" {
+				t.Errorf("path=%s, want /ragflow_tenant/_delete_by_query", r.URL.Path)
+				http.Error(w, "unexpected request path", http.StatusNotFound)
+				return
+			}
+			if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
+				t.Errorf("decode delete query: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"deleted":3}`))
+		default:
+			t.Errorf("method=%s", r.Method)
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+	ctx := t.Context()
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	deleted, err := engine.DeleteChunks(ctx, map[string]interface{}{
+		"kb_id":       "kb-1",
+		"compile_kwd": []string{"wiki_entity", "wiki_relation"},
+	}, "ragflow_tenant", "kb-1")
+	if err != nil {
+		t.Fatalf("DeleteChunks: %v", err)
+	}
+	if deleted != 3 {
+		t.Fatalf("deleted=%d, want 3", deleted)
+	}
+
+	query, ok := deleteQuery["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("delete query missing query: %#v", deleteQuery)
+	}
+	boolQuery, ok := query["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("delete query missing bool: %#v", query)
+	}
+	must, ok := boolQuery["must"].([]interface{})
+	if !ok || len(must) != 1 {
+		t.Fatalf("delete query must=%#v, want one terms clause", boolQuery["must"])
+	}
+	terms := must[0].(map[string]interface{})["terms"].(map[string]interface{})
+	assertEqual(t, terms["compile_kwd"], []interface{}{"wiki_entity", "wiki_relation"})
+}
+
+// TestDeleteChunksIDStringSlice guards against the id filter being dropped when
+// the caller passes a typed []string. Without a dedicated []string branch in
+// the id handling, the generic loop skips the "id" key and DeleteChunks would
+// build a match_all query and delete every document in the index.
+func TestDeleteChunksIDStringSlice(t *testing.T) {
+	var deleteQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodPost:
+			if r.URL.Path != "/ragflow_tenant/_delete_by_query" {
+				t.Errorf("path=%s, want /ragflow_tenant/_delete_by_query", r.URL.Path)
+				http.Error(w, "unexpected request path", http.StatusNotFound)
+				return
+			}
+			if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
+				t.Errorf("decode delete query: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"deleted":2}`))
+		default:
+			t.Errorf("method=%s", r.Method)
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+	ctx := t.Context()
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	if _, err = engine.DeleteChunks(ctx, map[string]interface{}{
+		"id": []string{"doc-a", "doc-b"},
+	}, "ragflow_tenant", "kb-1"); err != nil {
+		t.Fatalf("DeleteChunks: %v", err)
+	}
+
+	query, ok := deleteQuery["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("delete query missing query: %#v", deleteQuery)
+	}
+	boolQuery, ok := query["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("delete query missing bool: %#v", query)
+	}
+	must, ok := boolQuery["must"].([]interface{})
+	if !ok || len(must) != 1 {
+		t.Fatalf("delete query must=%#v, want one id terms clause (match_all would be a bug)", boolQuery["must"])
+	}
+	terms, ok := must[0].(map[string]interface{})["terms"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("must[0] missing terms clause: %#v", must[0])
+	}
+	assertEqual(t, terms["id"], []interface{}{"doc-a", "doc-b"})
 }
 
 func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
@@ -122,12 +238,13 @@ func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
 	if _, ok := got["missing-id.md"]; ok {
 		t.Fatalf("chunk without id should be skipped: %#v", got)
 	}
-	if fallbackMap, ok := got["fallback-chunk"]; !ok {
+	fallbackMap, ok := got["fallback-chunk"]
+	if !ok {
 		t.Fatalf("GetFields keys=%v, want fallback-chunk", got)
-	} else {
-		assertEqual(t, fallbackMap["id"], "fallback-chunk")
-		assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 	}
+
+	assertEqual(t, fallbackMap["id"], "fallback-chunk")
+	assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 }
 
 func TestElasticsearchGetAggregationSplitsCountsAndSorts(t *testing.T) {

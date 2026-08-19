@@ -818,6 +818,16 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 					"terms": map[string]interface{}{"id": ids},
 				})
 			}
+		case []string:
+			// A typed []string must be handled here; the generic loop below
+			// skips the "id" key, so without this branch a caller passing
+			// map[string]interface{}{"id": []string{...}} would build a query
+			// with no id filter and DeleteChunks could match every document.
+			if len(v) > 0 {
+				mustClauses = append(mustClauses, map[string]interface{}{
+					"terms": map[string]interface{}{"id": v},
+				})
+			}
 		case string:
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{"id": v},
@@ -856,6 +866,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 				mustClauses = append(mustClauses, map[string]interface{}{
 					"terms": map[string]interface{}{k: listVal},
 				})
+			} else if listVal, ok := v.([]string); ok {
+				mustClauses = append(mustClauses, map[string]interface{}{
+					"terms": map[string]interface{}{k: listVal},
+				})
 			} else if _, ok := v.(string); ok {
 				mustClauses = append(mustClauses, map[string]interface{}{
 					"term": map[string]interface{}{k: v},
@@ -871,6 +885,9 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Build the query
 	var qry map[string]interface{}
 	if len(filterClauses) == 0 && len(mustClauses) == 0 && len(mustNotClauses) == 0 {
+		if len(condition) > 0 {
+			return 0, fmt.Errorf("ES delete aborted: non-empty condition yielded match_all query on index %s", fullIndexName)
+		}
 		qry = map[string]interface{}{"match_all": map[string]interface{}{}}
 	} else {
 		boolMap := map[string]interface{}{}
@@ -1275,8 +1292,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		allResults = sortByScore(allResults, limit)
 	}
 
-	common.Info("ES Search completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
-
 	return &types.SearchResult{
 		Chunks: allResults,
 		Total:  totalHits,
@@ -1664,6 +1679,7 @@ func memoryMessageStatusBool(value interface{}) bool {
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
+	var mustNotClauses []interface{}
 	var filterClauses []interface{}
 	var shouldClauses []interface{}
 
@@ -1738,6 +1754,14 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			}
 			continue
 		}
+		if k == "must_not" {
+			if condition, ok := v.(map[string]interface{}); ok {
+				if field, ok := condition["exists"].(string); ok && field != "" {
+					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
+				}
+			}
+			continue
+		}
 		if k == "id" {
 			if v == nil || v == "" {
 				continue
@@ -1802,6 +1826,9 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	boolQuery := make(map[string]interface{})
 	if len(mustClauses) > 0 {
 		boolQuery["must"] = mustClauses
+	}
+	if len(mustNotClauses) > 0 {
+		boolQuery["must_not"] = mustNotClauses
 	}
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
@@ -2136,7 +2163,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
 				separator = "###"
 			}
-			for _, tag := range strings.Split(valueStr, separator) {
+			for tag := range strings.SplitSeq(valueStr, separator) {
 				countElasticsearchAggregationTag(tagCounts, tag)
 			}
 			continue

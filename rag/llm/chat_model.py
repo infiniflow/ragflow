@@ -24,10 +24,10 @@ from abc import ABC
 from copy import deepcopy
 from urllib.parse import urljoin
 
+import aiohttp
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
-import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
@@ -37,6 +37,7 @@ from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -151,9 +152,10 @@ def _apply_model_family_policies(
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         _pop_thinking_controls()
-        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # -preview variants (e.g. qwen3.8-max-preview) and the flagship
+        # reasoning model qwen3.8-2.4t-a95b only accept
         # enable_thinking=True; the API rejects any other value.
-        if "-preview" in model_name_lower:
+        if "-preview" in model_name_lower or "2.4t-a95b" in model_name_lower:
             enable_thinking = True
         else:
             enable_thinking = thinking_type == "enabled" if thinking_type else False
@@ -169,7 +171,12 @@ def _apply_model_family_policies(
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
-        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+        if provider == SupportedLiteLLMProvider.DeepSeek:
+            _pop_thinking_controls()
+            sanitized_gen_conf.pop("reasoning_effort", None)
+            sanitized_kwargs.pop("reasoning_effort", None)
+            _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type or "disabled"}})
+        elif provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
@@ -994,9 +1001,9 @@ class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -1008,7 +1015,7 @@ class MistralChat(Base):
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
-        response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        response = self.client.chat.complete(model=self.model_name, messages=history, **gen_conf)
         if not response.choices:
             raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
@@ -1020,6 +1027,8 @@ class MistralChat(Base):
         return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        from mistralai.client.errors import MistralError
+
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1027,8 +1036,9 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
-            for resp in response:
+            response = self.client.chat.stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
+            for event in response:
+                resp = event.data
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
                 ans = resp.choices[0].delta.content
@@ -1040,7 +1050,7 @@ class MistralChat(Base):
                         ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
-        except openai.APIError as e:
+        except MistralError as e:
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
@@ -1065,6 +1075,137 @@ class OpenAI_APIChat(Base):
             raise ValueError("url cannot be None")
         model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
+
+
+class MWSChat(Base):
+    """MWS Chat Completions adapter with a documentation-only request body."""
+
+    _FACTORY_NAME = "MWS"
+    _ROLES = {"system", "user", "assistant"}
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        """Initialize chat access for an MWS project and model deployment."""
+        token = require_mws_token(key)
+        self.chat_url = mws_api_url(base_url, "openai/v1/chat/completions")
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        }
+        super().__init__(
+            token,
+            model_name.split("___")[0],
+            mws_api_url(base_url, "openai/v1"),
+            **kwargs,
+        )
+
+    def _clean_conf(self, gen_conf):
+        """Keep only generation parameters documented by the MWS API."""
+        gen_conf = gen_conf or {}
+        cleaned = {}
+        if gen_conf.get("temperature") is not None:
+            cleaned["temperature"] = gen_conf["temperature"]
+        max_tokens = gen_conf.get("max_completion_tokens")
+        if max_tokens is None:
+            max_tokens = gen_conf.get("max_tokens")
+        if max_tokens is not None:
+            cleaned["max_completion_tokens"] = max_tokens
+        return cleaned
+
+    def _request_body(self, history, gen_conf, *, stream):
+        """Build a strict MWS chat request from RAGFlow messages and options."""
+        messages = []
+        for message in history:
+            role = message.get("role") if isinstance(message, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if role not in self._ROLES or not isinstance(content, str):
+                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
+            messages.append({"role": role, "content": content})
+        if not messages:
+            raise ValueError("MWS chat messages are required")
+
+        body = {"model": self.model_name, "messages": messages}
+        body.update(self._clean_conf(gen_conf))
+        if stream:
+            body["stream"] = True
+            body["stream_options"] = {"include_usage": True}
+        return body
+
+    async def _post_json(self, body):
+        """Send a non-streaming MWS chat request and decode its JSON response."""
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+                return await response.json()
+
+    async def _async_chat(self, history, gen_conf, **kwargs):
+        """Return one complete MWS chat answer together with its token usage."""
+        payload = await self._post_json(self._request_body(history, gen_conf, stream=False))
+        self.last_usage = usage_from_response(payload)
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("MWS chat response does not contain choices")
+        choice = choices[0]
+        message = choice.get("message") if isinstance(choice, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            raise ValueError("MWS chat response does not contain message content")
+        answer = content.strip()
+        if choice.get("finish_reason") == "length":
+            answer = self._length_stop(answer)
+        return answer, total_token_count_from_response(payload)
+
+    async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        """Yield MWS SSE content chunks and attach usage to the final chunk."""
+        body = self._request_body(history, gen_conf, stream=True)
+        timeout = aiohttp.ClientTimeout(total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600)))
+        pending_content = None
+        estimated_tokens = 0
+        reported_tokens = 0
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                self.chat_url,
+                headers=self.headers,
+                json=body,
+            ) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"MWS chat request failed with status {response.status}: {await response.text()}")
+
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    event = json.loads(data)
+                    usage = usage_from_response(event)
+                    if usage["total_tokens"]:
+                        self.last_usage = usage
+                        reported_tokens = usage["total_tokens"]
+
+                    choices = event.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") if isinstance(choice, dict) else None
+                    content = delta.get("content") if isinstance(delta, dict) else None
+                    if not isinstance(content, str) or not content:
+                        continue
+                    if choice.get("finish_reason") == "length":
+                        content = self._length_stop(content)
+                    if pending_content is not None:
+                        yield pending_content, 0
+                    pending_content = content
+                    estimated_tokens += num_tokens_from_string(content)
+
+        yield pending_content or "", reported_tokens or estimated_tokens
 
 
 class Xiaomi(Base):
@@ -1583,6 +1724,53 @@ class GreenPTChat(Base):
         super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
 
 
+# MiniMax models sometimes emit their bracket-delimited control/boundary tokens
+# into `content` instead of as structured control — e.g. "]<]minimax[>[" — most
+# often on tool-calling turns. The token is streamed split across many deltas,
+# so it can't be removed per-delta; it must be filtered over a window that spans
+# chunk boundaries. This pattern only matches the vendor name when it is wrapped
+# in bracket noise on BOTH sides, so ordinary prose that mentions "MiniMax" is
+# left untouched. Extend the alternation as further control tokens are observed.
+_MINIMAX_CONTROL_TOKEN_RE = re.compile(r"[\[\]<>]+\s*minimax\s*[\[\]<>]+", re.IGNORECASE)
+
+
+class _StreamSanitizer:
+    """Strip a regex from a token stream even when matches span chunk boundaries.
+
+    A control token is bracket+letter characters, and it can arrive split across
+    many deltas, so we hold back the trailing run of token-ish characters (which
+    might still be forming a match) and only ``sub`` + emit the part before it.
+    Applying ``sub`` to a partial trailing run would fire prematurely and leak the
+    unmatched remainder — hence the hold. ``flush()`` sanitizes and returns the
+    remainder at end of stream. ``keep`` caps how long a run is buffered so a very
+    long separator-less word can't stall the stream forever.
+    """
+
+    _TOKENISH = re.compile(r"[\[\]<>A-Za-z]*$")
+
+    def __init__(self, pattern: re.Pattern, keep: int = 64) -> None:
+        self._pat = pattern
+        self._keep = keep
+        self._buf = ""
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return ""
+        self._buf += text
+        match = self._TOKENISH.search(self._buf)
+        hold_start = match.start() if match else len(self._buf)
+        if len(self._buf) - hold_start > self._keep:
+            hold_start = len(self._buf) - self._keep
+        emit = self._pat.sub("", self._buf[:hold_start])
+        self._buf = self._buf[hold_start:]
+        return emit
+
+    def flush(self) -> str:
+        out = self._pat.sub("", self._buf)
+        self._buf = ""
+        return out
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1721,6 +1909,18 @@ class LiteLLMBase(ABC):
 
     def _need_reasoning_content_back(self) -> bool:
         return self.provider == SupportedLiteLLMProvider.DeepSeek
+
+    def _content_stream_sanitizer(self) -> "_StreamSanitizer | None":
+        """A per-stream filter for providers whose control tokens leak into content."""
+        if self.provider == SupportedLiteLLMProvider.MiniMax:
+            return _StreamSanitizer(_MINIMAX_CONTROL_TOKEN_RE)
+        return None
+
+    def _sanitize_answer(self, text: str) -> str:
+        """Strip provider control-token noise from a fully-assembled answer."""
+        if text and self.provider == SupportedLiteLLMProvider.MiniMax:
+            return _MINIMAX_CONTROL_TOKEN_RE.sub("", text)
+        return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1938,7 +2138,7 @@ class LiteLLMBase(ABC):
                 content = json.dumps(result, ensure_ascii=False)
             else:
                 content = str(result)
-            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content.replace("</think>", "") + ("</think>" if content.find("<think>") >= 0 else "")})
         return hist
 
     def bind_tools(self, toolcall_session=None, tools=None):
@@ -2021,7 +2221,7 @@ class LiteLLMBase(ABC):
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
-                        return ans, tk_count
+                        return self._sanitize_answer(ans), tk_count
 
                     async def _exec_tool(tc):
                         name = tc.function.name
@@ -2060,7 +2260,7 @@ class LiteLLMBase(ABC):
                 agg_usage["total_tokens"] += int(_fb.get("total_tokens", 0) or token_count)
                 tk_count = agg_usage["total_tokens"]
                 self.last_usage = dict(agg_usage)
-                return ans, tk_count
+                return self._sanitize_answer(ans), tk_count
 
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
@@ -2115,6 +2315,9 @@ class LiteLLMBase(ABC):
                     answer = ""
                     round_usage = None
                     round_estimate = 0
+                    # Per-round filter for providers (MiniMax) whose control tokens
+                    # leak into content split across deltas; None for others.
+                    _sanitizer = self._content_stream_sanitizer()
 
                     async for resp in response:
                         # Usage-only final chunk may carry no choices — read it first.
@@ -2154,7 +2357,12 @@ class LiteLLMBase(ABC):
                         else:
                             reasoning_start = False
                             answer += delta.content
-                            yield delta.content
+                            if _sanitizer is not None:
+                                emitted = _sanitizer.feed(delta.content)
+                                if emitted:
+                                    yield emitted
+                            else:
+                                yield delta.content
 
                         if not _u["total_tokens"]:
                             round_estimate += num_tokens_from_string(delta.content)
@@ -2162,6 +2370,12 @@ class LiteLLMBase(ABC):
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
                             yield self._length_stop("")
+
+                    # Flush any held-back (sanitized) answer content for this round.
+                    if _sanitizer is not None:
+                        tail = _sanitizer.flush()
+                        if tail:
+                            yield tail
 
                     # Commit this round's tokens to the running aggregate.
                     _commit_round(round_usage, round_estimate)

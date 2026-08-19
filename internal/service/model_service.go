@@ -396,12 +396,14 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	var result []map[string]interface{}
 	for _, model := range modelList {
 		result = append(result, map[string]interface{}{
-			"name":          model.Name,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
-			"max_tokens":    model.MaxTokens,
-			"model_types":   model.ModelTypes,
-			"thinking":      model.Thinking,
+			"name":           model.Name,
+			"max_dimension":  model.MaxDimension,
+			"max_batch_size": model.MaxBatchSize,
+			"dimensions":     model.Dimensions,
+			"content_length": model.ContentLength,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"thinking":       model.Thinking,
 		})
 	}
 	return result, nil
@@ -450,8 +452,8 @@ func (m *ModelProviderService) reconcileNvidiaInstanceModels(
 
 		for _, remote := range normalized {
 			maxTokens := 8192
-			if remote.MaxTokens != nil && *remote.MaxTokens > 0 {
-				maxTokens = *remote.MaxTokens
+			if remote.MaxOutput != nil && *remote.MaxOutput > 0 {
+				maxTokens = *remote.MaxOutput
 			}
 			modelType := int(entity.ModelTypeFromStrings(remote.ModelTypes))
 
@@ -513,6 +515,9 @@ func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.
 	extra["max_tokens"] = maxTokens
 	if model.MaxDimension != nil {
 		extra["max_dimension"] = *model.MaxDimension
+	}
+	if model.MaxBatchSize != nil {
+		extra["max_batch_size"] = *model.MaxBatchSize
 	}
 	if len(model.Dimensions) > 0 {
 		extra["dimensions"] = model.Dimensions
@@ -636,8 +641,8 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 					ModelName:  llm.Name,
 					ModelTypes: llm.ModelTypes,
 					MaxTokens: func() int {
-						if llm.MaxTokens != nil {
-							return *llm.MaxTokens
+						if llm.MaxOutput != nil {
+							return *llm.MaxOutput
 						}
 						return 8192
 					}(),
@@ -1139,8 +1144,11 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					modelTypes = modelModule.InferModelTypes(modelName)
 				}
 				modelsToVerify = append(modelsToVerify, &modelModule.Model{
-					Name:       modelName,
-					ModelTypes: modelTypes,
+					Name:         modelName,
+					ModelTypes:   modelTypes,
+					MaxDimension: rm.MaxDimension,
+					MaxBatchSize: rm.MaxBatchSize,
+					Dimensions:   append([]int(nil), rm.Dimensions...),
 				})
 			}
 		} else {
@@ -1177,9 +1185,25 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
 				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
 			case "embedding":
-				_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
+				// Provider discovery can return models without catalog limits. Apply
+				// the strict validator whenever the model has the metadata required
+				// to construct a valid verification request.
+				if model.MaxDimension != nil && model.MaxBatchSize != nil {
+					requestedDimension := *model.MaxDimension
+					if len(model.Dimensions) > 0 {
+						requestedDimension = model.Dimensions[0]
+					}
+					err = validateEmbeddingModel(model, requestedDimension, 1)
+				}
+				if err == nil {
+					_, err = driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: []string{"test"}}, apiConfig, nil, nil)
+				}
 			case "rerank":
-				_, err = driver.Rerank(ctx, &modelName, "test", []string{"test"}, apiConfig, &modelModule.RerankConfig{}, nil)
+				rerankRequest := modelModule.RerankRequest{
+					Query:     "test",
+					Documents: []string{"test"},
+				}
+				_, err = driver.Rerank(ctx, &modelName, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
 				_, err = driver.AudioSpeech(ctx, &modelName, &content, apiConfig, nil, nil)
@@ -1214,7 +1238,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(passedTypes) == 0 {
-		return modelVerifyResult, fmt.Errorf("all model verification attempts failed: %w", errors.Join(errs...))
+		return modelVerifyResult, fmt.Errorf("model verification attempts failed: %w", errors.Join(errs...))
 	}
 
 	return modelVerifyResult, nil
@@ -1818,14 +1842,14 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 // Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
 var (
 	mineruEnvKeys = []string{
-		common.EnvMineruApiServer,
+		common.EnvMineruAPIServer,
 		"MINERU_OUTPUT_DIR",
 		common.EnvMineruBackend,
 		"MINERU_SERVER_URL",
 		"MINERU_DELETE_OUTPUT",
 	}
 	mineruDefaultConfig = map[string]interface{}{
-		common.EnvMineruApiServer: "",
+		common.EnvMineruAPIServer: "",
 		"MINERU_OUTPUT_DIR":       "",
 		common.EnvMineruBackend:   "pipeline",
 		"MINERU_SERVER_URL":       "",
@@ -1833,21 +1857,21 @@ var (
 	}
 	paddleOCREnvKeys = []string{
 		common.EnvPaddleOCRBaseUrl,
-		common.EnvPaddleOCRApiURL,
+		common.EnvPaddleOCRAPIURL,
 		common.EnvPaddleOCRAccessToken,
 		common.EnvPaddleOCRAlgorithm,
 	}
 	paddleOCRDefaultConfig = map[string]interface{}{
 		common.EnvPaddleOCRBaseUrl:     "",
-		common.EnvPaddleOCRApiURL:      "",
+		common.EnvPaddleOCRAPIURL:      "",
 		common.EnvPaddleOCRAccessToken: nil,
 		common.EnvPaddleOCRAlgorithm:   "PaddleOCR-VL",
 	}
 	openDataLoaderEnvKeys = []string{
-		common.EnvOpenDataLoaderApiServer,
+		common.EnvOpenDataLoaderAPIServer,
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
-		common.EnvOpenDataLoaderApiServer: "",
+		common.EnvOpenDataLoaderAPIServer: "",
 	}
 )
 
@@ -2508,6 +2532,7 @@ type tenantModelExtra struct {
 	MaxTokens    *int     `json:"max_tokens"`
 	ModelTypes   []string `json:"model_types"`
 	MaxDimension *int     `json:"max_dimension"`
+	MaxBatchSize *int     `json:"max_batch_size"`
 	Dimensions   []int    `json:"dimensions"`
 	Thinking     *bool    `json:"thinking"`
 }
@@ -2538,7 +2563,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
-		model.MaxTokens = extra.MaxTokens
+		model.MaxOutput = extra.MaxTokens
 	}
 	if len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
@@ -2549,6 +2574,9 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
 		model.MaxDimension = extra.MaxDimension
+	}
+	if extra.MaxBatchSize != nil && *extra.MaxBatchSize > 0 {
+		model.MaxBatchSize = extra.MaxBatchSize
 	}
 	if len(extra.Dimensions) > 0 {
 		model.Dimensions = append([]int(nil), extra.Dimensions...)
@@ -2859,28 +2887,48 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(ctx context.Context, 
 	return common.CodeSuccess, nil
 }
 
-func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
-	if requested <= 0 || model == nil {
-		return nil
+func validateEmbeddingModel(model *modelModule.Model, requestedDimension, requestedBatchSize int) error {
+	if model == nil {
+		return fmt.Errorf("embedding model is nil")
+	}
+
+	if requestedDimension <= 0 {
+		return fmt.Errorf("input dimension <= 0")
+	}
+
+	if requestedBatchSize <= 0 {
+		return fmt.Errorf("input batch size <= 0")
+	}
+
+	if model.MaxDimension == nil {
+		return fmt.Errorf("input embedding max dimension is nil, %s", model.Name)
+	}
+
+	if model.MaxBatchSize == nil {
+		return fmt.Errorf("input embedding max batch size is nil, %s", model.Name)
+	}
+
+	if *model.MaxBatchSize < requestedBatchSize {
+		return fmt.Errorf("input embedding max batch size is more than limitation, %s", model.Name)
 	}
 
 	if len(model.Dimensions) > 0 {
 		for _, dim := range model.Dimensions {
-			if dim == requested {
+			if dim == requestedDimension {
 				return nil
 			}
 		}
 		return fmt.Errorf(
 			"dimension %d is not supported by model %s, supported dimensions: %v",
-			requested,
+			requestedDimension,
 			model.Name,
 			model.Dimensions,
 		)
 	}
-	if model.MaxDimension != nil && requested > *model.MaxDimension {
+	if model.MaxDimension != nil && requestedDimension > *model.MaxDimension {
 		return fmt.Errorf(
 			"dimension %d is not supported by model %s, max dimension: %d",
-			requested,
+			requestedDimension,
 			model.Name,
 			*model.MaxDimension,
 		)
@@ -2939,12 +2987,12 @@ func (m *ModelProviderService) EmbedText(ctx context.Context, providerName, inst
 		}
 	}
 
-	if err = validateEmbeddingDimension(info.ModelInfo, modelConfig.Dimension); err != nil {
+	if err = validateEmbeddingModel(info.ModelInfo, modelConfig.Dimension, len(texts)); err != nil {
 		return nil, common.CodeBadRequest, err
 	}
 
 	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(ctx, &resolvedModelName, texts, info.APIConfig, modelConfig, nil)
+	response, err = modelDriver.Embed(ctx, &resolvedModelName, modelModule.EmbedRequest{Texts: texts}, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3005,8 +3053,13 @@ func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName,
 		}
 	}
 
+	rerankRequest := modelModule.RerankRequest{
+		Query:     query,
+		Documents: documents,
+	}
+
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(ctx, &resolvedModelName, query, documents, info.APIConfig, modelConfig, nil)
+	response, err = modelDriver.Rerank(ctx, &resolvedModelName, rerankRequest, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3407,6 +3460,24 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, 
 	return m.ResolveModelConfig(ctx, tenantID, modelType, modelName)
 }
 
+// GetTenantDefaultModelRef returns the composite model reference (the
+// "<model>@<instance>@<provider>" form stored on the tenant, e.g.
+// "MiniMax-M3@mm@MiniMax") that callers pass on to model config resolution.
+// Unlike GetTenantDefaultModelByType — which resolves the driver/API config and
+// returns a bare model name — this returns the reference verbatim so it can be
+// used as an llmID for a later ResolveModelConfig/Chat round-trip.
+func (m *ModelProviderService) GetTenantDefaultModelRef(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
+	}
+	modelName, _ := defaultModelRefs(tenant, modelType)
+	if strings.TrimSpace(modelName) == "" {
+		return "", fmt.Errorf("no default %s model is set", modelType)
+	}
+	return modelName, nil
+}
+
 // GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
 func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	common.Debug("GetModelConfigByID",
@@ -3483,8 +3554,8 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.MaxTokens != nil {
-			maxTokens = *mi.MaxTokens
+		if mi.MaxOutput != nil {
+			maxTokens = *mi.MaxOutput
 		}
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
@@ -3530,6 +3601,24 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 		return nil, "", nil, 0, err
 	}
 	return m.GetModelConfigFromProviderInstance(ctx, tenantID, modelType, modelRef)
+}
+
+// ResolveModelContextLength returns the chat model's effective context window
+// (content_length) in tokens, or 0 when unknown. content_length is the total
+// context window and max_output is the generation cap; the
+// knowledge_compiler prompt-budget logic needs the context window, not the
+// output cap. modelRef accepts either a tenant model UUID or a
+// "model@instance@provider" composite name.
+//
+// The resolution is delegated to dao.ResolveModelContentLength so every
+// consumer shares one path: a tenant-configured "max_tokens" override in the
+// tenant_model.extra wins, otherwise the provider catalog's content_length is
+// used (D22/D23).
+func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
+	if strings.TrimSpace(modelRef) == "" {
+		return 0, fmt.Errorf("model ref is required")
+	}
+	return dao.ResolveModelContentLength(ctx, dao.DB, tenantID, modelRef, "", ""), nil
 }
 
 func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
@@ -3703,10 +3792,6 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeBadRequest, errors.New("model_name is required")
 	}
 
-	if len(request.ModelTypes) == 0 {
-		return common.CodeBadRequest, errors.New("model_type is required")
-	}
-
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
@@ -3741,18 +3826,15 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeServerError, err
 	}
 
-	// Compute model type bitmask.
+	// Compute model type bitmask. Matches Python's calculate_model_type:
+	// empty and unrecognized type names are ignored, not rejected.
 	combinedType := entity.ModelType(0)
 	for _, rawType := range request.ModelTypes {
 		mt := strings.TrimSpace(rawType)
 		if mt == "" {
 			continue
 		}
-		t := entity.ModelTypeFromString(mt)
-		if t == 0 {
-			return common.CodeBadRequest, fmt.Errorf("invalid model type: %s", mt)
-		}
-		combinedType |= t
+		combinedType |= entity.ModelTypeFromString(mt)
 	}
 
 	maxTokens := request.MaxTokens
@@ -3886,10 +3968,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 			maxTokens := 0
 			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.MaxTokens == nil {
+				if mi.MaxOutput == nil {
 					maxTokens = 0
 				} else {
-					maxTokens = *mi.MaxTokens
+					maxTokens = *mi.MaxOutput
 				}
 			}
 			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
@@ -3948,10 +4030,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.MaxTokens == nil {
+			if mi.MaxOutput == nil {
 				maxTokens = 0
 			} else {
-				maxTokens = *mi.MaxTokens
+				maxTokens = *mi.MaxOutput
 			}
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
@@ -4006,8 +4088,8 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := 0
-	if llmInfo.MaxTokens != nil {
-		maxTokens = *llmInfo.MaxTokens
+	if llmInfo.MaxOutput != nil {
+		maxTokens = *llmInfo.MaxOutput
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
@@ -4073,10 +4155,10 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	maxTokens := 0
 	if err == nil && modelInfo != nil {
-		if modelInfo.MaxTokens == nil {
+		if modelInfo.MaxOutput == nil {
 			maxTokens = 0
 		} else {
-			maxTokens = *modelInfo.MaxTokens
+			maxTokens = *modelInfo.MaxOutput
 		}
 	}
 

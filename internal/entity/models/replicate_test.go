@@ -105,8 +105,8 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 		if input["system_prompt"] != "be helpful" {
 			t.Errorf("system_prompt=%v", input["system_prompt"])
 		}
-		if input["max_new_tokens"] != float64(128) {
-			t.Errorf("max_new_tokens=%v", input["max_new_tokens"])
+		if _, ok := input["max_new_tokens"]; ok {
+			t.Errorf("max_new_tokens should be omitted, got %v", input["max_new_tokens"])
 		}
 		// Stop is deliberately filtered out because Replicate model
 		// inputs are model-specific and upstream support is undefined.
@@ -326,7 +326,7 @@ func TestReplicateUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	// Rerank IS implemented; with empty documents it short-circuits (no error).
 	// Pass non-empty docs + nil modelName to trigger model-name validation.
-	if _, err := m.Rerank(ctx, nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	// Balance IS a stub → "no such method"

@@ -173,7 +173,7 @@ func NewInfinityClient(cfg config.InfinityConfig) (*infinityClient, error) {
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Failed to connect to Infinity after 120s: %w", err)
+		return nil, fmt.Errorf("failed to connect to Infinity after 120s: %w", err)
 	}
 
 	client := &infinityClient{
@@ -201,12 +201,14 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 
 		conn, release, err := c.checkoutConn(ctx, "WaitForHealthy")
 		if err != nil {
+			common.Warn("Failed to get Infinity connection", zap.Error(err))
 			time.Sleep(5 * time.Second)
 			continue
 		}
 		res, err := conn.ShowCurrentNode()
 		release()
 		if err != nil {
+			common.Warn("Failed to check Infinity health", zap.Error(err))
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -243,12 +245,12 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 		}
 		time.Sleep(5 * time.Second)
 	}
-	return fmt.Errorf("Infinity not healthy after %v", timeout)
+	return fmt.Errorf("infinity not healthy after %v", timeout)
 }
 
 func (c *infinityClient) checkoutConn(ctx context.Context, caller string) (*infinity.InfinityConnection, func(), error) {
 	if c == nil || c.pool == nil {
-		return nil, nil, fmt.Errorf("Infinity client not initialized")
+		return nil, nil, fmt.Errorf("infinity client not initialized")
 	}
 	ctx, cancel := ensureDeadline(ctx, defaultOperationTimeout)
 	conn, err := c.pool.GetContext(ctx)
@@ -340,7 +342,7 @@ type Engine struct {
 }
 
 // NewEngine creates an Infinity engine
-func NewEngine(infinityConfig config.InfinityConfig) (*Engine, error) {
+func NewEngine(ctx context.Context, infinityConfig config.InfinityConfig) (*Engine, error) {
 
 	client, err := NewInfinityClient(infinityConfig)
 	if err != nil {
@@ -364,12 +366,12 @@ func NewEngine(infinityConfig config.InfinityConfig) (*Engine, error) {
 	}
 
 	// Wait for Infinity to be healthy
-	if err = client.WaitForHealthy(context.Background(), 120*time.Second); err != nil {
-		return nil, fmt.Errorf("Infinity not healthy: %w", err)
+	if err = client.WaitForHealthy(ctx, 120*time.Second); err != nil {
+		return nil, fmt.Errorf("infinity not healthy: %w", err)
 	}
 
 	// MigrateDB creates the database if it doesn't exist
-	if err = engine.MigrateDB(context.Background()); err != nil {
+	if err = engine.MigrateDB(ctx); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
@@ -389,7 +391,7 @@ func (e *Engine) SupportsPageRank() bool {
 // Ping checks if Infinity is accessible
 func (e *Engine) Ping(ctx context.Context) error {
 	if e.client == nil || e.client.pool == nil {
-		return fmt.Errorf("Infinity client not initialized")
+		return fmt.Errorf("infinity client not initialized")
 	}
 	conn, release, err := e.client.checkoutConn(ctx, "Ping")
 	if err != nil {
@@ -397,7 +399,7 @@ func (e *Engine) Ping(ctx context.Context) error {
 	}
 	defer release()
 	if !conn.IsConnected() {
-		return fmt.Errorf("Infinity not connected")
+		return fmt.Errorf("infinity not connected")
 	}
 	return nil
 }

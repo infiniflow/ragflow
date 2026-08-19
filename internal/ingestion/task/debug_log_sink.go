@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/utility"
 )
 
 // DebugLogTTL is the Redis expiry for a debug-run log. It mirrors the Python
@@ -110,6 +111,11 @@ type DebugLogSink struct {
 	// to the sink via SetResult (the ResultSink capability). It is written onto
 	// the END marker's trace entry in Flush. Empty until SetResult is called.
 	resultDSL json.RawMessage
+	// runOutput is the raw pipeline run output map (output["state"][<id>] is
+	// each component's outputs), handed over together with resultDSL. Flush
+	// uses it to build the END marker's message (the last component's output
+	// JSON) exactly like Python does. Nil until SetResult is called.
+	runOutput map[string]any
 }
 
 // NewDebugLogSink builds a sink that writes to "{canvasID}-{messageID}-logs".
@@ -128,11 +134,11 @@ func NewDebugLogSink(canvasID, messageID string, store DebugLogStore) *DebugLogS
 func (s *DebugLogSink) OnComponentTotal(_ context.Context, _ string, _ int) {}
 
 // SetResult receives the debug-run result DSL (built by BuildDebugResultDSL)
-// and stores it for the END marker. It implements the optional ResultSink
-// capability the executor probes for, so the sink stays decoupled from how the
-// DSL is produced. Safe to call at most once per run; a later call replaces the
-// previous value.
-func (s *DebugLogSink) SetResult(dsl map[string]any) {
+// plus the raw pipeline run output, and stores them for the END marker. It
+// implements the optional ResultSink capability the executor probes for, so
+// the sink stays decoupled from how the DSL is produced. Safe to call at most
+// once per run; a later call replaces the previous value.
+func (s *DebugLogSink) SetResult(dsl map[string]any, output map[string]any) {
 	b, err := json.Marshal(dsl)
 	if err != nil {
 		return
@@ -140,6 +146,7 @@ func (s *DebugLogSink) SetResult(dsl map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resultDSL = b
+	s.runOutput = output
 }
 
 // OnComponentProgress maps one component lifecycle event to a trace line and
@@ -164,7 +171,7 @@ func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.Progre
 		message = "[ERROR] " + message
 	}
 	// Clamp the message so a runaway component cannot blow up the stored entry.
-	message = truncateRunes(message, maxMessageRunes)
+	message = utility.TruncateRunes(message, maxMessageRunes)
 
 	entry := debugTrace{
 		Progress:    progress,
@@ -223,6 +230,13 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 	endMsg := "Debug run completed"
 	if finalErr != nil {
 		endMsg = "[ERROR] " + finalErr.Error()
+	} else if msg := endOutputMessage(entries, s.runOutput); msg != "" {
+		// Mirror Python's END marker message: a JSON dump of the last
+		// component's output (rag/flow/pipeline.py:171). The front-end
+		// "Export JSON" button JSON.parses this message
+		// (use-download-output.ts findEndOutput), so a plain-text sentinel
+		// would leave the button permanently disabled.
+		endMsg = msg
 	}
 	entries = append(entries, debugLogEntry{
 		ComponentID: "END",
@@ -253,17 +267,29 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 	s.store.Set(ctx, key, string(payload), s.ttl)
 }
 
-// truncateRunes returns s truncated to at most max runes, preserving the original
-// bytes when shorter. Mirrors internal/service/agent_sessions.go's truncateRunes.
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
+// endOutputMessage builds the END marker's message for a successful run: the
+// JSON dump of the last executed component's output, mirroring Python's
+// `json.dumps(self.get_component_obj(self.path[-1]).output())`
+// (rag/flow/pipeline.py:171). The last executed component is the sink's final
+// entry (path[-1] always emits its exit progress last). Raw embedding vectors
+// are stripped (deepCopy(out, true)) so the Redis log stays at Python-scale size.
+// Returns "" when no output is available; the caller then keeps the
+// plain-text fallback and the front-end export button stays disabled (empty
+// output, matching Python's isEmpty check).
+func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string {
+	if len(entries) == 0 || len(runOutput) == 0 {
 		return ""
 	}
-	r := []rune(s)
-	if len(r) <= max {
-		return s
+	lastID := entries[len(entries)-1].ComponentID
+	out, ok := lookupComponentOutput(runOutput, lastID).(map[string]any)
+	if !ok || len(out) == 0 {
+		return ""
 	}
-	return string(r[:max])
+	b, err := json.Marshal(deepCopy(out, true))
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // trimToPayloadBudget collapses the middle of the log (keeping the first few

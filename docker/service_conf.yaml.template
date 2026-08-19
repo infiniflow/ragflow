@@ -41,6 +41,12 @@ infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
   db_name: 'default_db'
+serenedb:
+  host: '${SERENEDB_HOST:-serenedb}'
+  port: 7890
+  user: '${SERENEDB_USER:-postgres}'
+  password: '${SERENEDB_PASSWORD:-infini_rag_flow}'
+  db_name: '${SERENEDB_DBNAME:-postgres}'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
   config:
@@ -49,6 +55,13 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+gaussdb:
+  host: '${GAUSSDB_HOST}'
+  port: ${GAUSSDB_PORT}
+  database: '${GAUSSDB_DATABASE:-postgres}'
+  user: '${GAUSSDB_USER}'
+  password: '${GAUSSDB_PASSWORD}'
+  schema: '${GAUSSDB_SCHEMA:-public}'
 seekdb:
   scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
   config:
@@ -81,9 +94,9 @@ otel:
 ingestor:
   mq_type: 'nats'
   max_concurrent_workers: 1
+  compiler_pool_size: 0
 file_syncer:
-  max_concurrent_syncs: 1
-  sync_interval: 3
+  max_concurrent_syncs: 5
 user_default_llm:
   default_models:
     embedding_model:
@@ -97,6 +110,8 @@ user_default_llm:
 #   port: 5432
 #   max_connections: 100
 #   stale_timeout: 30
+# GaussDB metadata DB is configured through GAUSSDB_METADATA_* environment
+# variables and is intentionally not rendered into service_conf.yaml.
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'

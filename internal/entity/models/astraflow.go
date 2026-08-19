@@ -181,12 +181,12 @@ func (a *AstraflowModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 	return err
 }
 
-func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -198,7 +198,7 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []s
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -229,7 +229,7 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []s
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Astraflow embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("astraflow embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsedResponse struct {
@@ -244,7 +244,7 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []s
 	}
 
 	if len(parsedResponse.Data) == 0 {
-		return nil, fmt.Errorf("Astraflow embedding response contains no data: %s", string(body))
+		return nil, fmt.Errorf("astraflow embedding response contains no data: %s", string(body))
 	}
 
 	var embeddings []EmbeddingData
@@ -258,10 +258,12 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []s
 	return embeddings, nil
 }
 
-func (a *AstraflowModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AstraflowModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
@@ -310,7 +312,7 @@ func (a *AstraflowModel) Rerank(ctx context.Context, modelName *string, query st
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Astraflow Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("astraflow Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var rerankResp struct {

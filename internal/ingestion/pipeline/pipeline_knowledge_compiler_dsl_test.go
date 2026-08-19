@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/dao"
 	"testing"
 
 	// Named import so this file can drive the runtime factory directly.
@@ -30,20 +31,22 @@ import (
 	_ "ragflow/internal/ingestion/component/knowledge_compiler"
 
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // installStubResolvers wires in-memory GroupResolver / TemplateResolver stubs so
 // the DSL tests can exercise the template-resolution path without MySQL.
 func installStubResolvers(t *testing.T, groupToTemplates map[string][]string, templates map[string]kc.TemplateInfo) {
 	t.Helper()
-	kc.SetGroupResolver(func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
+	kc.SetGroupResolver(func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
 		var out []string
 		for _, g := range groupIDs {
 			out = append(out, groupToTemplates[g]...)
 		}
 		return out, nil
 	})
-	kc.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (kc.TemplateInfo, error) {
+	kc.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (kc.TemplateInfo, error) {
 		info, ok := templates[templateID]
 		if !ok {
 			return kc.TemplateInfo{}, fmt.Errorf("no stub template %q", templateID)
@@ -92,10 +95,12 @@ func TestKnowledgeCompilerDSL_FixtureDecodesAndBindsParams(t *testing.T) {
 		t.Errorf("fixture unexpectedly sets variant; frontend Compiler DSL omits it")
 	}
 
-	// Authored as a single string group id in the frontend form.
-	gid, ok := params["compilation_template_group_id"].(string)
-	if !ok || gid != "c3aa748c8b2111f191f3047c16ec874f" {
-		t.Fatalf("compilation_template_group_id = %v, want single string id", params["compilation_template_group_id"])
+	// Authored as a single string group id in the frontend form. The shipped
+	// template leaves it empty by design (the user selects the template group at
+	// runtime), so we only assert the DSL shape is a plain string (and that the
+	// node carries no variant).
+	if _, ok := params["compilation_template_group_id"].(string); !ok {
+		t.Fatalf("compilation_template_group_id = %v, want a single string id", params["compilation_template_group_id"])
 	}
 }
 
@@ -107,6 +112,7 @@ func TestKnowledgeCompilerDSL_FixtureDecodesAndBindsParams(t *testing.T) {
 // TemplateResolver seam — without it, resolving the template fails loudly
 // rather than compiling with no template config.
 func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
+	ctx := t.Context()
 	raw, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "compiler.json"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -133,8 +139,11 @@ func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
 		t.Fatal("default runtime factory not installed")
 	}
 
-	// The fixture params (single group id, no variant) construct fine.
-	comp, err := f("KnowledgeCompiler", params)
+	// The fixture params carry no variant and a string group id. The shipped
+	// template leaves the group id empty (selected at runtime), so give it a
+	// concrete id here to verify the DSL constructs once configured.
+	params["compilation_template_group_id"] = "tpl-group"
+	comp, err := f("Compiler", params)
 	if err != nil {
 		t.Fatalf("construct from fixture params: %v", err)
 	}
@@ -144,22 +153,21 @@ func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
 
 	// Without an installed TemplateResolver, the resolution seam fails loud.
 	kc.SetTemplateResolver(nil)
-	if _, err := kc.ResolveTemplate(context.Background(), "tenant", "t1"); err == nil {
+	if _, err = kc.ResolveTemplate(ctx, dao.DB, "tenant", "t1"); err == nil {
 		t.Fatal("ResolveTemplate without resolver: expected error")
 	}
 }
 
 // TestKnowledgeCompilerDSL_RegisteredAndConstructible confirms the Go runtime
-// registers the component under the canonical name "KnowledgeCompiler" and that
-// the runtime factory can build a component instance from a DSL params map that
-// carries either compilation_template_id or compilation_template_group_id (the
-// variant is no longer part of the DSL surface). The frontend label "Compiler"
-// (see the fixture tests) maps to this runtime name at the API/canvas layer,
-// not inside the pipeline DSL decoder.
+// registers the knowledge-compiler component under the unified name "Compiler"
+// (matching the Python side rag/flow/compiler/compiler.py) and that the runtime
+// factory can build a component instance from a DSL params map that carries
+// either compilation_template_id or compilation_template_group_id (the variant
+// is no longer part of the DSL surface).
 func TestKnowledgeCompilerDSL_RegisteredAndConstructible(t *testing.T) {
 	runtime.InstallDefaultRegistryFactory()
-	if _, _, _, ok := runtime.DefaultRegistry.Lookup("KnowledgeCompiler"); !ok {
-		t.Fatal("KnowledgeCompiler not registered in the runtime factory")
+	if _, _, _, ok := runtime.DefaultRegistry.Lookup("Compiler"); !ok {
+		t.Fatal("Compiler not registered in the runtime factory")
 	}
 	f := runtime.DefaultFactory()
 	if f == nil {
@@ -173,7 +181,7 @@ func TestKnowledgeCompilerDSL_RegisteredAndConstructible(t *testing.T) {
 		{"compilation_template_id": "t1", "compilation_template_group_id": "g1"},
 	}
 	for i, params := range cases {
-		comp, err := f("KnowledgeCompiler", params)
+		comp, err := f("Compiler", params)
 		if err != nil {
 			t.Fatalf("case %d construct: %v", i, err)
 		}
@@ -183,7 +191,7 @@ func TestKnowledgeCompilerDSL_RegisteredAndConstructible(t *testing.T) {
 	}
 
 	// Param map with neither id resolves to a parse error.
-	if _, err := f("KnowledgeCompiler", map[string]any{}); err == nil {
+	if _, err := f("Compiler", map[string]any{}); err == nil {
 		t.Fatal("construct with no template spec: expected error")
 	}
 }
@@ -199,6 +207,8 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 		"compilation_template_group_id": "g1",
 		"llm_id":                        "llm-1",
 		"embedding_model":               "emb-1",
+		"tenant_id":                     "tenant-1",
+		"dataset_id":                    "kb-1",
 		"language":                      "Chinese",
 		"extra":                         map[string]any{"prompt": "summarize"},
 	})
@@ -214,6 +224,8 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 	if p.Variant != "" {
 		t.Errorf("Variant should be empty after ParseParam (derived from kind later), got %q", p.Variant)
 	}
+	// TenantID/DatasetID are injected at runtime by the component (not via the
+	// DSL/ParseParam), so they are not asserted here.
 	if p.LLMID != "llm-1" || p.EmbeddingModel != "emb-1" || p.Language != "Chinese" {
 		t.Errorf("scalar fields = %+v", p)
 	}
@@ -229,6 +241,33 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 	}
 	if p.EnableHistoricalDedup {
 		t.Errorf("EnableHistoricalDedup default = true, want false")
+	}
+	if p.Plan != nil {
+		t.Errorf("Plan = %v, want nil when omitted from DSL", *p.Plan)
+	}
+
+	for _, tc := range []struct {
+		name string
+		plan bool
+	}{
+		{name: "mode_a", plan: false},
+		{name: "mode_b", plan: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := kc.ParseParam(map[string]any{
+				"compilation_template_id": "t1",
+				"plan":                    tc.plan,
+			})
+			if err != nil {
+				t.Fatalf("ParseParam: %v", err)
+			}
+			if parsed.Plan == nil || *parsed.Plan != tc.plan {
+				t.Fatalf("Plan = %v, want explicit %t", parsed.Plan, tc.plan)
+			}
+			if parsed.PlanEnabled() != tc.plan {
+				t.Errorf("PlanEnabled() = %t, want %t", parsed.PlanEnabled(), tc.plan)
+			}
+		})
 	}
 }
 
@@ -295,7 +334,9 @@ func TestKnowledgeCompilerDSL_ResolveTemplateSeam(t *testing.T) {
 		"t2": {ID: "t2", Kind: "tree", Config: map[string]any{}},
 	})
 
-	ids, err := kc.ResolveGroupTemplateIDs(context.Background(), "tenant", []string{"g1"})
+	ctx := t.Context()
+
+	ids, err := kc.ResolveGroupTemplateIDs(ctx, dao.DB, "tenant", []string{"g1"})
 	if err != nil {
 		t.Fatalf("ResolveGroupTemplateIDs: %v", err)
 	}
@@ -303,7 +344,7 @@ func TestKnowledgeCompilerDSL_ResolveTemplateSeam(t *testing.T) {
 		t.Fatalf("group resolved to %v, want [t1 t2]", ids)
 	}
 
-	info, err := kc.ResolveTemplate(context.Background(), "tenant", "t1")
+	info, err := kc.ResolveTemplate(ctx, dao.DB, "tenant", "t1")
 	if err != nil {
 		t.Fatalf("ResolveTemplate t1: %v", err)
 	}

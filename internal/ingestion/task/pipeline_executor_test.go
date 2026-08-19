@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
 
 // =============================================================================
@@ -31,7 +32,7 @@ func TestMarkCompiledProductsHidden(t *testing.T) {
 	chunks := []map[string]any{
 		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
 		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A"},
-		{"id": "wiki-1", "compile_kwd": "artifact_page", "content_with_weight": "page X"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page", "content_with_weight": "page X"},
 		{"id": "src-2", "content_with_weight": "another source chunk"},
 	}
 	markCompiledProductsHidden(chunks)
@@ -201,7 +202,7 @@ func TestKB_Doc_Tenant_Accessors(t *testing.T) {
 func TestPipelineExecutor_ProcessChunks_WrapsProcessChunksForPipeline(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
 	chunks := []map[string]any{{"text": "hello world"}}
-	meta, err := ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, svc.taskCtx.Doc.KbID, *svc.taskCtx.Doc.Name, time.Now())
+	meta, err := indexdoc.ProcessChunksForPipeline(chunks, svc.taskCtx.Doc.ID, *svc.taskCtx.Doc.Name, time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -525,9 +526,9 @@ func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 	}
 }
 
-func TestCountDistinctChunkIDs(t *testing.T) {
+func TestCountOriginalChunkIDs(t *testing.T) {
 	// Empty list
-	if n := countDistinctChunkIDs(nil); n != 0 {
+	if n := countOriginalChunkIDs(nil); n != 0 {
 		t.Fatalf("nil chunks: got %d, want 0", n)
 	}
 
@@ -537,7 +538,7 @@ func TestCountDistinctChunkIDs(t *testing.T) {
 		{"id": "b"},
 		{"id": "c"},
 	}
-	if n := countDistinctChunkIDs(chunks); n != 3 {
+	if n := countOriginalChunkIDs(chunks); n != 3 {
 		t.Fatalf("all unique: got %d, want 3", n)
 	}
 
@@ -549,7 +550,7 @@ func TestCountDistinctChunkIDs(t *testing.T) {
 		{"id": "z"},
 		{"id": "y"}, // duplicate of [1]
 	}
-	if n := countDistinctChunkIDs(chunks); n != 3 {
+	if n := countOriginalChunkIDs(chunks); n != 3 {
 		t.Fatalf("with duplicates: got %d, want 3", n)
 	}
 
@@ -559,7 +560,40 @@ func TestCountDistinctChunkIDs(t *testing.T) {
 		{"text": "no id"},
 		{"id": "two"},
 	}
-	if n := countDistinctChunkIDs(chunks); n != 2 {
+	if n := countOriginalChunkIDs(chunks); n != 2 {
 		t.Fatalf("mixed present/absent ids: got %d, want 2", n)
+	}
+
+	// Compiler products are stored as chunks too, but are derived artifacts.
+	chunks = []map[string]any{
+		{"id": "source-1"},
+		{"id": "source-2"},
+		{"id": "wiki-page-1", "compile_kwd": "wiki_page"},
+		{"id": "wiki-section-1", "compile_kwd": "wiki_section"},
+	}
+	if n := countOriginalChunkIDs(chunks); n != 2 {
+		t.Fatalf("compiler products: got %d, want 2", n)
+	}
+}
+
+func TestBuiltInMetadata_ZeroExtractorFallback(t *testing.T) {
+	// Scenario: User constructed a pipeline with 0 Extractor components,
+	// but dataset parser_config has top-level built_in_metadata.
+	parserConfig := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+			map[string]any{"key": "update_time", "type": "time"},
+		},
+	}
+
+	arr, enabled := builtInMetadataFromParserConfig(parserConfig)
+	if !enabled {
+		t.Errorf("expected builtInMetadataFromParserConfig enabled=true for zero-extractor pipeline with top-level built_in_metadata")
+	}
+	if len(arr) != 2 {
+		t.Errorf("expected 2 built-in metadata items, got %d", len(arr))
 	}
 }
