@@ -31,6 +31,7 @@ const NumberInput = forwardRef<
     className,
     value: initialValue,
     onChange,
+    onBlur: onBlurProp,
     height,
     min = 0,
     max = Infinity,
@@ -83,10 +84,10 @@ const NumberInput = forwardRef<
     }
 
     if (!isNaN(newValue)) {
-      // Allow intermediate editing states that fall outside [min, max]
-      // (e.g. deleting "1024" → "102" when min=512). Update local state so the
-      // controlled input doesn't snap back, but only propagate to the form
-      // when the value is within range. Out-of-range values are clamped on blur.
+      // Show the raw typed value as-is, even when it falls outside [min, max]
+      // (e.g. deleting "1024" → "102" when min=512), so the controlled input
+      // never snaps back mid-edit. Out-of-range values are not propagated to
+      // the form; handleBlur clamps them into range on focus loss.
       setValue(newValue);
       if (newValue >= min && newValue <= max) {
         onChange?.(newValue);
@@ -94,30 +95,37 @@ const NumberInput = forwardRef<
     }
   };
 
-  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(() => {
-    if (isNumber(value)) {
-      let finalValue = value;
-      if (value < min) {
-        finalValue = min;
-      } else if (value > max) {
-        finalValue = max;
-      }
-      if (finalValue !== value) {
+  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      if (isNumber(value)) {
+        let finalValue = value;
+        if (value < min) {
+          finalValue = min;
+        } else if (value > max) {
+          finalValue = max;
+        }
+        if (finalValue !== value) {
+          setValue(finalValue);
+        }
+        onChange?.(finalValue);
+      } else {
+        const previousValue = valueRef.current ?? min;
+        let finalValue = previousValue;
+        if (previousValue < min) {
+          finalValue = min;
+        } else if (previousValue > max) {
+          finalValue = max;
+        }
         setValue(finalValue);
+        onChange?.(finalValue);
       }
-      onChange?.(finalValue);
-    } else {
-      const previousValue = valueRef.current ?? min;
-      let finalValue = previousValue;
-      if (previousValue < min) {
-        finalValue = min;
-      } else if (previousValue > max) {
-        finalValue = max;
-      }
-      setValue(finalValue);
-      onChange?.(finalValue);
-    }
-  }, [min, max, onChange, value]);
+      // Keep the caller's blur notification (e.g. react-hook-form's
+      // field.onBlur) alive — it is destructured out of props so that the
+      // spread below cannot silently replace this handler.
+      onBlurProp?.(e);
+    },
+    [min, max, onChange, onBlurProp, value],
+  );
 
   const style = useMemo(
     () => ({
