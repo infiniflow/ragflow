@@ -65,11 +65,11 @@ func TestScheduledTaskConcurrentStartSingleWorker(t *testing.T) {
 		}
 		wg.Wait()
 		time.Sleep(20 * time.Millisecond)
-		task.Stop()
 
 		if !task.IsRunning() {
 			t.Fatalf("iteration %d: task should be running before Stop", i)
 		}
+		task.Stop()
 		// Stop waited for the worker: after Stop returns, a subsequent tick
 		// must not fire.
 		fired := int32(0)

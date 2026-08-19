@@ -164,19 +164,19 @@ func (t *ScheduledTask) runSafely() {
 // waits for the worker to observe the signal before returning (#18468). A
 // job already executing may still finish; no new tick fires afterwards.
 func (t *ScheduledTask) Stop() {
+	// Hold the lifecycle lock until the worker exits: flipping running and
+	// releasing before waiting let a concurrent Start launch a new worker
+	// while the old one was still draining, and let a Stop return early
+	// (#18471 review). The worker never takes this lock (Start hands it the
+	// channels under the lock), so waiting here cannot deadlock.
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	if !t.running {
-		t.mu.Unlock()
 		return
 	}
-	t.running = false
 	close(t.stop)
-	done := t.done
-	t.mu.Unlock()
-
-	if done != nil {
-		<-done
-	}
+	<-t.done
+	t.running = false
 }
 
 // IsRunning reports whether a worker is currently active.
