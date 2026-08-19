@@ -1101,6 +1101,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
+      valueRangeMessage: 'Please enter a value between {{min}} and {{max}}.',
       thinking: 'Thinking',
       thought: 'Thought',
       thinkingDefault: 'System default',

@@ -477,6 +477,7 @@ export default {
       maxTokensTip: `Kích thước ngữ cảnh tối đa của mô hình; giá trị không hợp lệ hoặc sai sẽ gây lỗi. Mặc định là 512.`,
       maxTokensInvalidMessage: 'Vui lòng nhập số Token tối đa hợp lệ.',
       maxTokensMinMessage: 'Token tối đa không thể nhỏ hơn 0.',
+      valueRangeMessage: 'Vui lòng nhập giá trị từ {{min}} đến {{max}}.',
       quote: 'Hiển thị Trích dẫn',
       quoteTip: 'Nguồn văn bản gốc có nên được hiển thị không?',
       selfRag: 'Tự RAG',

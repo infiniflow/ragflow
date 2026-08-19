@@ -833,6 +833,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       maxTokensInvalidMessage:
         'Bitte geben Sie eine gültige Zahl für Maximale Tokens ein.',
       maxTokensMinMessage: 'Maximale Tokens können nicht weniger als 0 sein.',
+      valueRangeMessage: 'Bitte geben Sie einen Wert zwischen {{min}} und {{max}} ein.',
       quote: 'Zitat anzeigen',
       quoteTip: 'Ob der Originaltext als Referenz angezeigt werden soll.',
       selfRag: 'Self-RAG',

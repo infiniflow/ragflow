@@ -869,6 +869,7 @@ export default {
       maxTokensTip: `モデルの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '最大トークン数に有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
+      valueRangeMessage: '{{min}} から {{max}} の間の数値を入力してください。',
       quote: '引用を表示',
       quoteTip: '元のテキストの出典を表示しますか？',
       selfRag: 'Self-RAG',

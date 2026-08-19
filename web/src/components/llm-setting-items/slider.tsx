@@ -16,7 +16,7 @@
 
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { forwardRef } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import NumberInput from '../originui/number-input';
 import { SingleFormSlider } from '../ui/dual-range-slider';
@@ -64,6 +64,13 @@ export const SliderInputSwitchFormField = forwardRef<
     const form = useFormContext();
     const disabled = !form.watch(checkName);
     const { t } = useTranslate('chat');
+    const [rangeViolation, setRangeViolation] = useState(false);
+
+    useEffect(() => {
+      if (disabled) {
+        setRangeViolation(false);
+      }
+    }, [disabled]);
 
     return (
       <FormField
@@ -99,6 +106,7 @@ export const SliderInputSwitchFormField = forwardRef<
                 <SingleFormSlider
                   {...field}
                   onChange={(value: number) => {
+                    setRangeViolation(false);
                     onChange?.(value);
                     field.onChange(value);
                   }}
@@ -121,10 +129,16 @@ export const SliderInputSwitchFormField = forwardRef<
                     onChange?.(value);
                     field.onChange(value);
                   }}
+                  onRangeViolation={setRangeViolation}
                 ></NumberInput>
               </FormControl>
             </div>
             <FormMessage />
+            {rangeViolation && Number.isFinite(min) && Number.isFinite(max) && (
+              <p className="text-xs text-state-error">
+                {t('valueRangeMessage', { min, max })}
+              </p>
+            )}
           </FormItem>
         )}
       />

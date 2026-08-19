@@ -1006,6 +1006,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Veuillez saisir un nombre valide pour le nombre max de tokens.',
       maxTokensMinMessage:
         'Le nombre max de tokens ne peut pas être inférieur à 0.',
+      valueRangeMessage: 'Veuillez saisir une valeur comprise entre {{min}} et {{max}}.',
       quote: 'Afficher la citation',
       quoteTip: 'Afficher ou non le texte original en référence.',
       selfRag: 'Self-RAG',

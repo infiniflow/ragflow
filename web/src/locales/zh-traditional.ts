@@ -512,6 +512,7 @@ export default {
       maxTokensTip: `模型的最大上下文大小；無效或不正確的值會導致錯誤。預設為 512。`,
       maxTokensInvalidMessage: '請輸入有效的最大標記數。',
       maxTokensMinMessage: '最大標記數不能小於 0。',
+      valueRangeMessage: '請輸入介於 {{min}} 和 {{max}} 之間的數值。',
       thinking: '思考',
       thinkingDefault: '系統預設',
       thinkingEnabled: '開啟',

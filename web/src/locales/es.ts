@@ -258,6 +258,7 @@ export default {
       maxTokensInvalidMessage:
         'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
+      valueRangeMessage: 'Introduzca un valor entre {{min}} y {{max}}.',
       quote: 'Mostrar cita',
       quoteTip: '¿Debe mostrarse la fuente del texto original?',
       selfRag: 'Self-RAG',

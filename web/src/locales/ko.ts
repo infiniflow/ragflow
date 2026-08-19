@@ -1047,6 +1047,7 @@ export default {
       maxTokensTip: `모델의 최대 컨텍스트 크기입니다. 유효하지 않거나 잘못된 값을 입력하면 오류가 발생합니다. 기본값은 512입니다.`,
       maxTokensInvalidMessage: '유효한 숫자를 입력해 주세요.',
       maxTokensMinMessage: '최대 토큰은 0보다 작을 수 없습니다.',
+      valueRangeMessage: '{{min}}에서 {{max}} 사이의 값을 입력해 주세요.',
       quote: '인용 표시',
       quoteTip: '답변과 함께 원문을 출처로 표시할지 설정합니다.',
       selfRag: 'Self-RAG',
