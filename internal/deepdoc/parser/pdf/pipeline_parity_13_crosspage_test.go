@@ -4,6 +4,7 @@ package pdf
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,7 +108,8 @@ func TestPipelineParity13CrosspageSeam(t *testing.T) {
 		goVal, pyVal string
 	}
 	var seamDup []cellDiff
-	var otherDiffs []cellDiff
+	otherCount := 0
+	gridSim := tool.CharSimilarity(joinGrid(goRows), joinGrid(pyRows))
 	for i := 0; i < n; i++ {
 		g := rowOrEmpty(goRows, i)
 		py := rowOrEmpty(pyRows, i)
@@ -125,19 +127,30 @@ func TestPipelineParity13CrosspageSeam(t *testing.T) {
 			if hasRepeatedToken(gc) {
 				seamDup = append(seamDup, d)
 			} else {
-				otherDiffs = append(otherDiffs, d)
+				// goVal is already TrimSpace'd by goTableRows; a cell whose
+				// Python value only differs by surrounding whitespace is not a
+				// content gap — gridSim (CharSimilarity, whitespace/order
+				// insensitive) below 100 is the content-parity guard below.
+				otherCount++
 			}
 			t.Logf("ROW %d c%d: GO=%q PY=%q", i, c, gc, pyc)
 		}
 	}
 	t.Logf("13_crosspage_table seam-duplication cells=%d other-diff cells=%d gridSim=%.1f%%",
-		len(seamDup), len(otherDiffs), tool.CharSimilarity(joinGrid(goRows), joinGrid(pyRows)))
+		len(seamDup), otherCount, gridSim)
 
-	// Regression guard: the seam-duplication signature must not exist.
-	if len(seamDup) > 0 {
-		t.Errorf("OPEN go_bug table-crosspage-merge-seam-duplication: %d Go cells contain a duplicated seam token "+
-			"(e.g. %q vs Python %q). MergeTablesAcrossPages must collapse the page-seam row instead of concatenating it.",
-			len(seamDup), seamDup[0].goVal, seamDup[0].pyVal)
+	// Regression guard: the seam-duplication signature must not exist, and the
+	// grid must retain full content parity (gridSim==100). A partial fix that
+	// drops or adds cell content drops gridSim below 100 even if no
+	// repeated-token cell remains.
+	if len(seamDup) > 0 || gridSim < 100 {
+		ex := "no cells"
+		if len(seamDup) > 0 {
+			ex = fmt.Sprintf("e.g. %q vs Python %q", seamDup[0].goVal, seamDup[0].pyVal)
+		}
+		t.Errorf("OPEN go_bug table-crosspage-merge-seam-duplication: %d Go cells contain a duplicated seam token, gridSim=%.1f%% (%s). "+
+			"MergeTablesAcrossPages must collapse the page-seam row instead of concatenating it.",
+			len(seamDup), gridSim, ex)
 	}
 }
 

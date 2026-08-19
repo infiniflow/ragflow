@@ -22,12 +22,21 @@ import (
 // DedupIdenticalText collapses boxes whose text is byte-identical on the SAME
 // page AND whose Y bands are pairwise DISJOINT, keeping the first
 // (reading-order) occurrence. OCR repeatedly detects the same text at disjoint
-// Y positions (09_crosspage_paragraph detects each paragraph 5-6x per page);
+// Y positions (09_crosspage_paragraph detects each paragraph 14-18x per page);
 // Python's downstream merge collapses these, so Go must too or the replay
 // output duplicates every paragraph. Boxes that OVERLAP in Y are kept: multiple
 // columns / adjacent lines on one page legitimately share text (e.g.
 // eval_three_wide has 3 columns at the same Y). Different pages keep their own
 // copies (a cross-page paragraph appears once per page).
+//
+// A same-text group is treated as a pseudo-duplicate only when it forms a
+// REGULAR rolling-stride CHAIN of at least pseudoDupChainMin boxes (same X,
+// pairwise disjoint Y, gaps > 4x height). Shorter groups (2-4 copies, e.g. the
+// identical template rows of eval_two_wide_gutter / eval_two_indented_first_para)
+// are real document content — distinct physical lines that happen to share
+// text — and are kept verbatim.
+const pseudoDupChainMin = 5
+
 func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 	type key struct {
 		page int
@@ -50,7 +59,12 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 
 	drop := make(map[int]bool, len(boxes))
 	for _, idxs := range groups {
-		if len(idxs) < 2 {
+		// A pseudo-duplicate needs a rolling-stride CHAIN of at least
+		// pseudoDupChainMin detections. Isolated pairs / short groups of
+		// identical text are real repeated lines and must be kept (e.g. the
+		// eval_two_* template rows detected 2-4x, where dropping any copy
+		// loses a real line).
+		if len(idxs) < pseudoDupChainMin {
 			continue
 		}
 		// Short identical texts (e.g. the repeated keyword 'Transformer' in
