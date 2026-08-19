@@ -524,7 +524,7 @@ func (c *RestAPIConnector) ValidateLive(ctx context.Context) error {
 func (c *RestAPIConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return c.ValidateLive(ctx)
+	return validationError(c.ValidateLive(ctx))
 }
 
 // OpenSync opens one sync session. Incremental runs filter documents to the

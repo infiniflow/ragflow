@@ -98,20 +98,20 @@ func (c *GitHubConnector) ValidateConnectorSetting(ctx context.Context, request 
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if c == nil {
-		return fmt.Errorf("github connector is nil")
+		return validationError(fmt.Errorf("github connector is nil"))
 	}
 	if c.owner == "" {
-		return fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided")
+		return validationError(fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided"))
 	}
 	if c.token == "" {
-		return fmt.Errorf("Missing github_access_token in credentials")
+		return validationError(fmt.Errorf("Missing github_access_token in credentials"))
 	}
 	if c.batchSize <= 0 {
-		return fmt.Errorf("batch_size must be a positive integer")
+		return validationError(fmt.Errorf("batch_size must be a positive integer"))
 	}
 	var user map[string]any
 	if _, err := c.getJSON(ctx, c.apiURL("/user", nil), &user); err != nil {
-		return err
+		return validationError(err)
 	}
 	return nil
 }

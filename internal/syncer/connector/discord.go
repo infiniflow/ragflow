@@ -255,11 +255,11 @@ func (c *DiscordConnector) ValidateConnectorSetting(ctx context.Context, request
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if err := c.Validate(ctx); err != nil {
-		return err
+		return validationError(err)
 	}
 	targets, err := c.listTargets(ctx)
 	if err != nil {
-		return err
+		return validationError(err)
 	}
 	if len(targets) == 0 {
 		return &ConnectorValidationError{Message: "Discord connector found no accessible text channels"}

@@ -134,6 +134,13 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 	return fmt.Errorf("WebDAV validation failed for path '%s': %v", testPath, err)
 }
 
+// ValidateConnectorSetting validates WebDAV settings from an unsaved config.
+func (c *WebDAVConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return validationError(c.Validate(ctx))
+}
+
 // OpenSync opens one WebDAV sync session.
 func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	files, err := c.listFiles(ctx, c.remotePath)

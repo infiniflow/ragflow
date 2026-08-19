@@ -143,14 +143,17 @@ func (c *GoogleDriveConnector) ValidateConnectorSetting(ctx context.Context, req
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if err := c.Validate(ctx); err != nil {
-		return err
+		return validationError(err)
 	}
 	client, err := c.clientForUser(ctx, c.primaryAdminEmail)
 	if err != nil {
-		return err
+		return validationError(err)
 	}
 	var about map[string]any
-	return c.getJSON(ctx, client, "https://www.googleapis.com/drive/v3/about?fields=user", &about)
+	if err := c.getJSON(ctx, client, "https://www.googleapis.com/drive/v3/about?fields=user", &about); err != nil {
+		return validationError(err)
+	}
+	return nil
 }
 
 // OpenSync opens one Google Drive sync session.

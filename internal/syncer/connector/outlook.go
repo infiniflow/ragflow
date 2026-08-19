@@ -112,7 +112,7 @@ func (c *OutlookConnector) Validate(ctx context.Context) error {
 func (c *OutlookConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return c.Validate(ctx)
+	return validationError(c.Validate(ctx))
 }
 
 func (c *OutlookConnector) effectiveBatchSize() int {
