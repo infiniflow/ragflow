@@ -966,9 +966,7 @@ class GaussDBDatabaseLock(PostgresDatabaseLock):
 
 
 class MysqlDatabaseLock:
-    # MySQL treats a negative GET_LOCK() timeout as "wait forever", MariaDB does
-    # not: it returns NULL with a warning instead of waiting. Callers asking to
-    # block get this finite wait so both servers actually acquire the lock.
+    # Finite wait used for negative advisory-lock timeouts.
     BLOCKING_TIMEOUT = 60
 
     def __init__(self, lock_name, timeout=10, db=None):
