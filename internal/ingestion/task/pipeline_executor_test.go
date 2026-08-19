@@ -301,6 +301,98 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLog_BuiltinUsesParserIDFallback(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "general"
+	taskCtx.Doc.Thumbnail = strPtr("thumb.png")
+
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "general", 0).
+		WithBuiltinPipeline().
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		})
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{}`, "done")
+
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.PipelineTitle == nil || *captured.PipelineTitle != "general" {
+		t.Fatalf("PipelineTitle = %v, want \"general\"", captured.PipelineTitle)
+	}
+	if captured.Avatar == nil || *captured.Avatar != "thumb.png" {
+		t.Fatalf("Avatar = %v, want \"thumb.png\"", captured.Avatar)
+	}
+	if captured.PipelineID != nil {
+		t.Fatalf("PipelineID = %q, want nil for builtin pipeline", *captured.PipelineID)
+	}
+}
+
+func TestRecordPipelineLog_CustomCanvasTitle(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "tenant-1",
+		Title:  strPtr("My Pipeline"),
+		Avatar: strPtr("a.png"),
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "general"
+
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		})
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{}`, "done")
+
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.PipelineTitle == nil || *captured.PipelineTitle != "My Pipeline" {
+		t.Fatalf("PipelineTitle = %v, want \"My Pipeline\"", captured.PipelineTitle)
+	}
+	if captured.Avatar == nil || *captured.Avatar != "a.png" {
+		t.Fatalf("Avatar = %v, want \"a.png\"", captured.Avatar)
+	}
+	if captured.PipelineID == nil || *captured.PipelineID != "canvas-1" {
+		t.Fatalf("PipelineID = %v, want \"canvas-1\"", captured.PipelineID)
+	}
+}
+
+func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "general"
+
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-gone", 0).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		})
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{}`, "done")
+
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called")
+	}
+	if captured.PipelineTitle == nil || *captured.PipelineTitle != "general" {
+		t.Fatalf("PipelineTitle = %v, want \"general\" fallback", captured.PipelineTitle)
+	}
+}
+
 // =============================================================================
 // updateDocumentMetadata
 // =============================================================================

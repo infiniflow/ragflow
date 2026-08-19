@@ -65,6 +65,11 @@ type PipelineExecutor struct {
 	taskCtx     *TaskContext
 	canvasID    string
 	docBulkSize int
+	// builtinPipeline marks a run backed by the embedded builtin pipeline
+	// registry instead of a user_canvas row. canvasID then carries the
+	// parser_id, so the operation log must fall back to document fields for
+	// its pipeline identity (mirroring the Python operation-log path).
+	builtinPipeline bool
 
 	indexWriter     *chunkIndexWriter
 	logCreateFunc   func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error
@@ -137,6 +142,15 @@ func (s *PipelineExecutor) WithLogCreateFunc(f func(ctx context.Context, db *gor
 
 func (s *PipelineExecutor) WithLoadDSLFunc(f func(ctx context.Context, canvasID string) (string, string, error)) *PipelineExecutor {
 	s.loadDSLFunc = f
+	return s
+}
+
+// WithBuiltinPipeline marks the run as a builtin (registry-backed) pipeline so
+// the operation log skips the user_canvas lookup and titles itself from the
+// document's parser_id, mirroring record_pipeline_operation in
+// api/db/services/pipeline_operation_log_service.py.
+func (s *PipelineExecutor) WithBuiltinPipeline() *PipelineExecutor {
+	s.builtinPipeline = true
 	return s
 }
 
@@ -483,16 +497,25 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		}
 	}
 
-	pipelineTitle := ""
-	var pipelineAvatar *string
-	if db != nil {
-		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
-			if canvas.Title != nil {
-				pipelineTitle = *canvas.Title
+	// Pipeline identity for the log row. Without a user pipeline the row is
+	// titled with the document's parser_id and reuses the document thumbnail
+	// as avatar, matching the Python fallback in
+	// PipelineOperationLogService.create. Built-in runs never hit user_canvas:
+	// their canvasID is the parser_id, not a canvas row.
+	pipelineTitle := doc.ParserID
+	pipelineAvatar := doc.Thumbnail
+	var pipelineID *string
+	if !s.builtinPipeline {
+		pipelineID = &s.canvasID
+		if db != nil {
+			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+				if canvas.Title != nil {
+					pipelineTitle = *canvas.Title
+				}
+				pipelineAvatar = canvas.Avatar
+			} else if err != nil && !dao.IsNotFoundErr(err) {
+				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 			}
-			pipelineAvatar = canvas.Avatar
-		} else if err != nil {
-			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 		}
 	}
 
@@ -517,7 +540,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		TenantID:        s.Tenant().ID,
 		KbID:            s.KB().ID,
 		DocumentID:      docID,
-		PipelineID:      &s.canvasID,
+		PipelineID:      pipelineID,
 		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,
