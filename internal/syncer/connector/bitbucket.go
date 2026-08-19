@@ -968,22 +968,14 @@ func sanitizeBitbucketName(name string) string {
 	name = strings.ReplaceAll(name, "/", " ")
 	name = bitbucketSpaceRE.ReplaceAllString(name, " ")
 	name = strings.TrimSpace(name)
-	if len(name) > 200 {
-		ext := filepath.Ext(name)
-		if ext == "" {
-			name = name[:200]
-		} else {
-			limit := 200 - len(ext)
-			if limit < 0 {
-				limit = 0
-			}
-			name = name[:limit] + ext
-		}
+	const maxNameRunes = 200
+	if runes := []rune(name); len(runes) > maxNameRunes {
+		name = strings.TrimSpace(string(runes[:maxNameRunes]))
 	}
-	if filepath.Ext(name) == "" {
-		name += ".md"
+	if name == "" {
+		name = "PR"
 	}
-	return name
+	return name + ".md"
 }
 
 func splitBitbucketList(value string) []string {
