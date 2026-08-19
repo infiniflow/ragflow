@@ -672,7 +672,7 @@ func TestBuiltInMetadata_ZeroExtractorFallback_TopLevelOffCannotBeReopened(t *te
 }
 
 func TestBuiltInMetadata_ZeroExtractorFallback_TopLevelOffCannotBeReopenedConfig(t *testing.T) {
-	// Same authoritative off-switch semantics for the legacy metadata_config object.
+	// Same authoritative off-switch semantics for the metadata_config object.
 	parserConfig := map[string]any{
 		"Parser:HipSignsRhyme": map[string]any{
 			"setups": map[string]any{},
