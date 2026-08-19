@@ -88,9 +88,9 @@ func TestTokenChunker_OversizeUnitSplit(t *testing.T) {
 
 // TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit pins the hard-cap
 // contract under the merge: an in-budget unit is followed by an oversized
-// unit, which is re-split into <= budget pieces (no longer kept whole). The
-// in-budget unit stays a chunk of its own; the oversized unit becomes multiple
-// chunks that together reproduce its text.
+// unit, which is re-split into <= budget pieces. The in-budget unit stays a
+// chunk of its own; the oversized unit becomes multiple chunks that together
+// reproduce its text.
 func TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit(t *testing.T) {
 	var longLine = strings.Repeat("word ", 400) // ~400 tokens, far above the 32 budget
 	inBudget := "Hello world."                  // ASCII period is not a sentence delimiter; fits 32

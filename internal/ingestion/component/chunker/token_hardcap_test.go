@@ -211,7 +211,8 @@ func TestMergeUnits_HardSplitNeverSplitsCoordTag(t *testing.T) {
 }
 
 // TestMergeUnits_OverlapStrictCap verifies the overlap prefix never pushes a
-// fresh chunk over the target: overlap is trimmed to fit.
+// fresh chunk over the target: overlap is trimmed to fit. Both the running sum
+// (TKNums) and the re-tokenized emitted text are checked against the target.
 func TestMergeUnits_OverlapStrictCap(t *testing.T) {
 	const target = 40
 	units := []schema.ChunkDoc{
@@ -225,6 +226,82 @@ func TestMergeUnits_OverlapStrictCap(t *testing.T) {
 	for i, ck := range got {
 		if n := intValue(ck.TKNums); n > target {
 			t.Errorf("chunk %d exceeds target: tokens=%d (cap=%d)", i, n, target)
+		}
+		if n := tokenizeStr(ck.Text); n > target {
+			t.Errorf("chunk %d emitted text exceeds target: tokens=%d (cap=%d)", i, n, target)
+		}
+	}
+}
+
+// TestMergeUnits_ExpansionPreservesWhitespaceFragments verifies that
+// whitespace-only fragments from a repeated delimiter run (e.g. "\n\n") are
+// carried into adjacent pieces, so the concatenated pieces reproduce the
+// oversized unit text exactly (lossless).
+func TestMergeUnits_ExpansionPreservesWhitespaceFragments(t *testing.T) {
+	const target = 30
+	body := strings.Repeat("word ", 60) + "\n\n" + strings.Repeat("pad ", 60)
+	got := mergeUnits([]schema.ChunkDoc{
+		{Text: body, CKType: "text", TKNums: intPtr(tokenizeStr(body))},
+	}, target, 0, "")
+	if len(got) < 2 {
+		t.Fatalf("oversized unit must be split, got %d chunk(s)", len(got))
+	}
+	var joined string
+	for _, ck := range got {
+		joined += ck.Text
+	}
+	if joined != body {
+		t.Errorf("split dropped text (whitespace or content):\n got %q\nwant %q", joined, body)
+	}
+}
+
+// TestMergeUnits_ExpandedFirstPieceCarriesMetadata verifies Plan A metadata
+// inheritance: the first sub-piece of an expanded unit keeps every field the
+// source unit carried (coarse positions plus item attributes), while later
+// sub-pieces keep only the basics.
+func TestMergeUnits_ExpandedFirstPieceCarriesMetadata(t *testing.T) {
+	const target = 30
+	body := strings.Repeat("word ", 100)
+	unit := schema.ChunkDoc{
+		Text:          body,
+		DocType:       "text",
+		CKType:        "text",
+		TKNums:        intPtr(tokenizeStr(body)),
+		PDFPositions:  []byte(`[{"page":1}]`),
+		Mom:           "parent-id",
+		ImgID:         "img-1",
+		Layout:        "text",
+		Image:         "raw-image",
+		PageNumber:    intPtr(3),
+		TagKwd:        []string{"t1"},
+		ChunkOrderInt: intPtr(7),
+	}
+	got := mergeUnits([]schema.ChunkDoc{unit}, target, 0, "\n")
+	if len(got) < 2 {
+		t.Fatalf("oversized unit must be split, got %d chunk(s)", len(got))
+	}
+	head := got[0]
+	if head.Mom != "parent-id" || head.ImgID != "img-1" || head.Layout != "text" || head.Image != "raw-image" {
+		t.Errorf("first sub-piece lost item metadata: %#v", head)
+	}
+	if head.PageNumber == nil || *head.PageNumber != 3 {
+		t.Errorf("first sub-piece lost PageNumber: %#v", head.PageNumber)
+	}
+	if len(head.TagKwd) != 1 || head.TagKwd[0] != "t1" {
+		t.Errorf("first sub-piece lost TagKwd: %#v", head.TagKwd)
+	}
+	if head.ChunkOrderInt == nil || *head.ChunkOrderInt != 7 {
+		t.Errorf("first sub-piece lost ChunkOrderInt: %#v", head.ChunkOrderInt)
+	}
+	if len(head.PDFPositions) == 0 {
+		t.Errorf("first sub-piece must carry the original positions")
+	}
+	for i := 1; i < len(got); i++ {
+		if len(got[i].PDFPositions) != 0 {
+			t.Errorf("sub-piece %d must carry no positions", i)
+		}
+		if got[i].Mom != "" || got[i].ImgID != "" || got[i].Layout != "" {
+			t.Errorf("sub-piece %d must not carry item metadata", i)
 		}
 	}
 }

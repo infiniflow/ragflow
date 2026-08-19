@@ -2,7 +2,10 @@
   "case_id": "token__b1_count_sensitive",
   "chunks": [
     {
-      "text": "RAGFlow is a retrieval augmented generation engine that ingests heterogeneous documents and slices them into retrievable passages. The chunker must respect a token budget so that each passage fits the context window of the downstream language model without truncation. Token counting is"
+      "text": "RAGFlow is a retrieval augmented generation engine that ingests heterogeneous documents and slices them into retrievable passages. The chunker must respect a token budget so that each passage fits the context window of the downstream language model without truncation. Token counting"
+    },
+    {
+      "text": "is"
     },
     {
       "text": "the linchpin of this budget because every merge decision reads the per segment token length. When the encoder is missing the chunker silently reports zero tokens for every string and the budget is never exceeded so an entire document collapses into one oversized chunk. That"

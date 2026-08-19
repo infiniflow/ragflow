@@ -442,8 +442,8 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 	// paragraphs (the delimiter is DROPPED, mirroring Python naive_merge) and
 	// use each paragraph VERBATIM as a unit. This preserves the original
 	// inter-paragraph whitespace, so the merged text matches the source (and
-	// Python naive_merge). An oversized paragraph is later re-split by the
-	// hard-cap expansion in mergeUnits (it no longer stands whole).
+	// Python naive_merge). An oversized paragraph is re-split by the hard-cap
+	// expansion in mergeUnits.
 	//
 	// Otherwise (no active delimiter) the whole text is a single section and
 	// oversized sections are re-split on production sentence delimiters, which
@@ -457,7 +457,8 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 		// each kept paragraph. The sub-sec keeps its original surrounding
 		// whitespace (e.g. the trailing space before the delimiter); only the
 		// delimiter itself is removed. No sentence re-split is performed here —
-		// an oversize paragraph stands alone as its own chunk, matching Python.
+		// an oversized paragraph is re-split later by the hard-cap expansion in
+		// mergeUnits.
 		for _, sub := range splitDroppingDelim(text, delimPattern) {
 			if sub == "" {
 				continue
@@ -819,13 +820,13 @@ func takeFromStart(text string, tokens int) string {
 // the Python text path (rag/nlp naive_merge) is migrating to, so the two
 // languages and the two paths converge on ONE algorithm.
 //
-// Hard-cap contract (方案 B):
+// Hard-cap contract:
 //   - Every emitted text chunk is <= target tokens. Oversized units (a single
 //     unit whose token count exceeds target) are expanded FIRST: sentence
 //     boundaries are tried, then a hard token-split fallback guarantees each
 //     piece fits the target. The merge itself is UNDER_CAP: a projected join
-//     that would push the running sum over target starts a fresh chunk instead
-//     of merge-then-close, so no chunk ever exceeds target.
+//     that would push the running sum over target starts a fresh chunk, so no
+//     chunk ever exceeds target.
 //   - The merge threshold is SCALED to reserve room for overlap:
 //     threshold = target * (100 - overlap) / 100. A chunk keeps receiving
 //     units while its running token sum stays <= threshold; once it exceeds
@@ -998,7 +999,7 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 }
 
 // ---------------------------------------------------------------------------
-// Hard-cap expansion (方案 B)
+// Hard-cap expansion
 // ---------------------------------------------------------------------------
 
 // expandOversizedUnits re-splits text units whose token count exceeds target
@@ -1048,16 +1049,42 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 		lead = "\n"
 		text = strings.TrimPrefix(text, "\n")
 	}
+	// Split into sentences (delimiters attached). A whitespace-only fragment
+	// (a bare delimiter from a repeated run, e.g. "\n\n") is prepended to the
+	// NEXT non-whitespace piece so the concatenated pieces reproduce the unit
+	// text exactly; trailing whitespace attaches to the last piece. If
+	// attaching whitespace pushes a piece over the target, that piece is
+	// hard-split so the hard cap still holds.
 	var pieces []schema.ChunkDoc
+	var wsPending string
 	for _, part := range splitSentencesLossless(text) {
 		if strings.TrimSpace(part) == "" {
+			wsPending += part
 			continue
 		}
-		ptk := tokenizeStr(part)
-		if ptk > target {
-			pieces = append(pieces, hardSplitPiece(part, ck.DocType, target)...)
+		p := schema.ChunkDoc{Text: wsPending + part, DocType: ck.DocType, CKType: "text"}
+		wsPending = ""
+		if n := tokenizeStr(p.Text); n > target {
+			pieces = append(pieces, hardSplitPiece(p.Text, ck.DocType, target)...)
 		} else {
-			pieces = append(pieces, schema.ChunkDoc{Text: part, DocType: ck.DocType, TKNums: intPtr(ptk), CKType: "text"})
+			p.TKNums = intPtr(n)
+			pieces = append(pieces, p)
+		}
+	}
+	if wsPending != "" {
+		if len(pieces) > 0 {
+			last := &pieces[len(pieces)-1]
+			last.Text += wsPending
+			if n := tokenizeStr(last.Text); n > target {
+				replaced := hardSplitPiece(last.Text, ck.DocType, target)
+				pieces = append(pieces[:len(pieces)-1], replaced...)
+			} else {
+				last.TKNums = intPtr(n)
+			}
+		} else {
+			// All-whitespace unit: keep it as one piece so the split stays
+			// lossless (downstream empty-chunk filters drop it).
+			pieces = append(pieces, schema.ChunkDoc{Text: wsPending, DocType: ck.DocType, TKNums: intPtr(tokenizeStr(wsPending)), CKType: "text"})
 		}
 	}
 	if len(pieces) == 0 {
@@ -1066,21 +1093,22 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	if lead != "" {
 		pieces[0].Text = lead + pieces[0].Text
 		// The leading "\n" adds a token; recompute so the running sum stays
-		// faithful.
-		pieces[0].TKNums = intPtr(tokenizeStr(pieces[0].Text))
+		// faithful. Re-split if it pushes the piece over the target.
+		if n := tokenizeStr(pieces[0].Text); n > target {
+			replaced := hardSplitPiece(pieces[0].Text, ck.DocType, target)
+			pieces = append(replaced, pieces[1:]...)
+		} else {
+			pieces[0].TKNums = intPtr(n)
+		}
 	}
-	// Plan A: the first sub-piece carries the source unit's per-item metadata
-	// (coarse positions + item attributes); later sub-pieces keep only the
-	// basics (DocType/CKType already set).
-	if len(ck.PDFPositions) > 0 || len(ck.Positions) > 0 {
-		pieces[0].PDFPositions = ck.PDFPositions
-		pieces[0].Positions = ck.Positions
-	}
-	pieces[0].Mom = ck.Mom
-	pieces[0].ImgID = ck.ImgID
-	pieces[0].Layout = ck.Layout
-	pieces[0].Image = ck.Image
-	pieces[0].PageNumber = ck.PageNumber
+	// Plan A: the first sub-piece inherits the source unit's metadata (coarse
+	// positions + item attributes); later sub-pieces keep only the basics.
+	// Build it from a clone so every ChunkDoc field survives the split.
+	head := cloneChunkDoc(ck)
+	head.Text = pieces[0].Text
+	head.TKNums = pieces[0].TKNums
+	head.CKType = "text"
+	pieces[0] = head
 	return pieces
 }
 

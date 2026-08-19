@@ -72,8 +72,10 @@ func TestTokenChunker_TextOverlapPreservesInterLineSpace(t *testing.T) {
 
 	// The regression this test pins: the inter-line trailing space of every
 	// line must be preserved across a merge/overlap boundary (Python emits
-	// "alpha \nbeta", not "alpha\nbeta"). Scan every emitted chunk for a
-	// space-less "\n" boundary.
+	// "alpha \nbeta", not "alpha\nbeta"). No emitted chunk may contain a
+	// space-less "\n" boundary, and at least one space-preserving boundary must
+	// actually appear (otherwise the fixture no longer exercises the path).
+	spacePreserved := 0
 	for i, s := range got {
 		if strings.Contains(s, "alpha\nbeta") {
 			t.Errorf("chunk[%d] has space-less alpha/beta boundary (bug present): %q", i, s)
@@ -81,5 +83,11 @@ func TestTokenChunker_TextOverlapPreservesInterLineSpace(t *testing.T) {
 		if strings.Contains(s, "beta\ngamma") {
 			t.Errorf("chunk[%d] has space-less beta/gamma boundary (bug present): %q", i, s)
 		}
+		if strings.Contains(s, "alpha \nbeta") || strings.Contains(s, "beta \ngamma") {
+			spacePreserved++
+		}
+	}
+	if spacePreserved == 0 {
+		t.Errorf("no chunk preserved an inter-line space across a boundary; the regression fixture is not exercised")
 	}
 }

@@ -2,7 +2,10 @@
   "case_id": "token__text_long_paragraph",
   "chunks": [
     {
-      "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+      "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+    },
+    {
+      "text": "word"
     },
     {
       "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"

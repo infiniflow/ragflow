@@ -28,16 +28,18 @@ type mergeUnitsOracleRow struct {
 	tk   int
 }
 
-// pythonMergeUnitsOracle is the Go port of the UNIFIED merge contract shared by
-// the Go TokenChunker, Python naive_merge, and Python token_chunker's JSON
-// path. It is the oracle that mergeUnits (the single, unified merge core) must
-// match chunk-for-chunk (text AND count).
+// hardCapMergeUnitsOracle is the Go reference for the hard-cap merge contract
+// (方案 B) that mergeUnits (the single, unified merge core) must match
+// chunk-for-chunk (text AND count). It mirrors the same algorithm as the Go
+// TokenChunker, so the comparison pins the merge behavior, not Python's
+// OVER_CAP contract (which this code no longer follows).
 //
-// Contract mirrored here (the hard-cap "方案 B" algorithm):
+// Contract mirrored here:
 //   - token counts are the RUNNING SUM of per-unit counts (never re-tokenizing
 //     the joined text);
 //   - overlap>0 uses a SCALED threshold target*(100-overlap)/100 and prepends
-//     the previous chunk's tail UNCONDITIONALLY (trimmed to fit the target);
+//     the previous chunk's tail, trimmed to fit the target (computeOverlapPrefix
+//   - overlapFitPrefix, matching mergeUnits);
 //   - a non-text unit passes through and resets the merge run;
 //   - the merge is UNDER_CAP: a projected join that would push the running sum
 //     over target starts a fresh chunk (never merge-then-close);
@@ -49,7 +51,7 @@ type mergeUnitsOracleRow struct {
 // tkNums (so merge decisions are deterministic and offline-independent), but
 // an overlap-prefixed chunk recomputes its count via tokenizeStr — exactly as
 // mergeUnits does — so the two stay in lock-step.
-func pythonMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target int, overlap float64, joinSep string) []mergeUnitsOracleRow {
+func hardCapMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target int, overlap float64, joinSep string) []mergeUnitsOracleRow {
 	threshold := float64(target) * (100.0 - overlap) / 100.0
 	merged := []mergeUnitsOracleRow{}
 	prev := -1
@@ -72,17 +74,11 @@ func pythonMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target
 			text := texts[i]
 			cpTk := tk
 			if overlap > 0 && merged[prev].text != "" {
-				vis := []rune(removeTag(merged[prev].text))
-				cut := int(float64(len(vis)) * (100.0 - overlap) / 100.0)
-				if cut < 0 {
-					cut = 0
-				}
-				if cut < len(vis) {
-					text = string(vis[cut:]) + texts[i]
-				}
-				// Mirror mergeUnits: recompute the overlap chunk's token
-				// count from its (prefix+cur) text. Only when a prefix was
-				// actually prepended; otherwise keep the explicit count.
+				// Mirror mergeUnits: carve the overlap prefix from the previous
+				// chunk's tag-free tail, then trim it to fit the target.
+				prefix, _ := computeOverlapPrefix(merged[prev].text, overlap)
+				prefix, _ = overlapFitPrefix(prefix, texts[i], target)
+				text = prefix + texts[i]
 				cpTk = tokenizeStr(text)
 			}
 			merged = append(merged, mergeUnitsOracleRow{text, cpTk})
@@ -99,7 +95,7 @@ func pythonMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target
 	return merged
 }
 
-func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
+func TestMergeUnitsMatchesHardCapOracle(t *testing.T) {
 	cases := []struct {
 		name    string
 		texts   []string
@@ -180,6 +176,16 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 			kinds:  []string{"text", "text"},
 			target: 12, overlap: 20, joinSep: "\n",
 		},
+		{
+			// Current unit near the cap: the overlap prefix carved from the
+			// previous chunk would push the fresh chunk over the target, so
+			// overlapFitPrefix trims it. The oracle must mirror the trim.
+			name:   "overlap prefix trimmed to fit hard cap",
+			texts:  []string{strings.Repeat("word ", 10), strings.Repeat("pad ", 10)},
+			tkNums: []int{tokenizeStr(strings.Repeat("word ", 10)), tokenizeStr(strings.Repeat("pad ", 10))},
+			kinds:  []string{"text", "text"},
+			target: 22, overlap: 20, joinSep: "\n",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -187,7 +193,7 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 			for i, tx := range c.texts {
 				units[i] = schema.ChunkDoc{Text: tx, TKNums: intPtr(c.tkNums[i]), CKType: c.kinds[i]}
 			}
-			want := pythonMergeUnitsOracle(c.texts, c.tkNums, c.kinds, c.target, c.overlap, c.joinSep)
+			want := hardCapMergeUnitsOracle(c.texts, c.tkNums, c.kinds, c.target, c.overlap, c.joinSep)
 			got := mergeUnits(units, c.target, c.overlap, c.joinSep)
 			if len(got) != len(want) {
 				t.Fatalf("chunk count go=%d want=%d\n got=%v\nwant=%v", len(got), len(want), got, want)

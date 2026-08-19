@@ -59,23 +59,23 @@ func TestSentenceDelimiterMatchesBangAndQuestion(t *testing.T) {
 // join exceeds the budget — so the first unit must already sit near the
 // budget and the second unit must not fit alongside it.
 func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
-	// OVER_CAP (Python's canonical default) merges an overflowing unit into
-	// the previous chunk and then closes it, so a chunk can exceed budget by
-	// at most one unit. To exercise the overlap path we use three units:
+	// The hard-cap merge (UNDER_CAP) starts a fresh chunk when the projected
+	// join would exceed the budget. Three units:
 	//   - a carries a parser tag and fits the budget alone,
-	//   - b makes a+b overflow, so a+b merge-then-close into chunk0,
-	//   - c starts a fresh chunk (prevClosed) with an overlap prefix from
-	//     chunk0, which is where the tag-stripping must hold.
+	//   - b does not fit alongside a (a+b exceeds the budget), so b starts a
+	//     fresh chunk carrying an overlap prefix carved from a,
+	//   - c fits alongside b and merges into the same chunk; the tag-stripping
+	//     must hold in the overlap prefix on that chunk.
 	aText := strings.Repeat("word ", 18) + "@@1\t2.3## tail"
 	bText := strings.Repeat("word ", 18)
 	cText := strings.Repeat("word ", 6)
 	aN, bN, cN := tokenizeStr(aText), tokenizeStr(bText), tokenizeStr(cText)
-	// The merge decision is now the running sum of per-unit token counts
-	// (aN + bN), faithful to Python's _merge_text_chunks_by_token_size, NOT the
+	// The merge decision is the running sum of per-unit token counts (aN+bN),
+	// faithful to Python's _merge_text_chunks_by_token_size, NOT the
 	// re-tokenized a+b join. Budget just below the a+b running sum so a and b
-	// cannot merge without overflowing (forcing mergeThenClose on chunk0), but
-	// a alone and c alone fit, and an overlap prefix carved from chunk0 fits
-	// ahead of c (overlap path is exercised on chunk 1).
+	// cannot merge (b starts a fresh chunk), while a alone, c alone, and b+c
+	// all fit, and an overlap prefix carved from a fits ahead of b (the overlap
+	// path is exercised on chunk 1).
 	budget := aN + bN - 1
 	if budget < aN {
 		budget = aN
@@ -96,10 +96,10 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	got := mergeByTokenSizeFromJSON(items, budget, 30.0)
 	merged := got[0]
 	if len(merged) != 2 {
-		t.Fatalf("want 2 chunks (overflow-closed + overlap chunk), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
+		t.Fatalf("want 2 chunks (a + overlap-prefixed b+c), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
 	}
 	// The overlap prefix must actually be prepended to chunk 1; otherwise the
-	// test would pass even if prevClosed started c without any overlap.
+	// test would pass even if b started without any overlap.
 	overlap, _ := computeOverlapPrefix(merged[0].Text, 30.0)
 	if overlap == "" {
 		t.Fatal("expected a non-empty overlap prefix")
@@ -253,7 +253,7 @@ func clampOverlapFixture() [][]schema.ChunkDoc {
 
 func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100)
-	if at100 == nil || len(at100) == 0 {
+	if len(at100) == 0 {
 		t.Fatalf("overlappedPct=100: nil/empty result")
 	}
 	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150)
@@ -266,7 +266,7 @@ func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 	}
 
 	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0)
-	if at0 == nil || len(at0) == 0 {
+	if len(at0) == 0 {
 		t.Fatalf("overlappedPct=0: nil/empty result")
 	}
 	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5)

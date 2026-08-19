@@ -24,11 +24,10 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// Hard-cap contract tests (方案 B): no text chunk may exceed the token target.
-// The merge decision uses the RUNNING SUM of per-unit counts (#17948), so the
-// strict assertions below pin that sum; the emitted text's re-tokenized count
-// can drift a few tokens across "\n" joins (cl100k is non-additive), which the
-// end-to-end tests tolerate with a small slack.
+// Hard-cap contract tests: no text chunk may exceed the token target. The
+// merge decision uses the RUNNING SUM of per-unit counts (#17948), so the
+// assertions below pin that sum; the end-to-end tests additionally assert the
+// re-tokenized emitted text stays within the budget for their fixtures.
 
 func TestMergeByTokenSizeFromJSON_HardCapNoOvershoot(t *testing.T) {
 	// Eight 25-token-ish sections under a 50-token budget must pack without

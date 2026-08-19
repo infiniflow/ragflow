@@ -115,6 +115,26 @@ func TestGoMergeGroupsOracleSanity(t *testing.T) {
 				t.Errorf("case %d chunk %d exceeds cap: tokens=%d (cap=%d)", ci, gi, n, cap)
 			}
 		}
+		// Source preservation: the concatenated chunk texts must reproduce the
+		// non-empty input paragraph stream (order + no loss). All whitespace is
+		// normalized away because paragraph boundaries are joined with "\n" and
+		// each emitted chunk is trimmed.
+		var wantNormalized strings.Builder
+		for _, p := range in {
+			for _, w := range strings.Fields(p) {
+				wantNormalized.WriteString(w)
+			}
+		}
+		var gotNormalized strings.Builder
+		for _, text := range chunks {
+			for _, w := range strings.Fields(text) {
+				gotNormalized.WriteString(w)
+			}
+		}
+		if gotNormalized.String() != wantNormalized.String() {
+			t.Errorf("case %d: chunk stream dropped or reordered source text:\n got=%q\nwant=%q",
+				ci, gotNormalized.String(), wantNormalized.String())
+		}
 	}
 }
 
