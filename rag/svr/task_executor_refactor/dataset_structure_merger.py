@@ -41,7 +41,7 @@ from typing import Optional
 import xxhash
 
 from common import settings
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import hashable_key, thread_pool_exec
 from rag.nlp import search
 from rag.advanced_rag.knowlege_compile._common import (
     encode as _encode,
@@ -95,55 +95,6 @@ def is_structure_merge_task(task_type: str) -> bool:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class _CanonKey:
-    """Wraps a canonicalized structure so it can never collide with an
-    unrelated plain hashable value (e.g. a string equal to another value's
-    repr())."""
-
-    __slots__ = ("_key",)
-
-    def __init__(self, key):
-        self._key = key
-
-    def __eq__(self, other):
-        return isinstance(other, _CanonKey) and self._key == other._key
-
-    def __hash__(self):
-        return hash(self._key)
-
-
-def _canonicalize(value):
-    """Recursively convert JSON-like unhashable values (dict/list/set) into an
-    equality-preserving hashable form: dict equality ignores key order, list
-    equality doesn't. Distinct types that are never equal to each other in
-    Python (list vs. tuple) get distinct tags; types that compare equal by
-    value (set vs. frozenset) share one."""
-    if isinstance(value, dict):
-        return ("__dict__", frozenset((k, _canonicalize(v)) for k, v in value.items()))
-    if isinstance(value, list):
-        return ("__list__", tuple(_canonicalize(v) for v in value))
-    if isinstance(value, tuple):
-        return ("__tuple__", tuple(_canonicalize(v) for v in value))
-    if isinstance(value, (set, frozenset)):
-        return ("__set__", frozenset(_canonicalize(v) for v in value))
-    try:
-        hash(value)
-        return value
-    except TypeError:
-        return ("__repr__", repr(value))
-
-
-def _hashable_key(value):
-    """Return a value usable as a set/dict key, falling back to a recursive
-    canonicalization for unhashable (malformed) provenance values instead of
-    raising TypeError."""
-    try:
-        hash(value)
-        return value
-    except TypeError:
-        return _CanonKey(_canonicalize(value))
 
 
 def _index_name(tenant_id: str) -> str:
@@ -388,18 +339,18 @@ async def _merge_bucket(
             payload = json.loads(r.get("content_with_weight") or "{}")
             chunks = r.get("source_chunk_ids") or []
             for c in chunks:
-                c_key = _hashable_key(c)
+                c_key = hashable_key(c)
                 if c_key not in seen_chunks:
                     all_chunks.append(c)
                     seen_chunks.add(c_key)
             doc = r.get("doc_id") or ""
-            doc_key = _hashable_key(doc)
+            doc_key = hashable_key(doc)
             if doc and doc_key not in seen_docs:
                 all_docs.append(doc)
                 seen_docs.add(doc_key)
             mention_count += int(r.get("mention_count_int") or payload.get("mention_count", 1))
             desc = payload.get("description", "")
-            desc_key = _hashable_key(desc)
+            desc_key = hashable_key(desc)
             if desc and desc_key not in seen_descriptions:
                 all_descriptions.append(desc)
                 seen_descriptions.add(desc_key)
@@ -482,17 +433,17 @@ async def _merge_relations(
             payload = json.loads(r.get("content_with_weight") or "{}")
             chunks = r.get("source_chunk_ids") or []
             for c in chunks:
-                c_key = _hashable_key(c)
+                c_key = hashable_key(c)
                 if c_key not in seen_chunks:
                     all_chunks.append(c)
                     seen_chunks.add(c_key)
             doc = r.get("doc_id") or ""
-            doc_key = _hashable_key(doc)
+            doc_key = hashable_key(doc)
             if doc and doc_key not in seen_docs:
                 all_docs.append(doc)
                 seen_docs.add(doc_key)
             desc = payload.get("description") or f"{src} {rel_type} {tgt}"
-            desc_key = _hashable_key(desc)
+            desc_key = hashable_key(desc)
             if desc_key not in seen_desc:
                 all_desc.append(desc)
                 seen_desc.add(desc_key)
@@ -598,7 +549,7 @@ async def _cleanup_deleted_docs(
         return True  # no markers — nothing to do
     deleted_doc_ids_by_key: dict = {}
     for v in cursor.values():
-        deleted_doc_ids_by_key.setdefault(_hashable_key(v), v)
+        deleted_doc_ids_by_key.setdefault(hashable_key(v), v)
     deleted_doc_ids_set = set(deleted_doc_ids_by_key.keys())
     deleted_doc_ids = list(deleted_doc_ids_by_key.values())
 
@@ -640,7 +591,7 @@ async def _cleanup_deleted_docs(
             current: list = row.get("doc_ids_kwd") or []
             if not isinstance(current, list):
                 current = []
-            remaining = [d for d in current if _hashable_key(d) not in deleted_doc_ids_set]
+            remaining = [d for d in current if hashable_key(d) not in deleted_doc_ids_set]
             if not remaining:
                 ids_to_delete.append(row["id"])
             elif len(remaining) < len(current):
