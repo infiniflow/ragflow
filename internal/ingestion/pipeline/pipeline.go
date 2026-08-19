@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"ragflow/internal/agent/canvas"
@@ -182,9 +181,7 @@ func ValidatePipeline(cnv *canvas.Canvas) error {
 	}
 	extractorCount := 0
 	for id, comp := range cnv.Components {
-		lowerName := strings.ToLower(comp.Obj.ComponentName)
-		lowerID := strings.ToLower(id)
-		if lowerName == "extractor" || strings.HasPrefix(lowerID, "extractor:") || strings.HasPrefix(lowerID, "extractor_") {
+		if isExtractorComponent(id, comp.Obj.ComponentName) {
 			extractorCount++
 		}
 	}

@@ -2025,8 +2025,14 @@ func TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk(t *testing.T) {
 	}
 
 	// Call 1 System must contain Chunk 1 exactly once, and NOT contain Chunk 2; User contains Chunk 1
-	req1Sys := stub.requests[0].Messages[0].Content
-	req1User := stub.requests[0].Messages[1].Content
+	var req1Sys, req1User string
+	for _, msg := range stub.requests[0].Messages {
+		if msg.Role == eschema.System {
+			req1Sys = msg.Content
+		} else if msg.Role == eschema.User {
+			req1User = msg.Content
+		}
+	}
 	if n := strings.Count(req1Sys, "Chunk One Body"); n != 1 {
 		t.Errorf("call 1 chunk text count in system = %d, want 1; prompt: %q", n, req1Sys)
 	}
@@ -2038,8 +2044,14 @@ func TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk(t *testing.T) {
 	}
 
 	// Call 2 System must contain Chunk 2 exactly once, and NOT contain Chunk 1; User contains Chunk 2
-	req2Sys := stub.requests[1].Messages[0].Content
-	req2User := stub.requests[1].Messages[1].Content
+	var req2Sys, req2User string
+	for _, msg := range stub.requests[1].Messages {
+		if msg.Role == eschema.System {
+			req2Sys = msg.Content
+		} else if msg.Role == eschema.User {
+			req2User = msg.Content
+		}
+	}
 	if n := strings.Count(req2Sys, "Chunk Two Body"); n != 1 {
 		t.Errorf("call 2 chunk text count in system = %d, want 1; prompt: %q", n, req2Sys)
 	}
@@ -2720,3 +2732,88 @@ func TestExtractor_EndToEnd_LegacyPipelineFlow(t *testing.T) {
 		t.Errorf("expected important_kwd in chunk, got %#v", chunks[0]["important_kwd"])
 	}
 }
+
+func TestExtractor_MetadataNoAutoEnable_Flat(t *testing.T) {
+	flatParams := map[string]any{
+		"metadata": []any{
+			map[string]any{"key": "category", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+	}
+
+	compRaw, err := NewExtractorComponent(flatParams)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+	ec := compRaw.(*ExtractorComponent)
+	if ec.Param.Metadata.Enabled {
+		t.Errorf("expected Metadata.Enabled == false without explicit enable_metadata flag")
+	}
+	if len(ec.Param.Metadata.Metadata) != 1 || len(ec.Param.Metadata.BuiltInMetadata) != 1 {
+		t.Errorf("expected parsed metadata schema fields, got: %#v", ec.Param.Metadata)
+	}
+}
+
+func TestExtractor_ParseMetadataFieldDefs_MapSlice(t *testing.T) {
+	inputMapSlice := []map[string]any{
+		{"key": "author", "type": "string", "description": "Author name"},
+	}
+	defs := parseMetadataFieldDefs(inputMapSlice)
+	if len(defs) != 1 || defs[0].Key != "author" || defs[0].Type != "string" || defs[0].Description != "Author name" {
+		t.Errorf("parseMetadataFieldDefs failed for []map[string]any: %#v", defs)
+	}
+
+	inputDefs := []common.MetadataFieldDef{
+		{Key: "tag", Type: "string"},
+	}
+	directDefs := parseMetadataFieldDefs(inputDefs)
+	if len(directDefs) != 1 || directDefs[0].Key != "tag" {
+		t.Errorf("parseMetadataFieldDefs failed for []common.MetadataFieldDef: %#v", directDefs)
+	}
+}
+
+func TestExtractor_ResolveInputs_DeprecatedPromptInput(t *testing.T) {
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName:    "summary",
+		SystemPrompt: "Default sys",
+	}}
+
+	inputs := c.resolveInputs(map[string]any{
+		"prompt": "some prompt template",
+	})
+	if inputs.systemPrompt != "Default sys" {
+		t.Errorf("expected systemPrompt to remain 'Default sys', got %q", inputs.systemPrompt)
+	}
+}
+
+func TestExtractor_TopnTagsAlias(t *testing.T) {
+	// 1. topn_tags alias works
+	compRaw, err := NewExtractorComponent(map[string]any{
+		"topn_tags":   5,
+		"tag_file_id": "tag-1",
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+	ec := compRaw.(*ExtractorComponent)
+	if ec.Param.Tags.TopN != 5 || ec.Param.Tags.TagFileID != "tag-1" {
+		t.Errorf("expected Tags.TopN == 5 / TagFileID == tag-1, got %#v", ec.Param.Tags)
+	}
+
+	// 2. auto_tags has precedence over topn_tags
+	compRaw2, err := NewExtractorComponent(map[string]any{
+		"auto_tags": 3,
+		"topn_tags": 8,
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+	ec2 := compRaw2.(*ExtractorComponent)
+	if ec2.Param.Tags.TopN != 3 {
+		t.Errorf("expected auto_tags precedence TopN == 3, got %d", ec2.Param.Tags.TopN)
+	}
+}
+
+

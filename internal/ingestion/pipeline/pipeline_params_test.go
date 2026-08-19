@@ -488,3 +488,191 @@ func TestCleanComponentParams_KeepsLegacyExtractorParams(t *testing.T) {
 		t.Errorf("expected llm_id == gpt-4, got: %#v", ext["llm_id"])
 	}
 }
+
+func TestCleanComponentParams_ExtractorBuiltInMetadataRetained(t *testing.T) {
+	dslJSON := []byte(`{
+		"components": {
+			"Extractor:AutoExtractDefault": {
+				"obj": {
+					"component_name": "Extractor",
+					"params": {
+						"outputs": {},
+						"metadata": {}
+					}
+				}
+			}
+		}
+	}`)
+
+	rawConfig := map[string]any{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"enable_metadata": 1,
+			"metadata": []map[string]any{
+				{"key": "custom_field", "type": "string"},
+			},
+			"built_in_metadata": []map[string]any{
+				{"key": "doc_name", "type": "string"},
+			},
+		},
+	}
+
+	result := CleanComponentParams(dslJSON, rawConfig)
+	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
+	}
+
+	meta, ok := ext["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got: %#v", ext["metadata"])
+	}
+	if meta["enabled"] != true {
+		t.Errorf("expected enabled == true, got: %#v", meta["enabled"])
+	}
+	mFields, ok := meta["metadata"].([]any)
+	if !ok || len(mFields) != 1 {
+		t.Errorf("expected 1 metadata field, got: %#v", meta["metadata"])
+	}
+	bFields, ok := meta["built_in_metadata"].([]any)
+	if !ok || len(bFields) != 1 {
+		t.Errorf("expected 1 built_in_metadata field, got: %#v", meta["built_in_metadata"])
+	}
+}
+
+func TestNormalizeExtractorParams_MetadataNoAutoEnable(t *testing.T) {
+	raw := map[string]any{
+		"metadata": []any{
+			map[string]any{"key": "cat", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+	}
+
+	out := NormalizeExtractorParams(raw)
+	meta, ok := out["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata map, got %#v", out["metadata"])
+	}
+	if meta["enabled"] == true {
+		t.Errorf("metadata should NOT auto-enable without explicit enable_metadata flag: %#v", meta)
+	}
+}
+
+func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    map[string]any
+		validate func(t *testing.T, out map[string]any)
+	}{
+		{
+			name:  "nil input returns empty map",
+			input: nil,
+			validate: func(t *testing.T, out map[string]any) {
+				if len(out) != 0 {
+					t.Errorf("expected empty map for nil input, got %#v", out)
+				}
+			},
+		},
+		{
+			name: "keywords flat conversion",
+			input: map[string]any{
+				"auto_keywords":       5,
+				"keywords_sys_prompt": "custom kw prompt",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				kw, ok := out["keywords"].(map[string]any)
+				if !ok || kw["top_n"] != 5 || kw["system_prompt"] != "custom kw prompt" {
+					t.Errorf("keywords mismatch: %#v", out["keywords"])
+				}
+			},
+		},
+		{
+			name: "questions flat conversion",
+			input: map[string]any{
+				"auto_questions":       3,
+				"questions_sys_prompt": "custom q prompt",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				q, ok := out["questions"].(map[string]any)
+				if !ok || q["top_n"] != 3 || q["system_prompt"] != "custom q prompt" {
+					t.Errorf("questions mismatch: %#v", out["questions"])
+				}
+			},
+		},
+		{
+			name: "tags topn_tags alias and tag_file_id",
+			input: map[string]any{
+				"topn_tags":   7,
+				"tag_file_id": "file-123",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				tag, ok := out["tags"].(map[string]any)
+				if !ok || tag["top_n"] != 7 || tag["tag_file_id"] != "file-123" {
+					t.Errorf("tags mismatch: %#v", out["tags"])
+				}
+			},
+		},
+		{
+			name: "tags auto_tags precedence over topn_tags",
+			input: map[string]any{
+				"auto_tags": 2,
+				"topn_tags": 9,
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				tag, ok := out["tags"].(map[string]any)
+				if !ok || tag["top_n"] != 2 {
+					t.Errorf("expected auto_tags precedence 2, got %#v", out["tags"])
+				}
+			},
+		},
+		{
+			name: "summary enabled via field_name == summary",
+			input: map[string]any{
+				"field_name": "summary",
+				"sys_prompt": "summary prompt",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				sum, ok := out["summary"].(map[string]any)
+				if !ok || sum["enabled"] != true || sum["system_prompt"] != "summary prompt" {
+					t.Errorf("summary mismatch: %#v", out["summary"])
+				}
+			},
+		},
+		{
+			name: "metadata explicit enable with map slices",
+			input: map[string]any{
+				"enable_metadata": 1,
+				"metadata": []map[string]any{
+					{"key": "cat", "type": "string"},
+				},
+				"built_in_metadata": []map[string]any{
+					{"key": "file_name", "type": "string"},
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				meta, ok := out["metadata"].(map[string]any)
+				if !ok || meta["enabled"] != true {
+					t.Fatalf("expected enabled == true, got %#v", out["metadata"])
+				}
+				mList, ok := meta["metadata"].([]any)
+				if !ok || len(mList) != 1 {
+					t.Errorf("metadata slice mismatch: %#v", meta["metadata"])
+				}
+				bList, ok := meta["built_in_metadata"].([]any)
+				if !ok || len(bList) != 1 {
+					t.Errorf("built_in_metadata slice mismatch: %#v", meta["built_in_metadata"])
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := NormalizeExtractorParams(tc.input)
+			tc.validate(t, out)
+		})
+	}
+}
+
+

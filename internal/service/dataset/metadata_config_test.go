@@ -278,6 +278,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 		t.Fatalf("extractor enable_metadata = %#v, want 0 when top-level flag stays disabled", extractor["enable_metadata"])
 	}
 
+	// State 2: When enabled, updating fields updates component with enable_metadata = 1
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-1").
 		Update("parser_config", entity.JSONMap{
@@ -335,5 +336,58 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 		if field["key"] != want["key"] || field["type"] != want["type"] {
 			t.Fatalf("extractor metadata[%d] = %#v, want key/type %#v", i, field, want)
 		}
+	}
+
+	// State 3: Empty fields auto-disables enable_metadata
+	_, code, err = (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		Metadata:        []service.MetadataConfigField{},
+		BuiltInMetadata: []service.MetadataConfigField{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateMetadataConfig with empty fields failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	persisted, err = dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("failed to fetch persisted dataset: %v", err)
+	}
+	if enabled, ok := persisted.ParserConfig["enable_metadata"].(bool); !ok || enabled {
+		t.Fatalf("expected parser_config.enable_metadata == false after emptying fields, got %#v", persisted.ParserConfig["enable_metadata"])
+	}
+}
+
+func TestDatasetServiceUpdateMetadataConfig_BuiltInMetadataCamelFallback(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
+
+	ctx := t.Context()
+	result, code, err := (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		BuiltInMetadataCamel: []service.MetadataConfigField{
+			{Key: "file_name", Type: "string"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateMetadataConfig failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	builtIn, ok := result["built_in_metadata"].([]map[string]interface{})
+	if !ok || len(builtIn) != 1 {
+		t.Fatalf("expected 1 built_in_metadata field in result, got %#v", result["built_in_metadata"])
+	}
+	if builtIn[0]["key"] != "file_name" {
+		t.Fatalf("expected file_name key, got %#v", builtIn[0])
 	}
 }

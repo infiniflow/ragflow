@@ -126,6 +126,10 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}
 	parserConfig["metadata"] = metadata
 	parserConfig["built_in_metadata"] = builtInMetadata
+	// enable_metadata state machine:
+	// - If nil (uninitialized dataset): auto-enable if metadata fields exist.
+	// - If false (explicitly disabled by user): preserve false even when fields are added.
+	// - If fields are empty: auto-disable to avoid invoking extractor on empty schema.
 	if parserConfig["enable_metadata"] == nil {
 		parserConfig["enable_metadata"] = len(metadata) > 0 || len(builtInMetadata) > 0
 	} else if len(metadata) == 0 && len(builtInMetadata) == 0 {

@@ -41,6 +41,7 @@ var extractorLegacyParamKeys = map[string]struct{}{
 	"sys_prompt":           {},
 	"enable_metadata":      {},
 	"metadata_config":      {},
+	"built_in_metadata":    {},
 }
 
 // extractorValidParamKeys is dynamically derived from schema.ExtractorParam + LLM hyper-parameters + legacy keys.
@@ -81,10 +82,19 @@ func extractJSONTags(v any) map[string]struct{} {
 	return tags
 }
 
+// isExtractorComponent returns true if the component name or component ID
+// indicates an Extractor component.
+func isExtractorComponent(cpnID, componentName string) bool {
+	lowerName := strings.ToLower(componentName)
+	lowerID := strings.ToLower(cpnID)
+	return lowerName == "extractor" ||
+		strings.HasPrefix(lowerID, "extractor:") ||
+		strings.HasPrefix(lowerID, "extractor_")
+}
+
 // getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
 func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
-	lower := strings.ToLower(cpnID)
-	if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+	if isExtractorComponent(cpnID, "") {
 		return extractorValidParamKeys, true
 	}
 	return nil, false
@@ -330,17 +340,14 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 			meta["enabled"] = isTruthy(v)
 		}
 		if v, ok := out["metadata"]; ok {
-			if arr, ok := v.([]any); ok {
+			if arr := anySlice(v); arr != nil {
 				meta["metadata"] = arr
 			}
 		}
 		if v, ok := out["built_in_metadata"]; ok {
-			if arr, ok := v.([]any); ok {
+			if arr := anySlice(v); arr != nil {
 				meta["built_in_metadata"] = arr
 			}
-		}
-		if !isTruthy(meta["enabled"]) && (len(anySlice(meta["metadata"])) > 0 || len(anySlice(meta["built_in_metadata"])) > 0) && out["enable_metadata"] == nil {
-			meta["enabled"] = true
 		}
 		out["metadata"] = meta
 	}

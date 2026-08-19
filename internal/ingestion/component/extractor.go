@@ -378,9 +378,6 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := params["built_in_metadata"]; ok {
 				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
 			}
-			if !p.Metadata.Enabled && (len(p.Metadata.Metadata) > 0 || len(p.Metadata.BuiltInMetadata) > 0) && params["enable_metadata"] == nil {
-				p.Metadata.Enabled = true
-			}
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -396,7 +393,7 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
 		"chunks":        "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
-		"prompt":        "Deprecated user prompt template (retained for backward compatibility).",
+		"prompt":        "Deprecated user prompt template (ignored; user turn strictly carries chunk text, use system_prompt for instructions).",
 		"llm_id":        "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
 		"system_prompt": "Optional per-call system prompt override. Falls back to Param.SystemPrompt.",
 	}
@@ -644,6 +641,9 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 			}
 		}
 		return out
+	}
+	if v, ok := inputs["prompt"].(string); ok && strings.TrimSpace(v) != "" {
+		common.Warn("ExtractorComponent: input 'prompt' is deprecated and ignored; user turn strictly carries chunk text. Use 'system_prompt' for instructions.")
 	}
 	if v, ok := inputs["llm_id"].(string); ok && v != "" {
 		out.llmID = v
@@ -1619,6 +1619,8 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 // buildExtractorMessages assembles system + user messages for one extraction
 // call. The user message strictly carries chunkText (or a fallback single space
 // if empty), ensuring a clean and consistent message contract.
+// System prompt is omitted if empty or whitespace-only to avoid sending empty
+// system turns to LLM providers.
 func buildExtractorMessages(systemPrompt, chunkText string) []eschema.Message {
 	out := make([]eschema.Message, 0, 2)
 	if strings.TrimSpace(systemPrompt) != "" {
@@ -1745,8 +1747,22 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 // parseMetadataFieldDefs converts an any value (typically []any of maps)
 // to a typed []common.MetadataFieldDef slice.
 func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
-	arr, ok := v.([]any)
-	if !ok {
+	if v == nil {
+		return nil
+	}
+	if defs, ok := v.([]common.MetadataFieldDef); ok {
+		return defs
+	}
+	var arr []any
+	switch typed := v.(type) {
+	case []any:
+		arr = typed
+	case []map[string]any:
+		arr = make([]any, 0, len(typed))
+		for _, item := range typed {
+			arr = append(arr, item)
+		}
+	default:
 		return nil
 	}
 	fields := make([]common.MetadataFieldDef, 0, len(arr))
