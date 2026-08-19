@@ -14,6 +14,7 @@ import {
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import {
+  ArtifactAlterationKeys,
   DatasetStructureKeys,
   useDeleteDatasetStructure,
   useFetchArtifactAlteration,
@@ -71,7 +72,11 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
     queryClient.invalidateQueries({
       queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
     });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+    });
   }, [queryClient, knowledgeBaseId, kind]);
+  
   useRunEndEffect(structureStatus, handleRunEnd);
 
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(

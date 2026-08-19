@@ -152,9 +152,10 @@ def _apply_model_family_policies(
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         _pop_thinking_controls()
-        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # -preview variants (e.g. qwen3.8-max-preview) and the flagship
+        # reasoning model qwen3.8-2.4t-a95b only accept
         # enable_thinking=True; the API rejects any other value.
-        if "-preview" in model_name_lower:
+        if "-preview" in model_name_lower or "2.4t-a95b" in model_name_lower:
             enable_thinking = True
         else:
             enable_thinking = thinking_type == "enabled" if thinking_type else False
@@ -170,7 +171,12 @@ def _apply_model_family_policies(
         return sanitized_gen_conf, sanitized_kwargs
 
     if backend == "litellm":
-        if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
+        if provider == SupportedLiteLLMProvider.DeepSeek:
+            _pop_thinking_controls()
+            sanitized_gen_conf.pop("reasoning_effort", None)
+            sanitized_kwargs.pop("reasoning_effort", None)
+            _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type or "disabled"}})
+        elif provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)

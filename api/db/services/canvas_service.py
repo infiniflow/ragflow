@@ -156,7 +156,7 @@ class UserCanvasService(CommonService):
                 .join(User, on=(cls.model.user_id == User.id))
                 .where(
                     owner_filter,
-                    (fn.LOWER(cls.model.title).contains(keywords.lower())),
+                    (fn.LOWER(cls.model.title).contains(keywords.lower()) | fn.LOWER(cls.model.tags).contains(keywords.lower())),
                 )
             )
         else:

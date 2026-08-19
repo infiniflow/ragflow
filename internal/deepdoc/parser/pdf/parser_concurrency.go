@@ -205,8 +205,8 @@ func (p *Parser) inferOCRDetect(ctx context.Context, doc pdf.DocAnalyzer, pageIm
 }
 
 // inferOCRRecognize routes doc.OCRRecognize through the inference
-// limiter. Per-region OCR fallback paths (buildTextBoxes, ocrTableCells)
-// should use this wrapper so the per-region fan-out is bounded.
+// limiter. Per-region OCR fallback paths (buildTextBoxes) should use this
+// wrapper so the per-region fan-out is bounded.
 func (p *Parser) inferOCRRecognize(ctx context.Context, doc pdf.DocAnalyzer, cropped image.Image) ([]pdf.OCRText, error) {
 	if doc == nil || !doc.Health() {
 		return nil, nil

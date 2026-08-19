@@ -32,6 +32,16 @@ from common import settings
 from common.misc_utils import thread_pool_exec
 
 
+def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
+    """Build the Infinity weighted-sum expression from the vector weight."""
+    term_similarity_weight = 1 - vector_similarity_weight
+    return FusionExpr(
+        "weighted_sum",
+        topn,
+        {"weights": f"{term_similarity_weight:g},{vector_similarity_weight:g}"},
+    )
+
+
 def index_name(uid):
     return f"ragflow_{uid}"
 
@@ -207,7 +217,19 @@ class Dealer:
                 if settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
+                if settings.DOC_ENGINE_INFINITY:
+                    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+                    logging.debug(
+                        "Dealer.search fusion: topk=%s vector_similarity_weight=%s",
+                        topk,
+                        vector_similarity_weight,
+                    )
+                    fusionExpr = build_fusion_expr(topk, vector_similarity_weight)
+                elif settings.DOC_ENGINE_GAUSSDB:
+                    vector_weight = req.get("vector_similarity_weight", 0.3)
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
+                else:
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
                 matchExprs = [matchText, matchDense, fusionExpr] if matchText else [matchDense]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
@@ -337,20 +359,14 @@ class Dealer:
 
         return res, seted
 
-    def _rank_feature_scores(self, query_rfea, search_res):
-        ## For rank feature(tag_fea) scores.
+    def _tag_feature_scores(self, query_rfea, search_res):
         rank_fea = []
-        pageranks = []
-        for chunk_id in search_res.ids:
-            pageranks.append(search_res.field[chunk_id].get(PAGERANK_FLD, 0))
-        pageranks = np.array(pageranks, dtype=float)
-
         if not query_rfea:
-            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
+            return np.zeros(len(search_res.ids), dtype=float)
 
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
         if q_denor == 0:
-            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
+            return np.zeros(len(search_res.ids), dtype=float)
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
@@ -368,7 +384,12 @@ class Dealer:
                 rank_fea.append(0)
             else:
                 rank_fea.append(nor / np.sqrt(denor) / q_denor)
-        return np.array(rank_fea) * 10.0 + pageranks
+        return np.array(rank_fea, dtype=float) * 10.0
+
+    def _rank_feature_scores(self, query_rfea, search_res):
+        ## For rank feature(tag_fea) scores.
+        pageranks = np.array([search_res.field[chunk_id].get(PAGERANK_FLD, 0) for chunk_id in search_res.ids], dtype=float)
+        return self._tag_feature_scores(query_rfea, search_res) + pageranks
 
     async def _knn_scores(self, sres: "Dealer.SearchResult", idx_names: str | list[str], kb_ids: list[str]) -> dict[str, float]:
         """
@@ -597,6 +618,7 @@ class Dealer:
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
+            "vector_similarity_weight": vector_similarity_weight,
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
@@ -652,6 +674,14 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+            elif settings.DOC_ENGINE_GAUSSDB:
+                # GaussDB computes fusion and PageRank in SQL; tag features are
+                # applied locally to the returned candidate window.
+                sql_scores = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sql_scores = np.array([s if s is not None else 0.0 for s in sql_scores], dtype=np.float64)
+                sim = sql_scores + self._tag_feature_scores(rank_feature, sres)
+                tsim = sql_scores
+                vsim = sql_scores
             else:
                 # ES path: ask ES for the clean cosine score via a second
                 # KNN-only call filtered by the candidate ids, then merge it

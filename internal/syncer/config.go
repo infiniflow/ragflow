@@ -36,7 +36,7 @@ func DefaultConfig() Config {
 		TaskWorkerCount:    5,
 		TaskQueueSize:      10,
 		JobWorkerCount:     400,
-		JobQueueSize:       400,
+		JobQueueSize:       450,
 		ItemRetryCount:     3,
 		ItemRetryBaseDelay: time.Second,
 	}

@@ -1,7 +1,11 @@
 """Tool selection gating: phase-based filtering and fallback chain."""
 
+import logging
+
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
-from rag.advanced_rag.harness.types import OrchestratorContext
+from rag.advanced_rag.harness.types import ClaimTarget, OrchestratorContext
+
+_LOG = logging.getLogger(__name__)
 
 # Search phase definitions
 
@@ -90,6 +94,7 @@ def get_gated_tools(
     context: OrchestratorContext,
     has_routed_scope: bool = False,
     web_enabled: bool = True,
+    claim: ClaimTarget | None = None,
 ) -> list[dict]:
     """Filter, sort, and gate tools by phase priority and context."""
     phase_config = SEARCH_PHASES.get(phase)
@@ -110,6 +115,8 @@ def get_gated_tools(
         sorted_tools.append(tool_name)
 
     selected = sorted_tools[: phase_config["max_returned"]]
+    if phase == "locate":
+        selected = _inject_locate_fallback_tools(selected, available_tools, claim, web_enabled)
     # Copy the registry schemas before annotating — the registry dicts are
     # shared process-wide, mutating them would leak phase hints across
     # concurrent requests.
@@ -124,10 +131,46 @@ def _default_defs(tool_names: list[str], web_enabled: bool = True) -> list[dict]
     return [TOOL_REGISTRY[n]["function_schema"] for n in tool_names if n in TOOL_REGISTRY and (web_enabled or n != "web_search")]
 
 
-def determine_current_phase(context: OrchestratorContext) -> str:
+# After this many consecutive `locate` rounds for a single claim that produced
+# zero evidence chunks, keep the phase in `locate` but admit `web_search` into
+# the gated tool set. This preserves the phase semantics ("still trying to
+# locate an answer") while giving the agent an external-search escape hatch
+# when the knowledge base lacks the fact entirely.
+LOCATE_EMPTY_ADVANCE_THRESHOLD = 2
+
+
+def determine_current_phase(
+    context: OrchestratorContext,
+    claim: ClaimTarget | None = None,
+) -> str:
     """Determine the current search phase based on context."""
-    if not context.has_any_chunks():
+    if claim is not None:
+        evidence_ids = claim.agent_result.evidence_ids if claim.agent_result else None
+        if not evidence_ids:
+            return "locate"
+    elif not context.has_any_chunks():
         return "locate"
     if context.verdict and context.verdict.has_conflicts:
         return "verify"
     return "explore"
+
+
+def _inject_locate_fallback_tools(
+    selected: list[str],
+    available_tools: list[str],
+    claim: ClaimTarget | None,
+    web_enabled: bool,
+) -> list[str]:
+    """Keep `locate` semantics but add external fallback when KB locate fails."""
+    if not web_enabled or claim is None:
+        return selected
+    if claim.locate_empty_streak < LOCATE_EMPTY_ADVANCE_THRESHOLD:
+        return selected
+    if "web_search" not in available_tools or "web_search" in selected:
+        return selected
+    _LOG.info(
+        "[Tool gating] claim=%s: injecting web_search after repeated locate misses (locate_empty_streak=%d)",
+        claim.claim_id,
+        claim.locate_empty_streak,
+    )
+    return [*selected, "web_search"]

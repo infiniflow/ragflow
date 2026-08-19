@@ -19,7 +19,6 @@ package syncer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -57,7 +56,7 @@ func NewSyncer(taskWorkerCount int) *Syncer {
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()
 
-	registerBuiltInConnectors(registry)
+	syncerconnector.RegisterBuiltIns(registry)
 
 	documentService := documentservice.NewDocumentService()
 	pruneService := service.NewSyncPruneService(documentService, nil)
@@ -166,28 +165,4 @@ func logSyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Tim
 		zap.String("source", taskContext.Connector.Source),
 		zap.Duration("elapsed", time.Since(startedAt)),
 	)
-}
-
-// registerBuiltInConnectors registers datasource connectors available in the server binary.
-func registerBuiltInConnectors(registry *syncerconnector.Registry) {
-	registerDAOConnector(registry, "rss", syncerconnector.NewRSSConnector)
-	registerDAOConnector(registry, "github", syncerconnector.NewGitHubConnector)
-	registerDAOConnector(registry, "gmail", syncerconnector.NewGmailConnector)
-	registerDAOConnector(registry, "google-drive", syncerconnector.NewGoogleDriveConnector)
-	registerDAOConnector(registry, "google_drive", syncerconnector.NewGoogleDriveConnector)
-	registerDAOConnector(registry, "outlook", syncerconnector.NewOutlookConnector)
-	registerDAOConnector(registry, "rest_api", syncerconnector.NewRestAPIConnector)
-	registerDAOConnector(registry, "mysql", syncerconnector.NewMySQLConnector)
-	registerDAOConnector(registry, "postgresql", syncerconnector.NewPostgreSQLConnector)
-	registerDAOConnector(registry, "discord", syncerconnector.NewDiscordConnector)
-}
-
-func registerDAOConnector[T syncerconnector.Connector](registry *syncerconnector.Registry, source string, factory func(map[string]any) (T, error)) {
-	registry.Register(source, func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, fmt.Errorf("%s connector received an invalid task context", source)
-		}
-		return factory(map[string]any(row.Connector.Config))
-	})
 }

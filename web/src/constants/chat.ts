@@ -59,4 +59,5 @@ export enum DatasetMetadata {
 export enum WebSearchProvider {
   Tavily = 'tavily',
   Querit = 'querit',
+  Serply = 'serply',
 }

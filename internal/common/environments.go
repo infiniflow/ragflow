@@ -134,7 +134,6 @@ const (
 	EnvBatchSingle                       = "BATCH_SINGLE"
 	EnvBatchCount                        = "BATCH_COUNT"
 	EnvBatchLogLevel                     = "BATCH_LOG_LEVEL"
-	EnvBatchSkipOCR                      = "BATCH_SKIP_OCR"
 	EnvBatchCompareOnly                  = "BATCH_COMPARE_ONLY"
 	EnvBatchCompareFilter                = "BATCH_COMPARE_FILTER"
 	EnvBatchCompareCSV                   = "BATCH_COMPARE_CSV"

@@ -72,6 +72,14 @@ class ClaimTarget:
     confidence: float = 0.0
     suggested_tools: list[str] = field(default_factory=list)
     agent_result: AgentResult | None = None
+    # Consecutive research rounds for THIS claim that stayed in `locate` and
+    # produced neither evidence chunks nor routed document scope. Claim-scoped
+    # on purpose: claims are researched in parallel over one shared
+    # OrchestratorContext, so a global counter would let one claim's empty
+    # locate rounds influence a sibling. Once it reaches
+    # LOCATE_EMPTY_ADVANCE_THRESHOLD, the phase still stays `locate`, but
+    # gating may admit `web_search` for facts the corpus lacks.
+    locate_empty_streak: int = 0
 
 
 @dataclass
@@ -170,7 +178,6 @@ class OrchestratorContext:
     claims: list[ClaimTarget]
     mode: str
     iteration: int = 0
-    current_phase: str = "locate"
     verdict: SufficiencyVerdict | None = None
     history: list[dict] = field(default_factory=list)
     # Follow-up search queries produced by the Phase-2 LLM Sufficient Context

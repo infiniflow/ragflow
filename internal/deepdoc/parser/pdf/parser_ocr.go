@@ -279,47 +279,6 @@ func charBoxOverlapRatio(c pdf.TextChar, x0, x1, y0, y1 float64) float64 {
 	return inter / charArea
 }
 
-// ocrTableCells fills empty TSR cells via OCR recognition.
-func (p *Parser) ocrTableCells(ctx context.Context, cells []pdf.TSRCell, tableImg image.Image, doc pdf.DocAnalyzer) {
-	if doc == nil || tableImg == nil || len(cells) == 0 {
-		return
-	}
-	for i := range cells {
-		if cells[i].Text != "" {
-			continue
-		}
-		x0 := int(math.Max(0, cells[i].X0))
-		y0 := int(math.Max(0, cells[i].Y0))
-		x1 := int(math.Min(float64(tableImg.Bounds().Dx()), cells[i].X1))
-		y1 := int(math.Min(float64(tableImg.Bounds().Dy()), cells[i].Y1))
-		if x0 >= x1 || y0 >= y1 {
-			continue
-		}
-		// De-skew via WarpCrop and recognize via ocrRecognizeWithRotation like
-		// the other OCR paths. Table cells are axis-aligned, so WarpCrop
-		// early-exits to FastCrop and ocrRecognizeWithRotation recognizes once
-		// at 0 deg; the bounds-clamp / non-finite guard is still inherited.
-		cropped := util.WarpCrop(tableImg, [4]util.Pt{
-			{X: float64(x0), Y: float64(y0)},
-			{X: float64(x1), Y: float64(y0)},
-			{X: float64(x1), Y: float64(y1)},
-			{X: float64(x0), Y: float64(y1)},
-		})
-		texts, err := p.ocrRecognizeWithRotation(ctx, doc, cropped)
-		if err != nil {
-			slog.Warn("table cell OCR failed", "err", err)
-			continue
-		}
-		var parts []string
-		for _, t := range texts {
-			if t.Text != "" {
-				parts = append(parts, t.Text)
-			}
-		}
-		cells[i].Text = strings.TrimSpace(strings.Join(parts, " "))
-	}
-}
-
 // buildTextBoxes assembles detect box text from embedded chars and fills empty boxes via single-image OCR.
 // Each region that lacks embedded text is cropped and recognized with a
 // direct doc.OCRRecognize call so empty-box fallback runs through the

@@ -786,7 +786,9 @@ class Parser(ProcessBase):
             for b in bboxes:
                 if b.get("layout_type", "") == "title":
                     mkdn += "\n## "
-                if b.get("layout_type", "") == "figure":
+                # The current frontend uses JSON for PDF output. Keep this
+                # defensive guard for imported or API-authored Markdown flows.
+                if b.get("layout_type", "") == "figure" and b.get("image") is not None:
                     mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
                     continue
                 mkdn += b.get("text", "") + "\n"

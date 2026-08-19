@@ -9,6 +9,7 @@ export default {
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       deleteThem: '确定要删除吗？',
+      removeModalTitle: '确定移除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',
@@ -618,8 +619,6 @@ export default {
       dataSource: '数据源',
       linkSourceSetTip: '管理与此知识库的数据源链接',
       linkDataSource: '链接数据源',
-      tocExtractionTip:
-        '对于已有的 Chunk 生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`PageIndex`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的 Chunk。',
       deleteGenerateModalContent: `
         <p>删除生成的 <strong class='text-text-primary'>{{type}}</strong> 结果
           将从此知识库中移除所有派生 Entities 和 Relations。
@@ -682,6 +681,12 @@ export default {
         '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      audio: `<p>支持的文件格式为 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常见音频格式。</p>
+<p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
+      email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
+<p>本方法解析电子邮件文件，提取头部字段（如发件人、收件人、抄送、主题和日期）、正文内容以及附件。</p>`,
+      knowledgeCompiler: `<p>本 pipeline 先解析文件并分块，然后通过 Knowledge Compiler 组件将分块编译为结构化知识单元（知识图谱、百科、RAPTOR、思维导图或数据集导航）。</p>
+<p>编译后的知识单元以分块形式合并进分块流输出，适合在分块文档之上构建可检索的知识层。</p>`,
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
       由于一本书很长，并不是所有部分都有用，如果是 PDF，
       请为每本书设置<i>页面范围</i>，以消除负面影响并节省分析计算时间。</p>`,
@@ -933,6 +938,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       knowledgeBases: '知识库',
       knowledgeBasesPlaceholder: '请选择',
       knowledgeBasesMessage: '请选择',
+      datasetUnavailable: '所选知识库不可用（已删除或无 chunk），请重新选择',
       knowledgeBasesTip:
         '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
@@ -948,6 +954,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         {knowledge}
         以上是知识库。`,
       systemMessage: '请输入',
+      knowledgePlaceholderMessage:
+        '已选择知识库但系统提示词中缺少 {knowledge} 占位符，检索到的内容将无法注入。请在系统提示词中添加 {knowledge}，或移除已选择的知识库。',
       systemTip:
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
@@ -999,15 +1007,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
-      thinkingLevelNone: '简单',
-      thinkingLevelLow: '轻度',
-      thinkingLevelLowDescription: '即时响应',
-      thinkingLevelMedium: '中',
+      thinkingLevelNone: 'None',
+      thinkingLevelLow: 'Low',
+      thinkingLevelLowDescription: '快速响应',
+      thinkingLevelMedium: 'Medium',
       thinkingLevelMediumDescription: '平衡速度与深度',
-      thinkingLevelHigh: '高',
+      thinkingLevelHigh: 'High',
       thinkingLevelHighDescription: '深度推理',
-      thinkingLevelUltra: '极高',
-      thinkingLevelUltraDescription: '最大认知投入',
+      thinkingLevelUltra: 'Ultra',
+      thinkingLevelUltraDescription: '尽力思考',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -1084,6 +1092,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入你的 Querit API Key',
+      serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
+      serplyApiKeyMessage: '请输入你的 Serply API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
@@ -1496,6 +1506,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',
+      dataSourceTestConnection: '测试连接',
+      dataSourceTestSuccess: '数据源连接验证成功。',
+      dataSourceTestFailed: '数据源连接验证失败，请检查配置和日志。',
       chatChannels: '聊天渠道',
       chatChannelsDescription: '管理您的聊天渠道机器人及凭证',
       channelEmptyTip: '暂未添加任何聊天渠道，请从下方选择一个进行连接。',
@@ -1936,7 +1949,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       processFlowComingSoon: '流程视图预览即将到来',
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
-      skills: '技能',
+      skills: 'To Skills',
       navTree: 'PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
@@ -2076,7 +2089,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         sectionTitle: '章节标题',
       },
       canvasCategory: '画布分类',
-      tags: '标签',
       created: '创建于',
       editTags: '编辑标签',
       editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
@@ -2912,6 +2924,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       questions: '问题',
       metadata: '元数据',
       fieldName: '结果目的地',
+      enableSummary: '启用增强上下文',
+      useBuiltInTemplate: '使用内置模板',
       prompts: {
         system: {
           keywords: `角色

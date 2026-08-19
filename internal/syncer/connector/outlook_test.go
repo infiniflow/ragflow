@@ -236,6 +236,29 @@ func TestOutlookGetJSONRefreshesTokenAfterUnauthorized(t *testing.T) {
 	}
 }
 
+func TestOutlookConnectorValidateConnectorSetting(t *testing.T) {
+	connector := newFixtureOutlookConnector()
+	var probed bool
+	connector.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/v1.0/users/user-1" {
+			t.Fatalf("path = %q, want /v1.0/users/user-1", req.URL.Path)
+		}
+		probed = true
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"id":"user-1"}`)),
+		}, nil
+	})}
+
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+	if !probed {
+		t.Fatalf("ValidateConnectorSetting did not probe Outlook user")
+	}
+}
+
 type fixtureOutlookConnector struct {
 	*OutlookConnector
 }
