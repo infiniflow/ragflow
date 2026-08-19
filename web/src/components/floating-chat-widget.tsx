@@ -625,7 +625,7 @@ const FloatingChatWidget = () => {
                   className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`group max-w-[280px] px-4 py-2 rounded-2xl ${
+                    className={`max-w-[280px] px-4 py-2 rounded-2xl ${
                       message.role === MessageType.User
                         ? 'text-white rounded-br-md'
                         : 'rounded-bl-md'
@@ -658,10 +658,7 @@ const FloatingChatWidget = () => {
                           }
                           clickDocumentButton={clickDocumentButton}
                         />
-                        <div
-                          className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100"
-                          role="toolbar"
-                        >
+                        <div className="flex justify-end" role="toolbar">
                           <CopyToClipboard
                             text={removeThinkSection(message.content)}
                             className="border-0"
@@ -840,7 +837,7 @@ const FloatingChatWidget = () => {
                     className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`group max-w-[280px] px-4 py-2 rounded-2xl ${
+                      className={`max-w-[280px] px-4 py-2 rounded-2xl ${
                         message.role === MessageType.User
                           ? 'text-white rounded-br-md'
                           : 'rounded-bl-md'
@@ -873,10 +870,7 @@ const FloatingChatWidget = () => {
                             }
                             clickDocumentButton={clickDocumentButton}
                           />
-                          <div
-                            className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100"
-                            role="toolbar"
-                          >
+                          <div className="flex justify-end" role="toolbar">
                             <CopyToClipboard
                               text={removeThinkSection(message.content)}
                               className="border-0"
