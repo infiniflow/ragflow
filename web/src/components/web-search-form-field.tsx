@@ -17,6 +17,7 @@
 import queritLogo from '@/assets/querit.png';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
+import youcomLogo from '@/assets/svg/youcom.svg';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
@@ -36,11 +37,7 @@ interface IProps {
   prefix?: string;
 }
 
-const providerOptions: {
-  name: string;
-  logo?: string;
-  value: WebSearchProvider;
-}[] = [
+const providerOptions = [
   {
     name: 'Tavily',
     logo: tavilyLogo,
@@ -57,26 +54,21 @@ const providerOptions: {
     value: WebSearchProvider.Serply,
   },
   {
-    // No logo asset: You.com does not publish a mark at a usable size. Add one
-    // here as `youcomLogo` if that changes.
     name: 'You.com',
+    logo: youcomLogo,
     value: WebSearchProvider.YouCom,
   },
-];
-
-const sortedProviderOptions = [...providerOptions]
+]
   .sort((left, right) => left.name.localeCompare(right.name))
   .map(({ name, logo, value }) => ({
     label: (
       <span className="flex items-center gap-2">
-        {logo && (
-          <img
-            src={logo}
-            alt=""
-            aria-hidden="true"
-            className="size-4 shrink-0 object-contain"
-          />
-        )}
+        <img
+          src={logo}
+          alt=""
+          aria-hidden="true"
+          className="size-4 shrink-0 object-contain"
+        />
         {name}
       </span>
     ),
@@ -139,7 +131,7 @@ export function WebSearchFormField({ prefix = '' }: IProps) {
               <RAGFlowSelect
                 {...field}
                 value={field.value}
-                options={sortedProviderOptions}
+                options={providerOptions}
                 placeholder={t('webSearchProviderPlaceholder')}
                 triggerTestId="web-search-provider"
                 optionTestIdPrefix="web-search-provider-option"
