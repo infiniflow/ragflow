@@ -101,12 +101,15 @@ def test_output_excel_sanitizes_and_deduplicates_sheet_names(monkeypatch):
     }
     assert stored["tenant_id"] == "tenant-1"
     workbook = openpyxl.load_workbook(BytesIO(stored["data"]), read_only=True)
-    assert workbook.sheetnames == [
-        "Q1_ Sales",
-        "Q1_ Sales_2",
-        "Sales",
-        "History_",
-        "Sheet",
-        "A" * 31,
-        "Nul_Name",
-    ]
+    try:
+        assert workbook.sheetnames == [
+            "Q1_ Sales",
+            "Q1_ Sales_2",
+            "Sales",
+            "History_",
+            "Sheet",
+            "A" * 31,
+            "Nul_Name",
+        ]
+    finally:
+        workbook.close()
