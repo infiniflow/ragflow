@@ -45,9 +45,21 @@ def test_resolve_model_config_resolves_bare_tenant_model_id_without_name_fallbac
     provider = SimpleNamespace(id="provider-1", tenant_id=TENANT_ID, provider_name="OpenAI")
     instance = SimpleNamespace(id="instance-1", api_key="sk-test", extra="")
 
-    monkeypatch.setattr(module.TenantModelService, "get_by_id", lambda model_id: (True, model))
-    monkeypatch.setattr(module.TenantModelProviderService, "get_by_id", lambda provider_id: (True, provider))
-    monkeypatch.setattr(module.TenantModelInstanceService, "get_by_id", lambda instance_id: (True, instance))
+    def get_model_by_id(model_id):
+        assert model_id == BARE_MODEL_ID
+        return True, model
+
+    def get_provider_by_id(provider_id):
+        assert provider_id == "provider-1"
+        return True, provider
+
+    def get_instance_by_id(instance_id):
+        assert instance_id == "instance-1"
+        return True, instance
+
+    monkeypatch.setattr(module.TenantModelService, "get_by_id", get_model_by_id)
+    monkeypatch.setattr(module.TenantModelProviderService, "get_by_id", get_provider_by_id)
+    monkeypatch.setattr(module.TenantModelInstanceService, "get_by_id", get_instance_by_id)
 
     def _fail_if_called(*args, **kwargs):
         raise AssertionError("must not fall back to split_model_name/provider-name resolution for a bare id")
