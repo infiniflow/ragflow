@@ -50,6 +50,7 @@ class Excel(ExcelParser):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
+                    # A 0, 0.0, or False answer is falsy but is real content.
                     if cell.value is None or str(cell.value).strip() == "":
                         continue
                     if not q:
