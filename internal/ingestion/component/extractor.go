@@ -218,12 +218,18 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := kwRaw["top_n"]; ok {
 				p.Keywords.TopN = mapInt(v)
 			}
+			if v, ok := kwRaw["system_prompt"].(string); ok {
+				p.Keywords.SystemPrompt = v
+			}
 		}
 
 		// 2. Questions
 		if qRaw, ok := params["questions"].(map[string]any); ok {
 			if v, ok := qRaw["top_n"]; ok {
 				p.Questions.TopN = mapInt(v)
+			}
+			if v, ok := qRaw["system_prompt"].(string); ok {
+				p.Questions.SystemPrompt = v
 			}
 		}
 
@@ -243,6 +249,9 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				p.Summary.Enabled = v
 			} else if v, ok := sumRaw["enabled"]; ok {
 				p.Summary.Enabled = mapInt(v) == 1
+			}
+			if v, ok := sumRaw["system_prompt"].(string); ok {
+				p.Summary.SystemPrompt = v
 			}
 		}
 
@@ -621,7 +630,10 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if topN <= 0 {
 		return nil
 	}
-	systemPrompt := fmt.Sprintf(autoKeywordPrompt, topN)
+	systemPrompt := c.Param.Keywords.SystemPrompt
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = fmt.Sprintf(autoKeywordPrompt, topN)
+	}
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
 		llmID:       in.llmID,
@@ -658,7 +670,10 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if topN <= 0 {
 		return nil
 	}
-	systemPrompt := fmt.Sprintf(autoQuestionPrompt, topN)
+	systemPrompt := c.Param.Questions.SystemPrompt
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = fmt.Sprintf(autoQuestionPrompt, topN)
+	}
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
 		llmID:       in.llmID,
@@ -702,12 +717,16 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	if !c.Param.Summary.Enabled {
 		return nil
 	}
+	systemPrompt := c.Param.Summary.SystemPrompt
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = autoSummaryPrompt
+	}
 	sumTemp := extractorTemperature
 	sumIn := extractorInputs{
 		llmID:       in.llmID,
 		temperature: &sumTemp,
 	}
-	resultStr, err := c.callText(ctx, db, sumIn, autoSummaryPrompt, chunkText)
+	resultStr, err := c.callText(ctx, db, sumIn, systemPrompt, chunkText)
 	if err != nil {
 		return err
 	}

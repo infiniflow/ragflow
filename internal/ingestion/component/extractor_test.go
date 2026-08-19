@@ -1606,6 +1606,109 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 	}
 }
 
+func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "Custom summary."})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"summary": map[string]any{
+			"enabled":       true,
+			"system_prompt": "Custom system prompt for summarization.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Text to summarize."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	if chunks[0]["summary"] != "Custom summary." {
+		t.Errorf("expected summary = 'Custom summary.', got %v", chunks[0]["summary"])
+	}
+
+	if stub.Calls() != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", stub.Calls())
+	}
+
+	lastReq := stub.lastRequest()
+	msgs := lastReq.Messages
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (system + user), got %d: %+v", len(msgs), msgs)
+	}
+
+	if msgs[0].Role != "system" || msgs[0].Content != "Custom system prompt for summarization." {
+		t.Errorf("expected custom system prompt in system message, got: %+v", msgs[0])
+	}
+}
+
+func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "custom, keywords"},
+		stubResponse{Content: "Custom question 1?\nCustom question 2?"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom keywords system prompt.",
+		},
+		"questions": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom questions system prompt.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	if reqs[0].Messages[0].Content != "Custom keywords system prompt." {
+		t.Errorf("expected custom keywords system prompt, got: %q", reqs[0].Messages[0].Content)
+	}
+	if reqs[1].Messages[0].Content != "Custom questions system prompt." {
+		t.Errorf("expected custom questions system prompt, got: %q", reqs[1].Messages[0].Content)
+	}
+}
+
 func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 	stub := withStubChatInvoker(t, stubResponse{Content: "Not expected"})
 
@@ -1692,18 +1795,21 @@ func TestExtractor_ModularConfiguration(t *testing.T) {
 	paramsEnabled := map[string]any{
 		"metadata": map[string]any{
 			"enabled": true,
-			"fields": []any{
+			"metadata": []any{
 				map[string]any{"key": "author", "type": "string"},
 			},
 		},
 		"summary": map[string]any{
-			"enabled": true,
+			"enabled":       true,
+			"system_prompt": "Custom summary prompt",
 		},
 		"keywords": map[string]any{
-			"top_n": 4,
+			"top_n":         4,
+			"system_prompt": "Custom keywords prompt",
 		},
 		"questions": map[string]any{
-			"top_n": 2,
+			"top_n":         2,
+			"system_prompt": "Custom questions prompt",
 		},
 		"tags": map[string]any{
 			"top_n":       3,
@@ -1719,14 +1825,17 @@ func TestExtractor_ModularConfiguration(t *testing.T) {
 	if compB.Param.Metadata.Enabled != true {
 		t.Errorf("expected metadata enabled, got %v", compB.Param.Metadata.Enabled)
 	}
-	if compB.Param.Summary.Enabled != true {
-		t.Errorf("expected summary enabled, got %v", compB.Param.Summary.Enabled)
+	if len(compB.Param.Metadata.Metadata) != 1 || compB.Param.Metadata.Metadata[0].Key != "author" {
+		t.Errorf("expected metadata fields with author, got %+v", compB.Param.Metadata.Metadata)
 	}
-	if compB.Param.Keywords.TopN != 4 {
-		t.Errorf("expected keywords 4, got %v", compB.Param.Keywords.TopN)
+	if compB.Param.Summary.Enabled != true || compB.Param.Summary.SystemPrompt != "Custom summary prompt" {
+		t.Errorf("expected summary enabled with custom prompt, got %+v", compB.Param.Summary)
 	}
-	if compB.Param.Questions.TopN != 2 {
-		t.Errorf("expected questions 2, got %v", compB.Param.Questions.TopN)
+	if compB.Param.Keywords.TopN != 4 || compB.Param.Keywords.SystemPrompt != "Custom keywords prompt" {
+		t.Errorf("expected keywords 4 with custom prompt, got %+v", compB.Param.Keywords)
+	}
+	if compB.Param.Questions.TopN != 2 || compB.Param.Questions.SystemPrompt != "Custom questions prompt" {
+		t.Errorf("expected questions 2 with custom prompt, got %+v", compB.Param.Questions)
 	}
 	if compB.Param.Tags.TopN != 3 || compB.Param.Tags.TagFileID != "file-123" {
 		t.Errorf("expected tags 3 / file-123, got %+v", compB.Param.Tags)

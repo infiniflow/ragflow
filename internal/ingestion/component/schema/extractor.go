@@ -76,12 +76,14 @@ func (ExtractorFromUpstream) Validate() error { return nil }
 
 // KeywordExtractConfig configures automatic keyword extraction.
 type KeywordExtractConfig struct {
-	TopN int `json:"top_n"`
+	TopN         int    `json:"top_n"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // QuestionExtractConfig configures automatic question generation.
 type QuestionExtractConfig struct {
-	TopN int `json:"top_n"`
+	TopN         int    `json:"top_n"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // TagExtractConfig configures automatic tag extraction.
@@ -92,7 +94,8 @@ type TagExtractConfig struct {
 
 // SummaryExtractConfig configures summary / enhanced context extraction.
 type SummaryExtractConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled      bool   `json:"enabled"`
+	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // MetadataExtractConfig configures structured metadata extraction.
