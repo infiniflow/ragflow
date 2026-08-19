@@ -106,6 +106,47 @@ func TestBitbucketListReposFiltersByProjectKey(t *testing.T) {
 	}
 }
 
+func TestBitbucketPaginationRejectsForeignHost(t *testing.T) {
+	connector := &BitbucketConnector{
+		workspace: "acme",
+		baseURL:   "https://api.bitbucket.test",
+	}
+
+	// listWorkspaceRepos refuses to follow a server-supplied next URL on a
+	// different host than the configured Bitbucket API.
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		body, _ := json.Marshal(bitbucketRepositoryPage{
+			Values: []bitbucketRepository{{Slug: "repo-a"}},
+			Next:   "https://evil.example.com/repositories/acme",
+		})
+		return nil, json.Unmarshal(body, out)
+	}
+	if _, err := connector.listWorkspaceRepos(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "api.bitbucket.test") {
+		t.Fatalf("listWorkspaceRepos error = %v, want host mismatch", err)
+	}
+
+	// The pull-request page helpers stop before requesting a foreign host.
+	called := false
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		called = true
+		return http.Header{}, nil
+	}
+	if _, err := connector.listPullRequestPage(context.Background(), "repo-a", "https://evil.example.com/repositories/acme/repo-a/pullrequests", nil, time.Time{}); err == nil {
+		t.Fatalf("listPullRequestPage should reject a foreign host")
+	}
+	if called {
+		t.Fatalf("listPullRequestPage requested a foreign host")
+	}
+
+	called = false
+	if _, err := connector.listSlimPullRequestPage(context.Background(), "repo-a", "https://evil.example.com/repositories/acme/repo-a/pullrequests"); err == nil {
+		t.Fatalf("listSlimPullRequestPage should reject a foreign host")
+	}
+	if called {
+		t.Fatalf("listSlimPullRequestPage requested a foreign host")
+	}
+}
+
 func TestBitbucketPRListQueryBuildsIncrementalWindow(t *testing.T) {
 	start := mustTime(t, "2026-01-02T12:00:00Z")
 	end := mustTime(t, "2026-01-04T00:00:00Z")

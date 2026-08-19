@@ -228,6 +228,9 @@ func (c *BitbucketConnector) listWorkspaceRepos(ctx context.Context, project str
 		if page.Next == "" || len(page.Values) == 0 {
 			break
 		}
+		if err := c.validateBitbucketHost(page.Next); err != nil {
+			return nil, err
+		}
 		pageURL = page.Next
 	}
 	return repos, nil
@@ -237,6 +240,9 @@ func (c *BitbucketConnector) listWorkspaceRepos(ctx context.Context, project str
 func (c *BitbucketConnector) listPullRequestPage(ctx context.Context, repo, pageURL string, windowStart *time.Time, windowEnd time.Time) (bitbucketPullRequestPage, error) {
 	if pageURL == "" {
 		pageURL = c.apiURL("/repositories/"+url.PathEscape(c.workspace)+"/"+url.PathEscape(repo)+"/pullrequests", bitbucketPRListQuery(windowStart, windowEnd))
+	}
+	if err := c.validateBitbucketHost(pageURL); err != nil {
+		return bitbucketPullRequestPage{}, err
 	}
 	var page bitbucketPullRequestPage
 	if _, err := c.getJSON(ctx, pageURL, &page); err != nil {
@@ -256,11 +262,32 @@ func (c *BitbucketConnector) listSlimPullRequestPage(ctx context.Context, repo, 
 		}
 		pageURL = c.apiURL("/repositories/"+url.PathEscape(c.workspace)+"/"+url.PathEscape(repo)+"/pullrequests", query)
 	}
+	if err := c.validateBitbucketHost(pageURL); err != nil {
+		return bitbucketPullRequestPage{}, err
+	}
 	var page bitbucketPullRequestPage
 	if _, err := c.getJSON(ctx, pageURL, &page); err != nil {
 		return bitbucketPullRequestPage{}, err
 	}
 	return page, nil
+}
+
+// validateBitbucketHost rejects a server-supplied pagination URL whose host does
+// not match the configured Bitbucket host, so authenticated requests cannot be
+// redirected at an attacker-controlled host.
+func (c *BitbucketConnector) validateBitbucketHost(rawURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return fmt.Errorf("bitbucket: invalid pagination URL: %w", err)
+	}
+	base, err := url.Parse(strings.TrimSpace(c.baseURL))
+	if err != nil {
+		return fmt.Errorf("bitbucket: invalid configured base URL: %w", err)
+	}
+	if !strings.EqualFold(parsed.Hostname(), base.Hostname()) {
+		return fmt.Errorf("bitbucket: pagination URL host %q does not match configured host %q", parsed.Hostname(), base.Hostname())
+	}
+	return nil
 }
 
 // apiURL builds a Bitbucket API URL.
