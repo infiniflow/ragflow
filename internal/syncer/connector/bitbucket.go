@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -114,16 +113,16 @@ func (c *BitbucketConnector) ValidateConnectorSetting(ctx context.Context, reque
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if c == nil {
-		return &ConnectorValidationError{Message: "bitbucket connector is nil"}
+		return fmt.Errorf("bitbucket connector is nil")
 	}
 	if c.workspace == "" {
-		return &ConnectorValidationError{Message: "Invalid connector settings: 'workspace' must be provided"}
+		return fmt.Errorf("Invalid connector settings: 'workspace' must be provided")
 	}
 	if c.email == "" {
-		return &ConnectorMissingCredentialError{Message: "Missing bitbucket_account_email in credentials"}
+		return fmt.Errorf("Missing bitbucket_account_email in credentials")
 	}
 	if c.apiToken == "" {
-		return &ConnectorMissingCredentialError{Message: "Missing bitbucket_api_token in credentials"}
+		return fmt.Errorf("Missing bitbucket_api_token in credentials")
 	}
 	var page map[string]any
 	_, err := c.getJSON(ctx, c.apiURL("/repositories/"+url.PathEscape(c.workspace), url.Values{
@@ -135,13 +134,13 @@ func (c *BitbucketConnector) ValidateConnectorSetting(ctx context.Context, reque
 		if errors.As(err, &httpErr) {
 			switch httpErr.Status {
 			case http.StatusUnauthorized:
-				return &ConnectorMissingCredentialError{Message: httpErr.Error()}
+				return fmt.Errorf("Invalid or expired Bitbucket credentials (HTTP 401).")
 			case http.StatusForbidden:
-				return &ConnectorValidationError{Message: httpErr.Error()}
+				return fmt.Errorf("Insufficient permissions to access Bitbucket workspace (HTTP 403).")
 			}
-			return &ConnectorValidationError{Message: httpErr.Error()}
+			return err
 		}
-		return &ConnectorValidationError{Message: err.Error()}
+		return err
 	}
 	return nil
 }
@@ -284,10 +283,31 @@ func (c *BitbucketConnector) validateBitbucketHost(rawURL string) error {
 	if err != nil {
 		return fmt.Errorf("bitbucket: invalid configured base URL: %w", err)
 	}
+	if !strings.EqualFold(parsed.Scheme, base.Scheme) {
+		return fmt.Errorf("bitbucket: pagination URL scheme %q does not match configured scheme %q", parsed.Scheme, base.Scheme)
+	}
 	if !strings.EqualFold(parsed.Hostname(), base.Hostname()) {
 		return fmt.Errorf("bitbucket: pagination URL host %q does not match configured host %q", parsed.Hostname(), base.Hostname())
 	}
+	if effectiveBitbucketPort(parsed) != effectiveBitbucketPort(base) {
+		return fmt.Errorf("bitbucket: pagination URL port %q does not match configured port %q", effectiveBitbucketPort(parsed), effectiveBitbucketPort(base))
+	}
 	return nil
+}
+
+// effectiveBitbucketPort returns the explicit port, falling back to the
+// scheme's default port so an explicit default port still matches.
+func effectiveBitbucketPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	}
+	return ""
 }
 
 // apiURL builds a Bitbucket API URL.

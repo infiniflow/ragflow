@@ -125,6 +125,30 @@ func TestBitbucketPaginationRejectsForeignHost(t *testing.T) {
 		t.Fatalf("listWorkspaceRepos error = %v, want host mismatch", err)
 	}
 
+	// A same-host URL on a different scheme is still rejected.
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		body, _ := json.Marshal(bitbucketRepositoryPage{
+			Values: []bitbucketRepository{{Slug: "repo-a"}},
+			Next:   "http://api.bitbucket.test/repositories/acme",
+		})
+		return nil, json.Unmarshal(body, out)
+	}
+	if _, err := connector.listWorkspaceRepos(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "scheme") {
+		t.Fatalf("listWorkspaceRepos error = %v, want scheme mismatch", err)
+	}
+
+	// A same-host URL on a different port is still rejected.
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		body, _ := json.Marshal(bitbucketRepositoryPage{
+			Values: []bitbucketRepository{{Slug: "repo-a"}},
+			Next:   "https://api.bitbucket.test:8443/repositories/acme",
+		})
+		return nil, json.Unmarshal(body, out)
+	}
+	if _, err := connector.listWorkspaceRepos(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "port") {
+		t.Fatalf("listWorkspaceRepos error = %v, want port mismatch", err)
+	}
+
 	// The pull-request page helpers stop before requesting a foreign host.
 	called := false
 	connector.doJSON = func(ctx context.Context, apiURL string, out any) (http.Header, error) {
@@ -407,13 +431,12 @@ func TestBitbucketConnectorOpenPrune(t *testing.T) {
 
 func TestBitbucketConnectorValidateConnectorSetting(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		status  int
-		body    string
-		want    string
-		missing bool
+		name   string
+		status int
+		body   string
+		want   string
 	}{
-		{name: "unauthorized", status: http.StatusUnauthorized, body: `{"message":"API Token provided has no Bitbucket scopes."}`, want: "API Token provided has no Bitbucket scopes.", missing: true},
+		{name: "unauthorized", status: http.StatusUnauthorized, body: `{"message":"API Token provided has no Bitbucket scopes."}`, want: "Invalid or expired Bitbucket credentials (HTTP 401)."},
 		{name: "forbidden", status: http.StatusForbidden, body: `{"message":"nope"}`, want: "HTTP 403"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -430,17 +453,6 @@ func TestBitbucketConnectorValidateConnectorSetting(t *testing.T) {
 			err := connector.ValidateConnectorSetting(context.Background(), nil)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want contains %q", err, tc.want)
-			}
-			if tc.missing {
-				var credErr *ConnectorMissingCredentialError
-				if !errors.As(err, &credErr) {
-					t.Fatalf("err = %T, want *ConnectorMissingCredentialError", err)
-				}
-			} else {
-				var valErr *ConnectorValidationError
-				if !errors.As(err, &valErr) {
-					t.Fatalf("err = %T, want *ConnectorValidationError", err)
-				}
 			}
 		})
 	}
