@@ -337,18 +337,31 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 			}
 		}
 	}
+	topLevelEnabled := false
+	if v, exists := parserConfig["enable_metadata"]; exists {
+		topLevelEnabled = parserConfigBool(v)
+	}
+
 	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
 		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, true
+			enabled := topLevelEnabled
+			if v, exists := metaObj["enabled"]; exists {
+				enabled = parserConfigBool(v)
+			}
+			return arr, enabled
 		}
 	}
 	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
 		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, true
+			enabled := topLevelEnabled
+			if v, exists := metaConf["enabled"]; exists {
+				enabled = parserConfigBool(v)
+			}
+			return arr, enabled
 		}
 	}
 	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
-		return arr, true
+		return arr, topLevelEnabled
 	}
 	return nil, false
 }

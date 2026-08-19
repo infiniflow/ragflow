@@ -576,10 +576,11 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 	}
 }
 
-func TestBuiltInMetadata_ZeroExtractorFallback(t *testing.T) {
+func TestBuiltInMetadata_ZeroExtractorFallback_Enabled(t *testing.T) {
 	// Scenario: User constructed a pipeline with 0 Extractor components,
-	// but dataset parser_config has top-level built_in_metadata.
+	// but dataset parser_config has top-level built_in_metadata with enable_metadata=true.
 	parserConfig := map[string]any{
+		"enable_metadata": true,
 		"Parser:HipSignsRhyme": map[string]any{
 			"setups": map[string]any{},
 		},
@@ -591,9 +592,55 @@ func TestBuiltInMetadata_ZeroExtractorFallback(t *testing.T) {
 
 	arr, enabled := builtInMetadataFromParserConfig(parserConfig)
 	if !enabled {
-		t.Errorf("expected builtInMetadataFromParserConfig enabled=true for zero-extractor pipeline with top-level built_in_metadata")
+		t.Errorf("expected builtInMetadataFromParserConfig enabled=true for zero-extractor pipeline with enable_metadata=true")
 	}
 	if len(arr) != 2 {
 		t.Errorf("expected 2 built-in metadata items, got %d", len(arr))
+	}
+}
+
+func TestBuiltInMetadata_ZeroExtractorFallback_DisabledByEnableMetadata(t *testing.T) {
+	// Scenario: User has a zero-extractor pipeline and configured built_in_metadata,
+	// but explicitly disabled auto-metadata (enable_metadata=false).
+	parserConfig := map[string]any{
+		"enable_metadata": false,
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+			map[string]any{"key": "update_time", "type": "time"},
+		},
+	}
+
+	arr, enabled := builtInMetadataFromParserConfig(parserConfig)
+	if enabled {
+		t.Errorf("expected builtInMetadataFromParserConfig enabled=false when enable_metadata=false")
+	}
+	if len(arr) != 2 {
+		t.Errorf("expected 2 built-in metadata items returned, got %d", len(arr))
+	}
+}
+
+func TestBuiltInMetadata_ZeroExtractorFallback_DisabledByMetadataObject(t *testing.T) {
+	// Scenario: User has a zero-extractor pipeline and configured metadata map with enabled=false.
+	parserConfig := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{},
+		},
+		"metadata": map[string]any{
+			"enabled": false,
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	}
+
+	arr, enabled := builtInMetadataFromParserConfig(parserConfig)
+	if enabled {
+		t.Errorf("expected builtInMetadataFromParserConfig enabled=false when metadata.enabled=false")
+	}
+	if len(arr) != 1 {
+		t.Errorf("expected 1 built-in metadata item returned, got %d", len(arr))
 	}
 }
