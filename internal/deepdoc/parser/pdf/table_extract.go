@@ -170,6 +170,13 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			}
 			tableBoxes = append(tableBoxes, b)
 		}
+		// Drop OCR boxes that are strictly nested inside another box whose
+		// text contains theirs (e.g. a re-detected "Hardware" box fully
+		// inside "Software Hardware"). Without this, NaiveVerticalMerge
+		// concatenates the two into "Software Hardware Hardware" while
+		// Python's construct_table keeps the longer box only. Mirrors
+		// Python's effective behavior: the nested duplicate is not merged.
+		tableBoxes = dedupNestedBoxes(tableBoxes)
 		tableBoxes = lyt.NaiveVerticalMerge(tableBoxes, nil, nil, nil)
 		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
 		for _, b := range tableBoxes {
@@ -223,4 +230,50 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	return item
+}
+
+// dedupNestedBoxes drops OCR boxes that are strictly nested inside another
+// box whose trimmed text contains the nested box's trimmed text. This removes
+// re-detected duplicate boxes (e.g. a "Hardware" detection fully inside a
+// "Software Hardware" box) so the subsequent NaiveVerticalMerge does not
+// concatenate them into "Software Hardware Hardware". Python's
+// construct_table keeps the longer box only, so this matches Python's output.
+//
+// Containment requires the nested box's bbox to lie entirely within the other
+// box's bbox (same or narrower X, same or shorter Y). Side-by-side or
+// half-overlapping boxes are never nested, so they are preserved and merged
+// normally.
+func dedupNestedBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	keep := make([]bool, len(boxes))
+	for i := range boxes {
+		keep[i] = strings.TrimSpace(boxes[i].Text) != ""
+	}
+	for i := 0; i < len(boxes); i++ {
+		if !keep[i] {
+			continue
+		}
+		at := strings.TrimSpace(boxes[i].Text)
+		for j := 0; j < len(boxes); j++ {
+			if i == j || !keep[j] {
+				continue
+			}
+			bt := strings.TrimSpace(boxes[j].Text)
+			if bt == "" || !strings.Contains(at, bt) {
+				continue
+			}
+			// Drop the nested (shorter) box when it sits fully inside the
+			// outer box's bbox.
+			if boxes[j].X0 >= boxes[i].X0 && boxes[j].X1 <= boxes[i].X1 &&
+				boxes[j].Top >= boxes[i].Top && boxes[j].Bottom <= boxes[i].Bottom {
+				keep[j] = false
+			}
+		}
+	}
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for i := range boxes {
+		if keep[i] {
+			out = append(out, boxes[i])
+		}
+	}
+	return out
 }
