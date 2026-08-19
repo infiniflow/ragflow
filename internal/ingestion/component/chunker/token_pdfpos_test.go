@@ -38,7 +38,7 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 128, 0)
 	merged := got[0]
 	if len(merged) != 1 {
 		t.Fatalf("want 1 merged chunk, got %d", len(merged))
@@ -63,7 +63,7 @@ func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {
 			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 128, 0)
 	combined := string(got[0][0].Positions)
 	if !strings.Contains(combined, "1,2,3") || !strings.Contains(combined, "4,5,6") {
 		t.Errorf("merged chunk dropped/omitted `positions`: %s", combined)
@@ -103,7 +103,7 @@ func TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix(t *testing.T) {
 			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 128, 0)
 	m := got[0][0].ToMap()
 	raw, ok := m["positions"]
 	if !ok {
@@ -146,7 +146,7 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 			{Text: "gamma", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posC},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 20, 100, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 20, 100)
 	merged := got[0]
 	if len(merged) != 3 {
 		t.Fatalf("want 3 chunks (each unit starts fresh at overlapPct=100), got %d", len(merged))
@@ -211,7 +211,7 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 			{Text: "fffff", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 5, 20, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 5, 20)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 chunks (5 items merge, 6th starts fresh with partial overlap), got %d", len(merged))
