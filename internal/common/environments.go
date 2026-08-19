@@ -141,6 +141,7 @@ const (
 	EnvOSSDeepDocURL                     = "OSSDEEPDOC_URL"
 	EnvUpdateGolden                      = "UPDATE_GOLDEN"
 	EnvBatchParityFilter                 = "BATCH_PARITY_FILTER"
+	EnvBatchParityVariant                = "BATCH_PARITY_VARIANT"
 	EnvDumpCount                         = "DUMP_COUNT"
 	EnvBatchCSV                          = "BATCH_CSV"
 	EnvESTest                            = "ES_TEST"
