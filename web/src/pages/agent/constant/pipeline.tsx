@@ -1,5 +1,6 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { isGoBackend } from '@/utils/backend-runtime';
 import { cloneDeep } from 'lodash';
 
 export enum FileType {
@@ -91,6 +92,13 @@ export const InitialOutputFormatMap = {
   [FileType.Video]: VideoOutputFormat.Text,
   [FileType.Audio]: AudioOutputFormat.Text,
 };
+
+export enum ContextGeneratorFieldName {
+  Summary = 'summary',
+  Keywords = 'keywords',
+  Questions = 'questions',
+  Metadata = 'metadata',
+}
 
 export const FileId = 'File'; // BeginId
 
@@ -342,7 +350,20 @@ export const initialTitleChunkerValues = {
   groupRules: cloneDeep(originalRules),
 };
 
+// Defaults for the Python backend extractor (legacy flat fields).
 export const initialExtractorValues = {
+  ...initialLlmBaseValues,
+  field_name: ContextGeneratorFieldName.Summary,
+  auto_tags: 1,
+  tag_file_id: '',
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+// Defaults for the Go backend extractor (nested per-feature configs plus
+// legacy flat fields, which the Go schema still accepts).
+export const initialGoExtractorValues = {
   ...initialLlmBaseValues,
   keywords: {
     top_n: 0,
@@ -381,6 +402,10 @@ export const initialExtractorValues = {
     chunks: { type: 'Array<Object>', value: [] },
   },
 };
+
+export function getInitialExtractorValues() {
+  return isGoBackend() ? initialGoExtractorValues : initialExtractorValues;
+}
 
 export const initialCompilationValues = {
   compilation_template_group_id: '',
