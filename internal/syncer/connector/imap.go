@@ -524,12 +524,12 @@ func parseIMAPMessage(raw []byte, sizeThreshold int64) (SourceDocument, []Source
 	}
 
 	attachmentDocs := make([]SourceDocument, 0, len(attachments))
-	for _, attachment := range attachments {
+	for index, attachment := range attachments {
 		if utility.FilenameType(attachment.filename) == utility.FileTypeOTHER {
 			continue
 		}
 		attachmentDocs = append(attachmentDocs, SourceDocument{
-			SourceID:           messageID + "#att:" + attachment.filename,
+			SourceID:           messageID + "#att:" + strconv.Itoa(index) + ":" + attachment.filename,
 			SemanticIdentifier: attachment.filename,
 			Extension:          imapAttachmentExtension(attachment.filename),
 			Blob:               attachment.content,
