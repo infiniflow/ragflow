@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import sys
 from typing import List
@@ -20,6 +21,8 @@ from typing import List
 from common import settings
 from common.constants import MemoryType
 from common.doc_store.doc_store_base import MatchDenseExpr, MatchExpr, MatchTextExpr, OrderByExpr
+
+logger = logging.getLogger(__name__)
 
 
 def _copy_dense_expression(match_expressions: list[MatchExpr]) -> MatchDenseExpr | None:
@@ -196,6 +199,7 @@ class MessageService:
             agg_fields=[],
         )
         if not total_count and dense_fallback is not None:
+            logger.debug("memory_dense_fallback_retry hybrid_result_count=%d", total_count)
             res, total_count = settings.msgStoreConn.search(
                 select_fields=select_fields,
                 highlight_fields=[],
