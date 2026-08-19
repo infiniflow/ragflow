@@ -547,6 +547,11 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 		if part.MultipartReader() != nil {
 			return nil
 		}
+func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapAttachment) {
+	var body string
+	var htmlBody string
+	var attachments []imapAttachment
+	_ = entity.Walk(func(path []int, part *message.Entity, partErr error) error {
 		payload, err := io.ReadAll(part.Body)
 		if err != nil {
 			return nil
@@ -568,16 +573,28 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 				contentType: contentType,
 				content:     payload,
 			})
+			return nil
 		}
-		if body == "" && utf8.Valid(payload) {
-			body = string(payload)
+		if !utf8.Valid(payload) {
+			return nil
+		}
+		switch strings.ToLower(contentType) {
+		case "text/plain":
+			if body == "" {
+				body = string(payload)
+			}
+		case "text/html":
+			if htmlBody == "" {
+				htmlBody = imapHTMLToText(string(payload))
+			}
 		}
 		return nil
 	})
-	if body != "" {
-		body = imapHTMLToText(body)
+	if body == "" {
+		body = htmlBody
 	}
 	return body, attachments
+}
 }
 
 func decodedIMAPHeader(header message.Header, key string) string {
