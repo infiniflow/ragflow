@@ -153,6 +153,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		s.writeDataError(c, "You have to provide messages.")
 		return
 	}
+	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
+		s.writeArgError(c, "`max_tokens` must be greater than 0.")
+		return
+	}
 
 	lastRole, _ := normalizedMessages[len(normalizedMessages)-1]["role"].(string)
 	if lastRole != "user" {
