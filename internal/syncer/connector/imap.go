@@ -20,10 +20,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	netmail "net/mail"
 	"os"
@@ -44,6 +46,8 @@ const (
 	defaultIMAPBatchSize     = 32
 	defaultIMAPPort          = 993
 	defaultIMAPSizeThreshold = 10 * 1024 * 1024
+	imapDialTimeout          = 30 * time.Second
+	imapCommandTimeout       = 30 * time.Second
 )
 
 // IMAPConnector reads email messages and attachments from an IMAP server.
@@ -189,10 +193,11 @@ func (s *imapSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		raw, err := s.client.Fetch(ctx, uint32(seq))
 		if err != nil {
-			continue
+			return SyncBatch{}, err
 		}
 		emailDoc, attachments, err := parseIMAPMessage(raw, s.connector.sizeThreshold)
 		if err != nil {
+			log.Printf("imap: skip message seq %d in mailbox %q: %v", seq, s.currentMailbox, err)
 			continue
 		}
 		if !s.inWindow(emailDoc.UpdatedAt) {
@@ -271,10 +276,9 @@ func (s *imapSyncSession) listMailboxes(ctx context.Context) ([]string, error) {
 }
 
 // searchMailbox selects a mailbox and returns the email IDs in its window.
-// A mailbox that cannot be selected is skipped.
 func (s *imapSyncSession) searchMailbox(ctx context.Context, mailbox string) ([]string, error) {
 	if err := s.client.SelectMailbox(ctx, mailbox); err != nil {
-		return nil, nil
+		return nil, err
 	}
 	s.selected = mailbox
 	start := time.Time{}
@@ -389,11 +393,11 @@ func (s *imapPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 		}
 		raw, err := s.client.Fetch(ctx, uint32(seq))
 		if err != nil {
-			continue
+			return PruneBatch{}, err
 		}
 		emailDoc, attachments, err := parseIMAPMessage(raw, s.connector.sizeThreshold)
 		if err != nil {
-			continue
+			return PruneBatch{}, err
 		}
 		s.buffer = append(s.buffer, SlimDocument{SourceID: emailDoc.SourceID})
 		for _, attachment := range attachments {
@@ -433,7 +437,7 @@ func (s *imapPruneSession) ensureCurrentEmail(ctx context.Context) error {
 		mailbox := s.todoMailboxes[0]
 		s.todoMailboxes = s.todoMailboxes[1:]
 		if err := s.client.SelectMailbox(ctx, mailbox); err != nil {
-			continue
+			return err
 		}
 		nums, err := s.client.Search(ctx, time.Time{}, time.Time{})
 		if err != nil {
@@ -689,21 +693,64 @@ type realIMAPClient struct {
 	client *imapclient.Client
 }
 
+type imapCommandResult[T any] struct {
+	value T
+	err   error
+}
+
+func runIMAPCommand[T any](ctx context.Context, client *imapclient.Client, run func() (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, imapCommandTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		var zero T
+		return zero, err
+	}
+	done := make(chan imapCommandResult[T], 1)
+	go func() {
+		value, err := run()
+		done <- imapCommandResult[T]{value: value, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		_ = client.Close()
+		var zero T
+		return zero, ctx.Err()
+	case result := <-done:
+		return result.value, result.err
+	}
+}
+
 func dialRealIMAPClient(ctx context.Context, host string, port int, username, password string) (imapClient, error) {
 	address := net.JoinHostPort(host, strconv.Itoa(port))
-	client, err := imapclient.DialTLS(address, nil)
+	dialCtx, cancelDial := context.WithTimeout(ctx, imapDialTimeout)
+	defer cancelDial()
+	rawConn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", address)
 	if err != nil {
 		return nil, err
 	}
-	if err := client.Login(username, password).Wait(); err != nil {
+	tlsConn := tls.Client(rawConn, &tls.Config{
+		ServerName: host,
+		NextProtos: []string{"imap"},
+	})
+	if err := tlsConn.HandshakeContext(dialCtx); err != nil {
+		_ = rawConn.Close()
+		return nil, err
+	}
+	client := imapclient.New(tlsConn, nil)
+	if _, err := runIMAPCommand(ctx, client, func() (struct{}, error) {
+		return struct{}{}, client.Login(username, password).Wait()
+	}); err != nil {
 		_ = client.Logout().Wait()
+		_ = client.Close()
 		return nil, err
 	}
 	return &realIMAPClient{client: client}, nil
 }
 
 func (c *realIMAPClient) List(ctx context.Context) ([]string, error) {
-	listed, err := c.client.List("", "*", nil).Collect()
+	listed, err := runIMAPCommand(ctx, c.client, func() ([]*imap.ListData, error) {
+		return c.client.List("", "*", nil).Collect()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +768,9 @@ func (c *realIMAPClient) SelectMailbox(ctx context.Context, mailbox string) erro
 	// Send a real SELECT, not EXAMINE. go-imap emits EXAMINE when ReadOnly
 	// is set, which some servers acknowledge without entering the selected
 	// state. Fetches already use Peek, so a writable SELECT is read-safe.
-	_, err := c.client.Select(mailbox, nil).Wait()
+	_, err := runIMAPCommand(ctx, c.client, func() (*imap.SelectData, error) {
+		return c.client.Select(mailbox, nil).Wait()
+	})
 	return err
 }
 
@@ -733,7 +782,9 @@ func (c *realIMAPClient) Search(ctx context.Context, since, before time.Time) ([
 	if !before.IsZero() {
 		criteria.Before = before
 	}
-	data, err := c.client.Search(criteria, nil).Wait()
+	data, err := runIMAPCommand(ctx, c.client, func() (*imap.SearchData, error) {
+		return c.client.Search(criteria, nil).Wait()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -741,10 +792,11 @@ func (c *realIMAPClient) Search(ctx context.Context, since, before time.Time) ([
 }
 
 func (c *realIMAPClient) Fetch(ctx context.Context, seqNum uint32) ([]byte, error) {
-	command := c.client.Fetch(imap.SeqSetNum(seqNum), &imap.FetchOptions{
-		BodySection: []*imap.FetchItemBodySection{{Peek: true}},
+	buffers, err := runIMAPCommand(ctx, c.client, func() ([]*imapclient.FetchMessageBuffer, error) {
+		return c.client.Fetch(imap.SeqSetNum(seqNum), &imap.FetchOptions{
+			BodySection: []*imap.FetchItemBodySection{{Peek: true}},
+		}).Collect()
 	})
-	buffers, err := command.Collect()
 	if err != nil {
 		return nil, err
 	}
@@ -762,5 +814,7 @@ func (c *realIMAPClient) Fetch(ctx context.Context, seqNum uint32) ([]byte, erro
 }
 
 func (c *realIMAPClient) Close() error {
-	return c.client.Logout().Wait()
+	logoutErr := c.client.Logout().Wait()
+	_ = c.client.Close()
+	return logoutErr
 }
