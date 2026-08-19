@@ -68,20 +68,13 @@ def search_environment(monkeypatch):
     monkeypatch.setitem(sys.modules, "rag.nlp.rag_tokenizer", fake_tokenizer)
     monkeypatch.setitem(sys.modules, "rag.nlp.query", fake_query)
 
-    fusion_spec = importlib.util.spec_from_file_location("rag.nlp.fusion", _ROOT / "rag" / "nlp" / "fusion.py")
-    fusion_module = importlib.util.module_from_spec(fusion_spec)
-    assert fusion_spec.loader is not None
-    monkeypatch.setitem(sys.modules, "rag.nlp.fusion", fusion_module)
-    fusion_spec.loader.exec_module(fusion_module)
-    fake_rag_nlp.fusion = fusion_module
-
     search_spec = importlib.util.spec_from_file_location("rag.nlp.search", _ROOT / "rag" / "nlp" / "search.py")
     search_module = importlib.util.module_from_spec(search_spec)
     assert search_spec.loader is not None
     monkeypatch.setitem(sys.modules, "rag.nlp.search", search_module)
     search_spec.loader.exec_module(search_module)
 
-    return search_module.Dealer
+    return search_module
 
 
 class _FakeEmbeddingModel:
@@ -128,7 +121,7 @@ class _CapturingDataStore:
 async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr(search_environment, caplog):
     caplog.set_level(logging.DEBUG)
     data_store = _CapturingDataStore()
-    dealer = search_environment(data_store)
+    dealer = search_environment.Dealer(data_store)
 
     await dealer.retrieval(
         question="test question",
@@ -155,7 +148,7 @@ async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr(s
 @pytest.mark.asyncio
 async def test_dealer_retrieval_keeps_elasticsearch_fusion_weight(search_environment):
     data_store = _CapturingDataStore()
-    dealer = search_environment(data_store)
+    dealer = search_environment.Dealer(data_store)
 
     import common
 
@@ -178,3 +171,20 @@ async def test_dealer_retrieval_keeps_elasticsearch_fusion_weight(search_environ
     fusion_expr = data_store.match_expressions[2]
     assert isinstance(fusion_expr, FusionExpr)
     assert fusion_expr.fusion_params["weights"] == "0.001,1"
+
+
+@pytest.mark.parametrize(
+    ("vector_similarity_weight", "expected_weights"),
+    [
+        (0.0, "1,0"),
+        (0.3, "0.7,0.3"),
+        (0.5, "0.5,0.5"),
+        (1.0, "0,1"),
+    ],
+)
+def test_build_fusion_expr_uses_vector_similarity_weight(search_environment, vector_similarity_weight, expected_weights):
+    fusion_expr = search_environment.build_fusion_expr(topn=10, vector_similarity_weight=vector_similarity_weight)
+
+    assert fusion_expr.method == "weighted_sum"
+    assert fusion_expr.topn == 10
+    assert fusion_expr.fusion_params["weights"] == expected_weights

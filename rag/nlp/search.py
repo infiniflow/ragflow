@@ -21,7 +21,6 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
 from rag.nlp import rag_tokenizer, query
-from rag.nlp.fusion import build_fusion_expr
 import numpy as np
 from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
@@ -31,6 +30,16 @@ from common.tag_feature_utils import parse_tag_features
 from common import settings
 
 from common.misc_utils import thread_pool_exec
+
+
+def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
+    """Build the Infinity weighted-sum expression from the vector weight."""
+    term_similarity_weight = 1 - vector_similarity_weight
+    return FusionExpr(
+        "weighted_sum",
+        topn,
+        {"weights": f"{term_similarity_weight:g},{vector_similarity_weight:g}"},
+    )
 
 
 def index_name(uid):
