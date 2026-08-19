@@ -117,7 +117,7 @@ class Jin10(ToolBase, ABC):
                 )
                 response = response.json()
                 if self.check_if_canceled("Jin10 processing"):
-                    return
+                    return ""
                 if self._param.symbols_datatype == "symbols":
                     for i in response["data"]:
                         if self.check_if_canceled("Jin10 processing"):
@@ -148,11 +148,11 @@ class Jin10(ToolBase, ABC):
                 response = requests.get(url="https://open-data-api.jin10.com/data-api/news", headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
                 response = response.json()
                 if self.check_if_canceled("Jin10 processing"):
-                    return
+                    return ""
                 jin10_res.append({"content": pd.DataFrame(response["data"]).to_markdown()})
         except Exception as e:
             if self.check_if_canceled("Jin10 processing"):
-                return
+                return ""
             logging.exception("Jin10 request failed: %s", e)
             self.set_output("_ERROR", str(e))
             return f"Jin10 error: {e}"
