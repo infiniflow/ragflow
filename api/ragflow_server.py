@@ -48,6 +48,7 @@ from agent.plugin import GlobalPluginManager
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
+chat_channel_thread = None
 
 RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get("RAGFLOW_DEBUGPY_LISTEN", "0"))
 
@@ -57,25 +58,32 @@ def update_progress():
     redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
     logging.info(f"update_progress lock_value: {lock_value}")
     while not stop_event.is_set():
+        acquired = False
         try:
-            if redis_lock.acquire():
+            acquired = redis_lock.acquire()
+            if acquired:
                 DocumentService.update_progress()
-                redis_lock.release()
         except Exception:
             logging.exception("update_progress exception")
         finally:
-            try:
-                redis_lock.release()
-            except Exception:
-                logging.exception("update_progress exception")
+            if acquired:
+                try:
+                    redis_lock.release()
+                except Exception:
+                    logging.exception("update_progress exception")
             stop_event.wait(6)
+
+
+def stop_background_services():
+    stop_event.set()
+    if chat_channel_thread and chat_channel_thread.is_alive() and chat_channel_thread is not threading.current_thread():
+        chat_channel_thread.join(timeout=5)
 
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
     shutdown_all_mcp_sessions()
-    stop_event.set()
-    stop_event.wait(1)
+    stop_background_services()
     sys.exit(0)
 
 
@@ -137,17 +145,18 @@ if __name__ == "__main__":
         t.start()
 
     def start_chat_channels():
+        global chat_channel_thread
         try:
             from api.channels.bootstrap import start_channel_server
 
             logging.info("Starting chat channel server thread")
-            t = threading.Thread(
+            chat_channel_thread = threading.Thread(
                 target=start_channel_server,
                 args=(stop_event,),
                 daemon=True,
                 name="chat-channels",
             )
-            t.start()
+            chat_channel_thread.start()
         except Exception:
             logging.exception("Failed to start chat channel server")
 
@@ -165,6 +174,7 @@ if __name__ == "__main__":
         app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
     except Exception as e:
         logging.exception(f"Unhandled exception: {e}")
-        stop_event.set()
-        stop_event.wait(1)
+        stop_background_services()
         os.kill(os.getpid(), signal.SIGKILL)
+    finally:
+        stop_background_services()

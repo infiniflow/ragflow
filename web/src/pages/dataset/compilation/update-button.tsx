@@ -10,10 +10,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
-import {
-  ITraceInfo,
-  useGenerateStatus,
-} from '@/hooks/use-dataset-generate';
+import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
+import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
 
 import { UpdateRunProgress } from './update-run-progress';
 
@@ -23,6 +21,7 @@ type CompilationUpdateButtonProps = {
   hasChanges: boolean;
   newlyUploaded: number;
   removed: number;
+  changed?: number;
   loading: boolean;
   tooltip: string;
   onClick: () => void;
@@ -34,6 +33,7 @@ export function CompilationUpdateButton({
   hasChanges,
   newlyUploaded,
   removed,
+  changed = 0,
   loading,
   tooltip,
   onClick,
@@ -42,6 +42,13 @@ export function CompilationUpdateButton({
   const { status } = useGenerateStatus(traceData);
   const isRunning = status === GenerateStatus.Running;
   const isGenerating = isRunning || status === GenerateStatus.Failed;
+
+  // Go/hybrid: compilation is auto-driven by the scheduler with no manual
+  // re-merge, so hide the update control rather than offer a trigger that
+  // cannot work (plan v4.1 §4.2).
+  if (isGoDatasetBackend()) {
+    return null;
+  }
 
   // A failed trace persists (progress stays < 0) until the next run, so it
   // must not keep the button visible on its own — only real changes or a
@@ -59,7 +66,7 @@ export function CompilationUpdateButton({
               <UpdateRunProgress data={traceData} generateType={generateType} />
             ) : (
               <>
-                {t('knowledgeDetails.update', { defaultValue: 'Update' })}
+                {t('knowledgeCompilation.update', { defaultValue: 'Update' })}
                 {newlyUploaded > 0 && (
                   <Badge variant="success" className="ml-1">
                     {newlyUploaded}
@@ -70,6 +77,11 @@ export function CompilationUpdateButton({
                     {removed}
                   </Badge>
                 )}
+                {changed > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {changed}
+                  </Badge>
+                )}
                 <WandSparkles />
               </>
             )}
@@ -77,7 +89,7 @@ export function CompilationUpdateButton({
         </TooltipTrigger>
         <TooltipContent>
           {isGenerating
-            ? t('knowledgeDetails.viewUpdateLogs', {
+            ? t('knowledgeCompilation.viewUpdateLogs', {
                 defaultValue: 'View update logs',
               })
             : tooltip}

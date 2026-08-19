@@ -11,12 +11,27 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"strconv"
 	"strings"
 	"time"
 )
 
+const defaultDeploymentUploadMaxBytes int64 = 1 << 30
+
+func DeploymentUploadMaxBytes() int64 {
+	raw := common.GetEnv(common.EnvMaxContentLength)
+	if raw == "" {
+		return defaultDeploymentUploadMaxBytes
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return defaultDeploymentUploadMaxBytes
+	}
+	return n
+}
+
 // UploadFile uploads files to a folder
-func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
@@ -27,7 +42,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 
 	_, err := s.fileDAO.GetByID(ctx, dao.DB, parentID)
 	if err != nil {
-		return nil, fmt.Errorf("Can't find this folder!")
+		return nil, fmt.Errorf("can't find this folder")
 	}
 
 	maxFileNumPerUser := common.GetEnv(common.EnvMaxFileNumPerUser)
@@ -40,7 +55,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 				return nil, fmt.Errorf("failed to get document count: %w", err)
 			}
 			if docCount >= maxNum {
-				return nil, fmt.Errorf("Exceed the maximum file number of a free user!")
+				return nil, fmt.Errorf("exceed the maximum file number of a free user")
 			}
 		}
 	}
@@ -56,6 +71,10 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		filename := fileHeader.Filename
 		if filename == "" {
 			return nil, fmt.Errorf("no file selected")
+		}
+
+		if maxBytes > 0 && fileHeader.Size > maxBytes {
+			return nil, fmt.Errorf("file %s exceeds deployment upload limit of %d bytes", filename, maxBytes)
 		}
 
 		fileType := utility.FilenameType(filename)
@@ -90,7 +109,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		}
 
 		location := fileObjNames[len(fileObjNames)-1]
-		for storageImpl.ObjExist(lastFolder.ID, location) {
+		for storageImpl.ObjExist(ctx, lastFolder.ID, location) {
 			location += "_"
 		}
 
@@ -101,13 +120,13 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		}
 
 		var data []byte
-		data, err = io.ReadAll(src)
+		data, err = readDeploymentUploadData(src, maxBytes)
 		src.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}
 
-		if err = storageImpl.Put(lastFolder.ID, location, data); err != nil {
+		if err = storageImpl.Put(ctx, lastFolder.ID, location, data); err != nil {
 			return nil, fmt.Errorf("failed to store file: %w", err)
 		}
 
@@ -137,6 +156,21 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 	}
 
 	return result, nil
+}
+
+func readDeploymentUploadData(r io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return io.ReadAll(r)
+	}
+	limited := &io.LimitedReader{R: r, N: maxBytes + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("file size exceeds deployment upload limit of %d bytes", maxBytes)
+	}
+	return data, nil
 }
 
 // UploadInfos mirrors Python's upload_info file branch: store raw bytes in the
@@ -169,7 +203,7 @@ func (s *FileService) UploadInfos(ctx context.Context, userID string, files []*m
 			contentType = http.DetectContentType(data)
 		}
 		filename, contentType, data = utility.NormalizeUploadInfoContent(filename, contentType, data)
-		resp, err := s.storeUploadInfoBlob(storageImpl, userID, filename, contentType, data)
+		resp, err := s.storeUploadInfoBlob(ctx, storageImpl, userID, filename, contentType, data)
 		if err != nil {
 			return nil, err
 		}
@@ -235,20 +269,20 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filenam
 				return fmt.Errorf("failed to get document count: %w", err)
 			}
 			if docCount >= maxNum {
-				return fmt.Errorf("Exceed the maximum file number of a free user!")
+				return fmt.Errorf("exceed the maximum file number of a free user")
 			}
 		}
 	}
 	if len([]byte(filename)) > 255 {
-		return fmt.Errorf("Exceed the maximum length of file name!")
+		return fmt.Errorf("exceed the maximum length of file name")
 	}
 	return nil
 }
 
-func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
+func (s *FileService) storeUploadInfoBlob(ctx context.Context, storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
 	location := utility.GenerateUUID()
 	bucket := fmt.Sprintf("%s-downloads", userID)
-	if err := storageImpl.Put(bucket, location, data); err != nil {
+	if err := storageImpl.Put(ctx, bucket, location, data); err != nil {
 		return nil, fmt.Errorf("failed to store file: %w", err)
 	}
 	ext := ""

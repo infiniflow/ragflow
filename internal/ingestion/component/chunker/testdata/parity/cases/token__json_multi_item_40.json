@@ -1,0 +1,177 @@
+{
+ "id": "token__json_multi_item_40",
+ "component": "TokenChunker",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "multi.json",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "Section 1. RAGFlow chunks documents for retrieval. This is sentence two of item 1.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 2. RAGFlow chunks documents for retrieval. This is sentence two of item 2.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 3. RAGFlow chunks documents for retrieval. This is sentence two of item 3.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 4. RAGFlow chunks documents for retrieval. This is sentence two of item 4.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 5. RAGFlow chunks documents for retrieval. This is sentence two of item 5.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 6. RAGFlow chunks documents for retrieval. This is sentence two of item 6.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 7. RAGFlow chunks documents for retrieval. This is sentence two of item 7.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 8. RAGFlow chunks documents for retrieval. This is sentence two of item 8.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 9. RAGFlow chunks documents for retrieval. This is sentence two of item 9.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 10. RAGFlow chunks documents for retrieval. This is sentence two of item 10.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 11. RAGFlow chunks documents for retrieval. This is sentence two of item 11.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 12. RAGFlow chunks documents for retrieval. This is sentence two of item 12.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 13. RAGFlow chunks documents for retrieval. This is sentence two of item 13.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 14. RAGFlow chunks documents for retrieval. This is sentence two of item 14.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 15. RAGFlow chunks documents for retrieval. This is sentence two of item 15.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 16. RAGFlow chunks documents for retrieval. This is sentence two of item 16.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 17. RAGFlow chunks documents for retrieval. This is sentence two of item 17.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 18. RAGFlow chunks documents for retrieval. This is sentence two of item 18.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 19. RAGFlow chunks documents for retrieval. This is sentence two of item 19.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 20. RAGFlow chunks documents for retrieval. This is sentence two of item 20.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 21. RAGFlow chunks documents for retrieval. This is sentence two of item 21.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 22. RAGFlow chunks documents for retrieval. This is sentence two of item 22.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 23. RAGFlow chunks documents for retrieval. This is sentence two of item 23.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 24. RAGFlow chunks documents for retrieval. This is sentence two of item 24.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 25. RAGFlow chunks documents for retrieval. This is sentence two of item 25.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 26. RAGFlow chunks documents for retrieval. This is sentence two of item 26.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 27. RAGFlow chunks documents for retrieval. This is sentence two of item 27.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 28. RAGFlow chunks documents for retrieval. This is sentence two of item 28.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 29. RAGFlow chunks documents for retrieval. This is sentence two of item 29.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 30. RAGFlow chunks documents for retrieval. This is sentence two of item 30.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 31. RAGFlow chunks documents for retrieval. This is sentence two of item 31.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 32. RAGFlow chunks documents for retrieval. This is sentence two of item 32.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 33. RAGFlow chunks documents for retrieval. This is sentence two of item 33.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 34. RAGFlow chunks documents for retrieval. This is sentence two of item 34.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 35. RAGFlow chunks documents for retrieval. This is sentence two of item 35.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 36. RAGFlow chunks documents for retrieval. This is sentence two of item 36.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 37. RAGFlow chunks documents for retrieval. This is sentence two of item 37.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 38. RAGFlow chunks documents for retrieval. This is sentence two of item 38.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 39. RAGFlow chunks documents for retrieval. This is sentence two of item 39.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "Section 40. RAGFlow chunks documents for retrieval. This is sentence two of item 40.",
+    "doc_type_kwd": "text"
+   }
+  ]
+ },
+ "notes": "Lock global vs per-item merge: Python merges across items, Go merges per item."
+}

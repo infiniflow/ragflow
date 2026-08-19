@@ -21,14 +21,14 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	}
 	baseURL := strings.TrimSpace(parser.TCADPAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPApiServerURL))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIServerURL))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP requires tcadp_apiserver or TCADP_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.TCADPAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvTCADPAPIKey))
 	}
 	requestBody := map[string]any{
 		"file_type":              "PDF",
@@ -40,7 +40,7 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 			"MarkdownImageResponseType": parser.TCADPMarkdownImageResponseType,
 		},
 	}
-	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
+	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(false), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
 	}
@@ -68,7 +68,7 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	if auth := bearer(apiKey); auth != "" {
 		downloadReq.Header.Set("Authorization", auth)
 	}
-	downloadResp, err := models.NewDriverHTTPClient().Do(downloadReq)
+	downloadResp, err := models.NewDriverHTTPClient(false).Do(downloadReq)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download: %w", err)}
 	}

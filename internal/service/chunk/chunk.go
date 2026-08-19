@@ -192,11 +192,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		}
 	}
 
-	// Check if all kbs have the same embedding model
+	// Check if all kbs resolve to the same base embedding model
 	if len(kbRecords) > 1 {
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(kbRecords[0], tenantIDs[0])
+		embdNameCache := make(map[string]string)
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNameCache)
 		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(kbRecords[i], tenantIDs[i]) != firstEmbeddingKey {
+			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNameCache) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -444,14 +445,15 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}, nil
 }
 
-func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase, tenantID string) string {
-	if kb.TenantEmbdID != nil && *kb.TenantEmbdID != "" {
-		return fmt.Sprintf("tenant:%s", *kb.TenantEmbdID)
-	}
-	if kb.EmbdID == "" {
+// knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
+// model name (e.g. "BAAI/bge-m3") so datasets pointing at the same model
+// through different provider instances or storage forms (tenant_model id vs
+// legacy composite name) retrieve together.
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, cache map[string]string) string {
+	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return fmt.Sprintf("default:%s", tenantID)
 	}
-	return fmt.Sprintf("embd:%s", kb.EmbdID)
+	return "embd:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
@@ -769,7 +771,7 @@ func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req 
 			return map[string]interface{}{
 				"success_count": successCount,
 				"errors":        duplicateMessages,
-			}, common.CodeSuccess, fmt.Errorf("Partially parsed %d documents with %d errors", successCount, len(duplicateMessages))
+			}, common.CodeSuccess, fmt.Errorf("partially parsed %d documents with %d errors", successCount, len(duplicateMessages))
 		}
 		return nil, common.CodeDataError, fmt.Errorf("%s", strings.Join(duplicateMessages, ";"))
 	}
@@ -880,7 +882,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"available_int",
 		},
 		Filter: map[string]interface{}{
-			"doc_id": req.DocID,
+			"doc_id":   req.DocID,
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
 		},
 	}
 
@@ -1362,11 +1365,12 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 
 	if req.ImageBase64 != nil {
-		imageBinary, err := decodeChunkImageBase64(*req.ImageBase64)
+		var imageBinary []byte
+		imageBinary, err = decodeChunkImageBase64(*req.ImageBase64)
 		if err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: err.Error()}
 		}
-		if err := s.storeChunkImage(req.DatasetID, chunkID, imageBinary); err != nil {
+		if err = s.storeChunkImage(ctx, req.DatasetID, chunkID, imageBinary); err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
 		}
 		chunkData["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, chunkID)
@@ -1381,7 +1385,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{docName, embeddingText}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
@@ -1394,14 +1398,14 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	chunkData[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
 
-	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
-	if _, err := s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
 	tokenNum := int64(s.numTokens(req.Content))
-	if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
+	if err = s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
 
@@ -1640,7 +1644,7 @@ func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNu
 	})
 }
 
-func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byte) error {
+func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID string, imageBinary []byte) error {
 	if s.storeChunkImageFunc != nil {
 		return s.storeChunkImageFunc(bucket, chunkID, imageBinary)
 	}
@@ -1656,11 +1660,11 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 		releaseChunkImageMergeLock(lockKey)
 	}()
 
-	if !storageImpl.ObjExist(bucket, chunkID) {
-		return storageImpl.Put(bucket, chunkID, imageBinary)
+	if !storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return storageImpl.Put(ctx, bucket, chunkID, imageBinary)
 	}
 
-	oldBinary, err := storageImpl.Get(bucket, chunkID)
+	oldBinary, err := storageImpl.Get(ctx, bucket, chunkID)
 	if err != nil {
 		return err
 	}
@@ -1684,10 +1688,10 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 	draw.Draw(combined, image.Rect(0, oldBounds.Dy(), newBounds.Dx(), oldBounds.Dy()+newBounds.Dy()), newImage, newBounds.Min, draw.Src)
 
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, combined, nil); err != nil {
+	if err = jpeg.Encode(&buf, combined, nil); err != nil {
 		return err
 	}
-	return storageImpl.Put(bucket, chunkID, buf.Bytes())
+	return storageImpl.Put(ctx, bucket, chunkID, buf.Bytes())
 }
 
 func acquireChunkImageMergeLock(key string) *chunkImageMergeLock {

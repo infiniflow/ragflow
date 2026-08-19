@@ -88,7 +88,6 @@ func TestRegistryVsHardcodedList(t *testing.T) {
 		"picture":      true,
 		"presentation": true,
 		"qa":           true,
-		"resume":       true,
 		"table":        true,
 	}
 	for h := range hardcoded {

@@ -16,11 +16,12 @@
 import logging
 
 from peewee import OperationalError
-from quart import request
-from common.constants import RetCode
-from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
-from api.utils.pagination_utils import validate_rest_api_page_size
+from quart import make_response, request
+
+from api.apps import current_user, login_required
+from api.apps.services import dataset_api_service
+from api.utils.api_utils import add_tenant_id_to_kwargs, get_error_argument_result, get_error_data_result, get_json_result, get_result
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -31,7 +32,7 @@ from api.utils.validation_utils import (
     validate_and_parse_json_request,
     validate_and_parse_request_args,
 )
-from api.apps.services import dataset_api_service
+from common.constants import RetCode
 
 
 @manager.route("/datasets/tags/aggregation", methods=["GET"])  # noqa: F821
@@ -44,6 +45,7 @@ def aggregate_tags(tenant_id):
         return get_error_data_result(message="Lack of dataset_ids in query parameters")
 
     try:
+        validate_rest_api_ids(dataset_ids, "dataset_ids")
         success, result = dataset_api_service.aggregate_tags(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
@@ -66,6 +68,7 @@ def get_flattened_metadata(tenant_id):
         return get_error_data_result(message="Lack of dataset_ids in query parameters")
 
     try:
+        validate_rest_api_ids(dataset_ids, "dataset_ids")
         success, result = dataset_api_service.get_flattened_metadata(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
@@ -322,6 +325,14 @@ def list_datasets(tenant_id):
         required: false
         description: Dataset ID to filter.
       - in: query
+        name: ids
+        type: array
+        required: false
+        items:
+          type: string
+        collectionFormat: multi
+        description: Dataset IDs to filter.
+      - in: query
         name: name
         type: string
         required: false
@@ -504,7 +515,7 @@ async def search_datasets(tenant_id):
     POST /api/v1/datasets/search
     JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
-               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
@@ -527,7 +538,7 @@ async def search(tenant_id, dataset_id):
     POST /api/v1/datasets/<dataset_id>/search
     JSON body: {"question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
-               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict}
+               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
@@ -570,22 +581,19 @@ async def get_knowledge_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/any_artifact", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts", methods=["HEAD"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def has_any_wiki(tenant_id, dataset_id):
     """Probe whether this dataset has any compiled artifact pages.
 
-    GET /api/v1/datasets/<dataset_id>/any_artifact
-    Success: {"code": 0, "data": {"has": bool}}
     The frontend uses this to decide whether to surface the Artifact tab
     in the dataset sidebar.
     """
     try:
         success, result = await dataset_api_service.has_any_wiki(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        response = await make_response("", 200 if success and result["has"] else 404)
+        return response
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -597,16 +605,17 @@ async def has_any_wiki(tenant_id, dataset_id):
 async def list_wiki_pages(tenant_id, dataset_id):
     """List artifact pages for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity&topic=topic
+    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=100&page_type=entity&topic=topic&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
     """
     try:
-        page = int(request.args.get("page", 1) or 1)
-        page_size = int(request.args.get("page_size", 200) or 200)
-    except (TypeError, ValueError):
-        return get_error_argument_result("page and page_size must be integers")
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     page_type = (request.args.get("page_type") or "").strip() or None
     topic = (request.args.get("topic") or "").strip() or None
+    keywords = (request.args.get("keywords") or "").strip()
 
     try:
         success, result = await dataset_api_service.list_wiki_pages(
@@ -616,29 +625,37 @@ async def list_wiki_pages(tenant_id, dataset_id):
             page_size=page_size,
             page_type=page_type,
             topic=topic,
+            keywords=keywords,
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts_topics", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/topics", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_wiki_topics(tenant_id, dataset_id):
     """List wiki topics for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts_topics?page=1&page_size=200
+    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=100&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
     """
     try:
-        page = int(request.args.get("page", 1) or 1)
-        page_size = int(request.args.get("page_size", 200) or 200)
-    except (TypeError, ValueError):
-        return get_error_argument_result("page and page_size must be integers")
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+    keywords = (request.args.get("keywords") or "").strip()
 
     try:
         success, result = await dataset_api_service.list_wiki_topics(
@@ -646,10 +663,17 @@ async def list_wiki_topics(tenant_id, dataset_id):
             tenant_id,
             page=page,
             page_size=page_size,
+            keywords=keywords,
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -694,19 +718,25 @@ async def get_wiki_graph(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/structure", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_dataset_structure(tenant_id, dataset_id):
     """Return the dataset-scope (KB-wide) structure graph for one kind.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    GET /api/v1/datasets/<dataset_id>/artifacts/structure?kind=<kind>
     where ``kind`` is one of:
       graph | mindmap | timeline | session_essence | session_graph
 
@@ -741,19 +771,25 @@ async def get_dataset_structure(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/structure", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 def delete_dataset_structure(tenant_id, dataset_id):
     """Delete the dataset-scope (KB-wide) structure graph for one kind.
 
-    DELETE /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    DELETE /api/v1/datasets/<dataset_id>/artifacts/structure?kind=<kind>
     Optional query param: wipe=false cancels the task without deleting stored rows.
     """
     kind = request.args.get("kind", "")
@@ -797,7 +833,9 @@ async def get_wiki_alteration(tenant_id, dataset_id):
     GET /api/v1/datasets/<dataset_id>/artifacts/alteration?kind=<kind>
     ``kind`` (default ``wiki``) is one of: wiki | graph | mindmap | timeline |
     tree (tree covers both ``tree`` and ``page_index``).
-    Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}
+    Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}.
+    Wiki responses also include ``changed`` and ``changed_doc_ids`` based on
+    source chunk hash drift.
     """
     kind = (request.args.get("kind") or "wiki").strip().lower()
     if kind not in {"wiki", "graph", "mindmap", "timeline", "tree"}:
@@ -809,7 +847,13 @@ async def get_wiki_alteration(tenant_id, dataset_id):
             success, result = await dataset_api_service.get_structure_alteration(dataset_id, tenant_id, kind)
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -833,7 +877,13 @@ async def clear_wiki(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -860,26 +910,27 @@ async def get_wiki_page(tenant_id, dataset_id, page_type, slug):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/any_skill", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/skills", methods=["HEAD"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def has_any_skill(tenant_id, dataset_id):
-    """Probe whether this dataset has a compiled Corpus2Skill tree.
-
-    GET /api/v1/datasets/<dataset_id>/any_skill
-    Success: {"code": 0, "data": {"has": bool}}
-    """
+    """Probe whether this dataset has a compiled Corpus2Skill tree."""
     try:
         success, result = await dataset_api_service.has_any_skill(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        response = await make_response("", 200 if success and result["has"] else 404)
+        return response
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -901,7 +952,13 @@ async def get_skill_tree(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -923,7 +980,13 @@ async def delete_all_skills(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -946,41 +1009,121 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_dataset_nav(tenant_id, dataset_id):
     """First level of the dataset navigation tree — the top-level clusters.
 
-    GET /api/v1/datasets/<dataset_id>/nav
-    Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, has_children}, ...]}}
+    GET /api/v1/datasets/<dataset_id>/navigation
+    GET /api/v1/datasets/<dataset_id>/navigation?keywords=<query>&top_k=<n>
+    Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, has_children, ...}, ...]}}
     """
+    q = (request.args.get("keywords") or "").strip() or None
+    top_k_raw = request.args.get("top_k")
+    top_k = None
+    if top_k_raw:
+        try:
+            top_k = max(1, int(top_k_raw))
+        except (ValueError, TypeError):
+            return get_error_data_result(message="top_k must be a positive integer")
     try:
         success, result = await dataset_api_service.list_nav_clusters(
             dataset_id,
             tenant_id,
+            q=q,
+            top_k=top_k,
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav/<path:name>/children", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation/search", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def search_dataset_nav(tenant_id, dataset_id):
+    """Unified navigation search across different knowledge layers.
+
+    GET /api/v1/datasets/<dataset_id>/navigation/search?q=<query>&mode=<mode>&top_k=20&doc_ids=<id>,<id>
+
+    Modes:
+      - nav_doc:         navigation tree document leaves (default)
+      - nav_cluster:     navigation tree cluster nodes
+      - navigation_tree: tree-structured BFS beam descent
+      - chunk:           raw document chunks (deduplicated by doc_id)
+      - all:             union of all modes above
+
+    ``doc_ids`` (comma-separated, optional) restricts the search to those
+    documents; omitted → all documents of the dataset.
+
+    Success: {"code": 0, "data": {"mode": <mode>, "total": <n>,
+        "items": [{name, description, doc_count, type, has_children, doc_id, score, ...}, ...]}}
+    """
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return get_result(data={"mode": request.args.get("mode", "nav_doc"), "total": 0, "items": []})
+    mode = (request.args.get("mode") or "nav_doc").strip()
+    top_k_raw = request.args.get("top_k")
+    top_k = None
+    if top_k_raw:
+        try:
+            top_k = max(1, int(top_k_raw))
+        except (ValueError, TypeError):
+            return get_error_data_result(message="top_k must be a positive integer")
+    doc_scope = [d.strip() for d in request.args.get("doc_ids", "").split(",") if d.strip()] or None
+    try:
+        success, result = await dataset_api_service.search_dataset_layers(
+            dataset_id,
+            tenant_id,
+            q,
+            mode,
+            top_k=top_k,
+            doc_scope=doc_scope,
+        )
+        if success:
+            result["items"] = await dataset_api_service._enrich_nav_items(dataset_id, tenant_id, result.get("items", []))
+            return get_result(data=result)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/navigation/<path:name>/children", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_dataset_nav_children(tenant_id, dataset_id, name):
     """Direct children of a navigation node (hierarchical, one level per call).
 
-    GET /api/v1/datasets/<dataset_id>/nav/<name>/children
+    GET /api/v1/datasets/<dataset_id>/navigation/<name>/children
     Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, doc_id, has_children}, ...]}}
     """
     try:
@@ -991,19 +1134,25 @@ async def list_dataset_nav_children(tenant_id, dataset_id, name):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def delete_dataset_nav(tenant_id, dataset_id):
     """Delete the entire dataset navigation tree.
 
-    DELETE /api/v1/datasets/<dataset_id>/nav
+    DELETE /api/v1/datasets/<dataset_id>/navigation
     Success: {"code": 0, "data": {"deleted": <n>}}
     """
     try:
@@ -1013,19 +1162,25 @@ async def delete_dataset_nav(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav/<path:name>", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation/<path:name>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def delete_dataset_nav_node(tenant_id, dataset_id, name):
     """Delete one navigation node and its whole subtree.
 
-    DELETE /api/v1/datasets/<dataset_id>/nav/<name>
+    DELETE /api/v1/datasets/<dataset_id>/navigation/<name>
     Success: {"code": 0, "data": {"deleted": <n>}}
     """
     try:
@@ -1036,7 +1191,51 @@ async def delete_dataset_nav_node(tenant_id, dataset_id, name):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/navigation", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def generate_dataset_nav(tenant_id, dataset_id):
+    """Create the entire navigation tree from all dataset documents.
+
+    Deletes any existing navigation tree first, then rebuilds it from
+    scratch. When ``documents`` is provided, only those docs are used;
+    otherwise all docs in the dataset are auto-discovered.
+
+    POST /api/v1/datasets/<dataset_id>/navigation
+    Body (optional): {"documents": [{"doc_id": "...", "summary": "...",
+           "doc_title": "... (optional)", "source_type": "... (optional)"}, ...]}
+    Success: {"code": 0, "data": {"deleted": <n>, "upserted": <n>}}
+    """
+    try:
+        req = await request.json or {}
+        documents = req.get("documents")
+
+        success, result = await dataset_api_service.generate_nav(
+            dataset_id,
+            tenant_id,
+            documents,
+        )
+        if success:
+            return get_result(data=result)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -1059,7 +1258,13 @@ async def delete_skill_page(tenant_id, dataset_id, skill_kwd):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -1117,7 +1322,13 @@ async def update_wiki_page(tenant_id, dataset_id, page_type, slug):
         )
         if success:
             return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        if isinstance(result, dict):
+            msg = result.get("error", result)
+            code = result.get("code", RetCode.SERVER_ERROR)
+        else:
+            msg = result
+            code = RetCode.SERVER_ERROR
+        return get_result(data=False, message=msg, code=code)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -1213,8 +1424,8 @@ async def check_embedding(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 def list_ingestion_logs(tenant_id, dataset_id):
     try:
-        page = int(request.args.get("page", 0))
-        page_size = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         operation_status = request.args.getlist("operation_status")

@@ -69,6 +69,7 @@ func newAI302ForTest(baseURL string) *AI302Model {
 }
 
 func TestAI302ChatForcesNonStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAI302Server(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -114,6 +115,7 @@ func TestAI302ChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestAI302StreamForcesStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAI302Server(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Errorf("path=%s, want /v1/chat/completions", r.URL.Path)
@@ -167,6 +169,7 @@ func TestAI302StreamForcesStreaming(t *testing.T) {
 }
 
 func TestAI302ListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAI302Server(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -195,6 +198,7 @@ func TestAI302ListModelsHappyPath(t *testing.T) {
 }
 
 func TestAI302ListModelsRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	for name, response := range map[string]interface{}{
 		"missing data": map[string]interface{}{"object": "list"},
@@ -215,6 +219,7 @@ func TestAI302ListModelsRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestAI302ShowTaskEscapesTaskID(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAI302Server(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -245,6 +250,7 @@ func TestAI302ShowTaskEscapesTaskID(t *testing.T) {
 }
 
 func TestAI302ValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	emptyKey := "  "
 	model := "gpt-5"
@@ -292,7 +298,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "embed model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newAI302ForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -300,7 +306,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "rerank api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Rerank(ctx, &model, "q", []string{"doc"}, nil, nil, nil)
+				_, err := newAI302ForTest("http://unused").Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"doc"}}, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -308,7 +314,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "rerank query",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Rerank(ctx, &model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newAI302ForTest("http://unused").Rerank(ctx, &model, RerankRequest{Query: "  ", Documents: []string{"doc"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "query is required",

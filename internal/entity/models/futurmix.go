@@ -17,12 +17,9 @@
 package models
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"ragflow/internal/common"
 	"strings"
 )
@@ -38,7 +35,7 @@ func NewFuturMixModel(baseURL map[string]string, urlSuffix URLSuffix) *FuturMixM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -60,54 +57,6 @@ func (f *FuturMixModel) endpointURL(region, suffix string) (string, error) {
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
 }
 
-func futurmixRegion(apiConfig *APIConfig) string {
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		return *apiConfig.Region
-	}
-	return "default"
-}
-
-func newFuturMixJSONRequest(ctx context.Context, method, endpoint string, payload interface{}, apiKey string) (*http.Request, error) {
-	var body io.Reader
-	if payload != nil {
-		jsonData, err := json.Marshal(payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
-		body = bytes.NewBuffer(jsonData)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	}
-	return req, nil
-}
-
-type futurmixChatChoice struct {
-	Message      futurmixChatMessage `json:"message"`
-	Delta        futurmixChatDelta   `json:"delta"`
-	FinishReason string              `json:"finish_reason"`
-}
-
-type futurmixChatMessage struct {
-	Content          *string `json:"content"`
-	ReasoningContent string  `json:"reasoning_content"`
-}
-
-type futurmixChatDelta struct {
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content"`
-}
-
-type futurmixChatResponse struct {
-	Choices []futurmixChatChoice `json:"choices"`
-}
-
 // ChatWithMessages sends a non-streaming chat completion
 func (f *FuturMixModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -125,55 +74,24 @@ func (f *FuturMixModel) ChatWithMessages(ctx context.Context, modelName string, 
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]any{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]any{
+				"type": "disabled",
+			}
+		}
+	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := f.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := f.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("futurmix chat API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	var parsed futurmixChatResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-	if parsed.Choices[0].Message.Content == nil {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	content := *parsed.Choices[0].Message.Content
-	reasonContent := parsed.Choices[0].Message.ReasoningContent
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion
@@ -192,86 +110,34 @@ func (f *FuturMixModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Chat)
 
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{
+		"include_usage": true,
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := f.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("futurmix chat stream API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	accumulatedToolCalls := make(map[int]map[string]any)
-	if _, err = ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err = sender(nil, &reasoningContent); err != nil {
-				return err
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]any{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]any{
+				"type": "disabled",
 			}
 		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err = sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
+	return f.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 // Embed is not exposed by the FuturMix API per the public docs.
-func (f *FuturMixModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (f *FuturMixModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // Rerank is not exposed by the FuturMix API per the public docs.
-func (f *FuturMixModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (f *FuturMixModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 

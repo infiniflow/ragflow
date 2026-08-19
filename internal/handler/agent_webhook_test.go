@@ -153,12 +153,14 @@ func TestWebhook_RejectsUnknownCanvas(t *testing.T) {
 	}
 }
 
-// TestWebhook_RejectsDataFlowCanvas covers the second guard: the canvas
-// exists but its category is DataFlow (which python
-// agent_api.py:1575 explicitly rejects).
-func TestWebhook_RejectsDataFlowCanvas(t *testing.T) {
+// TestWebhook_DataFlowRejected pins the second guard: a canvas whose category
+// is DataFlow must NOT be triggered by an external webhook. The handler returns
+// CodeDataError with "Dataflow can not be triggered by webhook." — mirroring
+// Python agent_api.py:1786. DataFlow canvases are ingestion pipelines, not
+// interactive agents, and have no chat/debug surface over the webhook entry.
+func TestWebhook_DataFlowRejected(t *testing.T) {
 	cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
-	cv.CanvasCategory = "DataFlow"
+	cv.CanvasCategory = "dataflow_canvas"
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 	c, w := webhookCtx("POST", "/api/v1/agents/c1/webhook", `{}`, "application/json")
 
@@ -166,7 +168,7 @@ func TestWebhook_RejectsDataFlowCanvas(t *testing.T) {
 
 	code, msg := errBody(t, w.Body.Bytes())
 	if code != int(common.CodeDataError) {
-		t.Errorf("code = %d, want %d", code, common.CodeDataError)
+		t.Errorf("code = %d, want %d (CodeDataError)", code, common.CodeDataError)
 	}
 	if msg != "Dataflow can not be triggered by webhook." {
 		t.Errorf("message = %q, want %q", msg, "Dataflow can not be triggered by webhook.")
@@ -264,8 +266,8 @@ func TestWebhook_TokenAuthFails(t *testing.T) {
 	if code != int(common.CodeDataError) {
 		t.Errorf("code = %d, want %d", code, common.CodeDataError)
 	}
-	if msg != "Invalid token authentication" {
-		t.Errorf("message = %q, want %q", msg, "Invalid token authentication")
+	if msg != "invalid token authentication" {
+		t.Errorf("message = %q, want %q", msg, "invalid token authentication")
 	}
 }
 

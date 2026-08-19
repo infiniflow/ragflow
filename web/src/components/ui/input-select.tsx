@@ -55,6 +55,8 @@ export interface InputSelectProps {
   multi?: boolean;
   /** Type of input: text, number, date, or datetime */
   type?: 'text' | 'number' | 'date' | 'datetime';
+  /** Auto-complete attribute for the input */
+  autoComplete?: string;
 }
 
 /** Internal display for single-select selected value. Click label to re-edit (string labels only). */
@@ -123,6 +125,7 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
       style,
       multi = false,
       type = 'text',
+      autoComplete = 'new-password',
     },
     ref,
   ) => {
@@ -517,6 +520,7 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
               onClick={(e) => e.stopPropagation()}
               onFocus={handleInputFocus}
               onBlur={handleInputBlur}
+              autoComplete={autoComplete}
             />
           )}
         </div>

@@ -54,6 +54,14 @@ func (dao *TaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 	return &task, nil
 }
 
+// UpdateProgress sets the progress and progress message of a task
+func (dao *TaskDAO) UpdateProgress(ctx context.Context, db *gorm.DB, id string, progress float64, progressMsg string) error {
+	return db.WithContext(ctx).Model(&entity.Task{}).Where("id = ?", id).Updates(map[string]any{
+		"progress":     progress,
+		"progress_msg": progressMsg,
+	}).Error
+}
+
 // DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
 func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(ctx context.Context, db *gorm.DB, docIDs []string) (int64, error) {
 	if len(docIDs) == 0 {

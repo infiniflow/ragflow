@@ -85,6 +85,7 @@ func TestMoonshotNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestMoonshotChatForcesNonStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
@@ -132,6 +133,7 @@ func TestMoonshotChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestMoonshotChatSupportsTools(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		tools, ok := body["tools"].([]interface{})
@@ -185,6 +187,7 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 }
 
 func TestMoonshotChatParsesCompletionSchema(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -250,6 +253,7 @@ func TestMoonshotChatParsesCompletionSchema(t *testing.T) {
 }
 
 func TestMoonshotStreamForcesStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
@@ -314,6 +318,7 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 }
 
 func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
@@ -349,6 +354,7 @@ func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 }
 
 func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -377,6 +383,7 @@ func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
 }
 
 func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -411,6 +418,7 @@ func TestMoonshotBalanceUsesBodylessGet(t *testing.T) {
 }
 
 func TestMoonshotRejectsMalformedResponses(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	tests := []struct {
@@ -463,6 +471,7 @@ func TestMoonshotRejectsMalformedResponses(t *testing.T) {
 }
 
 func TestMoonshotValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := " "

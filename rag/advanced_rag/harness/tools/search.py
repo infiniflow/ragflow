@@ -114,7 +114,7 @@ def _highlight_keywords(text: str, kwds: list[str]) -> str:
     if not terms:
         return text
     pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE)
-    return pattern.sub(lambda m: f"<em>{m.group(0)}</em>", text)
+    return pattern.sub(lambda m: f"*{m.group(0)}*", text)
 
 
 def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
@@ -151,6 +151,26 @@ def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
     return out
 
 
+def _narrow_or_keep(chunks: list[dict], keywords: str, label: str) -> list[dict]:
+    """Narrow chunks to keyword sentences, but keep the originals when
+    narrowing would drop everything.
+
+    No keyword overlap does not mean irrelevant — the retriever already ranked
+    these chunks, and a sub-question's wording need not contain the parent
+    question's keywords. Dropping them all produced empty results, unverified
+    claims and pointless retry cycles.
+    """
+    if not keywords or not chunks:
+        return chunks
+    length = len(chunks)
+    narrowed = _narrow_by_keywords(chunks, keywords)
+    if narrowed:
+        _LOG.info(f"[{label}] Kept {len(narrowed)} of {length} passage(s) that actually mention the keywords.")
+        return narrowed
+    _LOG.info(f"[{label}] Keyword narrowing matched nothing — keeping all {length} retrieved passage(s).")
+    return chunks
+
+
 def _search_cache_key(effective_query: str, target_ids, top_n: int, doc_scope) -> tuple:
     """Key a retrieval by what actually determines its result.
 
@@ -181,9 +201,11 @@ def _normalize(kbinfos: dict, tenant_ids: list[str] | str | None) -> dict:
 
 
 async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "", use_compiled: bool = False) -> dict:
-    if not tools.kb_ids and not kb_ids:
+    target_ids = kb_ids or list(dict.fromkeys(tools.kb_ids + [kb.id for kb in tools.sql_kbs]))
+    if not target_ids:
         return {"chunks": [], "doc_aggs": []}
-    target_ids = kb_ids or tools.kb_ids
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     _LOG.info(f'[Hybrid search] Searching the knowledge base for "{query}" (keywords: {keywords})')
 
     # Query expansion: append the formalized-question keywords + close synonyms
@@ -215,21 +237,19 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=True,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    if keywords:
-        length = len(kbinfos["chunks"])
-        kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Hybrid search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Hybrid search")
     if use_compiled and kbinfos.get("chunks"):
         _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
-        await _expand_with_compiled(tools, query, keywords, kbinfos)
+        await _expand_with_compiled(tools, query, keywords, kbinfos, doc_scope)
     if cache is not None:
         cache[cache_key] = kbinfos
     return kbinfos
 
 
-async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "") -> dict:
+async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
     if not tools.embed_mdl:
         _LOG.warning("vector_search: no embed_mdl available")
         return {"chunks": [], "doc_aggs": []}
@@ -237,6 +257,8 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
     _LOG.info(f'[Vector search] Searching by meaning for "{query}" (keywords: {keywords})')
     effective_query = f"{query} {keywords}".strip() if keywords else query
     target_ids = kb_ids or tools.kb_ids
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     kbinfos = await settings.retriever.retrieval(
         effective_query,
         tools.embed_mdl,
@@ -248,19 +270,20 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         vector_similarity_weight=1.0,
         aggs=False,
         highlight=False,
+        doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    if keywords:
-        length = len(kbinfos["chunks"])
-        kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[Vector search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "Vector search")
     return kbinfos
 
 
-async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "") -> dict:
+async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, keywords: str = "", doc_scope: list[str] | None = None) -> dict:
     _LOG.info(f'[BM25 search] Searching by keyword for "{query}" (keywords: {keywords})')
     target_ids = kb_ids or tools.kb_ids
     effective_query = f"{query} {keywords}".strip() if keywords else query
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     kbinfos = await settings.retriever.retrieval(
         effective_query,
         None,
@@ -272,19 +295,18 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         vector_similarity_weight=0,
         aggs=False,
         highlight=False,
+        doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
-    if keywords:
-        length = len(kbinfos["chunks"])
-        kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
-        _LOG.info(f"[BM25 search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    kbinfos["chunks"] = _narrow_or_keep(kbinfos.get("chunks", []), keywords, "BM25 search")
     return kbinfos
 
 
 # ─── Compiled product expansion (zero-LLM, used by hybrid_search with use_compiled=True) ───
 
 
-async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict) -> None:
+async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict, doc_scope: list[str] | None = None) -> None:
     """Zero-LLM compiled-product expansion: page_index → tree → KG.
 
     For each bound KB, searches compiled entity rows matching the query,
@@ -294,7 +316,7 @@ async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict)
     before = len(kbinfos.get("chunks", []))
     seen_ids = {c.get("chunk_id") or c.get("id") for c in kbinfos.get("chunks", [])}
 
-    scopes = await _kg_scopes(tools)
+    scopes = await _kg_scopes(tools, doc_scope)
     if not scopes:
         return
 
@@ -757,14 +779,14 @@ async def web_search(tools, query: str, keywords: str = "") -> dict:
         from common.misc_utils import thread_pool_exec
 
         effective_query = f"{query} {keywords}".strip() if keywords else query
-        tav_res = await thread_pool_exec(tools.tav.retrieve_chunks, effective_query)
-        return {"chunks": tav_res.get("chunks", []), "doc_aggs": tav_res.get("doc_aggs", [])}
+        web_res = await thread_pool_exec(tools.web_search.retrieve_chunks, effective_query)
+        return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
     except Exception:
         _LOG.exception("web_search failed")
         return {"chunks": [], "doc_aggs": []}
 
 
-async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[str] | None = None) -> dict:
+async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[str] | None = None, doc_scope: list[str] | None = None) -> dict:
     """Answer from the structured (tabular) KBs by translating the query to SQL.
 
     ``keywords`` is accepted for schema conformance but deliberately unused: the
@@ -775,12 +797,14 @@ async def structured_query(tools, query: str, keywords: str = "", kb_ids: list[s
     sql_kbs = [kb for kb in tools.sql_kbs if kb_ids is None or kb.id in kb_ids]
     if not sql_kbs:
         return {"answer": "", "chunks": [], "doc_aggs": []}
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     from api.db.services.dialog_service import use_sql
 
     tenant_id = sql_kbs[0].tenant_id
     sql_kb_ids = [kb.id for kb in sql_kbs]
     try:
-        ans = await use_sql(query, tools.field_map, tenant_id, tools.chat_mdl, quota=True, kb_ids=sql_kb_ids)
+        ans = await use_sql(query, tools.field_map, tenant_id, tools.chat_mdl, quota=True, kb_ids=sql_kb_ids, doc_ids=doc_scope)
     except Exception:
         _LOG.exception("structured_query failed")
         return {"answer": "", "chunks": [], "doc_aggs": []}

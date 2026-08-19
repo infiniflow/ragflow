@@ -1,15 +1,25 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 /**
  * Parses a "Delimiter for text" field value into a list of delimiters for
- * display in the UI. The result is meant to be informative only — the
- * actual chunking behavior is determined by the backend.
- *
- * The parsing rule mirrors `rag/nlp/__init__.py::get_delimiters` in
- * spirit (backticks group characters into a multi-character delimiter;
- * anything outside backticks is itself a delimiter) but does **not**
- * exactly match any of the six divergent backend implementations, since
- * those implementations disagree on dedupe, sort order, the use of
- * `re.I`, and CRLF normalization. The helper is a *preview*, not a
- * contract. See #17383 for the backend consolidation.
+ * display in the UI. Mirrors the canonical backend parser in
+ * `rag/nlp/delim.py` (`parse_delimiter_field`): CRLF normalization, bare
+ * and backtick-wrapped tokens, insertion-ordered dedupe, and longest-first
+ * stable sort. Whitespace glyph substitution is display-only.
  */
 export interface ParsedDelimiter {
   /** The original characters the user entered. */
@@ -49,16 +59,9 @@ function toDisplay(raw: string): string {
 }
 
 /**
- * Parse the delimiter field into a deduplicated, display-ready list.
- *
- * Differences from the backend `get_delimiters`:
- *  - Deduplicates by raw value so distinct delimiters that happen to
- *    share a display glyph (e.g. a literal `\n` and a user-typed `↵`)
- *    are not silently merged. The backend does not always dedupe (see
- *    #17383).
- *  - Preserves left-to-right input order rather than sorting
- *    longest-first; visual order is more intuitive for users.
- *  - Does not regex-escape the values (irrelevant for display).
+ * Parse the delimiter field into a deduplicated, longest-first list that
+ * matches backend `parse_delimiter_field` semantics. Display glyphs are
+ * applied after parsing.
  *
  * Returns an empty array if the value is undefined or empty.
  */
@@ -67,28 +70,28 @@ export function parseDelimitersForDisplay(
 ): ParsedDelimiter[] {
   if (!value) return [];
 
+  // Match backend: \r\n → \n, then standalone \r → \n.
+  const normalizedValue = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
   const result: ParsedDelimiter[] = [];
   const seen = new Set<string>();
 
   const push = (raw: string) => {
-    if (seen.has(raw)) return;
+    if (!raw || seen.has(raw)) return;
     seen.add(raw);
     result.push({ raw, display: toDisplay(raw) });
   };
 
   let cursor = 0;
-  for (const match of value.matchAll(/`([^`]+)`/g)) {
+  for (const match of normalizedValue.matchAll(/`([^`]+)`/g)) {
     const start = match.index!;
     const end = start + match[0].length;
-    // bare characters before this backtick-wrapped token
-    for (const ch of value.slice(cursor, start)) push(ch);
-    // the backtick-wrapped token
+    for (const ch of normalizedValue.slice(cursor, start)) push(ch);
     push(match[1]);
     cursor = end;
   }
-  // bare characters after the last token (or the whole string if no
-  // backticks were present)
-  for (const ch of value.slice(cursor)) push(ch);
+  for (const ch of normalizedValue.slice(cursor)) push(ch);
 
-  return result;
+  // Stable sort longest-first (matches backend parse_delimiter_field).
+  return result.sort((a, b) => b.raw.length - a.raw.length);
 }

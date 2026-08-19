@@ -24,16 +24,17 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"strings"
 	"sync"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/dsl"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 )
 
@@ -81,7 +82,7 @@ func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
 // it (TenantID match), and Status must equal common.StatusDialogValid
 // (the python StatusEnum.VALID.value).
 func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
-	title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error,
+	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
@@ -90,19 +91,18 @@ func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string)
 	if dialog == nil || dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
 		return "", "", "", "", false, common.CodeDataError,
-			errors.New("Authentication error: no access to this chatbot!")
+			errors.New("authentication error: no access to this chatbot")
 	}
 	pc := dialog.PromptConfig
 	// Defensive lookups mirroring python's
 	// dialog.prompt_config.get("prologue", "") and
-	// dialog.prompt_config.get("tavily_api_key", "").strip()
+	// resolveWebSearchProvider(dialog.prompt_config) != nil
 	// semantics. A hard type assertion here would panic on a missing
 	// or non-string prologue field — this endpoint is public over
 	// persisted JSON config and the schema is not guaranteed.
 	prologue = stringFromMap(pc, "prologue")
-	tk := stringFromMap(pc, "tavily_api_key")
 	return botDerefStr(dialog.Name), botDerefStr(dialog.Icon), prologue,
-		dialog.LLMID, strings.TrimSpace(tk) != "", common.CodeSuccess, nil
+		dialog.LLMID, resolveWebSearchProvider(pc) != nil, common.CodeSuccess, nil
 }
 
 // AgentbotInputs returns the public metadata of an agentbot canvas.
@@ -157,25 +157,43 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	// Compose the canvas user input from req.UserInput (the `inputs`
-	// dict body field) plus the top-level `question`. Files remain a
-	// separate RunAgent argument so they can populate sys.files. The
-	// Python canvas_service.completion reads the same three fields
-	// separately; the previous code dropped question/files, so a body like
-	// `{"question":"hi"}` reached the canvas with empty inputs.
-	userInput := make(map[string]any, len(req.UserInput)+1)
-	for k, v := range req.UserInput {
-		userInput[k] = v
-	}
-	if req.Question != "" {
-		userInput["question"] = req.Question
-	}
+	// Compose the canvas user input the same way Python's
+	// canvas_service.completion does: `query` first (falling back to
+	// `question`), with the begin-form `inputs` dict only as a
+	// last resort when no free-text question is present. Passing the
+	// `inputs` map itself as the user input breaks the run — the
+	// canvas seeds sys.query / Begin's `query` output with it, and
+	// downstream Retrieval nodes then fail to unmarshal an object
+	// into a string field. Files remain a separate RunAgent argument
+	// so they can populate sys.files.
+	userInput := agentbotUserInput(req)
 	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
 		req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
 	return ch, common.CodeSuccess, nil
+}
+
+// AgentbotLogs returns the stored execution timeline for an agentbot run.
+// Access is scoped to the caller's accessible tenants, matching the Python
+// agent_bot_logs endpoint.
+func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
+		return nil, common.CodeDataError, err
+	}
+	payload, err := redis.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("failed to read agent logs")
+	}
+	data := map[string]any{}
+	if payload == "" {
+		return data, common.CodeSuccess, nil
+	}
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return nil, common.CodeServerError, errors.New("failed to decode agent logs")
+	}
+	return data, common.CodeSuccess, nil
 }
 
 // AgentbotCompletionRequest is the request body for
@@ -187,10 +205,59 @@ type AgentbotCompletionRequest struct {
 	SessionID string `json:"session_id"`
 	UserID    string `json:"user_id"`
 	Stream    bool   `json:"stream"`
-	// UserInput is the dict-shaped root input the canvas run expects.
+	// Query is the free-text chat question. The shared/embedded chat
+	// page sends `query` (the Python completion reads it before
+	// `question`).
+	Query string `json:"query"`
+	// UserInput carries the begin-form field values the canvas run
+	// expects when the flow starts from a form instead of free text.
 	UserInput map[string]any           `json:"inputs"`
 	Question  string                   `json:"question"`
 	Files     []map[string]interface{} `json:"files"`
+}
+
+// agentbotUserInput derives the single user-input value RunAgent
+// expects from an AgentbotCompletionRequest. Mirrors the Python
+// `query = kwargs.get("query", "") or kwargs.get("question", "")`
+// precedence in canvas_service.completion, and the in-app chat
+// handler's form-input fallback (handler/agent.go
+// extractUserInputFromFormInputs): when neither query field is set,
+// the begin-form `inputs` map supplies the value — a single field
+// lifts its `value` entry, multiple fields collapse to a
+// name→value map.
+func agentbotUserInput(req AgentbotCompletionRequest) any {
+	query := req.Query
+	if query == "" {
+		query = req.Question
+	}
+	if query != "" {
+		return query
+	}
+	inputs := req.UserInput
+	if len(inputs) == 0 {
+		return nil
+	}
+	if len(inputs) == 1 {
+		for _, raw := range inputs {
+			if field, ok := raw.(map[string]any); ok {
+				if v, ok := field["value"]; ok {
+					return v
+				}
+			}
+			return raw
+		}
+	}
+	out := make(map[string]any, len(inputs))
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]any); ok {
+			if v, ok := field["value"]; ok {
+				out[name] = v
+				continue
+			}
+		}
+		out[name] = raw
+	}
+	return out
 }
 
 // ChatbotCompletionRequest is the request body for
@@ -228,7 +295,7 @@ func (s *BotService) persistLock(sessionID string) *sync.Mutex {
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the
 // private loadCanvasForUser helper on AgentService without taking a
-// dependency on the agentService pointer (so BotService can be unit-
+// dependency on the agentService pointer (so BotService can be
 // tested with a nil agentService).
 func (s *BotService) loadCanvas(ctx context.Context, tenantID, agentID string) (*entity.UserCanvas, error) {
 	if agentID == "" {

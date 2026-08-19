@@ -67,21 +67,21 @@ type LLMFactoriesFile struct {
 
 // InitDB initialize database connection
 func InitDB(ctx context.Context, migrateDB bool) error {
-	cfg := server.GetConfig()
-	dbCfg := cfg.Database
+	globalConfig := server.GetConfig()
+	databaseConfig := globalConfig.GetMySQLConfig()
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		dbCfg.Username,
-		dbCfg.Password,
-		dbCfg.Host,
-		dbCfg.Port,
-		dbCfg.Database,
-		dbCfg.Charset,
+		databaseConfig.User,
+		databaseConfig.Password,
+		databaseConfig.Host,
+		databaseConfig.Port,
+		databaseConfig.DatabaseName,
+		databaseConfig.Charset,
 	)
 
 	// Set log level
 	var gormLogLevel gormLogger.LogLevel
-	if cfg.General.Mode == "debug" {
+	if globalConfig.GetMode() == "debug" {
 		gormLogLevel = gormLogger.Info
 	} else {
 		gormLogLevel = gormLogger.Silent
@@ -157,7 +157,12 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.IngestionTaskLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
-		&entity.KnowledgeCompileDoc{},
+		&entity.KnowledgeCompileDataset{},
+		// Knowledge-compile compilation templates and their groups. The Go
+		// KnowledgeCompilerComponent resolves a compilation_template (or group)
+		// from these tables at runtime, so the Go side must guarantee they exist.
+		&entity.CompilationTemplate{},
+		&entity.CompilationTemplateGroup{},
 	}
 
 	if migrateDB {
@@ -179,6 +184,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	// initialization.
 	if err = SeedCanvasTemplates(ctx, DB); err != nil {
 		common.Warn("Failed to seed canvas templates", zap.Error(err))
+	}
+	// Seed the built-in compilation template group (c3aa748c...) for every
+	// tenant so compiler.json's default group resolves out of the box.
+	if err = SeedBuiltinCompilationTemplates(ctx, DB); err != nil {
+		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
 	}
 
 	common.Info("Database connected and migrated successfully")

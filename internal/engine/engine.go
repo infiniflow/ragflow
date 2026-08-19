@@ -32,6 +32,9 @@ type EngineType string
 const (
 	EngineElasticsearch EngineType = "elasticsearch"
 	EngineInfinity      EngineType = "infinity"
+	EngineOceanBase     EngineType = "oceanbase"
+	EngineSeekDB        EngineType = "seekdb"
+	EngineSereneDB      EngineType = "serenedb"
 )
 
 // DocEngine document storage engine interface
@@ -66,14 +69,14 @@ type DocEngine interface {
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 
-	// Run SQL
+	// RunSQL runs a SQL query
 	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
 
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
 	GetScores(searchResult map[string]interface{}) map[string]float64
 
-	// Health check
+	// Ping check the engine is alive
 	Ping(ctx context.Context) error
 	Close() error
 
@@ -93,14 +96,21 @@ type DocEngine interface {
 // Type returns the engine type (helper method for runtime type checking)
 // This is a workaround since we can't import elasticsearch or infinity packages directly
 func Type(docEngine DocEngine) EngineType {
-	// Type checking through interface methods is not straightforward
-	// This is a placeholder that should be implemented differently
-	// or rely on configuration to know the type
-	return EngineType("unknown")
+	if docEngine == nil {
+		return EngineType("unknown")
+	}
+	return EngineType(docEngine.GetType())
+}
+
+// IsOceanBaseFamily reports whether a configured engine uses the shared
+// OceanBase/SeekDB SQL implementation.
+func IsOceanBaseFamily(engineName string) bool {
+	return engineName == string(EngineOceanBase) || engineName == string(EngineSeekDB)
 }
 
 type MessageQueue interface {
 	Init() error
+	Type() string
 	InitConsumer(subject string) error
 	PublishTask(subject string, payload []byte) error
 	GetMessages(messageCount int) ([]common.TaskHandle, error)

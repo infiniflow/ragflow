@@ -18,14 +18,11 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/service"
 )
 
@@ -42,12 +39,13 @@ type BotHandler struct {
 // is interface-typed so the test suite can inject a stub.
 type botService interface {
 	ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
-		title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error)
+		title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error)
 	AgentbotInputs(ctx context.Context, tenantID, agentID string) (
 		title, avatar, prologue, mode string, inputs map[string]any,
 		ec common.ErrorCode, err error)
 	AgentbotCompletion(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (
 		<-chan canvas.RunEvent, common.ErrorCode, error)
+	AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
 	ChatbotCompletion(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (
 		<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
@@ -60,7 +58,7 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 // ChatbotInfo GET /api/v1/chatbots/<dialog_id>/info
 //
 // Mirrors python bot_api.py:126-154. Returns the public metadata of
-// a chatbot dialog (title, avatar, prologue, tavily key flag, llm_id).
+// a chatbot dialog (title, avatar, prologue, web search flag, llm_id).
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -72,18 +70,19 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
 		return
 	}
-	title, avatar, prologue, llmID, hasTavily, ec, err := h.botService.ChatbotInfo(
+	title, avatar, prologue, llmID, hasWebSearch, ec, err := h.botService.ChatbotInfo(
 		c.Request.Context(), user.ID, dialogID)
 	if err != nil {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, gin.H{
-		"title":          title,
-		"avatar":         avatar,
-		"prologue":       prologue,
-		"has_tavily_key": hasTavily,
-		"llm_id":         llmID,
+		"title":                   title,
+		"avatar":                  avatar,
+		"prologue":                prologue,
+		"has_tavily_key":          hasWebSearch,
+		"has_web_search_provider": hasWebSearch,
+		"llm_id":                  llmID,
 	}, "success")
 }
 
@@ -230,13 +229,12 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 
 // GetAgentbotLogs GET /api/v1/agentbots/<agent_id>/logs/<message_id>
 //
-// Beta-token sibling of GetAgentLogs. The shared/embedded chat
-// page's "Thinking" button hits this endpoint because the share
-// flow authenticates with a beta APIToken (no session JWT) and
-// the regular /api/v1/agents/<id>/logs/<msg> requires @login_required.
-// Mirrors python bot_api.py:agent_bot_logs.
+// Beta-token sibling of GetAgentLogs. The shared/embedded chat page's
+// "Thinking" button hits this endpoint because the share flow authenticates
+// with a beta APIToken (no session JWT). Mirrors python bot_api.py:agent_bot_logs.
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
@@ -245,38 +243,25 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "agent_id is required")
 		return
 	}
-	boundAgentID, _ := c.Get("agent_id")
-	boundAgentIDStr, _ := boundAgentID.(string)
-	if boundAgentIDStr == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "API token is not bound to an agent.")
-		return
-	}
-	if boundAgentIDStr != agentIDStr {
-		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
-		return
-	}
 	messageID := c.Param("message_id")
 	if messageID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")
 		return
 	}
-	key := fmt.Sprintf("%s-%s-logs", agentIDStr, messageID)
-	payload, rerr := redis.Get().Get(key)
-	// Surface Redis / decode failures instead of silently returning
-	// `{code: 0, data: {}}` — the previous form made the endpoint
-	// indistinguishable from "logs not yet written", which masked
-	// real outages and corrupted payloads from operators (PR review
-	// round 5, Major #6).
-	if rerr != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to read agent logs")
-		return
-	}
-	data := map[string]interface{}{}
-	if payload != "" {
-		if uerr := json.Unmarshal([]byte(payload), &data); uerr != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to decode agent logs")
+	// A beta token with DialogID is restricted to that agent. Tokens without
+	// DialogID remain tenant-scoped and are checked by AgentbotLogs through
+	// the existing Canvas access guard.
+	if boundAgentID, ok := c.Get("agent_id"); ok {
+		boundAgentIDStr, ok := boundAgentID.(string)
+		if ok && boundAgentIDStr != "" && boundAgentIDStr != agentIDStr {
+			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
 			return
 		}
+	}
+	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), user.ID, agentIDStr, messageID)
+	if err != nil {
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		return
 	}
 	common.SuccessWithData(c, data, "success")
 }

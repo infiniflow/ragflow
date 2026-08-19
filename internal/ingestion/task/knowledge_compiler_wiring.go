@@ -28,8 +28,14 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	_ "ragflow/internal/ingestion/component/knowledge_compiler"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service"
+
+	appcommon "ragflow/internal/common"
+
+	"gorm.io/gorm"
 )
 
 // This file is the composition-root wiring for the KnowledgeCompiler ingestion
@@ -47,18 +53,39 @@ import (
 func init() {
 	kc.SetDepsResolver(newKnowledgeCompilerDepsResolver())
 	kc.SetGroupResolver(newKnowledgeCompilerGroupResolver())
+	kc.SetTemplateResolver(newKnowledgeCompilerTemplateResolver())
 }
 
 // newKnowledgeCompilerGroupResolver builds the production GroupResolver backed by
 // the compilation_template DAO. Without it, any config carrying
-// compilation_template_group_ids would fail loud at runtime (the component
+// compilation_template_group_id would fail loud at runtime (the component
 // refuses to silently drop the compilation_template_ids stamp). It resolves each
 // group id to its child template ids so group-based configs stamp the full set
 // on every compiled unit.
 func newKnowledgeCompilerGroupResolver() kc.GroupResolver {
 	tmplDAO := dao.NewCompilationTemplateDAO()
-	return func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
-		return tmplDAO.ResolveGroupTemplateIDs(ctx, tenantID, groupIDs)
+	return func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
+		return tmplDAO.ResolveGroupTemplateIDs(ctx, db, tenantID, groupIDs)
+	}
+}
+
+// newKnowledgeCompilerTemplateResolver builds the production TemplateResolver
+// backed by the compilation_template DAO. It loads a single template by id and
+// returns its id, kind (which selects the Go variant via common.KindToVariant),
+// and config (the template "content"). Without it, any config carrying
+// compilation_template_id would fail loudly at runtime.
+func newKnowledgeCompilerTemplateResolver() kc.TemplateResolver {
+	tmplDAO := dao.NewCompilationTemplateDAO()
+	return func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (kc.TemplateInfo, error) {
+		t, err := tmplDAO.GetTemplate(ctx, db, tenantID, templateID)
+		if err != nil {
+			return kc.TemplateInfo{}, err
+		}
+		return kc.TemplateInfo{
+			ID:     t.ID,
+			Kind:   t.Kind,
+			Config: map[string]any(t.Config),
+		}, nil
 	}
 }
 
@@ -70,27 +97,55 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 	svc := service.NewModelProviderService()
 	return func(tenantID, llmID, embeddingModel string) (kc.Deps, error) {
 		if strings.TrimSpace(llmID) == "" {
-			return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is required for production deps resolution")
+			// No explicit chat model was supplied (e.g. the dataset-level deduper
+			// is seeded with a global default that may be empty). Resolve the
+			// tenant's default chat model so cross-document LLM merging can
+			// actually run instead of failing / falling back to a no-op. Use the
+			// composite "<model>@<instance>@<provider>" reference (not the bare
+			// model name) so later Chat/ResolveModelConfig round-trips can locate
+			// the provider.
+			defaultRef, derr := svc.GetTenantDefaultModelRef(context.Background(), tenantID, entity.ModelTypeChat)
+			if derr != nil || strings.TrimSpace(defaultRef) == "" {
+				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
+			}
+			llmID = defaultRef
+			// Keep the fall-through path below for ModelContextLen resolution so
+			// both explicit and default model refs share one context-window path.
 		}
 		// Resolve the chat model's context window so RAPTOR can truncate each
 		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
+		// This uses content_length (PR #17839) — the total context window — not
+		// max_output. max_output is only the generation cap; using it as the
+		// budget source would collapse per-chunk input quotas.
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup so a stalled provider/instance DB read
 		// cannot block document ingestion indefinitely.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if _, _, _, ml, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && ml > 0 {
+		if ml, merr := svc.ResolveModelContextLength(ctx, tenantID, llmID); merr == nil && ml > 0 {
 			llmMax = ml
+		}
+		// Resolve the model's generation cap (max_output). Cross-document merge
+		// judging packs many pairs into one LLM call; the batch must be bounded by
+		// BOTH the input window and this output cap, so a large candidate set
+		// never overflows max_output and yields a truncated/non-JSON reply. This
+		// uses max_tokens (the generation cap), NOT content_length — see
+		// ResolveModelContextLength's comment.
+		llmMaxOutput := 0
+		if _, _, _, mo, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && mo > 0 {
+			llmMaxOutput = mo
 		}
 
 		return kc.Deps{
-			Chat:      &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
-			Embed:     &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
-			WikiPages: &kcWikiPageStore{docEngine: engine.Get()},
+			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
+			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
+			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
+			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
-			LLMMaxLength: llmMax,
+			ModelContextLen: llmMax,
+			ModelMaxOutput:  llmMaxOutput,
 		}, nil
 	}
 }
@@ -126,9 +181,32 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 			config.MaxTokens = req.MaxTokens
 		}
 	}
-	resp, err := c.svc.Chat(ctx, c.tenantID, llmID, msgs, config)
-	if err != nil {
-		return nil, err
+	// Retry transient transport/provider failures (HTTP timeout, reset,
+	// connection refused, 5xx, 429) with exponential backoff. A single
+	// external-LLM hiccup must not abort the whole knowledge compile — the reply
+	// is never cached, so each attempt issues a fresh request. Permanent
+	// configuration/model errors (auth, unknown model) are not retried.
+	var resp *models.ChatResponse
+	call := func() error {
+		// Bound each attempt to a short deadline so a stalled LLM provider (e.g.
+		// MiniMax hanging on a large merge-judge prompt) surfaces a timeout
+		// quickly instead of blocking a compile sub-batch for minutes; the
+		// retry/backoff loop above then handles it as a transient failure.
+		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
+		defer cancel()
+		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
+		if err != nil {
+			return err
+		}
+		resp = r
+		return nil
+	}
+	if req.DisableRetry {
+		if err := call(); err != nil {
+			return nil, err
+		}
+	} else if retryErr := appcommon.RetryWithBackoff(ctx, kcChatRetryMax, kcChatRetryDelay, call, appcommon.IsTransientError); retryErr != nil {
+		return nil, retryErr
 	}
 	content := ""
 	if resp != nil && resp.Answer != nil {
@@ -136,6 +214,20 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	return &kc.ChatResponse{Content: content}, nil
 }
+
+// kcChatRetryMax bounds how many times a transient LLM transport failure is
+// retried. Each attempt may run up to the driver's HTTP timeout, so the count
+// stays small to avoid unbounded wall-clock latency inside one compile.
+const kcChatRetryMax = 5
+
+// kcChatAttemptTimeout bounds a single Chat call (per retry attempt). A stalled
+// provider must surface a timeout promptly rather than hold a compile sub-batch;
+// 3 minutes is long enough for a big merge-judge prompt yet short enough that
+// several failed attempts do not stall the pipeline for many minutes.
+const kcChatAttemptTimeout = 3 * time.Minute
+
+// kcChatRetryDelay is the initial exponential-backoff delay between retries.
+const kcChatRetryDelay = 2 * time.Second
 
 // kcEmbedder adapts service.ModelProviderService.GetEmbeddingModel to the
 // knowledge_compiler Embedder seam. Vectors are returned as []float32 to match
@@ -151,31 +243,92 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	embdID := strings.TrimSpace(e.embdID)
-	if embdID == "" {
-		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required for production embedding")
-	}
-	mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
+	mdl, err := e.resolveModel(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
-	}
-	if mdl == nil || mdl.ModelDriver == nil {
-		return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
+		return nil, err
 	}
 	config := &models.EmbeddingConfig{}
-	// Embed expects *string for the model name; nil ModelUsage (not tracked here).
-	embeds, err := mdl.ModelDriver.Embed(ctx, mdl.ModelName, texts, mdl.APIConfig, config, nil)
-	if err != nil {
-		return nil, fmt.Errorf("knowledge_compiler: embed: %w", err)
+	// Slice inputs into per-provider batches: providers cap the per-request input
+	// count and reject larger batches rather than chunking internally. The batch
+	// size is resolved from the model's capability (all_models.json batch_size,
+	// added by #17877/#17878) via EmbeddingModel.ResolveBatchSize, which falls
+	// back to a conservative default. Batches are fanned out on the shared compiler
+	// pool and concatenated back in input order.
+	batchSize := mdl.ResolveBatchSize()
+	numBatches := (len(texts) + batchSize - 1) / batchSize
+	slots := make([][][]float32, numBatches) // per-batch vector lists, distinct indices => no race
+	jobs := make([]knowledge_compile.CompilerJob, 0, numBatches)
+	for b := 0; b < numBatches; b++ {
+		b := b
+		start := b * batchSize
+		end := start + batchSize
+		if end > len(texts) {
+			end = len(texts)
+		}
+		batchTexts := texts[start:end]
+		jobs = append(jobs, func() error {
+			if err = ctx.Err(); err != nil {
+				return err
+			}
+			var embeds []models.EmbeddingData
+			embeds, err = mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
+			if err != nil {
+				return fmt.Errorf("knowledge_compiler: embed: %w", err)
+			}
+			vecs := make([][]float32, len(embeds))
+			for i, v := range embeds {
+				vecs[i] = float64sToFloat32(v.Embedding)
+			}
+			slots[b] = vecs
+			return nil
+		})
 	}
-	out := make([][]float32, len(embeds))
-	for i, v := range embeds {
-		out[i] = float64sToFloat32(v.Embedding)
+	if err = knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
+		return nil, err
 	}
-	if len(out) > 0 {
-		e.dim.CompareAndSwap(0, int64(len(out[0])))
+	// Flatten in input order and derive the vector dimension from the first
+	// batch's first vector.
+	out := make([][]float32, 0, len(texts))
+	var batchDim int
+	for _, slot := range slots {
+		for _, vec := range slot {
+			out = append(out, vec)
+			if batchDim == 0 {
+				batchDim = len(vec)
+			}
+		}
+	}
+	if batchDim > 0 {
+		e.dim.CompareAndSwap(0, int64(batchDim))
 	}
 	return out, nil
+}
+
+// resolveModel returns the embedding model to embed with. It prefers the
+// explicitly configured embedding_model; when the caller left it unset, it falls
+// back to the tenant's default embedding model (mirrors Python, which uses the
+// KB/tenant's configured embedding model for wiki compilation). A clear error is
+// returned only when neither is available, so a KB with no embedding model fails
+// loudly instead of silently producing empty vectors.
+func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
+	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
+		mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
+		if err != nil {
+			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
+		}
+		if mdl == nil || mdl.ModelDriver == nil {
+			return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
+		}
+		return mdl, nil
+	}
+	driver, name, apiConfig, _, err := e.svc.GetTenantDefaultModelByType(ctx, e.tenantID, entity.ModelTypeEmbedding)
+	if err != nil {
+		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
+	}
+	if driver == nil || name == "" {
+		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
+	}
+	return &models.EmbeddingModel{ModelDriver: driver, ModelName: &name, APIConfig: apiConfig}, nil
 }
 
 func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }
@@ -206,10 +359,13 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		// compile_kwd="wiki_page" is the schema-backed discriminator for wiki
+		// pages (sections carry compile_kwd="wiki_section"); there is no
+		// "kc_kind" column in the chunk schema, so filtering on it would return
+		// empty on Infinity.
 		Filter: map[string]interface{}{
-			"compile_kwd": "artifact_page",
-			"kc_kind":     "page",
+			"compile_kwd": "wiki_page",
 		},
 		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
@@ -239,11 +395,10 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
 		Filter: map[string]interface{}{
-			"compile_kwd": "artifact_page",
+			"compile_kwd": "wiki_page",
 			"slug_kwd":    slug,
-			"kc_kind":     "page",
 		},
 	}
 	res, err := s.docEngine.Search(ctx, req)
@@ -254,6 +409,35 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 	return &page, nil
 }
 
+func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID, datasetID string, chunkIDs []string, k int) ([]kc.WikiPageCandidate, error) {
+	if s == nil || s.docEngine == nil || len(chunkIDs) == 0 || k <= 0 || strings.TrimSpace(datasetID) == "" {
+		return nil, nil
+	}
+	req := &enginetypes.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		KbIDs:        []string{datasetID},
+		Limit:        k,
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		Filter: map[string]interface{}{
+			"compile_kwd":      "wiki_page",
+			"source_chunk_ids": chunkIDs,
+		},
+	}
+	res, err := s.docEngine.Search(ctx, req)
+	if err != nil || res == nil {
+		return nil, err
+	}
+	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
+	for _, row := range res.Chunks {
+		candidate := wikiPageCandidateFromRow(row)
+		if candidate.Score == 0 {
+			candidate.Score = 0.68
+		}
+		out = append(out, candidate)
+	}
+	return out, nil
+}
+
 func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
 	return kc.WikiPageCandidate{
 		ID:             strings.TrimSpace(anyString(row["id"])),
@@ -261,12 +445,14 @@ func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
 		Title:          strings.TrimSpace(anyString(row["title_kwd"])),
 		PageType:       strings.TrimSpace(anyString(row["page_type_kwd"])),
 		Topic:          strings.TrimSpace(anyString(row["topic_kwd"])),
+		PlanGroup:      strings.TrimSpace(anyString(row["plan_group_kwd"])),
 		Summary:        strings.TrimSpace(anyString(row["summary_with_weight"])),
 		ContentMD:      strings.TrimSpace(anyString(row["content_with_weight"])),
 		ContentMDRaw:   strings.TrimSpace(anyString(row["kc_content_md_raw"])),
 		EntityNames:    anyStrings(row["entity_names_kwd"]),
 		RelatedKBPages: anyStrings(row["related_kb_pages_kwd"]),
 		Outlinks:       anyStrings(row["outlinks_kwd"]),
+		SourceChunkIDs: anyStrings(row["source_chunk_ids"]),
 		Score:          anyFloat(row["_score"]),
 	}
 }

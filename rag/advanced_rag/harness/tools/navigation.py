@@ -314,6 +314,8 @@ async def ontology_navigate(tools, topic: str, keywords: str = "", doc_scope: li
 
     :returns: ``{"answer": "", "chunks": [...], "doc_aggs": [...]}``
     """
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     if not doc_scope:
         doc_scope = []
     _LOG.info(f'[Ontology navigation] Looking through the document catalog for "{topic}" (keywords: {keywords}) in doc: {len(doc_scope)}')
@@ -332,6 +334,8 @@ async def mindmap_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
 
     :returns: ``{"answer": "", "chunks": [...], "doc_aggs": [...]}``
     """
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     if not doc_scope:
         doc_scope = []
     _LOG.info(f'[Mindmap navigation] Following the concept mindmap for "{topic}" (keywords: {keywords}) in doc: {len(doc_scope)}')
@@ -349,6 +353,15 @@ _NAV_MAX_CLUSTERS = 500  # top-level clusters listed / rendered to the LLM
 _NAV_CHILDREN_PAGE_SIZE = 1000  # children fetched per node
 _NAV_TREE_MAX_DEPTH = 6  # BFS depth cap when descending sub-clusters to leaves
 _NAV_TREE_MAX_LEAVES = 300  # document leaves rendered to the doc-select LLM
+
+# Chunk-level content recall (fallback) tunables.
+# The nav tree routes by *cluster summaries*; a question that matches a detail
+# only present in a document's body (not its one-line summary) can fall through
+# the tree.  We therefore back the tree result with a plain chunk retrieval and
+# fold the documents it hits back in as a recall fallback — reusing the existing
+# chunk index, so no new compilation artifact is required.
+_NAV_RECALL_TOP_N = 40  # chunk candidates fetched before doc aggregation
+_NAV_RECALL_MAX_DOCS = 4  # extra docs the content recall may add on top of the tree
 
 _NAV_SELECT_SYSTEM = """You are routing a question through a dataset's navigation tree.
 
@@ -384,7 +397,13 @@ async def _ask_nav_select(tools, query: str, items: list[dict], noun: str, max_i
         name = str(it.get("name") or "").strip() or f"item-{i}"
         desc = str(it.get("description") or "").strip().replace("\n", " ")
         extra = f" [{it['doc_count']} docs]" if it.get("doc_count") else ""
-        lines.append(f"[{i}] {name}{extra}: {desc[:300]}")
+        kwds = it.get("keywords") or []
+        tags = ", ".join(str(k) for k in kwds[:6]).strip()
+        head = f" [tags: {tags}]" if tags else ""
+        entities = it.get("entities") or []
+        ents = ", ".join(str(e) for e in entities[:6]).strip()
+        head += f" [entities: {ents}]" if ents else ""
+        lines.append(f"[{i}] {name}{extra}{head}: {desc[:300]}")
 
     system = _NAV_SELECT_SYSTEM.format(noun=noun)
     user = f"Question:\n{query}\n\n{noun.capitalize()} (numbered):\n" + "\n".join(lines) + "\n\nOutput JSON:"
@@ -418,7 +437,7 @@ async def _ask_nav_select(tools, query: str, items: list[dict], noun: str, max_i
     return out
 
 
-async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list[dict]:
+async def _collect_nav_leaves(dataset_api_service, clusters: list[dict], doc_scope: list[str] | None = None) -> list[dict]:
     """BFS from the selected clusters down to their document leaves.
 
     Each cluster carries ``name`` + ``kb``. A node's children are either document
@@ -429,6 +448,7 @@ async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list
     seen_docs: set[str] = set()
     seen_nodes: set[tuple] = set()
     frontier: list[tuple] = [(c["kb"], c["name"], 0) for c in clusters if c.get("name")]
+    allowed_docs = set(doc_scope or [])
 
     while frontier and len(leaves) < _NAV_TREE_MAX_LEAVES:
         kb, name, depth = frontier.pop(0)
@@ -446,7 +466,7 @@ async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list
         for item in data.get("items") or []:
             if item.get("type") == "doc":
                 did = str(item.get("doc_id") or "").strip()
-                if did and did not in seen_docs:
+                if did and (not allowed_docs or did in allowed_docs) and did not in seen_docs:
                     seen_docs.add(did)
                     leaves.append({**item, "kb": kb})
                     if len(leaves) >= _NAV_TREE_MAX_LEAVES:
@@ -459,6 +479,60 @@ async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list
 def _nav_cluster_names(clusters: list[dict]) -> str:
     names = [str(c.get("name") or "").strip() for c in clusters]
     return ", ".join(n for n in names if n) or "none"
+
+
+async def _content_recall_docs(tools, query: str, doc_scope: list[str] | None = None) -> list[str]:
+    """Fallback doc discovery: recall by chunk *content*, aggregated to docs.
+
+    Runs a plain hybrid retrieval over the bound KBs' chunk index and returns the
+    doc_ids of the hit documents, most-hit-first.  This is the safety net for the
+    nav-tree router: a question that matches detail living only in a document's
+    body (not its cluster summary) never appears in the tree, so this retrieval —
+    which reads real chunk text — is what catches it.
+
+    ``doc_scope`` (the already-effective routed doc scope) is forwarded as
+    ``doc_ids`` to the retrieval so content recall stays restricted to the same
+    documents the tree routed to, instead of re-opening the whole KB.
+
+    Returns ``[]`` on failure or when nothing hits.
+    """
+    if not query:
+        return []
+    from common import settings
+
+    target_ids = getattr(tools, "kb_ids", None) or []
+    if not target_ids:
+        return []
+    # Hybrid weight: blend vector + term recall when an embedder exists, and
+    # fall back to pure term matching otherwise (mirrors ``hybrid_search``).
+    embd_mdl = getattr(tools, "embed_mdl", None)
+    vector_weight = 0.3 if embd_mdl else 0
+    try:
+        kbinfos = await settings.retriever.retrieval(
+            query,
+            embd_mdl,
+            getattr(tools, "tenant_ids", None),
+            target_ids,
+            1,
+            _NAV_RECALL_TOP_N,
+            0.2,
+            vector_similarity_weight=vector_weight,
+            doc_ids=doc_scope,
+            aggs=True,
+            highlight=False,
+        )
+    except Exception:
+        _LOG.exception("[Dataset navigation] content-recall retrieval failed")
+        return []
+    doc_ids: list[str] = []
+    seen: set[str] = set()
+    for agg in kbinfos.get("doc_aggs") or []:
+        did = str(agg.get("doc_id") or "").strip()
+        if did and did not in seen:
+            seen.add(did)
+            doc_ids.append(did)
+    _LOG.info("[Dataset navigation] Content recall found %d candidate doc(s).", len(doc_ids))
+    return doc_ids
 
 
 async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
@@ -481,6 +555,8 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
     query = " ".join(part for part in ((topic or "").strip(), (keywords or "").strip()) if part).strip()
     if not query:
         return []
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
 
     _LOG.info('[Dataset navigation] Walking the dataset tree for "%s"', query)
 
@@ -503,27 +579,27 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
                 clusters.append({**item, "kb": kb})
 
     if not clusters:
-        _LOG.info("[Dataset navigation] no cluster there.")
-        return []
+        _LOG.info("[Dataset navigation] no cluster there — falling back to content recall.")
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
 
     # 2. Ask the model which clusters are relevant. Nothing relevant → [].
     selected_clusters = await _ask_nav_select(tools, query, clusters, "clusters", _NAV_MAX_CLUSTERS)
     if not selected_clusters:
-        _LOG.info("[Dataset navigation] no cluster found.")
-        return []
+        _LOG.info("[Dataset navigation] no cluster found — falling back to content recall.")
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
     _LOG.info("[Dataset navigation] %d/%d cluster(s) selected.", len(selected_clusters), len(clusters))
 
     # 3. Descend the selected clusters to their document leaves.
-    leaves = await _collect_nav_leaves(dataset_api_service, selected_clusters)
+    leaves = await _collect_nav_leaves(dataset_api_service, selected_clusters, doc_scope)
     if not leaves:
-        _LOG.info("[Dataset navigation] no leaf under selected cluster %s.", _nav_cluster_names(selected_clusters))
-        return []
+        _LOG.info("[Dataset navigation] no leaf under selected cluster %s — falling back to content recall.", _nav_cluster_names(selected_clusters))
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
 
     # 4. Ask the model which documents to look into. Nothing relevant → [].
     selected_docs = await _ask_nav_select(tools, query, leaves, "documents", _NAV_TREE_MAX_LEAVES)
     if not selected_docs:
-        _LOG.info("[Dataset navigation] no doc selected under cluster %s.", _nav_cluster_names(selected_clusters))
-        return []
+        _LOG.info("[Dataset navigation] no doc selected under cluster %s — falling back to content recall.", _nav_cluster_names(selected_clusters))
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
 
     routed: list[str] = []
     seen_docs: set[str] = set()
@@ -533,7 +609,90 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
             seen_docs.add(did)
             routed.append(did)
     _LOG.info("[Dataset navigation] Routed to %d document(s).", len(routed))
+
+    # 5. Content-recall fallback.  The tree routes only by cluster summaries, so
+    #    a question matching a detail present only in a document's body can fall
+    #    through it.  Back the routed set with a plain chunk retrieval: docs that
+    #    actually hit by content are folded back in (deduped, tree docs first) so
+    #    a missed document still reaches the caller.  Skip the extra retrieval
+    #    when the tree already filled the whole cap — nothing would be added.
+    if len(routed) < _NAV_MAX_DOCS:
+        fallback = await _content_recall_docs(tools, query, doc_scope)
+        added = [d for d in fallback if d not in seen_docs]
+        if added:
+            routed.extend(added[:_NAV_RECALL_MAX_DOCS])
+            _LOG.info(
+                "[Dataset navigation] Content recall added %d fallback doc(s) on top of the %d tree-routed one(s).",
+                len(added[:_NAV_RECALL_MAX_DOCS]),
+                len(routed) - len(added[:_NAV_RECALL_MAX_DOCS]),
+            )
     return routed[:_NAV_MAX_DOCS]
+
+
+# ── Dataset document search (hybrid, no LLM) ────────────────────────────────
+
+_NAV_SEARCH_MAX_DOCS = 12  # documents the hybrid search routes to
+_NAV_MIN_DOC_SCORE = 0.2  # drop docs below this score
+
+
+async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
+    """Return the ``doc_id``s most relevant to the question / keywords by
+    searching the dataset's navigation-tree document leaves (``nav_doc`` layer).
+
+    Runs ``search_dataset_layers`` with ``mode="nav_doc"``: a direct hybrid
+    search over the nav-tree doc leaves, so it only sees documents that have a
+    compiled nav-tree node.  Faster, no LLM cost, but less precise for ambiguous
+    queries.
+
+    Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
+    ``[]`` when no question/keywords are given or the search returns nothing.
+    This function only routes — it does not retrieve.
+    """
+    query = " ".join(part for part in ((topic or "").strip(), (keywords or "").strip()) if part).strip()
+    if not query:
+        return []
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
+
+    _LOG.info('[Dataset navigation search] Nav-tree doc search for "%s"', query)
+
+    from api.apps.services import dataset_api_service
+
+    kbs = getattr(tools, "kbs", []) or []
+    allowed_docs = set(doc_scope or [])
+
+    candidates: dict[str, float] = {}
+    for kb in kbs:
+        # ``doc_scope`` is forwarded query-time (search_dataset_layers applies
+        # it as a store filter on every mode), so the top_k truncation never
+        # drops scoped docs — no enlarged pool is needed.
+        try:
+            ok, result = await dataset_api_service.search_dataset_layers(
+                kb.id,
+                kb.tenant_id,
+                query,
+                "nav_doc",
+                top_k=_NAV_SEARCH_MAX_DOCS,
+                doc_scope=list(allowed_docs) or None,
+            )
+        except Exception:
+            _LOG.exception("[Dataset navigation search] search_dataset_layers failed for kb=%s", kb.id)
+            continue
+        if not ok or not isinstance(result, dict):
+            continue
+        for item in result.get("items", []):
+            score = float(item.get("score", 0.0))
+            if score < _NAV_MIN_DOC_SCORE:
+                continue
+            did = str(item.get("doc_id") or "").strip()
+            if not did:
+                continue
+            candidates[did] = max(candidates.get(did, float("-inf")), score)
+
+    routed = [did for did, _ in sorted(candidates.items(), key=lambda pair: pair[1], reverse=True)[:_NAV_SEARCH_MAX_DOCS]]
+
+    _LOG.info("[Dataset navigation search] Routed to %d document(s) (min_score=%.1f).", len(routed), _NAV_MIN_DOC_SCORE)
+    return routed[:_NAV_SEARCH_MAX_DOCS]
 
 
 # ── Knowledge-graph exploration ─────────────────────────────────────────────
@@ -566,6 +725,8 @@ async def _kg_scopes(tools, doc_scope: list[str] | None = None):
     """
     from common.misc_utils import thread_pool_exec
 
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     if doc_scope:
         by_kb: dict[tuple, list[str]] = {}
         for doc_id in doc_scope:
@@ -759,6 +920,8 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
     from rag.advanced_rag.harness.tools.search import _narrow_by_keywords
 
     _empty = {"answer": "", "chunks": [], "doc_aggs": []}
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     _LOG.info(f'[Graph exploration] Exploring the knowledge graph for "{query}" (keywords: {keywords})')
 
     scopes = await _kg_scopes(tools, doc_scope)

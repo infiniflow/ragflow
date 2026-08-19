@@ -14,10 +14,10 @@ import {
 import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
-  EnableTocToggle,
   ImageContextWindow,
   OverlappedPercent,
 } from './common-item';
+import { FormLayout } from '@/constants/form';
 
 export function NaiveConfiguration() {
   const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
@@ -35,14 +35,17 @@ export function NaiveConfiguration() {
         ></MaxTokenNumberFormField>
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
-        <EnableTocToggle />
         <ImageContextWindow />
         <AutoMetadata />
         <OverlappedPercent />
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
-        <AutoKeywordsFormField></AutoKeywordsFormField>
-        <AutoQuestionsFormField></AutoQuestionsFormField>
+        <AutoKeywordsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoKeywordsFormField>
+        <AutoQuestionsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoQuestionsFormField>
         <ExcelToHtmlFormField></ExcelToHtmlFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>

@@ -105,9 +105,9 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), orderby, desc, page, pageSize)
 	if err != nil {
-		// Mirror Python: ownership failures return code 109 "No authorization."
-		if strings.Contains(err.Error(), "No authorization") {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+		// Mirror Python: ownership failures return code 109 "no authorization"
+		if strings.Contains(err.Error(), "no authorization") {
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
@@ -127,8 +127,11 @@ type ChatCompletionsRequest struct {
 	LLMID                  string                   `json:"llm_id,omitempty"`
 	PassAllHistoryMessages *bool                    `json:"pass_all_history_messages,omitempty"`
 	PassAllHistory         *bool                    `json:"pass_all_history,omitempty"`
+	StoreHistoryMessages   *bool                    `json:"store_history_messages,omitempty"`
+	StoreHistory           *bool                    `json:"store_history,omitempty"`
 	Legacy                 bool                     `json:"legacy,omitempty"`
 	Stream                 *bool                    `json:"stream"`
+	Thinking               string                   `json:"thinking"`
 	Temperature            *float64                 `json:"temperature,omitempty"`
 	TopP                   *float64                 `json:"top_p,omitempty"`
 	FrequencyPenalty       *float64                 `json:"frequency_penalty,omitempty"`
@@ -180,6 +183,15 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 
 	// Build generation config
 	genConfig := make(map[string]interface{})
+	if req.Thinking != "" {
+		switch req.Thinking {
+		case "enabled":
+			genConfig["thinking"] = true
+		case "disabled":
+			genConfig["thinking"] = false
+		case "", "default":
+		}
+	}
 	if req.Temperature != nil {
 		genConfig["temperature"] = *req.Temperature
 	}
@@ -193,6 +205,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		genConfig["presence_penalty"] = *req.PresencePenalty
 	}
 	if req.MaxTokens != nil {
+		if *req.MaxTokens <= 0 {
+			common.ErrorWithCode(c, common.CodeBadRequest, "`max_tokens` must be greater than 0.")
+			return
+		}
 		genConfig["max_tokens"] = *req.MaxTokens
 	}
 
@@ -205,13 +221,27 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		passAllHistory = *req.PassAllHistoryMessages
 	}
 
+	// Resolve store_history from either alias (default true, mirrors Python)
+	storeHistory := true
+	if req.StoreHistory != nil {
+		storeHistory = *req.StoreHistory
+	}
+	if req.StoreHistoryMessages != nil {
+		storeHistory = *req.StoreHistoryMessages
+	}
+	if !storeHistory && !passAllHistory {
+		common.ErrorWithCode(c, common.CodeDataError, "`pass_all_history_messages` must be true when `store_history_messages` is false.")
+		return
+	}
+
 	// Remove known keys from rawBody; what remains is passthrough kwargs
 	knownKeys := []string{
 		"chat_id", "session_id", "conversation_id",
 		"messages", "question", "files",
 		"llm_id",
 		"pass_all_history_messages", "pass_all_history",
-		"legacy", "stream",
+		"store_history_messages", "store_history",
+		"legacy", "stream", "thinking",
 		"temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens",
 	}
 	for _, key := range knownKeys {
@@ -241,7 +271,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 				req.ChatID, sessionID,
 				req.Messages, req.Question, req.Files,
 				req.LLMID, genConfig, kwargs,
-				passAllHistory, req.Legacy,
+				passAllHistory, storeHistory, req.Legacy,
 				true, streamChan,
 			)
 		}()
@@ -261,7 +291,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			req.ChatID, sessionID,
 			req.Messages, req.Question, req.Files,
 			req.LLMID, genConfig, kwargs,
-			passAllHistory, req.Legacy,
+			passAllHistory, storeHistory, req.Legacy,
 			false, nil,
 		)
 		if err != nil {

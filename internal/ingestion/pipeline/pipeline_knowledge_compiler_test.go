@@ -24,6 +24,10 @@ import (
 	// init hook fires and the component name referenced by the template is
 	// resolvable in the default runtime factory.
 	"ragflow/internal/agent/runtime"
+	// Blank-import the parent component package so its init registers the
+	// File/Parser/TokenChunker components this test's template references.
+	_ "ragflow/internal/ingestion/component"
+	_ "ragflow/internal/ingestion/component/chunker"
 	_ "ragflow/internal/ingestion/component/knowledge_compiler"
 )
 
@@ -53,7 +57,7 @@ func TestKnowledgeCompilerTemplate_RegisteredAndDecodable(t *testing.T) {
 	if runtime.DefaultFactory() == nil {
 		t.Fatal("default runtime factory not installed")
 	}
-	for _, name := range []string{"File", "Parser", "TokenChunker", "KnowledgeCompiler"} {
+	for _, name := range []string{"File", "Parser", "TokenChunker", "Compiler"} {
 		if _, _, _, ok := runtime.DefaultRegistry.Lookup(name); !ok {
 			t.Errorf("component %q referenced by template is not registered in the runtime factory", name)
 		}

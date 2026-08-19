@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 export enum ModelStatus {
   Active = 'active',
   Inactive = 'inactive',
@@ -28,6 +44,7 @@ export enum LLMFactory {
   NVIDIA = 'NVIDIA',
   LMStudio = 'LM-Studio',
   OpenAiAPICompatible = 'OpenAI-API-Compatible',
+  MWS = 'MWS',
   Cohere = 'Cohere',
   LeptonAI = 'LeptonAI',
   TogetherAI = 'TogetherAI',
@@ -177,6 +194,7 @@ export const IconMap = {
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.MWS]: 'mws',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -201,12 +219,15 @@ export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.MWS]:
+    'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
-  [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
+  [LLMFactory.TongYiQianWen]:
+    'https://bailian.console.aliyun.com/?tab=model#/api-key',
+  [LLMFactory.ZhipuAI]: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',

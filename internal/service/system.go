@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	"strings"
 	"time"
 
 	"ragflow/internal/dao"
@@ -46,20 +45,16 @@ func NewSystemService() *SystemService {
 
 // ConfigResponse system configuration response
 type ConfigResponse struct {
-	RegisterEnabled      int  `json:"registerEnabled"`
+	EnableRegister       bool `json:"registerEnabled"`
 	DisablePasswordLogin bool `json:"disablePasswordLogin"`
 }
 
 // GetConfig get system configuration
 func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 	cfg := server.GetConfig()
-	registerEnabled := 1
-	if !cfg.Authentication.RegisterEnabled {
-		registerEnabled = 0
-	}
 	return &ConfigResponse{
-		RegisterEnabled:      registerEnabled,
-		DisablePasswordLogin: cfg.Authentication.DisablePasswordLogin,
+		EnableRegister:       cfg.EnableRegister(),
+		DisablePasswordLogin: cfg.DisablePasswordLogin(),
 	}, nil
 }
 
@@ -107,21 +102,21 @@ type StatusResponse struct {
 }
 
 // GetStatus gets health status for core system dependencies.
-func (s *SystemService) GetStatus() (*StatusResponse, error) {
+func (s *SystemService) GetStatus(ctx context.Context) (*StatusResponse, error) {
 	return &StatusResponse{
-		DocEngine:              s.getDocEngineStatus(),
-		Storage:                s.getStorageStatus(),
-		Database:               s.getDatabaseStatus(),
-		Redis:                  s.getRedisStatus(),
-		TaskExecutorHeartbeats: s.getTaskExecutorHeartbeats(),
+		DocEngine:              s.getDocEngineStatus(ctx),
+		Storage:                s.getStorageStatus(ctx),
+		Database:               s.getDatabaseStatus(ctx),
+		Redis:                  s.getRedisStatus(ctx),
+		TaskExecutorHeartbeats: s.getTaskExecutorHeartbeats(ctx),
 	}, nil
 }
 
-func (s *SystemService) getDocEngineStatus() ComponentStatus {
+func (s *SystemService) getDocEngineStatus(ctx context.Context) ComponentStatus {
 	cfg := server.GetConfig()
 	docEngineType := ""
 	if cfg != nil {
-		docEngineType = strings.ToLower(string(cfg.DocEngine.Type))
+		docEngineType = cfg.DocEngineType()
 	}
 
 	startedAt := time.Now()
@@ -135,9 +130,9 @@ func (s *SystemService) getDocEngineStatus() ComponentStatus {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeOutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := docEngine.Ping(ctx); err != nil {
+	if err := docEngine.Ping(timeOutCtx); err != nil {
 		return ComponentStatus{
 			"type":    docEngine.GetType(),
 			"status":  "red",
@@ -153,11 +148,11 @@ func (s *SystemService) getDocEngineStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getStorageStatus() ComponentStatus {
+func (s *SystemService) getStorageStatus(ctx context.Context) ComponentStatus {
 	cfg := server.GetConfig()
 	storageType := ""
 	if cfg != nil {
-		storageType = strings.ToLower(string(cfg.StorageEngine.Type))
+		storageType = cfg.StorageEngineType()
 	}
 
 	startedAt := time.Now()
@@ -171,10 +166,10 @@ func (s *SystemService) getStorageStatus() ComponentStatus {
 		}
 	}
 
-	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeOutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if !factory.Health() {
+	if !factory.Health(timeOutCtx) {
 		return ComponentStatus{
 			"type":    storageType,
 			"status":  "red",
@@ -190,11 +185,11 @@ func (s *SystemService) getStorageStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getDatabaseStatus() ComponentStatus {
+func (s *SystemService) getDatabaseStatus(ctx context.Context) ComponentStatus {
 	cfg := server.GetConfig()
 	databaseType := ""
 	if cfg != nil {
-		databaseType = cfg.Database.Driver
+		databaseType = cfg.DatabaseType()
 	}
 
 	startedAt := time.Now()
@@ -217,7 +212,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 		}
 	}
 
-	if err = sqlDB.Ping(); err != nil {
+	if err = sqlDB.PingContext(ctx); err != nil {
 		return ComponentStatus{
 			"type":    databaseType,
 			"status":  "red",
@@ -233,7 +228,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getRedisStatus() ComponentStatus {
+func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 	startedAt := time.Now()
 	redisClient := redis.Get()
 	if redisClient == nil {
@@ -243,7 +238,7 @@ func (s *SystemService) getRedisStatus() ComponentStatus {
 			"error":   "redis not initialized",
 		}
 	}
-	if !redisClient.Health() {
+	if !redisClient.Health(ctx) {
 		return ComponentStatus{
 			"status":  "red",
 			"elapsed": elapsedMilliseconds(startedAt),
@@ -257,21 +252,21 @@ func (s *SystemService) getRedisStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getTaskExecutorHeartbeats() map[string][]interface{} {
+func (s *SystemService) getTaskExecutorHeartbeats(ctx context.Context) map[string][]interface{} {
 	heartbeatsByExecutor := map[string][]interface{}{}
 	redisClient := redis.Get()
 	if redisClient == nil {
 		return heartbeatsByExecutor
 	}
 
-	taskExecutorIDs, err := redisClient.SMembers("TASKEXE")
+	taskExecutorIDs, err := redisClient.SMembers(ctx, "TASKEXE")
 	if err != nil {
 		return heartbeatsByExecutor
 	}
 
 	now := float64(time.Now().Unix())
 	for _, taskExecutorID := range taskExecutorIDs {
-		rawHeartbeats, err := redisClient.ZRangeByScore(taskExecutorID, now-60*30, now)
+		rawHeartbeats, err := redisClient.ZRangeByScore(ctx, taskExecutorID, now-60*30, now)
 		if err != nil {
 			continue
 		}
@@ -334,7 +329,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 
 	redisOK, redisMeta := timedHealthCheck(func() error {
 		redisClient := redis.Get()
-		if redisClient == nil || !redisClient.Health() {
+		if redisClient == nil || !redisClient.Health(ctx) {
 			return fmt.Errorf("redis is not healthy")
 		}
 		return nil
@@ -356,7 +351,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 
 	storageOK, storageMeta := timedHealthCheck(func() error {
 		store := storage.GetStorageFactory().GetStorage()
-		if store == nil || !store.Health() {
+		if store == nil || !store.Health(ctx) {
 			return fmt.Errorf("storage is not healthy")
 		}
 		return nil
@@ -470,7 +465,10 @@ func (s *SystemService) SetVariable(ctx context.Context, varName, varValue strin
 // ListAllConfigs list all configs
 // Returns all service configurations from the config file
 func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
-	result := server.GetAllConfigs()
+	result, err := server.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -480,8 +478,10 @@ func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
 func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
+	globalConfig := server.GetConfig()
+
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := globalConfig.GetEnvDocumentEngineType()
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}

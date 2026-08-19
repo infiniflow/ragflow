@@ -132,10 +132,10 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 			t.Errorf("chunk[%d] is the bare delimiter %q", i, text)
 		}
 	}
-	if got, want := chunks[0]["text"], "alpha section\n666"; got != want {
+	if got, want := chunks[0]["text"], "alpha section"; got != want {
 		t.Errorf("chunk[0] text = %q, want %q", got, want)
 	}
-	if got, want := chunks[1]["text"], "\nbeta section"; got != want {
+	if got, want := chunks[1]["text"], "beta section"; got != want {
 		t.Errorf("chunk[1] text = %q, want %q", got, want)
 	}
 }
@@ -145,7 +145,7 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 // token-size merge and emit >=1 chunk.
 func TestTokenChunker_InvokeTokenSize_FallbackToMerge(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": 50,
 		"delimiters":       []string{"`\n\n`"},
 	})
@@ -227,6 +227,73 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+// TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone is the
+// regression lock for #17889: when merging adjacent segments, only
+// "text" segments may be merged; "table"/"image" (any non-text type)
+// must each stay a standalone chunk and must not be merged with a
+// neighbouring segment.
+//
+// Go already enforces this via itemDocType (common.go:138, derives the
+// type from doc_type_kwd), chunkFromItem (token.go:756, emits a non-text
+// item as a single standalone chunk) and mergeByTokenSizeFromJSON
+// (token.go:1050 forces non-text standalone; token.go:991 starts a fresh
+// text chunk after a non-text chunk so text on either side of a
+// table/image is never merged across it). This test pins the behaviour
+// so a future refactor cannot silently start folding tables/images into
+// text chunks.
+func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	// text, table, text, image, text — in document order.
+	items := []map[string]any{
+		{"text": "Alpha section text content", "doc_type_kwd": "text"},
+		{"text": "<table>caption</table>", "doc_type_kwd": "table"},
+		{"text": "Beta section text content", "doc_type_kwd": "text"},
+		{"text": "[image]", "doc_type_kwd": "image"},
+		{"text": "Gamma section text content", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.md",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks: want []map[string]any, got %T", out["chunks"])
+	}
+	// Each segment must remain its own chunk: 5 in, 5 out. If a table or
+	// image were merged into an adjacent text chunk this count would drop.
+	if len(chunks) != 5 {
+		t.Fatalf("chunks: want 5 (every segment standalone), got %d: %+v", len(chunks), chunks)
+	}
+	wantTypes := []string{"text", "table", "text", "image", "text"}
+	for i, ch := range chunks {
+		got, _ := ch["doc_type_kwd"].(string)
+		if got != wantTypes[i] {
+			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
+		}
+	}
+	// The two text segments on either side of the table/image must remain
+	// distinct — they must NOT be merged across the non-text segments.
+	if got, _ := chunks[0]["text"].(string); !strings.Contains(got, "Alpha") {
+		t.Errorf("chunk 0 text = %q, want it to contain Alpha", got)
+	}
+	if got, _ := chunks[2]["text"].(string); !strings.Contains(got, "Beta") {
+		t.Errorf("chunk 2 text = %q, want it to contain Beta", got)
+	}
+	if got, _ := chunks[4]["text"].(string); !strings.Contains(got, "Gamma") {
+		t.Errorf("chunk 4 text = %q, want it to contain Gamma", got)
+	}
+}
+
 // TestTokenChunker_InvokeDeterministic runs a 20-item structured
 // payload 10 times under the race detector and asserts the chunk
 // list is identical every time.
@@ -298,9 +365,9 @@ func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
 	}{
 		{"bad delimiter_mode", map[string]any{"delimiter_mode": "nope"}},
 		{"one delimiter_mode (use OneChunker)", map[string]any{"delimiter_mode": "one"}},
-		{"zero chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 0}},
-		{"negative chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": -5}},
-		{"negative table_context_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 50, "table_context_size": -1}},
+		{"zero chunk_token_size", map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 0}},
+		{"negative chunk_token_size", map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": -5}},
+		{"negative table_context_size", map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 50, "table_context_size": -1}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -313,14 +380,14 @@ func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
 
 // TestTokenChunker_NewAcceptsDefaults ensures the no-config
 // constructor returns a usable component with a working default
-// delimiter_mode = "token_size".
+// delimiter_mode = "delimiter".
 func TestTokenChunker_NewAcceptsDefaults(t *testing.T) {
 	c, err := NewTokenChunker(nil)
 	if err != nil {
 		t.Fatalf("NewTokenChunker(nil): %v", err)
 	}
-	if got := c.(*TokenChunkerComponent).param.DelimiterMode; got != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", got)
+	if got := c.(*TokenChunkerComponent).param.DelimiterMode; got != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", got)
 	}
 }
 
@@ -372,7 +439,7 @@ func TestTokenChunker_NewAcceptsPythonOverlappedRange(t *testing.T) {
 	// percentages, including out-of-range inputs that Python clamps).
 	for _, pct := range []float64{0, 0.1, 0.5, 15, 30, 50, 90, 95, -5} {
 		conf := map[string]any{
-			"delimiter_mode":     "token_size",
+			"delimiter_mode":     "delimiter",
 			"chunk_token_size":   100,
 			"overlapped_percent": pct,
 		}
@@ -395,7 +462,11 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 	}{
 		{"zero", 0, 0},
 		{"fraction 0.1 -> 10", 0.1, 10},
+		{"fraction 0.29 -> 29 (round, was 28 trunc)", 0.29, 29},
+		{"fraction 0.3 -> 30", 0.3, 30},
 		{"fraction 0.5 -> 50", 0.5, 50},
+		{"fraction 0.57 -> 57 (round, was 56 trunc)", 0.57, 57},
+		{"fraction 0.93 -> 90 (clamp after round)", 0.93, 90},
 		{"fraction 0.95 -> 90 (clamp)", 0.95, 90},
 		{"percent 15", 15, 15},
 		{"int truncation 33.3 -> 33", 33.3, 33},
@@ -413,6 +484,8 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 		{"huge 1e300 -> 90", 1e300, 90},
 		{"huge -1e300 -> 0", -1e300, 0},
 		{"huge math.MaxFloat64 -> 90", math.MaxFloat64, 90},
+		{"huge math.MaxFloat64 +1 -> 90 (clamp pre-round)", math.MaxFloat64 + 1, 90},
+		{`numeric string fraction "0.29" -> 29`, "0.29", 29},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -462,7 +535,7 @@ func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := NewTokenChunker(map[string]any{
-				"delimiter_mode":     "token_size",
+				"delimiter_mode":     "delimiter",
 				"chunk_token_size":   100,
 				"overlapped_percent": tc.in,
 			})
@@ -491,6 +564,8 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 		wantErr bool
 	}{
 		{"fraction 0.3 -> 30", 0.3, 30, false},
+		{"fraction 0.29 -> 29 (round, was 28 trunc)", 0.29, 29, false},
+		{"fraction 0.57 -> 57 (round, was 56 trunc)", 0.57, 57, false},
 		{"percent 0", 0, 0, false},
 		{"percent 30", 30, 30, false},
 		{"percent 90 (boundary)", 90, 90, false},
@@ -500,7 +575,7 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := schema.TokenChunkerParam{
-				DelimiterMode:     "token_size",
+				DelimiterMode:     "delimiter",
 				ChunkTokenSize:    100,
 				OverlappedPercent: tc.in,
 			}
@@ -532,7 +607,7 @@ func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
 		c := &TokenChunkerComponent{}
 		c.param.ChunkTokenSize = 128
 		c.param.OverlappedPercent = 0
-		out := c.mergeByTokenSize(text, nil)
+		out := c.mergeByTokenSize(text, nil, nil)
 		raw, ok := out["chunks"].([]map[string]any)
 		if !ok {
 			t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -577,7 +652,7 @@ func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
 	c := &TokenChunkerComponent{}
 	c.param.ChunkTokenSize = 128
 	c.param.OverlappedPercent = 0
-	out := c.mergeByTokenSize("A\n\n\nB", nil)
+	out := c.mergeByTokenSize("A\n\n\nB", nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -606,7 +681,7 @@ func TestMergeByTokenSize_OversizeDropsDelimiters(t *testing.T) {
 	c.param.ChunkTokenSize = 5
 	c.param.OverlappedPercent = 0
 	text := "第一句。第二句。第三句。第四句。第五句。"
-	out := c.mergeByTokenSize(text, nil)
+	out := c.mergeByTokenSize(text, nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
@@ -637,7 +712,7 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	// dropped, mirroring Python, so the blank line must not survive.
 	block := strings.Repeat("知识库检索增强生成技术", 7) // 70 chars
 	text := block + "\n\n" + block
-	out := c.mergeByTokenSize(text, nil)
+	out := c.mergeByTokenSize(text, nil, nil)
 	raw, ok := out["chunks"].([]map[string]any)
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)

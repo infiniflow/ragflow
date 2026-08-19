@@ -7,26 +7,40 @@ import re
 from rag.advanced_rag.harness.types import RouteDecision
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.prompts.route_prompt import ROUTE_PROMPT
+from rag.advanced_rag.harness.stats import in_phase
 
 _LOG = logging.getLogger(__name__)
 
 
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown fences and think tags."""
+    """Extract a JSON *object* from the LLM response.
+
+    Handles markdown fences and think tags, then attempts ``json_repair``
+    followed by ``json.loads``. Robustness: the LLM can return a bare string,
+    a list, or a JSON primitive — anything that is not a ``dict`` is coerced to
+    ``{}`` (with a warning) so callers can safely use ``result.get(...)``. This
+    guards against the crash seen in check.log where ``route_node`` received a
+    string and ``result.get("question_type")`` raised AttributeError.
+    """
     text = re.sub(r"^.*</think>", "", text, flags=re.DOTALL).strip()
     text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
     try:
         import json_repair
 
-        return json_repair.loads(text)
+        parsed = json_repair.loads(text)
     except Exception:
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
         except Exception:
             _LOG.warning("route: failed to parse LLM output: %s", text[:200])
             return {}
+    if not isinstance(parsed, dict):
+        _LOG.warning("route: LLM returned non-object JSON (%s), coercing to {}: %s", type(parsed).__name__, str(parsed)[:200])
+        return {}
+    return parsed
 
 
+@in_phase("route")
 async def route_node(state: dict, tools) -> dict:
     """Route node — analyze the question, produce RouteDecision."""
     question = state.get("question", "")
@@ -45,6 +59,12 @@ async def route_node(state: dict, tools) -> dict:
         result = _extract_json(ans)
     except Exception:
         _LOG.exception("route_node failed")
+        result = {}
+
+    # Belt-and-suspenders: _extract_json already coerces to dict, but guard
+    # here too so a future code path can never crash on result.get().
+    if not isinstance(result, dict):
+        _LOG.warning("route_node: result not a dict (%s); falling back to defaults", type(result).__name__)
         result = {}
 
     question_type = result.get("question_type", "factual")

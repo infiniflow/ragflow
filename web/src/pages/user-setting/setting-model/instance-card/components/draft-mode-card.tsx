@@ -73,19 +73,22 @@ export function DraftModeCard({
         onSubmit={() => undefined}
         defaultValues={formDefaultValues}
         labelClassName="font-normal"
+        resetOptions={{ keepDirtyValues: true }}
       />
 
       {providerName === LLMFactory.AIMLAPI && (
         <AimlapiGetKeyButton onKey={handleAimlapiKey} />
       )}
 
-      <div className="pt-3">
-        <VerifyButton
-          onVerify={handleVerify}
-          isAbsolute={false}
-          formRef={formRef}
-        />
-      </div>
+      {providerName !== LLMFactory.OpenAiAPICompatible && (
+        <div className="pt-3">
+          <VerifyButton
+            onVerify={handleVerify}
+            isAbsolute={false}
+            formRef={formRef}
+          />
+        </div>
+      )}
 
       <div className="pt-3">
         <ModelsSection

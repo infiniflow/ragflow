@@ -1,5 +1,5 @@
 general:
-  heartbeat_interval: 3
+  heartbeat_interval: 3s
 ragflow:
   host: 0.0.0.0
   http_port: 9380
@@ -68,9 +68,10 @@ otel:
   enable: false
 ingestor:
   mq_type: 'nats'
+  max_concurrent_workers: 1
+  compiler_pool_size: 0
 file_syncer:
-  max_concurrent_syncs: 4
-  sync_interval: 3
+  max_concurrent_syncs: 5
 user_default_llm:
   default_models:
     embedding_model:

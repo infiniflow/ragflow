@@ -65,6 +65,7 @@ func newJieKouAIForTest(baseURL string) *JieKouAIModel {
 }
 
 func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -109,6 +110,7 @@ func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestJieKouAIChatSendsExplicitThinkingFalse(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["enable_thinking"] != false {
 			t.Errorf("enable_thinking=%v, want false", body["enable_thinking"])
@@ -138,6 +140,7 @@ func TestJieKouAIChatSendsExplicitThinkingFalse(t *testing.T) {
 }
 
 func TestJieKouAIStreamForcesStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/chat/completions" {
 			t.Errorf("path=%s, want /openai/v1/chat/completions", r.URL.Path)
@@ -190,6 +193,7 @@ func TestJieKouAIStreamForcesStreaming(t *testing.T) {
 }
 
 func TestJieKouAIListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -218,6 +222,7 @@ func TestJieKouAIListModelsHappyPath(t *testing.T) {
 }
 
 func TestJieKouAIListModelsRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	for name, response := range map[string]interface{}{
@@ -238,6 +243,7 @@ func TestJieKouAIListModelsRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestJieKouAIEmbedSendsValidatedRequest(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/embeddings" {
@@ -261,7 +267,7 @@ func TestJieKouAIEmbedSendsValidatedRequest(t *testing.T) {
 
 	apiKey := "test-key"
 	model := " text-embedding-3-large "
-	embeddings, err := newJieKouAIForTest(srv.URL).Embed(ctx, &model, []string{"hello"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newJieKouAIForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"hello"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -271,6 +277,7 @@ func TestJieKouAIEmbedSendsValidatedRequest(t *testing.T) {
 }
 
 func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/rerank" {
@@ -296,7 +303,7 @@ func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
 
 	apiKey := "test-key"
 	model := " baai/bge-reranker-v2-m3 "
-	resp, err := newJieKouAIForTest(srv.URL).Rerank(ctx, &model, " question ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := newJieKouAIForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: " question ", Documents: []string{"doc"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -306,6 +313,7 @@ func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
 }
 
 func TestJieKouAIValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := "  "
@@ -350,7 +358,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "embed model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -358,7 +366,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "embed api key",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Embed(ctx, &model, []string{"x"}, nil, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -366,7 +374,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "rerank model",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Rerank(ctx, nil, "q", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"doc"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -374,7 +382,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "rerank api key",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Rerank(ctx, &model, "q", []string{"doc"}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"doc"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -382,7 +390,7 @@ func TestJieKouAIValidatesInputs(t *testing.T) {
 		{
 			name: "rerank query",
 			run: func() error {
-				_, err := newJieKouAIForTest("http://unused").Rerank(ctx, &model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				_, err := newJieKouAIForTest("http://unused").Rerank(ctx, &model, RerankRequest{Query: "  ", Documents: []string{"doc"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "query is required",

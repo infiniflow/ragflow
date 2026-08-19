@@ -22,13 +22,30 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
+
+func metadataFlagInt(t *testing.T, value interface{}) int {
+	t.Helper()
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		t.Fatalf("unexpected metadata flag type %T (%#v)", value, value)
+		return 0
+	}
+}
 
 func testDatasetServiceForDocumentMetadataConfig(t *testing.T) *DatasetService {
 	t.Helper()
 	return &DatasetService{
 		kbDAO:       dao.NewKnowledgebaseDAO(),
 		documentDAO: dao.NewDocumentDAO(),
+		tenantDAO:   dao.NewTenantDAO(),
 	}
 }
 
@@ -205,5 +222,201 @@ func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T
 	}
 	if doc.ParserConfig["metadata"] == nil {
 		t.Fatalf("metadata was not updated: %#v", doc.ParserConfig)
+	}
+}
+
+func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("parser_config", entity.JSONMap{
+			"enable_metadata": false,
+			"Extractor:AutoExtractDefault": map[string]any{
+				"metadata": map[string]any{
+					"enabled": true,
+					"fields": []any{
+						map[string]any{"key": "stale", "type": "string"},
+					},
+				},
+			},
+		}).Error; err != nil {
+		t.Fatalf("seed parser_config: %v", err)
+	}
+
+	ctx := t.Context()
+	result, code, err := (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		Metadata: []service.MetadataConfigField{
+			{Key: "author", Type: "string"},
+		},
+		BuiltInMetadata: []service.MetadataConfigField{
+			{Key: "document_name", Type: "string"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateMetadataConfig failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["metadata"] == nil {
+		t.Fatalf("metadata response missing: %#v", result)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("failed to fetch persisted dataset: %v", err)
+	}
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected extractor component params, got %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	if _, ok := extractor["enable_metadata"]; ok {
+		t.Fatalf("extractor enable_metadata should not be present, got %#v", extractor["enable_metadata"])
+	}
+	extractorMeta, ok := extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata map in extractor, got %#v", extractor["metadata"])
+	}
+	if enabled, ok := extractorMeta["enabled"].(bool); !ok || enabled {
+		t.Fatalf("extractor metadata.enabled = %#v, want false when top-level flag stays disabled", extractorMeta["enabled"])
+	}
+
+	// State 2: When enabled, updating fields updates component with enabled = true
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("parser_config", entity.JSONMap{
+			"enable_metadata":              true,
+			"Extractor:AutoExtractDefault": map[string]any{},
+		}).Error; err != nil {
+		t.Fatalf("reset parser_config: %v", err)
+	}
+
+	_, code, err = (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		Metadata: []service.MetadataConfigField{
+			{Key: "author", Type: "string"},
+		},
+		BuiltInMetadata: []service.MetadataConfigField{
+			{Key: "document_name", Type: "string"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateMetadataConfig with enabled metadata failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	persisted, err = dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("failed to fetch persisted dataset: %v", err)
+	}
+	extractor, ok = persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected extractor component params, got %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	extractorMeta, ok = extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata map in extractor, got %#v", extractor["metadata"])
+	}
+	if enabled, ok := extractorMeta["enabled"].(bool); !ok || !enabled {
+		t.Fatalf("extractor metadata.enabled = %#v, want true", extractorMeta["enabled"])
+	}
+	gotFields, ok := extractorMeta["metadata"].([]interface{})
+	if !ok {
+		t.Fatalf("extractor metadata.metadata = %#v, want []interface{}", extractorMeta["metadata"])
+	}
+	if len(gotFields) != 1 {
+		t.Fatalf("extractor metadata.metadata len = %d, want 1 (%#v)", len(gotFields), gotFields)
+	}
+	gotBuiltIn, ok := extractorMeta["built_in_metadata"].([]interface{})
+	if !ok {
+		t.Fatalf("extractor metadata.built_in_metadata = %#v, want []interface{}", extractorMeta["built_in_metadata"])
+	}
+	if len(gotBuiltIn) != 1 {
+		t.Fatalf("extractor metadata.built_in_metadata len = %d, want 1 (%#v)", len(gotBuiltIn), gotBuiltIn)
+	}
+
+	// State 3: Empty fields auto-disables enable_metadata
+	_, code, err = (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		Metadata:        []service.MetadataConfigField{},
+		BuiltInMetadata: []service.MetadataConfigField{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateMetadataConfig with empty fields failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	persisted, err = dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("failed to fetch persisted dataset: %v", err)
+	}
+	if enabled, ok := persisted.ParserConfig["enable_metadata"].(bool); !ok || enabled {
+		t.Fatalf("expected parser_config.enable_metadata == false after emptying fields, got %#v", persisted.ParserConfig["enable_metadata"])
+	}
+}
+
+func TestDatasetServiceGetMetadataConfig(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
+
+	ctx := t.Context()
+	_, code, err := (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		Metadata: []service.MetadataConfigField{
+			{Key: "author", Type: "string"},
+		},
+		BuiltInMetadata: []service.MetadataConfigField{
+			{Key: "file_name", Type: "string"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateMetadataConfig failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	result, code, err := (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).GetMetadataConfig(ctx, "kb-1", "tenant-1")
+	if err != nil {
+		t.Fatalf("GetMetadataConfig failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	metadata, ok := result["metadata"].([]interface{})
+	if !ok || len(metadata) != 1 {
+		t.Fatalf("expected 1 metadata item, got %#v", result["metadata"])
+	}
+	field0, ok := metadata[0].(map[string]interface{})
+	if !ok || field0["key"] != "author" {
+		t.Fatalf("expected key author, got %#v", metadata[0])
+	}
+	builtIn, ok := result["built_in_metadata"].([]interface{})
+	if !ok || len(builtIn) != 1 {
+		t.Fatalf("expected 1 built_in_metadata item, got %#v", result["built_in_metadata"])
+	}
+	builtIn0, ok := builtIn[0].(map[string]interface{})
+	if !ok || builtIn0["key"] != "file_name" {
+		t.Fatalf("expected key file_name, got %#v", builtIn[0])
 	}
 }

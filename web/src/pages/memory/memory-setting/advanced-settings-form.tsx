@@ -143,6 +143,13 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.systemPromptPlaceholder'),
               required: false,
+              fieldConfig: {
+                resize: 'vertical',
+                autoSize: {
+                  minRows: 8,
+                  maxRows: 16,
+                },
+              },
             }}
           />
           <RenderField
@@ -154,6 +161,13 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.userPromptPlaceholder'),
               required: false,
+              fieldConfig: {
+                resize: 'vertical',
+                autoSize: {
+                  minRows: 6,
+                  maxRows: 12,
+                },
+              },
             }}
           />
         </>

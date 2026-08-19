@@ -236,7 +236,7 @@ func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.Emb
 		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, modelModule.EmbedRequest{Texts: cleaned}, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

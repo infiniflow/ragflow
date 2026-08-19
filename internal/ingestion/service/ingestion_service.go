@@ -18,9 +18,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"runtime"
 	"strings"
 	"sync"
@@ -37,6 +37,7 @@ import (
 	taskpkg "ragflow/internal/ingestion/task"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
+	"ragflow/internal/utility"
 
 	"github.com/cenkalti/backoff/v5"
 )
@@ -64,13 +65,18 @@ type Ingestor struct {
 	ShutdownCh chan struct{}
 
 	// Worker pool
-	taskChan  chan *taskpkg.TaskContext
-	workerWg  sync.WaitGroup
-	startOnce sync.Once
-	stopOnce  sync.Once // guards close(ShutdownCh) against double-close on repeated Stop
+	taskChan   chan *taskpkg.TaskContext
+	workerWg   sync.WaitGroup
+	startOnce  sync.Once
+	workerOnce sync.Once // guards startWorkerPool; must NOT be startOnce (Start wraps start() in startOnce, and start() calls startWorkerPool -> re-entry deadlock)
+	stopOnce   sync.Once // guards close(ShutdownCh) against double-close on repeated Stop
 
 	ingestionTaskSvc *servicepkg.IngestionTaskService
 	docState         *docStateUpdater
+	// memorySvc runs async memory-extraction tasks (TaskKindMemory) that share
+	// the worker pool with ingestion tasks. nil disables memory extraction
+	// (e.g. tests that don't exercise it).
+	memorySvc *servicepkg.MemoryMessageService
 
 	// knowledgeCompile is the dataset-level post-processing consumer (§11,
 	// Option E) owned by this ingestor. It is driven by kcConcurrency owned
@@ -153,7 +159,7 @@ func (e *Ingestor) Start() error {
 // error is retained and returned to every later caller.
 func (e *Ingestor) start() error {
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	if err := msgQueueEngine.InitConsumer("tasks.RAGFLOW"); err != nil {
+	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		return err
 	}
 
@@ -210,6 +216,13 @@ func (e *Ingestor) consumeLoop() {
 	}
 }
 
+// SetMemoryMessageService installs the memory-extraction service used by
+// TaskKindMemory tasks that share the worker pool. Call it before Start; a nil
+// value disables memory extraction (received memory tasks are ack-skipped).
+func (e *Ingestor) SetMemoryMessageService(memorySvc *servicepkg.MemoryMessageService) {
+	e.memorySvc = memorySvc
+}
+
 // SetKnowledgeCompileModelConfig supplies the default LLM/embedding model ids
 // used by the dataset-level compile consumer's deduper. Call it before Start.
 func (e *Ingestor) SetKnowledgeCompileModelConfig(llmID, embedding string) {
@@ -246,7 +259,7 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
 	}
-	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultScheduler())
+	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultClaimer())
 	n := e.kcConcurrency
 	if n <= 0 {
 		n = int32(runtime.NumCPU())
@@ -296,6 +309,40 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			e.releaseTask(claimedTaskID)
 		}
 	}()
+
+	// Memory-extraction tasks share the tasks.RAGFLOW consumer and the worker
+	// pool with ingestion tasks. They do NOT use the ingestion state machine
+	// (no ingestion_task row): the message body is dispatched straight to a
+	// worker via TaskContext.Kind==TaskKindMemory, which runs the memory
+	// extractor and acks/nacks on its own.
+	if taskMessage.TaskType == common.TaskTypeMemory {
+		if e.memorySvc == nil {
+			common.Warn(fmt.Sprintf("memory task %s received but memory extractor is disabled, ack", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
+		var payload map[string]any
+		if len(taskMessage.Payload) == 0 || json.Unmarshal(taskMessage.Payload, &payload) != nil {
+			common.Warn(fmt.Sprintf("memory task %s has no parseable payload, ack", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
+		select {
+		case e.taskChan <- taskCtx:
+			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
+		case <-e.ctx.Done():
+			// Shutdown won the race: return without settling so the broker
+			// redelivers the memory task after restart.
+			common.Info(fmt.Sprintf("Ingestor shutting down; memory task %s not enqueued", taskMessage.TaskID))
+			return
+		}
+		return
+	}
 
 	if taskMessage.TaskType != common.TaskTypeIngestionTask {
 		common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
@@ -367,22 +414,34 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
 
-	// Push to task channel; if full, reject the task (backpressure).
+	// Push to the task channel. Use a blocking send so backpressure is
+	// applied at the consumer: the consume loop waits for a free worker slot
+	// instead of dropping the message. Dropping on backpressure is unsafe
+	// because StartRunning (above) has already flipped the task — and its
+	// document — to RUNNING in the DB, and there is no scan-and-re-enqueue
+	// path on completion. A Nack that exceeds the broker's MaxDeliver (16,
+	// with no dead-letter in nats.go) would permanently lose the task and
+	// leave the document stuck in RUNNING — the "files get stuck after the
+	// first few parse" defect.
+	//
+	// The in-flight claim (set just above) guards against a redelivery racing
+	// the blocked send: a duplicate delivery sees claimTask fail and is
+	// ack-skipped, so a blocking send cannot double-execute a task.
 	select {
 	case e.taskChan <- taskCtx:
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
-	default:
-		common.Info(fmt.Sprintf("No available slot for task %s, failed", task.ID))
-		// claimedTaskID is still set; defer will call releaseTask.
-		if nackErr := handle.Nack(); nackErr != nil {
-			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
-		}
+	case <-e.ctx.Done():
+		// Shutdown won the race: release the claim and return without
+		// settling so the broker redelivers the message after restart
+		// rather than blocking the consume loop forever.
+		common.Info(fmt.Sprintf("Ingestor shutting down; releasing slot for task %s without ack", task.ID))
+		return
 	}
 }
 
 func (e *Ingestor) startWorkerPool() {
-	e.startOnce.Do(func() {
+	e.workerOnce.Do(func() {
 		for i := int32(0); i < e.maxConcurrency; i++ {
 			e.workerWg.Add(1)
 			go e.workerLoop(i)
@@ -401,9 +460,65 @@ func (e *Ingestor) workerLoop(id int32) {
 		case <-e.ctx.Done():
 			return
 		case taskCtx := <-e.taskChan:
+			if taskCtx.Kind == taskpkg.TaskKindMemory {
+				e.executeMemoryTask(e.ctx, taskCtx)
+				continue
+			}
 			common.Info("task context:" + taskCtx.IngestionTask.ID)
 			e.executeTask(e.ctx, taskCtx)
 		}
+	}
+}
+
+// executeMemoryTask runs one async memory-extraction task (TaskKindMemory) on
+// a worker of the shared pool. Unlike ingestion tasks, memory tasks have no
+// ingestion_task row / state machine: HandleSaveToMemoryTask persists the
+// extracted messages and settles task progress on the way out.
+//
+// Settlement is error-category aware:
+//   - Terminal failure (task row absent, already-failed, or progress=-1 already
+//     persisted) is Acked so an already-consumed message is never redelivered
+//     into an infinite nack loop.
+//   - Transient failure (a task-load DB error before any durable marker, or an
+//     LLM/network failure that did not reach progress=-1) is Nacked so the
+//     message is redelivered and retried instead of being silently dropped.
+func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
+	taskID, _ := taskCtx.MemoryPayload["id"].(string)
+	if taskID == "" {
+		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
+	}
+	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
+	if taskCtx.Handle == nil {
+		common.Warn("memory task handle is nil, skip")
+		return
+	}
+	if e.memorySvc == nil {
+		common.Warn(fmt.Sprintf("memory task %s: memory extractor disabled, ack", taskID))
+		if err := taskCtx.Handle.Ack(); err != nil {
+			common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
+		}
+		return
+	}
+	if err := e.memorySvc.HandleSaveToMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
+		// HandleSaveToMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
+		// (durable progress=-1 written, or no row to retry). Everything else is
+		// transient and must be redelivered rather than dropped.
+		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
+			common.Error(fmt.Sprintf("memory task %s failed terminally, ack", taskID), err)
+			if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
+				common.Error(fmt.Sprintf("ack failed memory task %s", taskID), ackErr)
+			}
+			return
+		}
+		common.Error(fmt.Sprintf("memory task %s failed transiently, nack for redelivery", taskID), err)
+		if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
+			common.Error(fmt.Sprintf("nack memory task %s", taskID), nackErr)
+		}
+		return
+	}
+	common.Info(fmt.Sprintf("Memory task %s completed", taskID))
+	if err := taskCtx.Handle.Ack(); err != nil {
+		common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
 	}
 }
 
@@ -459,7 +574,7 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 	}
 	if rc := redis2.Get(); rc != nil {
 		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
-			rc.Delete(fmt.Sprintf("%s-cancel", taskID))
+			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
 			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
 		})
 	}
@@ -492,6 +607,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
 		return e.markFailed(ctx, task.ID)
 	}
+	if err := e.ingestionTaskSvc.ClearComponentProgress(ctx, task.ID); err != nil {
+		common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
+		return e.markFailed(ctx, task.ID)
+	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
 	// that exists now is stale — a leftover from a previous run whose
@@ -502,7 +621,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	if rc := redis2.Get(); rc != nil {
 		key := fmt.Sprintf("%s-cancel", task.ID)
 		utility.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
-			rc.Delete(key)
+			rc.Delete(ctx, key)
 			return nil // Delete returns bool; false may mean "key not found" or "error"
 		})
 	}
@@ -664,7 +783,7 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	rc := redis2.Get()
 	if rc != nil {
-		if ok, _ := rc.Exist(fmt.Sprintf("%s-cancel", taskID)); ok {
+		if ok, _ := rc.Exist(ctx, fmt.Sprintf("%s-cancel", taskID)); ok {
 			return true
 		}
 	}

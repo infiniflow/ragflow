@@ -77,6 +77,7 @@ func TestOpenRouterAudioFormatUsesConfiguredValue(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	audio := []byte("RIFF test audio")
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
@@ -143,6 +144,7 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioInfersFormat(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		inputAudio, ok := body["input_audio"].(map[string]interface{})
@@ -167,6 +169,7 @@ func TestOpenRouterTranscribeAudioInfersFormat(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	modelName := "openai/whisper-large-v3"
 	apiKey := "test-key"
@@ -195,6 +198,7 @@ func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioValidatesASRSuffix(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "openai/whisper-large-v3"
@@ -208,6 +212,7 @@ func TestOpenRouterTranscribeAudioValidatesASRSuffix(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -231,6 +236,7 @@ func TestOpenRouterTranscribeAudioHTTPError(t *testing.T) {
 // and reasoning is requested via OpenRouter's standard `reasoning` object rather
 // than the non-standard `thinking` key that the API silently ignores.
 func TestOpenRouterChatStreamlyRequest(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var gotPath string
 	var gotBody map[string]interface{}

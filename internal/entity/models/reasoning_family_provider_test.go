@@ -47,6 +47,7 @@ func newReasoningFamilyChatServer(t *testing.T, handler func(t *testing.T, body 
 }
 
 func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-8b" {
@@ -87,6 +88,7 @@ func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
 }
 
 func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen/qwen3-8b" {

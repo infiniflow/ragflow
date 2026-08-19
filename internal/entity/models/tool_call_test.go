@@ -24,6 +24,7 @@ import (
 )
 
 func testNonStreamingToolCall(t *testing.T, modelName, path string, newDriver func(string) ModelDriver) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	t.Helper()
 	var requestBody map[string]interface{}
@@ -67,6 +68,7 @@ func testNonStreamingToolCall(t *testing.T, modelName, path string, newDriver fu
 }
 
 func testStreamingToolCall(t *testing.T, modelName, path string, newDriver func(string) ModelDriver) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

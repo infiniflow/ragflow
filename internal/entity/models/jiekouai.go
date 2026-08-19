@@ -36,7 +36,7 @@ func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIM
 	// JieKouAI's methods issue requests without a per-call context deadline, so
 	// keep an explicit 120s client-level timeout to bound them. Built on the
 	// shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient()
+	client := NewDriverHTTPClient(false)
 	client.Timeout = 120 * time.Second
 	return &JieKouAIModel{
 		baseModel: BaseModel{
@@ -60,32 +60,6 @@ func validateJieKouAIModelName(modelName *string) (string, error) {
 		return "", fmt.Errorf("model name is required")
 	}
 	return strings.TrimSpace(*modelName), nil
-}
-
-// JieKouAIChatResponse mirrors Jiekou.AI's OpenAI-compatible chat response.
-type JieKouAIChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		FinishReason string `json:"finish_reason"`
-		Index        int    `json:"index"`
-		Logprobs     any    `json:"logprobs"`
-		Message      struct {
-			Content          string           `json:"content"`
-			Reasoning        string           `json:"reasoning"`
-			ReasoningContent string           `json:"reasoning_content"`
-			Role             string           `json:"role"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-		} `json:"message"`
-	} `json:"choices"`
-	SystemFingerprint string `json:"system_fingerprint"`
-	Usage             struct {
-		CompletionTokens int `json:"completion_tokens"`
-		PromptTokens     int `json:"prompt_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
 }
 
 // JieKouAIEmbeddingResponse mirrors Jiekou.AI's embeddings response.
@@ -127,7 +101,6 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if modelName = strings.TrimSpace(modelName); modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -151,78 +124,18 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := j.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := j.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
-		var result JieKouAIChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := result.Choices[0]
-		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
-			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
-		}
-		reasonContent := ""
-		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
-			reasonContent = choice.Message.ReasoningContent
-			if reasonContent == "" {
-				reasonContent = choice.Message.Reasoning
-			}
-			reasonContent = strings.TrimPrefix(reasonContent, "\n")
-		}
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &choice.Message.Content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage: &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      result.Usage.TotalTokens,
-			},
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if modelName = strings.TrimSpace(modelName); modelName == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -253,104 +166,17 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := j.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
-		}
-		choices, ok := event["choices"].([]any)
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		choice, ok := choices[0].(map[string]any)
-		if !ok {
-			return nil
-		}
-		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-		delta, ok := choice["delta"].(map[string]any)
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
+	return j.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("jiekouai: stream ended before [DONE] or finish_reason")
-	}
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
 }
 
-func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
 	model, err := validateJieKouAIModelName(modelName)
@@ -367,7 +193,7 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 
 	reqBody := map[string]interface{}{
 		"model": model,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -427,11 +253,12 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 	return embeddings, nil
 }
 
-func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

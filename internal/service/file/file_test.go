@@ -45,11 +45,45 @@ func testFileService() *FileService {
 	}
 }
 
-func (f *fakeStorage) Health() bool {
+func TestDeploymentUploadMaxBytes(t *testing.T) {
+	t.Setenv("MAX_CONTENT_LENGTH", "")
+	if got := DeploymentUploadMaxBytes(); got != defaultDeploymentUploadMaxBytes {
+		t.Fatalf("default limit = %d, want %d", got, defaultDeploymentUploadMaxBytes)
+	}
+
+	t.Setenv("MAX_CONTENT_LENGTH", "12345")
+	if got := DeploymentUploadMaxBytes(); got != 12345 {
+		t.Fatalf("configured limit = %d, want 12345", got)
+	}
+
+	t.Setenv("MAX_CONTENT_LENGTH", "invalid")
+	if got := DeploymentUploadMaxBytes(); got != defaultDeploymentUploadMaxBytes {
+		t.Fatalf("invalid limit = %d, want default %d", got, defaultDeploymentUploadMaxBytes)
+	}
+}
+
+func TestReadDeploymentUploadDataLimit(t *testing.T) {
+	data, err := readDeploymentUploadData(strings.NewReader("hello"), 5)
+	if err != nil {
+		t.Fatalf("readDeploymentUploadData exact limit: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", string(data))
+	}
+
+	_, err = readDeploymentUploadData(strings.NewReader("hello!"), 5)
+	if err == nil || !strings.Contains(err.Error(), "deployment upload limit of 5 bytes") {
+		t.Fatalf("error = %v, want deployment upload limit", err)
+	}
+}
+
+func (f *fakeStorage) Type() string { return "fake_storage" }
+
+func (f *fakeStorage) Health(ctx context.Context) bool {
 	return true
 }
 
-func (f *fakeStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (f *fakeStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	f.lastBucket = bucket
 	f.lastFnm = fnm
 	f.blob = binary
@@ -57,42 +91,42 @@ func (f *fakeStorage) Put(bucket, fnm string, binary []byte, tenantID ...string)
 	return f.err
 }
 
-func (f *fakeStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (f *fakeStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	f.getCalls++
 	f.lastBucket = bucket
 	f.lastFnm = fnm
 	return f.blob, f.err
 }
 
-func (f *fakeStorage) Remove(bucket, fnm string, tenantID ...string) error {
+func (f *fakeStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	panic("not implemented in fakeStorage")
 }
 
-func (f *fakeStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+func (f *fakeStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
 	return f.exists && f.lastBucket == bucket && f.lastFnm == fnm
 }
 
-func (f *fakeStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (f *fakeStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	panic("not implemented in fakeStorage")
 }
 
-func (f *fakeStorage) BucketExists(bucket string) bool {
+func (f *fakeStorage) BucketExists(ctx context.Context, bucket string) bool {
 	panic("not implemented in fakeStorage")
 }
 
-func (f *fakeStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (f *fakeStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	panic("not implemented in fakeStorage")
 }
 
-func (f *fakeStorage) RemoveBucket(bucket string) error {
+func (f *fakeStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	panic("not implemented in fakeStorage")
 }
 
-func (f *fakeStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+func (f *fakeStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	panic("not implemented in fakeStorage")
 }
 
-func (f *fakeStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
+func (f *fakeStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	panic("not implemented in fakeStorage")
 }
 
@@ -100,7 +134,8 @@ func (f *fakeStorage) Close() error { return nil }
 
 func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 	memory := storage.NewMemoryStorage()
-	if err := memory.Put("other-user-downloads", "loc-1", []byte("secret")); err != nil {
+	ctx := t.Context()
+	if err := memory.Put(ctx, "other-user-downloads", "loc-1", []byte("secret")); err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	factory := storage.GetStorageFactory()
@@ -128,7 +163,8 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 
 func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	memory := storage.NewMemoryStorage()
-	if err := memory.Put("user-1-downloads", "loc-1", []byte("allowed content")); err != nil {
+	ctx := t.Context()
+	if err := memory.Put(ctx, "user-1-downloads", "loc-1", []byte("allowed content")); err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	factory := storage.GetStorageFactory()
@@ -157,10 +193,10 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) {
 	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
-	if err := memory.Put("user-1-downloads", "text-id", []byte("uploaded text")); err != nil {
+	if err := memory.Put(ctx, "user-1-downloads", "text-id", []byte("uploaded text")); err != nil {
 		t.Fatalf("put text: %v", err)
 	}
-	if err := memory.Put("user-1-downloads", "image-id", []byte("png")); err != nil {
+	if err := memory.Put(ctx, "user-1-downloads", "image-id", []byte("png")); err != nil {
 		t.Fatalf("put image: %v", err)
 	}
 	factory := storage.GetStorageFactory()

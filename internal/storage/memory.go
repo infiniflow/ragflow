@@ -17,10 +17,14 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ErrMemoryNotFound is returned when a key does not exist in the in-memory backend.
@@ -46,19 +50,25 @@ func NewMemoryStorage() Storage {
 	return &MemoryStorage{objects: make(map[string]map[string][]byte)}
 }
 
+func (m *MemoryStorage) Type() string { return "memory_storage" }
+
 // Health always reports healthy for the in-memory backend.
-func (m *MemoryStorage) Health() bool {
+func (m *MemoryStorage) Health(ctx context.Context) bool {
 	return true
 }
 
 // Put uploads an object to the in-memory backend, creating the bucket
 // on demand if it does not yet exist. The stored bytes are a defensive copy.
-func (m *MemoryStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (m *MemoryStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	if bucket == "" {
 		return fmt.Errorf("memory storage: bucket is required")
 	}
 	if fnm == "" {
 		return fmt.Errorf("memory storage: key is required")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -78,7 +88,7 @@ func (m *MemoryStorage) Put(bucket, fnm string, binary []byte, tenantID ...strin
 
 // Get retrieves an object from the in-memory backend. Returns
 // ErrMemoryNotFound when the bucket or key is missing.
-func (m *MemoryStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (m *MemoryStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -98,7 +108,11 @@ func (m *MemoryStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, err
 
 // Remove deletes an object from the in-memory backend. Removing a
 // non-existent key is a no-op and returns nil.
-func (m *MemoryStorage) Remove(bucket, fnm string, tenantID ...string) error {
+func (m *MemoryStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -111,7 +125,7 @@ func (m *MemoryStorage) Remove(bucket, fnm string, tenantID ...string) error {
 }
 
 // ObjExist reports whether the given bucket and key are present.
-func (m *MemoryStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+func (m *MemoryStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -123,7 +137,7 @@ func (m *MemoryStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
 	return ok
 }
 
-func (m *MemoryStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (m *MemoryStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -144,7 +158,7 @@ func (m *MemoryStorage) ListObjects(bucket string, tenantID ...string) ([]string
 
 // GetPresignedURL returns a deterministic, non-network URL string for tests.
 // Format: memory://<bucket>/<key>?exp=<unix-seconds>
-func (m *MemoryStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (m *MemoryStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -161,7 +175,7 @@ func (m *MemoryStorage) GetPresignedURL(bucket, fnm string, expires time.Duratio
 }
 
 // BucketExists reports whether the named bucket has been created.
-func (m *MemoryStorage) BucketExists(bucket string) bool {
+func (m *MemoryStorage) BucketExists(ctx context.Context, bucket string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -171,7 +185,11 @@ func (m *MemoryStorage) BucketExists(bucket string) bool {
 
 // RemoveBucket deletes a bucket and all of its keys. Removing a
 // non-existent bucket is a no-op and returns nil.
-func (m *MemoryStorage) RemoveBucket(bucket string) error {
+func (m *MemoryStorage) RemoveBucket(ctx context.Context, bucket string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -182,7 +200,11 @@ func (m *MemoryStorage) RemoveBucket(bucket string) error {
 // Copy duplicates an object from srcBucket/srcKey to destBucket/destKey.
 // The source is left untouched. Returns false if the source does not exist
 // or if the destination bucket creation fails.
-func (m *MemoryStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+func (m *MemoryStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if err := ctx.Err(); err != nil {
+		return false
+	}
+
 	m.mu.RLock()
 	srcBucketMap, ok := m.objects[srcBucket]
 	if !ok {
@@ -211,11 +233,22 @@ func (m *MemoryStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bo
 
 // Move transfers an object to a new location, deleting the source on success.
 // Returns false if the source does not exist or the copy step fails.
-func (m *MemoryStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
-	if !m.Copy(srcBucket, srcPath, destBucket, destPath) {
+func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+
+	if err := ctx.Err(); err != nil {
 		return false
 	}
-	if err := m.Remove(srcBucket, srcPath); err != nil {
+
+	if !m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
+		return false
+	}
+	if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		err = m.Remove(rollbackCtx, destBucket, destPath)
+		if err != nil {
+			common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
+		}
 		return false
 	}
 	return true

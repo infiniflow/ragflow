@@ -51,12 +51,14 @@ func newGiteeForChatTest(baseURL string) *GiteeModel {
 }
 
 func TestGiteeStreamAcceptsTerminalWithoutDelta(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, `data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n")
 	}))
 	defer srv.Close()
 
@@ -110,6 +112,7 @@ func deepSeekAliasModelsForTest(t *testing.T) map[string]Model {
 }
 
 func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
 	aliasModels := deepSeekAliasModelsForTest(t)
@@ -160,11 +163,11 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 		if model.Name != alias {
 			t.Fatalf("models[%d].Name=%q, want %q", i, model.Name, alias)
 		}
-		if (model.MaxTokens == nil) != (expected.MaxTokens == nil) {
-			t.Fatalf("models[%d] alias %q MaxTokens nil=%t, want nil=%t", i, alias, model.MaxTokens == nil, expected.MaxTokens == nil)
+		if (model.MaxOutput == nil) != (expected.MaxOutput == nil) {
+			t.Fatalf("models[%d] alias %q MaxOutput nil=%t, want nil=%t", i, alias, model.MaxOutput == nil, expected.MaxOutput == nil)
 		}
-		if model.MaxTokens != nil && expected.MaxTokens != nil && *model.MaxTokens != *expected.MaxTokens {
-			t.Fatalf("models[%d] alias %q MaxTokens=%d, want %d", i, alias, *model.MaxTokens, *expected.MaxTokens)
+		if model.MaxOutput != nil && expected.MaxOutput != nil && *model.MaxOutput != *expected.MaxOutput {
+			t.Fatalf("models[%d] alias %q MaxOutput=%d, want %d", i, alias, *model.MaxOutput, *expected.MaxOutput)
 		}
 		if strings.Join(model.ModelTypes, ",") != strings.Join(expected.ModelTypes, ",") {
 			t.Fatalf("models[%d] alias %q ModelTypes=%v, want %v", i, alias, model.ModelTypes, expected.ModelTypes)
@@ -178,15 +181,16 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 	if unknown.Name != "unknown-model" {
 		t.Fatalf("unknown.Name=%q, want unknown-model", unknown.Name)
 	}
-	if unknown.MaxTokens != nil {
-		t.Fatalf("unknown.MaxTokens=%v, want nil", *unknown.MaxTokens)
+	if unknown.MaxOutput != nil {
+		t.Fatalf("unknown.MaxOutput=%v, want nil", *unknown.MaxOutput)
 	}
 	if len(unknown.ModelTypes) != 0 {
 		t.Fatalf("unknown.ModelTypes=%v, want empty", unknown.ModelTypes)
 	}
 }
 
-func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T) {
+func TestGiteeListModelsKeepsModelNameAfterAliasMetadataLookup(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
 
@@ -203,11 +207,11 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 		t.Fatalf("len(models)=%d, want 1", len(models))
 	}
 	model := models[0]
-	if model.Name != "deepseek/deepseek-v4-pro@gitee" {
-		t.Fatalf("Name=%q, want deepseek/deepseek-v4-pro@gitee", model.Name)
+	if model.Name != "deepseek/deepseek-v4-pro" {
+		t.Fatalf("Name=%q, want deepseek/deepseek-v4-pro", model.Name)
 	}
-	if model.MaxTokens == nil || *model.MaxTokens != 1048576 {
-		t.Fatalf("MaxTokens=%v, want 1048576", model.MaxTokens)
+	if model.MaxOutput == nil || *model.MaxOutput != 393216 {
+		t.Fatalf("MaxOutput=%v, want 393216", model.MaxOutput)
 	}
 	if len(model.ModelTypes) != 1 || model.ModelTypes[0] != "chat" {
 		t.Fatalf("ModelTypes=%v, want [chat]", model.ModelTypes)
@@ -218,6 +222,7 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 }
 
 func TestGiteeListModelsIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	if common.GetEnv(common.EnvGiteeListModelsIntegration) != "1" {
 		t.Skip("set GITEE_LIST_MODELS_INTEGRATION=1 to call the real Gitee models endpoint")
@@ -230,7 +235,7 @@ func TestGiteeListModelsIntegration(t *testing.T) {
 		baseURL = "https://api.moark.ai/v1"
 	}
 	apiConfig := &APIConfig{}
-	if apiKey := common.GetEnv(common.EnvGiteeApiKey); apiKey != "" {
+	if apiKey := common.GetEnv(common.EnvGiteeAPIKey); apiKey != "" {
 		apiConfig.ApiKey = &apiKey
 	}
 
