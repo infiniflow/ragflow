@@ -136,7 +136,7 @@ def format_iso_8601_to_ymd_hms(time_str: str, fallback: str | None = None) -> st
     Args:
         time_str: ISO 8601 date string (e.g. "2024-01-01T12:00:00Z")
         fallback: Value to return when ``time_str`` cannot be parsed. When omitted,
-            the original input is returned for backward compatibility.
+            the original input is returned.
 
     Returns:
         str: Date string in "YYYY-MM-DD HH:MM:SS" format
