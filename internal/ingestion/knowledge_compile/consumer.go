@@ -852,6 +852,8 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			accepted := make([]kccommon.Product, 0, len(group.candidates))
 			for _, candidate := range group.candidates {
 				if !isTopicPage(candidate) {
+					candidate.Merged = true
+					candidate.DocID = kb
 					unmatched = append(unmatched, candidate)
 					continue
 				}
@@ -940,6 +942,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	mergedFinal = append(mergedFinal, newMerged...)
 	mergedFinal = append(mergedFinal, unmatched...)
 	mergedFinal, staleTopicIDs := mergeTopicProducts(tenant, kb, mergedFinal)
+	mergedFinal = refreshWikiProductVectors(ctx, tenant, mergedFinal)
 	if err := c.withWriteLock(ctx, kb, token, func() error {
 		if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
 			return err
@@ -996,14 +999,6 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	return nil
 }
 
-func productContents(products []kccommon.Product) []string {
-	contents := make([]string, len(products))
-	for i, product := range products {
-		contents[i] = product.Content
-	}
-	return contents
-}
-
 func copyMeta(input map[string]any) map[string]any {
 	output := make(map[string]any, len(input)+2)
 	for key, value := range input {
@@ -1038,6 +1033,7 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 	}
 	sort.Strings(keys)
 	reader, canLoadExisting := c.reader.(mergedProductReader)
+	deps, depsErr := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
 	merged := make([]kccommon.Product, 0, len(keys))
 	for _, key := range keys {
 		var current kccommon.Product
@@ -1054,7 +1050,11 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 			if current.ID == "" {
 				current = candidate
 			} else {
-				current = c.synthesizeEntityPage(ctx, tenant, current, candidate)
+				if depsErr == nil {
+					current = c.synthesizeEntityPage(ctx, deps, current, candidate)
+				} else {
+					current = wikiEntityMerge(current, candidate)
+				}
 			}
 		}
 		if current.ID != "" {
@@ -1070,10 +1070,9 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 // evidence. Unlike topic-mode replacement, the model receives both bodies and
 // is required to preserve every factual block. If the model cannot be resolved
 // (for example in an offline test), the deterministic block union remains safe.
-func (c *Consumer) synthesizeEntityPage(ctx context.Context, tenant string, existing, incoming kccommon.Product) kccommon.Product {
+func (c *Consumer) synthesizeEntityPage(ctx context.Context, deps kccommon.Deps, existing, incoming kccommon.Product) kccommon.Product {
 	merged := wikiEntityMerge(existing, incoming)
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
-	if err != nil || deps.Chat == nil {
+	if deps.Chat == nil {
 		return merged
 	}
 	resp, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
@@ -1087,6 +1086,32 @@ func (c *Consumer) synthesizeEntityPage(ctx context.Context, tenant string, exis
 	}
 	merged.Content = strings.TrimSpace(resp.Content)
 	return merged
+}
+
+func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) []kccommon.Product {
+	if len(products) == 0 {
+		return products
+	}
+	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	if err != nil || deps.Embed == nil {
+		return products
+	}
+	vectors, err := deps.Embed.Encode(ctx, productContentsForEmbedding(products))
+	if err != nil || len(vectors) != len(products) {
+		return products
+	}
+	for i := range products {
+		products[i].Vector = vectors[i]
+	}
+	return products
+}
+
+func productContentsForEmbedding(products []kccommon.Product) []string {
+	contents := make([]string, len(products))
+	for i := range products {
+		contents[i] = products[i].Content
+	}
+	return contents
 }
 
 // candidateIdentity returns a compact identity string for a product, preferring

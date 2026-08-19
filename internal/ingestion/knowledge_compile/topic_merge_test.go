@@ -54,3 +54,18 @@ func TestMergeTopicProductsKeepsDifferentTopicsSeparate(t *testing.T) {
 		t.Fatalf("merged pages = %d, want 2", len(merged))
 	}
 }
+
+func TestMergeTopicProductsRemovesSupersededDatasetPage(t *testing.T) {
+	products := []kccommon.Product{
+		{ID: "old-page", DocID: "kb", Merged: true, Variant: kccommon.VariantWiki, Content: "old", Meta: map[string]any{
+			"kind": "page", "page_type": "topic", "topic": "History", "slug": "topic/old",
+		}},
+		{ID: "new-page", DocID: "kb", Merged: true, Variant: kccommon.VariantWiki, Content: "new", Meta: map[string]any{
+			"kind": "page", "page_type": "topic", "topic": "History", "slug": "topic/new",
+		}},
+	}
+	merged, stale := mergeTopicProducts("tenant", "kb", products)
+	if len(merged) != 1 || len(stale) != 1 || stale[0] != "new-page" {
+		t.Fatalf("merged=%#v stale=%#v, want one survivor and new-page stale", merged, stale)
+	}
+}

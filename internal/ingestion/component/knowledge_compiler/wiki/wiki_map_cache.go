@@ -83,18 +83,9 @@ func (p *wikiPipeline) runVersionedMap() error {
 		if err := json.Unmarshal(payload, &extracts[version.index]); err != nil {
 			return fmt.Errorf("wiki: decode MAP version %s for chunk %s: %w", version.key, version.chunk.ID, err)
 		}
-		// Persist the effective compiler mode in old cache rows as they are
-		// reused. The mode is part of the dataset FINALIZE contract; without
-		// backfilling it, a topic-mode run made entirely of cache hits would be
-		// indistinguishable from entity mode at the global consumer.
+		// Stamp the effective compiler mode on the in-memory extract. The mode is
+		// part of the dataset FINALIZE contract and cache rows remain immutable.
 		extracts[version.index].Mode = p.wikiMode()
-		if enriched, marshalErr := json.Marshal(extracts[version.index]); marshalErr == nil {
-			toSave = append(toSave, common.WikiMapVersion{
-				Key: version.key, TenantID: p.tenantID, DatasetID: p.datasetID,
-				DocumentID: p.docID, ChunkID: version.chunk.ID, ContentHash: version.contentHash,
-				TemplateFingerprint: templateFingerprint, LLMFingerprint: llmFingerprint, Payload: enriched,
-			})
-		}
 		resolved[version.index] = true
 	}
 
@@ -152,9 +143,17 @@ func (p *wikiPipeline) runVersionedMap() error {
 		return err
 	}
 
-	p.mapExtracts = append(p.mapExtracts, extracts...)
+	for _, extract := range extracts {
+		if wikiExtractHasContent(extract) {
+			p.mapExtracts = append(p.mapExtracts, extract)
+		}
+	}
 	p.mapExtracts = append(p.mapExtracts, uncachedExtracts...)
 	return nil
+}
+
+func wikiExtractHasContent(extract wikiExtract) bool {
+	return len(extract.Entities) > 0 || len(extract.Concepts) > 0 || len(extract.Claims) > 0 || len(extract.Relations) > 0 || len(extract.Topics) > 0
 }
 
 func (p *wikiPipeline) wikiMapTemplateFingerprint() (string, error) {

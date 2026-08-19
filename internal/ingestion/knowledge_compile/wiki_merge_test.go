@@ -106,3 +106,13 @@ func TestWikiEntityMergeRetainsBothEvidenceBodies(t *testing.T) {
 		t.Fatalf("entity identity changed: %#v", merged)
 	}
 }
+
+func TestSplitMarkdownBlocksKeepsFencedCodeTogether(t *testing.T) {
+	blocks := splitMarkdownBlocks("before\n\n```go\nline one\n\nline two\n```\n\nafter")
+	if len(blocks) != 3 {
+		t.Fatalf("blocks=%d, want 3: %#v", len(blocks), blocks)
+	}
+	if !strings.Contains(blocks[1], "line one\n\nline two") {
+		t.Fatalf("fenced block was split: %q", blocks[1])
+	}
+}

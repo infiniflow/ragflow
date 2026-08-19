@@ -22,6 +22,8 @@ import (
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
+const maxMergedWikiMarkdownBytes = 256 * 1024
+
 // wikiEntityMerge combines evidence for the same stable page without
 // using a page replacement consumer. Existing and incoming Markdown blocks are
 // retained deterministically; source provenance is unioned.
@@ -54,6 +56,7 @@ func unionWikiMarkdown(left, right string) string {
 	blocks := append(splitMarkdownBlocks(left), splitMarkdownBlocks(right)...)
 	seen := map[string]struct{}{}
 	unique := make([]string, 0, len(blocks))
+	length := 0
 	for _, block := range blocks {
 		key := strings.TrimSpace(block)
 		if key == "" {
@@ -62,20 +65,42 @@ func unionWikiMarkdown(left, right string) string {
 		if _, exists := seen[key]; exists {
 			continue
 		}
+		if length+len(block)+2 > maxMergedWikiMarkdownBytes {
+			break
+		}
 		seen[key] = struct{}{}
 		unique = append(unique, key)
+		length += len(block) + 2
 	}
 	return strings.Join(unique, "\n\n")
 }
 
 func splitMarkdownBlocks(markdown string) []string {
-	parts := strings.Split(markdown, "\n\n")
-	blocks := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			blocks = append(blocks, part)
+	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
+	blocks := make([]string, 0)
+	var current strings.Builder
+	inFence := false
+	flush := func() {
+		if block := strings.TrimSpace(current.String()); block != "" {
+			blocks = append(blocks, block)
 		}
+		current.Reset()
 	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+		}
+		if trimmed == "" && !inFence {
+			flush()
+			continue
+		}
+		if current.Len() > 0 {
+			current.WriteByte('\n')
+		}
+		current.WriteString(line)
+	}
+	flush()
 	return blocks
 }
 
@@ -161,10 +186,6 @@ func wikiMergeBatch(_ context.Context, groups []MergeGroup) []MergeGroup {
 		var distinct []kccommon.Product
 		duplicated := false
 		for _, cand := range groups[gi].Candidates {
-			// A wiki page candidate is always a replacement of the existing row
-			// (same slug, newer content). It is never kept as an additional distinct
-			// row — distinctness for wiki is decided by KNN (different slug -> different
-			// existing row -> different group).
 			if isTopicPage(existing) && isTopicPage(cand) {
 				existing = mergeTopicPage(existing, cand)
 			} else {

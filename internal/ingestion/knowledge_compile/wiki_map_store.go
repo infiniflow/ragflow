@@ -49,7 +49,7 @@ func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, 
 		return out, nil
 	}
 	if s == nil || s.engine == nil {
-		return nil, fmt.Errorf("Wiki MAP version DocStore is not initialized")
+		return nil, fmt.Errorf("wiki MAP version DocStore is not initialized")
 	}
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(datasetID) == "" {
 		return nil, fmt.Errorf("load Wiki MAP versions: tenant_id and dataset_id are required")
@@ -64,8 +64,9 @@ func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, 
 				"id", "compile_kwd", "content_with_weight",
 			},
 			Filter: map[string]interface{}{
-				"id":          keys[start:end],
-				"compile_kwd": wikiMapExtractCompileKWD,
+				"id":            keys[start:end],
+				"compile_kwd":   wikiMapExtractCompileKWD,
+				"available_int": 0,
 			},
 		})
 		if err != nil {
@@ -93,7 +94,7 @@ func (s *wikiMapVersionStore) PutWikiMapVersions(ctx context.Context, versions [
 		return nil
 	}
 	if s == nil || s.engine == nil {
-		return fmt.Errorf("Wiki MAP version DocStore is not initialized")
+		return fmt.Errorf("wiki MAP version DocStore is not initialized")
 	}
 	byScope := make(map[string][]kccommon.WikiMapVersion)
 	for _, version := range versions {

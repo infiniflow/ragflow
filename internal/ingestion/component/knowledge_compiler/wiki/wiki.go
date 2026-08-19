@@ -104,6 +104,7 @@ type wikiPipeline struct {
 	// planCapacityExcluded counts the planned pages dropped to fit the global
 	// hard cap; testable and reported for observability.
 	planCapacityExcluded int
+	neighborCache        map[string]*common.WikiPageCandidate
 }
 
 type wikiExtract struct {
@@ -219,14 +220,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		zap.Bool("chat_ready", deps.Chat != nil),
 		zap.Bool("embed_ready", deps.Embed != nil))
 	p := &wikiPipeline{
-		ctx:       ctx,
-		deps:      deps,
-		param:     param,
-		inputs:    inputs,
-		docID:     docID,
-		tenantID:  deps.TenantID,
-		datasetID: deps.DatasetID,
-		llmID:     llmID,
+		ctx:           ctx,
+		deps:          deps,
+		param:         param,
+		inputs:        inputs,
+		docID:         docID,
+		tenantID:      deps.TenantID,
+		datasetID:     deps.DatasetID,
+		llmID:         llmID,
+		neighborCache: make(map[string]*common.WikiPageCandidate),
 	}
 	if err := p.run(); err != nil {
 		appcommon.Error("wiki: Run pipeline failed", err,
@@ -628,10 +630,7 @@ func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 }
 
 func (p *wikiPipeline) runPlan() (wikiPlan, error) {
-	// Topic mode uses embedding only to narrow the planner's input community.
-	// Tests and offline callers without an embedder retain the legacy batching
-	// path, while production topic compilation always gets the hybrid route.
-	if p.deps.Embed != nil {
+	if p.wikiMode() == "topic" && p.deps.Embed != nil {
 		return p.runTopicPlan()
 	}
 	return p.runLegacyPlan()
@@ -1068,6 +1067,9 @@ func (p *wikiPipeline) expandTopicNeighborCandidates(page wikiPlanPage, candidat
 	if p.deps.WikiPages == nil {
 		return candidates
 	}
+	if p.neighborCache == nil {
+		p.neighborCache = make(map[string]*common.WikiPageCandidate)
+	}
 	out := append([]common.WikiPageCandidate(nil), candidates...)
 	seen := make(map[string]struct{}, len(out))
 	for _, candidate := range out {
@@ -1075,6 +1077,9 @@ func (p *wikiPipeline) expandTopicNeighborCandidates(page wikiPlanPage, candidat
 	}
 	for _, candidate := range candidates {
 		for _, slug := range candidate.RelatedKBPages {
+			if len(out) >= len(candidates)+wikiTopicNeighborMax {
+				break
+			}
 			slug = strings.TrimSpace(slug)
 			if slug == "" {
 				continue
@@ -1082,8 +1087,19 @@ func (p *wikiPipeline) expandTopicNeighborCandidates(page wikiPlanPage, candidat
 			if _, exists := seen[slug]; exists {
 				continue
 			}
-			neighbor, err := p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, slug)
-			if err != nil || neighbor == nil {
+			var neighbor *common.WikiPageCandidate
+			if cached, ok := p.neighborCache[slug]; ok {
+				neighbor = cached
+			} else {
+				loaded, err := p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, slug)
+				if err != nil {
+					p.neighborCache[slug] = nil
+					continue
+				}
+				neighbor = loaded
+				p.neighborCache[slug] = loaded
+			}
+			if neighbor == nil {
 				continue
 			}
 			seen[neighbor.Slug] = struct{}{}
@@ -1144,7 +1160,11 @@ func (p *wikiPipeline) sourceChunksForPlanPage(page wikiPlanPage) []string {
 			chunks = append(chunks, relation.SourceChunkIDs...)
 		}
 	}
-	return uniqueStrings(chunks)
+	chunks = uniqueStrings(chunks)
+	if len(chunks) > wikiTopicSourceChunkMax {
+		chunks = chunks[:wikiTopicSourceChunkMax]
+	}
+	return chunks
 }
 
 func rerankWikiPlanCandidates(page wikiPlanPage, candidates []common.WikiPageCandidate) []common.WikiPageCandidate {

@@ -13,6 +13,8 @@ import (
 const (
 	wikiTopicCandidateThreshold = 0.72
 	wikiTopicCommunityMaxItems  = 12
+	wikiTopicNeighborMax        = 32
+	wikiTopicSourceChunkMax     = 128
 )
 
 type topicCommunityItem struct {
@@ -75,8 +77,12 @@ func (p *wikiPipeline) buildTopicCandidateCommunities() []wikiExtract {
 			communities[placed] = append(communities[placed], item)
 		}
 	}
+	residual := wikiExtract{}
+	assignedClaims := make([]bool, len(p.reduced.Claims))
+	assignedRelations := make([]bool, len(p.reduced.Relations))
+	assignedTopics := make([]bool, len(p.reduced.Topics))
 	out := make([]wikiExtract, 0, len(communities))
-	for _, community := range communities {
+	for i, community := range communities {
 		nameSet := make(map[string]struct{}, len(community))
 		extract := wikiExtract{}
 		for _, item := range community {
@@ -88,21 +94,38 @@ func (p *wikiPipeline) buildTopicCandidateCommunities() []wikiExtract {
 				extract.Concepts = append(extract.Concepts, *item.concept)
 			}
 		}
-		for _, claim := range p.reduced.Claims {
+		for claimIndex, claim := range p.reduced.Claims {
 			if _, ok := nameSet[normKey(claim.Subject)]; ok {
 				extract.Claims = append(extract.Claims, claim)
+				assignedClaims[claimIndex] = true
+			} else if i == len(communities)-1 && !assignedClaims[claimIndex] {
+				residual.Claims = append(residual.Claims, claim)
 			}
 		}
-		for _, relation := range p.reduced.Relations {
+		for relationIndex, relation := range p.reduced.Relations {
 			_, fromOK := nameSet[normKey(relation.From)]
 			_, toOK := nameSet[normKey(relation.To)]
 			if fromOK || toOK {
 				extract.Relations = append(extract.Relations, relation)
+				assignedRelations[relationIndex] = true
+			} else if i == len(communities)-1 && !assignedRelations[relationIndex] {
+				residual.Relations = append(residual.Relations, relation)
 			}
 		}
-		extract.Topics = append(extract.Topics, p.reduced.Topics...)
+		for topicIndex, topic := range p.reduced.Topics {
+			if _, ok := nameSet[normKey(topic)]; ok {
+				extract.Topics = append(extract.Topics, topic)
+				assignedTopics[topicIndex] = true
+			} else if i == len(communities)-1 && !assignedTopics[topicIndex] {
+				residual.Topics = append(residual.Topics, topic)
+			}
+		}
 		extract.Topics = uniqueStrings(extract.Topics)
 		out = append(out, extract)
+	}
+	if len(residual.Claims) > 0 || len(residual.Relations) > 0 || len(residual.Topics) > 0 {
+		residual.Topics = uniqueStrings(residual.Topics)
+		out = append(out, residual)
 	}
 	return out
 }
@@ -133,6 +156,9 @@ func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {
 		approved.Relations = append(approved.Relations, community.Relations...)
 		approved.Topics = append(approved.Topics, community.Topics...)
 		jobs = append(jobs, func() error {
+			if err := p.ctx.Err(); err != nil {
+				return err
+			}
 			plan, err := p.runPlanBatch(community, i+1, len(communities), quota, p.planBudget.MaxTokens)
 			if err != nil {
 				return err

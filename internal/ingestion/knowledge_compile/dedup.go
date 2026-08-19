@@ -137,8 +137,12 @@ func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]Me
 	// merge and must not be parsed as generic JSON.
 	wikiIdx, structIdx, structGroups := splitWikiGroups(groups)
 	// Wiki groups: evidence-preserving page merge, in place.
-	for _, gi := range wikiIdx {
-		groups[gi] = wikiMergeBatch(ctx, []MergeGroup{groups[gi]})[0]
+	wikiGroups := make([]MergeGroup, len(wikiIdx))
+	for i, gi := range wikiIdx {
+		wikiGroups[i] = groups[gi]
+	}
+	for i, group := range wikiMergeBatch(ctx, wikiGroups) {
+		groups[wikiIdx[i]] = group
 	}
 	if len(structGroups) == 0 {
 		return groups, nil

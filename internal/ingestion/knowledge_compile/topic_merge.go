@@ -89,7 +89,7 @@ func prepareTopicProduct(product kccommon.Product, topic string) kccommon.Produc
 
 // mergeTopicProducts folds pages with the same canonical topic and preserves
 // the first dataset-level page identity.
-func mergeTopicProducts(_ string, kb string, products []kccommon.Product) ([]kccommon.Product, []string) {
+func mergeTopicProducts(tenant, kb string, products []kccommon.Product) ([]kccommon.Product, []string) {
 	groups := make(map[string][]kccommon.Product)
 	order := make([]string, 0, len(products))
 	for _, product := range products {
@@ -132,6 +132,14 @@ func mergeTopicProducts(_ string, kb string, products []kccommon.Product) ([]kcc
 			}
 		}
 		current.Merged = true
+		currentID := datasetLevelID(tenant, kb, current)
+		filteredStale := stale[:0]
+		for _, id := range stale {
+			if id != currentID {
+				filteredStale = append(filteredStale, id)
+			}
+		}
+		stale = filteredStale
 		merged = append(merged, current)
 	}
 	// The writer's dataset-level id is derived from the surviving topic slug.

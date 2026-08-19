@@ -65,10 +65,6 @@ type mergedWikiPageReader interface {
 	LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error)
 }
 
-type mergedWikiPageDeleter interface {
-	DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error
-}
-
 // engineReader loads the per-document compiled products through the global
 // DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
 // process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
@@ -238,6 +234,7 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
+			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
 			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 			Filter:       filter,
 		})
