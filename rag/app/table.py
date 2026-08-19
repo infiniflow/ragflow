@@ -430,9 +430,11 @@ def column_data_type(arr):
             # chunk body and the stored field. Covers both the raising
             # converters and the return-None ones (bool/datetime), which never
             # hit the warning below otherwise.
+            # No raw cell value in the log: it is source-document content and
+            # can carry confidential or personal data (#18466 review).
             logging.info(
-                "Column %d: value %r not representable as %s; preserving original",
-                i, arr[i], ty,
+                "Column %d: value not representable as %s; preserving original",
+                i, ty,
             )
             continue
         arr[i] = converted

@@ -48,6 +48,10 @@ _STUB_NAMES = (
 @pytest.fixture(autouse=True)
 def _import_table_module():
     saved = {name: sys.modules.get(name) for name in _STUB_NAMES}
+    # Drop any cached rag.app.table too: the module imports with the stubs
+    # active and stays cached otherwise, so a sibling test could import the
+    # mocked version (#18466 review).
+    saved_table = sys.modules.pop("rag.app.table", None)
     try:
         for name in _STUB_NAMES:
             m = MagicMock()
@@ -56,6 +60,9 @@ def _import_table_module():
         sys.modules["common.settings"].DOC_ENGINE_INFINITY = False
         yield
     finally:
+        sys.modules.pop("rag.app.table", None)
+        if saved_table is not None:
+            sys.modules["rag.app.table"] = saved_table
         for name, original in saved.items():
             if original is None:
                 sys.modules.pop(name, None)
