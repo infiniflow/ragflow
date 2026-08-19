@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
@@ -97,16 +98,11 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if tsrErr != nil {
 		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 	}
-	w := tm.Region.X1 - tm.Region.X0
-	h := tm.Region.Y1 - tm.Region.Y0
-	cropOffX := math.Max(0, tm.Region.X0-w*0.03)
-	cropOffY := math.Max(0, tm.Region.Y0-h*0.03)
+	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
+	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {
 		if bestAngle != 0 {
-			if !p.Config.SkipOCR {
-				p.ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
-			}
 			for i := range cells {
 				cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1 = util.MapRotatedRectToOriginal(
 					cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
@@ -121,12 +117,24 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		if firstCellTop == 1e9 {
 			firstCellTop = cells[0].Y0
 		}
-		boxInCrop = make([]pdf.TextBox, 0, len(tm.BoxIdx))
+		tableBoxes := make([]pdf.TextBox, 0, len(tm.BoxIdx))
 		for _, idx := range tm.BoxIdx {
 			b := boxes[idx]
 			if b.Bottom*scale-cropOffY < firstCellTop {
 				continue
 			}
+			tableBoxes = append(tableBoxes, b)
+		}
+		// Collapse overlapping/adjacent OCR boxes before cell-fill, mirroring
+		// Python's pipeline order: _naive_vertical_merge runs before
+		// construct_table, so overlapping boxes are merged before they reach
+		// cell assignment. Go runs table cell-fill per-page (here), before the
+		// document-wide vertical merge in buildLayout, so it must run its own
+		// collapse on this table's box subset first or overlapping OCR boxes
+		// duplicate text across cells.
+		tableBoxes = lyt.NaiveVerticalMerge(tableBoxes, nil, nil, nil)
+		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
+		for _, b := range tableBoxes {
 			boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
 		}
 	}
@@ -149,16 +157,6 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 				for ci := range grid[ri] {
 					grid[ri][ci].Text = flat[idx].Text
 					idx++
-				}
-			}
-			if bestAngle == 0 && !p.Config.SkipOCR {
-				p.ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
-				idx = 0
-				for ri := range grid {
-					for ci := range grid[ri] {
-						grid[ri][ci].Text = flat[idx].Text
-						idx++
-					}
 				}
 			}
 		}

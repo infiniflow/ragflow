@@ -14,14 +14,12 @@
  *  limitations under the License.
  */
 
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useCreateCompilationTemplateGroup,
   useFetchCompilationTemplateGroup,
   useUpdateCompilationTemplateGroup,
 } from '@/hooks/use-compilation-template-group-request';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
-import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,14 +31,13 @@ import { useCompilationTemplateGroupForm } from './use-compilation-template-grou
 import { useCompilationTemplateGroupSubmit } from './use-compilation-template-group-submit';
 
 type UseEditNextCompilationTemplateGroupOptions = {
-  onSuccess?: () => void;
+  onSuccess: () => void;
 };
 
 export const useEditNextCompilationTemplateGroup = ({
   onSuccess,
-}: UseEditNextCompilationTemplateGroupOptions = {}) => {
+}: UseEditNextCompilationTemplateGroupOptions) => {
   const { id } = useParams<{ id: string }>();
-  const { navigateToCompilationTemplates } = useNavigatePage();
   const { t } = useTranslation();
 
   const isCreate = isCreateCompilationTemplateGroup(id);
@@ -48,7 +45,6 @@ export const useEditNextCompilationTemplateGroup = ({
   const { data: detail } = useFetchCompilationTemplateGroup();
   const { data: builtins, kindOptions: builtinKindOptions } =
     useFetchBuiltinCompilationTemplates();
-  const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const { createGroup, loading: createLoading } =
     useCreateCompilationTemplateGroup();
@@ -64,18 +60,14 @@ export const useEditNextCompilationTemplateGroup = ({
     [builtinKindOptions, t],
   );
 
-  const { form } = useCompilationTemplateGroupForm({
-    detail,
-    defaultLlmId: defaultModelDictionary.llm_id,
-    isCreate,
-  });
+  const { form } = useCompilationTemplateGroupForm({ detail });
 
   const { onSubmit } = useCompilationTemplateGroupSubmit({
     isCreate,
     id,
     createGroup,
     updateGroup,
-    onSuccess: onSuccess ?? navigateToCompilationTemplates,
+    onSuccess,
   });
 
   return {
@@ -86,6 +78,5 @@ export const useEditNextCompilationTemplateGroup = ({
     onSubmit,
     isCreate,
     isLoading: isCreate ? createLoading : updateLoading,
-    navigateToCompilationTemplates,
   };
 };

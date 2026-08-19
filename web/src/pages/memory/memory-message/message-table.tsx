@@ -70,8 +70,10 @@ function getTaskStatus(progress: number) {
     return RunningStatus.DONE;
   } else if (progress > 0 && progress < 1) {
     return RunningStatus.RUNNING;
-  } else {
+  } else if (progress < 0) {
     return RunningStatus.FAIL;
+  } else {
+    return RunningStatus.UNSTART;
   }
 }
 
@@ -291,6 +293,7 @@ export function MemoryTable({
                   'bg-state-success': taskStatus === RunningStatus.DONE,
                   'bg-state-error': taskStatus === RunningStatus.FAIL,
                   'bg-state-warning': taskStatus === RunningStatus.RUNNING,
+                  'bg-text-secondary': taskStatus === RunningStatus.UNSTART,
                 })}
               />
             </Button>

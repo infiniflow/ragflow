@@ -30,7 +30,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
-from rag.utils.url_utils import ensure_v1
+from rag.utils.url_utils import append_api_path, ensure_v1
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +230,13 @@ class QWenSeq2txt(Base):
         resp = dashscope.MultiModalConversation.call(model=self.model_name, messages=messages, result_format="message", asr_options={"enable_lid": True, "enable_itn": False})
 
         try:
-            text = resp["output"]["choices"][0]["message"].content[0]["text"]
+            choices = resp["output"].get("choices") or []
+            if not choices:
+                raise ValueError("no valid speech content in response")
+            content = (choices[0].get("message") or {}).get("content") or []
+            if not content or "text" not in content[0]:
+                raise ValueError("no speech text in response")
+            text = content[0]["text"]
         except Exception as e:
             text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
@@ -369,7 +375,13 @@ class QWenSeq2txt(Base):
         full = ""
         for chunk in stream:
             try:
-                piece = chunk["output"]["choices"][0]["message"].content[0]["text"]
+                choices = chunk["output"].get("choices") or []
+                if not choices:
+                    raise ValueError("no valid speech content in response")
+                content = (choices[0].get("message") or {}).get("content") or []
+                if not content or "text" not in content[0]:
+                    raise ValueError("no speech text in response")
+                piece = content[0]["text"]
                 full = piece
                 yield {"event": "delta", "text": piece}
             except Exception as e:
@@ -396,7 +408,7 @@ class XinferenceSeq2txt(Base):
         self.model_name = model_name
         self.key = key
 
-    def transcription(self, audio, language="zh", prompt=None, response_format="json"):
+    def transcription(self, audio, language="Chinese", prompt=None, response_format="json"):
         if isinstance(audio, str):
             with open(audio, "rb") as audio_file:
                 audio_data = audio_file.read()
@@ -410,7 +422,8 @@ class XinferenceSeq2txt(Base):
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
         try:
-            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload, timeout=60)
+            headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+            response = requests.post(append_api_path(self.base_url, "audio/transcriptions"), files=files, data=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
 

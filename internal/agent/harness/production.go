@@ -22,12 +22,17 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
 	"gorm.io/gorm"
 	"ragflow/internal/agent/tool"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service"
 	"ragflow/internal/service/nav"
 	"ragflow/internal/service/wikisearch"
 )
@@ -47,6 +52,16 @@ type ProductionRunner struct {
 	// runner never exposes web fallback (P8: no web provider configured => the
 	// agent does not attempt web search and no failing tool call is made).
 	webTool einotool.InvokableTool
+	// sqlKBs are the tabular (structured) KBs — those whose parser_config carries
+	// a field_map. structured_query only runs over these (mirrors RAGTools.sql_kbs).
+	sqlKBs []*entity.Knowledgebase
+	// fieldMap is the merged field_map across the tabular KBs (mirrors
+	// RAGTools.field_map).
+	fieldMap map[string]interface{}
+	// chatPipeline drives structured_query (useSQL). Lazily constructed, guarded
+	// by chatPipelineOnce against concurrent runSQLTool calls.
+	chatPipeline     *service.ChatPipelineService
+	chatPipelineOnce sync.Once
 }
 
 // NewProductionRunner builds a ProductionRunner backed by the real tools. The
@@ -55,7 +70,7 @@ type ProductionRunner struct {
 // API key is present), the runner also wires the web fallback tool so
 // high/ultra modes can fill an empty KB result from the web; otherwise no web
 // tool is attached and no web call is ever attempted (P8/R2).
-func NewProductionRunner(db *gorm.DB, tenantID string, datasetIDs []string) (*ProductionRunner, error) {
+func NewProductionRunner(ctx context.Context, db *gorm.DB, tenantID string, datasetIDs []string) (*ProductionRunner, error) {
 	searchBase, err := tool.BuildByName("hybrid_search", nil)
 	if err != nil {
 		return nil, err
@@ -68,7 +83,74 @@ func NewProductionRunner(db *gorm.DB, tenantID string, datasetIDs []string) (*Pr
 	if common.GetEnv(common.EnvTavilyAPIKey) != "" {
 		r.webTool = tool.NewTavilyTool()
 	}
+	// Partition the bound KBs into tabular (field_map-bearing) vs general,
+	// mirroring Python RAGTools._exclude_sql_kb. Runs under the caller's context
+	// so request deadlines/cancellation propagate to the lookup.
+	r.loadSQLKBs(ctx)
 	return r, nil
+}
+
+// loadSQLKBs partitions the bound KBs into tabular (structured_query) vs general
+// and merges their field_map, mirroring Python RAGTools._exclude_sql_kb.
+func (r *ProductionRunner) loadSQLKBs(ctx context.Context) {
+	if r == nil || r.db == nil {
+		return
+	}
+	kbs, err := dao.NewKnowledgebaseDAO().GetByIDs(ctx, r.db, r.datasetIDs)
+	if err != nil {
+		// Distinguish a database failure from "no tabular KBs": structured_query
+		// silently reporting no tabular KBs would otherwise mask this.
+		log.Printf("agentic_rag: loadSQLKBs lookup failed for %v: %v", r.datasetIDs, err)
+		return
+	}
+	r.fieldMap = map[string]interface{}{}
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		if fm, ok := kb.ParserConfig["field_map"].(map[string]interface{}); ok && len(fm) > 0 {
+			for k, v := range fm {
+				r.fieldMap[k] = v
+			}
+			r.sqlKBs = append(r.sqlKBs, kb)
+		}
+	}
+}
+
+// runSQLTool runs structured_query: translate the query to SQL over the tabular
+// KBs and return the answer + referenced chunks. Returns empty when there are no
+// tabular KBs or no chat model is configured (mirrors Python structured_query's
+// sql_kbs guard).
+func (r *ProductionRunner) runSQLTool(ctx context.Context, args map[string]interface{}) ToolResult {
+	if r == nil || len(r.sqlKBs) == 0 || len(r.fieldMap) == 0 {
+		return ToolResult{}
+	}
+	query := stringValue(args["query"])
+	if strings.TrimSpace(query) == "" {
+		return ToolResult{}
+	}
+	// Resolve the tenant's default chat model (empty llmID → default).
+	driver, modelName, apiConfig, _, err := service.NewModelProviderService().GetChatModelConfig(ctx, r.tenantID, "")
+	if err != nil {
+		return ToolResult{}
+	}
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	r.chatPipelineOnce.Do(func() {
+		r.chatPipeline = service.NewChatPipelineService()
+	})
+	ans, err := r.chatPipeline.StructuredQuery(ctx, &entity.Chat{TenantID: r.tenantID}, r.sqlKBs, query, chatModel, r.fieldMap)
+	if err != nil || ans == nil {
+		return ToolResult{}
+	}
+	answer := stringValue(ans["answer"])
+	ref, _ := ans["reference"].(map[string]interface{})
+	var chunks []map[string]interface{}
+	if ref != nil {
+		if c, ok := ref["chunks"].([]map[string]interface{}); ok {
+			chunks = c
+		}
+	}
+	return ToolResult{Answer: answer, Chunks: chunks}
 }
 
 // newProductionRunnerWithTools builds a ProductionRunner with an injected
@@ -108,8 +190,50 @@ func (r *ProductionRunner) Run(ctx context.Context, question, keywords, modeLabe
 	if route.SuggestsCompilation == "wiki" && r.wikiAvailable(ctx) {
 		searchFn = r.wikiPreferredSearchFn(searchFn)
 	}
+
+	// high/ultra (agentic_research / deep_research) drive the two-level research
+	// loop through the Pipeline (real tools + compilation gating + doc routing),
+	// not the SearchFn closure used by low/medium. This is the P5 strategy
+	// dispatch: high/ultra is a strict superset of medium.
+	if route.ExecutionStrategy == "agentic_research" || route.ExecutionStrategy == "deep_research" {
+		return r.runAgentic(ctx, question, keywords, modeLabel, route)
+	}
 	return RunAgenticRAGWithRoute(ctx, r.db, question, keywords, modeLabel, route, searchFn)
 }
+
+// runAgentic drives the high/ultra two-level loop over a Pipeline. It shares the
+// same route/planner as RunAgenticRAGWithRoute but researches claims via the
+// research agent (inner tool loop) rather than a single hybrid search.
+func (r *ProductionRunner) runAgentic(ctx context.Context, question, keywords, modeLabel string, route RouteDecision) AnswerResult {
+	mode, _ := GetMode(modeLabel)
+	if mode.Label == "" {
+		mode = THINKING_MODES["high"]
+	}
+
+	kbinfos := &Kbinfos{}
+	// pre_search grounds the planner (same as the medium path).
+	chunks, aggs := r.hybridSearchFn(ctx, question, keywords, modeLabel)(ctx, question, keywords)
+	seed := extractChunkTexts(chunks)
+	kbinfos.Merge(chunks, aggs)
+
+	plan := PlannerNode(ctx, r.db, route, seed)
+	claims := make([]*ClaimTarget, len(plan.Claims))
+	for i := range plan.Claims {
+		claims[i] = &plan.Claims[i]
+	}
+
+	compilation := buildCompilationMap(ctx, r.db, r.tenantID, r.datasetIDs)
+	pipeline := NewPipeline(r.db, r.tenantID, r.datasetIDs, r, kbinfos, compilation)
+
+	orch := AgenticResearch(ctx, r.db, pipeline, question, claims, mode)
+
+	return FormalizeAnswer(ctx, r.db, question, orch.Kbinfos, orch.PartialAnswer, orch.Abstain, orch.EmptyResult, orch.Caveat, orch.ForceLLM)
+}
+
+// buildCompilationMap reports which compiled artifacts each bound KB carries,
+// so the Pipeline can gate compilation-requiring tools (ontology/mindmap/graph/
+// wiki). It mirrors Python _get_compilation_map (parser_config toggles + dataset
+// nav rows). A nil/empty map disables gating (all tools pass through).
 
 // modeAllowsWeb reports whether the mode's AvailableTools include web_search, so
 // web fallback is only reachable in the modes that are supposed to have it
@@ -334,47 +458,56 @@ func (r *ProductionRunner) webFallbackFn(hybrid SearchFn) SearchFn {
 		if err != nil {
 			return nil, nil
 		}
-		var res struct {
-			Chunks  []map[string]interface{} `json:"chunks"`
-			Results []map[string]interface{} `json:"results"`
-		}
-		if err := json.Unmarshal([]byte(raw), &res); err != nil {
-			return nil, nil
-		}
-		// Normalize web evidence into the same agentic evidence shape as KB
-		// chunks. Accept both the agent "chunks" envelope and the Tavily
-		// "results" envelope (tavily.go returns {"results":[...]}); each result
-		// contributes content + a doc_id reference so the answer can retain the
-		// source URL.
-		src := res.Chunks
-		if len(src) == 0 {
-			src = res.Results
-		}
-		out := make([]map[string]interface{}, 0, len(src))
-		for _, c := range src {
-			url := firstNonEmpty(stringValue(c["url"]), stringValue(c["link"]), stringValue(c["source"]))
-			if url == "" {
-				continue
-			}
-			content := firstNonEmpty(stringValue(c["content"]), stringValue(c["raw_content"]), stringValue(c["text"]))
-			if content == "" {
-				continue
-			}
-			docID := stringValue(c["doc_id"])
-			if docID == "" {
-				docID = url + "|" + stringValue(c["source"])
-			}
-			out = append(out, map[string]interface{}{
-				"chunk_id": docID, "content_with_weight": content,
-				"doc_id": docID, "docnm_kwd": firstNonEmpty(stringValue(c["title"]), stringValue(c["source"])),
-				"dataset_id": stringValue(c["dataset_id"]), "url": url, "source": "web",
-			})
-		}
+		out := normalizeWebResults([]byte(raw))
 		if len(out) == 0 {
 			return nil, nil
 		}
 		return out, nil
 	}
+}
+
+// normalizeWebResults parses the web provider's raw JSON and normalizes it into
+// the same agentic evidence shape as KB chunks. Accepts both the agent "chunks"
+// envelope and the Tavily "results" envelope (tavily.go returns
+// {"results":[...]}); each result contributes content + a doc_id reference so
+// the answer can retain the source URL.
+func normalizeWebResults(raw []byte) []map[string]interface{} {
+	var res struct {
+		Chunks  []map[string]interface{} `json:"chunks"`
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil
+	}
+	src := res.Chunks
+	if len(src) == 0 {
+		src = res.Results
+	}
+	out := make([]map[string]interface{}, 0, len(src))
+	for i, c := range src {
+		url := firstNonEmpty(stringValue(c["url"]), stringValue(c["link"]), stringValue(c["source"]))
+		if url == "" {
+			continue
+		}
+		content := firstNonEmpty(stringValue(c["content"]), stringValue(c["raw_content"]), stringValue(c["text"]))
+		if content == "" {
+			continue
+		}
+		docID := stringValue(c["doc_id"])
+		if docID == "" {
+			docID = url
+		}
+		// doc_id stays the source URL; chunk_id must be UNIQUE per snippet so
+		// Kbinfos.Merge (dedup by chunkKey) does not collapse several snippets
+		// from the same URL, or the same URL across two retrieval rounds.
+		chunkID := fmt.Sprintf("%s#%d", docID, i)
+		out = append(out, map[string]interface{}{
+			"chunk_id": chunkID, "content_with_weight": content,
+			"doc_id": docID, "docnm_kwd": firstNonEmpty(stringValue(c["title"]), stringValue(c["source"])),
+			"dataset_id": stringValue(c["dataset_id"]), "url": url, "source": "web",
+		})
+	}
+	return out
 }
 
 func stringValue(v interface{}) string {

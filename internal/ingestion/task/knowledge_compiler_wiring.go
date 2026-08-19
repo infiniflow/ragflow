@@ -137,9 +137,10 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		}
 
 		return kc.Deps{
-			Chat:      &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
-			Embed:     &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
-			WikiPages: &kcWikiPageStore{docEngine: engine.Get()},
+			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
+			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
+			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
+			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
@@ -266,10 +267,11 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 		}
 		batchTexts := texts[start:end]
 		jobs = append(jobs, func() error {
-			if err := ctx.Err(); err != nil {
+			if err = ctx.Err(); err != nil {
 				return err
 			}
-			embeds, err := mdl.ModelDriver.Embed(ctx, mdl.ModelName, batchTexts, mdl.APIConfig, config, nil)
+			var embeds []models.EmbeddingData
+			embeds, err = mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
 			if err != nil {
 				return fmt.Errorf("knowledge_compiler: embed: %w", err)
 			}
@@ -281,7 +283,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 			return nil
 		})
 	}
-	if err := knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
+	if err = knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
 		return nil, err
 	}
 	// Flatten in input order and derive the vector dimension from the first
@@ -357,7 +359,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
 		// compile_kwd="wiki_page" is the schema-backed discriminator for wiki
 		// pages (sections carry compile_kwd="wiki_section"); there is no
 		// "kc_kind" column in the chunk schema, so filtering on it would return
@@ -393,7 +395,7 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
 		Filter: map[string]interface{}{
 			"compile_kwd": "wiki_page",
 			"slug_kwd":    slug,
@@ -407,6 +409,35 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 	return &page, nil
 }
 
+func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID, datasetID string, chunkIDs []string, k int) ([]kc.WikiPageCandidate, error) {
+	if s == nil || s.docEngine == nil || len(chunkIDs) == 0 || k <= 0 || strings.TrimSpace(datasetID) == "" {
+		return nil, nil
+	}
+	req := &enginetypes.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		KbIDs:        []string{datasetID},
+		Limit:        k,
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		Filter: map[string]interface{}{
+			"compile_kwd":      "wiki_page",
+			"source_chunk_ids": chunkIDs,
+		},
+	}
+	res, err := s.docEngine.Search(ctx, req)
+	if err != nil || res == nil {
+		return nil, err
+	}
+	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
+	for _, row := range res.Chunks {
+		candidate := wikiPageCandidateFromRow(row)
+		if candidate.Score == 0 {
+			candidate.Score = 0.68
+		}
+		out = append(out, candidate)
+	}
+	return out, nil
+}
+
 func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
 	return kc.WikiPageCandidate{
 		ID:             strings.TrimSpace(anyString(row["id"])),
@@ -414,12 +445,14 @@ func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
 		Title:          strings.TrimSpace(anyString(row["title_kwd"])),
 		PageType:       strings.TrimSpace(anyString(row["page_type_kwd"])),
 		Topic:          strings.TrimSpace(anyString(row["topic_kwd"])),
+		PlanGroup:      strings.TrimSpace(anyString(row["plan_group_kwd"])),
 		Summary:        strings.TrimSpace(anyString(row["summary_with_weight"])),
 		ContentMD:      strings.TrimSpace(anyString(row["content_with_weight"])),
 		ContentMDRaw:   strings.TrimSpace(anyString(row["kc_content_md_raw"])),
 		EntityNames:    anyStrings(row["entity_names_kwd"]),
 		RelatedKBPages: anyStrings(row["related_kb_pages_kwd"]),
 		Outlinks:       anyStrings(row["outlinks_kwd"]),
+		SourceChunkIDs: anyStrings(row["source_chunk_ids"]),
 		Score:          anyFloat(row["_score"]),
 	}
 }

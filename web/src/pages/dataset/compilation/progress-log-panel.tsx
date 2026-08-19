@@ -32,7 +32,7 @@ export function ProgressLogPanel({
     <div className={cn('flex min-h-0 flex-col gap-2', className)}>
       <div className="flex items-center gap-2 text-text-primary">
         <Logs className="size-5" />
-        <span>{t('knowledgeDetails.log')}</span>
+        <span>{t('knowledgeCompilation.log')}</span>
       </div>
       <div
         ref={listRef}

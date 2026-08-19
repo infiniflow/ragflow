@@ -38,12 +38,12 @@ type ParseResult struct {
 	DLARegions []DLAPageRegions
 
 	// Engine is the native PDF backend used to lazily crop section
-	// images on demand (e.g. for markdown figure embeds or downstream
+	// images on demand (e.g. for Markdown figure embeds or downstream
 	// chunk-time cropping). It is populated by ParseRaw and carries
 	// ownership of the engine: Parse does NOT close the engine, so the
 	// caller must release it via Close once the result is fully
 	// serialized. The JSON parse path closes it immediately after
-	// serialization; the markdown path crops figure images first, then
+	// serialization; the Markdown path crops figure images first, then
 	// closes. Close is idempotent and safe to call on a nil result.
 	Engine PDFEngine
 }
@@ -212,7 +212,6 @@ type ParserConfig struct {
 	AutoRotateTables   *bool
 	SeparateTablesFigs bool
 	SortByTop          bool
-	SkipOCR            bool
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
@@ -250,6 +249,20 @@ const (
 	DLALabelFigureCaption = "figure caption"
 	DLALabelTableCaption  = "table caption"
 )
+
+// GarbageLayoutScoreThreshold is the minimum confidence a garbage-layout
+// region must reach to survive; below it the region is dropped. Mirrors
+// Python's garbage gate in LayoutRecognizer (deepdoc/vision/layout_recognizer.py:97).
+const GarbageLayoutScoreThreshold = 0.4
+
+// GarbageLayoutTypes are layout types dropped when their confidence is below
+// GarbageLayoutScoreThreshold. Mirrors Python's self.garbage_layouts
+// = ["footer", "header", "reference"].
+var GarbageLayoutTypes = map[string]bool{
+	LayoutTypeFooter:    true,
+	LayoutTypeHeader:    true,
+	LayoutTypeReference: true,
+}
 
 // ── Interfaces ────────────────────────────────────────────────────────────
 

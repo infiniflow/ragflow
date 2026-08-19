@@ -190,7 +190,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, userID, chat, messages, stream)
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -651,31 +651,7 @@ func (s *ChatPipelineService) AsyncChat(
 					)
 					question := strings.Join(questions, " ")
 
-					drErr := dr.Research(ctx, kbinfos, question, question, func(msg string) {
-						switch {
-						case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "<retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "</retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						default:
-							out <- AsyncChatResult{
-								Answer:      msg,
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						}
-					})
+					drErr := dr.Research(ctx, kbinfos, question, question, s.deepResearchProgressCallback(ctx, out))
 					if drErr != nil {
 						common.Warn("DeepResearcher failed", zap.Error(drErr))
 					} else {
@@ -988,17 +964,15 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		// Adjust max_tokens so the LLM has room within the total budget.
-		if chat.LLMSetting != nil {
-			if mt, ok := chat.LLMSetting["max_tokens"].(float64); ok {
-				original := int(mt)
-				adjusted := original
-				if adjusted > modelMaxTokens-usedTokenCount {
-					adjusted = modelMaxTokens - usedTokenCount
-				}
-				chat.LLMSetting["max_tokens"] = float64(adjusted)
-				common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
+		chatCfg := BuildChatConfig(chat, kwargs)
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
 			}
+			return
+		} else if ok {
+			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
 		}
 
 		// === Phase 11: Drive LLM + Decorate Answer ===
@@ -1060,8 +1034,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-
-			chatCfg := BuildChatConfig(chat, nil)
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1257,8 +1229,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Non-streaming: get the answer synchronously.
 			var answer string
 			var err error
-			chatCfg := BuildChatConfig(chat, nil)
-
 			// Tool routing: use tool-loop when tools are bound.
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
@@ -1302,6 +1272,32 @@ func (s *ChatPipelineService) AsyncChat(
 	return out, nil
 }
 
+// deepResearchProgressCallback builds the progress callback handed to
+// DeepResearcher.Research. Progress deltas are non-essential: once the
+// consumer is gone (ctx canceled) they are dropped instead of blocking, so
+// parallel sub-research goroutines can drain before Research returns and
+// the pipeline goroutine closes the channel.
+func (s *ChatPipelineService) deepResearchProgressCallback(ctx context.Context, out chan<- AsyncChatResult) func(string) {
+	return func(msg string) {
+		answer := msg
+		switch {
+		case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
+			answer = "<retrieving>"
+		case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
+			answer = "</retrieving>"
+		}
+		select {
+		case out <- AsyncChatResult{
+			Answer:      answer,
+			Reference:   map[string]interface{}{},
+			AudioBinary: nil,
+			Final:       false,
+		}:
+		case <-ctx.Done():
+		}
+	}
+}
+
 // AsyncChatSolo is the LLM-only chat path (no KBs, no web search).
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
@@ -1310,6 +1306,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
+	config map[string]interface{},
 ) (<-chan AsyncChatResult, error) {
 
 	out := make(chan AsyncChatResult, 16)
@@ -1441,7 +1438,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if stream {
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
@@ -1568,7 +1565,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		} else {
 			// Non-streaming: one-shot call.
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
 				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
@@ -1971,7 +1968,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 		if kbs[0].EmbdID != "" {
@@ -2658,7 +2655,7 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, texts, e.embModel.APIConfig, config, nil)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2895,10 +2892,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2966,8 +2963,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3142,6 +3139,23 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
+//
+// StructuredQuery is the exported narrow entrypoint for the agentic-search
+// structured_query tool: translate a natural-language question to SQL over the
+// given tabular KBs and return the answer + reference chunks. It forwards to the
+// internal useSQL with quote=false (the agent tool returns the answer directly,
+// not a cited natural-language response).
+func (s *ChatPipelineService) StructuredQuery(
+	ctx context.Context,
+	chat *entity.Chat,
+	kbs []*entity.Knowledgebase,
+	question string,
+	chatModel *modelModule.ChatModel,
+	fieldMap map[string]interface{},
+) (ans map[string]interface{}, err error) {
+	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
+}
+
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -4186,14 +4200,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := dialog.LLMSetting["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
@@ -4226,14 +4240,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := config["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := config["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(config["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := config["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(config["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := config["do_sample"].(bool); ok {
@@ -4260,6 +4274,64 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	}
 
 	return cfg
+}
+
+func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
+	if usedTokenCount >= modelMaxTokens {
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+	}
+	if cfg == nil || cfg.MaxTokens == nil {
+		return 0, false, nil
+	}
+	adjusted := *cfg.MaxTokens
+	if adjusted <= 0 {
+		cfg.MaxTokens = nil
+		return 0, false, nil
+	}
+	remainingTokens := modelMaxTokens - usedTokenCount
+	if adjusted > remainingTokens {
+		adjusted = remainingTokens
+	}
+	cfg.MaxTokens = &adjusted
+	return adjusted, true, nil
+}
+
+func chatConfigPositiveInt(value interface{}) (int, bool) {
+	v, ok := chatConfigInt(value)
+	if !ok || v <= 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+func chatConfigInt(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+func chatConfigFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {

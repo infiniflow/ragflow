@@ -49,7 +49,6 @@ const (
 	ParserTypeLaws         ParserType = "laws"
 	ParserTypeManual       ParserType = "manual"
 	ParserTypePaper        ParserType = "paper"
-	ParserTypeResume       ParserType = "resume"
 	ParserTypeBook         ParserType = "book"
 	ParserTypeQA           ParserType = "qa"
 	ParserTypeTable        ParserType = "table"
@@ -125,7 +124,19 @@ type Knowledgebase struct {
 	WikiTaskFinishAt       *time.Time `gorm:"column:wiki_task_finish_at" json:"wiki_task_finish_at,omitempty"`
 	SkillTaskID            *string    `gorm:"column:skill_task_id;size:32;index" json:"skill_task_id,omitempty"`
 	SkillTaskFinishAt      *time.Time `gorm:"column:skill_task_finish_at" json:"skill_task_finish_at,omitempty"`
-	Status                 *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	// Dataset-level structure merge task state (plan §8, mirror Python
+	// _INDEX_TYPE_TO_TASK_ID_FIELD's per-structure-index entries).
+	StructureGraphTaskID         *string    `gorm:"column:structure_graph_task_id;size:32;index" json:"structure_graph_task_id,omitempty"`
+	StructureGraphTaskFinishAt   *time.Time `gorm:"column:structure_graph_task_finish_at" json:"structure_graph_task_finish_at,omitempty"`
+	StructureMindmapTaskID       *string    `gorm:"column:structure_mindmap_task_id;size:32;index" json:"structure_mindmap_task_id,omitempty"`
+	StructureMindmapTaskFinishAt *time.Time `gorm:"column:structure_mindmap_task_finish_at" json:"structure_mindmap_task_finish_at,omitempty"`
+	TimelineTaskID               *string    `gorm:"column:timeline_task_id;size:32;index" json:"timeline_task_id,omitempty"`
+	TimelineTaskFinishAt         *time.Time `gorm:"column:timeline_task_finish_at" json:"timeline_task_finish_at,omitempty"`
+	SessionGraphTaskID           *string    `gorm:"column:session_graph_task_id;size:32;index" json:"session_graph_task_id,omitempty"`
+	SessionGraphTaskFinishAt     *time.Time `gorm:"column:session_graph_task_finish_at" json:"session_graph_task_finish_at,omitempty"`
+	SessionEssenceTaskID         *string    `gorm:"column:session_essence_task_id;size:32;index" json:"session_essence_task_id,omitempty"`
+	SessionEssenceTaskFinishAt   *time.Time `gorm:"column:session_essence_task_finish_at" json:"session_essence_task_finish_at,omitempty"`
+	Status                       *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }
 

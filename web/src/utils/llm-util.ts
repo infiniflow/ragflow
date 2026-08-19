@@ -123,6 +123,21 @@ export function parseModelValue(val: string) {
   };
 }
 
+/**
+ * Base embedding model name used to decide whether two datasets can be
+ * selected and searched together. Composite references
+ * ("modelName@instanceName@providerName" or "modelName@providerName") reduce
+ * to the bare model name, so datasets using the same embedding model through
+ * different provider instances still group together. Opaque values without
+ * '@' (e.g. an unresolved tenant_model id) are returned unchanged, so only
+ * exact matches group together. Mirrors the backend's base-name comparison
+ * (Python `_base_model_name`, Go `common.BaseModelName`).
+ */
+export function getEmbeddingBaseName(embeddingModel?: string | null): string {
+  if (!embeddingModel) return '';
+  return parseModelValue(embeddingModel)?.model_name ?? embeddingModel;
+}
+
 // Extract model name and factory ID from a model UUID
 // Supports both "model_name@factory_id" and "model_name@factory_id#instance_name".
 // Uses right-anchored split for the same reason as parseModelValue:
@@ -159,9 +174,11 @@ const modelParamMap: ModelParamMap = {
 };
 
 // API endpoint whitelist - only these endpoints will have tenant parameters added
+// Note: /api/v1/chats is intentionally absent — the chats API normalizes the
+// model name/id pair server-side, so the frontend submits only llm_id /
+// rerank_id and must not have a stale tenant_* id injected back in here.
 const API_WHITELIST = [
   '/api/v1/users/me/models',
-  '/api/v1/chats',
   '/v1/canvas/set',
   '/v1/canvas/setting',
   '/api/v1/searches/',
@@ -184,17 +201,26 @@ export function addTenantParams(data: any, url?: string): any {
     return data;
   }
 
-  const llmList = getCachedLlmList();
-  if (!llmList) return data;
-
   // Handle arrays
   if (Array.isArray(data)) {
     return data.map((item) => addTenantParams(item, url));
   }
 
   const newData = { ...data };
+  const llmList = getCachedLlmList();
 
-  // Iterate through model parameters and add corresponding tenant parameters
+  // Clear the paired tenant ID when a model selection is explicitly cleared.
+  for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
+    if (
+      Object.hasOwn(newData, paramName) &&
+      (newData[paramName] === '' || newData[paramName] == null)
+    ) {
+      newData[tenantParamName] = null;
+    }
+  }
+
+  if (!llmList) return newData;
+
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
     if (newData[paramName]) {
       try {

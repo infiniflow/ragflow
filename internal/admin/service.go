@@ -252,7 +252,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	rerankModel := ""
 	var ttsModel *string = nil
 	var ocrModel *string = nil
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
+	parserIDs := "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
 		chatModel = cfg.GetDefaultChatModel().Name

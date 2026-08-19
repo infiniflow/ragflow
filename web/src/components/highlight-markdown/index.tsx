@@ -32,6 +32,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { omit } from 'lodash';
 import { useIsDarkTheme } from '../theme-provider';
+import { SafeImg } from '@/components/safe-img';
 import styles from './index.module.less';
 
 const HighLightMarkdown = ({
@@ -60,6 +61,7 @@ const HighLightMarkdown = ({
             p: ({ children, ...props }: any) => (
               <p {...omit(props, 'node')}>{children}</p>
             ),
+            img: SafeImg,
             code(props: any) {
               const { children, className, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');

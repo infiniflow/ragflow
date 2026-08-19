@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/utility"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
@@ -47,6 +49,12 @@ type PipelineResult struct {
 	ChunkCount       int
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
+	// DocName, BuiltInMetadataConfig and AutoMetadataEnabled carry what the
+	// document-state finalizer needs to apply built-in metadata
+	// (update_time / file_name), mirroring Python apply_built_in_metadata.
+	DocName               string
+	BuiltInMetadataConfig []any
+	AutoMetadataEnabled   bool
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -204,7 +212,7 @@ func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutpu
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Chunks:           chunks,
-		ChunkCount:       countDistinctChunkIDs(chunks),
+		ChunkCount:       countOriginalChunkIDs(chunks),
 		TokenConsumption: indexdoc.GetEmbeddingTokenConsumption(pipelineOutput),
 		Duration:         time.Since(start).Seconds(),
 	}, nil
@@ -263,31 +271,123 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// (available_int=1). The notification is sent only after a successful persist
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID); err != nil {
+	//
+	// The variants passed to PublishCompleted are the compile types this document
+	// produced, derived from the authoritative `compilation_template_kind_kwd` the
+	// KnowledgeCompiler component stamps on each compiled product (the resolved
+	// template's kind → KindToVariant, O2a whitelist). This is the compiler's
+	// runtime inference surfaced here, NOT a re-derivation from `compile_kwd`.
+	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, compiledVariants(chunks)); err != nil {
 		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 	}
 
-	chunkCount := countDistinctChunkIDs(chunks)
+	// Compilation products are derived artifacts and must not inflate the
+	// document's source chunk counter shown by the document list API.
+	chunkCount := countOriginalChunkIDs(chunks)
+
+	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
+		s.taskCtx.Doc.ParserConfig,
+	)
 
 	return &PipelineResult{
-		DocID:            s.taskCtx.Doc.ID,
-		KbID:             s.taskCtx.Doc.KbID,
-		Metadata:         metadata,
-		ChunkCount:       chunkCount,
-		TokenConsumption: embeddingTokenConsumption,
-		Duration:         time.Since(start).Seconds(),
+		DocID:                 s.taskCtx.Doc.ID,
+		KbID:                  s.taskCtx.Doc.KbID,
+		Metadata:              metadata,
+		ChunkCount:            chunkCount,
+		TokenConsumption:      embeddingTokenConsumption,
+		Duration:              time.Since(start).Seconds(),
+		DocName:               docNameValue(s.taskCtx.Doc.Name),
+		BuiltInMetadataConfig: builtInMetadata,
+		AutoMetadataEnabled:   autoMetaEnabled,
 	}, nil
 }
 
-// countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled. Supports
+// modular metadata_config sub-objects as well as legacy flat fields on
+// Extractor nodes and top-level parser_config.
+func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
+	var extractorKeys []string
+	for k := range parserConfig {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+			extractorKeys = append(extractorKeys, k)
+		}
+	}
+	sort.Strings(extractorKeys)
+
+	for _, k := range extractorKeys {
+		nodeRaw := parserConfig[k]
+		if node, ok := nodeRaw.(map[string]any); ok {
+			if metaObj, ok := node["metadata"].(map[string]any); ok {
+				enabled := parserConfigBool(metaObj["enabled"])
+				if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
+					return arr, enabled
+				}
+			}
+			if metaConf, ok := node["metadata_config"].(map[string]any); ok {
+				enabled := parserConfigBool(metaConf["enabled"])
+				if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
+					return arr, enabled
+				}
+			}
+			enabled := parserConfigBool(node["enable_metadata"])
+			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
+				return arr, enabled
+			}
+		}
+	}
+	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
+		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
+			return arr, true
+		}
+	}
+	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
+		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
+			return arr, true
+		}
+	}
+	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
+		return arr, true
+	}
+	return nil, false
+}
+
+// parserConfigBool coerces a parser_config boolean-like value (bool / number)
+// to bool, mirroring the frontend's enable_metadata handling.
+func parserConfigBool(v any) bool {
+	switch typed := v.(type) {
+	case bool:
+		return typed
+	case float64:
+		return typed > 0
+	case int:
+		return typed > 0
+	}
+	return false
+}
+
+func docNameValue(name *string) string {
+	if name == nil {
+		return ""
+	}
+	return *name
+}
+
+// countOriginalChunkIDs returns the number of distinct source chunk IDs in the
+// slice. Knowledge-compiler products are also emitted as index chunks, but
+// carry compile_kwd and must not be included in the document's chunk_count.
 // After ProcessChunksForPipeline, every chunk carries an "id" field computed
 // from xxhash(text+docID). Chunks with identical text share the same id and
 // the search engine treats them as upserts, so the effective stored chunk count
 // is the number of unique ids — not len(chunks). Mirrors the index-side
 // deduplication that happens at write time.
-func countDistinctChunkIDs(chunks []map[string]any) int {
+func countOriginalChunkIDs(chunks []map[string]any) int {
 	seen := make(map[string]struct{}, len(chunks))
 	for _, ck := range chunks {
+		if _, compiled := ck["compile_kwd"]; compiled {
+			continue
+		}
 		id, _ := ck["id"].(string)
 		if id == "" {
 			continue
@@ -314,10 +414,121 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 	}
 }
 
+// compiledVariants returns the sorted, de-duplicated set of compile types a
+// document's compiled products carry. It reads the authoritative
+// `compilation_template_kind_kwd` the KnowledgeCompiler component stamps on each
+// compiled product (the resolved template's kind) and maps it through
+// common.KindToVariant (O2a whitelist: unknown kinds are skipped). Products
+// without an authoritative kind fall back to their `compile_kwd`-derived variant.
+// This surfaces the compiler's runtime variant inference to PublishCompleted so
+// the consumer can route the dataset-level re-compile per compile type.
+func compiledVariants(chunks []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		var v kccommon.Variant
+		if kind, ok := ck["compilation_template_kind_kwd"].(string); ok && kind != "" {
+			mapped, err := kccommon.KindToVariant(kind)
+			if err != nil {
+				continue // unknown template kind (O2a): skip, do not mis-route
+			}
+			v = mapped
+		} else {
+			// Fallback on compile_kwd via the shared knowledge_compile mapping
+			// (which folds the inferred structure kinds list/set/hypergraph into
+			// VariantStructure before the KindToVariant whitelist lookup).
+			mapped, err := knowledge_compile.KwdToVariant(asCompiledKwd(ck))
+			if err != nil {
+				continue
+			}
+			v = mapped
+		}
+		if _, dup := seen[string(v)]; dup {
+			continue
+		}
+		seen[string(v)] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// asCompiledKwd extracts the compile_kwd keyword value from a chunk map,
+// tolerating both a bare string and a list-wrapped keyword column from the
+// engine. It returns "" when absent.
+func asCompiledKwd(c map[string]any) string {
+	switch v := c["compile_kwd"].(type) {
+	case string:
+		return v
+	case []string:
+		if len(v) > 0 {
+			return v[0]
+		}
+	case []any:
+		if len(v) > 0 {
+			if s, ok := v[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	var dslMap entity.JSONMap
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": dsl}
+	}
+
+	// The task context contains the document snapshot loaded when the task
+	// started. Reload it here so the operation log reflects the final progress
+	// state written by the progress sink, matching the Python operation-log
+	// creation path.
+	doc := s.taskCtx.Doc
+	if db != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, docID); err == nil && persisted != nil {
+			doc = *persisted
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", docID, err))
+		}
+	}
+
+	pipelineTitle := ""
+	var pipelineAvatar *string
+	if db != nil {
+		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+			if canvas.Title != nil {
+				pipelineTitle = *canvas.Title
+			}
+			pipelineAvatar = canvas.Avatar
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
+		}
+	}
+
+	operationStatus := status
+	if doc.Run != nil && *doc.Run != "" {
+		operationStatus = *doc.Run
+	}
+	statusValue := "1"
+	if doc.Status != nil && *doc.Status != "" {
+		statusValue = *doc.Status
+	}
+	sourceFrom := doc.SourceType
+	if parts := strings.SplitN(sourceFrom, "/", 2); len(parts) > 0 {
+		sourceFrom = parts[0]
+	}
+	documentName := ""
+	if doc.Name != nil {
+		documentName = *doc.Name
 	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
@@ -325,14 +536,21 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		KbID:            s.KB().ID,
 		DocumentID:      docID,
 		PipelineID:      &s.canvasID,
+		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,
-		ParserID:        s.taskCtx.Doc.ParserID,
-		DocumentName:    *s.Doc().Name,
-		DocumentSuffix:  s.taskCtx.Doc.Suffix,
-		DocumentType:    s.taskCtx.Doc.Type,
-		SourceFrom:      s.taskCtx.Doc.SourceType,
-		OperationStatus: status,
+		ParserID:        doc.ParserID,
+		DocumentName:    documentName,
+		DocumentSuffix:  doc.Suffix,
+		DocumentType:    doc.Type,
+		SourceFrom:      sourceFrom,
+		Progress:        doc.Progress,
+		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
+		ProcessDuration: doc.ProcessDuration,
+		OperationStatus: operationStatus,
+		Avatar:          pipelineAvatar,
+		Status:          &statusValue,
 	}
 	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))

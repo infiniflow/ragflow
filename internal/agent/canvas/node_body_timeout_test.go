@@ -59,7 +59,7 @@ func TestRealComponentBody_RespectsParentCancellation(t *testing.T) {
 	comp := &blockingComponent{}
 	body := realComponentBody("test-cpn", "TestBlocking", comp)
 
-	parentCtx, cancel := context.WithCancel(context.Background())
+	parentCtx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
 	_, err := body(parentCtx, map[string]any{"x": 1})
@@ -77,7 +77,7 @@ func TestRealComponentBody_NoTimeoutWhenFast(t *testing.T) {
 	comp := &echoComponent{}
 	body := realComponentBody("test-cpn", "TestEcho", comp)
 
-	out, err := body(context.Background(), map[string]any{"x": 1})
+	out, err := body(t.Context(), map[string]any{"x": 1})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

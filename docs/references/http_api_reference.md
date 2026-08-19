@@ -3032,9 +3032,10 @@ curl --request POST \
   - `"use_kg"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"` and `"querit"`. Defaults to `"tavily"` when omitted.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"querit"`, and `"serply"`. Defaults to `"tavily"` when omitted.
   - `"tavily_api_key"`: `string`
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
+  - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
@@ -4716,7 +4717,7 @@ When `stream=true`, the server sends Server-Sent Events (SSE). A client should h
 The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_component_reference/begin.md) component first.
+You can include custom parameters in the request body, but they must be defined in the [Begin](../guides/agent/agent_workflow/basic_component.md) component first.
 :::
 
 ##### Request examples

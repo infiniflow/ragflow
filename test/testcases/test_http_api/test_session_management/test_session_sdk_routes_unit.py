@@ -1688,6 +1688,24 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["has_web_search_provider"] is True
 
+    # Explicit Serply configuration also enables the provider-neutral flag.
+    serply_dialog = SimpleNamespace(
+        name="My Serply Bot",
+        icon="avatar.png",
+        tenant_id="tenant-1",
+        status="1",
+        llm_id="",
+        prompt_config={
+            "prologue": "Hello!",
+            "web_search_provider": "serply",
+            "serply_api_key": "serply-key123",
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, serply_dialog))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-serply"))
+    assert res["code"] == 0
+    assert res["data"]["has_web_search_provider"] is True
+
 
 @pytest.mark.p2
 def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):

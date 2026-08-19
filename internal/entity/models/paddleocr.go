@@ -61,11 +61,11 @@ func (p *PaddleOCRModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (p *PaddleOCRModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (p *PaddleOCRModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 

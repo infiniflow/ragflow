@@ -17,6 +17,7 @@ import os
 import json
 import logging
 import asyncio
+from urllib.parse import urlparse, urlunparse
 
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
@@ -50,6 +51,53 @@ def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     if not base_url.endswith("/v1"):
         base_url += "/v1"
     return base_url
+
+
+def _redact_url(url: str | None) -> str:
+    """Drop credentials from a user-supplied URL before it reaches a log or a response.
+
+    Provider base URLs are typed by the user and routinely carry secrets, either as
+    userinfo (`https://user:token@host/v1`) or as a query token
+    (`https://host/v1?api-key=...`). Keep the scheme, host, port and path, which is
+    what makes a discovery failure diagnosable, and drop the rest.
+    """
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+        # A base URL with no authority is malformed for our purposes, and `.port` only
+        # validates on access, so an unparsable port raises here rather than at parse
+        # time. Either way the input is unsafe to echo back, so give up on it entirely.
+        if not parsed.netloc:
+            return "<unparsable url>"
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+    except ValueError:
+        return "<unparsable url>"
+    if parsed.username or parsed.password:
+        netloc = f"***@{netloc}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+
+
+def _scrub_url_secrets(text: str, url: str | None) -> str:
+    """Remove every secret-bearing fragment of *url* from provider-produced text.
+
+    A client echoes back the URL it was handed, whole or in part, so replacing only
+    the exact string it was given is not enough to keep userinfo and query tokens out
+    of a message built from an exception.
+    """
+    if not text or not url:
+        return text
+    text = text.replace(url, _redact_url(url))
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return text
+    fragments = [parsed.password, parsed.username, parsed.query, parsed.fragment]
+    for fragment in sorted((f for f in fragments if f), key=len, reverse=True):
+        text = text.replace(fragment, "***")
+    return text
 
 
 def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
@@ -670,6 +718,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
         factory_llms = factory_info[0]["llm"]
         if not factory_llms:
             model_base_url = base_url or factory_info[0].get("url", "")
+            discovery_error = ""
             try:
                 if provider_name in ModelMeta:
                     remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
@@ -682,10 +731,19 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                             for m in remote_models
                             for mt in m.get("model_types", [])
                         ]
-            except Exception:
-                pass
+            except Exception as e:
+                # Discovery reaches a user-supplied base URL, so it fails for mundane reasons:
+                # the host is unreachable from inside the container, TLS is wrong, the port is
+                # closed. Reporting only "no models found" sends people hunting for a bad key.
+                safe_url = _redact_url(model_base_url)
+                reason = _scrub_url_secrets(str(e), model_base_url)
+                # logging.exception would write the raw `e` and its traceback, and clients
+                # echo the URL they were handed, so the credentials would land in the log
+                # even though the caller-visible message is clean. Log the scrubbed reason.
+                logging.error("Model discovery failed for provider %s at %s: %s: %s", provider_name, safe_url, type(e).__name__, reason)
+                discovery_error = f" Discovery against {safe_url} failed: {reason}"
             if not factory_llms:
-                return False, f"No models found for provider '{provider_id_or_name}'", {}
+                return False, f"No models found for provider '{provider_id_or_name}'.{discovery_error}", {}
 
     model_verify_result = {}
     # test if api key works
@@ -865,6 +923,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
         if any_passed:
             msg = ""
+            break
         else:
             msg = msg or "No model passed verification"
 

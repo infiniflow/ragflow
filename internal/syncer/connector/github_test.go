@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,6 +135,123 @@ func TestGitHubConnectorOpenPrune(t *testing.T) {
 	}
 }
 
+// TestGitHubConnectorOpenSyncResumesAfterCheckpoint verifies retry skips committed GitHub documents.
+func TestGitHubConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner":      "openai",
+		"repository_name":       "ragflow",
+		"include_pull_requests": true,
+		"include_issues":        true,
+		"batch_size":            1,
+		"credentials":           map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubFixtureDoJSON(t)
+
+	end := mustTime(t, "2026-01-04T00:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch first failed: %v", err)
+	}
+	if len(first.Documents) != 1 || first.Documents[0].SourceID != "https://github.com/openai/ragflow/pull/7" {
+		t.Fatalf("first documents = %+v, want PR 7", first.Documents)
+	}
+	if first.Checkpoint == nil || first.Checkpoint.SourceID != "https://github.com/openai/ragflow/pull/7" {
+		t.Fatalf("first checkpoint = %+v, want PR 7", first.Checkpoint)
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://github.com/openai/ragflow/issues/3" {
+		t.Fatalf("resume documents = %+v, want issue 3", second.Documents)
+	}
+	if second.Checkpoint == nil || second.Checkpoint.SourceID != "https://github.com/openai/ragflow/issues/3" {
+		t.Fatalf("resume checkpoint = %+v, want issue 3", second.Checkpoint)
+	}
+	if _, err = resumed.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("resume EOF = %v", err)
+	}
+}
+
+// TestGitHubConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument verifies offset fallback excludes the committed offset.
+func TestGitHubConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner":      "openai",
+		"repository_name":       "ragflow",
+		"include_pull_requests": true,
+		"include_issues":        true,
+		"batch_size":            1,
+		"credentials":           map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubFixtureDoJSON(t)
+
+	end := mustTime(t, "2026-01-04T00:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch first failed: %v", err)
+	}
+	if len(first.Documents) != 1 || first.Documents[0].SourceID != "https://github.com/openai/ragflow/pull/7" {
+		t.Fatalf("first documents = %+v, want PR 7", first.Documents)
+	}
+	if first.Checkpoint == nil {
+		t.Fatalf("first checkpoint is nil")
+	}
+
+	resumeCheckpoint := cloneGitHubCheckpointWithMissingSourceID(t, first.Checkpoint)
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: resumeCheckpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	second, err := resumed.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resume NextBatch failed: %v", err)
+	}
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://github.com/openai/ragflow/issues/3" {
+		t.Fatalf("resume documents = %+v, want issue 3", second.Documents)
+	}
+	if second.Documents[0].SourceID == first.Documents[0].SourceID {
+		t.Fatalf("committed document was redelivered: %s", second.Documents[0].SourceID)
+	}
+}
+
+func cloneGitHubCheckpointWithMissingSourceID(t *testing.T, checkpoint *SyncCheckpoint) *SyncCheckpoint {
+	t.Helper()
+	var cursor githubSyncCursor
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		t.Fatalf("decode checkpoint cursor: %v", err)
+	}
+	cursor.SourceID = ""
+	data, err := json.Marshal(cursor)
+	if err != nil {
+		t.Fatalf("encode checkpoint cursor: %v", err)
+	}
+	clone := *checkpoint
+	clone.Cursor = string(data)
+	clone.SourceID = ""
+	return &clone
+}
+
 // githubFixtureDoJSON returns a fixture GitHub JSON transport.
 func githubFixtureDoJSON(t *testing.T) func(ctx context.Context, apiURL string, out any) (http.Header, error) {
 	t.Helper()
@@ -182,4 +300,233 @@ func githubFixtureDoJSON(t *testing.T) func(ctx context.Context, apiURL string, 
 		}
 		return http.Header{}, nil
 	}
+}
+
+// githubValidationDoJSON returns a GitHub fixture transport for connection testing.
+func githubValidationDoJSON(t *testing.T, ok map[string]string, fail map[string]*githubAPIError) func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+	t.Helper()
+	return func(ctx context.Context, apiURL string, out any) (http.Header, error) {
+		parsed, err := url.Parse(apiURL)
+		if err != nil {
+			t.Fatalf("parse api url: %v", err)
+		}
+		if strings.HasPrefix(parsed.Path, "/repos/") || strings.Contains(parsed.Path, "/contents") {
+			t.Fatalf("ValidateConnectorSetting should not call repository or contents endpoint: %s", parsed.Path)
+		}
+		if apiErr, exists := fail[parsed.Path]; exists {
+			return nil, apiErr
+		}
+		body, exists := ok[parsed.Path]
+		if !exists {
+			t.Fatalf("unexpected api path %s", parsed.Path)
+		}
+		if err = json.Unmarshal([]byte(body), out); err != nil {
+			t.Fatalf("decode fixture: %v", err)
+		}
+		return http.Header{}, nil
+	}
+}
+
+// TestGitHubValidateConnectorSettingSingleRepoSkipsRepoAccess verifies test
+// connection does not probe repository or contents endpoints.
+func TestGitHubValidateConnectorSettingSingleRepoSkipsRepoAccess(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "openai",
+		"repository_name":  "ragflow",
+		"credentials":      map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		map[string]string{
+			"/orgs/openai":       `{"login":"openai"}`,
+			"/orgs/openai/repos": `[{"full_name":"openai/ragflow"}]`,
+		},
+		nil,
+	)
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+}
+
+// TestGitHubValidateConnectorSettingMultipleReposSkipsRepoAccess verifies comma-separated repository names
+// do not trigger repository-level access probes during test connection.
+func TestGitHubValidateConnectorSettingMultipleReposSkipsRepoAccess(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "openai",
+		"repository_name":  "missing, ragflow",
+		"credentials":      map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		map[string]string{
+			"/orgs/openai":       `{"login":"openai"}`,
+			"/orgs/openai/repos": `[{"full_name":"openai/ragflow"}]`,
+		},
+		nil,
+	)
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+}
+
+// TestGitHubValidateConnectorSettingUnauthorized verifies an invalid token is detected.
+func TestGitHubValidateConnectorSettingUnauthorized(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "openai",
+		"repository_name":  "ragflow",
+		"credentials":      map[string]any{"github_access_token": "bad-token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		nil,
+		map[string]*githubAPIError{
+			"/orgs/openai": {Status: http.StatusUnauthorized, Message: `{"message":"Bad credentials"}`},
+		},
+	)
+	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	var credErr *ConnectorMissingCredentialError
+	if !errors.As(err, &credErr) {
+		t.Fatalf("err = %v, want ConnectorMissingCredentialError", err)
+	}
+}
+
+// TestGitHubValidateConnectorSettingOwnerOrg verifies an owner with repositories passes.
+func TestGitHubValidateConnectorSettingOwnerOrg(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "openai",
+		"credentials":      map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		map[string]string{
+			"/orgs/openai":       `{"login":"openai"}`,
+			"/orgs/openai/repos": `[{"full_name":"openai/ragflow"}]`,
+		},
+		nil,
+	)
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+}
+
+// TestGitHubValidateConnectorSettingOwnerUserFallback verifies a user owner falls back from org lookup.
+func TestGitHubValidateConnectorSettingOwnerUserFallback(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "openai",
+		"credentials":      map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		map[string]string{
+			"/users/openai":       `{"login":"openai"}`,
+			"/users/openai/repos": `[{"full_name":"openai/ragflow"}]`,
+		},
+		map[string]*githubAPIError{
+			"/orgs/openai": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
+		},
+	)
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+}
+
+// TestGitHubValidateConnectorSettingOwnerNotFound verifies an unknown owner fails.
+func TestGitHubValidateConnectorSettingOwnerNotFound(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "ghost",
+		"credentials":      map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		nil,
+		map[string]*githubAPIError{
+			"/orgs/ghost":  {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
+			"/users/ghost": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
+		},
+	)
+	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	var valErr *ConnectorValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("err = %v, want ConnectorValidationError", err)
+	}
+	if got, want := valErr.Message, "GitHub user or organization not found: ghost"; got != want {
+		t.Fatalf("message = %q, want %q", got, want)
+	}
+}
+
+// TestGitHubValidateConnectorSettingMissingSSO verifies the SSO guide error is reported.
+func TestGitHubValidateConnectorSettingMissingSSO(t *testing.T) {
+	connector, err := NewGitHubConnector(map[string]any{
+		"repository_owner": "ssoorg",
+		"credentials":      map[string]any{"github_access_token": "token"},
+	})
+	if err != nil {
+		t.Fatalf("NewGitHubConnector failed: %v", err)
+	}
+	connector.baseURL = "https://api.github.test"
+	connector.doJSON = githubValidationDoJSON(t,
+		nil,
+		map[string]*githubAPIError{
+			"/orgs/ssoorg": {Status: http.StatusForbidden, Message: `{"message":"Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."}`},
+		},
+	)
+	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	var valErr *ConnectorValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("err = %v, want ConnectorValidationError", err)
+	}
+	if !strings.Contains(valErr.Message, "missing authorization") {
+		t.Fatalf("message = %q, want SSO authorization hint", valErr.Message)
+	}
+}
+
+// TestGitHubValidateConnectorSettingMissingInputs verifies missing config errors.
+func TestGitHubValidateConnectorSettingMissingInputs(t *testing.T) {
+	t.Run("missing token", func(t *testing.T) {
+		connector, err := NewGitHubConnector(map[string]any{
+			"repository_owner": "openai",
+			"repository_name":  "ragflow",
+			"credentials":      map[string]any{},
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubConnector failed: %v", err)
+		}
+		err = connector.ValidateConnectorSetting(context.Background(), nil)
+		var credErr *ConnectorMissingCredentialError
+		if !errors.As(err, &credErr) {
+			t.Fatalf("err = %v, want ConnectorMissingCredentialError", err)
+		}
+	})
+	t.Run("missing owner", func(t *testing.T) {
+		connector, err := NewGitHubConnector(map[string]any{
+			"repository_name": "ragflow",
+			"credentials":     map[string]any{"github_access_token": "token"},
+		})
+		if err != nil {
+			t.Fatalf("NewGitHubConnector failed: %v", err)
+		}
+		err = connector.ValidateConnectorSetting(context.Background(), nil)
+		var valErr *ConnectorValidationError
+		if !errors.As(err, &valErr) {
+			t.Fatalf("err = %v, want ConnectorValidationError", err)
+		}
+	})
 }

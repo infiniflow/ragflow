@@ -52,7 +52,7 @@ export const isConfigMetaKey = (key: string) =>
     'instruction',
     'synthesis',
     'use_blueprint',
-    'plan',
+    'mode',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -80,7 +80,6 @@ export const normalizeSection = (
 export const buildConfigFromBuiltin = (
   builtinTemplate: ICompilationTemplateBuiltin,
   kind: string,
-  llmId: string,
 ): TemplateSchemaType['config'] => {
   const instruction =
     typeof builtinTemplate.config?.instruction === 'string'
@@ -92,7 +91,6 @@ export const buildConfigFromBuiltin = (
       : '';
   const sections: TemplateSchemaType['config'] = {
     kind,
-    llm_id: llmId,
     global_rules:
       typeof builtinTemplate.config?.global_rules === 'string'
         ? builtinTemplate.config.global_rules
@@ -111,10 +109,10 @@ export const buildConfigFromBuiltin = (
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts &&
       (instruction.length > 0 || example.length > 0),
-    plan:
-      typeof builtinTemplate.config?.plan === 'boolean'
-        ? builtinTemplate.config.plan
-        : true,
+    mode:
+      typeof builtinTemplate.config?.mode === 'string'
+        ? builtinTemplate.config.mode
+        : '',
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -172,7 +170,6 @@ export const transformDetailToForm = (
   );
   const base: TemplateSchemaType['config'] = {
     kind: config.kind ?? '',
-    llm_id: config.llm_id ?? '',
     global_rules: config.global_rules ?? '',
     example: storedExample,
     ...(typeof config.synthesis === 'object' && config.synthesis !== null
@@ -183,7 +180,7 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && hasBlueprintContent,
-    plan: typeof config.plan === 'boolean' ? config.plan : true,
+    mode: typeof config.mode === 'string' ? config.mode : '',
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
@@ -209,7 +206,6 @@ export const transformDetailToForm = (
       id: detail.id,
       name: detail.name ?? '',
       description: detail.description ?? '',
-      llm_id: config.llm_id ?? '',
       kind: detail.kind ?? '',
       config: {
         ...base,
@@ -235,7 +231,6 @@ export const transformDetailToForm = (
     id: detail.id,
     name: detail.name ?? '',
     description: detail.description ?? '',
-    llm_id: config.llm_id ?? '',
     kind: detail.kind ?? '',
     config: base,
   };
@@ -259,17 +254,16 @@ export const transformGroupDetailToForm = (
 export const transformTemplateToPayload = (template: TemplateSchemaType) => {
   const config: ICompilationTemplateConfigRequest = {
     kind: template.kind,
-    llm_id: template.llm_id,
   };
 
   Object.entries(template.config).forEach(([key, value]) => {
-    if (key === 'kind' || key === 'llm_id') return;
+    if (key === 'kind') return;
     if (key === 'example' || key === 'instruction') return;
     if (key === 'synthesis') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }
-    if (key === 'plan') {
+    if (key === 'mode') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }

@@ -258,7 +258,7 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 }
 
 // Embed embeds a list of texts into embeddings
-func (m *MinimaxModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *MinimaxModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -325,7 +325,7 @@ func (m *MinimaxModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 }
 
 // Rerank calculates similarity scores between query and documents
-func (m *MinimaxModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *MinimaxModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", m.Name())
 }
 

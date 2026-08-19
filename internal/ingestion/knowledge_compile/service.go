@@ -123,6 +123,7 @@ func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	if db == nil {
 		return nil
 	}
+	kcDB = db
 	s := newScheduler(db, mq, generateHolder(), 2*time.Minute)
 	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
 	// startup indefinitely. The caller's ctx is also honoured (cancelled on

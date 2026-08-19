@@ -396,6 +396,7 @@ def by_mistral_ocr(
                     parse_method=parse_method,
                     from_page=from_page,
                     to_page=to_page,
+                    lang=lang,
                     **kwargs,
                 )
                 return sections, tables, pdf_parser
@@ -893,7 +894,7 @@ class Markdown(MarkdownParser):
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
-        if binary:
+        if binary is not None:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
@@ -1067,6 +1068,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
+        if name == "mineru":
+            kwargs["parse_method"] = "naive"
 
         sections, tables, pdf_parser = parser(
             filename=filename,

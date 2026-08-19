@@ -253,6 +253,19 @@ func splitInlineThink(answer, thinking string) (string, string) {
 	return answer, thinking
 }
 
+// agentSessionMessageContent mirrors how Python's canvas_service.completion
+// accumulates the persisted assistant message: reasoning streams first,
+// bracketed by start_to_think/end_to_think markers, so the stored content
+// keeps the thinking segment wrapped in <think> tags. The chat UI refetches
+// the session message list after streaming and needs those tags for
+// MarkdownContent to render the "thought" section (chat.thought).
+func agentSessionMessageContent(answer, thinking string) string {
+	if thinking == "" {
+		return answer
+	}
+	return "<think>" + thinking + "</think>" + answer
+}
+
 func splitMessageContent(content string) []string {
 	if content == "" {
 		return nil
@@ -303,12 +316,14 @@ var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
 type AgentService struct {
-	canvasDAO           *dao.UserCanvasDAO
-	canvasTemplateDAO   *dao.CanvasTemplateDAO
-	userDAO             *dao.UserDAO
-	userTenantDAO       *dao.UserTenantDAO
-	versionDAO          *dao.UserCanvasVersionDAO
-	api4ConversationDAO *dao.API4ConversationDAO
+	canvasDAO                   *dao.UserCanvasDAO
+	canvasTemplateDAO           *dao.CanvasTemplateDAO
+	userDAO                     *dao.UserDAO
+	userTenantDAO               *dao.UserTenantDAO
+	versionDAO                  *dao.UserCanvasVersionDAO
+	api4ConversationDAO         *dao.API4ConversationDAO
+	compilationTemplateGroupDAO *dao.CompilationTemplateGroupDAO
+	compilationTemplateDAO      *dao.CompilationTemplateDAO
 
 	// driver is the per-process runner that drives canvas
 	// invocations and produces SSE events. V1 persistence is
@@ -375,17 +390,19 @@ func NewAgentServiceWithOptions(
 		agenttool.SetSandboxClient(agentsandbox.NewManagerClient())
 	}
 	return &AgentService{
-		canvasDAO:           dao.NewUserCanvasDAO(),
-		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
-		userDAO:             dao.NewUserDAO(),
-		userTenantDAO:       dao.NewUserTenantDAO(),
-		versionDAO:          dao.NewUserCanvasVersionDAO(),
-		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
-		runner:              canvas.NewRunner(),
-		activeSessions:      make(map[string]*activeAgentRun),
-		checkpointStore:     cp,
-		stateSerializer:     ser,
-		runTracker:          rt,
+		canvasDAO:                   dao.NewUserCanvasDAO(),
+		canvasTemplateDAO:           dao.NewCanvasTemplateDAO(),
+		userDAO:                     dao.NewUserDAO(),
+		userTenantDAO:               dao.NewUserTenantDAO(),
+		versionDAO:                  dao.NewUserCanvasVersionDAO(),
+		api4ConversationDAO:         dao.NewAPI4ConversationDAO(),
+		compilationTemplateGroupDAO: dao.NewCompilationTemplateGroupDAO(),
+		compilationTemplateDAO:      dao.NewCompilationTemplateDAO(),
+		runner:                      canvas.NewRunner(),
+		activeSessions:              make(map[string]*activeAgentRun),
+		checkpointStore:             cp,
+		stateSerializer:             ser,
+		runTracker:                  rt,
 	}
 }
 
@@ -413,12 +430,134 @@ type AgentItem struct {
 	CreateTime     *int64  `json:"create_time,omitempty"`
 	UpdateTime     *int64  `json:"update_time,omitempty"`
 	ReleaseTime    *int64  `json:"release_time,omitempty"`
+	// Type discriminates agent vs compilation-template-group items in the merged
+	// /agents response. It is set only for merged items (agent => "agent").
+	Type string `json:"type,omitempty"`
 }
 
-// ListAgentsResponse is the response body for GET /api/v1/agents.
+// ListAgentsResponse is the response body for GET /api/v1/agents. Canvas holds
+// pre-marshalled JSON items because a canvas entry is either an agent (AgentItem
+// shape) or a compilation template group (group shape with a "type" of
+// "compilation_template_group"); a single typed slice cannot express both.
 type ListAgentsResponse struct {
-	Canvas []*AgentItem `json:"canvas"`
-	Total  int64        `json:"total"`
+	Canvas []json.RawMessage `json:"canvas"`
+	Total  int64             `json:"total"`
+}
+
+// AgentItemType discriminates the two kinds of canvas items in the merged
+// /agents response, mirroring Python _COMPILATION_TEMPLATE_GROUP_CATEGORY and
+// the frontend AgentListItem union.
+const (
+	AgentItemTypeAgent = "agent"
+	AgentItemTypeGroup = CompilationTemplateGroupCategory // "compilation_template_group"
+)
+
+// CompilationTemplateGroupCategory is the synthetic canvas_category the
+// frontend uses to filter compilation template groups through the merged
+// /agents endpoint. Mirrors Python _COMPILATION_TEMPLATE_GROUP_CATEGORY.
+const CompilationTemplateGroupCategory = "compilation_template_group"
+
+// AgentOwnerFilter is one owner option in the agents filter response.
+type AgentOwnerFilter struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+// AgentCategoryFilter is one canvas_category option in the agents filter
+// response.
+type AgentCategoryFilter struct {
+	ID    string `json:"id"`
+	Count int64  `json:"count"`
+}
+
+// AgentFiltersResponse is the response body for
+// GET /api/v1/agents?type=filter.
+type AgentFiltersResponse struct {
+	Filter struct {
+		Owner          []AgentOwnerFilter    `json:"owner"`
+		CanvasCategory []AgentCategoryFilter `json:"canvas_category"`
+	} `json:"filter"`
+	Total int64 `json:"total"`
+}
+
+// ListAgentFilters returns the owner/category aggregations backing the
+// agents page filter bar. Mirrors the ?type=filter branch of Python
+// agent_api.list_agents.
+func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*AgentFiltersResponse, common.ErrorCode, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to get tenant IDs: %w", err)
+	}
+	ownerIDs := make([]string, 0, len(tenantIDs)+1)
+	seen := make(map[string]struct{}, len(tenantIDs)+1)
+	seen[userID] = struct{}{}
+	ownerIDs = append(ownerIDs, userID)
+	for _, id := range tenantIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ownerIDs = append(ownerIDs, id)
+	}
+
+	owners, err := s.canvasDAO.GetOwnerFilter(ctx, dao.DB, ownerIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent owners: %w", err)
+	}
+	categories, err := s.canvasDAO.GetCategoryFilter(ctx, dao.DB, ownerIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent categories: %w", err)
+	}
+	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
+	}
+
+	ownerFilters := make([]AgentOwnerFilter, 0, len(owners)+1)
+	for _, o := range owners {
+		label := o.ID
+		if o.Label != nil && *o.Label != "" {
+			label = *o.Label
+		}
+		ownerFilters = append(ownerFilters, AgentOwnerFilter{ID: o.ID, Label: label, Count: o.Count})
+	}
+	if groupCount > 0 {
+		idx := -1
+		for i := range ownerFilters {
+			if ownerFilters[i].ID == userID {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			ownerFilters[idx].Count += groupCount
+		} else {
+			nickname, nerr := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
+			if nerr != nil {
+				nickname = ""
+			}
+			ownerFilters = append(ownerFilters, AgentOwnerFilter{ID: userID, Label: nickname, Count: groupCount})
+		}
+	}
+
+	categoryFilters := make([]AgentCategoryFilter, 0, len(categories)+1)
+	for _, c := range categories {
+		categoryFilters = append(categoryFilters, AgentCategoryFilter{ID: c.ID, Count: c.Count})
+	}
+	if groupCount > 0 {
+		categoryFilters = append(categoryFilters, AgentCategoryFilter{ID: CompilationTemplateGroupCategory, Count: groupCount})
+	}
+
+	var total int64
+	for _, o := range ownerFilters {
+		total += o.Count
+	}
+
+	resp := &AgentFiltersResponse{Total: total}
+	resp.Filter.Owner = ownerFilters
+	resp.Filter.CanvasCategory = categoryFilters
+	return resp, common.CodeSuccess, nil
 }
 
 type AgentTagCount struct {
@@ -482,17 +621,46 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 		}
 	}
 
+	// A canvas entry is either an agent (user_canvas) or a compilation template
+	// group. Python splits canvas_category on commas and, when the tenant is the
+	// sole effective owner, merges the caller's template groups into the list.
+	categories := splitCategoryList(canvasCategory)
+	wantsGroups := sliceContains(categories, CompilationTemplateGroupCategory)
+	agentCategories := filterCategory(categories, CompilationTemplateGroupCategory)
+	// Merge mode mirrors Python: no category, no canvas_type, no tags -> the
+	// caller's template groups are interleaved with agents by update_time.
+	mergeMode := len(categories) == 0 && canvasType == "" && len(tags) == 0
+
+	// Groups-only mode: canvas_category is exactly ["compilation_template_group"].
+	// Template groups are always the caller's own, so they are only visible when
+	// the caller is an effective owner; otherwise (e.g. owner_ids names another
+	// user) return an empty list (review Major).
+	if len(categories) == 1 && wantsGroups {
+		if !sliceContains(effectiveOwnerIDs, userID) {
+			return &ListAgentsResponse{Canvas: []json.RawMessage{}, Total: 0}, common.CodeSuccess, nil
+		}
+		return s.listAgentsGroupsOnly(ctx, userID, keywords, orderBy, desc, page, pageSize)
+	}
+
+	// Fetch agents. In merge/mixed modes we disable SQL pagination (page=0) and
+	// paginate in Go after interleaving with groups, matching Python.
+	listPage, listSize := page, pageSize
+	agentCategoryFilter := canvasCategory
+	if mergeMode || (wantsGroups && len(agentCategories) > 0) {
+		listPage, listSize = 0, 0
+		agentCategoryFilter = strings.Join(agentCategories, ",")
+	}
 	canvases, total, err := s.canvasDAO.ListByTenantIDs(
 		ctx,
 		dao.DB,
 		effectiveOwnerIDs,
 		userID,
-		page,
-		pageSize,
+		listPage,
+		listSize,
 		orderBy,
 		desc,
 		keywords,
-		canvasCategory,
+		agentCategoryFilter,
 		canvasType,
 		tags,
 	)
@@ -500,31 +668,252 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 		return nil, common.CodeServerError, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	items := make([]*AgentItem, len(canvases))
+	agentItems := make([]*AgentItem, len(canvases))
 	for i, c := range canvases {
-		items[i] = toAgentItem(c)
+		agentItems[i] = toAgentItem(c)
+	}
+	s.attachReleaseTimes(ctx, agentItems)
+
+	// Groups are owner-only (no team sharing) and scoped to the caller, so they
+	// are merged only when the caller's own tenant is an effective owner
+	// (Python include_template_groups).
+	includeGroups := sliceContains(effectiveOwnerIDs, userID)
+	if includeGroups && (mergeMode || wantsGroups) {
+		return s.mergeAgentsAndGroups(ctx, userID, agentItems, keywords, orderBy, desc, page, pageSize)
 	}
 
-	// Attach the latest release time per canvas so agent cards can render
-	// the "published at" line (Python UserCanvasService.get_list parity).
-	if len(items) > 0 {
-		canvasIDs := make([]string, 0, len(items))
-		for _, item := range items {
-			canvasIDs = append(canvasIDs, item.ID)
-		}
-		var releaseTimes map[string]int64
-		releaseTimes, err = s.versionDAO.GetLatestReleaseTimes(ctx, dao.DB, canvasIDs)
+	raw := make([]json.RawMessage, len(agentItems))
+	for i, item := range agentItems {
+		item.Type = AgentItemTypeAgent
+		raw[i] = marshalAgentItem(item)
+	}
+	return &ListAgentsResponse{Canvas: raw, Total: total}, common.CodeSuccess, nil
+}
+
+// listAgentsGroupsOnly returns only the caller's compilation template groups
+// (Python canvas_category == ["compilation_template_group"] branch).
+func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keywords, orderBy string, desc bool, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", orderBy, desc)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
+	}
+	total := int64(len(groups))
+	groups = slicePage(groups, page, pageSize)
+	raw := make([]json.RawMessage, 0, len(groups))
+	for _, g := range groups {
+		item, err := s.marshalMergeGroupItem(ctx, userID, g)
 		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to get release times: %w", err)
+			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
 		}
-		for _, item := range items {
-			if t, ok := releaseTimes[item.ID]; ok {
-				item.ReleaseTime = &t
-			}
+		raw = append(raw, item)
+	}
+	return &ListAgentsResponse{Canvas: raw, Total: total}, common.CodeSuccess, nil
+}
+
+// mergeAgentsAndGroups combines agents and the caller's compilation template
+// groups into a single list ordered by (canvas_category, name) ascending, then
+// pages in Go. desc is accepted for API signature parity but the ordering is
+// intentionally category/name based, not chronological.
+func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords, orderBy string, desc bool, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", orderBy, desc)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
+	}
+	merged := make([]mergeCanvasItem, 0, len(agentItems)+len(groups))
+	for _, item := range agentItems {
+		item.Type = AgentItemTypeAgent
+		merged = append(merged, mergeCanvasItem{
+			item:     item,
+			category: item.CanvasCategory,
+			name:     derefString(item.Title),
+		})
+	}
+	for _, g := range groups {
+		raw, err := s.marshalMergeGroupItem(ctx, userID, g)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
+		}
+		merged = append(merged, mergeCanvasItem{
+			raw:      raw,
+			category: CompilationTemplateGroupCategory,
+			name:     g.Name,
+		})
+	}
+	// Order the merged list by (category, name) ascending (A-Z): agents and
+	// compilation template groups are grouped by flow category, then sorted by
+	// display name within each category. The category sort key uses the raw
+	// canvas_category string so the natural order is agent_canvas <
+	// compilation_template_group < dataflow_canvas.
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].category != merged[j].category {
+			return merged[i].category < merged[j].category
+		}
+		return strings.ToLower(merged[i].name) < strings.ToLower(merged[j].name)
+	})
+	total := int64(len(merged))
+	merged = slicePage(merged, page, pageSize)
+	raw := make([]json.RawMessage, 0, len(merged))
+	for _, m := range merged {
+		if m.raw != nil {
+			raw = append(raw, m.raw)
+		} else if m.item != nil {
+			raw = append(raw, marshalAgentItem(m.item))
 		}
 	}
+	return &ListAgentsResponse{Canvas: raw, Total: total}, common.CodeSuccess, nil
+}
 
-	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
+// marshalMergeGroupItem renders a compilation template group as a merged /agents
+// canvas item: the group shape (ICompilationTemplateGroup) plus the "type" and
+// "title" discriminators the frontend union expects (Python _group_to_dict).
+func (s *AgentService) marshalMergeGroupItem(ctx context.Context, userID string, g *entity.CompilationTemplateGroup) (json.RawMessage, error) {
+	children, err := s.compilationTemplateDAO.ListByGroup(ctx, dao.DB, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	templates := make([]json.RawMessage, 0, len(children))
+	for _, c := range children {
+		templates = append(templates, marshalGroupTemplate(c))
+	}
+	item := map[string]interface{}{
+		"id":          g.ID,
+		"name":        g.Name,
+		"title":       g.Name,
+		"description": derefString(g.Description),
+		"scope":       g.Scope,
+		"create_time": intValuePtr(g.CreateTime),
+		"update_time": intValuePtr(g.UpdateTime),
+		"templates":   templates,
+		"type":        AgentItemTypeGroup,
+	}
+	b, err := json.Marshal(item)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// mergeCanvasItem is a decoded entry in the merged /agents list: exactly one of
+// item (an agent) or raw (a marshalled group) is set. category is the flow
+// classification (canvas_category, or "compilation_template_group" for groups)
+// and name is the display title; the merged list is ordered by (category, name).
+type mergeCanvasItem struct {
+	item     *AgentItem
+	raw      json.RawMessage
+	category string
+	name     string
+}
+
+// attachReleaseTimes populates ReleaseTime for each agent item from the latest
+// published version (Python UserCanvasService.get_list parity).
+func (s *AgentService) attachReleaseTimes(ctx context.Context, items []*AgentItem) {
+	if len(items) == 0 {
+		return
+	}
+	canvasIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		canvasIDs = append(canvasIDs, item.ID)
+	}
+	releaseTimes, err := s.versionDAO.GetLatestReleaseTimes(ctx, dao.DB, canvasIDs)
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		if t, ok := releaseTimes[item.ID]; ok {
+			item.ReleaseTime = &t
+		}
+	}
+}
+
+// marshalAgentItem renders an agent item to its JSON representation.
+func marshalAgentItem(item *AgentItem) json.RawMessage {
+	b, err := json.Marshal(item)
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return b
+}
+
+// marshalGroupTemplate renders a compilation template child to the read-side
+// shape the frontend group card expects (mirrors Python _to_saved_dict).
+func marshalGroupTemplate(c *entity.CompilationTemplate) json.RawMessage {
+	item := map[string]interface{}{
+		"id":          c.ID,
+		"name":        c.Name,
+		"description": derefString(c.Description),
+		"kind":        c.Kind,
+		"config":      c.Config,
+		"create_time": intValuePtr(c.CreateTime),
+		"update_time": intValuePtr(c.UpdateTime),
+	}
+	b, err := json.Marshal(item)
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return b
+}
+
+// splitCategoryList splits a comma-separated canvas_category query into the
+// non-empty categories, mirroring Python
+// request.args.get("canvas_category", "").strip().split(",").
+func splitCategoryList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// filterCategory returns the categories in src that are not equal to drop.
+func filterCategory(src []string, drop string) []string {
+	var out []string
+	for _, c := range src {
+		if c != drop {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// sliceContains reports whether v is present in s.
+func sliceContains[T comparable](s []T, v T) bool {
+	for _, e := range s {
+		if e == v {
+			return true
+		}
+	}
+	return false
+}
+
+// slicePage returns a shallow copy of s bounded to the requested page window.
+// A page <= 0 or pageSize <= 0 returns s unchanged (caller did not ask to page).
+// The page bound is checked arithmetically before computing the offset so an
+// unbounded positive page/page_size can never overflow to a negative start and
+// panic (review Critical).
+func slicePage[T any](s []T, page, pageSize int) []T {
+	if page <= 0 || pageSize <= 0 || len(s) == 0 {
+		return s
+	}
+	// page-1 must be <= (len(s)-1)/pageSize, i.e. start must be < len(s).
+	if page-1 > (len(s)-1)/pageSize {
+		return nil
+	}
+	start := (page - 1) * pageSize
+	if pageSize >= len(s)-start {
+		return s[start:]
+	}
+	return s[start : start+pageSize]
+}
+
+// intValuePtr dereferences a *int64 to a plain int64 (0 when nil), used for the
+// group/template create_time & update_time epoch fields in merged items.
+func intValuePtr(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // CreateAgentRequest is the input shape for CreateAgent.
@@ -1734,7 +2123,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				if answer != "" {
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
 				}
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
 					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
 				if answer != "" && shouldEmitMessage {
@@ -1751,7 +2140,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, assistantOutput)
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 				}
@@ -1787,7 +2176,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		appendAssistantHistory(state, assistantOutput)
-		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
 		}
@@ -1915,6 +2304,7 @@ func (s *AgentService) persistAgentRunSession(
 	agentID, userID, sessionID, messageID string,
 	userInput any,
 	answer string,
+	thinking string,
 	reference map[string]interface{},
 	runDSL map[string]any,
 	state *canvas.CanvasState,
@@ -1937,7 +2327,7 @@ func (s *AgentService) persistAgentRunSession(
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
 	if appendAssistantMessage {
-		messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+		messages = append(messages, map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now})
 	}
 	if raw, err := json.Marshal(messages); err == nil {
 		session.Message = raw

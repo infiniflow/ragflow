@@ -9,33 +9,28 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import {
   AdvancedSettingsForm,
-  advancedSettingsFormSchema,
   defaultAdvancedSettingsForm,
 } from './advanced-settings-form';
-import { BasicInfo, basicInfoSchema, defaultBasicInfo } from './basic-form';
+import { BasicInfo, defaultBasicInfo } from './basic-form';
 import { useUpdateMemoryConfig } from './hook';
+import { MemoryModelForm, defaultMemoryModelForm } from './memory-model-form';
 import {
-  MemoryModelForm,
-  defaultMemoryModelForm,
-  memoryModelFormSchema,
-} from './memory-model-form';
+  useMemoryFormSchema,
+  useRevalidatePersistedModels,
+} from './memory-setting-hooks';
 import { MemorySettingProvider } from './memory-setting-context';
 
-// type MemoryMessageForm = z.infer<typeof MemoryMessageSchema>;
 export default function MemoryMessage() {
   const { t } = useTranslation();
-  const MemoryMessageSchema = z.object({
-    id: z.string(),
-    ...basicInfoSchema,
-    ...memoryModelFormSchema(t),
-    ...advancedSettingsFormSchema,
-  });
+  const { data } = useFetchMemoryBaseConfiguration();
+  const { formSchema, modelsFetched, modelsEditable } = useMemoryFormSchema(
+    data?.tenant_id,
+  );
   const form = useForm<IMemory>({
-    resolver: zodResolver(MemoryMessageSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       id: '',
       ...defaultBasicInfo,
@@ -43,7 +38,6 @@ export default function MemoryMessage() {
       ...defaultAdvancedSettingsForm,
     } as unknown as IMemory,
   });
-  const { data } = useFetchMemoryBaseConfiguration();
   const { onMemoryRenameOk, loading } = useUpdateMemoryConfig();
 
   useEffect(() => {
@@ -64,8 +58,16 @@ export default function MemoryMessage() {
       permissions: data?.permissions || 'me',
     });
   }, [data, form]);
+
+  useRevalidatePersistedModels({
+    control: form.control,
+    trigger: form.trigger,
+    clearErrors: form.clearErrors,
+    modelsFetched,
+    modelsEditable,
+  });
+
   const onSubmit = (data: IMemory) => {
-    console.log('data', data);
     onMemoryRenameOk(data);
   };
   return (
@@ -102,7 +104,6 @@ export default function MemoryMessage() {
                 <DynamicForm.SavingButton
                   submitLoading={loading}
                   submitFunc={(value) => {
-                    console.log('form-value', value);
                     onSubmit(value as IMemory);
                   }}
                 ></DynamicForm.SavingButton>

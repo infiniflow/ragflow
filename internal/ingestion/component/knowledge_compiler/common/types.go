@@ -49,6 +49,11 @@ type Param struct {
 	SimilarityThreshold   float64
 	MaxWorkers            int
 	EnableHistoricalDedup bool
+	// Plan selects the wiki compilation mode. nil means the DSL did not specify a
+	// mode, so template config may decide; the effective default is false (Mode A).
+	// true selects B-mode (LLM planning + reconcile), while false selects A-mode
+	// (one entity/concept = one deterministic flat page).
+	Plan *bool
 	// Extra carries arbitrary caller-provided overrides merged into the
 	// resolved template config.
 	Extra map[string]any
@@ -168,10 +173,21 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["enable_historical_dedup"].(bool); ok {
 		p.EnableHistoricalDedup = v
 	}
+	// Keep presence separate from the boolean value: nil means template config may
+	// supply the mode, while an explicit false still overrides template plan:true.
+	if v, ok := m["plan"].(bool); ok {
+		p.Plan = &v
+	}
 	if raw, ok := m["extra"].(map[string]any); ok {
 		p.Extra = raw
 	}
 	return p, nil
+}
+
+// PlanEnabled reports whether wiki B-mode is selected. An unset value defaults
+// to Mode A.
+func (p Param) PlanEnabled() bool {
+	return p.Plan != nil && *p.Plan
 }
 
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.

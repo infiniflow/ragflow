@@ -41,8 +41,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-
-import { useWarnEmptyModel } from './use-warn-empty-model';
+import { useFetchDefaultModelDictionary } from './use-llm-request';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -88,40 +87,30 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   return { data, loading };
 };
 
-// Stop using this interface to retrieve the default model; instead, directly call `useFetchDefaultModelDictionary`.
-export const useFetchTenantInfo = (
-  showEmptyModelWarn = false,
-): ResponseGetType<ITenantInfo> => {
+export const useFetchTenantData = (): ResponseGetType<ITenantInfo> => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: [UserSettingApiAction.TenantInfo, showEmptyModelWarn],
+    queryKey: [UserSettingApiAction.TenantInfo],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
       const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
-        // llm_id is chat_id
-        // asr_id is speech2txt
-        const { data } = res;
-        data.chat_id = data.llm_id;
-        data.speech2text_id = data.asr_id;
-
-        return data;
+        return res.data ?? {};
       }
 
       return res;
     },
   });
-
-  useWarnEmptyModel(showEmptyModelWarn, data?.embd_id, data?.llm_id, loading);
-
   return { data, loading };
 };
+
+export const useFetchTenantInfo = useFetchTenantData;
 
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
+  const { data: tenantInfo } = useFetchTenantInfo();
   const { t } = useTranslation();
 
   // Detect backend runtime language (Go vs Python) so we can choose
@@ -144,6 +133,7 @@ export const useSelectParserList = (): Array<{
     staleTime: Infinity,
     enabled: backendLang === 'go',
   });
+  useFetchDefaultModelDictionary(true);
 
   const defaultParsers = useMemo(
     () => [
@@ -194,7 +184,36 @@ export const useSelectParserList = (): Array<{
           const translated = t(key);
           return translated !== key ? translated : title;
         };
-        return pipelineList.map((item) => ({
+        // Order the Go pipeline catalog the same way as the Python
+        // backend's parser_ids (settings.PARSERS), so the chunk-method
+        // dropdown lists commonly used methods first. The Python "naive"
+        // slot corresponds to the Go "general" pipeline. Go-only pipelines
+        // (e.g. knowledge_compiler) keep their API order at the end.
+        const pythonParserOrder = [
+          'general', // "naive" in Python parser_ids
+          'qa',
+          'resume',
+          'manual',
+          'table',
+          'paper',
+          'book',
+          'laws',
+          'presentation',
+          'picture',
+          'one',
+          'audio',
+          'email',
+          'tag',
+        ];
+        const order = new Map(
+          pythonParserOrder.map((id, index) => [id, index]),
+        );
+        const sortedList = [...pipelineList].sort(
+          (a, b) =>
+            (order.get(a.id) ?? pythonParserOrder.length) -
+            (order.get(b.id) ?? pythonParserOrder.length),
+        );
+        return sortedList.map((item) => ({
           value: item.id,
           label: labelFromAPI(item.id, item.title),
         }));

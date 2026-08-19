@@ -393,9 +393,12 @@ func setupAgentRouter(svc agentServiceIface) *gin.Engine {
 
 func TestListAgents_Success(t *testing.T) {
 	title := "My Agent"
+	agentJSON, _ := json.Marshal(service.AgentItem{
+		ID: "canvas-1", Title: &title, Permission: "me", CanvasCategory: "agent_canvas",
+	})
 	svc := &fakeAgentService{
 		result: &service.ListAgentsResponse{
-			Canvas: []*service.AgentItem{{ID: "canvas-1", Title: &title, Permission: "me", CanvasCategory: "agent_canvas"}},
+			Canvas: []json.RawMessage{agentJSON},
 			Total:  1,
 		},
 		code: common.CodeSuccess,
@@ -863,6 +866,46 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 }
 
+// TestAgentChatCompletions_NonStreamingPreservesThinkMarkers covers the
+// non-streaming aggregation: start_to_think/end_to_think message events must
+// survive as <think> tags in the final content, mirroring Python
+// agent_api.py, so clients can render the "thought" section.
+func TestAgentChatCompletions_NonStreamingPreservesThinkMarkers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hello","stream":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"","start_to_think":true}`},
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"reasoning trace"}`},
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"","end_to_think":true}`},
+		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"final answer"}`},
+		{Type: "message_end", MessageID: "msg-1", SessionID: "sess-1", Data: `{}`},
+		{Type: "done", Data: ""},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	body := w.Body.String()
+	if !strings.Contains(body, `"code":0`) {
+		t.Fatalf("body should contain success code, got %q", body)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data, _ := response["data"].(map[string]any)
+	ansData, _ := data["data"].(map[string]any)
+	if got, _ := ansData["content"].(string); got != "<think>reasoning trace</think>final answer" {
+		t.Errorf("aggregated content = %q, want the think section preserved as %q", got, "<think>reasoning trace</think>final answer")
+	}
+}
+
 type emptySessionCaptureRunner struct {
 	sessionID string
 }
@@ -1241,12 +1284,11 @@ func (s *stubDocService) Accessible(_, _ string) bool {
 	return s.accessible
 }
 
-// TestAgentChatCompletions_FilesDeserialized verifies that when the
-// JSON request body contains the web-contract 2D `files` field
-// (`[[{...}]]`), the agentChatCompletionsRequest struct deserializes it
-// and the inner file list reaches RunAgent. Mirrors Python's
-// agent_api.py:1611 `queue_dataflow(..., files[0], 0)`, where the first
-// inner list is the set of files for the run.
+// TestAgentChatCompletions_FilesDeserialized verifies that the
+// dataflow-debug 2D `files` shape (`[[{...}]]`, web use-run-dataflow.ts)
+// still deserializes: the agentFiles unmarshaler normalizes it by taking
+// the first inner list, matching Python's `files[0]` access in the
+// dataflow debug branch (agent_api.py queue_dataflow call site).
 func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1282,6 +1324,51 @@ func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
 	mime, _ := capturedFiles[0]["mime_type"].(string)
 	if mime != "text/plain" {
 		t.Errorf("capturedFiles[0][\"mime_type\"] = %q, want %q", mime, "text/plain")
+	}
+}
+
+// TestAgentChatCompletions_Files1DDeserialized pins the agent chat wire
+// shape: the chat front-end posts `files` as a 1D list of file dicts
+// (`[{...}]`, use-send-agent-message.ts). The previous 2D-only struct
+// field rejected this with a 400 "cannot unmarshal object into Go struct
+// field ... of type []map[string]interface {}", so sending a message
+// with an uploaded image produced no agent response in the chat UI.
+func TestAgentChatCompletions_Files1DDeserialized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{
+		"agent_id": "a1",
+		"query": "hi",
+		"files": [
+			{"id": "file-1", "name": "photo.png", "mime_type": "image/png", "created_by": "u1"}
+		]
+	}`
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	var capturedFiles []map[string]interface{}
+	runner := &captureChatRunner{captured: &captured, capturedFiles: &capturedFiles}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code == float64(common.CodeArgumentError) {
+		t.Fatalf("1D files rejected: code=%v message=%v; want the request accepted", code, resp["message"])
+	}
+	if len(capturedFiles) != 1 {
+		t.Fatalf("capturedFiles length = %d, want 1", len(capturedFiles))
+	}
+	if id, _ := capturedFiles[0]["id"].(string); id != "file-1" {
+		t.Errorf("capturedFiles[0][\"id\"] = %q, want %q", id, "file-1")
+	}
+	if mime, _ := capturedFiles[0]["mime_type"].(string); mime != "image/png" {
+		t.Errorf("capturedFiles[0][\"mime_type\"] = %q, want %q", mime, "image/png")
 	}
 }
 

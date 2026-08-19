@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 )
 
 type stubExtractorTagChat struct {
@@ -44,7 +45,7 @@ func pushExtractorTagTargetResolverStub(t *testing.T) {
 
 func TestExtractorTags_NoTagFileID(t *testing.T) {
 	pushExtractorTagChatStub(t, nil)
-	comp, _ := NewExtractorComponent(map[string]any{"auto_tags": 3})
+	comp, _ := NewExtractorComponent(map[string]any{"tags": map[string]any{"top_n": 3}})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "test"},
@@ -64,7 +65,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 
 func TestExtractorTags_NoLLMID(t *testing.T) {
 	pushExtractorTagChatStub(t, nil)
-	comp, _ := NewExtractorComponent(map[string]any{"auto_tags": 3})
+	comp, _ := NewExtractorComponent(map[string]any{"tags": map[string]any{"top_n": 3}})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "some unrelated text"},
@@ -84,9 +85,13 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	pushExtractorTagTargetResolverStub(t)
 
 	comp, _ := NewExtractorComponent(map[string]any{
-		"llm_id":        "test@test",
-		"auto_tags":     3,
-		"auto_keywords": 3,
+		"llm_id": "test@test",
+		"tags": map[string]any{
+			"top_n": 3,
+		},
+		"keywords": map[string]any{
+			"top_n": 3,
+		},
 	})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -234,6 +239,86 @@ func stubXLSXBytes(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+// capturingExtractorTagChat records the request it was given so tests can
+// assert on the exact messages sent to the LLM.
+type capturingExtractorTagChat struct {
+	req extractorChatRequest
+}
+
+func (c *capturingExtractorTagChat) Chat(_ context.Context, req extractorChatRequest) (*extractorChatResponse, error) {
+	c.req = req
+	return &extractorChatResponse{Content: `{"RAG": 8, "vector database": 6}`}, nil
+}
+
+func pushCapturingTagChat(t *testing.T) *capturingExtractorTagChat {
+	t.Helper()
+	capt := &capturingExtractorTagChat{}
+	SetExtractorChatInvoker(capt)
+	t.Cleanup(func() { SetExtractorChatInvoker(nil) })
+	return capt
+}
+
+func longChunkText() string {
+	return strings.Repeat("RAGFlow is an open source retrieval augmented generation engine. ", 10)
+}
+
+// TestLlmtagChunk_MessageFit verifies that llmTagChunk trims the prompt to the
+// model's context window before sending, mirroring Python's message_fit_in in
+// content_tagging (generator.py:331). The tagger system prompt embeds the full
+// chunk text plus the whole tag set, so an oversized chunk must be trimmed
+// rather than rejected by the provider with "context length exceeded".
+func TestLlmtagChunk_MessageFit(t *testing.T) {
+	const budget = 20
+	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return budget })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+
+	capt := pushCapturingTagChat(t)
+
+	longText := longChunkText()
+	chunk := map[string]any{"content_with_weight": longText}
+	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
+	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
+
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3)
+
+	if len(capt.req.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
+	}
+	// The full chunk text must have been trimmed away from the system prompt.
+	if strings.Contains(capt.req.Messages[0].Content, longText) {
+		t.Fatal("system prompt was not trimmed to the context budget")
+	}
+	total := tokenizer.NumTokensFromString(capt.req.Messages[0].Content) +
+		tokenizer.NumTokensFromString(capt.req.Messages[1].Content)
+	// The budget is 97% of the resolved content_length (the override value),
+	// mirroring the agent's contextFitBudget; the margin keeps a fitted
+	// prompt inside the provider's real context limit.
+	if total > extractorContextFitBudget(budget) {
+		t.Fatalf("fitted messages total %d tokens exceeds the margin-adjusted budget %d", total, extractorContextFitBudget(budget))
+	}
+}
+
+// TestLlmtagChunk_NoContextLength_SkipsFit verifies the guard: when the model's
+// context length is unknown (extractorContextLength returns 0), the tagger
+// passes the prompt through untrimmed instead of erroring.
+func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
+	capt := pushCapturingTagChat(t)
+
+	longText := longChunkText()
+	chunk := map[string]any{"content_with_weight": longText}
+	allTags := map[string]float64{"RAG": 1}
+	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
+
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3)
+
+	if len(capt.req.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
+	}
+	if !strings.Contains(capt.req.Messages[0].Content, longText) {
+		t.Fatal("system prompt should pass through untrimmed when context length is unknown")
+	}
 }
 
 func TestParseCSVQuoteAwareReader(t *testing.T) {

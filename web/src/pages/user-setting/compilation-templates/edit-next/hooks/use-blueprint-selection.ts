@@ -93,9 +93,9 @@ export function useBlueprintSelection({
         label: capitalize(lowerCase(preset.id)),
         value: preset.id,
       })),
-      { label: t('setting.custom'), value: CustomBlueprintValue },
+      { label: 'Custom', value: CustomBlueprintValue },
     ],
-    [presets, t],
+    [presets],
   );
 
   const handleSelect = useCallback(

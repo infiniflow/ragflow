@@ -16,7 +16,6 @@
 
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
-import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { SkeletonCard } from '@/components/skeleton-card';
@@ -43,6 +42,8 @@ import MarkdownContent from './markdown-content';
 import MindMapSheet from './mindmap-sheet';
 import { RAGFlowLogo } from './ragflow-logo';
 import RetrievalDocuments from './retrieval-documents';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import classNames from 'classnames';
 
 const formatMetadataValue = (value: unknown) => {
   if (Array.isArray(value)) return value.join(', ');
@@ -252,9 +253,18 @@ export default function SearchingView({
                                 id={chunk.image_id || chunk.img_id}
                               ></ImageWithPopover>
                             )}
-                            <HighLightMarkdown>
-                              {chunk.content_with_weight}
-                            </HighLightMarkdown>
+                            <div
+                              dangerouslySetInnerHTML={{
+                                __html: sanitizeHtmlWithImagesAsText(
+                                  chunk.content_with_weight,
+                                ).trim(),
+                              }}
+                              className={classNames(
+                                // Keep whitespaces?
+                                'text-wrap break-words whitespace-pre text-base',
+                                '[&_em]:text-accent-primary [&_em]:not-italic',
+                              )}
+                            />
                           </div>
                           {chunk.document_metadata &&
                             Object.keys(chunk.document_metadata).length > 0 && (

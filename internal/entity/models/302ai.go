@@ -171,11 +171,11 @@ func (a *AI302Model) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	})
 }
 
-func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (a *AI302Model) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	model, err := validateAI302ModelName(modelName)
@@ -192,7 +192,7 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 
 	reqBody := map[string]interface{}{
 		"model": model,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -252,10 +252,13 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 	return embeddings, nil
 }
 
-func (a *AI302Model) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (a *AI302Model) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+
+	documents := request.Documents
+	query := request.Query
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil

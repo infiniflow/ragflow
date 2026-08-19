@@ -659,9 +659,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       dataSource: 'Veri kaynağı',
       linkSourceSetTip: 'Bu dataset ile veri kaynağı bağlantısını yönetin',
       linkDataSource: 'Veri kaynağını bağla',
-      tocExtraction: 'SayfaDizini',
-      tocExtractionTip:
-        'Mevcut parçalar için hiyerarşik bir içindekiler tablosu oluşturur (dosya başına bir dizin). Sorgularda Dizin Geliştirme etkinleştirildiğinde, sistem kullanıcının sorusuyla ilgili dizin öğelerini belirlemek için büyük bir model kullanır ve böylece ilgili parçaları tespit eder.',
       deleteGenerateModalContent: `
         <p>Oluşturulan <strong class='text-text-primary'>{{type}}</strong> sonuçlarını silmek,
         bu dataset içindeki tüm türetilmiş varlıkları ve ilişkileri kaldıracak.
@@ -740,6 +737,12 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         'Aşağıdaki ekran görüntüleri açıklama amacıyla sunulmuştur.',
       dialogueExamplesTitle: 'görüntüle',
       methodEmpty: 'Bu, dataset kategorilerinin görsel açıklamasını gösterecek',
+      audio: `<p>Desteklenen dosya formatları: <b>WAV, MP3, AAC, FLAC, OGG</b> ve diğer yaygın ses formatları.</p>
+<p>Bu yöntem, konuşmayı metne dönüştüren bir model kullanarak ses dosyalarını metne dönüştürür.</p>`,
+      email: `<p>Desteklenen dosya formatları: <b>EML</b> ve <b>MSG</b>.</p>
+<p>Bu yöntem e-posta dosyalarını ayrıştırarak başlık alanlarını (Kimden, Kime, CC, Konu ve Tarih gibi), ileti gövdesini ve ekleri çıkarır.</p>`,
+      knowledgeCompiler: `<p>Bu işlem hattı dosyaları ayrıştırıp parçalara böler, ardından parçaları Knowledge Compiler bileşeni aracılığıyla yapılandırılmış bilgi birimlerine (bilgi grafiği, wiki, RAPTOR, zihin haritası veya veri kümesi gezintisi) derler.</p>
+<p>Derlenen bilgi birimleri, parça akışına birleştirilmiş parçalar olarak çıktılanır; bu da parçalanmış belgelerin üzerinde alınabilir bir bilgi katmanı oluşturmak için idealdir.</p>`,
       book: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Her PDF kitap için, istenmeyen bilgileri kaldırmak ve analiz süresini azaltmak için lütfen <i>sayfa aralıklarını</i> ayarlayın.</p>`,
       laws: `<p>Desteklenen dosya formatları: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -1095,7 +1098,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       locale: 'Yerel ayar',
       selectLanguage: 'Dil seçin',
       reasoning: 'Akıl yürütme',
-      reasoningTip: `Deepseek-R1 veya OpenAI o1 gibi modellerde görüldüğü şekilde soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi. Etkinleştirildiğinde, model harici bilgiye erişebilir ve karmaşık soruları düşünce zinciri akıl yürütmesi gibi tekniklerden yararlanarak adım adım ele alabilir. Bu yaklaşım, problemleri yönetilebilir adımlara bölerek modelin doğru yanıtlar sağlama yeteneğini artırır.`,
+      reasoningTip: `Deepseek-R1 gibi modellerde görüldüğü şekilde soru yanıtlama sırasında bir akıl yürütme iş akışı etkinleştirilsin mi. Etkinleştirildiğinde, model harici bilgiye erişebilir ve karmaşık soruları düşünce zinciri akıl yürütmesi gibi tekniklerden yararlanarak adım adım ele alabilir. Bu yaklaşım, problemleri yönetilebilir adımlara bölerek modelin doğru yanıtlar sağlama yeteneğini artırır.`,
       tavilyApiKeyTip:
         'Burada bir API anahtarı doğru şekilde ayarlanırsa, Tavily tabanlı web aramaları dataset alımını desteklemek için kullanılacaktır.',
       tavilyApiKeyMessage: 'Lütfen Tavily API ANAHTARInızı girin',
@@ -1575,7 +1578,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         chat: 'Sohbet',
         embedding: 'Embedding',
         rerank: 'Yeniden sıralama',
-        sequence2text: 'diziden metne',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',

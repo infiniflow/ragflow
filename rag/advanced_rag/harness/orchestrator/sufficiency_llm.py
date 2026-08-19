@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import re
 
+from rag.advanced_rag.harness.stats import in_phase
 from rag.advanced_rag.harness.types import SufficiencyVerdict
 
 _LOG = logging.getLogger(__name__)
@@ -188,6 +189,7 @@ def _evidence_md(tools, evidence_ids=None, keywords: str | None = None) -> str:
     return "\n\n".join(blocks)
 
 
+@in_phase("sufficiency")
 async def llm_sufficiency_boost(
     tools,
     question: str,

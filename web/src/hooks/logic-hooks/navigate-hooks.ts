@@ -209,7 +209,11 @@ export const useNavigatePage = () => {
       const params: string[] = [];
       Object.keys(props).forEach((key) => {
         if (props[key as keyof typeof props]) {
-          params.push(`${key}=${props[key as keyof typeof props]}`);
+          // Values may contain characters like `&`, `=` or `#` (e.g. file
+          // names), which would corrupt the query string without encoding.
+          params.push(
+            `${key}=${encodeURIComponent(props[key as keyof typeof props] as string)}`,
+          );
         }
       });
       navigate(
@@ -223,32 +227,6 @@ export const useNavigatePage = () => {
   const navigateToModelSetting = useCallback(() => {
     navigate(`${Routes.UserSetting}${Routes.Model}`);
   }, [navigate]);
-
-  const navigateToCompilationTemplates = useCallback(() => {
-    navigate(`${Routes.UserSetting}${Routes.CompilationTemplates}`);
-  }, [navigate]);
-
-  const navigateToCompilationTemplate = useCallback(
-    (id?: string) => () => {
-      if (id && id !== 'create') {
-        navigate(`${Routes.CompilationTemplatesCreateNext}/${id}`);
-      } else {
-        navigate(Routes.CompilationTemplatesCreateNext);
-      }
-    },
-    [navigate],
-  );
-
-  const navigateToCompilationTemplateEditNext = useCallback(
-    (id?: string) => () => {
-      if (id && id !== 'create') {
-        navigate(`${Routes.CompilationTemplatesEditNext}/${id}`);
-      } else {
-        navigate(Routes.CompilationTemplatesEditNext);
-      }
-    },
-    [navigate],
-  );
 
   return {
     navigateToDatasetList,
@@ -278,8 +256,5 @@ export const useNavigatePage = () => {
     navigateToMemory,
     navigateToMemoryList,
     navigateToModelSetting,
-    navigateToCompilationTemplates,
-    navigateToCompilationTemplate,
-    navigateToCompilationTemplateEditNext,
   };
 };

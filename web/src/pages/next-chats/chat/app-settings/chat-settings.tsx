@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
+import { useStaleDatasetIds } from '@/hooks/use-knowledge-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import {
@@ -14,7 +15,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { z } from 'zod';
@@ -27,8 +28,16 @@ import { getWebSearchProvider } from '../web-search-api-key';
 type ChatSettingsProps = { hasSingleChatBox: boolean };
 
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
-  const formSchema = useChatSettingSchema();
   const { data } = useFetchChat();
+
+  // Only the persisted ids need validation: ids picked from the dataset
+  // select are valid by construction, while a persisted id may reference a
+  // dataset that has since been deleted or emptied of chunks.
+  const { staleDatasetIds, settled: datasetsFetched } = useStaleDatasetIds(
+    data?.dataset_ids,
+  );
+
+  const formSchema = useChatSettingSchema(staleDatasetIds);
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
   const { id } = useParams();
@@ -42,6 +51,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     shouldUnregister: false,
+    mode: 'onChange',
     defaultValues: {
       name: '',
       icon: '',
@@ -88,10 +98,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
     // Add model_type to llm_setting based on the selected llm_id
     if (nextValues.llm_id) {
-      // The model selector returns the tenant model ID. Keep the legacy
-      // llm_id and the tenant-scoped ID synchronized; the backend gives
-      // tenant_llm_id precedence when resolving the chat model.
-      nextValues.tenant_llm_id = nextValues.llm_id;
       nextValues.llm_setting = {
         ...nextValues.llm_setting,
         model_type: findLlmByUuid(nextValues.llm_id)?.model_type || 'chat',
@@ -104,6 +110,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...omit(data, [
           'operator_permission',
           'tenant_id',
+          'tenant_llm_id',
+          'tenant_rerank_id',
           'created_by',
           'create_time',
           'create_date',
@@ -146,6 +154,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       form.reset(nextData as FormSchemaType);
     }
   }, [data, form]);
+
+  const datasetIds = useWatch({ control: form.control, name: 'dataset_ids' });
+  const trigger = form.trigger;
+
+  // A persisted dataset_ids value never fires onChange validation, so once
+  // the lookup of those ids has settled, revalidate explicitly — it may
+  // reference datasets that have since been deleted or emptied of chunks.
+  useEffect(() => {
+    if (!datasetsFetched || !datasetIds?.length) {
+      return;
+    }
+
+    trigger('dataset_ids');
+  }, [trigger, datasetsFetched, datasetIds.length]);
 
   return (
     <>

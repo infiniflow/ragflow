@@ -16,6 +16,7 @@
 
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { SafeImg } from '@/components/safe-img';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
@@ -419,7 +420,7 @@ function MarkdownContent({
                 </a>
               );
             },
-            img({ src, alt, ...props }: any) {
+            img({ src, alt, title }: any) {
               if (isArtifactUrl(src)) {
                 return (
                   <ArtifactImage
@@ -429,16 +430,7 @@ function MarkdownContent({
                   />
                 );
               }
-              return (
-                <span className={styles.artifactImageWrapper}>
-                  <img
-                    src={src}
-                    alt={alt || ''}
-                    className={styles.artifactImage}
-                    {...omit(props, 'node')}
-                  />
-                </span>
-              );
+              return <SafeImg src={src} alt={alt} title={title} />;
             },
             code(props: any) {
               const { children, className, ...rest } = props;

@@ -21,6 +21,7 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { IDataset } from '@/interfaces/database/dataset';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { getEmbeddingBaseName } from '@/utils/llm-util';
 import { useDebounce } from 'ahooks';
 import { toLower } from 'lodash';
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
@@ -94,44 +95,53 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     );
   }, [datasetListOrigin, selectedDatasetIds, missingDatasets]);
 
-  const selectedEmbedId = useMemo(() => {
+  // Datasets are mutually selectable when their embedding models resolve to
+  // the same base model name, even if they use different provider instances
+  // (e.g. "BAAI/bge-m3@renew@SILICONFLOW" vs "BAAI/bge-m3@COPY@SILICONFLOW").
+  const selectedEmbedBaseName = useMemo(() => {
     const data = datasetList?.find((item) => item.id === datasetId?.[0]);
-    return data?.embedding_model ?? '';
+    return getEmbeddingBaseName(data?.embedding_model);
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
-    const datasetListMap = datasetList.map((item: IDataset) => {
-      return {
-        label: item.name,
-        icon: () => (
-          <RAGFlowAvatar
-            className="size-4"
-            avatar={item.avatar}
-            name={item.name}
-          />
-        ),
-        suffix: (
-          <section className="flex gap-2">
-            <DatasetLabel text={item.nickname} />
-            <DatasetLabel
-              text={
-                item.embedding_model_name
-                  ? item.embedding_model_name
-                  : item.embedding_model
-              }
-            />
-          </section>
-        ),
-        value: item.id,
-        disabled:
-          item.chunk_count <= 0 ||
-          item.chunk_method === DocumentParserType.Tag ||
-          (item.embedding_model !== selectedEmbedId && selectedEmbedId !== ''),
-      };
-    });
-
-    return datasetListMap;
-  }, [datasetList, selectedEmbedId]);
+    return (
+      datasetList
+        // Datasets without chunks are not selectable. A stale selected value
+        // (emptied or deleted dataset) is excluded as well — the MultiSelect
+        // badge falls back to rendering its raw id and stays removable.
+        .filter((item) => item.chunk_count > 0)
+        .map((item: IDataset) => {
+          return {
+            label: item.name,
+            icon: () => (
+              <RAGFlowAvatar
+                className="size-4"
+                avatar={item.avatar}
+                name={item.name}
+              />
+            ),
+            suffix: (
+              <section className="flex gap-2">
+                <DatasetLabel text={item.nickname} />
+                <DatasetLabel
+                  text={
+                    item.embedding_model_name
+                      ? item.embedding_model_name
+                      : item.embedding_model
+                  }
+                />
+              </section>
+            ),
+            value: item.id,
+            disabled:
+              item.chunk_method === DocumentParserType.Tag ||
+              (selectedEmbedBaseName !== '' &&
+                getEmbeddingBaseName(item.embedding_model) !==
+                  selectedEmbedBaseName),
+          };
+        })
+    );
+  }, [datasetList, selectedEmbedBaseName]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchString(value);

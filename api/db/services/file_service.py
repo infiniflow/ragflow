@@ -19,9 +19,10 @@ import logging
 import re
 import sys
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Union
+from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +35,14 @@ from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from common.misc_utils import get_uuid
-from common.ssrf_guard import assert_url_is_safe
-from common.constants import TaskStatus, FileSource, ParserType, MAXIMUM_PAGE_NUMBER
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
-from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
-from rag.llm.cv_model import GptV4
+from api.utils.file_utils import filename_type, read_potential_broken_pdf, sanitize_path, thumbnail_img
 from common import settings
+from common.constants import MAXIMUM_PAGE_NUMBER, FileSource, ParserType, TaskStatus
+from common.misc_utils import get_uuid
+from common.ssrf_guard import assert_url_is_safe
+from rag.llm.cv_model import GptV4
 
 
 class FileService(CommonService):
@@ -63,7 +64,12 @@ class FileService(CommonService):
         # Returns:
         #     Tuple of (file_list, total_count)
         if keywords:
-            files = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == pf_id), (fn.LOWER(cls.model.name).contains(keywords.lower())), ~(cls.model.id == pf_id))
+            # Keyword search covers the whole subtree under pf_id so files and
+            # folders nested in sub-folders can be found too.
+            subtree_ids = cls.get_subtree_ids(tenant_id, pf_id)
+            files = cls.model.select().where(
+                (cls.model.tenant_id == tenant_id), (cls.model.parent_id.in_(subtree_ids)), (fn.LOWER(cls.model.name).contains(keywords.lower())), ~(cls.model.id == pf_id)
+            )
         else:
             files = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == pf_id), ~(cls.model.id == pf_id))
         count = files.count()
@@ -103,6 +109,29 @@ class FileService(CommonService):
             file["kbs_info"] = kbs_info
 
         return res_files, count
+
+    @classmethod
+    @DB.connection_context()
+    def get_subtree_ids(cls, tenant_id, pf_id):
+        # Return pf_id itself plus the IDs of all entries nested under it
+        # (folders and files), used to scope recursive keyword searches.
+        rows = list(cls.model.select(cls.model.id, cls.model.parent_id).where(cls.model.tenant_id == tenant_id).dicts())
+        children = {}
+        for row in rows:
+            children.setdefault(row["parent_id"], []).append(row["id"])
+
+        ids = [pf_id]
+        in_tree = {pf_id}
+        queue = deque([pf_id])
+        while queue:
+            current = queue.popleft()
+            for child in children.get(current, []):
+                if child in in_tree:
+                    continue
+                in_tree.add(child)
+                ids.append(child)
+                queue.append(child)
+        return ids
 
     @classmethod
     @DB.connection_context()
@@ -440,7 +469,6 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def delete(cls, file):
-        #
         return cls.delete_by_id(file.id)
 
     @classmethod
@@ -457,7 +485,7 @@ class FileService(CommonService):
                 cls.delete_folder_by_pf_id(user_id, file.id)
             return (cls.model.delete().where((cls.model.tenant_id == user_id) & (cls.model.id == folder_id)).execute(),)
         except Exception:
-            logging.exception("delete_folder_by_pf_id")
+            logger.exception("delete_folder_by_pf_id")
             raise RuntimeError("Database error (File retrieval)!")
 
     @classmethod
@@ -498,7 +526,7 @@ class FileService(CommonService):
             "source_type": FileSource.KNOWLEDGEBASE,
         }
         cls.save(**file)
-        File2DocumentService.save(**{"id": get_uuid(), "file_id": file["id"], "document_id": doc["id"]})
+        File2DocumentService.save(id=get_uuid(), file_id=file["id"], document_id=doc["id"])
 
     @classmethod
     @DB.connection_context()
@@ -506,7 +534,7 @@ class FileService(CommonService):
         try:
             cls.filter_update((cls.model.id << file_ids,), {"parent_id": folder_id})
         except Exception:
-            logging.exception("move_file")
+            logger.exception("move_file")
             raise RuntimeError("Database error (File move)!")
 
     @classmethod
@@ -534,7 +562,7 @@ class FileService(CommonService):
             if e:
                 try:
                     if str(doc.kb_id) != str(kb.id):
-                        logging.warning(
+                        logger.warning(
                             "Existing document id collision detected for %s: belongs to kb_id=%s, incoming kb_id=%s. Skipping update to avoid cross-KB overwrite.",
                             doc_id,
                             doc.kb_id,
@@ -559,7 +587,7 @@ class FileService(CommonService):
                     if new_hash != old_hash:
                         files.append((doc, blob))
                 except Exception as exc:
-                    logging.exception(f"Failed to update document {doc_id}: {exc}")
+                    logger.exception("Failed to update document %s", doc_id)
                     err.append(file.filename + ": " + str(exc))
                 continue
             try:
@@ -605,7 +633,7 @@ class FileService(CommonService):
 
                 FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
                 files.append((doc, blob))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - collect per-file errors and keep processing the rest
                 err.append(file.filename + ": " + str(e))
 
         return err, files
@@ -617,7 +645,7 @@ class FileService(CommonService):
             files = cls.model.select().where((cls.model.parent_id == parent_id) & (cls.model.id != parent_id))
             return list(files)
         except Exception:
-            logging.exception("list_by_parent_id failed")
+            logger.exception("list_by_parent_id failed")
             raise RuntimeError("Database error (list_by_parent_id)!")
 
     @staticmethod
@@ -635,8 +663,8 @@ class FileService(CommonService):
 
     @staticmethod
     def parse(filename, blob, img_base64=True, tenant_id=None, layout_recognize=None):
-        from rag.app import audio, email, naive, picture, presentation
         from api.apps import current_user
+        from rag.app import audio, email, naive, picture, presentation
 
         def dummy(prog=None, msg=""):
             pass
@@ -684,16 +712,16 @@ class FileService(CommonService):
             try:
                 e, doc = DocumentService.get_by_id(doc_id)
                 if not e:
-                    raise Exception("document not found")
+                    raise RuntimeError("document not found")
                 tenant_id = DocumentService.get_tenant_id(doc_id)
                 if not tenant_id:
-                    raise Exception("Tenant not found!")
+                    raise RuntimeError("Tenant not found!")
 
                 b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
                 TaskService.filter_delete([Task.doc_id == doc_id])
                 if not DocumentService.remove_document(doc, tenant_id):
-                    raise Exception("Database error (Document removal)!")
+                    raise RuntimeError("Database error (Document removal)!")
 
                 f2d = File2DocumentService.get_by_document_id(doc_id)
                 deleted_file_count = 0
@@ -712,12 +740,12 @@ class FileService(CommonService):
                     kb_table_num_map[kb_id] -= 1
                     if kb_table_num_map[kb_id] <= 0:
                         KnowledgebaseService.delete_field_map(kb_id)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - aggregate per-document errors and continue deleting the rest
                 errors += str(e)
 
         return errors
 
-    _ALLOWED_SCHEMES = {"http", "https"}
+    _ALLOWED_SCHEMES: ClassVar[set[str]] = {"http", "https"}
 
     @staticmethod
     def _validate_url_for_crawl(url: str) -> tuple[str, str]:
@@ -760,8 +788,10 @@ class FileService(CommonService):
             }
 
         if url:
-            import requests as _requests
             from urllib.parse import urljoin as _urljoin
+
+            import requests as _requests
+
             from api.utils.web_utils import BROWSER_FETCH_TIMEOUT, browser_fetch_slot
 
             _MAX_CRAWL_REDIRECTS = 10
@@ -807,7 +837,7 @@ class FileService(CommonService):
                 # skipping DNS entirely and eliminating the rebinding window.
                 _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
 
-                from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
+                from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CrawlResult, DefaultMarkdownGenerator, PruningContentFilter
 
                 filename = re.sub(r"\?.*", "", url.split("/")[-1])
 
@@ -836,7 +866,7 @@ class FileService(CommonService):
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
 
     @staticmethod
-    def get_files(files: Union[None, list[dict]], raw: bool = False, layout_recognize: str = None) -> Union[list[str], tuple[list[str], list[dict]]]:
+    def get_files(files: None | list[dict], raw: bool = False, layout_recognize: str | None = None) -> list[str] | tuple[list[str], list[dict]]:
         if not files:
             return []
 

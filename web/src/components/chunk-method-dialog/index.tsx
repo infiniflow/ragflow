@@ -38,7 +38,6 @@ import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
   AutoMetadata,
   ChunkMethodItem,
-  EnableTocToggle,
   ImageContextWindow,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -116,12 +115,7 @@ export function ChunkMethodDialog({
   const FormSchema = z
     .object({
       parseType: z.nativeEnum(ParseType),
-      parser_id: z
-        .string()
-        .min(1, {
-          message: t('common.pleaseSelect'),
-        })
-        .trim(),
+      parser_id: z.string().trim().optional(),
       pipeline_id: z.string().optional(),
       parser_config: z.object({
         task_page_size: z.coerce.number().optional(),
@@ -133,7 +127,6 @@ export function ChunkMethodDialog({
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
-        toc_extraction: z.boolean().optional(),
         image_table_context_window: z.coerce.number().optional(),
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
@@ -186,6 +179,13 @@ export function ChunkMethodDialog({
       }),
     })
     .superRefine((data, ctx) => {
+      if (data.parseType === ParseType.BuiltIn && !data.parser_id) {
+        ctx.addIssue({
+          path: ['parser_id'],
+          message: t('common.pleaseSelect'),
+          code: 'custom',
+        });
+      }
       if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
         ctx.addIssue({
           path: ['pipeline_id'],
@@ -251,6 +251,7 @@ export function ChunkMethodDialog({
     );
     const nextData = {
       ...data,
+      parser_id: data.parser_id || '',
       parser_config: {
         ...parserConfig,
         image_table_context_window: imageTableContextWindow,
@@ -385,10 +386,7 @@ export function ChunkMethodDialog({
 
                 <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {selectedTag === DocumentParserType.Naive && (
-                    <>
-                      <EnableTocToggle />
-                      <ImageContextWindow />
-                    </>
+                    <ImageContextWindow />
                   )}
 
                   {showAutoKeywords(selectedTag) && (

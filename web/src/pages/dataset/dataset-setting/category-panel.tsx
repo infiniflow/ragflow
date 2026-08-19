@@ -6,7 +6,7 @@ import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import { TagTabs } from './tag-tabs';
-import { ImageMap } from './utils';
+import { DescriptionKeyMap, ImageMap } from './utils';
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -15,9 +15,12 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const item = useMemo(() => {
     const item = parserList.find((x) => x.value === chunkMethod);
     if (item) {
+      const descriptionKey = DescriptionKeyMap[item.value] ?? item.value;
       return {
         title: item.label,
-        description: t(camelCase(item.value)),
+        // Methods without a description entry get an empty string, so the
+        // empty placeholder below is still shown for them.
+        description: t(camelCase(descriptionKey), { defaultValue: '' }),
       };
     }
     return { title: '', description: '' };
@@ -30,9 +33,11 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
     return [];
   }, [chunkMethod]);
 
+  const hasDescription = item.description.trim().length > 0;
+
   return (
     <div>
-      {imageList.length > 0 ? (
+      {hasDescription ? (
         <>
           <h5 className="font-semibold text-base mt-0 mb-1">
             {`"${item.title}" ${t('methodTitle')}`}
@@ -43,24 +48,28 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
               __html: DOMPurify.sanitize(item.description),
             }}
           ></p>
-          <h5 className="font-semibold text-base mt-4 mb-1">{`"${item.title}" ${t('methodExamples')}`}</h5>
-          <span className="text-text-secondary">
-            {t('methodExamplesDescription')}
-          </span>
-          <div className="grid grid-cols-2 gap-2.5 mt-4">
-            {imageList.map((x) => (
-              <SvgIcon
-                name={x}
-                width={'100%'}
-                className="w-full"
-                key={x}
-              ></SvgIcon>
-            ))}
-          </div>
-          <h5 className="font-semibold text-base mt-4 mb-1">
-            {item.title} {t('dialogueExamplesTitle')}
-          </h5>
-          <Divider></Divider>
+          {imageList.length > 0 && (
+            <>
+              <h5 className="font-semibold text-base mt-4 mb-1">{`"${item.title}" ${t('methodExamples')}`}</h5>
+              <span className="text-text-secondary">
+                {t('methodExamplesDescription')}
+              </span>
+              <div className="grid grid-cols-2 gap-2.5 mt-4">
+                {imageList.map((x) => (
+                  <SvgIcon
+                    name={x}
+                    width={'100%'}
+                    className="w-full"
+                    key={x}
+                  ></SvgIcon>
+                ))}
+              </div>
+              <h5 className="font-semibold text-base mt-4 mb-1">
+                {item.title} {t('dialogueExamplesTitle')}
+              </h5>
+              <Divider></Divider>
+            </>
+          )}
         </>
       ) : (
         <div className="flex flex-col items-center justify-center py-8">

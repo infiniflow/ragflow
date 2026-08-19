@@ -33,6 +33,7 @@ from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
@@ -878,6 +879,41 @@ class OpenAI_APIEmbed(OpenAIEmbed):
         base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class MWSEmbed(OpenAIEmbed):
+    """MWS embedding adapter with the exact documented request body."""
+
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, key, model_name, base_url):
+        """Initialize embedding access for an MWS project and deployment."""
+        self.api_key = require_mws_token(key)
+        self.base_url = mws_api_url(base_url, "openai/v1/embeddings")
+        self.model_name = model_name.split("___")[0]
+
+    def _call(self, batch):
+        """Embed a batch and restore vectors to their original input order."""
+        response = requests.post(
+            self.base_url,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},
+            json={"model": self.model_name, "input": batch},
+            timeout=30,
+        )
+        _raise_model_exception_if_failed(response)
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list) or len(data) != len(batch):
+            count = len(data) if isinstance(data, list) else 0
+            raise ValueError(f"MWS returned {count} embeddings for {len(batch)} inputs")
+
+        embeddings = [None] * len(batch)
+        for item in data:
+            index = item.get("index") if isinstance(item, dict) else None
+            if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(batch) or embeddings[index] is not None:
+                raise ValueError(f"unexpected MWS embedding index: {index}")
+            embeddings[index] = item["embedding"]
+        return embeddings, total_token_count_from_response(payload)
 
 
 class GreenPTEmbed(OpenAIEmbed):

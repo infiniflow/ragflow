@@ -1,11 +1,10 @@
 """Tool system: register all tools with the registry on import."""
 
-from rag.advanced_rag.harness.tools.registry import register_tool, _search_schema, _navigate_schema, _inspector_schema
+from rag.advanced_rag.harness.tools.registry import _inspector_schema, _navigate_schema, _search_schema, register_tool
 
 # Register tools
-
 # Search tools
-from rag.advanced_rag.harness.tools.search import hybrid_search, vector_search, bm25_search, web_search, structured_query
+from rag.advanced_rag.harness.tools.search import bm25_search, hybrid_search, structured_query, vector_search, web_search
 
 register_tool("hybrid_search", _search_schema("hybrid_search", "Embedding + Keywords search"), hybrid_search)
 register_tool("vector_search", _search_schema("vector_search", "Embedding search"), vector_search)
@@ -14,7 +13,7 @@ register_tool("web_search", _search_schema("web_search", "Internet search"), web
 register_tool("structured_query", _search_schema("structured_query", "SQL search"), structured_query)
 
 # Navigation tools (require compilation)
-from rag.advanced_rag.harness.tools.navigation import ontology_navigate, dataset_navigation_by_tree, mindmap_navigate
+from rag.advanced_rag.harness.tools.navigation import dataset_navigation_search, mindmap_navigate, ontology_navigate
 
 # ontology_navigate covers both the tree/TOC outline and the page index.
 register_tool(
@@ -28,12 +27,12 @@ register_tool(
     "mindmap_navigate", _navigate_schema("mindmap_navigate", "Get question-related chunks from the document's  mindmap"), mindmap_navigate, requires_compilation=True, compilation_type="mindmap"
 )
 register_tool(
-    "dataset_navigation_by_tree",
+    "dataset_navigation_search",
     _navigate_schema(
-        "dataset_navigation_by_tree",
-        "Find the documents most relevant to the question via the dataset map; returns their document IDs (later navigation/exploration tools are automatically scoped to them).",
+        "dataset_navigation_search",
+        "Find the documents most relevant to the question by hybrid-searching the dataset's navigation-tree document leaves (nav_doc layer) — only documents that have a compiled nav-tree node are reachable. Returns the most relevant document IDs.",
     ),
-    dataset_navigation_by_tree,
+    dataset_navigation_search,
     requires_compilation=True,
     compilation_type="tree",
 )
@@ -45,7 +44,7 @@ register_tool("graph_explore", _search_schema("graph_explore", "Knowledge graph 
 register_tool("wiki_query", _search_schema("wiki_query", "Wiki search"), wiki_query, requires_compilation=True, compilation_type="wiki")
 
 # Inspector tools
-from rag.advanced_rag.harness.tools.inspector import open_context, compare_sources, grep_within, request_adjacent
+from rag.advanced_rag.harness.tools.inspector import compare_sources, grep_within, open_context, request_adjacent
 
 register_tool(
     "inspector_open_context",

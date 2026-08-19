@@ -4,8 +4,9 @@ go 1.26.4
 
 require (
 	cloud.google.com/go/storage v1.63.0
+	github.com/AkmalOt/gomsg v0.0.0-20260407083308-985c3a1a76b7
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.5.2
+	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1
 	github.com/alicebob/miniredis/v2 v2.38.0
@@ -20,9 +21,11 @@ require (
 	github.com/browserbase/stagehand-go/v3 v3.21.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cloudwego/eino v0.9.13
+	github.com/cloudwego/eino v0.9.14
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-message v0.18.2
 	github.com/eric642/e2b-go-sdk v0.1.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -30,6 +33,7 @@ require (
 	github.com/goccy/go-json v0.10.6
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/gomarkdown/markdown v0.0.0-20260614204949-e08cff860f76
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/infiniflow/infinity-go-sdk v0.0.0-00010101000000-000000000000
@@ -50,6 +54,7 @@ require (
 	github.com/signintech/gopdf v0.36.1
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
 	github.com/spf13/viper v1.18.2
+	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260807065450-08464aef9ed5
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yfedoseev/office_oxide/go v0.1.8
 	github.com/yfedoseev/pdf_oxide/go v0.3.67
@@ -74,6 +79,8 @@ require (
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.7
 )
+
+require github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect
@@ -140,13 +147,16 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.17 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
@@ -226,4 +236,6 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260723093510-ceb4bc518010
+replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9
+
+replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7

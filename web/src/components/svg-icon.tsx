@@ -23,23 +23,6 @@ import { IconFontFill } from './icon-font';
 import { RAGFlowAvatar } from './ragflow-avatar';
 import { useIsDarkTheme } from './theme-provider';
 
-// const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
-//   const list = requireContext.keys().map((key) => {
-//     const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
-//     return { name, value: requireContext(key) };
-//   });
-//   return list;
-// };
-
-// let routeList: { name: string; value: string }[] = [];
-
-// try {
-//   routeList = importAll(require.context('@/assets/svg', true, /\.svg$/));
-// } catch (error) {
-//   console.warn(error);
-//   routeList = [];
-// }
-
 const svgModules = import.meta.glob('@/assets/svg/**/*.svg', {
   eager: true,
   query: '?url',
@@ -52,6 +35,9 @@ const routeList: { name: string; value: string }[] = Object.entries(
   // @ts-ignore
   return { name, value: module.default || module };
 });
+
+export const hasSvgIcon = (name: string) =>
+  routeList.some((item) => item.name === name);
 
 interface IProps extends IconComponentProps {
   name: string;
@@ -126,6 +112,7 @@ const svgIcons = [
   LLMFactory.FunASR,
   LLMFactory.AIMLAPI,
   LLMFactory.GreenPT,
+  LLMFactory.MWS,
 ];
 
 export const LlmIcon = ({

@@ -1151,6 +1151,8 @@ async def transcription():
             os.remove(temp_audio_path)
         except Exception as e:
             logging.error(f"Failed to remove temp audio file: {str(e)}")
+        if "**ERROR**" in text:
+            return get_data_error_result(message=text)
         return get_json_result(data={"text": text})
 
     async def event_stream():
@@ -1302,6 +1304,7 @@ async def session_completion(chat_id_in_arg=""):
             if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
+            dia.tenant_llm_id = None
             dia.llm_setting = chat_model_config
         elif not dia.llm_id:
             logging.info("empty chat_model_id in req, use default chat model.")

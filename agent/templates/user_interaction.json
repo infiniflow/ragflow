@@ -258,7 +258,11 @@
                 {
                     "data": {
                         "label": "Begin",
-                        "name": "begin"
+                        "name": "begin",
+                        "form": {
+                            "enablePrologue": true,
+                            "mode": "conversational"
+                        }
                     },
                     "dragging": false,
                     "id": "begin",
