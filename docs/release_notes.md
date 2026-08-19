@@ -18,7 +18,7 @@ Released on Aug 19, 2026.
 - Brand new Agentic RAG with four thinking modes when answering - Low, Medium, High, and Ultra High ([#18303](https://github.com/infiniflow/ragflow/pull/18303), [#18138](https://github.com/infiniflow/ragflow/pull/18138), [#17342](https://github.com/infiniflow/ragflow/pull/17342), [#17444](https://github.com/infiniflow/ragflow/pull/17444))
 
 ### Improvements
-- Fully revamped model provider system, more convenient to use ([#16604](https://github.com/infiniflow/ragflow/pull/16604))
+- Fully revamped model provider system for easier model configuration and management ([#16604](https://github.com/infiniflow/ragflow/pull/16604))
 
 ### Model Support
 - Qwen 3.8 series ([#18368](https://github.com/infiniflow/ragflow/pull/18368))
@@ -40,7 +40,7 @@ Released on Aug 19, 2026.
 ### Tools
 - New Querit web search tool ([#17813](https://github.com/infiniflow/ragflow/pull/17813))
 
-### UI UX
+### UI/UX
 - Markdown typography improvements ([#16752](https://github.com/infiniflow/ragflow/pull/16752))
 - Search/chat filters ([#16707](https://github.com/infiniflow/ragflow/pull/16707))
 
@@ -52,7 +52,7 @@ Released on Aug 19, 2026.
 - Fixed preview failure for PDFs with Chinese filenames ([#18422](https://github.com/infiniflow/ragflow/pull/18422))
 - Fixed CID-font PDF preview ([#18249](https://github.com/infiniflow/ragflow/pull/18249))
 - Fixed invalid query strings breaking search ([#18217](https://github.com/infiniflow/ragflow/pull/18217))
-- Fixed dataset/document deletion blocking other APIs ([#17800](https://github.com/infiniflow/ragflow/pull/17800))
+- Fixed dataset/document deletion blocking other API requests ([#17800](https://github.com/infiniflow/ragflow/pull/17800))
 - Fixed default delimiter stored as an escaped string instead of a real newline ([#17591](https://github.com/infiniflow/ragflow/pull/17591))
 - Fixed shared page language affecting the original website ([#18043](https://github.com/infiniflow/ragflow/pull/18043))
 - Fixed stale messages on session switch ([#18140](https://github.com/infiniflow/ragflow/pull/18140))
