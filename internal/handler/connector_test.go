@@ -15,6 +15,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	syncerconnector "ragflow/internal/syncer/connector"
 )
 
 type fakeConnectorService struct {
@@ -36,7 +37,7 @@ func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.
 	return &service.ListConnectorsResponse{}, nil
 }
 
-func (s fakeConnectorService) TestConnector(context.Context, string, string) error {
+func (s fakeConnectorService) TestConnector(context.Context, string, string, entity.JSONMap) error {
 	return s.err
 }
 
@@ -265,9 +266,24 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			wantCode: common.CodeArgumentError,
 		},
 		{
-			name:     "validation failure",
-			err:      fmt.Errorf("connector credentials are missing"),
+			name:     "schema validation failure",
+			err:      &syncerconnector.ConnectorValidationError{Message: "At least one content field must be configured (content_fields)."},
 			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "missing credential failure",
+			err:      &syncerconnector.ConnectorMissingCredentialError{Message: "REST API (bearer) requires 'token' in credentials"},
+			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "rate limit failure",
+			err:      &syncerconnector.RateLimitTriedTooManyTimesError{Message: "REST API rate limited"},
+			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "unexpected failure",
+			err:      fmt.Errorf("boom"),
+			wantCode: common.CodeServerError,
 		},
 	}
 

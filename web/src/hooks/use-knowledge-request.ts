@@ -136,6 +136,7 @@ export const useTestRetrieval = () => {
       page: 1,
       doc_ids: filterValue.doc_ids,
       highlight: true,
+      include_knowledge_compilation: false,
     };
   }, [filterValue, knowledgeBaseId, values]);
 
@@ -1144,9 +1145,9 @@ export const useSelectKnowledgeOptions = () => {
 };
 
 /**
- * Fetch datasets by a set of IDs. Used to resolve the names of
- * already-selected datasets that are not present in the first page of
- * the paginated list so they can be echoed back in the form field.
+ * Fetch datasets by a set of IDs. Used to resolve already-selected datasets
+ * that are not present in the first page of the paginated list, e.g. to echo
+ * their names in a form field. For staleness checks see `useStaleDatasetIds`.
  */
 export const useFetchDatasetsByIds = (ids: string[]) => {
   const sortedIds = useMemo(() => [...ids].sort(), [ids]);
@@ -1161,6 +1162,29 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
   });
 
   return { data, loading };
+};
+
+/**
+ * Resolve which of the given persisted dataset ids have gone stale — the
+ * dataset no longer exists or has been emptied of chunks. The set stays
+ * empty while the lookup is in flight so consumers can hold off validation
+ * until it settles; `settled` flips true once the lookup has finished.
+ */
+export const useStaleDatasetIds = (datasetIds?: string[]) => {
+  const persistedIds = useMemo(() => datasetIds ?? [], [datasetIds]);
+  const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
+
+  const staleDatasetIds = useMemo(() => {
+    if (loading) {
+      return new Set<string>();
+    }
+    const usableIds = new Set(
+      (datasets ?? []).filter((x) => x.chunk_count > 0).map((x) => x.id),
+    );
+    return new Set(persistedIds.filter((id) => !usableIds.has(id)));
+  }, [datasets, loading, persistedIds]);
+
+  return { staleDatasetIds, settled: !loading };
 };
 
 //#region tags

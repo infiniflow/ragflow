@@ -1,7 +1,6 @@
 package wiki
 
 import (
-	"context"
 	"fmt"
 	"hash/fnv"
 	"strings"
@@ -27,58 +26,7 @@ type wikiPageResult struct {
 	Outlinks       []string
 	SourceChunkIDs []string
 	SourceDocIDs   []string
-}
-
-// mapFromChunks runs the MAP stage: extract raw facts/notes from the source.
-func mapFromChunks(ctx context.Context, deps common.Deps, llmID, sections string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiMapSystem,
-		UserPrompt:   sections,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// reduceFromExtracts consolidates the MAP output into topic clusters.
-func reduceFromExtracts(ctx context.Context, deps common.Deps, llmID, raw string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiReduceSystem,
-		UserPrompt:   raw,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// planFromReduction arranges topics into a page outline.
-func planFromReduction(ctx context.Context, deps common.Deps, llmID, reduced string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiPlanSystem,
-		UserPrompt:   reduced,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// refineFromPlan writes the final wiki page from the outline.
-func refineFromPlan(ctx context.Context, deps common.Deps, llmID, plan string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiRefineSystem,
-		UserPrompt:   plan,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
+	PlanGroup      string
 }
 
 // Section is one heading block parsed out of a wiki page's Markdown body. The
@@ -109,7 +57,7 @@ func ParseOutline(md string) []Section {
 			current = nil
 		}
 	}
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		trimmed := strings.TrimRight(line, "\r")
 		if lvl := headingLevel(trimmed); lvl > 0 {
 			flush()
@@ -238,6 +186,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 				"source_chunk_ids": sourceChunkIDs,
 				"source_doc_ids":   sourceDocIDs,
 				"content_md_raw":   page.ContentRaw,
+				"plan_group":       strings.TrimSpace(page.PlanGroup),
 			},
 		})
 		for i, sec := range ParseOutline(content) {
@@ -266,6 +215,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 					"section_index":    i,
 					"source_chunk_ids": sourceChunkIDs,
 					"source_doc_ids":   sourceDocIDs,
+					"plan_group":       strings.TrimSpace(page.PlanGroup),
 				},
 			})
 		}
@@ -275,7 +225,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 
 // firstHeading returns the first Markdown "# "-prefixed line, trimmed.
 func firstHeading(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		s := strings.TrimSpace(line)
 		if strings.HasPrefix(s, "# ") {
 			return strings.TrimSpace(strings.TrimPrefix(s, "# "))
@@ -286,7 +236,7 @@ func firstHeading(md string) string {
 
 // firstParagraph returns the first non-empty, non-heading line, capped.
 func firstParagraph(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		s := strings.TrimSpace(line)
 		if s == "" || strings.HasPrefix(s, "#") {
 			continue

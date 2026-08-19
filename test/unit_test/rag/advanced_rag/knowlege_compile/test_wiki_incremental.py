@@ -83,10 +83,10 @@ def make_doc_store(search_results: list[dict] | None = None):
     """Create a mock settings.docStoreConn."""
     conn = MagicMock()
     conn.index_exist = MagicMock(return_value=True)
-    conn.search = AsyncMock(return_value={"hits": {"total": {"value": len(search_results or [])}, "hits": search_results or []}})
-    conn.insert = AsyncMock(return_value=None)
-    conn.update = AsyncMock(return_value=None)
-    conn.delete = AsyncMock(return_value=None)
+    conn.search = MagicMock(return_value={"hits": {"total": {"value": len(search_results or [])}, "hits": search_results or []}})
+    conn.insert = MagicMock(return_value=None)
+    conn.update = MagicMock(return_value=None)
+    conn.delete = MagicMock(return_value=None)
     conn.refresh_idx = MagicMock(return_value=True)
 
     def _get_fields(res, fields):
@@ -1270,6 +1270,8 @@ async def test_finalize_links_via_map_relations():
                 "_source": {
                     "doc_id": "map1",
                     "compile_kwd": "wiki_map_extract",
+                    "source_chunk_ids": ["chunk-1"],
+                    "chunk_hash_kwd": "hash-1",
                     "content_with_weight": json.dumps(
                         {
                             "entities": [{"name": "肖亮", "type": "person"}, {"name": "肖立", "type": "person"}],
@@ -1286,7 +1288,12 @@ async def test_finalize_links_via_map_relations():
         patch("common.settings.docStoreConn", doc_store),
         patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
     ):
-        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+        await _wiki._wiki_finalize(
+            tenant_id="t1",
+            kb_id="kb1",
+            embd_mdl=None,
+            chunk_state={"chunk-1": {"doc_id": "map1", "hash": "hash-1"}},
+        )
 
     update_calls = doc_store.update.call_args_list
     xiaoliang_upd = None
@@ -1904,3 +1911,63 @@ async def test_local_split_preserves_all_members_and_original_slug():
     assert any(page_id.startswith("_new_") for page_id in split)
     assert {entity["entity_name"] for entities in split.values() for entity in entities} == set(names)
     assert "entity-0" in {entity["entity_name"] for entity in split["entity/original"]}
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_retracts_only_invalidated_chunk_claims():
+    existing_page = {
+        "claims": [
+            {"statement": "old-c1", "source_doc_id": "doc-1", "chunk_ids": ["c1"]},
+            {"statement": "keep-c2", "source_doc_id": "doc-1", "chunk_ids": ["c2"]},
+        ],
+        "source_chunk_ids": ["c1", "c2"],
+    }
+
+    delta = await _wiki._wiki_reduce_entity(
+        entity_name="Alpha",
+        new_claims=[{"statement": "new-c1", "source_doc_id": "doc-1", "chunk_ids": ["c1"]}],
+        existing_page=existing_page,
+        deleted_doc_ids=set(),
+        invalidated_chunk_ids={"c1"},
+        source_doc_ids=["doc-1"],
+        source_chunk_ids=["c1", "c2"],
+    )
+
+    assert delta["action"] == "update"
+    assert [claim["statement"] for claim in delta["retractions"]] == ["old-c1"]
+    assert [claim["statement"] for claim in delta["additions"]] == ["new-c1"]
+    assert delta["source_chunk_ids"] == ["c1", "c2"]
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_deletes_page_when_last_chunk_is_removed():
+    delta = await _wiki._wiki_reduce_entity(
+        entity_name="Alpha",
+        new_claims=[],
+        existing_page={
+            "claims": [{"statement": "only claim", "source_doc_id": "doc-1", "chunk_ids": ["c1"]}],
+            "source_chunk_ids": ["c1"],
+        },
+        deleted_doc_ids=set(),
+        invalidated_chunk_ids={"c1"},
+    )
+
+    assert delta["action"] == "delete"
+    assert delta["source_chunk_ids"] == []
+    assert [claim["statement"] for claim in delta["retractions"]] == ["only claim"]
+
+
+def test_as_int_accepts_string_doc_store_values():
+    assert _wiki._as_int("7") == 7
+    assert _wiki._as_int(None, 3) == 3
+
+
+def test_contextual_hints_accepts_native_string_relations():
+    hints = _wiki._wiki_build_contextual_hints(
+        "entity/Alpha",
+        {"related_kb_pages_kwd": ["entity/Beta", "concept/Gamma"]},
+        {},
+    )
+
+    assert "[[entity/Beta]] — related" in hints
+    assert "[[concept/Gamma]] — related" in hints

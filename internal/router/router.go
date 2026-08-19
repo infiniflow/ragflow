@@ -626,7 +626,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)
 				connectors.POST("", r.connectorHandler.CreateConnector)
-				// Sync logs for the current user, optionally filtered by dataset.
 				connectors.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)

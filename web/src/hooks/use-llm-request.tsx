@@ -45,7 +45,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { buildModelValue, parseModelValue } from '@/utils/llm-util';
+import {
+  buildModelValue,
+  buildValidModelIds,
+  parseModelValue,
+} from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum LLMApiAction {
@@ -147,6 +151,27 @@ export const useFetchAllAddedModels = (
   // result apart from "fetch hasn't completed yet" — `isFetched` stays false
   // until a genuine response (or error) arrives.
   return { data, loading, isFetched, isError };
+};
+
+/**
+ * The set of ids under which added models of the given types can be
+ * referenced (both the model_id form and the legacy composite form), for
+ * validating that a persisted form value still points at an existing model.
+ * `isFetched` must be checked before trusting `validIds` — while the model
+ * list is loading it is empty and every value would look missing.
+ */
+export const useModelValidIds = (
+  modelTypes: string[],
+  ownerTenantId?: string,
+) => {
+  const { data, isFetched } = useFetchAllAddedModels(undefined, ownerTenantId);
+
+  const validIds = useMemo(
+    () => buildValidModelIds(data, modelTypes),
+    [data, modelTypes],
+  );
+
+  return { validIds, isFetched };
 };
 
 export function useFindLlmByUuid() {

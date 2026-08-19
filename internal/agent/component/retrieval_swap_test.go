@@ -55,7 +55,7 @@ func TestRetrieval_DelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("Retrieval c.Name() = %q, want %q", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval Invoke errored: %v", err)
 	}

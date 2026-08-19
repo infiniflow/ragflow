@@ -227,7 +227,7 @@ export const APIMapUrl = {
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
   [LLMFactory.TongYiQianWen]:
     'https://bailian.console.aliyun.com/?tab=model#/api-key',
-  [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
+  [LLMFactory.ZhipuAI]: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',

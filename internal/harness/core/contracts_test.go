@@ -16,7 +16,7 @@ func TestBaseMiddleware_AllMethods(t *testing.T) {
 	s := NewReActAgentState([]*schema.Message{}, nil, 10)
 	mc := &ModelContext{}
 
-	ctx, rc2, err := b.BeforeAgent(context.Background(), rc)
+	ctx, rc2, err := b.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Fatalf("BeforeAgent: %v", err)
 	}
@@ -25,13 +25,13 @@ func TestBaseMiddleware_AllMethods(t *testing.T) {
 	}
 	_ = ctx
 
-	ctx, err = b.AfterAgent(context.Background(), s)
+	ctx, err = b.AfterAgent(t.Context(), s)
 	if err != nil {
 		t.Fatalf("AfterAgent: %v", err)
 	}
 	_ = ctx
 
-	ctx, s2, err := b.BeforeModelRewrite(context.Background(), s, mc)
+	ctx, s2, err := b.BeforeModelRewrite(t.Context(), s, mc)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestBaseMiddleware_AllMethods(t *testing.T) {
 	}
 	_ = ctx
 
-	ctx, s3, err := b.AfterModelRewrite(context.Background(), s, mc)
+	ctx, s3, err := b.AfterModelRewrite(t.Context(), s, mc)
 	if err != nil {
 		t.Fatalf("AfterModelRewrite: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestBaseMiddleware_AllMethods(t *testing.T) {
 	}
 	_ = ctx
 
-	m, err := b.WrapModel(context.Background(), nil, nil)
+	m, err := b.WrapModel(t.Context(), nil, nil)
 	if err != nil {
 		t.Fatalf("WrapModel: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestMiddleware_BeforeAgentCanModifyInstruction(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "mod_agent"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	for {
@@ -94,7 +94,7 @@ func TestMiddleware_BeforeModelRewriteCanModifyState(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "bmr_agent"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	for {
@@ -120,7 +120,7 @@ func TestMiddleware_AfterModelRewriteModifiesState(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "amr_agent"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	for {
@@ -150,7 +150,7 @@ func TestMiddleware_MultipleMiddlewares(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw1, mw2},
 	})
 	agent.name = "multi_mw"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	for {
@@ -176,7 +176,7 @@ func TestMiddleware_BeforeAgentError(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_before"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	var lastErr error
@@ -205,7 +205,7 @@ func TestMiddleware_BeforeModelRewriteError(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_bmr"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	var lastErr error
@@ -234,7 +234,7 @@ func TestMiddleware_AfterModelRewriteError(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_amr"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	var lastErr error
@@ -263,7 +263,7 @@ func TestMiddleware_AfterAgentError(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_aa"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	var lastErr error
@@ -292,7 +292,7 @@ func TestMiddleware_WrapModelReturnsError(t *testing.T) {
 		Model: model, Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "err_wm"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	var lastErr error

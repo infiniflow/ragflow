@@ -617,6 +617,64 @@ func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
 	}
 }
 
+func TestNATSTaskWorkerRetriesStillScheduledUnclaimedTask(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	insertSyncLog(t, db, "conn-1", "kb-1", "task-2", dao.TaskTypePrune)
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
+		t.Fatalf("mark sync running: %v", err)
+	}
+	if err := db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
+		t.Fatalf("mark connector running: %v", err)
+	}
+
+	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, &fakeSyncTaskBroker{})
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock()).WithScheduler(scheduler)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-2", TaskType: common.TaskTypeSyncer}}
+
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-2", Handle: handle})
+
+	if handle.acks != 1 || handle.nacks != 0 {
+		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
+	}
+	scheduler.timerMu.Lock()
+	timer := scheduler.timers["task-2"]
+	if timer != nil {
+		timer.Stop()
+		delete(scheduler.timers, "task-2")
+	}
+	scheduler.timerMu.Unlock()
+	if timer == nil {
+		t.Fatalf("scheduled prune retry timer was not registered")
+	}
+}
+
+func TestNATSTaskWorkerDoesNotRetryCompletedUnclaimedTask(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusDone).Error; err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+
+	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, &fakeSyncTaskBroker{})
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock()).WithScheduler(scheduler)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
+
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
+
+	if handle.acks != 1 || handle.nacks != 0 {
+		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
+	}
+	scheduler.timerMu.Lock()
+	_, scheduled := scheduler.timers["task-1"]
+	scheduler.timerMu.Unlock()
+	if scheduled {
+		t.Fatalf("completed task should not be scheduled for retry")
+	}
+}
+
 // TestSameConnectorDifferentKBsRunInParallel verifies one datasource can sync into different KBs concurrently.
 func TestSameConnectorDifferentKBsRunInParallel(t *testing.T) {
 	db := setupSyncerDB(t)
@@ -794,7 +852,12 @@ func TestHash128MatchesPythonGolden(t *testing.T) {
 func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
+		"status":             dao.SyncStatusRunning,
+		"total_docs_indexed": int64(1),
+	}).Error; err != nil {
+		t.Fatalf("set running task: %v", err)
+	}
 	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
 	legacyID := service.Hash128("conn-1:source-1")
 	store := fakeStore{ids: map[string]struct{}{legacyID: {}}, fingerprints: map[string]string{legacyID: "fp-1"}}
@@ -807,6 +870,20 @@ func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	}
 	if sink.callCount() != 0 {
 		t.Fatalf("sink calls = %d, want 0", sink.callCount())
+	}
+	var completed entity.SyncLogs
+	if err := db.First(&completed, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load completed task: %v", err)
+	}
+	if completed.NewDocsIndexed != 0 || completed.TotalDocsIndexed != 0 {
+		t.Fatalf("completed stats new/total = %d/%d, want 0/0", completed.NewDocsIndexed, completed.TotalDocsIndexed)
+	}
+	var next entity.SyncLogs
+	if err := db.Where("id <> ? AND connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", "task-1", "conn-1", "kb-1", dao.TaskTypeSync, dao.SyncStatusSchedule).First(&next).Error; err != nil {
+		t.Fatalf("load next scheduled task: %v", err)
+	}
+	if next.TotalDocsIndexed != 1 {
+		t.Fatalf("next scheduled total docs indexed = %d, want 1", next.TotalDocsIndexed)
 	}
 }
 

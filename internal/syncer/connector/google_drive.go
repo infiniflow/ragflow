@@ -138,6 +138,21 @@ func (c *GoogleDriveConnector) Validate(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates Google Drive settings from an unsaved config.
+func (c *GoogleDriveConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	if err := c.Validate(ctx); err != nil {
+		return err
+	}
+	client, err := c.clientForUser(ctx, c.primaryAdminEmail)
+	if err != nil {
+		return err
+	}
+	var about map[string]any
+	return c.getJSON(ctx, client, "https://www.googleapis.com/drive/v3/about?fields=user", &about)
+}
+
 // OpenSync opens one Google Drive sync session.
 func (c *GoogleDriveConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	scopes, err := c.buildScopes(ctx)
@@ -1240,7 +1255,7 @@ func (c *GoogleDriveConnector) effectiveIncludeSharedWithMe() bool {
 
 func splitCommaList(value string) []string {
 	values := []string{}
-	for _, part := range strings.Split(value, ",") {
+	for part := range strings.SplitSeq(value, ",") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			values = append(values, part)

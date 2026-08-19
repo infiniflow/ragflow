@@ -52,7 +52,7 @@ export function BlueprintSection({
       <Collapse
         defaultOpen
         title={
-          <h3 className="text-base font-medium">{t('setting.blueprints')}</h3>
+          <h3 className="text-base font-medium">{t('knowledgeCompilation.blueprints')}</h3>
         }
       >
         <div className="space-y-4">
@@ -66,14 +66,14 @@ export function BlueprintSection({
           <div className="space-y-4">
             <RAGFlowFormItem
               name={instructionPath}
-              label={t('setting.instruction')}
+              label={t('knowledgeCompilation.instruction')}
             >
               <Textarea rows={8} resize={'vertical'} />
             </RAGFlowFormItem>
 
             <RAGFlowFormItem
               name={examplePath}
-              label={t('setting.example')}
+              label={t('knowledgeCompilation.example')}
               className="flex h-[50vh] min-h-0 flex-col"
               valueClassName="flex-1 min-h-0"
             >

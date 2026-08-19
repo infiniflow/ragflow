@@ -143,7 +143,7 @@ func (s *SyncTaskService) HandleTransientFailure(ctx context.Context, taskID, co
 // CompleteSync commits a successful SYNC task and schedules the next one.
 func (s *SyncTaskService) CompleteSync(ctx context.Context, taskContext SyncTaskContext, pollRangeEnd time.Time, stats SyncStats) (string, error) {
 	changed := stats.Added + stats.Updated
-	return s.taskDAO.CompleteSyncTask(ctx, taskContext, pollRangeEnd, changed, changed, stats.ErrorCount, stats.ErrorMsg)
+	return s.taskDAO.CompleteSyncTask(ctx, taskContext, pollRangeEnd, stats.Added, changed, stats.ErrorCount, stats.ErrorMsg)
 }
 
 // CompletePrune commits a successful PRUNE task and schedules the next one.

@@ -206,6 +206,12 @@ export default {
       dialogueExamplesTitle: 'Contoh Dialog',
       methodEmpty:
         'Ini akan menampilkan penjelasan visual dari kategori basis pengetahuan',
+      audio: `<p>Format file yang didukung adalah <b>WAV, MP3, AAC, FLAC, OGG</b> dan format audio umum lainnya.</p>
+<p>Metode ini mentranskripsikan file audio menjadi teks menggunakan model speech-to-text.</p>`,
+      email: `<p>Format file yang didukung adalah <b>EML</b> dan <b>MSG</b>.</p>
+<p>Metode ini mem-parse file email, mengekstrak field header (seperti Dari, Kepada, CC, Subjek, dan Tanggal), isi pesan, dan lampiran.</p>`,
+      knowledgeCompiler: `<p>Pipeline ini mem-parse dan memecah file menjadi chunk, kemudian mengompilasi chunk menjadi unit pengetahuan terstruktur (graf pengetahuan, wiki, RAPTOR, peta pikiran, atau navigasi dataset) melalui komponen Knowledge Compiler.</p>
+<p>Unit pengetahuan yang dikompilasi dikeluarkan sebagai chunk yang digabungkan ke dalam aliran chunk, ideal untuk membangun lapisan pengetahuan yang dapat diambil di atas dokumen yang telah dipecah.</p>`,
       book: `<p>Format file yang didukung adalah <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
           Karena buku panjang dan tidak semua bagian berguna, jika itu adalah PDF,
           silakan atur <i>rentang halaman</i> untuk setiap buku untuk menghilangkan efek negatif dan menghemat waktu komputasi untuk analisis.</p>`,

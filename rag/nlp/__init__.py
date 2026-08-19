@@ -417,7 +417,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             add_positions(d, [[ii] * 5])
 
         if child_delimiters_pattern:
-            d["mom_with_weight"] = ck
+            d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
 
@@ -440,7 +440,7 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
 
         if ck.get("ck_type") == "text":
             if child_delimiters_pattern:
-                d["mom_with_weight"] = text
+                d["mom_with_weight"] = text.removeprefix("\n")
                 res.extend(split_with_pattern(d, child_delimiters_pattern, text, eng, language=language))
                 continue
         elif ck.get("ck_type") == "image":
@@ -463,7 +463,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
         d["image"] = image
         add_positions(d, [[ii] * 5])
         if child_delimiters_pattern:
-            d["mom_with_weight"] = ck
+            d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
         tokenize(d, ck, eng, language=language)
@@ -477,15 +477,15 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
     for (img, rows), poss in tbls:
         if not rows:
             continue
+        # Media producers use strings for tables and lists for figures. Keep
+        # that contract explicit instead of guessing the type from HTML tags.
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
             tokenize(d, rows, eng, language=language)
             d["content_with_weight"] = rows
             d["doc_type_kwd"] = "table"
-            if img:
+            if img is not None:
                 d["image"] = img
-                if d["content_with_weight"].find("<tr>") < 0:
-                    d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -496,11 +496,9 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
             d = copy.deepcopy(doc)
             r = de.join(rows[i : i + batch_size])
             tokenize(d, r, eng, language=language)
-            d["doc_type_kwd"] = "table"
-            if img:
+            d["doc_type_kwd"] = "image"
+            if img is not None:
                 d["image"] = img
-                if d["content_with_weight"].find("<tr>") < 0:
-                    d["doc_type_kwd"] = "image"
             add_positions(d, poss)
             res.append(d)
     return res
@@ -884,6 +882,14 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
     res = []
     contexts = []
     for (img, tb), poss in tabls:
+        # MinerU is expected to provide page_idx and bbox, but production
+        # fallbacks may still yield media without positions. Preserve it.
+        if not poss:
+            res.append(((img, tb), poss))
+            if return_context:
+                contexts.append(("", ""))
+            continue
+
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
         if isinstance(tb, list):

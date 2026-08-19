@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
@@ -317,18 +318,28 @@ export function ModelsSection(props: ModelsSectionProps) {
             {tSetting('batchVerifyModels')}
           </Button>
           {!hideActions && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBatchToggleModels}
-              disabled={batchLoading || filteredModels.length === 0}
-              data-testid="models-batch-toggle"
+            // When the toggle is in "remove all" mode the click opens a
+            // confirmation dialog instead of mutating directly; the button
+            // acts as the dialog trigger, so the handler moves to `onOk`.
+            <ConfirmDeleteDialog
+              hidden={!allFilteredAdded}
+              onOk={handleBatchToggleModels}
+              title={t('common.removeModalTitle')}
+              okButtonText={t('common.remove')}
             >
-              {batchLoading && <Loader2 className="size-3 animate-spin" />}
-              {allFilteredAdded
-                ? tSetting('batchRemoveModels')
-                : tSetting('batchAddModels')}
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={allFilteredAdded ? undefined : handleBatchToggleModels}
+                disabled={batchLoading || filteredModels.length === 0}
+                data-testid="models-batch-toggle"
+              >
+                {batchLoading && <Loader2 className="size-3 animate-spin" />}
+                {allFilteredAdded
+                  ? tSetting('batchRemoveModels')
+                  : tSetting('batchAddModels')}
+              </Button>
+            </ConfirmDeleteDialog>
           )}
         </div>
 

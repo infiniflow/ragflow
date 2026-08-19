@@ -25,15 +25,22 @@ import (
 // Factory creates a connector for a task context.
 type Factory func(ctx context.Context, taskContext any) (Connector, error)
 
-// Registry maps Python connector source names to Go connector factories.
+// ConfigFactory creates a connector from raw connector config.
+type ConfigFactory func(config map[string]any) (Connector, error)
+
+// Registry maps connector source names to Go connector factories.
 type Registry struct {
-	mu        sync.RWMutex
-	factories map[string]Factory
+	mu              sync.RWMutex
+	factories       map[string]Factory
+	configFactories map[string]ConfigFactory
 }
 
 // NewRegistry creates an empty connector registry.
 func NewRegistry() *Registry {
-	return &Registry{factories: map[string]Factory{}}
+	return &Registry{
+		factories:       map[string]Factory{},
+		configFactories: map[string]ConfigFactory{},
+	}
 }
 
 // Register adds or replaces a connector factory.
@@ -41,6 +48,13 @@ func (r *Registry) Register(source string, factory Factory) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.factories[source] = factory
+}
+
+// RegisterConfigFactory adds or replaces a raw config connector factory.
+func (r *Registry) RegisterConfigFactory(source string, factory ConfigFactory) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.configFactories[source] = factory
 }
 
 // Open creates a connector for a task context.
@@ -62,6 +76,17 @@ func (r *Registry) Open(ctx context.Context, taskContext any) (Connector, error)
 		source = value.GetSource()
 	}
 	return r.openSource(ctx, source, taskContext)
+}
+
+// OpenFromConfig builds a connector from a raw config map.
+func (r *Registry) OpenFromConfig(source string, config map[string]any) (Connector, error) {
+	r.mu.RLock()
+	factory := r.configFactories[source]
+	r.mu.RUnlock()
+	if factory == nil {
+		return nil, fmt.Errorf("unsupported connector source %q", source)
+	}
+	return factory(config)
 }
 
 // openSource creates a connector for a known source.

@@ -75,7 +75,7 @@ export function WikiLeftPanel({
           removed={removed}
           changed={changed}
           loading={updateLoading}
-          tooltip={t('knowledgeDetails.updateTooltip', {
+          tooltip={t('knowledgeCompilation.updateTooltip', {
             newlyUploaded,
             removed,
             changed,
@@ -87,8 +87,8 @@ export function WikiLeftPanel({
         <ConfirmDeleteDialog
           open={open}
           onOpenChange={setOpen}
-          title={t('knowledgeDetails.clearWikiTitle')}
-          content={{ title: t('knowledgeDetails.clearWikiDescription') }}
+          title={t('knowledgeCompilation.clearWikiTitle')}
+          content={{ title: t('knowledgeCompilation.clearWikiDescription') }}
           onOk={handleConfirm}
         >
           <Button
@@ -105,10 +105,10 @@ export function WikiLeftPanel({
       <Tabs value={tab} onValueChange={onTabChange} className="pb-5">
         <TabsList className="grid grid-cols-2 w-80">
           <TabsTrigger value={LeftPanelTab.Contents}>
-            {t('knowledgeDetails.contents')}
+            {t('knowledgeCompilation.contents')}
           </TabsTrigger>
           <TabsTrigger value={LeftPanelTab.Graph}>
-            {t('knowledgeDetails.graph')}
+            {t('knowledgeCompilation.graph')}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -133,7 +133,7 @@ export function WikiLeftPanel({
         open={updateSheetOpen}
         onOpenChange={onUpdateSheetOpenChange}
         data={traceData}
-        title={t('knowledgeDetails.updateSheetTitle', {
+        title={t('knowledgeCompilation.updateSheetTitle', {
           defaultValue: 'Update Wiki',
         })}
       />
