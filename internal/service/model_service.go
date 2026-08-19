@@ -535,25 +535,43 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
-func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, error) {
+func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, string, error) {
 	if !strings.EqualFold(providerName, "Bedrock") {
-		return false, nil
+		return false, apiKey, nil
+	}
+	var rawConfig map[string]json.RawMessage
+	if json.Unmarshal([]byte(apiKey), &rawConfig) != nil {
+		return false, apiKey, nil
+	}
+	var authMode string
+	if json.Unmarshal(rawConfig["auth_mode"], &authMode) != nil || authMode != "bedrock_api_key" {
+		return false, apiKey, nil
 	}
 	var config struct {
-		AuthMode string `json:"auth_mode"`
-		APIKey   string `json:"bedrock_api_key"`
-		Region   string `json:"bedrock_region"`
+		APIKey string `json:"bedrock_api_key"`
+		Region string `json:"bedrock_region"`
 	}
-	if json.Unmarshal([]byte(apiKey), &config) != nil || config.AuthMode != "bedrock_api_key" {
-		return false, nil
+	if json.Unmarshal([]byte(apiKey), &config) != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
 	}
-	if strings.TrimSpace(config.APIKey) == "" {
-		return false, errors.New("Bedrock API key must be provided")
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	if config.APIKey == "" {
+		return true, apiKey, errors.New("Bedrock API key must be provided")
 	}
-	if strings.TrimSpace(config.Region) == "" {
-		return false, errors.New("AWS region must be provided")
+	config.Region = strings.TrimSpace(config.Region)
+	if config.Region == "" {
+		return true, apiKey, errors.New("AWS region must be provided")
 	}
-	return true, nil
+	if err := modelModule.ValidateBedrockRegion(config.Region); err != nil {
+		return true, apiKey, err
+	}
+	rawConfig["bedrock_api_key"], _ = json.Marshal(config.APIKey)
+	rawConfig["bedrock_region"], _ = json.Marshal(config.Region)
+	normalizedAPIKey, err := json.Marshal(rawConfig)
+	if err != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	return true, string(normalizedAPIKey), nil
 }
 
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
@@ -594,12 +612,19 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		apiKey = "x"
 	}
 
-	bedrockAPIKeyAuth, err := validateBedrockAPIKeyAuth(providerName, apiKey)
+	bedrockAPIKeyAuth, apiKey, err := validateBedrockAPIKeyAuth(providerName, apiKey)
 	if err != nil {
 		return common.CodeBadRequest, err
 	}
-	if bedrockAPIKeyAuth && len(modelInfo) == 0 {
-		return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
+	if bedrockAPIKeyAuth {
+		if len(modelInfo) == 0 {
+			return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
+		}
+		for _, model := range modelInfo {
+			if strings.TrimSpace(model.ModelName) == "" {
+				return common.CodeBadRequest, errors.New("Bedrock model name must be provided")
+			}
+		}
 	}
 	instanceID := utility.GenerateToken()
 
@@ -1978,7 +2003,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		apiKey = "x"
 	}
 
-	_, err = validateBedrockAPIKeyAuth(providerName, apiKey)
+	_, apiKey, err = validateBedrockAPIKeyAuth(providerName, apiKey)
 	if err != nil {
 		return common.CodeBadRequest, err
 	}

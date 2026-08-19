@@ -73,6 +73,25 @@ def _bedrock_api_key_config(api_key: str | dict | None) -> dict | None:
     return None
 
 
+def _validate_bedrock_api_key_config(api_key: str | dict | None) -> dict[str, object] | None:
+    config = _bedrock_api_key_config(api_key)
+    if config is None:
+        return None
+
+    bedrock_api_key = config.get("bedrock_api_key")
+    if not isinstance(bedrock_api_key, str) or not bedrock_api_key.strip():
+        raise ValueError("Bedrock API key must be provided")
+    bedrock_region = config.get("bedrock_region")
+    if not isinstance(bedrock_region, str) or not bedrock_region.strip():
+        raise ValueError("AWS region must be provided")
+
+    return {
+        **config,
+        "bedrock_api_key": bedrock_api_key.strip(),
+        "bedrock_region": bedrock_region.strip(),
+    }
+
+
 def _factory_llm_name(llm: dict) -> str:
     return llm.get("name") or llm.get("llm_name", "")
 
@@ -358,17 +377,17 @@ async def update_provider_instance(
     api_key = _normalize_provider_api_key(provider_name, api_key)
     region = (region or "").strip()
 
+    try:
+        bedrock_api_key_config = _validate_bedrock_api_key_config(api_key) if provider_name == "Bedrock" else None
+    except ValueError as error:
+        return False, str(error)
+    bedrock_api_key_auth = bedrock_api_key_config is not None
+    if bedrock_api_key_auth:
+        api_key = bedrock_api_key_config
+
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
-
-    bedrock_api_key_config = _bedrock_api_key_config(api_key)
-    bedrock_api_key_auth = provider_name == "Bedrock" and bedrock_api_key_config is not None
-    if bedrock_api_key_auth:
-        if not str(bedrock_api_key_config.get("bedrock_api_key", "")).strip():
-            return False, "Bedrock API key must be provided"
-        if not str(bedrock_api_key_config.get("bedrock_region", "")).strip():
-            return False, "AWS region must be provided"
 
     # Verify api_key
     model_verify_result = {}
@@ -537,17 +556,19 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if provider_name not in allowed_factories:
         return False, f"Provider '{provider_name}' is not allowed"
 
+    try:
+        bedrock_api_key_config = _validate_bedrock_api_key_config(api_key) if provider_name == "Bedrock" else None
+    except ValueError as error:
+        return False, str(error)
+    bedrock_api_key_auth = bedrock_api_key_config is not None
+    if bedrock_api_key_auth:
+        api_key = bedrock_api_key_config
+
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    bedrock_api_key_config = _bedrock_api_key_config(api_key)
-    bedrock_api_key_auth = provider_name == "Bedrock" and bedrock_api_key_config is not None
     if bedrock_api_key_auth:
-        if not str(bedrock_api_key_config.get("bedrock_api_key", "")).strip():
-            return False, "Bedrock API key must be provided"
-        if not str(bedrock_api_key_config.get("bedrock_region", "")).strip():
-            return False, "AWS region must be provided"
         if not model_info:
             return False, "At least one Bedrock model must be selected"
         model_verify_result = {}

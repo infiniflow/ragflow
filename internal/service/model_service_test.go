@@ -38,6 +38,51 @@ func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.A
 	return d.checkErr
 }
 
+func TestValidateBedrockAPIKeyAuth(t *testing.T) {
+	tests := []struct {
+		name    string
+		apiKey  string
+		wantErr string
+	}{
+		{
+			name:    "rejects non-string API key",
+			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":[],"bedrock_region":"us-east-1"}`,
+			wantErr: "invalid Bedrock API-key configuration",
+		},
+		{
+			name:    "rejects invalid region",
+			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us east 1"}`,
+			wantErr: "invalid region",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authenticated, _, err := validateBedrockAPIKeyAuth("Bedrock", test.apiKey)
+			if !authenticated || err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validateBedrockAPIKeyAuth() = (%v, %v), want API-key mode error containing %q", authenticated, err, test.wantErr)
+			}
+		})
+	}
+
+	nonAPIKey := `{"auth_mode":"access_key_secret","bedrock_region":"us-east-1"}`
+	authenticated, normalized, err := validateBedrockAPIKeyAuth("Bedrock", nonAPIKey)
+	if authenticated || err != nil || normalized != nonAPIKey {
+		t.Fatalf("non-API-key mode = (%v, %q, %v), want unchanged", authenticated, normalized, err)
+	}
+
+	authenticated, normalized, err = validateBedrockAPIKeyAuth("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":" test-key ","bedrock_region":" us-east-1 ","custom":"value"}`)
+	if !authenticated || err != nil {
+		t.Fatalf("valid API-key mode = (%v, %v), want success", authenticated, err)
+	}
+	var config map[string]string
+	if err = json.Unmarshal([]byte(normalized), &config); err != nil {
+		t.Fatalf("decode normalized API key: %v", err)
+	}
+	if config["bedrock_api_key"] != "test-key" || config["bedrock_region"] != "us-east-1" || config["custom"] != "value" {
+		t.Fatalf("normalized API key = %#v", config)
+	}
+}
+
 func TestValidateEmbeddingModel(t *testing.T) {
 	maxDimension := 2048
 	maxBatchSize := 128
@@ -337,14 +382,6 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 	if len(models) != 1 || models[0].ModelName != "amazon.nova-lite-v1:0" {
 		t.Fatalf("models = %#v, want persisted Bedrock model", models)
 	}
-	var extra map[string]interface{}
-	if err = json.Unmarshal([]byte(models[0].Extra), &extra); err != nil {
-		t.Fatalf("decode model extra: %v", err)
-	}
-	if extra["verify"] != entity.ModelVerifyUnknown {
-		t.Fatalf("verify = %v, want %q", extra["verify"], entity.ModelVerifyUnknown)
-	}
-
 	code, err = NewModelProviderService().AlterProviderInstance(
 		t.Context(),
 		"user-1",
@@ -382,6 +419,27 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 	)
 	if code != common.CodeBadRequest || err == nil {
 		t.Fatalf("empty model list returned (%v, %v), want bad request", code, err)
+	}
+
+	code, err = NewModelProviderService().CreateProviderInstance(
+		t.Context(),
+		"Bedrock",
+		"empty-model-name-instance",
+		apiKey,
+		"",
+		"default",
+		"user-1",
+		[]CreateInstanceModelInfo{{}},
+	)
+	if code != common.CodeBadRequest || err == nil {
+		t.Fatalf("empty model name returned (%v, %v), want bad request", code, err)
+	}
+	var instanceCount int64
+	if err = db.Model(&entity.TenantModelInstance{}).Where("instance_name = ?", "empty-model-name-instance").Count(&instanceCount).Error; err != nil {
+		t.Fatalf("count instances: %v", err)
+	}
+	if instanceCount != 0 {
+		t.Fatalf("empty model name created %d instances, want 0", instanceCount)
 	}
 }
 

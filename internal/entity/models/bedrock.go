@@ -77,6 +77,14 @@ const (
 
 var bedrockRegionPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
+// ValidateBedrockRegion reports whether region can be used in an AWS endpoint.
+func ValidateBedrockRegion(region string) error {
+	if !bedrockRegionPattern.MatchString(region) {
+		return fmt.Errorf("bedrock: invalid region %q", region)
+	}
+	return nil
+}
+
 // bedrockAssumeRoleSession identifies temporary sessions in CloudTrail
 // when iam_role mode triggers STS AssumeRole. Matches the Python
 // implementation's RoleSessionName so audit logs stay consistent.
@@ -193,8 +201,8 @@ func resolveBedrockRegion(apiConfig *APIConfig, key *bedrockKey) (string, error)
 	if region == "" {
 		return "", fmt.Errorf("bedrock: region is required (set apiConfig.Region or bedrock_region in the API key)")
 	}
-	if !bedrockRegionPattern.MatchString(region) {
-		return "", fmt.Errorf("bedrock: invalid region %q", region)
+	if err := ValidateBedrockRegion(region); err != nil {
+		return "", err
 	}
 	return region, nil
 }
