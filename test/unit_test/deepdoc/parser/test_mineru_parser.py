@@ -4,7 +4,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 import json
 
 import pytest
@@ -107,6 +107,45 @@ def test_parse_pdf_forwards_normalized_dataset_language_to_image_enhancement(mon
     )
 
     enhance.assert_called_once_with([], vision_model, callback=None, language=expected_language)
+
+
+def test_parse_pdf_forwards_callback_to_page_rendering(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    callback = Mock()
+    render_pages = Mock()
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", render_pages)
+    monkeypatch.setattr(parser, "_run_mineru", Mock(return_value=output_dir))
+    monkeypatch.setattr(parser, "_read_output", Mock(return_value=[]))
+
+    parser.parse_pdf(
+        filepath=str(pdf_path),
+        binary=None,
+        callback=callback,
+        output_dir=str(output_dir),
+        delete_output=False,
+    )
+
+    render_pages.assert_called_once_with(pdf_path, zoomin=1, callback=callback)
+
+
+def test_page_rendering_failure_is_reported_to_callback(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    callback = Mock()
+    monkeypatch.setattr(module.pdfplumber, "open", Mock(side_effect=ValueError("bad pdf")))
+
+    parser.__images__(b"pdf", page_from=2, page_to=4, callback=callback)
+
+    assert callback.call_args_list == [
+        call(0.16, "[MinerU] Rendering PDF pages..."),
+        call(0.16, "[MinerU] PDF page rendering failed for pages 2:4: bad pdf"),
+    ]
 
 
 def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):

@@ -354,6 +354,8 @@ class MinerUParser(RAGFlowPdfParser):
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
+        if callback:
+            callback(0.16, "[MinerU] Rendering PDF pages...")
         try:
             with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
                 self.pdf = pdf
@@ -361,7 +363,14 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception as e:
             self.page_images = None
             self.total_page = 0
-            self.logger.exception(e)
+            self.logger.exception("[MinerU] PDF page rendering failed for pages %s:%s: %s", page_from, page_to, e)
+            if callback:
+                callback(0.16, f"[MinerU] PDF page rendering failed for pages {page_from}:{page_to}: {e}")
+        else:
+            # Report success only after every selected page rendered successfully.
+            self.logger.info("[MinerU] Rendered %d PDF page images.", len(self.page_images))
+            if callback:
+                callback(0.19, f"[MinerU] Rendered {len(self.page_images)} PDF page images.")
 
     @staticmethod
     def _normalize_bbox(bbox):
@@ -1030,7 +1039,7 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.15, f"[MinerU] Output directory: {out_dir}")
 
-        self.__images__(pdf, zoomin=1)
+        self.__images__(pdf, zoomin=1, callback=callback)
 
         try:
             options = MinerUParseOptions(
