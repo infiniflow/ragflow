@@ -41,6 +41,7 @@ const (
 	defaultConfluenceAttachmentThreshold = 10 * 1024 * 1024
 	confluenceRequestTimeout             = 60 * time.Second
 	maxConfluenceResponseSize            = 32 * 1024 * 1024
+	maxConfluenceSearchPages             = 1000
 )
 
 var (
@@ -165,17 +166,15 @@ func (c *ConfluenceConnector) OpenSync(ctx context.Context, request SyncRequest)
 	if end.IsZero() {
 		end = time.Now().UTC()
 	}
-	documents, err := c.loadDocuments(ctx, request.WindowStart, end, request.FromBeginning)
-	if err != nil {
-		return nil, err
+	session := &confluenceSyncSession{
+		connector:     c,
+		batchSize:     c.batchSize,
+		windowStart:   request.WindowStart,
+		windowEnd:     end,
+		fromBeginning: request.FromBeginning,
+		pageCursor:    newConfluenceSearchCursor(c, c.pageCQL(request.WindowStart, end, request.FromBeginning), strings.Join(confluencePageExpansionFields, ",")),
+		nameCounts:    map[string]int{},
 	}
-	sort.Slice(documents, func(i, j int) bool {
-		if documents[i].UpdatedAt.Equal(documents[j].UpdatedAt) {
-			return documents[i].SourceID < documents[j].SourceID
-		}
-		return documents[i].UpdatedAt.Before(documents[j].UpdatedAt)
-	})
-	session := &confluenceSyncSession{documents: documents, batchSize: c.batchSize}
 	session.applyResume(request.Resume)
 	return session, nil
 }
@@ -191,40 +190,6 @@ func (c *ConfluenceConnector) OpenPrune(ctx context.Context, request PruneReques
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 	return &confluencePruneSession{documents: documents, batchSize: c.batchSize}, nil
-}
-
-func (c *ConfluenceConnector) loadDocuments(ctx context.Context, start *time.Time, end time.Time, fromBeginning bool) ([]SourceDocument, error) {
-	var documents []SourceDocument
-	pageQuery := c.pageCQL(start, end, fromBeginning)
-	pages, err := c.searchAll(ctx, pageQuery, strings.Join(confluencePageExpansionFields, ","))
-	if err != nil {
-		return nil, err
-	}
-	nameCounts := map[string]int{}
-	for _, page := range pages {
-		pageDoc, err := c.pageDocument(ctx, page, nameCounts)
-		if err != nil {
-			return nil, err
-		}
-		if fromBeginning || inConfluenceWindow(pageDoc.UpdatedAt, start, end) {
-			documents = append(documents, pageDoc)
-		}
-		attachmentQuery := c.attachmentCQL(page.ID.String(), start, end, fromBeginning)
-		attachments, err := c.searchAll(ctx, attachmentQuery, strings.Join(confluenceAttachmentExpansionFields, ","))
-		if err != nil {
-			return nil, err
-		}
-		for _, attachment := range attachments {
-			doc, ok, err := c.attachmentDocument(ctx, page, attachment, nameCounts)
-			if err != nil {
-				return nil, err
-			}
-			if ok && (fromBeginning || inConfluenceWindow(doc.UpdatedAt, start, end)) {
-				documents = append(documents, doc)
-			}
-		}
-	}
-	return documents, nil
 }
 
 func (c *ConfluenceConnector) loadSlimDocuments(ctx context.Context) ([]SlimDocument, error) {
@@ -249,7 +214,7 @@ func (c *ConfluenceConnector) loadSlimDocuments(ctx context.Context) ([]SlimDocu
 	return documents, nil
 }
 
-func (c *ConfluenceConnector) pageDocument(ctx context.Context, page confluenceContent, nameCounts map[string]int) (SourceDocument, error) {
+func (c *ConfluenceConnector) pageDocument(ctx context.Context, page confluenceContent) (SourceDocument, error) {
 	pageURL := c.documentURL(page.Links.WebUI)
 	content := confluenceHTMLText(page.bodyHTML())
 	comments, err := c.pageComments(ctx, page.ID.String())
@@ -280,14 +245,13 @@ func (c *ConfluenceConnector) pageDocument(ctx context.Context, page confluenceC
 		}
 	}
 	return SourceDocument{
-		SourceID:           pageURL,
-		SemanticIdentifier: confluenceSemanticIdentifier(page.Space.Name, page.ancestorTitles(), page.Title, nameCounts),
-		Extension:          ".txt",
-		Blob:               blob,
-		UpdatedAt:          updatedAt,
-		SizeBytes:          int64(len(blob)),
-		Metadata:           metadataOrNil(metadata),
-		Fingerprint:        contentFingerprint(blob),
+		SourceID:    pageURL,
+		Extension:   ".txt",
+		Blob:        blob,
+		UpdatedAt:   updatedAt,
+		SizeBytes:   int64(len(blob)),
+		Metadata:    metadataOrNil(metadata),
+		Fingerprint: contentFingerprint(blob),
 	}, nil
 }
 
@@ -306,12 +270,11 @@ func (c *ConfluenceConnector) pageComments(ctx context.Context, pageID string) (
 	return strings.Join(parts, "\n"), nil
 }
 
-func (c *ConfluenceConnector) attachmentDocument(ctx context.Context, page confluenceContent, attachment confluenceContent, nameCounts map[string]int) (SourceDocument, bool, error) {
+func (c *ConfluenceConnector) attachmentDocument(ctx context.Context, page confluenceContent, attachment confluenceContent) (SourceDocument, bool, error) {
 	if !isConfluenceAttachmentAccepted(attachment) {
 		return SourceDocument{}, false, nil
 	}
-	size := attachment.Extensions.FileSize
-	if size > c.attachmentThreshold && !strings.HasPrefix(attachment.Metadata.MediaType, "image/") {
+	if attachment.Extensions.FileSize > c.attachmentThreshold {
 		return SourceDocument{}, false, nil
 	}
 	rawURL := attachment.Links.Download
@@ -347,31 +310,92 @@ func (c *ConfluenceConnector) attachmentDocument(ctx context.Context, page confl
 			metadata["labels"] = labels
 		}
 	}
-	title := firstNonEmpty(attachment.Title, path.Base(rawURL), "attachment")
+	title := confluenceAttachmentTitle(attachment)
 	return SourceDocument{
-		SourceID:           c.documentURL(attachment.Links.WebUI),
-		SemanticIdentifier: confluenceSemanticIdentifier(firstNonEmpty(page.Space.Name, attachment.Space.Name), nil, page.Title+" / "+title, nameCounts),
-		Extension:          confluenceAttachmentExtension(title),
-		Blob:               blob,
-		UpdatedAt:          updatedAt,
-		SizeBytes:          int64(len(blob)),
-		Metadata:           metadata,
-		Fingerprint:        contentFingerprint(blob),
+		SourceID:    c.documentURL(attachment.Links.WebUI),
+		Extension:   confluenceAttachmentExtension(title),
+		Blob:        blob,
+		UpdatedAt:   updatedAt,
+		SizeBytes:   int64(len(blob)),
+		Metadata:    metadata,
+		Fingerprint: contentFingerprint(blob),
 	}, true, nil
 }
 
+func confluenceFileNameFromURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	name := path.Base(parsed.Path)
+	if name == "." || name == "/" {
+		return ""
+	}
+	return name
+}
+
+func confluenceAttachmentTitle(attachment confluenceContent) string {
+	return firstNonEmpty(attachment.Title, confluenceFileNameFromURL(attachment.Links.Download), "attachment")
+}
+
 func (c *ConfluenceConnector) searchAll(ctx context.Context, cql, expand string) ([]confluenceContent, error) {
-	nextPath := confluenceCQLPath(cql, expand, c.batchSize)
+	cursor := newConfluenceSearchCursor(c, cql, expand)
 	var out []confluenceContent
-	for nextPath != "" {
-		var page confluenceSearchResponse
-		if err := c.getJSON(ctx, nextPath, &page); err != nil {
+	for {
+		item, ok, err := cursor.next(ctx)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, page.Results...)
-		nextPath = page.Links.Next
+		if !ok {
+			return out, nil
+		}
+		out = append(out, item)
 	}
-	return out, nil
+}
+
+// confluenceSearchCursor iterates one Confluence content search, fetching pages
+// on demand while guarding against repeated next links and unbounded pagination.
+type confluenceSearchCursor struct {
+	connector *ConfluenceConnector
+	nextPath  string
+	seen      map[string]struct{}
+	pages     int
+	results   []confluenceContent
+	index     int
+}
+
+func newConfluenceSearchCursor(connector *ConfluenceConnector, cql, expand string) *confluenceSearchCursor {
+	return &confluenceSearchCursor{
+		connector: connector,
+		nextPath:  confluenceCQLPath(cql, expand, connector.batchSize),
+		seen:      map[string]struct{}{},
+	}
+}
+
+func (cur *confluenceSearchCursor) next(ctx context.Context) (confluenceContent, bool, error) {
+	for cur.index >= len(cur.results) {
+		if cur.nextPath == "" {
+			return confluenceContent{}, false, nil
+		}
+		if _, ok := cur.seen[cur.nextPath]; ok {
+			return confluenceContent{}, false, fmt.Errorf("confluence pagination repeated the same next link")
+		}
+		cur.seen[cur.nextPath] = struct{}{}
+		cur.pages++
+		if cur.pages > maxConfluenceSearchPages {
+			return confluenceContent{}, false, fmt.Errorf("confluence search exceeded %d pages", maxConfluenceSearchPages)
+		}
+		var page confluenceSearchResponse
+		if err := cur.connector.getJSON(ctx, cur.nextPath, &page); err != nil {
+			return confluenceContent{}, false, err
+		}
+		cur.results = page.Results
+		cur.index = 0
+		cur.nextPath = page.Links.Next
+	}
+	item := cur.results[cur.index]
+	cur.index++
+	return item, true, nil
 }
 
 func (c *ConfluenceConnector) doJSON(ctx context.Context, path string, out any) error {
@@ -408,7 +432,7 @@ func (c *ConfluenceConnector) do(ctx context.Context, method, rawURL string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxConfluenceResponseSize+1))
 	if err != nil {
 		return nil, err
@@ -430,12 +454,15 @@ func (c *ConfluenceConnector) resolveURL(rawURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if parsed.IsAbs() {
-		return parsed.String(), nil
-	}
 	base, err := url.Parse(strings.TrimRight(c.apiBase, "/") + "/")
 	if err != nil {
 		return "", err
+	}
+	if parsed.IsAbs() {
+		if !strings.EqualFold(parsed.Scheme, base.Scheme) || !strings.EqualFold(parsed.Host, base.Host) {
+			return "", fmt.Errorf("confluence URL %q targets a different origin than the configured wiki base", rawURL)
+		}
+		return parsed.String(), nil
 	}
 	return base.ResolveReference(parsed).String(), nil
 }
@@ -499,24 +526,52 @@ func (c *ConfluenceConnector) attachmentCQL(pageID string, start *time.Time, end
 }
 
 type confluenceSyncSession struct {
-	documents []SourceDocument
-	batchSize int
-	index     int
+	connector     *ConfluenceConnector
+	batchSize     int
+	windowStart   *time.Time
+	windowEnd     time.Time
+	fromBeginning bool
+
+	pageCursor     *confluenceSearchCursor
+	currentPage    confluenceContent
+	hasCurrentPage bool
+	pageDocPending bool
+	attachCursor   *confluenceSearchCursor
+
+	resumeSourceID  string
+	resumeMatched   bool
+	resumeUpdatedAt *time.Time
+
+	nameCounts map[string]int
 }
 
-// NextBatch returns the next Confluence document batch.
+// NextBatch returns the next Confluence document batch, fetching pages,
+// comments, and attachments incrementally so session memory stays bounded by
+// batchSize.
 func (s *confluenceSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	if s.index >= len(s.documents) {
-		return SyncBatch{}, io.EOF
+	documents := make([]SourceDocument, 0, s.batchSize)
+	var checkpoint *SyncCheckpoint
+	for len(documents) < s.batchSize {
+		doc, err := s.nextDocument(ctx)
+		if errors.Is(err, io.EOF) {
+			if s.resumeSourceID != "" && !s.resumeMatched {
+				return SyncBatch{}, fmt.Errorf("confluence sync resume checkpoint %q was not found in the source; refusing to discard unprocessed documents", s.resumeSourceID)
+			}
+			if len(documents) == 0 {
+				return SyncBatch{}, io.EOF
+			}
+			break
+		}
+		if err != nil {
+			return SyncBatch{}, err
+		}
+		if !s.includeResumed(*doc) {
+			continue
+		}
+		documents = append(documents, *doc)
+		checkpoint = confluenceSyncCheckpoint(*doc)
 	}
-	end := s.index + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
-	}
-	batchDocuments := s.documents[s.index:end]
-	batch := SyncBatch{Documents: batchDocuments, Checkpoint: confluenceSyncCheckpoint(batchDocuments[len(batchDocuments)-1])}
-	s.index = end
-	return batch, nil
+	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
 // Close closes the Confluence sync session.
@@ -524,25 +579,80 @@ func (s *confluenceSyncSession) Close() error {
 	return nil
 }
 
+// nextDocument produces the next document in page order: each page followed by
+// its accepted attachments, all filtered by the configured window.
+func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocument, error) {
+	for {
+		if !s.hasCurrentPage {
+			page, ok, err := s.pageCursor.next(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, io.EOF
+			}
+			s.currentPage = page
+			s.hasCurrentPage = true
+			s.pageDocPending = true
+			s.attachCursor = newConfluenceSearchCursor(s.connector, s.connector.attachmentCQL(page.ID.String(), s.windowStart, s.windowEnd, s.fromBeginning), strings.Join(confluenceAttachmentExpansionFields, ","))
+		}
+
+		if s.pageDocPending {
+			s.pageDocPending = false
+			doc, err := s.connector.pageDocument(ctx, s.currentPage)
+			if err != nil {
+				return nil, err
+			}
+			if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
+				doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title, s.nameCounts)
+				return &doc, nil
+			}
+			continue
+		}
+
+		attachment, ok, err := s.attachCursor.next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			s.hasCurrentPage = false
+			continue
+		}
+		doc, accepted, err := s.connector.attachmentDocument(ctx, s.currentPage, attachment)
+		if err != nil {
+			return nil, err
+		}
+		if !accepted {
+			continue
+		}
+		if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
+			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), nil, s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment), s.nameCounts)
+			return &doc, nil
+		}
+	}
+}
+
+func (s *confluenceSyncSession) includeResumed(doc SourceDocument) bool {
+	if s.resumeMatched || s.resumeSourceID == "" {
+		return true
+	}
+	if doc.SourceID == s.resumeSourceID {
+		s.resumeMatched = true
+		return false
+	}
+	if s.resumeUpdatedAt != nil && doc.UpdatedAt.After(*s.resumeUpdatedAt) {
+		s.resumeMatched = true
+		return true
+	}
+	return false
+}
+
 func (s *confluenceSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	if checkpoint == nil {
 		return
 	}
-	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
-	if sourceID != "" {
-		for index, doc := range s.documents {
-			if doc.SourceID == sourceID {
-				s.index = index + 1
-				return
-			}
-		}
-	}
-	if checkpoint.UpdatedAt == nil {
-		return
-	}
-	for s.index < len(s.documents) && !s.documents[s.index].UpdatedAt.After(*checkpoint.UpdatedAt) {
-		s.index++
-	}
+	s.resumeSourceID = firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	s.resumeUpdatedAt = checkpoint.UpdatedAt
 }
 
 func confluenceSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
@@ -700,6 +810,7 @@ func confluenceCQLPath(cql, expand string, limit int) string {
 }
 
 func confluenceCQLQuote(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
 	return strings.ReplaceAll(value, "'", "\\'")
 }
 

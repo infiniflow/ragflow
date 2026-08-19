@@ -31,7 +31,7 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSync() error = %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	batch, err := session.NextBatch(context.Background())
 	if err != nil {
@@ -127,7 +127,7 @@ func TestConfluenceConnectorPrune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenPrune() error = %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	batch, err := session.NextBatch(context.Background())
 	if err != nil {
@@ -205,13 +205,15 @@ func newConfluenceFixtureServer(t *testing.T, validateStatus int) *httptest.Serv
 			case strings.Contains(cql, "type=attachment"):
 				writeConfluenceJSON(t, w, map[string]any{"results": []map[string]any{confluenceFixtureAttachment()}})
 			default:
-				t.Fatalf("unexpected CQL %q", cql)
+				t.Errorf("Unexpected CQL: %q", cql)
+				http.Error(w, "unexpected cql", http.StatusInternalServerError)
 			}
 		case r.URL.Path == "/wiki/download/attachments/file.txt":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("attachment bytes"))
 		default:
-			t.Fatalf("unexpected request %s", r.URL.String())
+			t.Errorf("unexpected request %s", r.URL.String())
+			http.Error(w, "unexpected request", http.StatusInternalServerError)
 		}
 	}))
 	return server
@@ -234,7 +236,7 @@ func writeConfluenceJSON(t *testing.T, w http.ResponseWriter, payload any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		t.Fatalf("encode fixture: %v", err)
+		t.Errorf("encode fixture: %v", err)
 	}
 }
 
@@ -314,5 +316,13 @@ func TestConfluenceCQLPathEscapesQuery(t *testing.T) {
 	}
 	if parsed.Query().Get("cql") != "type=page and space='A B'" {
 		t.Fatalf("cql = %q", parsed.Query().Get("cql"))
+	}
+}
+
+func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
+	got := confluenceCQLQuote(`path\name's`)
+	want := `path\\name\'s`
+	if got != want {
+		t.Fatalf("confluenceCQLQuote() = %q, want %q", got, want)
 	}
 }
