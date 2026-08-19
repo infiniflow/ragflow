@@ -137,7 +137,8 @@ def format_iso_8601_to_ymd_hms(time_str: str) -> str:
         time_str: ISO 8601 date string (e.g. "2024-01-01T12:00:00Z")
 
     Returns:
-        str: Date string in "YYYY-MM-DD HH:MM:SS" format
+        str: Date string in "YYYY-MM-DD HH:MM:SS" format, or "" if
+        ``time_str`` is empty or cannot be parsed as ISO 8601.
 
     Example:
         >>> format_iso_8601_to_ymd_hms("2024-01-01T12:00:00Z")
@@ -145,9 +146,19 @@ def format_iso_8601_to_ymd_hms(time_str: str) -> str:
     """
     from dateutil import parser
 
+    if not time_str:
+        return ""
     try:
-        dt = parser.isoparse(time_str)
+        # ``dateutil.parser.isoparse`` accepts every ISO 8601 form the LLM
+        # extraction prompt can plausibly emit, including ordinal dates
+        # (``2024-001T12:00:00``) that stdlib ``datetime.fromisoformat``
+        # rejects. Strip the tz offset so ``strftime`` formats the wall
+        # clock unchanged, matching the legacy return path.
+        dt = parser.isoparse(time_str).replace(tzinfo=None)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
-        logging.error(str(e))
-        return time_str
+        # Surface the rejected value and exception so callers (and log readers)
+        # can identify which field of which memory failed to parse, instead
+        # of silently writing the unparsed string into a timestamp column.
+        logging.error(f"format_iso_8601_to_ymd_hms: invalid ISO 8601 timestamp {time_str!r}: {e}")
+        return ""

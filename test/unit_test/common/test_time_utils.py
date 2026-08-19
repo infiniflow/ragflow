@@ -699,15 +699,23 @@ class TestFormatIso8601ToYmdHms:
     def test_ordinal_date_extended(self):
         """ISO 8601 ordinal date (day-of-year), extended form.
 
-        dateutil.isoparse accepts it but datetime.fromisoformat rejects it,
-        which previously made the function silently return the input unchanged.
-        """
+        ``dateutil.parser.isoparse`` accepts ordinal dates that stdlib
+        ``datetime.fromisoformat`` rejects; the function now uses the
+        dateutil result directly.
+        ``"""
         assert format_iso_8601_to_ymd_hms("2024-001T12:00:00Z") == "2024-01-01 12:00:00"
 
     def test_ordinal_date_basic(self):
         """ISO 8601 ordinal date (day-of-year), basic form."""
         assert format_iso_8601_to_ymd_hms("2024001T120000Z") == "2024-01-01 12:00:00"
 
-    def test_invalid_string_returns_original(self):
-        """Unparseable input is returned unchanged."""
-        assert format_iso_8601_to_ymd_hms("not-a-date") == "not-a-date"
+    def test_invalid_string_returns_empty(self):
+        """Unparseable input returns "" instead of writing the garbage string
+        to a timestamp column. The original string and exception are logged
+        so the operator can identify which field failed."""
+        assert format_iso_8601_to_ymd_hms("not-a-date") == ""
+
+    def test_empty_string_returns_empty(self):
+        """Empty input returns "" — matches the convention used by the caller
+        for the ``invalid_at`` field when the model omits it."""
+        assert format_iso_8601_to_ymd_hms("") == ""
