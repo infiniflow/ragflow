@@ -954,6 +954,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         {knowledge}
         以上是知识库。`,
       systemMessage: '请输入',
+      knowledgePlaceholderMessage:
+        '已选择知识库但系统提示词中缺少 {knowledge} 占位符，检索到的内容将无法注入。请在系统提示词中添加 {knowledge}，或移除已选择的知识库。',
       systemTip:
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',

@@ -11,7 +11,8 @@ import {
 import { topnSchema } from '@/components/top-n-item';
 import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
-import { z } from 'zod';
+import { z, ZodIssueCode } from 'zod';
+import { chatPromptKbIssues } from './validate-chat-prompt';
 
 export function useChatSettingSchema(staleDatasetIds: Set<string>) {
   const { t } = useTranslate('chat');
@@ -47,23 +48,33 @@ export function useChatSettingSchema(staleDatasetIds: Set<string>) {
       .optional(),
   });
 
-  const formSchema = z.object({
-    name: z.string().min(1, { message: t('assistantNameMessage') }),
-    icon: z.string(),
-    description: z.string().optional(),
-    dataset_ids: z.array(z.string()).min(0, {
-      message: t('knowledgeBasesMessage'),
-    }),
-    prompt_config: promptConfigSchema,
-    ...rerankFormSchema,
-    llm_setting: z.object(LlmSettingFieldSchema),
-    ...LlmSettingEnabledSchema,
-    llm_id: z.string().optional(),
-    ...vectorSimilarityWeightSchema,
-    ...similarityThresholdSchema,
-    ...topnSchema,
-    ...MetadataFilterSchema,
-  });
+  const formSchema = z
+    .object({
+      name: z.string().min(1, { message: t('assistantNameMessage') }),
+      icon: z.string(),
+      description: z.string().optional(),
+      dataset_ids: z.array(z.string()).min(0, {
+        message: t('knowledgeBasesMessage'),
+      }),
+      prompt_config: promptConfigSchema,
+      ...rerankFormSchema,
+      llm_setting: z.object(LlmSettingFieldSchema),
+      ...LlmSettingEnabledSchema,
+      llm_id: z.string().optional(),
+      ...vectorSimilarityWeightSchema,
+      ...similarityThresholdSchema,
+      ...topnSchema,
+      ...MetadataFilterSchema,
+    })
+    .superRefine((value, ctx) => {
+      for (const issue of chatPromptKbIssues(value, t)) {
+        ctx.addIssue({
+          code: ZodIssueCode.custom,
+          path: issue.path,
+          message: issue.message,
+        });
+      }
+    });
 
   // A persisted dataset_ids value may reference datasets that have since been
   // deleted or emptied of chunks — those stale ids are flagged here.
