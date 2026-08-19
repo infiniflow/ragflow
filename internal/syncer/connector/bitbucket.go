@@ -114,16 +114,16 @@ func (c *BitbucketConnector) ValidateConnectorSetting(ctx context.Context, reque
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if c == nil {
-		return fmt.Errorf("bitbucket connector is nil")
+		return &ConnectorValidationError{Message: "bitbucket connector is nil"}
 	}
 	if c.workspace == "" {
-		return fmt.Errorf("Invalid connector settings: 'workspace' must be provided")
+		return &ConnectorValidationError{Message: "Invalid connector settings: 'workspace' must be provided"}
 	}
 	if c.email == "" {
-		return fmt.Errorf("Missing bitbucket_account_email in credentials")
+		return &ConnectorMissingCredentialError{Message: "Missing bitbucket_account_email in credentials"}
 	}
 	if c.apiToken == "" {
-		return fmt.Errorf("Missing bitbucket_api_token in credentials")
+		return &ConnectorMissingCredentialError{Message: "Missing bitbucket_api_token in credentials"}
 	}
 	var page map[string]any
 	_, err := c.getJSON(ctx, c.apiURL("/repositories/"+url.PathEscape(c.workspace), url.Values{
@@ -135,12 +135,13 @@ func (c *BitbucketConnector) ValidateConnectorSetting(ctx context.Context, reque
 		if errors.As(err, &httpErr) {
 			switch httpErr.Status {
 			case http.StatusUnauthorized:
-				return fmt.Errorf("Invalid or expired Bitbucket credentials (HTTP 401).")
+				return &ConnectorMissingCredentialError{Message: httpErr.Error()}
 			case http.StatusForbidden:
-				return fmt.Errorf("Insufficient permissions to access Bitbucket workspace (HTTP 403).")
+				return &ConnectorValidationError{Message: httpErr.Error()}
 			}
+			return &ConnectorValidationError{Message: httpErr.Error()}
 		}
-		return err
+		return &ConnectorValidationError{Message: err.Error()}
 	}
 	return nil
 }

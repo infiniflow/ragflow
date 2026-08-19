@@ -366,12 +366,14 @@ func TestBitbucketConnectorOpenPrune(t *testing.T) {
 
 func TestBitbucketConnectorValidateConnectorSetting(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		status int
-		want   string
+		name    string
+		status  int
+		body    string
+		want    string
+		missing bool
 	}{
-		{name: "unauthorized", status: http.StatusUnauthorized, want: "HTTP 401"},
-		{name: "forbidden", status: http.StatusForbidden, want: "HTTP 403"},
+		{name: "unauthorized", status: http.StatusUnauthorized, body: `{"message":"API Token provided has no Bitbucket scopes."}`, want: "API Token provided has no Bitbucket scopes.", missing: true},
+		{name: "forbidden", status: http.StatusForbidden, body: `{"message":"nope"}`, want: "HTTP 403"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			connector := &BitbucketConnector{
@@ -381,12 +383,23 @@ func TestBitbucketConnectorValidateConnectorSetting(t *testing.T) {
 				batchSize: 10,
 				baseURL:   "https://api.bitbucket.test",
 				doJSON: func(ctx context.Context, apiURL string, out any) (http.Header, error) {
-					return nil, &bitbucketHTTPError{Status: tc.status}
+					return nil, &bitbucketHTTPError{Status: tc.status, Body: tc.body}
 				},
 			}
 			err := connector.ValidateConnectorSetting(context.Background(), nil)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want contains %q", err, tc.want)
+			}
+			if tc.missing {
+				var credErr *ConnectorMissingCredentialError
+				if !errors.As(err, &credErr) {
+					t.Fatalf("err = %T, want *ConnectorMissingCredentialError", err)
+				}
+			} else {
+				var valErr *ConnectorValidationError
+				if !errors.As(err, &valErr) {
+					t.Fatalf("err = %T, want *ConnectorValidationError", err)
+				}
 			}
 		})
 	}
