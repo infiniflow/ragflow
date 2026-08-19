@@ -195,6 +195,25 @@ func TestDedupSubstringOverlaps_AdjacentLinesKept(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_TallerFragmentKept locks the defensive invariant:
+// a PHYSICALLY TALLER box whose SHORT text is a substring of a shorter, contained
+// box's longer text is NOT silently dropped. Collapse requires the substring-text
+// box to be geometrically INSIDE the text-containing box; here the substring box
+// is the taller CONTAINER, so it is kept. This guards the height-vs-text decoupling
+// fix (a taller box must not be dropped just because its text is a substring).
+func TestDedupSubstringOverlaps_TallerFragmentKept(t *testing.T) {
+	tall := pdf.TextBox{
+		Text: "X", PageNumber: 0, Top: 100, Bottom: 160, X0: 60, X1: 520, IsOCR: true, // taller container
+	}
+	wide := pdf.TextBox{
+		Text: "prefix X suffix", PageNumber: 0, Top: 115, Bottom: 130, X0: 60, X1: 520, IsOCR: true, // shorter, inside tall, contains "X"
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{tall, wide})
+	if len(got) != 2 {
+		t.Fatalf("taller substring box must be kept (only contained fragments are dropped), got %d boxes", len(got))
+	}
+}
+
 // TestDedupSubstringOverlaps_CharPathKept locks that a char-path box whose text
 // is a substring of another char-path box is NEVER collapsed — e.g. a repeated
 // heading inside another paragraph's text range on a digital PDF. Only OCR

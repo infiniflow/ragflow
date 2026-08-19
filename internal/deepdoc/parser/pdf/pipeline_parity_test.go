@@ -8,12 +8,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
-	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
@@ -63,12 +61,7 @@ func TestPipelineParity(t *testing.T) {
 	// go_intentional (rule table-rotation-split-vs-merged-grid in
 	// known_diffs.json), where Go's split matches the physical PDF and
 	// Python's merged 8x7 grid is a segmentation defect.
-	lockedGridPDFs := map[string]bool{
-		"13_crosspage_table.pdf":        true,
-		"14_text_table_interleaved.pdf": true,
-		"06_table_content.pdf":          true,
-		"18_table_caption.pdf":          true,
-	}
+	lockedGridPDFs := parityLockedGridPDFs()
 
 	// go_intentional rules exempt their applies_to PDFs from the FAIL count:
 	// a documented, deliberate divergence where Go is judged at least as good

@@ -107,13 +107,16 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 }
 
 // DedupSubstringOverlaps collapses a box whose text is a CONTIGUOUS SUBSTRING
-// of another same-page box and whose X AND Y bands both overlap it, keeping
-// the longer box. OCR detects both a full paragraph and its middle fragment at
-// the same location (e.g. 01_english_simple: full paragraph y=(105,166) plus
-// fragment "language models. When a user asks..." y=(119,132)); Python drops
-// the fragment, Go must too or the merged paragraph repeats it. A substring
-// box at a disjoint Y OR X (different column, e.g. eval_two_wide_gutter) is
-// kept — a real repeated heading or another column's text is legal.
+// of another same-page box AND is geometrically contained in that box (X AND Y
+// inside), keeping the longer box. OCR detects both a full paragraph and its
+// middle fragment at the same location (e.g. 01_english_simple: full paragraph
+// y=(105,166) plus fragment "language models. When a user asks..." y=(119,132));
+// Python drops the fragment, Go must too or the merged paragraph repeats it. A
+// substring box at a disjoint Y OR X (different column, e.g.
+// eval_two_wide_gutter) is kept — a real repeated heading or another column's
+// text is legal. The containment test is bound to the substring box (not just
+// the shorter-height box) so a physically taller box whose short text is a
+// substring of a neighbour is never silently dropped.
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
 	for i := range boxes {
@@ -137,28 +140,23 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 			if aj == "" || len(ai) == len(aj) {
 				continue
 			}
-			// The fragment must sit FULLY INSIDE the parent box in Y (OCR emits
-			// a full paragraph plus its middle fragment at the same spot).
-			// Adjacent lines only touch at the boundary, so partial overlap is
-			// NOT a duplicate (keeps 'linexxx' runs in eval_*).
-			var sh, lo pdf.TextBox
-			if boxes[i].Bottom-boxes[i].Top <= boxes[j].Bottom-boxes[j].Top {
-				sh, lo = boxes[i], boxes[j]
-			} else {
-				sh, lo = boxes[j], boxes[i]
-			}
-			if sh.Top < lo.Top || sh.Bottom > lo.Bottom {
-				continue
-			}
-			// X must also overlap (same location; different columns are legal).
-			if lo.X1 <= sh.X0 || sh.X1 <= lo.X0 {
-				continue
-			}
+			// Collapse only when the SUBSTRING-text box is geometrically CONTAINED
+			// in the text-containing box. Binding the geometry to the actual
+			// substring (not merely the shorter-height box) avoids silently
+			// dropping a physically taller box whose short text happens to be a
+			// substring of a neighbour — OCR double-detection fragments are always
+			// the smaller, contained box, so the taller container is kept.
 			if len(ai) > len(aj) && strings.Contains(ai, aj) {
-				drop[j] = true
+				// j's text is a substring of i's -> drop j only if j sits inside i.
+				if boxInside(boxes[j], boxes[i]) {
+					drop[j] = true
+				}
 			} else if len(aj) > len(ai) && strings.Contains(aj, ai) {
-				drop[i] = true
-				break
+				// i's text is a substring of j's -> drop i only if i sits inside j.
+				if boxInside(boxes[i], boxes[j]) {
+					drop[i] = true
+					break
+				}
 			}
 		}
 	}
@@ -170,6 +168,19 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 		out = append(out, b)
 	}
 	return out
+}
+
+// boxInside reports whether inner is fully contained within outer in Y and
+// overlaps it in X. It confirms an OCR substring fragment sits inside the box
+// whose text contains it (not merely shares a Y band at a different column).
+func boxInside(inner, outer pdf.TextBox) bool {
+	if inner.Top < outer.Top || inner.Bottom > outer.Bottom {
+		return false
+	}
+	if outer.X1 <= inner.X0 || inner.X1 <= outer.X0 {
+		return false
+	}
+	return true
 }
 
 // TextMerge horizontally merges adjacent boxes at similar vertical positions.
@@ -238,17 +249,18 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		}
 
 		mh := medianHeights[pg]
-		if mh <= 0 {
-			// Python: for is_english documents chars are cleared so mean_height
-			// is 0 and _naive_vertical_merge skips every pair (gap > 0). Mirror
-			// that for English pages — otherwise 'linexxx' rows (eval_*) merge
-			// into one giant line. Non-English pages fall back to the box
-			// median height as before.
-			if pageEnglish[pg] {
-				mh = 0
-			} else {
-				mh = util.MedianHeight(bxs)
-			}
+		if pageEnglish[pg] {
+			// Python: for is_english documents chars are cleared so
+			// mean_height becomes 0 and _naive_vertical_merge skips every
+			// pair (gap > 0). Mirror that for English pages DIRECTLY — do not
+			// fall back to the (positive) char-derived median height, or real
+			// English pages would still merge and 'linexxx' rows (eval_*)
+			// concatenate into one giant line. The old guard `if mh <= 0`
+			// never fired for real pages because their char-derived median
+			// height is always positive.
+			mh = 0
+		} else if mh <= 0 {
+			mh = util.MedianHeight(bxs)
 		}
 		mw := medianWidths[pg]
 		if mw <= 0 {

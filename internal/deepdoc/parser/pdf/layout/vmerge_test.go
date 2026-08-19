@@ -24,6 +24,27 @@ func TestVerticalMergeEnglishNoMerge(t *testing.T) {
 	}
 }
 
+// TestVerticalMergeEnglishNoMergePositiveMedian locks the REAL production path:
+// an ENGLISH page whose char-derived median height is POSITIVE (the common case
+// for digital English PDFs, where Go keeps embedded chars) must STILL NOT
+// vertically merge. The old guard `if mh <= 0 { if pageEnglish ... }` never
+// fired for real pages (mh > 0), so English lines were wrongly merged and
+// 'linexxx' rows concatenated into one giant line. This reproduces that gap and
+// is the regression lock for the fix (mirror Python is_english -> chars=[] ->
+// mean_height 0 -> no merge).
+func TestVerticalMergeEnglishNoMergePositiveMedian(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{Text: "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", PageNumber: 0, Top: 100, Bottom: 112, X0: 60, X1: 260},
+		{Text: "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", PageNumber: 0, Top: 113, Bottom: 125, X0: 60, X1: 260},
+		{Text: "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", PageNumber: 0, Top: 126, Bottom: 138, X0: 60, X1: 260},
+	}
+	// English page, POSITIVE median height (real char-path case) -> no merge.
+	got := NaiveVerticalMerge(boxes, map[int]float64{0: 15}, map[int]float64{0: 8}, map[int]bool{0: true})
+	if len(got) != 3 {
+		t.Fatalf("english page with positive median height must keep 3 separate lines, got %d", len(got))
+	}
+}
+
 // TestVerticalMergeNonEnglishKeepsMerge ensures non-English pages still merge
 // close adjacent lines (median height > 0), so paragraph assembly is intact.
 func TestVerticalMergeNonEnglishKeepsMerge(t *testing.T) {
