@@ -50,7 +50,6 @@ class Jin10Param(ToolParamBase):
         self.calendar_datatype = "data"
         self.symbols_type = "GOODS"
         self.symbols_datatype = "symbols"
-        self.contain = ""
         self.filter = ""
 
     def check(self):
