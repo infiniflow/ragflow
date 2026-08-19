@@ -75,6 +75,7 @@ def test_gaussdb_empty_string_compatible_migration_drops_not_null_only_for_gauss
     assert len(FakeDB.queries) == expected_query_count
     assert ('ALTER TABLE "user" ALTER COLUMN "nickname" DROP NOT NULL', None) in FakeDB.queries
     assert ('ALTER TABLE "tenant" ALTER COLUMN "llm_id" DROP NOT NULL', None) in FakeDB.queries
+    assert ('ALTER TABLE "document" ALTER COLUMN "suffix" DROP NOT NULL', None) in FakeDB.queries
     assert ('ALTER TABLE "system_settings" ALTER COLUMN "value" DROP NOT NULL', None) in FakeDB.queries
     assert ('ALTER TABLE "task" ALTER COLUMN "task_type" DROP NOT NULL', None) in FakeDB.queries
     assert ('ALTER TABLE "sync_logs" ALTER COLUMN "error_msg" DROP NOT NULL', None) in FakeDB.queries
@@ -88,15 +89,14 @@ def test_gaussdb_empty_string_compatible_migration_drops_not_null_only_for_gauss
     assert len(FakeDB.queries) == expected_query_count
 
 
-def test_gaussdb_migration_adds_compatible_tags_before_relaxing_columns(monkeypatch):
+def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkeypatch):
     events = []
-    migrated_tags_field = None
+    migrated_fields = {}
 
     def record_add_column(_migrator, table_name, column_name, column_type):
-        nonlocal migrated_tags_field
         events.append(("add", table_name, column_name))
-        if (table_name, column_name) == ("user_canvas", "tags"):
-            migrated_tags_field = column_type
+        if (table_name, column_name) in {("document", "suffix"), ("user_canvas", "tags")}:
+            migrated_fields[(table_name, column_name)] = column_type
 
     monkeypatch.setattr(settings, "DATABASE_TYPE", "gaussdb")
     monkeypatch.setattr(db_models, "alter_db_add_column", record_add_column)
@@ -111,9 +111,20 @@ def test_gaussdb_migration_adds_compatible_tags_before_relaxing_columns(monkeypa
 
     db_models.migrate_db()
 
-    assert isinstance(migrated_tags_field, db_models.EmptyStringCharField)
-    assert migrated_tags_field.null is True
+    for field in migrated_fields.values():
+        assert isinstance(field, db_models.EmptyStringCharField)
+        assert field.null is True
+    assert set(migrated_fields) == {("document", "suffix"), ("user_canvas", "tags")}
     assert events[-1] == ("relax",)
+
+
+def test_empty_string_char_field_keeps_non_gaussdb_constraints(monkeypatch):
+    for database_type in ("mysql", "postgres", "oceanbase"):
+        monkeypatch.setattr(settings, "DATABASE_TYPE", database_type)
+        field = db_models.EmptyStringCharField(null=False)
+
+        assert field.null is False
+        assert field.db_value("") == ""
 
 
 def test_gaussdb_unique_email_migration_checks_unique_email_index_not_fixed_name(monkeypatch):
