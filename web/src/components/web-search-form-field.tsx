@@ -36,7 +36,11 @@ interface IProps {
   prefix?: string;
 }
 
-const providerOptions = [
+const providerOptions: {
+  name: string;
+  logo?: string;
+  value: WebSearchProvider;
+}[] = [
   {
     name: 'Tavily',
     logo: tavilyLogo,
@@ -52,17 +56,27 @@ const providerOptions = [
     logo: serplyLogo,
     value: WebSearchProvider.Serply,
   },
-]
+  {
+    // No logo asset: You.com does not publish a mark at a usable size. Add one
+    // here as `youcomLogo` if that changes.
+    name: 'You.com',
+    value: WebSearchProvider.YouCom,
+  },
+];
+
+const sortedProviderOptions = [...providerOptions]
   .sort((left, right) => left.name.localeCompare(right.name))
   .map(({ name, logo, value }) => ({
     label: (
       <span className="flex items-center gap-2">
-        <img
-          src={logo}
-          alt=""
-          aria-hidden="true"
-          className="size-4 shrink-0 object-contain"
-        />
+        {logo && (
+          <img
+            src={logo}
+            alt=""
+            aria-hidden="true"
+            className="size-4 shrink-0 object-contain"
+          />
+        )}
         {name}
       </span>
     ),
@@ -91,6 +105,14 @@ const providerKeyConfig = {
     placeholder: 'serplyApiKeyMessage',
     helpUrl: 'https://serply.io',
   },
+  [WebSearchProvider.YouCom]: {
+    name: 'prompt_config.youcom_api_key',
+    label: 'You.com API Key',
+    tip: 'youcomApiKeyTip',
+    placeholder: 'youcomApiKeyMessage',
+    helpUrl:
+      'https://you.com/platform?utm_source=infiniflow-ragflow&utm_medium=oss_integration&utm_campaign=2026-08-oss-integrations&utm_content=app',
+  },
 } as const;
 
 export function WebSearchFormField({ prefix = '' }: IProps) {
@@ -117,7 +139,7 @@ export function WebSearchFormField({ prefix = '' }: IProps) {
               <RAGFlowSelect
                 {...field}
                 value={field.value}
-                options={providerOptions}
+                options={sortedProviderOptions}
                 placeholder={t('webSearchProviderPlaceholder')}
                 triggerTestId="web-search-provider"
                 optionTestIdPrefix="web-search-provider-option"
