@@ -350,3 +350,78 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     assert retriever.calls[0]["kwargs"]["doc_ids"] is None
     assert "Chunk text from dataset." in chat_model.calls[0]["system_prompt"]
     assert result[0]["answer"] == "stub answer"
+
+
+@pytest.mark.p2
+def test_async_chat_sql_retrieval_uses_dataset_owner_tenant_not_dialog_tenant(monkeypatch):
+    """Regression test for a team-shared dataset SQL-retrieval tenant mismatch.
+
+    When a chat (owned by tenant "chat-creator-tenant") references a table
+    dataset owned by a different tenant ("dataset-owner-tenant"), SQL
+    retrieval must build the doc-store index/table name from the dataset
+    owner's tenant, not from dialog.tenant_id -- otherwise it queries an
+    index that doesn't exist (see GitHub issue #18514).
+    """
+    shared_kb = SimpleNamespace(
+        id="kb-shared",
+        tenant_id="dataset-owner-tenant",
+        parser_config={"field_map": {"product": "Product Name"}},
+    )
+    chat_model = _StubChatModel(["unused"])
+    dialog = SimpleNamespace(
+        kb_ids=["kb-shared"],
+        llm_id="chat-model",
+        tenant_llm_id="",
+        tenant_id="chat-creator-tenant",
+        llm_setting={},
+        similarity_threshold=0.1,
+        vector_similarity_weight=0.2,
+        top_n=8,
+        top_k=32,
+        meta_data_filter=None,
+        prompt_config={
+            "quote": True,
+            "keyword": False,
+            "tts": False,
+            "empty_response": "",
+            "system": "Use only this knowledge: {knowledge}",
+            "parameters": [{"key": "knowledge", "optional": False}],
+            "reasoning": False,
+            "toc_enhance": False,
+            "use_kg": False,
+        },
+    )
+
+    captured_calls = []
+
+    async def _fake_use_sql(_question, _field_map, tenant_id, _chat_mdl, _quote, kb_ids, doc_ids=None):
+        captured_calls.append({"tenant_id": tenant_id, "kb_ids": kb_ids})
+        return {"answer": "sql answer", "reference": {"chunks": [], "doc_aggs": []}, "prompt": ""}
+
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(
+        dialog_service,
+        "resolve_model_config",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096, "model_type": "chat"},
+    )
+    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "get_models",
+        lambda _dialog, **_kwargs: ([shared_kb], object(), None, chat_model, None),
+    )
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {"product": "Product Name"})
+    monkeypatch.setattr(dialog_service, "use_sql", _fake_use_sql)
+
+    async def _collect():
+        items = []
+        async for item in dialog_service.async_chat(dialog, [{"role": "user", "content": "How many products?"}], stream=False):
+            items.append(item)
+        return items
+
+    result = asyncio.run(_collect())
+
+    assert len(captured_calls) == 1
+    assert captured_calls[0]["tenant_id"] == "dataset-owner-tenant"
+    assert captured_calls[0]["kb_ids"] == ["kb-shared"]
+    assert result[0]["answer"] == "sql answer"
