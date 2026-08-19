@@ -19,7 +19,24 @@ from typing import List
 
 from common import settings
 from common.constants import MemoryType
-from common.doc_store.doc_store_base import OrderByExpr, MatchExpr
+from common.doc_store.doc_store_base import MatchDenseExpr, MatchExpr, MatchTextExpr, OrderByExpr
+
+
+def _copy_dense_expression(match_expressions: list[MatchExpr]) -> MatchDenseExpr | None:
+    """Copy the dense leg before connectors can mutate its options in place."""
+    if not any(isinstance(expr, MatchTextExpr) for expr in match_expressions):
+        return None
+    for expr in match_expressions:
+        if isinstance(expr, MatchDenseExpr):
+            return MatchDenseExpr(
+                expr.vector_column_name,
+                expr.embedding_data,
+                expr.embedding_data_type,
+                expr.distance_type,
+                expr.topn,
+                dict(expr.extra_options or {}),
+            )
+    return None
 
 
 def _es_index_prefix() -> str:
@@ -148,7 +165,15 @@ class MessageService:
         return list(doc_mapping.values())
 
     @classmethod
-    def search_message(cls, memory_ids: List[str], condition_dict: dict, uid_list: List[str], match_expressions: list[MatchExpr], top_n: int):
+    def search_message(
+        cls,
+        memory_ids: List[str],
+        condition_dict: dict,
+        uid_list: List[str],
+        match_expressions: list[MatchExpr],
+        top_n: int,
+        allow_dense_fallback: bool = False,
+    ):
         index_names = [index_name(uid) for uid in uid_list]
         # filter only valid messages by default
         if "status" not in condition_dict:
@@ -156,8 +181,10 @@ class MessageService:
 
         order_by = OrderByExpr()
         order_by.desc("valid_at")
+        select_fields = ["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"]
+        dense_fallback = _copy_dense_expression(match_expressions) if allow_dense_fallback else None
         res, total_count = settings.msgStoreConn.search(
-            select_fields=["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"],
+            select_fields=select_fields,
             highlight_fields=[],
             condition=condition_dict,
             match_expressions=match_expressions,
@@ -168,12 +195,23 @@ class MessageService:
             memory_ids=memory_ids,
             agg_fields=[],
         )
+        if not total_count and dense_fallback is not None:
+            res, total_count = settings.msgStoreConn.search(
+                select_fields=select_fields,
+                highlight_fields=[],
+                condition=condition_dict,
+                match_expressions=[dense_fallback],
+                order_by=order_by,
+                offset=0,
+                limit=top_n,
+                index_names=index_names,
+                memory_ids=memory_ids,
+                agg_fields=[],
+            )
         if not total_count:
             return []
 
-        docs = settings.msgStoreConn.get_fields(
-            res, ["message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at", "invalid_at", "forget_at", "status", "content"]
-        )
+        docs = settings.msgStoreConn.get_fields(res, select_fields)
         return list(docs.values())
 
     @staticmethod
