@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"regexp"
@@ -48,7 +49,7 @@ import (
 type ChatPipelineService struct {
 	ModelProviderSvc *ModelProviderService
 	MetadataSvc      *MetadataService
-	datasetService   *DatasetService
+	kbDAO            *dao.KnowledgebaseDAO
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
@@ -56,7 +57,7 @@ func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
 		ModelProviderSvc: NewModelProviderService(),
 		MetadataSvc:      NewMetadataService(),
-		datasetService:   NewDatasetService(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -124,12 +125,12 @@ type AsyncChatResult struct {
 //	│                                                       │
 //	│  reasoning=true?                                      │
 //	│   YES → DeepResearcher (recursive, maxDepth=3)        │
-//	│         each layer: KB → Web(Tavily) → KG(use_kg)     │
+//	│         each layer: KB → Web search → KG(use_kg)      │
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
 //	│         TOC enhance → child chunk retrieval →         │
-//	│         Tavily web search → KG retrieval (prepend)    │
+//	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
 //	│    kbPrompt (build knowledge blocks)                  │
@@ -168,7 +169,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
-		return nil, fmt.Errorf("The last content of this conversation is not from user.")
+		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -183,7 +184,7 @@ func (s *ChatPipelineService) AsyncChat(
 	if useWebSearch {
 		common.Debug("web_search",
 			zap.Bool("kb", hasKBs),
-			zap.Bool("tavily", chat.PromptConfig != nil && chat.PromptConfig["tavily_api_key"] != "" && chat.PromptConfig["tavily_api_key"] != nil),
+			zap.Bool("configured", resolveWebSearchProvider(chat.PromptConfig) != nil),
 			zap.Any("internet", kwargs["internet"]),
 			zap.Bool("enabled", useWebSearch))
 	}
@@ -204,7 +205,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 2: Resolve LLM Model Config + max_tokens ===
 		common.Info("Phase 2: Resolve LLM Model Config + max_tokens")
 		timer.Enter(common.PhaseCheckLLM)
-		llmModelConfig, _, _, _, err := s.getLLMModelConfig(chat)
+		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -245,7 +246,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 4: Bind Models (embedding, rerank, chat, TTS) + ToolCall ===
 		common.Info("Phase 4: Bind Models (embedding, rerank, chat, TTS)")
 		timer.Enter(common.PhaseBindModels)
-		kbs, embModel, rerankModel, chatModel, ttsModel := s.getModels(ctx, chat)
+		kbs, embModel, rerankModel, chatModel, ttsModel, err := s.getModels(ctx, chat)
+		if err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
+			}
+			return
+		}
 
 		// Toolcall binding
 		if toolcallSession, hasSession := kwargs["toolcall_session"]; hasSession && toolcallSession != nil {
@@ -325,9 +333,9 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(userID, files, false)
+				textAttachmentsList, imageAttachments = splitFileAttachments(ctx, userID, files, false)
 			} else {
-				textAttachmentsList, imageFiles = splitFileAttachments(userID, files, true)
+				textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, true)
 			}
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			common.Debug("Resolved attachments",
@@ -340,7 +348,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		fieldMap, fmErr := s.datasetService.GetFieldMap(kbIDStrings(kbs))
+		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
@@ -395,7 +403,7 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 					}
 					kbinfos := map[string]interface{}{"chunks": chunks}
-					s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
 				out <- AsyncChatResult{
@@ -544,7 +552,7 @@ func (s *ChatPipelineService) AsyncChat(
 				var flattedMeta common.MetaData
 				var mErr error
 				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(kbIDs)
+					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 				}
 				if mErr == nil {
 					if filtered, ok := ApplyMetaDataFilter(
@@ -604,7 +612,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//   b) Otherwise: standard retrieval, then:
 		//      - TOC enhancement (if toc_enhance is enabled).
 		//      - Child chunk retrieval.
-		//      - Tavily web search (if internet is enabled).
+		//      - Web search provider (if internet is enabled).
 		//      - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
 		// When false, the entire block is skipped.
@@ -681,7 +689,7 @@ func (s *ChatPipelineService) AsyncChat(
 				searchQuestion := strings.Join(questions, " ")
 				if embModel != nil {
 					// Retrieval
-					rankFeature := s.MetadataSvc.LabelQuestion(searchQuestion, kbs)
+					rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
 					{
 						tenantIDs := make([]string, 0)
 						kbIDs := make([]string, 0)
@@ -764,21 +772,21 @@ func (s *ChatPipelineService) AsyncChat(
 					kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
 				}
 
-				// Web search via Tavily
+				// Web search
 				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-					tavResult, tavErr := s.tavilyRetrieve(ctx, tavilyKey, searchQuestion)
-					if tavErr != nil {
-						common.Warn("Tavily web search failed", zap.Error(tavErr))
+					provider := resolveWebSearchProvider(chat.PromptConfig)
+					webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
+					if webErr != nil {
+						common.Warn("Web search failed", zap.Error(webErr))
 					} else {
 						// Extend chunks and doc_aggs with web search results.
 						if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-							if newChunks, ok := tavResult["chunks"].([]map[string]interface{}); ok {
+							if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
 								kbinfos["chunks"] = append(existingChunks, newChunks...)
 							}
 						}
 						if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-							if newAggs, ok := tavResult["doc_aggs"].([]interface{}); ok {
+							if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
 								kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
 							}
 						}
@@ -818,7 +826,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Enrich chunks with document metadata AFTER all retrieval adds.
 		// Request values (kwargs) take precedence over config values.
 		if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta {
-			s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
 
@@ -837,12 +845,31 @@ func (s *ChatPipelineService) AsyncChat(
 		// return the user-configured fallback message (if set).
 		// If empty_response is not configured, fall through to the LLM call
 		// with an empty knowledge context.
-		if len(knowledges) == 0 {
+		//
+		// EXCEPTION: when the user attached files to their message, the
+		// attachment text provides context that should be sent to the LLM
+		// even if KB retrieval returned nothing. In that case we skip the
+		// early return and fall through to the normal LLM call where
+		// attachments are appended to the system prompt.
+		//
+		// Two results are yielded (mirroring Python dialog_service.py):
+		//   1. Final=false — carries the answer text so streaming consumers
+		//      actually display the fallback message.
+		//   2. Final=true   — closes the stream with the same full answer plus
+		//      the reference/prompt. Python yields the full answer again in the
+		//      final event (dialog_service.py:807); consumers that only look at
+		//      the final event (e.g. the OpenAI-compatible endpoint) would
+		//      otherwise see an empty reply.
+		if len(knowledges) == 0 && attachments == "" {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
+				out <- AsyncChatResult{
+					Answer:    emptyResp,
+					Reference: map[string]interface{}{},
+				}
 				out <- AsyncChatResult{
 					Answer:      emptyResp,
 					Reference:   kbinfos,
-					AudioBinary: s.synthesizeTTS(ttsModel, emptyResp),
+					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
 				}
@@ -982,7 +1009,7 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("stream", stream),
 			zap.Int("llm_messages_count", len(llmMessages)))
 		timer.Enter(common.PhaseGenerateAnswer)
-		chatDriver := s.buildChatDriver(chat, chatModel)
+		chatDriver := s.buildChatDriver(ctx, chat, chatModel)
 		if chatDriver == nil {
 			out <- AsyncChatResult{
 				Answer: "**ERROR**: No chat model available for this chat.",
@@ -1091,7 +1118,7 @@ func (s *ChatPipelineService) AsyncChat(
 							out <- AsyncChatResult{
 								Answer:      text,
 								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ttsModel, text),
+								AudioBinary: s.synthesizeTTS(ctx, ttsModel, text),
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 							}
@@ -1100,7 +1127,7 @@ func (s *ChatPipelineService) AsyncChat(
 					})
 			} else {
 				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
@@ -1120,7 +1147,7 @@ func (s *ChatPipelineService) AsyncChat(
 									out <- AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 										CreatedAt:   float64(time.Now().Unix()),
 										Final:       false,
 									}
@@ -1135,7 +1162,7 @@ func (s *ChatPipelineService) AsyncChat(
 										out <- AsyncChatResult{
 											Answer:      d.Value,
 											Reference:   map[string]interface{}{},
-											AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+											AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 											CreatedAt:   float64(time.Now().Unix()),
 											Final:       false,
 										}
@@ -1157,7 +1184,7 @@ func (s *ChatPipelineService) AsyncChat(
 									out <- AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 										CreatedAt:   float64(time.Now().Unix()),
 										Final:       false,
 									}
@@ -1195,7 +1222,7 @@ func (s *ChatPipelineService) AsyncChat(
 					out <- AsyncChatResult{
 						Answer:      d.Value,
 						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
@@ -1237,7 +1264,7 @@ func (s *ChatPipelineService) AsyncChat(
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
 				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					*chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg,
+					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
 				)
 				if respErr != nil {
 					err = respErr
@@ -1302,7 +1329,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 1b. Resolve LLM model config (needed early for model_type dispatch).
-		llmModelConfig, _, _, _, err := s.getLLMModelConfig(chat)
+		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		factoryName := ""
 		if err == nil && llmModelConfig != nil {
 			factoryName, _ = llmModelConfig["llm_factory"].(string)
@@ -1323,11 +1350,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(userID, files)
+				attachmentsStr = s.processFileAttachments(ctx, userID, files)
 				if isImage2Text {
 					imageFiles = s.extractRawImageURLs(files)
 				} else {
-					imageFiles = s.extractImageFiles(userID, files)
+					imageFiles = s.extractImageFiles(ctx, userID, files)
 				}
 			}
 		}
@@ -1356,7 +1383,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1371,7 +1398,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
 				ttsDriver, ttsName, ttsConfig, _, ttsErr := s.ModelProviderSvc.GetTenantDefaultModelByType(
-					chat.TenantID, entity.ModelTypeTTS,
+					ctx, chat.TenantID, entity.ModelTypeTTS,
 				)
 				if ttsErr != nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
@@ -1418,7 +1445,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			timer.Enter(common.PhaseGenerateAnswer)
 
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
 						if thinkState.EnterReasoning() {
@@ -1438,7 +1465,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								out <- AsyncChatResult{
 									Answer:      d.Value,
 									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 								}
@@ -1453,7 +1480,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 									out <- AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 										CreatedAt:   float64(time.Now().Unix()),
 										Final:       false,
 									}
@@ -1475,7 +1502,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								out <- AsyncChatResult{
 									Answer:      d.Value,
 									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 								}
@@ -1509,7 +1536,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					out <- AsyncChatResult{
 						Answer:      d.Value,
 						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ttsModel, d.Value),
+						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 					}
@@ -1544,7 +1571,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, nil)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg,
+				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
 			)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
@@ -1571,7 +1598,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			out <- AsyncChatResult{
 				Answer:      answer,
 				Reference:   map[string]interface{}{},
-				AudioBinary: s.synthesizeTTS(ttsModel, answer),
+				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
 			}
@@ -1583,12 +1610,14 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 // extractImageFiles extracts data-URI image attachments from the files list.
 // Mirrors Python split_file_attachments raw mode.
-func (s *ChatPipelineService) extractImageFiles(userID string, files interface{}) []string {
+func (s *ChatPipelineService) extractImageFiles(ctx context.Context, userID string, files interface{}) []string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
 		// Use raw=false to get base64 data URIs for images.
-		_, images, err := fileSvc.GetFileContents(userID, fileDicts, false)
+		_, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in extractImageFiles",
 				zap.Error(err))
@@ -1726,7 +1755,7 @@ func normalizeInternetFlag(v interface{}) *bool {
 
 // shouldUseWebSearch returns true if web search should be enabled.
 // Mirrors Python's _should_use_web_search (dialog_service.py:122-126):
-// Tavily key must be present on chat.PromptConfig AND the internet
+// A web search provider must be configured on chat.PromptConfig AND the internet
 // flag must normalize to explicit true.
 //
 // The second parameter takes the raw internet value (typically
@@ -1736,8 +1765,7 @@ func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet int
 	if chat.PromptConfig == nil {
 		return false
 	}
-	tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-	if tavilyKey == "" {
+	if resolveWebSearchProvider(chat.PromptConfig) == nil {
 		return false
 	}
 	normalized := normalizeInternetFlag(internet)
@@ -1847,11 +1875,11 @@ func tokenizeText(text string) string {
 // The returned `cfg` map's "model_type" field carries the chosen type
 // so downstream code (e.g. the multimodal-conversion guard in AsyncChat
 // at async_chat.go:632) can skip chat-only logic for image2text dialogs.
-func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
+func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
 		return s.buildLLMModelConfig(
-			s.ModelProviderSvc.GetTenantDefaultModelByType(chat.TenantID, entity.ModelTypeChat),
+			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
 		)
 	}
 
@@ -1859,7 +1887,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 	// when the LLM is registered as such, otherwise CHAT.
 	modelType := entity.ModelTypeChat
 	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.GetModelTypeByName(chat.TenantID, chat.LLMID); mtErr == nil {
+	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(ctx, chat.TenantID, chat.LLMID); mtErr == nil {
 		for _, mt := range modelTypes {
 			if mt == entity.ModelTypeImage2Text {
 				modelType = entity.ModelTypeImage2Text
@@ -1869,7 +1897,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 		}
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.GetModelConfigFromProviderInstance(chat.TenantID, modelType, chat.LLMID),
+		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
 	)
 	if err != nil {
 		return nil, "", "", "", err
@@ -1918,6 +1946,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
 	*modelModule.ChatModel, // TTS model
+	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
 
@@ -1932,7 +1961,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var kbs []*entity.Knowledgebase
 	if len(kbIDs) > 0 {
 		var err error
-		kbs, err = kbDAO.GetByIDs(kbIDs)
+		kbs, err = kbDAO.GetByIDs(ctx, dao.DB, kbIDs)
 		if err != nil {
 			common.Warn("Failed to get KBs by IDs; retrieval may be incomplete",
 				zap.Strings("kbIDs", kbIDs), zap.Error(err))
@@ -1942,32 +1971,27 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		// All KBs must share the same embedding model.
-		embdIDs := make(map[string]bool)
-		for _, kb := range kbs {
-			if kb.EmbdID != "" {
-				embdIDs[kb.EmbdID] = true
-			}
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
+			return nil, nil, nil, nil, nil, err
 		}
-		if len(embdIDs) > 1 {
-			// Multiple embedding models across KBs — error.
-			common.Warn("Knowledge bases use different embedding models")
-		}
-		if len(embdIDs) == 1 {
-			for embdID := range embdIDs {
-				embdTenantID := kbs[0].TenantID
-				driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
-					embdTenantID, entity.ModelTypeEmbedding, embdID,
-				)
-				if err == nil {
-					embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-				}
+		if kbs[0].EmbdID != "" {
+			embdTenantID := kbs[0].TenantID
+			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
+				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
+			)
+			if err != nil {
+				common.Warn("Failed to get embedding model for chat retrieval",
+					zap.String("embdID", kbs[0].EmbdID),
+					zap.String("tenantID", embdTenantID),
+					zap.Error(err))
+				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
+			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 		}
 	}
 
 	// Chat model.
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
@@ -1976,8 +2000,8 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.GetModelConfigFromProviderInstance(
-			chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
+		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
+			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
 			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig)
@@ -1989,7 +2013,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
 			ttsDriver, ttsName, ttsConfig, _, err := s.ModelProviderSvc.GetTenantDefaultModelByType(
-				chat.TenantID, entity.ModelTypeTTS,
+				ctx, chat.TenantID, entity.ModelTypeTTS,
 			)
 			if err == nil {
 				ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
@@ -1997,7 +2021,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 	}
 
-	return kbs, embModel, rerankModel, chatModel, ttsModel
+	return kbs, embModel, rerankModel, chatModel, ttsModel, nil
 }
 
 // lastUserQuestion returns the content of the most recent user message in
@@ -2047,11 +2071,13 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 //
 // When files are file dicts (Python-compatible format), calls
 // FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(userID string, files interface{}) string {
+func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID string, files interface{}) string {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
-		texts, _, err := fileSvc.GetFileContents(userID, fileDicts, false)
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		texts, _, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
 		if err != nil {
 			common.Warn("GetFileContents failed in processFileAttachments",
 				zap.Error(err))
@@ -2102,11 +2128,13 @@ func (s *ChatPipelineService) processFileAttachments(userID string, files interf
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(ctx context.Context, userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		fileSvc := NewFileService()
-		texts, images, err := fileSvc.GetFileContents(userID, fileDicts, raw)
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, raw)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2230,7 +2258,7 @@ func cleanTTSText(text string) string {
 
 // synthesizeTTS calls the TTS model to convert text to audio.
 // Mirrors dialog_service.py:1426-1432.
-func (s *ChatPipelineService) synthesizeTTS(ttsModel *modelModule.ChatModel, text string) interface{} {
+func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.ChatModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
 	}
@@ -2239,7 +2267,7 @@ func (s *ChatPipelineService) synthesizeTTS(ttsModel *modelModule.ChatModel, tex
 		return nil
 	}
 	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"},
+		ctx, ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
 	)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
@@ -2330,7 +2358,7 @@ func (s *ChatPipelineService) resolveReferenceMetadata(promptConfig map[string]i
 // enrichChunksWithMetadata enriches chunk records in kbinfos with document-level
 // metadata. Mirrors Python's enrich_chunks_with_document_metadata() in
 // api/utils/reference_metadata_utils.py.
-func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interface{}, tenantID string, fields []string) {
+func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbinfos map[string]interface{}, tenantID string, fields []string) {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 	if !ok || len(chunksRaw) == 0 {
 		return
@@ -2342,7 +2370,7 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interf
 		return
 	}
 
-	s.MetadataSvc.EnrichChunksWithDocMetadata(chunks, tenantID, fields)
+	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks.
@@ -2525,11 +2553,11 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 }
 
 // buildChatDriver creates a ChatModel wrapper from the chat.
-func (s *ChatPipelineService) buildChatDriver(chat *entity.Chat, chatModel *modelModule.ChatModel) *modelModule.ChatModel {
+func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.Chat, chatModel *modelModule.ChatModel) *modelModule.ChatModel {
 	if chatModel != nil {
 		return chatModel
 	}
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 	if err != nil {
 		return nil
 	}
@@ -2628,9 +2656,9 @@ type embeddingModelEmbedder struct {
 	embModel *modelModule.EmbeddingModel
 }
 
-func (e *embeddingModelEmbedder) Encode(texts []string) ([][]float64, error) {
+func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(e.embModel.ModelName, texts, e.embModel.APIConfig, config)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2714,7 +2742,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 				if allVec {
 					embedder := &embeddingModelEmbedder{embModel: embModel}
-					if decorated, cited := InsertCitations(ans, NewSourcedChunks(chunksRaw), embedder, chunkVectors); len(cited) > 0 {
+					if decorated, cited := InsertCitations(ctx, ans, NewSourcedChunks(chunksRaw), embedder, chunkVectors); len(cited) > 0 {
 						ans = decorated
 						citationIdx = make(map[int]struct{})
 						for _, ci := range cited {
@@ -2829,7 +2857,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 
 	// TTS synthesis for the final answer.
-	audioBinary := s.synthesizeTTS(ttsModel, think+ans)
+	audioBinary := s.synthesizeTTS(ctx, ttsModel, think+ans)
 
 	// Langfuse generation end observation.
 	if langfuseTraceID != "" {
@@ -2867,10 +2895,10 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
@@ -2938,8 +2966,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3114,6 +3142,23 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
+//
+// StructuredQuery is the exported narrow entrypoint for the agentic-search
+// structured_query tool: translate a natural-language question to SQL over the
+// given tabular KBs and return the answer + reference chunks. It forwards to the
+// internal useSQL with quote=false (the agent tool returns the answer directly,
+// not a cited natural-language response).
+func (s *ChatPipelineService) StructuredQuery(
+	ctx context.Context,
+	chat *entity.Chat,
+	kbs []*entity.Knowledgebase,
+	question string,
+	chatModel *modelModule.ChatModel,
+	fieldMap map[string]interface{},
+) (ans map[string]interface{}, err error) {
+	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
+}
+
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -3397,7 +3442,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase":
+	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
 		bullets := strings.Builder{}
 		for _, n := range names {
@@ -3505,7 +3550,7 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // OpenSearch share the direct-column template. expectedCol is
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3534,7 +3579,7 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // buildExecutionErrorRepairPrompt returns the engine-specific user
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3587,7 +3632,7 @@ func chatForSQL(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, cfg,
+		ctx, modelName, msgs, chatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err
@@ -3681,7 +3726,7 @@ func removeRedundantSpaces(s string) string {
 // dialog_service.py:1309. Matches `T13:24:55|` or `T13:24:55.123Z|`.
 var isoTimestampCellRe = regexp.MustCompile(`T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|`)
 
-// stripISOTimestamps removes ISO-8601 timestamps that end a markdown
+// stripISOTimestamps removes ISO-8601 timestamps that end a Markdown
 // table cell. Operates on the full joined rows string (not per-cell).
 func stripISOTimestamps(rows string) string {
 	return isoTimestampCellRe.ReplaceAllString(rows, "|")

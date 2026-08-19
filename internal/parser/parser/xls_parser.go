@@ -1,5 +1,3 @@
-//go:build cgo
-
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -20,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
@@ -27,55 +26,91 @@ import (
 )
 
 type XLSParser struct {
-	libType string
+	libType                        string
+	ParseMethod                    string
+	OutputFormat                   string
+	ChunkRows                      int
+	TCADPAPIServer                 string
+	TCADPAPIKey                    string
+	TCADPTableResultType           string
+	TCADPMarkdownImageResponseType string
 }
 
 func NewXLSParser(libType string) (*XLSParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &XLSParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported XLS library type: %s", libType)
+	if libType == "" {
+		libType = "excelize"
 	}
+	return &XLSParser{
+		libType:                        libType,
+		ChunkRows:                      defaultTableChunkRows,
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+	}, nil
 }
 
 func (p *XLSParser) String() string {
 	return "XLSParser"
 }
 
-// ParseWithResult delegates to excelize which handles both .xls
-// and .xlsx through the same API. The python ExcelParser falls
-// back to a similar delegation; on the Go side excelize is the
-// single library for both extensions.
-func (p *XLSParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["parse_method"].(string); ok && v != "" {
+		p.ParseMethod = v
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.OutputFormat = v
+	}
+	p.ChunkRows = decodeChunkRows(setup)
+	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
+		p.TCADPAPIServer = v
+	}
+	if v, ok := setup["tcadp_api_key"].(string); ok {
+		p.TCADPAPIKey = v
+	}
+	if v, ok := setup["table_result_type"].(string); ok && v != "" {
+		p.TCADPTableResultType = v
+	}
+	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
+		p.TCADPMarkdownImageResponseType = v
+	}
+}
+
+func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	method := normalizeXLSXParseMethod(p.ParseMethod)
+	switch method {
+	case "tcadp":
+		return parseSpreadsheetWithTCADP(
+			filename, data, "XLS",
+			p.TCADPAPIServer, p.TCADPAPIKey,
+			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
+			p.OutputFormat,
+		)
+	case "", "excelize":
+		// Continue with the local Excelize parser.
+	default:
+		return ParseResult{
+			Err: fmt.Errorf("unsupported XLS parse method: %q", p.ParseMethod),
+		}
+	}
+
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls open: %w", err)}
 	}
 	defer f.Close()
 
-	var html strings.Builder
-	html.WriteString("<html><body>")
-	for _, sheet := range f.GetSheetList() {
-		html.WriteString("<h3>")
-		html.WriteString(sheet)
-		html.WriteString("</h3>")
-		rows, _ := f.GetRows(sheet)
-		html.WriteString("<table>")
-		for _, row := range rows {
-			html.WriteString("<tr>")
-			for _, cell := range row {
-				html.WriteString("<td>")
-				html.WriteString(htmlEscape(cell))
-				html.WriteString("</td>")
-			}
-			html.WriteString("</tr>")
-		}
-		html.WriteString("</table>")
+	sheets := f.GetSheetList()
+	chunkRows := p.ChunkRows
+	if chunkRows <= 0 {
+		chunkRows = defaultTableChunkRows
 	}
-	html.WriteString("</body></html>")
+
+	var html strings.Builder
+	for _, sheet := range sheets {
+		html.WriteString(renderSheetTables(f, sheet, chunkRows))
+	}
 
 	return ParseResult{
 		OutputFormat: "html",

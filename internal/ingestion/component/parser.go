@@ -22,38 +22,43 @@
 //   - WHAT IS PORTED:
 //
 //   - The component's lifecycle contract: NewParserComponent /
-//     Invoke / Parallelism / Inputs / Outputs and registration
-//     under runtime.CategoryIngestion.
+//     Invoke / Inputs / Outputs and registration under
+//     runtime.CategoryIngestion.
 //
-//   - The Python fan-out pattern from rag/flow/parser/parser.py
-//     (parallel page parsing, deterministic merge by page number,
-//     see plan §8 R8) — the Go implementation uses
-//     golang.org/x/sync/errgroup with up to 4 goroutines and
-//     bounds each fan-out batch by a "page_size" input (default
-//     = ceil(total_pages / 4)).
+//   - Per-page parallelism is delegated to the parser backends
+//     (e.g. internal/deepdoc/parser/pdf fans out one worker per
+//     page and assembles the results in page order). This
+//     component only reshapes the parser output into the
+//     schema.Page layout and keeps the deterministic, page-number
+//     sorted merge contract (plan §8 R8) that the downstream
+//     chunker / tokenizer rely on for stable chunk IDs.
 //
-//   - TrackProgress (start/done callback), WithTimeout (60s per
-//     page-batch) and TrackElapsed (_created_time / _elapsed_time
-//     stamping) — see internal/agent/runtime/helpers.go for the
-//     helpers, plan §1 background.
+//   - Progress (start/done callback) and elapsed-time stamping
+//     (_created_time / _elapsed_time) are owned by the canvas
+//     framework (internal/agent/canvas/node_body.go realComponentBody),
+//     which wraps every component Invoke. This component does not call
+//     those helpers itself. See internal/agent/runtime/helpers.go.
 //
 //   - WHAT IS NOT YET PORTED:
 //
 //   - The Python component dispatches to 13 file-format branches
-//     (pdf, markdown, text&code, html, spreadsheet, slides, doc,
+//     (pdf, Markdown, text&code, html, spreadsheet, slides, doc,
 //     docx, image, audio, video, email, epub) — see parser.py
-//     function_map at line ~1273. The Go counterparts in
-//     internal/parser/parser/ are SKELETONS that print to
-//     stdout and return nil. The cgo-gated office variants
-//     (docx, doc, ppt, pptx, xls, xlsx) call office_oxide but
-//     discard the result.
+//     function_map at line ~1273. The Go port is LANDed and LIVE
+//     in production for the families the ingestor claims (see
+//     cmd/ragflow_server.go: Ingestor.supportedTypes =
+//     ["pdf","docx","txt"]); those run their real parsers,
+//     including the cgo-gated office variants via office_oxide.
+//     Families not yet ported fall through to the raw-text path
+//     below rather than printing skeletons.
 //
-//   - Until the parser package returns real data, the Go Parser
-//     component uses a "raw text" fallback: it treats the input
-//     binary as UTF-8 and slices it into 1 page (or N pages
-//     when the upstream signals a page boundary with a literal
+//   - For any family NOT yet ported (its Go parser returns no real
+//     data), the component uses a "raw text" fallback: it treats
+//     the input binary as UTF-8 and slices it into 1 page (or N
+//     pages when the upstream signals a page boundary with a literal
 //     "\f" form feed). This is the conservative, observable
-//     behaviour until the real format dispatch lands.
+//     behaviour for UNPORTED families only; ported families run
+//     their real parsers.
 //
 //   - The Python side's "image2id" pipeline (parser.py:1317-1329)
 //     that uploads embedded images to MinIO is not replicated —
@@ -62,10 +67,12 @@
 //     side-effect component (out of scope for Phase 2.2).
 //
 //   - The Python _param.check() business validation
-//     (parse_method whitelist, output_format whitelist, etc.) is
-//     not replicated. The component trusts the param block
-//     passed in at construction time; invalid values surface as
-//     runtime errors in the chosen parser branch.
+//     (parse_method whitelist, conditional lang checks) is mirrored
+//     by (*ParserComponent).Check() below, which NewParserComponent
+//     runs at construction time. The Python flow check() also
+//     validates audio/video vlm.llm_id, but Go media_dispatch uses
+//     tenant default models (resolveTenantModelByType) rather than
+//     setup["vlm"]["llm_id"], so that check is intentionally omitted.
 //
 //   - NO PERSISTENCE: parsed pages live only in the per-run
 //     output map, exactly as the schema.Page type is intended.
@@ -77,30 +84,19 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
 
-	"golang.org/x/sync/errgroup"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
 
 const ComponentNameParser = "Parser"
-
-// parserParallelism is the fan-out degree for the Parser component.
-// Matches the plan §2 AD-5a choice ("Parser: 4 (parallel page
-// parsing)"). Used by the pipeline runner when it needs to know how
-// many goroutines the component is willing to absorb.
-const parserParallelism = 4
-
-// parserPageBatchTimeout is the per-batch timeout. Mirrors the
-// Python component's `@timeout(60)` decorator on the page parse
-// branch. WithTimeout collapses the dual-layer
-// asyncio.wait_for / @timeout model into a single context, see
-// plan §8 R1.
-const parserPageBatchTimeout = 60 * time.Second
 
 // pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
@@ -117,10 +113,8 @@ const pageFormFeed = '\f'
 // the goroutine that returned from Invoke. The static Param is
 // read-only after construction.
 type ParserComponent struct {
-	// Param is the static configuration from schema.ParserParam.
-	// Kept as a value (not a pointer) so callers can pass literals
-	// and the component makes its own copy.
-	Param schema.ParserParam
+	Setups map[string]schema.ParserSetup
+	Param  schema.ParserParam
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -132,7 +126,9 @@ type ParserComponent struct {
 // schema.ParserParam.Defaults() values):
 //
 //	{
-//	  "setups":               map[string]map[string]any,
+//	  "pdf":                  map[string]any,
+//	  "docx":                 map[string]any,
+//	  ...
 //	  "allowed_output_format": map[string][]string,
 //	}
 //
@@ -140,23 +136,23 @@ type ParserComponent struct {
 // param is caught at build time rather than mid-run.
 func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	p := schema.ParserParam{}.Defaults()
+	s := defaultSetups()
 	if params == nil {
-		return &ParserComponent{Param: p}, nil
+		return &ParserComponent{Setups: s, Param: p}, nil
 	}
-	// Setups — best-effort decode. A type mismatch in a single
-	// setup entry drops just that entry; the rest of the table
-	// remains usable. This matches the python behaviour of
-	// accepting whatever shape the JSON loader hands back.
-	if rawSetups, ok := params["setups"].(map[string]any); ok {
-		for fileType, raw := range rawSetups {
-			setupMap, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			if p.Setups == nil {
-				p.Setups = make(map[string]schema.ParserSetup)
-			}
-			p.Setups[fileType] = schema.ParserSetup(setupMap)
+	for k, raw := range params {
+		if k == "outputs" {
+			continue
+		}
+		ftCfg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := s[k]; !exists {
+			s[k] = schema.ParserSetup{}
+		}
+		for fk, fv := range ftCfg {
+			s[k][fk] = fv
 		}
 	}
 	if rawAllowed, ok := params["allowed_output_format"].(map[string]any); ok {
@@ -176,14 +172,165 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 		p.AllowedOutputFormat = allowed
 	}
-	return &ParserComponent{Param: p}, nil
+	pc := &ParserComponent{Setups: s, Param: p}
+	if err := pc.Check(); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
+	}
+	return pc, nil
 }
 
-// Parallelism declares the goroutine fan-out degree. The pipeline
-// runner uses this to decide how many worker slots the component
-// can absorb. We return 4 to match the Python asyncio.gather
-// pattern that fans one batch per page-range.
-func (c *ParserComponent) Parallelism() int { return parserParallelism }
+// Check mirrors the applicable subset of Python ParserParam.check()
+// (rag/flow/parser/parser.py:251-321). Runs at construction time so
+// a malformed DSL surfaces as a canvas compile failure rather than a
+// mid-run error. Returns the first validation error encountered
+// (Python raises ValueError on the first failure).
+//
+// NOT covered here (intentional):
+//   - output_format whitelist: already enforced at Invoke time by
+//     resolveOutputFormat (parser_dispatch.go:100-122).
+//   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
+//     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
+//     The Python flow check() for vlm.llm_id does not apply — Go
+//     never reads that field, and validating it would block every
+//     valid audio/video pipeline (see ingestion_pipeline_audio.json).
+func (c *ParserComponent) Check() error {
+	// PDF family (parser.py:252-261).
+	if pdf, ok := c.Setups["pdf"]; ok {
+		pm, _ := pdf["parse_method"].(string)
+		if pm == "" {
+			return errors.New("parse method abnormal. does not support empty value")
+		}
+		pmLower := strings.ToLower(pm)
+		pdfWhitelist := []string{
+			"deepdoc", "plain_text", "mineru", "docling",
+			"opendataloader", "tcadp parser", "paddleocr", "somark",
+		}
+		if !containsString(pdfWhitelist, pmLower) {
+			// Non-whitelist parse_method is treated as a VLM method,
+			// which requires lang (Python parser.py:257-258).
+			if lang, _ := pdf["lang"].(string); lang == "" {
+				return errors.New("PDF VLM language does not support empty value")
+			}
+		}
+	}
+	// image family (parser.py:283-287).
+	if img, ok := c.Setups["image"]; ok {
+		pm, _ := img["parse_method"].(string)
+		// OCR mode does not need a VLM language; any other value does.
+		if pm != "ocr" {
+			if lang, _ := img["lang"].(string); lang == "" {
+				return errors.New("image VLM language does not support empty value")
+			}
+		}
+	}
+	return nil
+}
+
+// containsString reports whether s is in list. Used by Check() for
+// whitelist membership tests; kept unexported and local to this file
+// to avoid polluting the package namespace.
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultSetups() map[string]schema.ParserSetup {
+	return map[string]schema.ParserSetup{
+		"pdf": {
+			"parse_method":          "deepdoc",
+			"lang":                  "Chinese",
+			"flatten_media_to_text": false,
+			"remove_toc":            false,
+			"remove_header_footer":  false,
+			"suffix":                []string{"pdf"},
+			"output_format":         "json",
+		},
+		"spreadsheet": {
+			"parse_method":          "deepdoc",
+			"flatten_media_to_text": false,
+			"output_format":         "html",
+			"suffix":                []string{"xls", "xlsx", "csv"},
+		},
+		"doc": {
+			"remove_toc":           false,
+			"remove_header_footer": false,
+			"suffix":               []string{"doc"},
+			"output_format":        "json",
+		},
+		"docx": {
+			"flatten_media_to_text": false,
+			"remove_toc":            false,
+			"remove_header_footer":  false,
+			"suffix":                []string{"docx"},
+			"output_format":         "json",
+		},
+		"markdown": {
+			"flatten_media_to_text": false,
+			"suffix":                []string{"md", "markdown", "mdx"},
+			"remove_toc":            false,
+			"output_format":         "json",
+		},
+		"text&code": {
+			"suffix": []string{
+				"txt", "py", "js", "java", "c", "cpp", "h", "php",
+				"go", "ts", "sh", "cs", "kt", "sql",
+			},
+			"output_format": "json",
+		},
+		"html": {
+			"suffix":               []string{"htm", "html"},
+			"remove_toc":           false,
+			"remove_header_footer": false,
+			"output_format":        "json",
+		},
+		"slides": {
+			"parse_method":  "deepdoc",
+			"suffix":        []string{"pptx", "ppt"},
+			"output_format": "json",
+		},
+		"image": {
+			"parse_method":  "ocr",
+			"llm_id":        "",
+			"lang":          "Chinese",
+			"system_prompt": "",
+			"suffix":        []string{"jpg", "jpeg", "png", "gif"},
+			"output_format": "json",
+		},
+		"email": {
+			"suffix": []string{"eml", "msg"},
+			"fields": []string{
+				"from", "to", "cc", "bcc", "date", "subject",
+				"body", "attachments", "metadata",
+			},
+			"output_format": "json",
+		},
+		"audio": {
+			"suffix": []string{
+				"da", "wave", "wav", "mp3", "aac", "flac", "ogg",
+				"aiff", "au", "midi", "wma", "realaudio", "vqf",
+				"oggvorbis", "ape",
+			},
+			"output_format": "json",
+		},
+		"video": {
+			"suffix":        []string{"mp4", "avi", "mkv"},
+			"output_format": "text",
+			"prompt":        "",
+		},
+		"epub": {
+			"suffix":        []string{"epub"},
+			"output_format": "json",
+		},
+		"json": {
+			"suffix":        []string{"json", "jsonl", "ldjson"},
+			"output_format": "json",
+		},
+	}
+}
 
 // Inputs returns the static parameter metadata. The component
 // reads the following from the inputs map at Invoke time:
@@ -193,16 +340,12 @@ func (c *ParserComponent) Parallelism() int { return parserParallelism }
 //	                                them from bucket/path or doc_id.
 //	doc_id    (string, optional) — document ID used for naming and,
 //	                                when binary is absent, storage lookup.
-//	page_size (int, optional)    — pages per goroutine for
-//	                                fan-out. Defaults to
-//	                                ceil(totalPages / Parallelism).
 func (c *ParserComponent) Inputs() map[string]string {
 	return map[string]string{
-		"binary":    "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
-		"doc_id":    "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
-		"bucket":    "Optional storage bucket override. Used when binary is absent.",
-		"path":      "Optional storage object key override. Used when binary is absent.",
-		"page_size": "Optional integer. Pages per goroutine for fan-out. Default: ceil(totalPages / 4).",
+		"binary": "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
+		"doc_id": "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
+		"bucket": "Optional storage bucket override. Used when binary is absent.",
+		"path":   "Optional storage object key override. Used when binary is absent.",
 	}
 }
 
@@ -224,6 +367,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"output_format": "string: the active output format (\"text\" when emitting text pages).",
+		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
 }
@@ -236,29 +380,39 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "pages":          []schema.Page (sorted by PageNumber),
 //	  "name":           string (from inputs["doc_id"]),
 //	  "output_format": "text",
+//	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
 //	}
 //
-// The fan-out is bounded by Parallelism() goroutines. Each
-// goroutine parses its page-batch under a derived timeout
-// (WithTimeout, 60s). The first error cancels the errgroup
-// context; siblings observe ctx.Done() and abandon their work.
+// Per-page parallelism and aggregation now live in the parser
+// backends (e.g. internal/deepdoc/parser/pdf fans out one worker
+// per page and assembles the results in page order), so this
+// component does no goroutine fan-out of its own.
 //
-// DETERMINISTIC MERGE (plan §8 R8): after fan-out, the page slice
-// is sorted by PageNumber. This guarantees the same input
+// DETERMINISTIC MERGE (plan §8 R8): after the page slice is built,
+// it is sorted by PageNumber. This guarantees the same input
 // produces byte-identical output across runs and is the contract
 // that downstream Chunker / Tokenizer rely on for stable chunk
 // IDs (chunks that span pages must reference adjacent PageNumbers
 // in input order).
-func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(ctx, inputs)
+	binary, err := readParserBinary(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
+
+	// Inject run-level metadata from Globals into inputs so media
+	// dispatch branches (audio/image/video) can resolve tenant_id.
+	// The File component upstream does not emit tenant_id; the pipeline
+	// runner seeds it into CanvasState.Globals, and the Parser must pull
+	// it back into the local inputs map for the dispatch functions.
+	if tid := globals.GlobalOrInput(ctx, inputs, "tenant_id", ""); tid != "" {
+		inputs["tenant_id"] = tid
+	}
 
 	// 2. Resolve the file family from the inputs. When the family
 	//    is known, dispatchParse returns a typed parser payload.
@@ -276,7 +430,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	//     off the python family identifiers in schema.ParserParam.
 	//
 	// For most families the two forms coincide; the divergence
-	// exists for markdown ("md" vs "markdown") and slides
+	// exists for Markdown ("md" vs "markdown") and slides
 	// ("ppt"/"pptx" vs "slides") and is intentional — the python
 	// ParserParam collapses the slide family into a single key.
 	fileTypeExt := fileTypeFromInputs(inputs)
@@ -286,19 +440,66 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	//     family-specific allowed_output_format whitelist. We do
 	//     this even when no setups entry exists so a misconfigured
 	//     DSL surfaces as _ERROR instead of a silent fallback.
-	if _, hasSetup := c.Param.Setups[fileTypeFam]; hasSetup {
-		if _, verr := resolveOutputFormat(fileTypeFam, c.Param.Setups, c.Param.AllowedOutputFormat); verr != nil {
+	if _, hasSetup := c.Setups[fileTypeFam]; hasSetup {
+		if _, verr := resolveOutputFormat(fileTypeFam, c.Setups, c.Param.AllowedOutputFormat); verr != nil {
 			return nil, verr
 		}
 	}
 
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(fileTypeExt, filename, binary, inputs, c.Param.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
+
+	var handledMedia bool
 	if !handledVision {
-		dispatched = dispatchParse(fileTypeExt, filename, binary, c.Param.Setups)
+		// Video dispatch: IMAGE2TEXT vision chat.
+		// Mirrors Python's _video().
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+		if visionErr != nil {
+			return nil, visionErr
+		}
+	}
+	var handledImage bool
+	if !handledVision && !handledMedia {
+		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
+		// Mirrors Python's rag/app/picture.py:chunk() image branch.
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+		if visionErr != nil {
+			return nil, visionErr
+		}
+	}
+	var handledAudio bool
+	if !handledVision && !handledMedia && !handledImage {
+		// Audio dispatch: SPEECH2TEXT transcription.
+		// Mirrors Python's rag/app/audio.py:chunk().
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+		if visionErr != nil {
+			return nil, visionErr
+		}
+	}
+	if !handledVision && !handledMedia && !handledImage && !handledAudio {
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
+
+		// DOCX vision figure enhancement: on the JSON output path,
+		// append vision-model descriptions to embedded image items
+		// (doc_type_kwd "image"). Mirrors Python's
+		// enhance_media_sections_with_vision in parser.py:_doc.
+		dispatched, _, _ = maybeDispatchDOCXVision(ctx, db, fileTypeExt, dispatched, inputs, c.Setups)
+
+		// Markdown vision figure enhancement: enrich parsed
+		// Markdown JSON items with LLM-generated descriptions of
+		// referenced images (![alt](url)). Mirrors Python's
+		// enhance_media_sections_with_vision in _Markdown.
+		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, db, fileTypeExt, dispatched, inputs)
+
+		// PDF vision figure enhancement: enrich parsed PDF JSON
+		// items with vision-model descriptions of embedded
+		// images/tables (doc_type_kwd "image"/"table" with non-empty
+		// image field). Mirrors Python's enhance_media_sections_with_vision
+		// in parser.py:_pdf
+		dispatched, _, _ = maybeDispatchPDFVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
@@ -336,123 +537,90 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 			pages = [][]byte{nil}
 		}
 	}
-	totalPages := len(pages)
 
-	// 4. Fan-out: split pages into batches of pageSize. The
-	//    default pageSize is ceil(totalPages / Parallelism),
-	//    matching the plan §2 AD-5a target.
-	pageSize := resolvePageSize(inputs, totalPages)
-	batches := splitIntoBatches(pages, pageSize)
+	// 3b. (pages-based page selection is handled upstream via the
+	//     component setup: ParserConfig[cpnID][filetype]["pages"] is a
+	//     list of page ranges delivered through override_params and
+	//     consumed by the deepdoc/pdf parser. No inputs-level handling
+	//     here.)
 
-	// 5. Drive the fan-out from TrackProgress (which delivers the
-	//    start/done/fail callback sequence); stamp
-	//    _created_time / _elapsed_time on the result via
-	//    TrackElapsed without re-running the work.
-	var out map[string]any
-	progressErr := runtime.TrackProgress(ComponentNameParser, nil, func() error {
-		parsed, err := fanOutAndMerge(ctx, batches, parserParallelism)
-		if err != nil {
-			return err
-		}
-		// Sort by PageNumber — DETERMINISTIC MERGE (plan §8 R8).
-		sortPagesByNumber(parsed)
-		out = buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
-		return nil
-	})
-	if progressErr != nil {
-		return nil, fmt.Errorf("Parser: %w", progressErr)
+	// 4. Build the page slice sequentially. Per-page parallelism now
+	//    lives in the parser backends (e.g. internal/deepdoc/parser/pdf
+	//    fans out one worker per page and assembles in page order), so
+	//    this component only reshapes the parser output. The DETERMINISTIC
+	//    MERGE (plan §8 R8) keeps pages sorted by PageNumber so the
+	//    downstream chunker / tokenizer get stable chunk IDs.
+	parsed, err := buildPagesFromBytes(ctx, pages, dispatched.DocType)
+	if err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
 	}
-	// Stamp _created_time / _elapsed_time. We pass a closure
-	// that returns the pre-built `out` so the helper does not
-	// re-execute the fan-out.
-	return runtime.TrackElapsed(ComponentNameParser, func() (map[string]any, error) {
-		return out, nil
-	})
+	sortPagesByNumber(parsed)
+	lang, _ := getString(inputs, "lang")
+	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt, lang)
+	// Forward the storage references so a downstream chunker can
+	// re-acquire the source PDF and crop section images on demand,
+	// instead of carrying the binary across the component boundary.
+	if docID != "" {
+		out["doc_id"] = docID
+	}
+	if bucket, _ := getString(inputs, "bucket"); bucket != "" {
+		out["bucket"] = bucket
+	}
+	if path, _ := getString(inputs, "path"); path != "" {
+		out["path"] = path
+	}
+	// Publish the resolved run-level metadata into the workflow-wide
+	// CanvasState.Globals bag so downstream components read it from ctx
+	// instead of relying on this output re-emitting it. The Go runtime
+	// forwards only this explicit output to the next node, so shared
+	// fields must live in Globals.
+	globals.PublishGlobals(ctx, out)
+	// Debug log: summarize parser output for pipeline debugging.
+	if dispatched.OutputFormat == "json" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", "json"),
+			zap.Int("json_items", len(dispatched.JSON)),
+		)
+	} else if dispatched.OutputFormat != "" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", dispatched.OutputFormat),
+		)
+	}
+	// Progress (_created_time / _elapsed_time stamping, start/done
+	// callbacks) is owned by the canvas framework (realComponentBody),
+	// not by this component, so we return the work result directly.
+	return out, nil
 }
 
-// fanOutAndMerge parses each batch in parallel and concatenates
-// the per-batch results. The first error cancels the errgroup
-// context; siblings see ctx.Done() and abandon their parse
-// (returning ctx.Err()).
+// buildPagesFromBytes reshapes already-prepared page bytes into the
+// schema.Page layout the downstream chunker consumes. The per-page
+// parse (including any parallelism) now lives in the parser backends
+// (internal/parser/parser and internal/deepdoc/parser/pdf); this
+// component only wraps the bytes into pages and honors context
+// cancellation so an abandoned run does not keep reshaping pages.
 //
-// Concurrency model: at most `parallelism` goroutines run
-// concurrently. errgroup.WithContext provides the cancel-on-
-// first-error behaviour, and golang.org/x/sync/errgroup is
-// already in go.mod (line 59).
-func fanOutAndMerge(parent context.Context, batches [][][]byte, parallelism int) ([]schema.Page, error) {
-	if len(batches) == 0 {
-		return nil, nil
+// The function is format-agnostic: it does not resolve parsers or
+// inspect file families — it only carries the raw bytes under the
+// "text" key with the given doc_type_kwd (defaults to "text" when
+// empty), matching the shape downstream readers expect from the
+// raw-text fallback and dispatch paths.
+func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([]schema.Page, error) {
+	if docType == "" {
+		docType = "text"
 	}
-	if parallelism < 1 {
-		parallelism = 1
-	}
-	g, ctx := errgroup.WithContext(parent)
-	g.SetLimit(parallelism)
-
-	// One slot per batch; we collect the results in order so the
-	// caller can sort the merged slice by PageNumber without
-	// needing a mutex.
-	results := make([][]schema.Page, len(batches))
-	for i, batch := range batches {
-		i, batch := i, batch
-		g.Go(func() error {
-			pages, err := parseBatch(ctx, batch)
-			if err != nil {
-				return err
-			}
-			results[i] = pages
-			return nil
+	out := make([]schema.Page, 0, len(pages))
+	for _, raw := range pages {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		out = append(out, schema.Page{
+			"text":         string(raw),
+			"doc_type_kwd": docType,
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	// Flatten in batch order. The caller is responsible for
-	// sorting by PageNumber — we deliberately do NOT sort here
-	// so the per-batch order is visible to tests.
-	total := 0
-	for _, r := range results {
-		total += len(r)
-	}
-	merged := make([]schema.Page, 0, total)
-	for _, r := range results {
-		merged = append(merged, r...)
-	}
-	return merged, nil
-}
-
-// parseBatch parses a single batch of pages under a derived
-// 60-second timeout. The batch is the unit of fan-out: if a
-// batch exceeds its timeout, ONLY that batch errors; siblings
-// see ctx.Done() and abandon their work (errgroup cancel
-// cascades).
-//
-// runtime.WithTimeout returns just an error; we capture the
-// result pages in a closure-scoped variable and read it back
-// after Wait. This keeps the helper at its single-purpose
-// signature (ctx, fn -> error) without growing the runtime API.
-func parseBatch(ctx context.Context, batch [][]byte) ([]schema.Page, error) {
-	var pages []schema.Page
-	err := runtime.WithTimeout(ctx, parserPageBatchTimeout, func(ctx context.Context) error {
-		pages = make([]schema.Page, 0, len(batch))
-		for _, raw := range batch {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-			// Text-page mode: the bytes are already page text.
-			pages = append(pages, schema.Page{
-				"text":         string(raw),
-				"doc_type_kwd": "text",
-			})
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return pages, nil
+	return out, nil
 }
 
 // --- input helpers ---
@@ -461,13 +629,13 @@ func parseBatch(ctx context.Context, batch [][]byte) ([]schema.Page, error) {
 // map. The accepted shapes are:
 //
 //	[]byte          — the in-process caller's normal form
-//	string          — UTF-8 text (json callers' normal form)
+//	string          — UTF-8 text (JSON callers' normal form)
 //	nil / absent    — returns an empty page (not an error)
 //
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) ([]byte, error) {
 	if inputs == nil {
 		return nil, nil
 	}
@@ -477,22 +645,22 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 	if s, ok := inputs["binary"].(string); ok {
 		if !utf8.ValidString(s) {
 			return nil, errors.New(
-				"Parser: binary string is not valid UTF-8. " +
-					"Text-page mode only accepts UTF-8 text input.")
+				"parser: binary string is not valid UTF-8. " +
+					"Text-page mode only accepts UTF-8 text input")
 		}
 		return []byte(s), nil
 	}
 	bucket, _ := getString(inputs, "bucket")
 	path, _ := getString(inputs, "path")
 	if bucket != "" && path != "" {
-		return fetchBinary(ctx, bucket, path)
+		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := resolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
-			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
+			return nil, fmt.Errorf("parser: resolve doc_id %q: %w", docID, err)
 		}
-		return fetchBinary(ctx, ref.Bucket, ref.Path)
+		return FetchBinary(ctx, ref.Bucket, ref.Path)
 	}
 	return nil, nil
 }
@@ -529,57 +697,6 @@ func containsFormFeed(b []byte) bool {
 		}
 	}
 	return false
-}
-
-// splitIntoBatches partitions the page slice into batches of
-// `size` consecutive pages. A non-positive size collapses to
-// one batch.
-func splitIntoBatches(pages [][]byte, size int) [][][]byte {
-	if size < 1 {
-		size = len(pages)
-	}
-	if size < 1 {
-		return nil
-	}
-	batches := make([][][]byte, 0, (len(pages)+size-1)/size)
-	for i := 0; i < len(pages); i += size {
-		end := i + size
-		if end > len(pages) {
-			end = len(pages)
-		}
-		batch := make([][]byte, end-i)
-		copy(batch, pages[i:end])
-		batches = append(batches, batch)
-	}
-	return batches
-}
-
-// resolvePageSize returns the inputs["page_size"] value when
-// valid, otherwise ceil(totalPages / Parallelism). A page_size
-// of 0 or 1 is treated as "use the default" so a caller that
-// sets page_size=1 to mean "no batching" still fans out across
-// `Parallelism` goroutines.
-func resolvePageSize(inputs map[string]any, totalPages int) int {
-	if inputs != nil {
-		if v, ok := inputs["page_size"].(int); ok && v > 1 {
-			return v
-		}
-		if v, ok := inputs["page_size"].(int64); ok && v > 1 {
-			return int(v)
-		}
-		if v, ok := inputs["page_size"].(float64); ok && v > 1 {
-			return int(v)
-		}
-	}
-	if totalPages < 1 {
-		return 1
-	}
-	// ceil(totalPages / Parallelism)
-	size := (totalPages + parserParallelism - 1) / parserParallelism
-	if size < 1 {
-		size = 1
-	}
-	return size
 }
 
 // sortPagesByNumber orders pages by their PageNumber key

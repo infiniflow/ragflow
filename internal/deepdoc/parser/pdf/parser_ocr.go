@@ -12,14 +12,21 @@ import (
 	"strings"
 )
 
-func ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string) []pdf.TextBox {
-	boxes, err := doc.OCRDetect(ctx, pageImg)
+func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string) []pdf.TextBox {
+	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
 			slog.Warn(logLabel+" OCR detect failed", "page", pageNum, "err", err)
 		}
 		return nil
 	}
+
+	// detectBoxes returns image-pixel coords; ocrMergeChars divides by
+	// pdf.DlaScale before emitting boxes so downstream layout receives
+	// PDF-point coordinates. ocrDetectAndRecognize must match the same
+	// conversion so both OCR paths produce the same coordinate space.
+	imgW := float64(pageImg.Bounds().Dx()) / pdf.DlaScale
+	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
 
 	var result []pdf.TextBox
 	for _, b := range boxes {
@@ -30,24 +37,110 @@ func ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.Doc
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		cropped := util.FastCrop(pageImg, x0, y0, x1, y1)
-		texts, recErr := doc.OCRRecognize(ctx, cropped)
+		// De-skew the quad with a perspective transform (WarpCrop, layer 1),
+		// then recognize via ocrRecognizeWithRotation which applies layer-2
+		// score-based 0/CW90/CCW90 selection for tall crops (get_rotate_crop_image
+		// parity), so the recognizer receives a rectangular, horizontal crop
+		// instead of the slanted detection region. The emitted box bounds below
+		// still use the axis-aligned detection bbox (x0..y1); only the crop fed
+		// to recognition is transformed.
+		cropped := util.WarpCrop(pageImg, [4]util.Pt{
+			{X: b.X0, Y: b.Y0},
+			{X: b.X1, Y: b.Y1},
+			{X: b.X2, Y: b.Y2},
+			{X: b.X3, Y: b.Y3},
+		})
+		texts, recErr := p.ocrRecognizeWithRotation(ctx, doc, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
+			continue
+		}
+		// Convert crop bounds back to PDF-point space before emitting.
+		px0 := float64(x0) / pdf.DlaScale
+		py0 := float64(y0) / pdf.DlaScale
+		px1 := float64(x1) / pdf.DlaScale
+		py1 := float64(y1) / pdf.DlaScale
+		if px0 < 0 {
+			px0 = 0
+		}
+		if py0 < 0 {
+			py0 = 0
+		}
+		if px1 > imgW {
+			px1 = imgW
+		}
+		if py1 > imgH {
+			py1 = imgH
+		}
+		if px0 >= px1 || py0 >= py1 {
 			continue
 		}
 		for _, t := range texts {
 			if strings.TrimSpace(t.Text) != "" {
 				result = append(result, pdf.TextBox{
-					X0: float64(x0), X1: float64(x1),
-					Top: float64(y0), Bottom: float64(y1),
-					Text: t.Text,
+					X0:         px0,
+					X1:         px1,
+					Top:        py0,
+					Bottom:     py1,
+					Text:       t.Text,
 					PageNumber: pageNum,
 				})
 			}
 		}
 	}
 	return result
+}
+
+// ocrRecognizeWithRotation recognizes a single cropped text region, applying
+// layer-2 rotation selection for tall, narrow crops.
+//
+// When a crop's height is at least 1.5x its width, the text is most likely a
+// vertical line and the recognizer — trained on horizontal text — only reads
+// it cleanly after a 90 deg rotation. The crop is recognized at 0, CW90, and
+// CCW90 and the orientation with the highest recognition confidence is kept.
+// The emitted box bounds are unchanged; only the recognized text is
+// effectively rotated. Layer 1 (the perspective de-skew) is applied at crop
+// time by WarpCrop before this runs.
+//
+// The DeepDoc rec service surfaces the real recognition confidence, so the
+// orientation is picked by score rather than by a fixed rotation.
+func (p *Parser) ocrRecognizeWithRotation(ctx context.Context, doc pdf.DocAnalyzer, cropped image.Image) ([]pdf.OCRText, error) {
+	b := cropped.Bounds()
+	// Short / wide crops are already horizontal — recognize once at 0 deg.
+	if float64(b.Dy()) < 1.5*float64(b.Dx()) {
+		return p.inferOCRRecognize(ctx, doc, cropped)
+	}
+	candidates := []image.Image{
+		cropped,
+		util.RotateImageCW(cropped, 90),  // CW90
+		util.RotateImageCW(cropped, 270), // CCW90
+	}
+	var best []pdf.OCRText
+	bestScore := -1.0
+	for _, c := range candidates {
+		texts, err := p.inferOCRRecognize(ctx, doc, c)
+		if err != nil {
+			return nil, err
+		}
+		if s := ocrBestScore(texts); s > bestScore {
+			bestScore = s
+			best = texts
+		}
+	}
+	return best, nil
+}
+
+// ocrBestScore is the layer-2 orientation score: the highest recognition
+// confidence among the recognized items. A correctly oriented line reads with
+// high confidence; a mis-rotated line reads with low confidence.
+func ocrBestScore(texts []pdf.OCRText) float64 {
+	best := 0.0
+	for _, t := range texts {
+		if t.Confidence > best {
+			best = t.Confidence
+		}
+	}
+	return best
 }
 
 // ocrMergeChars runs full-page detect on a page that has embedded chars,
@@ -59,17 +152,17 @@ type ocrDetectBox struct {
 	x0, y0, x1, y1 float64
 }
 
-func ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
-	boxes, scale, err := detectBoxes(ctx, pageImg, doc, pageNum)
+func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
+	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum)
 	if err != nil || len(boxes) == 0 {
 		return nil
 	}
 	boxChars := matchCharsToBoxes(boxes, chars)
-	return buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
+	return p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
 }
 
-func detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int) ([]ocrDetectBox, float64, error) {
-	ocrDetectBoxes, err := doc.OCRDetect(ctx, pageImg)
+func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int) ([]ocrDetectBox, float64, error) {
+	ocrDetectBoxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
@@ -186,40 +279,12 @@ func charBoxOverlapRatio(c pdf.TextChar, x0, x1, y0, y1 float64) float64 {
 	return inter / charArea
 }
 
-// ocrTableCells fills empty TSR cells via OCR recognition.
-func ocrTableCells(ctx context.Context, cells []pdf.TSRCell, tableImg image.Image, doc pdf.DocAnalyzer) {
-	if doc == nil || tableImg == nil || len(cells) == 0 {
-		return
-	}
-	for i := range cells {
-		if cells[i].Text != "" {
-			continue
-		}
-		x0 := int(math.Max(0, cells[i].X0))
-		y0 := int(math.Max(0, cells[i].Y0))
-		x1 := int(math.Min(float64(tableImg.Bounds().Dx()), cells[i].X1))
-		y1 := int(math.Min(float64(tableImg.Bounds().Dy()), cells[i].Y1))
-		if x0 >= x1 || y0 >= y1 {
-			continue
-		}
-		cropped := util.FastCrop(tableImg, x0, y0, x1, y1)
-		texts, err := doc.OCRRecognize(ctx, cropped)
-		if err != nil {
-			slog.Warn("table cell OCR failed", "err", err)
-			continue
-		}
-		var parts []string
-		for _, t := range texts {
-			if t.Text != "" {
-				parts = append(parts, t.Text)
-			}
-		}
-		cells[i].Text = strings.TrimSpace(strings.Join(parts, " "))
-	}
-}
-
-// buildTextBoxes assembles detect box text from embedded chars and fills empty boxes via batch OCR.
-func buildTextBoxes(ctx context.Context, pageImg image.Image,
+// buildTextBoxes assembles detect box text from embedded chars and fills empty boxes via single-image OCR.
+// Each region that lacks embedded text is cropped and recognized with a
+// direct doc.OCRRecognize call so empty-box fallback runs through the
+// canonical single-image recognition primitive. A nil or unhealthy
+// analyzer yields empty results for OCR-hungry regions instead of panicking.
+func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 	boxes []ocrDetectBox, boxChars [][]pdf.TextChar, doc pdf.DocAnalyzer, scale float64, pageNum int,
 ) []pdf.TextBox {
 	var result []pdf.TextBox
@@ -240,10 +305,12 @@ func buildTextBoxes(ctx context.Context, pageImg image.Image,
 					}
 				}
 			}
+			// PUA / unmapped-glyph garbage: genuine noise, re-OCR regardless of script.
 			if totalCnt > 0 && float64(garbledCnt)/float64(totalCnt) >= 0.5 {
 				tb.Text = ""
-			}
-			if tb.Text != "" && util.IsGarbledByFontEncoding(boxChars[i], 5) {
+			} else if tb.Text != "" && util.OcrCanRepresent(tb.Text) && util.IsGarbledByFontEncoding(boxChars[i], 5) {
+				// Font-encoding garbling, but skipped for a script the recogniser
+				// cannot spell -- OCR would only produce garbage.
 				tb.Text = ""
 			}
 		}
@@ -253,21 +320,28 @@ func buildTextBoxes(ctx context.Context, pageImg image.Image,
 		}
 		result = append(result, tb)
 	}
-	if len(needOCR) > 0 {
-		cropped := make([]image.Image, len(needOCR))
-		for j, idx := range needOCR {
-			cropped[j] = util.FastCrop(pageImg,
-				int(boxes[idx].x0*scale), int(boxes[idx].y0*scale),
-				int(boxes[idx].x1*scale), int(boxes[idx].y1*scale))
-		}
-		allTexts, allErrs := doc.OCRRecognizeBatch(ctx, cropped)
-		for j, idx := range needOCR {
-			if allErrs[j] != nil {
-				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", allErrs[j])
+	if len(needOCR) > 0 && doc != nil && doc.Health() {
+		for _, idx := range needOCR {
+			// De-skew via WarpCrop and recognize via ocrRecognizeWithRotation
+			// the same way ocrDetectAndRecognize does, so all Go OCR paths feed
+			// the recognizer an identical geometry. Char/table-derived boxes are
+			// axis-aligned, so WarpCrop early-exits to FastCrop and
+			// ocrRecognizeWithRotation recognizes once at 0 deg here, while still
+			// inheriting WarpCrop's bounds-clamp / non-finite guard on the
+			// untrusted detector box.
+			cropped := util.WarpCrop(pageImg, [4]util.Pt{
+				{X: boxes[idx].x0 * scale, Y: boxes[idx].y0 * scale},
+				{X: boxes[idx].x1 * scale, Y: boxes[idx].y0 * scale},
+				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
+				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
+			})
+			texts, err := p.ocrRecognizeWithRotation(ctx, doc, cropped)
+			if err != nil {
+				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
 				continue
 			}
 			var ocrParts []string
-			for _, t := range allTexts[j] {
+			for _, t := range texts {
 				if strings.TrimSpace(t.Text) != "" {
 					ocrParts = append(ocrParts, t.Text)
 				}

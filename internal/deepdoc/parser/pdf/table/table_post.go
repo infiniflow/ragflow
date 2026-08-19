@@ -19,10 +19,7 @@ func FilterBoxesByRemoveSet(boxes []pdf.TextBox, removeSet map[int]bool) []pdf.T
 	}
 	// Pre-allocate: estimate final size to avoid resizing
 	// Use max to prevent negative capacity when len(removeSet) > len(boxes)
-	estimatedCap := len(boxes) - len(removeSet)
-	if estimatedCap < 0 {
-		estimatedCap = 0
-	}
+	estimatedCap := max(len(boxes)-len(removeSet), 0)
 	out := make([]pdf.TextBox, 0, estimatedCap)
 	for i, b := range boxes {
 		if !removeSet[i] {
@@ -321,11 +318,19 @@ func processTablesWithReplacements(
 	removeSet map[int]bool,
 	replacements []replacement,
 ) []pdf.TextBox {
-	for _, r := range replacements {
-		removeSet[r.boxIdx] = true
-	}
 	anchors := findTableAnchorsWithReplacements(boxes, tables, replacements)
 	htmls := buildTableHTMLs(boxes, tables)
+	// A box is removed only when it is actually replaced by a table HTML box.
+	// A DLA-tagged region that produced no table HTML (no cells, or a
+	// degenerate table whose ConstructTable returned "") keeps its original
+	// text as prose instead of being silently dropped. Marking per replacement
+	// (rather than un-marking empties) also avoids duplicating content when one
+	// box is covered by both an empty and a real table.
+	for _, r := range replacements {
+		if html, ok := htmls[r.tableIdx]; ok && html != "" {
+			removeSet[r.boxIdx] = true
+		}
+	}
 	anchorList := buildAndSortAnchors(anchors)
 	return insertTableBoxes(boxes, tables, removeSet, anchorList, htmls)
 }

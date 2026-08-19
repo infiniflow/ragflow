@@ -1,8 +1,6 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
-import {
-  initialLlmBaseValues,
-  DataflowOperator as Operator,
-} from '@/constants/agent';
+import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { isGoBackend } from '@/utils/backend-runtime';
 import { cloneDeep } from 'lodash';
 
 export enum FileType {
@@ -100,7 +98,6 @@ export enum ContextGeneratorFieldName {
   Keywords = 'keywords',
   Questions = 'questions',
   Metadata = 'metadata',
-  TableOfContents = 'toc',
 }
 
 export const FileId = 'File'; // BeginId
@@ -200,6 +197,7 @@ export const initialParserValues = {
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
       remove_header_footer: false,
+      pages: [{ from: 1, to: 100000 }],
     },
     {
       fileFormat: FileType.Spreadsheet,
@@ -265,7 +263,7 @@ export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
-  delimiter_mode: 'token_size',
+  delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
@@ -347,19 +345,78 @@ export const initialTitleChunkerValues = {
   hierarchyGroup: '0',
   include_heading_content: false,
   root_chunk_as_heading: false,
+  chunk_token_cap: 512,
   hierarchyRules: cloneDeep(originalRules),
   groupRules: cloneDeep(originalRules),
 };
 
+// Defaults for the Python backend extractor (legacy flat fields).
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
+  auto_tags: 1,
+  tag_file_id: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
 };
 
-export const NoDebugOperatorsList = [Operator.Begin];
+// Defaults for the Go backend extractor (nested per-feature configs plus
+// legacy flat fields, which the Go schema still accepts).
+export const initialGoExtractorValues = {
+  ...initialLlmBaseValues,
+  keywords: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  questions: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  tags: {
+    top_n: 0,
+    tag_file_id: '',
+  },
+  summary: {
+    enabled: false,
+    system_prompt: '',
+  },
+  metadata_config: {
+    enabled: false,
+    metadata: [],
+    built_in_metadata: [],
+  },
+  metadata: [],
+  built_in_metadata: [],
+  field_name: '',
+  auto_keywords: 0,
+  auto_questions: 0,
+  auto_tags: 0,
+  tag_file_id: '',
+  enable_summary: 0,
+  enable_metadata: 0,
+  keywords_sys_prompt: '',
+  questions_sys_prompt: '',
+  sys_prompt: '',
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export function getInitialExtractorValues() {
+  return isGoBackend() ? initialGoExtractorValues : initialExtractorValues;
+}
+
+export const initialCompilationValues = {
+  compilation_template_group_id: '',
+  llm_id: '',
+  mode: 'entity',
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export const NoDebugOperatorsList = [Operator.File];
 
 export const FileTypeSuffixMap = {
   [FileType.PDF]: ['pdf'],

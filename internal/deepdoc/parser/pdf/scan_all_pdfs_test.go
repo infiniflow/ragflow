@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +43,7 @@ func TestScanAllPDFs(t *testing.T) {
 		eng := mustOpenEngine(t, name)
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.ParseRaw(context.Background(), eng, client)
+		result, err := p.ParseRaw(t.Context(), eng, client)
 		eng.Close()
 		if err != nil {
 			fmt.Printf("  ❌ ERROR: %v\n", err)

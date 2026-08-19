@@ -55,7 +55,7 @@ export default {
       submit: 'إرسال',
       clear: 'مسح',
       embedIntoSite: 'تضمين في صفحة الويب',
-      openInNewTab: 'الدردشة في علامة تبويب جديدة',
+      openInNewTab: 'فتح في علامة تبويب جديدة',
       previousPage: 'سابق',
       nextPage: 'التالي',
       add: 'يضيف',
@@ -466,9 +466,6 @@ export default {
       dataSource: 'مصدر البيانات',
       linkSourceSetTip: 'إدارة ربط مصدر البيانات بمجموعة البيانات هذه',
       linkDataSource: 'ربط مصدر البيانات',
-      tocExtraction: 'فهرس الصفحة',
-      tocExtractionTip:
-        'بالنسبة للقطع الموجودة، قم بإنشاء جدول محتويات هرمي (دليل واحد لكل ملف). أثناء الاستعلامات، عند تنشيط "تحسين الدليل"، سيستخدم النظام نموذجًا كبيرًا لتحديد عناصر الدليل ذات الصلة بسؤال المستخدم، وبالتالي تحديد الأجزاء ذات الصلة.',
       deleteGenerateModalContent:
         "<p>حذف النتائج <strong class='text-text-primary'>{{type}}</strong> التي تم إنشاؤها\n        سيؤدي إلى إزالة جميع الكيانات والعلاقات المشتقة من مجموعة البيانات هذه.\n        ستبقى ملفاتك الأصلية سليمة.<p>\n        <br/>\n        هل تريد الاستمرار؟",
       extractRaptor: 'استخراج رابتور',
@@ -479,8 +476,7 @@ export default {
       setDefaultTip: '',
       setDefault: 'تعيين كافتراضي',
       editLinkDataPipeline: 'تعديل مسار الابتلاع',
-      linkPipelineSetTip:
-        'إدارة ربط خط أنابيب الاستيعاب مع مجموعة البيانات هذه',
+      linkPipelineSetTip: 'إدارة ربط خط أنابيب الاستيعاب مع مجموعة البيانات هذه',
       default: 'تقصير',
       dataPipeline: 'تبديل أو تكوين مسار الابتلاع.',
       linkDataPipeline: 'ربط خط أنابيب استيعاب',
@@ -951,7 +947,7 @@ export default {
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
-        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+        'The Base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
@@ -1136,7 +1132,7 @@ export default {
       modelType: 'نوع النموذج',
       modelTypeMessage: 'الرجاء إدخال نوع النموذج الخاص بك!',
       addLlmBaseUrl: 'عنوان URL الأساسي',
-      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك!',
+      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك',
       paddleocr: {
         apiUrl: 'عنوان URL لواجهة برمجة تطبيقات PaddleOCR',
         apiUrlPlaceholder:
@@ -1158,13 +1154,13 @@ export default {
       endpointIDMessage: 'يرجى إدخال Model ID للنموذج',
       addArkApiKey: 'فولك ARK_API_KEY',
       ArkApiKeyMessage: 'الرجاء إدخال ARK_API_KEY الخاص بك',
-      bedrockModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك!',
+      bedrockModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك',
       addBedrockEngineAK: 'مفتاح الوصول',
       bedrockAKMessage: 'الرجاء إدخال مفتاح الوصول الخاص بك',
       addBedrockSK: 'المفتاح السري',
       bedrockSKMessage: 'الرجاء إدخال المفتاح السري الخاص بك',
       bedrockRegion: 'منطقة أوس',
-      bedrockRegionMessage: 'الرجاء التحديد!',
+      bedrockRegionMessage: 'الرجاء التحديد',
       'us-east-2': 'شرق الولايات المتحدة (أوهايو)',
       'us-east-1': 'شرق الولايات المتحدة (شمال فرجينيا)',
       'us-west-1': 'غرب الولايات المتحدة (شمال كاليفورنيا)',
@@ -1209,8 +1205,8 @@ export default {
       SparkAPIPasswordMessage: 'يرجى إدخال كلمة مرور API الخاصة بك',
       addSparkAPPID: 'معرف تطبيق سبارك',
       SparkAPPIDMessage: 'يرجى إدخال معرف التطبيق الخاص بك',
-      addSparkAPISecret: 'سبارك API Secret',
-      SparkAPISecretMessage: 'يرجى إدخال APISecret الخاص بك',
+      addSparkAPISecret: 'سبارك API SECRET',
+      SparkAPISecretMessage: 'يرجى إدخال API SECRET الخاص بك',
       addSparkAPIKey: 'سبارك APIKey',
       SparkAPIKeyMessage: 'الرجاء إدخال APIKey الخاص بك',
       yiyanModelNameMessage: 'الرجاء إدخال اسم النموذج',
@@ -1286,7 +1282,7 @@ export default {
         chat: 'محادثة',
         embedding: 'التضمين',
         rerank: 'إعادة الترتيب',
-        sequence2text: 'تسلسل2نص',
+        sequence2text: 'ASR',
         tts: 'تحويل النص إلى كلام',
         image2text: 'التعرف الضوئي على الحروف',
         speech2text: 'ASR',

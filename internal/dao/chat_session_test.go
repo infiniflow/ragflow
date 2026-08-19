@@ -67,6 +67,29 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 	}
 }
 
+func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID, name string, message json.RawMessage, updateTime int64) {
+	t.Helper()
+
+	updateDate := time.UnixMilli(updateTime).Local()
+	session := &entity.API4Conversation{
+		ID:        id,
+		Name:      &name,
+		DialogID:  agentID,
+		UserID:    userID,
+		Message:   message,
+		Reference: json.RawMessage(`[]`),
+		BaseModel: entity.BaseModel{
+			CreateTime: &updateTime,
+			CreateDate: &updateDate,
+			UpdateTime: &updateTime,
+			UpdateDate: &updateDate,
+		},
+	}
+	if err := db.Create(session).Error; err != nil {
+		t.Fatalf("failed to create session %s: %v", id, err)
+	}
+}
+
 func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name string, updateTime int64) {
 	t.Helper()
 
@@ -91,16 +114,16 @@ func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name str
 
 func TestChatSessionDAOUpdateByIDRefreshesTimestampsOnEmptyUpdate(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
 	oldUpdateTime := int64(1000)
 	createChatSessionForDAOTest(t, db, "session-1", "chat-1", "same", oldUpdateTime)
 
-	if err := NewChatSessionDAO().UpdateByID("session-1", map[string]interface{}{}); err != nil {
+	ctx := t.Context()
+	if err := NewChatSessionDAO().UpdateByID(ctx, db, "session-1", map[string]interface{}{}); err != nil {
 		t.Fatalf("UpdateByID failed: %v", err)
 	}
 
-	session, err := NewChatSessionDAO().GetByID("session-1")
+	session, err := NewChatSessionDAO().GetByID(ctx, db, "session-1")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}
@@ -114,20 +137,20 @@ func TestChatSessionDAOUpdateByIDRefreshesTimestampsOnEmptyUpdate(t *testing.T) 
 
 func TestChatSessionDAOUpdateByIDSameValueSucceeds(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
 	createChatSessionForDAOTest(t, db, "session-1", "chat-1", "same", 1000)
 
-	if err := NewChatSessionDAO().UpdateByID("session-1", map[string]interface{}{"name": "same"}); err != nil {
+	ctx := t.Context()
+	if err := NewChatSessionDAO().UpdateByID(ctx, db, "session-1", map[string]interface{}{"name": "same"}); err != nil {
 		t.Fatalf("UpdateByID failed: %v", err)
 	}
 }
 
 func TestChatSessionDAOUpdateByIDMissingSession(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
-	err := NewChatSessionDAO().UpdateByID("missing", nil)
+	ctx := t.Context()
+	err := NewChatSessionDAO().UpdateByID(ctx, db, "missing", nil)
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected ErrRecordNotFound, got %v", err)
 	}
@@ -135,14 +158,14 @@ func TestChatSessionDAOUpdateByIDMissingSession(t *testing.T) {
 
 func TestChatSessionDAOListAgentSessionsOrdersByUpdateTimeDesc(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
 	createAgentSessionForDAOTest(t, db, "session-old", "agent-1", "user-1", 1000)
 	createAgentSessionForDAOTest(t, db, "session-new", "agent-1", "user-1", 3000)
 	createAgentSessionForDAOTest(t, db, "session-middle", "agent-1", "user-1", 2000)
 	createAgentSessionForDAOTest(t, db, "session-other-agent", "agent-2", "user-1", 9999)
 
-	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ListAgentSessionsParams{
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, db, ListAgentSessionsParams{
 		AgentID:  "agent-1",
 		Page:     1,
 		PageSize: 10,
@@ -173,14 +196,14 @@ func TestChatSessionDAOListAgentSessionsOrdersByUpdateTimeDesc(t *testing.T) {
 
 func TestChatSessionDAOListAgentSessionsFiltersAndPaginates(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
 	createAgentSessionForDAOTest(t, db, "session-1", "agent-1", "user-1", 1000)
 	createAgentSessionForDAOTest(t, db, "session-2", "agent-1", "user-1", 2000)
 	createAgentSessionForDAOTest(t, db, "session-3", "agent-1", "user-1", 3000)
 	createAgentSessionForDAOTest(t, db, "session-other-user", "agent-1", "user-2", 4000)
 
-	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ListAgentSessionsParams{
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, db, ListAgentSessionsParams{
 		AgentID:  "agent-1",
 		UserID:   "user-1",
 		Page:     2,
@@ -203,5 +226,47 @@ func TestChatSessionDAOListAgentSessionsFiltersAndPaginates(t *testing.T) {
 	}
 	if sessions[0].UserID != "user-1" {
 		t.Fatalf("expected user-1, got %s", sessions[0].UserID)
+	}
+}
+
+func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+
+	createNamedAgentSessionForDAOTest(t, db, "release-session-id", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary"}]`), 1000)
+	createNamedAgentSessionForDAOTest(t, db, "session-title", "agent-1", "user-1", "Release Notes", json.RawMessage(`[{"content":"ordinary"}]`), 2000)
+	createNamedAgentSessionForDAOTest(t, db, "session-message", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"release details"}]`), 3000)
+	createNamedAgentSessionForDAOTest(t, db, "other-agent-release", "agent-2", "user-1", "Release Notes", json.RawMessage(`[{"content":"release details"}]`), 4000)
+
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, db, ListAgentSessionsParams{
+		AgentID:  "agent-1",
+		Keywords: "release",
+		Page:     1,
+		PageSize: 10,
+		OrderBy:  "update_time",
+		Desc:     false,
+	})
+	if err != nil {
+		t.Fatalf("ListAgentSessions failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Fatalf("expected total 3, got %d", total)
+	}
+	gotIDs := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		gotIDs = append(gotIDs, session.ID)
+		if session.DialogID != "agent-1" {
+			t.Fatalf("session %s leaked from agent %s", session.ID, session.DialogID)
+		}
+	}
+	wantIDs := []string{"release-session-id", "session-title", "session-message"}
+	if len(gotIDs) != len(wantIDs) {
+		t.Fatalf("ids = %v, want %v", gotIDs, wantIDs)
+	}
+	for i := range wantIDs {
+		if gotIDs[i] != wantIDs[i] {
+			t.Fatalf("ids = %v, want %v", gotIDs, wantIDs)
+		}
 	}
 }

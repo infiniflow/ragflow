@@ -24,6 +24,44 @@ import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
+from common.float_utils import get_float
+
+
+DENSE_FILTER_FULLTEXT_WEIGHT_THRESHOLD = 0.8
+DEFAULT_VECTOR_SIMILARITY_WEIGHT = 0.5
+_JSON_LIST_FIELDS = frozenset(
+    (
+        "source_chunk_ids",
+        "source_doc_ids",
+        "compilation_template_ids",
+        "doc_ids_kwd",
+        "entity_names_kwd",
+        "outlinks_kwd",
+        "related_kb_pages_kwd",
+        "rechunked_from_chunk_ids",
+    )
+)
+
+
+def _vector_similarity_weight(match_expressions: list[MatchExpr]) -> float:
+    vector_similarity_weight = DEFAULT_VECTOR_SIMILARITY_WEIGHT
+    for matchExpr in match_expressions:
+        if not isinstance(matchExpr, FusionExpr) or matchExpr.method != "weighted_sum":
+            continue
+        fusion_params = matchExpr.fusion_params or {}
+        weights = fusion_params.get("weights")
+        if not weights:
+            continue
+        weight_parts = str(weights).split(",")
+        if len(weight_parts) > 1:
+            vector_similarity_weight = get_float(weight_parts[1])
+    return vector_similarity_weight
+
+
+def _build_dense_filter(filter_cond: str | None, filter_fulltext: str | None, vector_similarity_weight: float) -> str:
+    if vector_similarity_weight > DENSE_FILTER_FULLTEXT_WEIGHT_THRESHOLD:
+        return filter_cond or ""
+    return filter_fulltext or filter_cond or ""
 
 
 @singleton
@@ -34,8 +72,12 @@ class InfinityConnection(InfinityConnectionBase):
 
     @staticmethod
     def field_keyword(field_name: str):
-        # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
-        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]):
+        # Treat "*_kwd" tag-like columns as keyword lists except for the fields in the exclusion list; source_id is also keyword-like.
+        # source_doc_ids / source_chunk_ids are multi-valued provenance lists (artifact/wiki rows) and must be
+        # stored/read/updated as keyword lists so the delete-time ref-count (remove one id, drop row when empty) works.
+        if field_name in ("source_id", "source_doc_ids", "source_chunk_ids") or (
+            field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd", "parent_kwd"]
+        ):
             return True
         return False
 
@@ -173,6 +215,7 @@ class InfinityConnection(InfinityConnectionBase):
                     self.logger.error(f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
                     return pd.DataFrame(), 0
 
+            # vector_similarity_weight = _vector_similarity_weight(match_expressions)
             for matchExpr in match_expressions:
                 if isinstance(matchExpr, MatchTextExpr):
                     if filter_cond and "filter" not in matchExpr.extra_options:
@@ -205,6 +248,9 @@ class InfinityConnection(InfinityConnectionBase):
                 elif isinstance(matchExpr, MatchDenseExpr):
                     if filter_fulltext and "filter" not in matchExpr.extra_options:
                         matchExpr.extra_options.update({"filter": filter_fulltext})
+                    # dense_filter = _build_dense_filter(filter_cond, filter_fulltext, vector_similarity_weight)
+                    # if dense_filter and "filter" not in matchExpr.extra_options:
+                    #    matchExpr.extra_options.update({"filter": dense_filter})
                     for k, v in matchExpr.extra_options.items():
                         if not isinstance(v, str):
                             matchExpr.extra_options[k] = str(v)
@@ -285,19 +331,37 @@ class InfinityConnection(InfinityConnectionBase):
             self.connPool.release_conn(inf_conn)
 
     def get(self, chunk_id: str, index_name: str, knowledgebase_ids: list[str]) -> dict | None:
+        # Doc-meta tables are per-tenant, not per-kb: they have no `_kb_id`
+        # suffix. Match the special-casing used by index_exist/insert/delete
+        # in InfinityConnectionBase so callers can pass either a chunk
+        # index (``ragflow_<tenant>``) or a doc-meta index
+        # (``ragflow_doc_meta_<tenant>``) without us logging a bogus
+        # "blank knowledgebase_ids" warning.
+        is_meta_table = index_name.startswith("ragflow_doc_meta_")
+
+        # Validate the per-kb list BEFORE acquiring a connection — the
+        # blank-list case is a caller bug and shouldn't burn a connection
+        # from the pool. For meta tables the list is unused, so an empty
+        # list is fine.
+        if not is_meta_table:
+            if not knowledgebase_ids:
+                self.logger.warning("INFINITY get called with empty knowledgebase_ids for index %s", index_name)
+                return None
+            kb_table_names = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids if kb_id]
+            if not kb_table_names:
+                self.logger.warning("INFINITY get has only blank knowledgebase_ids for index %s", index_name)
+                return None
+
         inf_conn = self.connPool.get_conn()
         try:
             db_instance = inf_conn.get_database(self.dbName)
             df_list = list()
             assert isinstance(knowledgebase_ids, list)
             table_list = list()
-            if not knowledgebase_ids:
-                self.logger.warning("INFINITY get called with empty knowledgebase_ids for index %s", index_name)
-                return None
-            table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids if kb_id]
-            if not table_names_to_search:
-                self.logger.warning("INFINITY get has only blank knowledgebase_ids for index %s", index_name)
-                return None
+            if is_meta_table:
+                table_names_to_search = [index_name]
+            else:
+                table_names_to_search = kb_table_names
             for table_name in table_names_to_search:
                 table_list.append(table_name)
                 try:
@@ -333,7 +397,59 @@ class InfinityConnection(InfinityConnectionBase):
             chunk["id"] = chunk_id
         return chunk
 
-    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+    def ensure_columns(self, index_name: str, knowledgebase_id: str, column_defs: dict) -> None:
+        """Make sure the per-KB chunk table carries the given columns.
+
+        Infinity's ``add_columns`` is idempotent for already-present columns,
+        so this is safe to call repeatedly. Used by callers that write new
+        marker rows referencing columns which were introduced after the
+        chunk-table schema was last updated (e.g. ``deleted_doc_id``, added
+        in #17685). For per-tenant doc-meta tables, pass ``knowledgebase_id``
+        as the empty string.
+
+        Logs and swallows any failure — this is a best-effort upgrade helper,
+        not a hard requirement of the calling write path. New tables are
+        created with the current ``conf/infinity_mapping.json`` schema so
+        callers will not need to invoke this in the steady state.
+        """
+        if index_name.startswith("ragflow_doc_meta_"):
+            table_name = index_name
+        else:
+            table_name = f"{index_name}_{knowledgebase_id}" if knowledgebase_id else None
+        if not table_name:
+            return
+        inf_conn = self.connPool.get_conn()
+        try:
+            db_instance = inf_conn.get_database(self.dbName)
+            try:
+                table_instance = db_instance.get_table(table_name)
+            except InfinityException as e:
+                # src/common/status.cppm, kTableNotExist = 3022
+                if e.error_code != ErrorCode.TABLE_NOT_EXIST:
+                    raise
+                # Table doesn't exist yet — the next insert() will create it
+                # with the current schema, so we have nothing to upgrade.
+                return
+            existing = {n for n, *_ in table_instance.show_columns().rows()}
+            missing = {c: d for c, d in column_defs.items() if c not in existing}
+            if not missing:
+                return
+            self.logger.info(
+                "INFINITY adding %d missing column(s) [%s] to %s",
+                len(missing),
+                ", ".join(sorted(missing)),
+                table_name,
+            )
+            table_instance.add_columns(missing)
+        except Exception:
+            self.logger.exception(
+                "INFINITY failed to upgrade columns on %s; the next insert() may fail",
+                table_name,
+            )
+        finally:
+            self.connPool.release_conn(inf_conn)
+
+    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None, refresh: str | bool = "wait_for") -> list[str]:
         """
         # Save input to file to test inserting from file in GO
         import datetime
@@ -436,6 +552,8 @@ class InfinityConnection(InfinityConnectionBase):
                     elif k == "question_tks":
                         if not d.get("question_kwd"):
                             d["questions"] = self.list2str(v)
+                    elif k in _JSON_LIST_FIELDS:
+                        d[k] = json.dumps(list(v) if isinstance(v, (list, tuple, set)) else [], ensure_ascii=False)
                     elif self.field_keyword(k):
                         if isinstance(v, list):
                             d[k] = "###".join(v)
@@ -476,6 +594,10 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = v if v else "{}"
                     else:
                         d[k] = v
+                # Infinity thrift client does not accept None values.
+                for k in list(d.keys()):
+                    if d[k] is None:
+                        del d[k]
                 for k in [
                     "docnm_kwd",
                     "title_tks",
@@ -575,6 +697,8 @@ class InfinityConnection(InfinityConnectionBase):
                 elif k == "question_tks":
                     if not new_value.get("question_kwd"):
                         new_value["questions"] = self.list2str(v)
+                elif k in _JSON_LIST_FIELDS:
+                    new_value[k] = json.dumps(list(v) if isinstance(v, (list, tuple, set)) else [], ensure_ascii=False)
                 elif self.field_keyword(k):
                     if isinstance(v, list):
                         new_value[k] = "###".join(v)
@@ -621,6 +745,22 @@ class InfinityConnection(InfinityConnectionBase):
                 "question_tks",
             ]:
                 if k in new_value:
+                    del new_value[k]
+
+            # The Infinity Python client inspects value[0] for list values
+            # while building an update expression.  An empty list therefore
+            # raises IndexError before the request reaches Infinity.  Keep
+            # JSON and keyword-list columns clearable, but do not send empty
+            # values for other columns (for example, an empty vector returned
+            # by a partial row read).
+            for k, v in list(new_value.items()):
+                if not isinstance(v, list) or v:
+                    continue
+                if k in _JSON_LIST_FIELDS:
+                    new_value[k] = json.dumps([], ensure_ascii=False)
+                elif self.field_keyword(k):
+                    new_value[k] = ""
+                else:
                     del new_value[k]
 
             remove_opt = {}  # "[k,new_value]": [id_to_update, ...]
@@ -790,7 +930,22 @@ class InfinityConnection(InfinityConnectionBase):
 
         for column in list(res2.columns):
             k = column.lower()
-            if self.field_keyword(k):
+            if k in _JSON_LIST_FIELDS:
+
+                def parse_json_list(value):
+                    if isinstance(value, list):
+                        return value
+                    if not value:
+                        return []
+                    try:
+                        parsed = json.loads(value)
+                        return parsed if isinstance(parsed, list) else [parsed]
+                    except (TypeError, json.JSONDecodeError):
+                        # Read rows written by the previous varchar encoding.
+                        return [item for item in str(value).split("###") if item]
+
+                res2[column] = res2[column].apply(parse_json_list)
+            elif self.field_keyword(k):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})

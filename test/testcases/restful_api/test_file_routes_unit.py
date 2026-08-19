@@ -402,6 +402,10 @@ def _set_request_json(monkeypatch, module, payload_state):
     monkeypatch.setattr(module, "get_request_json", _req_json)
 
 
+def _set_request_args(monkeypatch, module, args):
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=args))
+
+
 @pytest.fixture(scope="session")
 def auth():
     return "unit-auth"
@@ -439,6 +443,7 @@ def _load_file2document_module(monkeypatch):
 
     services_pkg = ModuleType("api.db.services")
     services_pkg.__path__ = []
+    services_pkg.duplicate_name = lambda _query_func, **kwargs: "file(1).txt" if kwargs.get("name") == "file.txt" and kwargs.get("kb_id") == "kb-dup" else kwargs.get("name")
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
 
     common_pkg = ModuleType("api.common")
@@ -460,6 +465,10 @@ def _load_file2document_module(monkeypatch):
 
         @staticmethod
         def delete_by_file_id(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def delete_by_document_id(*_args, **_kwargs):
             return None
 
         @staticmethod
@@ -518,6 +527,10 @@ def _load_file2document_module(monkeypatch):
         @staticmethod
         def remove_document(*_args, **_kwargs):
             return True
+
+        @staticmethod
+        def query(*_args, **_kwargs):
+            return False
 
         @staticmethod
         def insert(_payload):
@@ -585,6 +598,7 @@ def test_convert_branch_matrix_unit(monkeypatch):
     module = _load_file2document_module(monkeypatch)
     req_state = {"kb_ids": ["kb-1"], "file_ids": ["f1"]}
     _set_request_json(monkeypatch, module, req_state)
+    _set_request_args(monkeypatch, module, {})
 
     # Falsy file returns "File not found!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_FalsyFile("f1", module.FileType.DOC.value)])
@@ -605,14 +619,14 @@ def test_convert_branch_matrix_unit(monkeypatch):
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: False)
     res = _run(module.convert())
     assert res["code"] == 102
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     # Unauthorized dataset access is rejected before scheduling background work.
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: False)
     res = _run(module.convert())
     assert res["code"] == 102
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     # Valid file and kb schedule background work and return data=True immediately.
     monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: True)
@@ -638,6 +652,59 @@ def test_convert_branch_matrix_unit(monkeypatch):
     res = _run(module.convert())
     assert res["code"] == 500
     assert "convert boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_convert_files_mode_add_and_replace_unit(monkeypatch):
+    module = _load_file2document_module(monkeypatch)
+    inserted = []
+    removed = []
+    deleted_doc_links = []
+    deleted_file_links = []
+    file = _DummyFile("f1", module.FileType.DOC.value, name="a.txt")
+    kb = SimpleNamespace(id="kb-new", parser_id="naive", pipeline_id="p1", parser_config={})
+
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, file))
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+    monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda file_id: [SimpleNamespace(document_id=f"doc-{file_id}")])
+    monkeypatch.setattr(module.File2DocumentService, "delete_by_document_id", lambda doc_id: deleted_doc_links.append(doc_id))
+    monkeypatch.setattr(module.File2DocumentService, "delete_by_file_id", lambda file_id: deleted_file_links.append(file_id))
+    monkeypatch.setattr(module.File2DocumentService, "insert", lambda payload: inserted.append(payload) or SimpleNamespace(to_json=lambda: {}))
+    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(id=doc_id, kb_id="kb-old")))
+    monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
+    monkeypatch.setattr(module.DocumentService, "remove_document", lambda doc, tenant_id: removed.append((doc.id, tenant_id)) or True)
+    monkeypatch.setattr(module.DocumentService, "insert", lambda payload: SimpleNamespace(id=f"new-{payload['kb_id']}"))
+
+    module._convert_files(["f1", "f2"], ["kb-old", "kb-new"], "user-1", "add")
+    assert len(inserted) == 2
+    assert removed == []
+    assert deleted_doc_links == []
+    assert deleted_file_links == []
+
+    inserted.clear()
+    module._convert_files(["f1", "f2"], ["kb-new"], "user-1", "replace")
+    assert len(inserted) == 2
+    assert removed == [("doc-f1", "tenant-1"), ("doc-f2", "tenant-1")]
+    assert deleted_doc_links == ["doc-f1", "doc-f2"]
+    assert deleted_file_links == ["f1", "f2"]
+
+
+@pytest.mark.p2
+def test_convert_files_renames_duplicate_document_name_unit(monkeypatch):
+    module = _load_file2document_module(monkeypatch)
+    inserted_docs = []
+    file = _DummyFile("f1", module.FileType.DOC.value, name="file.txt")
+    kb = SimpleNamespace(id="kb-dup", parser_id="naive", pipeline_id="p1", parser_config={})
+
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, file))
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, kb))
+    monkeypatch.setattr(module.DocumentService, "insert", lambda payload: inserted_docs.append(payload) or SimpleNamespace(id="doc-1"))
+
+    module._convert_files(["f1"], ["kb-dup"], "user-1", "add")
+
+    assert inserted_docs[0]["name"] == "file(1).txt"
+    assert inserted_docs[0]["suffix"] == "txt"
+    assert inserted_docs[0]["location"] == "loc"
 
 
 def _load_file_api_service(monkeypatch):
@@ -926,9 +993,54 @@ def test_get_file_content_checks_permission(monkeypatch):
 
     ok, message = module.get_file_content("tenant1", "file1")
     assert ok is False
-    assert message == "No authorization."
+    assert message == "no authorization"
 
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     ok, file = module.get_file_content("tenant1", "file1")
     assert ok is True
     assert file.id == "file1"
+
+
+@pytest.mark.p2
+def test_move_folder_to_its_current_parent_does_not_delete_it(monkeypatch):
+    """Moving a folder into its current parent (i.e. to its current location)
+    must not delete the folder: _move_entry_recursive used to reuse the source
+    folder itself as the target and then delete it, making the folder vanish."""
+    module = _load_file_api_service(monkeypatch)
+    deleted = []
+
+    src = _DummyFile("folder-a", module.FileType.FOLDER.value, name="A", parent_id="parent")
+    dest = SimpleNamespace(id="parent", name="parent")
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [src])
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, dest))
+    # The folder already sits in the destination folder under the same name.
+    monkeypatch.setattr(module.FileService, "query", lambda **_kwargs: [src])
+    monkeypatch.setattr(
+        module.FileService,
+        "delete_by_id",
+        lambda file_id: deleted.append(file_id) or True,
+    )
+
+    ok, message = _run(module.move_files("tenant1", ["folder-a"], "parent"))
+    assert ok is False
+    assert message == "The folder is already in the target location. There is no need to move it."
+    assert deleted == []
+
+
+@pytest.mark.p2
+def test_move_folder_to_itself_is_rejected(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    src = _DummyFile("folder-a", module.FileType.FOLDER.value, name="A", parent_id="parent")
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [src])
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda _file_id: (True, SimpleNamespace(id="folder-a")),
+    )
+    monkeypatch.setattr(module.FileService, "get_all_parent_folders", lambda _file_id: [])
+
+    ok, message = _run(module.move_files("tenant1", ["folder-a"], "folder-a"))
+    assert ok is False
+    assert message == "Cannot move a folder to itself."

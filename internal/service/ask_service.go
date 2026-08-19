@@ -72,7 +72,7 @@ type AskStreamOptions struct {
 
 // Retriever abstracts chunk retrieval for AskService.
 type Retriever interface {
-	RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
+	RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
 }
 
 // StreamingLLM abstracts streaming chat for AskService.
@@ -113,16 +113,16 @@ func (s *AskService) Stream(ctx context.Context, llm StreamingLLM, userID, quest
 
 // StreamWithOptions runs Stream while allowing callers such as saved Search
 // apps to pass search_config retrieval options through to RetrievalTest.
-func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string, opts AskStreamOptions) <-chan AskDelta {
+func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions) <-chan AskDelta {
 	out := make(chan AskDelta, 32)
 	go func() {
 		defer close(out)
-		s.run(ctx, llm, userID, question, kbIDs, opts, out)
+		s.run(ctx, llm, userID, question, datasetIDs, opts, out)
 	}()
 	return out
 }
 
-func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
+func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
 	// Phase 1: Retrieval.
 	topK := DefaultAskTopK
 	if opts.TopK != nil {
@@ -138,7 +138,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	}
 
 	req := &RetrievalTestRequest{
-		Datasets:               common.StringSlice(kbIDs),
+		Datasets:               common.StringSlice(datasetIDs),
 		Question:               question,
 		DocIDs:                 opts.DocIDs,
 		UseKG:                  opts.UseKG,
@@ -159,7 +159,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	req.Page = &page
 	req.Size = &ps
 
-	result, err := s.retriever.RetrievalTest(req, userID)
+	result, err := s.retriever.RetrievalTest(ctx, req, userID)
 	if err != nil {
 		common.Warn("AskService retrieval failed", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "retrieval failed"}, ctx)
@@ -186,7 +186,12 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		{Role: "system", Content: sysPrompt},
 		{Role: "user", Content: question},
 	}
-	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1)}
+	// Thinking is disabled: summarization does not need reasoning. With
+	// thinking enabled, the reasoning (which drafts the summary) streams
+	// first, then collapses into a hidden think block, and the provider may
+	// emit only a fragment as the visible answer once the reasoning has
+	// consumed the output budget.
+	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1), Thinking: ptrBool(false)}
 
 	ch, err := llm.ChatStream(ctx, messages, genConf)
 	if err != nil {
@@ -219,7 +224,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	// Attempt citation insertion if embedder is available.
 	chunkVectors := ExtractChunkVectors(result.Chunks)
 	if len(chunkVectors) > 0 && s.embedder != nil {
-		if decorated, cited := InsertCitations(visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
+		if decorated, cited := InsertCitations(ctx, visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
 			visible = decorated
 		}
 	}
@@ -279,3 +284,4 @@ func toFloat64Slice(v interface{}) []float64 {
 
 func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
+func ptrBool(v bool) *bool          { return &v }

@@ -18,35 +18,50 @@ package parser
 
 import (
 	"fmt"
+
 	"ragflow/internal/utility"
 )
 
-func GetParser(fileType utility.FileType, config map[string]string) (ParseResultProducer, error) {
-	libType, ok := config["lib_type"]
-	if !ok {
-		return nil, fmt.Errorf("missing lib_type config")
-	}
+// GetParser returns the ParseResultProducer for the given file type.
+// Each format picks a single backend — the Python dispatcher does
+// not pass any lib_type knob for these families, so the Go side
+// mirrors that with one constructor per format. Constructors mirror
+// the NewPDFParser shape (no error return): none of them have inputs
+// that could fail, so the error slot is dead weight.
+func GetParser(fileType utility.FileType) (ParseResultProducer, error) {
 	switch fileType {
 	case utility.FileTypePPTX:
-		return NewPPTXParser(libType)
+		return NewPPTXParser(), nil
 	case utility.FileTypePPT:
-		return NewPPTParser(libType)
+		return NewPPTParser(), nil
 	case utility.FileTypeXLSX:
-		return NewXLSXParser(libType)
+		return NewXLSXParser("")
 	case utility.FileTypeXLS:
-		return NewXLSParser(libType)
+		return NewXLSParser("")
+	case utility.FileTypeCSV:
+		return NewCSVParser(), nil
 	case utility.FileTypeDOCX:
-		return NewDOCXParser(libType)
+		return NewDOCXParser(), nil
 	case utility.FileTypeDOC:
-		return NewDOCParser(libType)
+		return NewDOCParser(), nil
 	case utility.FileTypePDF:
 		return NewPDFParser(), nil
 	case utility.FileTypeHTML:
-		return NewHTMLParser(Official)
+		return NewHTMLParser(), nil
 	case utility.FileTypeMarkdown:
 		return NewMarkdownParser(GoMarkdown)
 	case utility.FileTypeTXT:
-		return NewTextParser(libType)
+		return NewTextParser(), nil
+	case utility.FileTypeEPUB:
+		return NewEPUBParser(), nil
+	case utility.FileTypeJSON:
+		return NewJSONParser(), nil
+	case utility.FileTypeEMAIL:
+		return NewEmailParser(), nil
+	case utility.FileTypeVISUAL:
+		return NewPictureParser(), nil
+	case utility.FileTypeAURAL:
+		return NewAudioParser(), nil
 	default:
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}

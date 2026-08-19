@@ -22,7 +22,7 @@ DOC_ENGINE = (os.getenv("DOC_ENGINE") or "").lower()
 
 
 class TestChunksRetrieval:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_page_size, expected_message",
         [

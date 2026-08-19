@@ -20,7 +20,6 @@ package canvas
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -34,7 +33,7 @@ import (
 )
 
 // ctxKey is the unexported context-key type for per-run metadata
-// (events channel, message/task/session ids) so the statePre/statePost
+// (events channel, message/session ids) so the statePre/statePost
 // wrappers can emit node_started/node_finished without depending on
 // the service package.
 type ctxKey string
@@ -46,7 +45,6 @@ const terminalMergeNodeID = "__canvas_terminal_merge__"
 type RunMeta struct {
 	Events    chan RunEvent
 	MessageID string
-	TaskID    string
 	SessionID string
 }
 
@@ -151,6 +149,12 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 	// the upstream outputs the state post handler already wrote.
 	if state != nil {
 		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx); ctxState != nil && ctxState != state {
+			localHistory := state.SnapshotHistory()
+			contextHistory := ctxState.SnapshotHistory()
+			localMemory := state.SnapshotMemory()
+			contextMemory := ctxState.SnapshotMemory()
+			localSysHistory := state.SnapshotSysHistory()
+			contextSysHistory := ctxState.SnapshotSysHistory()
 			for cpnID, bucket := range state.Outputs {
 				for k, v := range bucket {
 					ctxState.SetVar(cpnID, k, v)
@@ -165,6 +169,23 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 			}
 			for k, v := range globalsNS {
 				ctxState.Globals[k] = v
+			}
+			if len(contextHistory) >= len(localHistory) {
+				state.SetHistory(contextHistory)
+			} else {
+				ctxState.SetHistory(localHistory)
+			}
+			if len(contextMemory) >= len(localMemory) {
+				state.SetMemory(contextMemory)
+			} else {
+				ctxState.SetMemory(localMemory)
+			}
+			if len(contextSysHistory) >= len(localSysHistory) {
+				state.SetSysHistory(contextSysHistory)
+				ctxState.SetSysHistory(contextSysHistory)
+			} else {
+				state.SetSysHistory(localSysHistory)
+				ctxState.SetSysHistory(localSysHistory)
 			}
 		}
 	}
@@ -215,6 +236,8 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 		state.Sys = sysNS
 		state.Env = envNS
 		state.Globals = globalsNS
+		state.SetHistory(ctxState.SnapshotHistory())
+		state.SetMemory(ctxState.SnapshotMemory())
 	}
 	return out, nil
 }
@@ -249,7 +272,7 @@ func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 
 // nodeStartedAt records the per-node start time in state.Sys and emits a
 // node_started RunEvent. Called from the per-node statePre wrapper.
-// Metadata (message/task/session ids) is read from ctx via RunMeta.
+// Metadata (message/session ids) is read from ctx via RunMeta.
 func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, inputs map[string]any) {
 	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
 	if state == nil {
@@ -261,7 +284,7 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		state.Sys["_node_start_"+cpnID] = now
 		state.Sys["_node_inputs_"+cpnID] = sanitizeNodeInputs(inputs)
 	}
-	nsData, _ := json.Marshal(NodeStartedData{
+	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
 		Inputs:        sanitizeNodeInputs(inputs),
 		CreatedAt:     now,
 		ComponentID:   cpnID,
@@ -269,15 +292,24 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		ComponentType: componentType,
 		Thoughts:      "",
 	})
+	if err != nil {
+		common.Warn("node_started marshal failed",
+			zap.String("cpnID", cpnID),
+			zap.String("componentName", componentName),
+			zap.Error(err),
+		)
+		nsData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
+			cpnID, componentName, componentType))
+	}
 	meta := GetRunMeta(ctx)
-	msgID, taskID, sessionID := "", "", ""
+	msgID, sessionID := "", ""
 	if meta != nil {
-		msgID, taskID, sessionID = meta.MessageID, meta.TaskID, meta.SessionID
+		msgID, sessionID = meta.MessageID, meta.SessionID
 	}
 	emitEventFromCtx(ctx, RunEvent{
 		Type: "node_started", Data: string(nsData),
 		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		TaskID: taskID, SessionID: sessionID,
+		SessionID: sessionID,
 	})
 }
 
@@ -322,7 +354,7 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		nfErr = nodeErr.Error()
 	}
 
-	nfData, _ := json.Marshal(NodeFinishedData{
+	nfData, err := runtime.SafeJSONMarshal(NodeFinishedData{
 		Inputs:        inputs,
 		Outputs:       outputs,
 		ComponentID:   cpnID,
@@ -332,15 +364,24 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		ElapsedTime:   elapsed,
 		CreatedAt:     now,
 	})
+	if err != nil {
+		common.Warn("node_finished marshal failed",
+			zap.String("cpnID", cpnID),
+			zap.String("componentName", componentName),
+			zap.Error(err),
+		)
+		nfData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
+			cpnID, componentName, componentType))
+	}
 	meta := GetRunMeta(ctx)
-	msgID, taskID, sessionID := "", "", ""
+	msgID, sessionID := "", ""
 	if meta != nil {
-		msgID, taskID, sessionID = meta.MessageID, meta.TaskID, meta.SessionID
+		msgID, sessionID = meta.MessageID, meta.SessionID
 	}
 	emitEventFromCtx(ctx, RunEvent{
 		Type: "node_finished", Data: string(nfData),
 		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		TaskID: taskID, SessionID: sessionID,
+		SessionID: sessionID,
 	})
 }
 
@@ -366,9 +407,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		return nil, fmt.Errorf("canvas: no components")
 	}
 
-	// GenLocalState seeds each run with a fresh *CanvasState. eino calls
-	// this once per run and threads the result through StatePre/Post
-	// handlers via context.
+	// GenLocalState copies the request-initialized *CanvasState when the
+	// caller attached one to the context. The service layer populates that
+	// state with per-run sys values (query, files, user_id) and persisted
+	// history/memory before Invoke; replacing it here with DSL globals would
+	// make the first statePre copy stale defaults such as sys.files=[] back
+	// over the request values.
+	//
+	// Callers that do not attach a state still get a fresh DSL-seeded state.
+	// eino calls this once per run and threads the result through
+	// StatePre/Post handlers.
 	//
 	// The initial env/sys values come from c.Globals (the DSL-level
 	// "globals" map) so that env.* references like "env.counter" resolve
@@ -378,7 +426,23 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// seeding here mirrors the Python canvas.__init__ →
 	// self.globals["env.counter"] = 0 path.
 	globals := c.Globals
-	genState := func(_ context.Context) *CanvasState {
+	genState := func(runCtx context.Context) *CanvasState {
+		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](runCtx); ctxState != nil {
+			st := NewCanvasState(ctxState.RunID, ctxState.SessionID)
+			for cpnID, bucket := range ctxState.Snapshot() {
+				for key, value := range bucket {
+					st.SetVar(cpnID, key, value)
+				}
+			}
+			sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
+			st.Sys = sysNS
+			st.Env = envNS
+			st.Globals = globalsNS
+			st.Path = append([]string(nil), ctxState.Path...)
+			st.SetHistory(ctxState.SnapshotHistory())
+			st.SetMemory(ctxState.SnapshotMemory())
+			return st
+		}
 		st := NewCanvasState("", "")
 		if globals != nil {
 			for k, v := range globals {
@@ -391,6 +455,9 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}
 			}
 		}
+		st.SetHistory(c.History)
+		st.SetMemory(c.Memory)
+		st.EnsureSysDate()
 		return st
 	}
 
@@ -412,6 +479,18 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				return nil, err
 			}
 			var opts []workflowx.LoopOption
+			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
+			opts = append(opts, workflowx.WithLoopLifecycleHooks(
+				func(ctx context.Context, input any) {
+					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					in, _ := input.(map[string]any)
+					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, in)
+				},
+				func(ctx context.Context, loopErr error) {
+					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, loopErr)
+				},
+			))
 			if exp.MaxIters > 0 {
 				opts = append(opts, workflowx.WithLoopMaxIterations(exp.MaxIters))
 			}
@@ -486,7 +565,12 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if name == "" {
 			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
 		}
-		body, err := buildNodeBody(cpnID, name, c.Components[cpnID].Obj.Params)
+		deferToMessage := directMessageDownstream(c, cpnID)
+		nodeOpts := runtime.ComponentExecutionOptions{
+			DeferAgentToMessage:        deferToMessage,
+			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
+		}
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -503,7 +587,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		nodePost := func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
 			result, postErr := statePost(ctx, out, state)
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
+			if postErr == nil && runtime.IsDeferredStream(result["content"]) {
+				// Python keeps the Agent node pending while Message consumes its
+				// partial generator. Message completes this callback after the
+				// deferred stream closes.
+				runtime.RegisterDeferredNode(ctx, cpnID, func() {
+					nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+				})
+			} else {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
+			}
 			return result, postErr
 		}
 		lambda := compose.InvokableLambda[map[string]any, map[string]any](body)
@@ -634,6 +727,26 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 
 	return wf, nil
+}
+
+// directMessageDownstream: only a direct
+// Message child enables lazy Agent execution. Intermediate nodes must not
+// accidentally change the Agent's execution mode.
+func directMessageDownstream(c *Canvas, cpnID string) bool {
+	if c == nil {
+		return false
+	}
+	comp, ok := c.Components[cpnID]
+	if !ok {
+		return false
+	}
+	for _, downID := range comp.Downstream {
+		down, ok := c.Components[downID]
+		if ok && strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return true
+		}
+	}
+	return false
 }
 
 func wireWorkflowTerminals(

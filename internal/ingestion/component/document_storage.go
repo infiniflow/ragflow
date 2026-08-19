@@ -23,6 +23,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 // DocumentStorageRef is the resolved backing storage location for a document.
@@ -38,9 +40,13 @@ type DocumentStorageRef struct {
 // storage resolution. Production leaves this nil and uses DAO-backed lookup.
 var ResolveDocumentStorageOverride func(docID string) (*DocumentStorageRef, error)
 
-func fetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
-	stg := resolveStorage()
-	if stg == nil {
+// FetchBinary downloads the raw object stored at (bucket, path). It is
+// exported so downstream components (e.g. the chunker, which re-acquires
+// the source PDF to crop section images on demand) can reuse the same
+// storage resolution the Parser uses.
+func FetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
+	storageImpl := resolveStorage()
+	if storageImpl == nil {
 		return nil, fmt.Errorf("no storage backend registered")
 	}
 
@@ -50,7 +56,7 @@ func fetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		data, err := stg.Get(bucket, path)
+		data, err := storageImpl.Get(ctx, bucket, path)
 		done <- result{data: data, err: err}
 	}()
 	select {
@@ -73,23 +79,27 @@ func resolveStorage() storage.Storage {
 	return storage.GetStorageFactory().GetStorage()
 }
 
-func resolveDocumentStorage(docID string) (*DocumentStorageRef, error) {
+// ResolveDocumentStorage maps a document ID to its backing storage
+// location. It is exported so downstream components can re-acquire the
+// source PDF without threading the raw bytes across the component
+// boundary.
+func ResolveDocumentStorage(ctx context.Context, db *gorm.DB, docID string) (*DocumentStorageRef, error) {
 	if ResolveDocumentStorageOverride != nil {
 		return ResolveDocumentStorageOverride(docID)
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, docID)
 	if err != nil {
 		return nil, err
 	}
 	ref := &DocumentStorageRef{Name: documentNameOrID(doc)}
 
-	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(doc.ID)
+	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, doc.ID)
 	if err != nil {
 		return nil, err
 	}
 	if len(mappings) > 0 && mappings[0].FileID != nil && *mappings[0].FileID != "" {
-		file, err := dao.NewFileDAO().GetByID(*mappings[0].FileID)
+		file, err := dao.NewFileDAO().GetByID(ctx, db, *mappings[0].FileID)
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +120,7 @@ func resolveDocumentStorage(docID string) (*DocumentStorageRef, error) {
 	return ref, nil
 }
 
-func resolveDocumentName(docID string) (string, error) {
+func resolveDocumentName(ctx context.Context, docID string) (string, error) {
 	if ResolveDocumentStorageOverride != nil {
 		ref, err := ResolveDocumentStorageOverride(docID)
 		if err != nil {
@@ -120,7 +130,7 @@ func resolveDocumentName(docID string) (string, error) {
 			return ref.Name, nil
 		}
 	}
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return "", err
 	}

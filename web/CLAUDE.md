@@ -18,7 +18,8 @@ RAGFlow frontend is a React/TypeScript application built with UmiJS:
 npm install
 npm run dev        # Development server
 npm run build      # Production build
-npm run lint       # ESLint
+npm run lint       # oxlint
+npm run format     # oxfmt
 npm run test       # Jest tests
 ```
 
@@ -29,6 +30,10 @@ npm run test       # Jest tests
 When fixing CSS/layout issues (especially flex truncation, ellipsis, or element sizing), **always inspect the full parent hierarchy** for `flex-shrink`, `min-width`, and `overflow` constraints before applying fixes like `min-w-0`. Do not repeatedly apply the same fix without verifying the root cause.
 
 - Before editing, explain: (1) the full flex/container hierarchy from the target element up to the nearest non-flex ancestor, (2) what constraint is actually causing the bug, and (3) how the proposed fix addresses that root cause.
+
+### Color Tokens
+
+When writing or modifying styles, **use the project-defined color tokens from `src/tailwind.css`** (e.g., `bg-bg-base`, `text-text-primary`, `text-text-secondary`, `text-text-disabled`, `border-border-button`, `bg-bg-card`). Do not use arbitrary hex/RGB values or Tailwind's default palette colors (e.g., `emerald-500`, `blue-400`) directly in component class names. These tokens are defined for both light and dark modes and keep the UI consistent with the design system.
 
 ### Scope and Boundaries
 
@@ -77,6 +82,14 @@ For React Query / cache invalidation bugs, **carefully compare query keys across
 
 - Systematically: (1) list every component/hook that calls `useQuery` for this data, (2) compare their query keys character-for-character, (3) check every mutation's `onSuccess` for cache invalidation, and (4) verify no parent re-renders are remounting the observer.
 
+#### Colocate Queries with the Consuming View
+
+**Fire a query in the component that renders its data — not in a parent page.** When a page switches between mutually exclusive views (tabs, view modes), extract each view into its own component that issues its own requests on mount. Conditional rendering then provides lazy loading for free.
+
+- Do not hoist child-view queries into the page component — it fires requests the user may never need (e.g., fetching the skill tree on page entry while the default view is the LLM wiki).
+- Do not thread `enabled` flags or view-mode props through hooks to gate a hoisted query; that is a sign the query lives at the wrong level. Split the view instead.
+- Remember the trade-off: with `gcTime: 0`, unmounting a view drops its cache, so switching back refetches. That is usually desirable for always-fresh data — do not reintroduce eager hoisting just to avoid the refetch.
+
 ### Network Request Layering
 
 HTTP requests are organized in three layers. **Never import `@/utils/request`, `@/utils/next-request`, or `@/utils/api` directly inside a hook**:
@@ -103,10 +116,14 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 
 ### React Patterns and Conventions
 
+- **Avoid inline event handlers.** Do not define arrow functions directly on JSX event props like `onClick={() => ...}` or `onChange={(e) => ...}`. Instead, extract the handler and reference it by name (e.g., `onClick={handleClick}`). Inline handlers are recreated on every render, which can break `React.memo` optimizations and make stack traces harder to read.
 - **Prefer `requestAnimationFrame` or `useLayoutEffect`** over `setTimeout(..., 0)` for focus or DOM measurement operations.
 - **Prefer `useTranslation` from `react-i18next`** over project-wrapped utilities like `useTranslate`.
 - Extract complex logic into hooks or utils; keep components lean.
-- Use `PascalCase` for constants and component names.
+- Use **PascalCase** for constants and component names.
+  - Components: `EditableTextarea`, `RAGFlowFormItem`
+  - Constants: `InitialMockData`, `DefaultPlaceholder`
+- Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
 ### Utility Libraries and Reuse

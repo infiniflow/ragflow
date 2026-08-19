@@ -124,10 +124,7 @@ func RenderCaptchaPNG(text string) []byte {
 
 	glyphW := captchaGlyphW * captchaPNGScale
 	glyphH := captchaGlyphH * captchaPNGScale
-	width := captchaSidePadding*2 + len(upper)*glyphW + (len(upper)-1)*captchaCharSpacing
-	if width < 40 {
-		width = 40
-	}
+	width := max(captchaSidePadding*2+len(upper)*glyphW+(len(upper)-1)*captchaCharSpacing, 40)
 	height := captchaTopPadding*2 + glyphH + 8 // a bit of headroom for jitter
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))

@@ -16,133 +16,60 @@
 
 // Slice 3 tests for port-rag-flow-pipeline-to-go.md Phase 5.
 //
-// Pins the Tokenizer content_with_weight fallback and the
-// Extractor prompt placeholder substitution.
+// Pins the Extractor prompt placeholder substitution.
 
 package component
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
 
-// TestTokenizer_FallsBackToContentWithWeight pins the python
-// rag/flow/tokenizer.py:111 fallback. A chunk with only
-// content_with_weight (no text) must tokenize the fallback text.
-func TestTokenizer_FallsBackToContentWithWeight(t *testing.T) {
-	requireTokenizerPool(t)
-	c := &TokenizerComponent{}
-	c.param.SearchMethod = []string{"full_text"}
-	c.param.Fields = []string{"text"}
-	c.param.FilenameEmbdWeight = 0
-
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":          "doc",
-		"output_format": "chunks",
-		"chunks": []map[string]any{
-			{"content_with_weight": "fallback text", "doc_type_kwd": "text"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Tokenizer.Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) == 0 {
-		t.Fatal("no chunks emitted")
-	}
-	if got := chunks[0]["content_ltks"]; got == nil {
-		t.Errorf("content_ltks missing; content_with_weight fallback did not run")
-	} else if s, ok := got.(string); !ok || s == "" {
-		t.Errorf("content_ltks = %v (type %T), want non-empty string", got, got)
-	}
-}
-
-// TestTokenizer_DoesNotChangeChunkText pins the regression guard
-// for the fallback. When both "text" and "content_with_weight"
-// are present, "text" wins.
-func TestTokenizer_DoesNotChangeChunkText(t *testing.T) {
-	requireTokenizerPool(t)
-	c := &TokenizerComponent{}
-	c.param.SearchMethod = []string{"full_text"}
-	c.param.Fields = []string{"text"}
-	c.param.FilenameEmbdWeight = 0
-
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":          "doc",
-		"output_format": "chunks",
-		"chunks": []map[string]any{
-			{"text": "primary text", "content_with_weight": "fallback", "doc_type_kwd": "text"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Tokenizer.Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) == 0 {
-		t.Fatal("no chunks emitted")
-	}
-	if got, want := chunks[0]["text"], "primary text"; got != want {
-		t.Errorf("text = %v, want %v (text should win over content_with_weight)", got, want)
-	}
-}
-
-// TestSubstitutePromptPlaceholders_ReplacesAtChunks pins the
-// resume-template pattern `{TitleChunker:FlatMiceFix@chunks}`.
-// The substitute is the joined chunk text.
-func TestSubstitutePromptPlaceholders_ReplacesAtChunks(t *testing.T) {
+// TestRenderExtractorPrompts_ReplacesAtChunks pins the
+// `{ComponentName:ParamName@chunks}` placeholder substitution.
+func TestRenderExtractorPrompts_ReplacesAtChunks(t *testing.T) {
 	prompt := "Extract metadata from: {TitleChunker:FlatMiceFix@chunks}"
-	chunks := []map[string]any{
-		{"text": "First chunk."},
-		{"text": "Second chunk."},
-	}
-	got := substitutePromptPlaceholders(prompt, chunks)
+	ck := map[string]any{"text": "First chunk."}
+	_, got := renderExtractorPrompts("", prompt, ck, "First chunk.")
 	if strings.Contains(got, "{TitleChunker:FlatMiceFix@chunks}") {
 		t.Errorf("placeholder not substituted: %q", got)
 	}
-	if !strings.Contains(got, "First chunk.") || !strings.Contains(got, "Second chunk.") {
+	if !strings.Contains(got, "First chunk.") {
 		t.Errorf("substitute missing chunk content: %q", got)
 	}
-}
-
-// TestSubstitutePromptPlaceholders_LeavesPatternWhenNoChunks pins
-// the opt-in substitution rule. When chunks is empty the
-// placeholder is left intact so a misconfigured template surfaces
-// as a clear pattern rather than silently disappearing.
-func TestSubstitutePromptPlaceholders_LeavesPatternWhenNoChunks(t *testing.T) {
-	prompt := "Extract metadata from: {TitleChunker:FlatMiceFix@chunks}"
-	got := substitutePromptPlaceholders(prompt, nil)
-	if got != prompt {
-		t.Errorf("empty chunks: placeholder should be preserved\n  got: %q\n want: %q", got, prompt)
+	if n := strings.Count(got, "First chunk."); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1: %q", n, got)
 	}
 }
 
-// TestSubstitutePromptPlaceholders_NoPlaceholderInPrompt pins the
-// no-op behaviour when the prompt carries no @chunks pattern.
-func TestSubstitutePromptPlaceholders_NoPlaceholderInPrompt(t *testing.T) {
+// TestRenderExtractorPrompts_LeavesUnknownPattern pins that unrecognized
+// placeholders are preserved verbatim.
+func TestRenderExtractorPrompts_LeavesUnknownPattern(t *testing.T) {
+	prompt := "Extract metadata from: {unknown_placeholder}"
+	_, got := renderExtractorPrompts("", prompt, nil, "")
+	if got != prompt {
+		t.Errorf("unknown placeholder: pattern should be preserved\n  got: %q\n want: %q", got, prompt)
+	}
+}
+
+// TestRenderExtractorPrompts_NoPlaceholderAppendsChunkText pins the
+// fallback append behavior when the prompt carries no body placeholder.
+func TestRenderExtractorPrompts_NoPlaceholderAppendsChunkText(t *testing.T) {
 	prompt := "Plain prompt with no substitution."
-	chunks := []map[string]any{{"text": "x"}}
-	got := substitutePromptPlaceholders(prompt, chunks)
-	if got != prompt {
-		t.Errorf("no-placeholder prompt should be unchanged\n  got: %q\n want: %q", got, prompt)
+	ck := map[string]any{"text": "my chunk text"}
+	_, got := renderExtractorPrompts("", prompt, ck, "my chunk text")
+	want := "Plain prompt with no substitution.\n\nmy chunk text"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
-// TestSubstitutePromptPlaceholders_SkipsEmptyChunkText pins the
-// per-chunk text trim. A chunk with no text field does not
-// contribute a trailing blank line.
-func TestSubstitutePromptPlaceholders_SkipsEmptyChunkText(t *testing.T) {
-	prompt := "p {TitleChunker:FlatMiceFix@chunks} q"
-	chunks := []map[string]any{
-		{"text": ""},
-		{"text": "actual"},
-		{},
-	}
-	got := substitutePromptPlaceholders(prompt, chunks)
-	if strings.Contains(got, "{TitleChunker:FlatMiceFix@chunks}") {
-		t.Errorf("placeholder not substituted: %q", got)
-	}
-	if !strings.Contains(got, "actual") {
-		t.Errorf("chunk text missing: %q", got)
+// TestRenderExtractorPrompts_SkipsEmptyChunkText pins that an empty
+// chunkText does not append a trailing blank line.
+func TestRenderExtractorPrompts_SkipsEmptyChunkText(t *testing.T) {
+	prompt := "Plain prompt"
+	_, got := renderExtractorPrompts("", prompt, map[string]any{}, "")
+	if got != prompt {
+		t.Errorf("empty chunkText should not alter prompt\n  got: %q\n want: %q", got, prompt)
 	}
 }

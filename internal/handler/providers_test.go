@@ -48,7 +48,7 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
 		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: "chat", Status: "active"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
@@ -84,15 +84,15 @@ func decodeProviderHandlerResponse(t *testing.T, recorder *httptest.ResponseReco
 	return body
 }
 
-func TestProviderHandlerEnableOrDisableModelRejectsMissingModelSelector(t *testing.T) {
+func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
 		map[string]interface{}{"status": "active"},
-		gin.Param{Key: "provider_name", Value: "OpenAI"},
-		gin.Param{Key: "instance_name", Value: "default"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+		gin.Param{Key: "instance_id_or_name", Value: "default"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).EnableOrDisableModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -103,16 +103,16 @@ func TestProviderHandlerEnableOrDisableModelRejectsMissingModelSelector(t *testi
 	}
 }
 
-func TestProviderHandlerEnableOrDisableModelRejectsInvalidStatus(t *testing.T) {
+func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
 		map[string]interface{}{"status": "disabled"},
-		gin.Param{Key: "provider_name", Value: "OpenAI"},
-		gin.Param{Key: "instance_name", Value: "default"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+		gin.Param{Key: "instance_id_or_name", Value: "default"},
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).EnableOrDisableModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -123,7 +123,7 @@ func TestProviderHandlerEnableOrDisableModelRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
-func TestProviderHandlerEnableOrDisableModelUpdatesStatus(t *testing.T) {
+func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 	db := setupProviderHandlerTestDB(t)
 	useProviderHandlerTestDB(t, db)
 	seedProviderHandlerModel(t, db)
@@ -131,12 +131,12 @@ func TestProviderHandlerEnableOrDisableModelUpdatesStatus(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
 		map[string]interface{}{"status": "inactive"},
-		gin.Param{Key: "provider_name", Value: "OpenAI"},
-		gin.Param{Key: "instance_name", Value: "default"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+		gin.Param{Key: "instance_id_or_name", Value: "default"},
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).EnableOrDisableModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())

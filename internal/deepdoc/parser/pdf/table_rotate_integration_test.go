@@ -3,9 +3,9 @@
 package pdf
 
 import (
-	"context"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -29,7 +29,7 @@ func TestTableRotation_Integration(t *testing.T) {
 		t.Skipf("test PDF not found: %s (run tools/generate_rotated_table_pdf.py first)", pdfPath)
 	}
 
-	baseURL := os.Getenv("DEEPDOC_URL")
+	baseURL := common.GetEnv(common.EnvDeepDocURL)
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
@@ -57,18 +57,18 @@ func TestTableRotation_Integration(t *testing.T) {
 	t.Logf("PDF: %d pages", pageCount)
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
 	_ = NewParser(cfg) // verify construction does not panic
 
+	ctx := t.Context()
 	for pg := 0; pg < pageCount; pg++ {
 		pageImg, err := RenderPageToImage(eng, pg)
 		if err != nil {
 			t.Fatalf("render page %d: %v", pg, err)
 		}
 
-		regions, err := dd.DLA(context.Background(), pageImg)
+		regions, err := dd.DLA(ctx, pageImg)
 		if err != nil {
 			t.Fatalf("DLA page %d: %v", pg, err)
 		}
@@ -88,7 +88,7 @@ func TestTableRotation_Integration(t *testing.T) {
 			}
 
 			// Evaluate rotation
-			angle, _, scores := tbl.EvaluateTableOrientation(context.Background(), cropped, dd)
+			angle, _, scores := tbl.EvaluateTableOrientation(ctx, cropped, dd)
 			t.Logf("  Page %d Table %d: %dx%d, bestAngle=%d°, scores: 0=%.3f 90=%.3f 180=%.3f 270=%.3f",
 				pg, tableCount, cropped.Bounds().Dx(), cropped.Bounds().Dy(),
 				angle,
@@ -103,7 +103,7 @@ func TestTableRotation_Integration(t *testing.T) {
 				t.Logf("  NOTE: Page 1 rotated table detected as %d° (expect 90 or 270)", angle)
 
 				// Verify TSR returns labels (6th element in bbox array).
-				testCells, tsrErr := dd.TSR(context.Background(), cropped)
+				testCells, tsrErr := dd.TSR(ctx, cropped)
 				if tsrErr == nil && len(testCells) > 0 {
 					hasLabel := false
 					for _, c := range testCells {
@@ -127,7 +127,7 @@ func TestTableRotation_Integration(t *testing.T) {
 // TestTableRotation_Stability runs rotation detection on a sample real PDF
 // and verifies the pipeline doesn't crash. Set BATCH_COUNT to limit.
 func TestTableRotation_Stability(t *testing.T) {
-	baseURL := os.Getenv("DEEPDOC_URL")
+	baseURL := common.GetEnv(common.EnvDeepDocURL)
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
@@ -147,6 +147,7 @@ func TestTableRotation_Stability(t *testing.T) {
 
 	count := 0
 	maxCount := 3 // sample size
+	ctx := t.Context()
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".pdf" {
 			continue
@@ -170,7 +171,7 @@ func TestTableRotation_Stability(t *testing.T) {
 			continue
 		}
 
-		regions, _ := dd.DLA(context.Background(), pageImg)
+		regions, _ := dd.DLA(ctx, pageImg)
 		tables := 0
 		rotated := 0
 		for _, r := range regions {
@@ -186,7 +187,7 @@ func TestTableRotation_Stability(t *testing.T) {
 			if cropped == nil {
 				continue
 			}
-			angle, _, _ := tbl.EvaluateTableOrientation(context.Background(), cropped, dd)
+			angle, _, _ := tbl.EvaluateTableOrientation(ctx, cropped, dd)
 			if angle != 0 {
 				rotated++
 				t.Logf("  %s: rotated table detected (angle=%d°)", e.Name(), angle)

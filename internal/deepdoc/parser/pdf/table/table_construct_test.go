@@ -1,4 +1,3 @@
-
 package table
 
 import (
@@ -20,7 +19,7 @@ func TestCellTexts(t *testing.T) {
 }
 
 func TestConstructTable_Simple3x2(t *testing.T) {
-	// 3 columns × 2 rows — cells pre-filled (simulating extractTableBoxesFromImage).
+	// 3 columns × 2 rows — cells pre-filled (simulating enrichOnePageWithDeepDoc).
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A", Label: "table row"},
 		{X0: 101, Y0: 0, X1: 200, Y1: 50, Text: "B", Label: "table row"},
@@ -106,7 +105,7 @@ func TestConstructTable_CellsTextFilledAfterCall(t *testing.T) {
 	// constructTable should populate cell text from boxes.
 	// Bug: fillCellTextFromBoxes modifies a local copy — original cells stay empty,
 	// causing generate_test.go to output empty rows.
-	// Cells pre-filled — constructTable no longer fills text (done in extractTableBoxesFromImage).
+	// Cells pre-filled — constructTable no longer fills text (done in enrichOnePageWithDeepDoc).
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A1", Label: "table row"},
 		{X0: 101, Y0: 0, X1: 200, Y1: 50, Text: "B1", Label: "table row"},
@@ -144,13 +143,14 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	// Simulate 公司差旅费 page 0 table coordinates.
 	// DLA region: X0=217, X1=1584, Y0=985, Y1=1599 at 216 DPI → PDF: 72-528 x 328-533
 	// Scale = 216/72 = 3.0
-	// cropOff ≈ region.X - region.W*0.03
+	// cropOff = region.X - 10pt*ZM = region.X - 30px (fixed margin, matches
+	// Python's MARGIN=10; NOT the old Go 3% proportional margin).
 	const scale = 3.0
-	const cropOffX = 176.0
-	const cropOffY = 967.0
+	const cropOffX = 187.0
+	const cropOffY = 955.0
 
 	// Post-merge boxes in PDF point space (inside the table region).
-	// PDF Y=470 → crop Top = 470*3-967 = 443 → overlaps crop cell at Y0=441.
+	// PDF Y=470 → crop Top = 470*3-955 = 455 → overlaps crop cell at Y0=441.
 	// Boxes must have R (row) and C (col) annotations matching cells,
 	// matching Python's construct_table which assigns boxes to cells by R/C.
 	boxes := []pdf.TextBox{
@@ -161,7 +161,7 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	}
 
 	// TSR cells in crop pixel space (matching real TSR output).
-	// Cells pre-filled (extractTableBoxesFromImage already ran fillText + OCR).
+	// Cells pre-filled (enrichOnePageWithDeepDoc already ran fillText + OCR).
 	cells := []pdf.TSRCell{
 		{X0: 35, Y0: 441, X1: 456, Y1: 500, Text: "标职务", Label: "table row"},
 		{X0: 460, Y0: 441, X1: 630, Y1: 500, Text: "飞机", Label: "table row"},
@@ -252,9 +252,9 @@ func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 	// Boxes have R/C annotations but their spatial overlap with cell rects
 	// is marginal (real-world scenario). R/C path should still fill text.
 	boxes := []pdf.TextBox{
-		{X0: 12, X1: 198, Top: 12, Bottom: 48, Text: "A", R: 0, C: 0}, // overlap ~92% → OK
+		{X0: 12, X1: 198, Top: 12, Bottom: 48, Text: "A", R: 0, C: 0},  // overlap ~92% → OK
 		{X0: 215, X1: 395, Top: 12, Bottom: 48, Text: "B", R: 0, C: 1}, // overlap ~90% → OK
-		{X0: 12, X1: 198, Top: 58, Bottom: 92, Text: "C", R: 1, C: 0}, // overlap ~92% → OK
+		{X0: 12, X1: 198, Top: 58, Bottom: 92, Text: "C", R: 1, C: 0},  // overlap ~92% → OK
 		{X0: 215, X1: 350, Top: 58, Bottom: 92, Text: "D", R: 1, C: 1}, // overlap ~50% → MARGINAL
 	}
 
@@ -393,8 +393,10 @@ func TestExtractTableAndReplace_OnlyTableBoxes(t *testing.T) {
 }
 
 func TestFillCellText_RCOverSpatial(t *testing.T) {
-	// Box at X=30-270 overlaps all 3 cells (>30% each — spatial fills ALL).
-	// With R/C, it belongs only to cell[1] (R=0, C=1).
+	// Box at X=30-270 overlaps all 3 cells, but Python assigns it to exactly
+	// ONE cell via greedy best row + tightest column. With R/C it belongs to
+	// cell[1] (R=0, C=1); spatial fill must now agree (single assignment, the
+	// go_bug #1 fix) instead of duplicating across all overlapping cells.
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 30, Label: "table"},
 		{X0: 90, Y0: 0, X1: 200, Y1: 30, Label: "table"},
@@ -404,7 +406,7 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 		{X0: 30, X1: 270, Top: 0, Bottom: 30, Text: "TEXT", LayoutType: "table", R: 0, C: 1},
 	}
 
-	// Spatial fill: fills ALL overlapping cells → duplication.
+	// Spatial fill: assigns the box to the single tightest column (cell[1]).
 	cellsCopy := make([]pdf.TSRCell, 3)
 	copy(cellsCopy, cells)
 	FillCellTextFromBoxes(cellsCopy, boxes)
@@ -414,10 +416,10 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 			spatialCount++
 		}
 	}
-	if spatialCount <= 1 {
-		t.Errorf("spatial fill: expected >1 cells with text, got %d", spatialCount)
+	if spatialCount != 1 {
+		t.Errorf("spatial fill: expected exactly 1 cell with text, got %d", spatialCount)
 	}
-	t.Logf("spatial fill: %d cells (WRONG — duplication)", spatialCount)
+	t.Logf("spatial fill: %d cell (single assignment, matches R/C)", spatialCount)
 
 	// R/C fill: only cell matching box.R/C gets text.
 	cellsRC := make([]pdf.TSRCell, 3)
@@ -450,7 +452,7 @@ func TestIsCaptionBox(t *testing.T) {
 		{"Table 1: Transport Levels", true},
 		{"图表 1: 测试", true},
 		{"公司领导班子成员、出差地", false}, // plain text, not caption
-		{"第十条到厂矿单位出差", false}, // normal paragraph
+		{"第十条到厂矿单位出差", false},   // normal paragraph
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -698,7 +700,8 @@ func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 }
 
 func TestCleanupOrphanColumns(t *testing.T) {
-	// Test 1: Less than 4 rows - no cleanup
+	// Test 1: column cleanup is gated on >=4 rows, so a 3-row table is
+	// skipped; even if it ran, this single-column grid has no orphan column.
 	t.Run("less than 4 rows", func(t *testing.T) {
 		rows := [][]pdf.TSRCell{
 			{{Text: "a"}},

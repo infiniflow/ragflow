@@ -19,24 +19,16 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
-type DOCParser struct {
-	libType string
-}
+type DOCParser struct{}
 
-func NewDOCParser(libType string) (*DOCParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &DOCParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported DOC library type: %s", libType)
-	}
+func NewDOCParser() *DOCParser {
+	return &DOCParser{}
 }
 
 func (p *DOCParser) String() string {
@@ -48,7 +40,7 @@ func (p *DOCParser) String() string {
 // the Go side uses office_oxide which supports DOC via PlainText.
 // OutputFormat="text" — the python side falls back to text for
 // legacy DOC files since structured extraction is unreliable.
-func (p *DOCParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "doc")
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("doc open: %w", err)}

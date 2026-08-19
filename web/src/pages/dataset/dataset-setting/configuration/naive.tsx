@@ -11,18 +11,23 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
-  EnableTocToggle,
   ImageContextWindow,
   OverlappedPercent,
 } from './common-item';
+import { FormLayout } from '@/constants/form';
 
 export function NaiveConfiguration() {
+  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField testId="ds-settings-parser-pdf-parser-select"></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField
+          testId="ds-settings-parser-pdf-parser-select"
+          ownerTenantId={ownerTenantId}
+        ></LayoutRecognizeFormField>
         <MaxTokenNumberFormField
           initialValue={512}
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"
@@ -30,14 +35,17 @@ export function NaiveConfiguration() {
         ></MaxTokenNumberFormField>
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
-        <EnableTocToggle />
         <ImageContextWindow />
         <AutoMetadata />
         <OverlappedPercent />
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
-        <AutoKeywordsFormField></AutoKeywordsFormField>
-        <AutoQuestionsFormField></AutoQuestionsFormField>
+        <AutoKeywordsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoKeywordsFormField>
+        <AutoQuestionsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoQuestionsFormField>
         <ExcelToHtmlFormField></ExcelToHtmlFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>

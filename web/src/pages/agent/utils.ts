@@ -8,6 +8,7 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
+import { getBackendLanguage, isGoBackend } from '@/utils/backend-runtime';
 import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
@@ -21,7 +22,6 @@ import {
   omit,
   sample,
 } from 'lodash';
-import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
@@ -164,10 +164,7 @@ function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
 }
 
 const buildOperatorParams = (operatorName: string) =>
-  pipe(
-    removeUselessDataInTheOperator(operatorName),
-    // initializeOperatorParams(operatorName), // Final processing, for guarantee
-  );
+  removeUselessDataInTheOperator(operatorName);
 
 const ExcludeOperators = [Operator.Note, Operator.Tool, Operator.Placeholder];
 
@@ -206,15 +203,16 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
-function transformParserParams(params: ParserFormSchemaType) {
+export function transformParserParams(params: ParserFormSchemaType) {
   const setups = params.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
-  >((pre, cur) => {
+  >((pre, cur, index) => {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         ParserFormSchemaType['setups'][0] & { suffix: string[] } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
+          pages: number[][];
         }
       > = {
         output_format: cur.output_format,
@@ -233,6 +231,11 @@ function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
+            ...(isGoBackend()
+              ? {
+                  pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
+                }
+              : {}),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -322,15 +325,26 @@ function transformParserParams(params: ParserFormSchemaType) {
           break;
       }
 
-      pre[cur.fileFormat] = filteredSetup;
+      pre[cur.fileFormat] = {
+        ...filteredSetup,
+        order_index: index,
+      } as any;
     }
     return pre;
   }, {});
 
+  // The Go backend expects the setups map flattened into top-level params,
+  // while the Python backend reads them from the nested `setups` object.
+  // Default to the Python shape while the language probe is unresolved.
+  if (getBackendLanguage() === 'go') {
+    return { ...omit(params, ['setups']), ...setups };
+  }
   return { ...params, setups };
 }
 
-function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
+export function transformTokenChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
@@ -353,7 +367,9 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
   };
 }
 
-function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
+export function transformTitleChunkerParams(
+  params: TitleChunkerFormSchemaType,
+) {
   const activeRules =
     (params.method === TitleChunkerMethod.Group
       ? params.groupRules
@@ -383,8 +399,87 @@ function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   };
 }
 
-function transformExtractorParams(params: ExtractorFormSchemaType) {
-  return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+export function transformExtractorParams(
+  params: ExtractorFormSchemaType,
+): Record<string, any> {
+  // The Python extractor only reads the legacy flat fields; the nested
+  // per-feature configs below are Go-only.
+  if (!isGoBackend()) {
+    return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+  }
+
+  const isMetadataEnabled =
+    params.metadata_config?.enabled !== undefined
+      ? Boolean(params.metadata_config?.enabled)
+      : params.enable_metadata === 1 || params.enable_metadata === true;
+
+  const isSummaryEnabled =
+    params.summary?.enabled !== undefined
+      ? Boolean(params.summary?.enabled)
+      : params.enable_summary === 1 ||
+        params.enable_summary === true ||
+        params.field_name === 'summary';
+
+  const metadataList =
+    params.metadata_config?.metadata ?? params.metadata ?? [];
+  const builtInMetadataList =
+    params.metadata_config?.built_in_metadata ??
+    params.built_in_metadata ??
+    [];
+
+  const summarySysPrompt =
+    params.summary?.system_prompt ?? params.sys_prompt ?? '';
+
+  const keywordsTopN = params.keywords?.top_n ?? params.auto_keywords ?? 0;
+  const keywordsSysPrompt =
+    params.keywords?.system_prompt ?? params.keywords_sys_prompt ?? '';
+
+  const questionsTopN = params.questions?.top_n ?? params.auto_questions ?? 0;
+  const questionsSysPrompt =
+    params.questions?.system_prompt ?? params.questions_sys_prompt ?? '';
+
+  const tagsTopN = params.tags?.top_n ?? params.auto_tags ?? 0;
+  const tagFileId = params.tags?.tag_file_id ?? params.tag_file_id ?? '';
+
+  return {
+    ...params,
+    prompts: [{ content: params.prompts, role: 'user' }],
+    auto_keywords: keywordsTopN,
+    keywords_sys_prompt: keywordsSysPrompt,
+    keywords: {
+      top_n: keywordsTopN,
+      system_prompt: keywordsSysPrompt,
+    },
+    auto_questions: questionsTopN,
+    questions_sys_prompt: questionsSysPrompt,
+    questions: {
+      top_n: questionsTopN,
+      system_prompt: questionsSysPrompt,
+    },
+    auto_tags: tagsTopN,
+    tag_file_id: tagFileId,
+    tags: {
+      top_n: tagsTopN,
+      tag_file_id: tagFileId,
+    },
+    enable_summary: isSummaryEnabled ? 1 : 0,
+    sys_prompt: summarySysPrompt,
+    field_name: isSummaryEnabled
+      ? (params.field_name || 'summary')
+      : (params.field_name === 'summary' ? '' : (params.field_name || '')),
+    summary: {
+      enabled: isSummaryEnabled,
+      system_prompt: summarySysPrompt,
+    },
+    enable_metadata: isMetadataEnabled ? 1 : 0,
+    metadata: metadataList,
+    built_in_metadata: builtInMetadataList,
+    metadata_config: {
+      enabled: isMetadataEnabled,
+      metadata: metadataList,
+      built_in_metadata: builtInMetadataList,
+    },
+  };
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {

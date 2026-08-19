@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"ragflow/internal/common"
+
 	//"os/signal"
 	"path/filepath"
 	"strconv"
@@ -482,7 +484,7 @@ Commands:
 
 // HistoryFile returns the path to the history file
 func HistoryFile() string {
-	return os.Getenv("HOME") + "/" + historyFileName
+	return common.GetEnv(common.EnvHome) + "/" + historyFileName
 }
 
 const historyFileName = ".ragflow_cli_history"
@@ -832,7 +834,7 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
-  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat 
+  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat
                                                            (run openai_chat -h for detailed options)
   CHAT COMPLETIONS 'question' [options] ;                - Chat completions via /api/v1/chat/completions
                                                            (run chat completions -h for detailed options)

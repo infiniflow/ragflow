@@ -60,7 +60,7 @@ export default {
       submit: '적용',
       clear: '초기화',
       embedIntoSite: '웹페이지에 임베드',
-      openInNewTab: '새 탭에서 채팅',
+      openInNewTab: '새 탭에서 열기',
       previousPage: '이전',
       nextPage: '다음',
       previous: '이전',
@@ -652,9 +652,6 @@ export default {
       dataSource: '데이터 소스',
       linkSourceSetTip: '이 데이터셋과 데이터 소스 간의 연결을 관리합니다',
       linkDataSource: '데이터 소스 연결',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        '기존 chunk에 대해 계층적 목차(파일당 하나의 디렉토리)를 생성합니다. 쿼리 시 디렉토리 향상이 활성화되면 시스템이 대형 모델을 사용하여 사용자 질문과 관련된 디렉토리 항목을 결정하고 관련 chunk를 식별합니다.',
       deleteGenerateModalContent: `
         <p>생성된 <strong class='text-text-primary'>{{type}}</strong> 결과를 삭제하면
         이 데이터셋에서 파생된 모든 엔티티와 관계가 제거됩니다.
@@ -749,6 +746,12 @@ export default {
       methodExamplesDescription: '다음 스크린샷은 설명을 위해 제공됩니다.',
       dialogueExamplesTitle: '보기',
       methodEmpty: '데이터셋 카테고리에 대한 시각적 설명이 여기에 표시됩니다',
+      audio: `<p>지원 파일 형식: <b>WAV, MP3, AAC, FLAC, OGG</b> 및 기타 일반적인 오디오 형식.</p>
+<p>이 방법은 음성-텍스트 변환 모델을 사용하여 오디오 파일을 텍스트로 변환합니다.</p>`,
+      email: `<p>지원 파일 형식: <b>EML</b> 및 <b>MSG</b>.</p>
+<p>이 방법은 이메일 파일을 파싱하여 헤더 필드(보낸 사람, 받는 사람, 참조, 제목, 날짜 등), 본문 내용 및 첨부 파일을 추출합니다.</p>`,
+      knowledgeCompiler: `<p>이 파이프라인은 파일을 파싱하고 청크로 분할한 후, Knowledge Compiler 컴포넌트를 통해 청크를 구조화된 지식 단위(지식 그래프, 위키, RAPTOR, 마인드맵 또는 데이터셋 탐색)로 컴파일합니다.</p>
+<p>컴파일된 지식 단위는 청크 스트림에 병합된 청크로 출력되므로, 청크로 분할된 문서 위에 검색 가능한 지식 계층을 구축하는 데 적합합니다.</p>`,
       book: `<p>지원 파일 형식: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       PDF 도서의 경우 불필요한 정보를 제거하고 분석 시간을 줄이기 위해 <i>페이지 범위</i>를 설정하세요.</p>`,
       laws: `<p>지원 파일 형식: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -1058,7 +1061,7 @@ export default {
       preview: '미리보기',
       embedded: '삽입됨',
       serviceApiEndpoint: '서비스 API 엔드포인트',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       apiReference: 'API 문서',
       dateRange: '날짜 범위:',
       backendServiceApi: 'API 서버',
@@ -1513,12 +1516,12 @@ export default {
       addedModels: '추가된 모델',
       modelsToBeAdded: '추가할 모델',
       addTheModel: '추가',
-      apiKey: 'API-Key',
+      apiKey: 'API Key',
       apiKeyMessage: 'API 키를 입력해 주세요',
       apiKeyTip: '해당 LLM 공급업체에 등록하여 API 키를 얻을 수 있습니다.',
       showMoreModels: '모델 보기',
       hideModels: '모델 숨기기',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'API 키가 OpenAI에서 발급된 경우 무시하세요. 다른 중간 제공업체는 API 키와 함께 이 기본 URL을 제공합니다.',
       tongyiBaseUrlTip:
@@ -1667,18 +1670,18 @@ export default {
       SparkAPIPasswordMessage: 'APIPassword를 입력해 주세요',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'APP ID를 입력해 주세요',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'APISecret을 입력해 주세요',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'API SECRET을 입력해 주세요',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'APIKey를 입력해 주세요',
       yiyanModelNameMessage: '모델 이름을 입력해 주세요',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'API KEY를 입력해 주세요',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Secret KEY를 입력해 주세요',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'API Key를 입력해 주세요',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'SECRET KEY를 입력해 주세요',
       FishAudioModelNameMessage: '음성 합성 모델에 이름을 지정해 주세요',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'API KEY를 입력해 주세요',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'API Key를 입력해 주세요',
       addFishAudioRefID: 'FishAudio 참조 ID',
       addFishAudioRefIDMessage:
         '참조 ID를 입력해 주세요 (기본 모델을 사용하려면 비워두세요).',
@@ -1744,7 +1747,7 @@ export default {
         chat: '채팅',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -2101,7 +2104,7 @@ export default {
       bing: 'Bing',
       bingDescription:
         'https://www.bing.com/ 에서 검색하는 구성 요소로, TopN을 사용하여 검색 결과 수를 지정할 수 있습니다. 기존 데이터셋을 보완합니다. microsoft.com의 API 키가 필요합니다.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: '국가 및 지역',
       language: '언어',
       googleScholar: 'Google Scholar',
@@ -2807,7 +2810,7 @@ Important structured information may include: names, dates, locations, events, k
         bodyTemplate: '본문 템플릿',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'Api key',
+        apiKey: 'API Key',
         queryParameters: '쿼리 파라미터',
         headerParameters: '헤더 파라미터',
         requestBodyParameters: '요청 본문 파라미터',

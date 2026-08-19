@@ -1,7 +1,6 @@
 package layout
 
 import (
-	"sort"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -44,7 +43,7 @@ func ResolvePageSpan(pageNum int, bottom float64, pageHeights map[int]float64) (
 	return
 }
 
-// boxesToSections converts layout boxes to section format with position tags.
+// BoxesToSections converts layout boxes to section format with position tags.
 //
 // pageHeights provides the PDF-point height of each page (image height / zoom).
 // Boxes that extend beyond their page produce multi-page position tags
@@ -102,30 +101,13 @@ func NormalizeSectionPositions(sections []pdf.Section) {
 	}
 }
 
-// SortByPageThenY sorts boxes by page → vertical key → x0.
-func SortByPageThenY(boxes []pdf.TextBox, sortByTop bool) {
-	key := func(b pdf.TextBox) float64 { return b.Bottom }
-	if sortByTop {
-		key = func(b pdf.TextBox) float64 { return b.Top }
-	}
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].PageNumber != boxes[j].PageNumber {
-			return boxes[i].PageNumber < boxes[j].PageNumber
-		}
-		if key(boxes[i]) != key(boxes[j]) {
-			return key(boxes[i]) < key(boxes[j])
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-}
-
-// SectionsToMarkdown converts Sections to a markdown string.
+// SectionsToMarkdown converts Sections to a Markdown string.
 //
 // Title sections get a "## " prefix.
 // Figure sections produce an "![Image](data:image/png;base64,...)" tag.
 // Text and all other sections are appended verbatim.
 //
-// This mirrors the Python parser.py:665-671 markdown output path.
+// This mirrors the Python parser.py:665-671 Markdown output path.
 func SectionsToMarkdown(sections []pdf.Section) string {
 	var b strings.Builder
 	for _, s := range sections {

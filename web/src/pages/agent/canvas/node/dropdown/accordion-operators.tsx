@@ -109,6 +109,8 @@ export function AccordionOperators({
             operators={[
               Operator.TavilySearch,
               Operator.TavilyExtract,
+              Operator.QueritContents,
+              Operator.QueritSearch,
               Operator.ExeSQL,
               Operator.Google,
               Operator.YahooFinance,
@@ -173,8 +175,11 @@ export function PipelineAccordionOperators({
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
+    if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
+      list.push(Operator.Compiler);
+    }
     return list;
-  }, [restrictSingleOperatorOnCanvas]);
+  }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
 
   const chunkerOperators = useMemo(() => {
     return [
@@ -188,6 +193,7 @@ export function PipelineAccordionOperators({
   const showChunker = useMemo(() => {
     return (
       getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
+      getOperatorTypeFromId(nodeId) !== Operator.Compiler &&
       chunkerOperators.length > 0
     );
   }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);

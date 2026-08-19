@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	_ "ragflow/internal/agent/component" // registers the production factory
 	agentruntime "ragflow/internal/agent/runtime"
@@ -49,8 +50,7 @@ func componentCtx(t *testing.T, method, path, body string) (*gin.Context, *httpt
 }
 
 // beginCanvas returns a UserCanvas whose DSL has a single Begin
-// component with both an input_form and a params block. Used for
-// happy-path tests.
+// component with a params block. Used for happy-path tests.
 func beginCanvas() *entity.UserCanvas {
 	return &entity.UserCanvas{
 		ID: "c1",
@@ -61,9 +61,9 @@ func beginCanvas() *entity.UserCanvas {
 						"component_name": "Begin",
 						"params": map[string]any{
 							"mode": "Manual",
-						},
-						"input_form": map[string]any{
-							"query": map[string]any{"type": "string"},
+							"inputs": map[string]any{
+								"query": map[string]any{"type": "string"},
+							},
 						},
 					},
 				},
@@ -205,8 +205,8 @@ func TestGetComponentInputForm_BrowserDynamicInputForm(t *testing.T) {
 	if prompts["name"] != "Prompts" {
 		t.Errorf("data.prompts.name = %v, want Prompts", prompts["name"])
 	}
-	if prompts["type"] != "text" {
-		t.Errorf("data.prompts.type = %v, want text", prompts["type"])
+	if prompts["type"] != "paragraph" {
+		t.Errorf("data.prompts.type = %v, want paragraph", prompts["type"])
 	}
 	uploadSources, ok := env.Data["upload_sources"].(map[string]interface{})
 	if !ok {
@@ -268,7 +268,7 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 				"answer": map[string]any{
 					"obj": map[string]any{
 						"component_name": "Answer",
-						// no input_form
+						// no params.inputs
 					},
 				},
 			},
@@ -287,8 +287,8 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 	if code != 102 {
 		t.Errorf("code = %d, want 102; msg=%q", code, msg)
 	}
-	if !strings.Contains(msg, "no input_form") {
-		t.Errorf("msg = %q, want 'no input_form'", msg)
+	if !strings.Contains(msg, "no params.inputs") {
+		t.Errorf("msg = %q, want 'no params.inputs'", msg)
 	}
 }
 
@@ -330,7 +330,7 @@ func TestDebugComponent_HappyPath_Begin(t *testing.T) {
 
 type sysEchoComponent struct{}
 
-func (s *sysEchoComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	state, _, err := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx)
 	if err != nil {
 		return nil, err

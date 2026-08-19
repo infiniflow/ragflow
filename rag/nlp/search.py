@@ -131,7 +131,7 @@ class Dealer:
             condition["must_not"] = req["must_not"]
         return condition
 
-    async def search(self, req, idx_names: str | list[str], kb_ids: list[str], emb_mdl=None, highlight: bool | list | None = None, rank_feature: dict | None = None):
+    async def search(self, req, idx_names: str | list[str], kb_ids: list[str], emb_mdl=None, highlight: bool | list | None = None, rank_feature: dict | None = None, min_match: bool = True):
         if highlight is None:
             highlight = False
 
@@ -189,9 +189,9 @@ class Dealer:
                 highlightFields = []
             elif isinstance(highlight, list):
                 highlightFields = highlight
-            matchText, keywords = self.qryr.question(qst, min_match=0.3)
+            matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
             if emb_mdl is None:
-                matchExprs = [matchText]
+                matchExprs = [matchText] if matchText else []
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
@@ -204,11 +204,15 @@ class Dealer:
                 # citations (see Dealer.fetch_chunk_vectors). OceanBase
                 # still relies on local rerank against chunk vectors, so
                 # keep pulling them for that backend.
-                if settings.DOC_ENGINE_OCEANBASE:
+                if settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
-                matchExprs = [matchText, matchDense, fusionExpr]
+                if settings.DOC_ENGINE_GAUSSDB:
+                    vector_weight = req.get("vector_similarity_weight", 0.3)
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
+                else:
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
+                matchExprs = [matchText, matchDense, fusionExpr] if matchText else [matchDense]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
@@ -220,10 +224,20 @@ class Dealer:
                         res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
-                        matchText, _ = self.qryr.question(qst, min_match=0.1)
+                        matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
                         matchDense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
-                            self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature
+                            self.dataStore.search,
+                            src,
+                            highlightFields,
+                            filters,
+                            [matchText, matchDense, fusionExpr] if matchText else [matchDense],
+                            orderBy,
+                            offset,
+                            limit,
+                            idx_names,
+                            kb_ids,
+                            rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
@@ -327,20 +341,14 @@ class Dealer:
 
         return res, seted
 
-    def _rank_feature_scores(self, query_rfea, search_res):
-        ## For rank feature(tag_fea) scores.
+    def _tag_feature_scores(self, query_rfea, search_res):
         rank_fea = []
-        pageranks = []
-        for chunk_id in search_res.ids:
-            pageranks.append(search_res.field[chunk_id].get(PAGERANK_FLD, 0))
-        pageranks = np.array(pageranks, dtype=float)
-
         if not query_rfea:
-            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
+            return np.zeros(len(search_res.ids), dtype=float)
 
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
         if q_denor == 0:
-            return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
+            return np.zeros(len(search_res.ids), dtype=float)
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
@@ -358,7 +366,12 @@ class Dealer:
                 rank_fea.append(0)
             else:
                 rank_fea.append(nor / np.sqrt(denor) / q_denor)
-        return np.array(rank_fea) * 10.0 + pageranks
+        return np.array(rank_fea, dtype=float) * 10.0
+
+    def _rank_feature_scores(self, query_rfea, search_res):
+        ## For rank feature(tag_fea) scores.
+        pageranks = np.array([search_res.field[chunk_id].get(PAGERANK_FLD, 0) for chunk_id in search_res.ids], dtype=float)
+        return self._tag_feature_scores(query_rfea, search_res) + pageranks
 
     async def _knn_scores(self, sres: "Dealer.SearchResult", idx_names: str | list[str], kb_ids: list[str]) -> dict[str, float]:
         """
@@ -563,6 +576,7 @@ class Dealer:
         highlight=False,
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
+        must_not: dict | None = None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -586,14 +600,18 @@ class Dealer:
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
+            "vector_similarity_weight": vector_similarity_weight,
         }
+        if isinstance(must_not, dict) and must_not:
+            req["must_not"] = must_not
         logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
         idx_names = [index_name(tid) for tid in tenant_ids]
-        sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
+        min_match = vector_similarity_weight < 0.8
+        sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight, rank_feature=rank_feature, min_match=min_match)
         # Temporary retrieval-side guard: prune chunks whose parent document no
         # longer exists before reranking and returning results.
         sres = await self._prune_deleted_chunks(sres)
@@ -628,7 +646,7 @@ class Dealer:
                 sim = [s if s is not None else 0.0 for s in sim]
                 tsim = sim
                 vsim = sim
-            elif settings.DOC_ENGINE_OCEANBASE:
+            elif settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                 # OceanBase still returns chunk vectors in the result; use
                 # the historical local rerank that depends on them.
                 sim, tsim, vsim = self.rerank(
@@ -638,6 +656,14 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+            elif settings.DOC_ENGINE_GAUSSDB:
+                # GaussDB computes fusion and PageRank in SQL; tag features are
+                # applied locally to the returned candidate window.
+                sql_scores = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sql_scores = np.array([s if s is not None else 0.0 for s in sql_scores], dtype=np.float64)
+                sim = sql_scores + self._tag_feature_scores(rank_feature, sres)
+                tsim = sql_scores
+                vsim = sql_scores
             else:
                 # ES path: ask ES for the clean cosine score via a second
                 # KNN-only call filtered by the candidate ids, then merge it
@@ -695,7 +721,7 @@ class Dealer:
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
-                "content_with_weight": chunk["content_with_weight"],
+                "content_with_weight": chunk.get("content_with_weight", ""),
                 "doc_id": did,
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],

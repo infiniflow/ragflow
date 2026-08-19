@@ -78,7 +78,7 @@ type OpenAICompletionResponse struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
-	Created          int64
+	Created          *int64
 }
 
 // OpenAIStreamEventKind discriminates stream events.
@@ -217,7 +217,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	dialogResp, err := s.chatSvc.GetChat(userID, chatID)
+	ctx := c.Request.Context()
+	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
 		s.writeDataError(c, err.Error())
 		return
@@ -231,11 +232,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, _, _, _, mErr := s.pipeline.ModelProviderSvc.GetChatModelConfig(dialog.TenantID, resolvedModel); mErr != nil {
+		if _, _, _, _, mErr := s.pipeline.ModelProviderSvc.GetChatModelConfig(ctx, dialog.TenantID, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(dialog.TenantID, req.Model)
+		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
 		if apiErr != nil || apiKey == "" {
 			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
@@ -263,12 +264,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	ctx := c.Request.Context()
 	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			_ = lfClient.Shutdown(shutdownCtx)
 		}()
@@ -286,7 +286,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				kbIDs = append(kbIDs, id)
 			}
 		}
-		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(kbIDs)
+		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 		if mdErr != nil {
 			s.writeDataError(c, fmt.Errorf("metadata_condition: load metadata: %w", mdErr).Error())
 			return
@@ -358,12 +358,13 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				if result.Final {
 					finalContent := strings.TrimSpace(result.Answer)
 					fullContent = finalContent
+					finalReference = []FormattedChunk{}
 					if ref, ok := result.Reference["chunks"]; ok {
 						if chunks, ok := ref.([]map[string]interface{}); ok {
 							finalReference = formatChunks(chunks)
 						}
 					}
-					s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 					completionTok = tokenizer.NumTokensFromString(result.Answer)
 					events <- OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
@@ -397,13 +398,14 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			}
 
 			if finalReference == nil && openaiReq.NeedReference {
+				finalReference = []FormattedChunk{}
 				if ref, ok := lastResult.Reference["chunks"]; ok {
 					if chunks, ok := ref.([]map[string]interface{}); ok {
 						finalReference = formatChunks(chunks)
 					}
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 			events <- OpenAIStreamEvent{
 				Kind:             OpenAIEventFinal,
 				FinalAnswer:      strings.TrimSpace(fullContent),
@@ -434,7 +436,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		content := strings.TrimSpace(finalResult.Answer)
 		completionTokens := tokenizer.NumTokensFromString(content)
 		resp := &OpenAICompletionResponse{
-			Created:          time.Now().Unix(),
 			Model:            openaiReq.Model,
 			Content:          content,
 			PromptTokens:     promptTokens,
@@ -442,12 +443,13 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			TotalTokens:      promptTokens + completionTokens,
 		}
 		if openaiReq.NeedReference {
+			resp.Reference = []FormattedChunk{}
 			if ref, ok := finalResult.Reference["chunks"]; ok {
 				if chunks, ok := ref.([]map[string]interface{}); ok {
 					resp.Reference = formatChunks(chunks)
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 		}
 
 		contextUsed := 0
@@ -473,7 +475,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		c.JSON(http.StatusOK, gin.H{
 			"id":      completionID,
 			"object":  "chat.completion",
-			"created": resp.Created,
+			"created": getCreatedOrDefault(resp.Created),
 			"model":   resp.Model,
 			"usage": gin.H{
 				"prompt_tokens":     resp.PromptTokens,
@@ -667,7 +669,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 // api/utils/reference_metadata_utils.py.
 // When fields is a non-nil empty slice (explicitly provided as []), enrichment
 // is skipped — matching Python's behavior for {"fields": []}.
-func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedChunk, tenantID string, include bool, fields []string) {
+func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(ctx context.Context, chunks []FormattedChunk, tenantID string, include bool, fields []string) {
 	if !include || len(chunks) == 0 || s == nil || s.pipeline.MetadataSvc == nil {
 		return
 	}
@@ -682,7 +684,7 @@ func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedC
 			"document_metadata": ch.DocumentMetadata,
 		}
 	}
-	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(maps, tenantID, fields)
+	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(ctx, maps, tenantID, fields)
 	for i, m := range maps {
 		if md, ok := m["document_metadata"]; ok {
 			chunks[i].DocumentMetadata = md
@@ -835,4 +837,11 @@ func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
 	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+}
+
+func getCreatedOrDefault(created *int64) int64 {
+	if created != nil {
+		return *created
+	}
+	return time.Now().Unix()
 }

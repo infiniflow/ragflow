@@ -133,9 +133,9 @@ func TestComponentsHandler_NoFilter(t *testing.T) {
 }
 
 // TestComponentsHandler_FilterIngestion verifies the
-// ?category=ingestion filter returns the 8 ingestion components
-// (Extractor, File, Parser, Tokenizer + 4 chunker variants). Names
-// must be sorted ascending (plan §4 task 1 stable output).
+// ?category=ingestion filter returns the ingestion components
+// (Compiler, Extractor, File, Parser, Tokenizer + 9 chunker variants).
+// Names must be sorted ascending (plan §4 task 1 stable output).
 func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	eng := newComponentsTestRig(t)
 	w := doRequest(t, eng, "/api/v1/components?category=ingestion")
@@ -146,8 +146,9 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "titlechunker", "tokenchunker", "tokenizer",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
+		"titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion", data, wantNames)
 
@@ -171,8 +172,9 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "titlechunker", "tokenchunker", "tokenizer",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
+		"titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "ingestion,shared", data, wantNames)
 }
@@ -271,8 +273,9 @@ func TestComponentsHandler_CaseInsensitive(t *testing.T) {
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
-		"parser", "titlechunker", "tokenchunker", "tokenizer",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
+		"titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertNameSet(t, "INGESTION (case-folded)", data, wantNames)
 }

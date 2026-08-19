@@ -19,10 +19,7 @@ package pipeline
 import "errors"
 
 var (
-	errNilDSL           = errors.New("pipeline: nil DSL")
-	errEmptyStages      = errors.New("pipeline: DSL has no components")
-	errUnknownComponent = errors.New("pipeline: unknown component")
-	errUnknownStage     = errors.New("pipeline: unknown stage")
+	errNilDSL = errors.New("pipeline: nil DSL")
 )
 
 type stageError struct {
@@ -32,12 +29,4 @@ type stageError struct {
 
 func (e *stageError) Error() string {
 	return "pipeline: stage " + e.Stage + ": " + e.Reason
-}
-
-type sinkError struct {
-	Reason string
-}
-
-func (e *sinkError) Error() string {
-	return "pipeline: sink: " + e.Reason
 }

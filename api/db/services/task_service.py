@@ -197,11 +197,13 @@ class TaskService(CommonService):
             Knowledgebase.tenant_id,
             Knowledgebase.language,
             Knowledgebase.embd_id,
+            Knowledgebase.tenant_embd_id,
             Knowledgebase.pagerank,
             Knowledgebase.parser_config.alias("kb_parser_config"),
             Tenant.img2txt_id,
             Tenant.asr_id,
             Tenant.llm_id,
+            Tenant.tenant_llm_id,
             cls.model.update_time,
         ]
         docs = (
@@ -390,14 +392,18 @@ class TaskService(CommonService):
                         - progress_msg (str, optional): Progress message to append
                         - progress (float, optional): Progress percentage (0.0 to 1.0)
         """
-        task = cls.model.get_by_id(id)
+        try:
+            task = cls.model.get_by_id(id)
+        except cls.model.DoesNotExist:
+            logging.info("Skip progress update for deleted task %s", id)
+            return
         if not task:
             logging.warning("Update_progress error: task not found")
             return
 
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 prog = info["progress"]
@@ -405,7 +411,7 @@ class TaskService(CommonService):
         else:
             with DB.lock("update_progress", -1):
                 if info["progress_msg"]:
-                    progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                    progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                     cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
                 if "progress" in info:
                     prog = info["progress"]
@@ -419,7 +425,9 @@ class TaskService(CommonService):
             doc_info = {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()}
             if info.get("progress_msg"):
                 doc_info["progress_msg"] = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
-            DocumentService.update_by_id(task.doc_id, doc_info)
+            DocumentService.model.update(doc_info).where(
+                (DocumentService.model.id == task.doc_id) & ((DocumentService.model.run.is_null(True)) | (DocumentService.model.run != TaskStatus.CANCEL.value))
+            ).execute()
 
     @classmethod
     @DB.connection_context()
@@ -576,12 +584,8 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    if (
-        "from_page" in task
-        and "to_page" in task
-        and (int(task["to_page"]) - int(task["from_page"]) >= 10**6 or (int(task["from_page"]) == MAXIMUM_TASK_PAGE_NUMBER and int(task["to_page"]) == MAXIMUM_TASK_PAGE_NUMBER))
-    ):
-        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
+    if "from_page" in task and "to_page" in task and int(task["to_page"]) - int(task["from_page"]) >= 10**6:
+        task["progress_msg"] = f"Page({int(task['from_page']) + 1}~{int(task['to_page'])}): "
     else:
         task["progress_msg"] = ""
     task["progress_msg"] = " ".join([datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])

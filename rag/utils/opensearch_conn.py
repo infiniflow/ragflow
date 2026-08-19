@@ -507,7 +507,7 @@ class OSConnection(DocStoreConnection):
         logger.error(f"OSConnection.get timeout for {ATTEMPT_TIME} times!")
         raise Exception("OSConnection.get timeout.")
 
-    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
+    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None, refresh: str | bool = "wait_for") -> list[str]:
         # Refers to https://opensearch.org/docs/latest/api-reference/document-apis/bulk/
         operations = []
         for d in documents:
@@ -525,7 +525,7 @@ class OSConnection(DocStoreConnection):
         for _ in range(ATTEMPT_TIME):
             try:
                 res = []
-                r = self.os.bulk(index=(indexName), body=operations, refresh="wait_for", timeout=60)
+                r = self.os.bulk(index=(indexName), body=operations, refresh=refresh, timeout=60)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 

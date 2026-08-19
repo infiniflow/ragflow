@@ -59,7 +59,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
-		if err == dao.ErrUserCanvasNotFound {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
@@ -72,15 +72,11 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		mapDSLError(c, componentID, err)
 		return
 	}
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    form,
-		"message": "success",
-	})
+	common.SuccessWithData(c, form, "success")
 }
 
 // componentInputForm returns the input-form schema for a single component.
-// It first tries the static input_form stored in the DSL; if the component
+// It first tries the params.inputs stored in the DSL; if the component
 // does not define one (e.g. Agent components that generate it dynamically),
 // it instantiates the runtime component and calls its GetInputForm method.
 // This mirrors Python's Canvas.get_component_input_form which invokes the
@@ -148,7 +144,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
-		if err == dao.ErrUserCanvasNotFound {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
@@ -221,17 +217,15 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	}
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
-	outputs, err := comp.Invoke(invokeCtx, inputs)
+	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {
+		return comp.Invoke(invokeCtx, dao.DB, inputs)
+	})
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "invoke: "+err.Error())
 		return
 	}
 
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    outputs,
-		"message": "success",
-	})
+	common.SuccessWithData(c, outputs, "success")
 }
 
 // mapDSLError translates a dsl extractor error into a 102 envelope.
@@ -244,7 +238,7 @@ func mapDSLError(c *gin.Context, componentID string, err error) {
 	case errors.Is(err, dsl.ErrComponentNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component not found: "+componentID)
 	case errors.Is(err, dsl.ErrMissingInputForm):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component has no input_form: "+componentID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component has no params.inputs: "+componentID)
 	case errors.Is(err, dsl.ErrMalformedDSL):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "malformed dsl: "+err.Error())
 	default:

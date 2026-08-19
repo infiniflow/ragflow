@@ -38,7 +38,7 @@ func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -51,8 +51,42 @@ func (v *VolcEngine) Name() string {
 	return "volcengine"
 }
 
+// getAPIKey extracts the actual API key from VolcEngine's stored format.
+// VolcEngine stores the api_key as a JSON string like:
+//
+//	{"ark_api_key": "...", "endpoint_id": "..."}
+//
+// Falls back to the raw key string if JSON parsing fails.
+func (v *VolcEngine) getAPIKey(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	var volcConfig struct {
+		ArkAPIKey string `json:"ark_api_key"`
+	}
+	if err := json.Unmarshal([]byte(key), &volcConfig); err == nil && volcConfig.ArkAPIKey != "" {
+		return volcConfig.ArkAPIKey
+	}
+	return key
+}
+
+// effectiveAPIConfig returns an APIConfig with the extracted API key
+// suitable for use with doRequest/doStreamRequest.
+func (v *VolcEngine) effectiveAPIConfig(apiConfig *APIConfig) *APIConfig {
+	if apiConfig == nil {
+		return nil
+	}
+	key := v.getAPIKey(apiConfig)
+	return &APIConfig{
+		ApiKey:  &key,
+		Region:  apiConfig.Region,
+		BaseURL: apiConfig.BaseURL,
+	}
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
-func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (v *VolcEngine) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -67,40 +101,10 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				var thinkingFlag string
@@ -124,6 +128,9 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 				case "high":
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = "high"
+				case "xhigh":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "xhigh"
 				default:
 					thinkingFlag = "enabled"
 					reqBody["reasoning_effort"] = effort
@@ -137,86 +144,20 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 				}
 			}
 		}
+
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	effectiveConfig := v.effectiveAPIConfig(apiConfig)
+	body, err := v.baseModel.doRequest(ctx, url, effectiveConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := v.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid reasonContent format")
-		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (v *VolcEngine) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -229,166 +170,69 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	if modelConfig == nil {
-		modelConfig = &ChatConfig{}
-	}
-
-	if modelConfig.Stream != nil {
-		reqBody["stream"] = *modelConfig.Stream
-	}
-
-	if modelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *modelConfig.MaxTokens
-	}
-
-	if modelConfig.Temperature != nil {
-		reqBody["temperature"] = *modelConfig.Temperature
-	}
-
-	if modelConfig.TopP != nil {
-		reqBody["top_p"] = *modelConfig.TopP
-	}
-
-	if modelConfig.DoSample != nil {
-		reqBody["do_sample"] = *modelConfig.DoSample
-	}
-
-	if modelConfig.Stop != nil {
-		reqBody["stop"] = *modelConfig.Stop
-	}
-
-	// TODO VolcEngine has `auto` mode
-	if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			var thinkingFlag string
-			effort := "medium"
-			if modelConfig.Effort != nil {
-				effort = *modelConfig.Effort
-			}
-			switch effort {
-			case "none", "minimal":
-				thinkingFlag = "disabled"
-				reqBody["reasoning_effort"] = "minimal"
-				break
-			case "low":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "low"
-				break
-			case "medium":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "medium"
-				break
-			case "auto", "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "medium"
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			default:
-				return fmt.Errorf("invalid effort level")
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := v.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
+	if modelConfig != nil {
+		// TODO VolcEngine has `auto` mode
+		if modelConfig.Thinking != nil {
+			if *modelConfig.Thinking {
+				var thinkingFlag string
+				effort := "medium"
+				if modelConfig.Effort != nil {
+					effort = *modelConfig.Effort
+				}
+				switch effort {
+				case "none", "minimal":
+					thinkingFlag = "disabled"
+					reqBody["reasoning_effort"] = "minimal"
+					break
+				case "low":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "low"
+					break
+				case "medium":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "medium"
+					break
+				case "auto", "default":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "medium"
+					break
+				case "high":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+					break
+				case "xhigh":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "xhigh"
+					break
+				case "max":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "max"
+					break
+				default:
+					return fmt.Errorf("invalid effort level")
+				}
+				reqBody["thinking"] = map[string]interface{}{
+					"type": thinkingFlag,
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	effectiveConfig := v.effectiveAPIConfig(apiConfig)
+	return v.baseModel.doStreamRequest(ctx, url, effectiveConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type volcengineEmbeddingResponse struct {
@@ -417,13 +261,16 @@ type volcenginePromptTokensDetails struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (v *VolcEngine) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
@@ -433,8 +280,10 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Embedding)
 
 	var embeddings []EmbeddingData
+	var totalUsage TokenUsage
+	var requestID string
 
-	for i, text := range texts {
+	for i, text := range request.Texts {
 
 		reqBody := map[string]interface{}{
 			"model":           *modelName,
@@ -457,14 +306,13 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 				err,
 			)
 		}
-
 		// Run each per-text request in its own scope so the context's
 		// deadline is cancelled at the end of every iteration instead of
 		// piling up deferred cancels until the whole batch finishes.
 		parsed, err := func() (volcengineEmbeddingResponse, error) {
 			var parsed volcengineEmbeddingResponse
 
-			ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+			ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 			defer cancel()
 
 			req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -473,7 +321,7 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 			}
 
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 			resp, err := v.baseModel.httpClient.Do(req)
 			if err != nil {
@@ -498,50 +346,129 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 		if err != nil {
 			return nil, err
 		}
+		requestID = parsed.ID
+		totalUsage.PromptTokens += parsed.Usage.PromptTokens
+		totalUsage.TotalTokens += parsed.Usage.TotalTokens
 
 		var embeddingData EmbeddingData
 		embeddingData.Index = i
 		embeddingData.Embedding = parsed.Data.Embedding
 		embeddings = append(embeddings, embeddingData)
 	}
+	recordResponseUsage(modelUsage, requestID, &totalUsage, "embedding")
 
 	return embeddings, nil
 }
 
 // Rerank calculates similarity scores between query and documents
-func (v *VolcEngine) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (v *VolcEngine) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", v.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (v *VolcEngine) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (v *VolcEngine) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VolcEngine) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (v *VolcEngine) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // AudioSpeech convert text to audio
-func (v *VolcEngine) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (v *VolcEngine) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VolcEngine) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (v *VolcEngine) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // OCRFile OCR file
-func (v *VolcEngine) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (v *VolcEngine) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
 // ParseFile parse file
-func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (v *VolcEngine) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+// volcengineModelData is a VolcEngine-specific model list item with
+// extra fields for model type inference.
+type volcengineModelData struct {
+	ID         string   `json:"id"`
+	Object     string   `json:"object"`
+	OwnedBy    string   `json:"owned_by"`
+	Status     string   `json:"status"`
+	Domain     string   `json:"domain"`
+	TaskType   []string `json:"task_type"`
+	Modalities struct {
+		InputModalities  []string `json:"input_modalities"`
+		OutputModalities []string `json:"output_modalities"`
+	} `json:"modalities"`
+}
+
+// volcengineModelList is the VolcEngine-specific model list response.
+type volcengineModelList struct {
+	Object string                `json:"object"`
+	Models []volcengineModelData `json:"data"`
+}
+
+// inferVolcengineModelTypes infers model types from a VolcEngine model's
+// domain, task_type, and modalities fields.
+func inferVolcengineModelTypes(m volcengineModelData) []string {
+	var types []string
+	outputModalities := m.Modalities.OutputModalities
+	inputModalities := m.Modalities.InputModalities
+
+	if m.Domain == "Embedding" {
+		types = append(types, "embedding")
+		return types
+	}
+
+	taskSet := make(map[string]bool, len(m.TaskType))
+	for _, t := range m.TaskType {
+		taskSet[t] = true
+	}
+	if taskSet["TextEmbedding"] || taskSet["ImageEmbedding"] {
+		types = append(types, "embedding")
+		return types
+	}
+
+	for _, out := range outputModalities {
+		switch out {
+		case "text":
+			types = append(types, "chat")
+		case "embeddings":
+			types = append(types, "embedding")
+		case "audio":
+			types = append(types, "tts")
+		}
+	}
+	for _, in := range inputModalities {
+		switch in {
+		case "image":
+			for _, out := range outputModalities {
+				if out == "text" {
+					types = append(types, "image2text")
+				}
+			}
+		case "audio":
+			for _, out := range outputModalities {
+				if out == "text" {
+					types = append(types, "speech2text")
+				}
+			}
+		}
+	}
+
+	if len(types) == 0 {
+		types = append(types, "chat")
+	}
+	return types
+}
+
+func (v *VolcEngine) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -550,18 +477,15 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
+
 	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), modelsSuffix)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -569,7 +493,7 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -586,20 +510,51 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("VolcEngine models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	// Parse response
-	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	// Parse VolcEngine-specific response with extra fields
+	var volcList volcengineModelList
+	if err = json.Unmarshal(body, &volcList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return ParseListModel(modelList), nil
+	// Convert to standard ModelList for enrichment from static config
+	var standardModels []ModelListItem
+	volcModelInfo := make(map[string]volcengineModelData)
+	for _, m := range volcList.Models {
+		if m.Status == "Shutdown" {
+			continue
+		}
+		volcModelInfo[m.ID] = m
+		standardModels = append(standardModels, ModelListItem{
+			ID:      m.ID,
+			Object:  m.Object,
+			OwnedBy: m.OwnedBy,
+		})
+	}
+
+	if len(standardModels) == 0 {
+		return []ListModelResponse{}, nil
+	}
+
+	enrichedModels := ParseListModel(ModelList{
+		Object: volcList.Object,
+		Models: standardModels,
+	})
+
+	// Override model_types with VolcEngine-specific inference
+	for i := range enrichedModels {
+		if vm, ok := volcModelInfo[enrichedModels[i].Name]; ok {
+			enrichedModels[i].ModelTypes = inferVolcengineModelTypes(vm)
+		}
+	}
+
+	return enrichedModels, nil
 }
 
-func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (v *VolcEngine) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
+func (v *VolcEngine) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -610,7 +565,7 @@ func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Files)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -619,7 +574,7 @@ func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", v.getAPIKey(apiConfig)))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -639,10 +594,10 @@ func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-func (v *VolcEngine) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (v *VolcEngine) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VolcEngine) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (v *VolcEngine) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

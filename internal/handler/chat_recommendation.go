@@ -43,7 +43,7 @@ type ChatRecommendationRequest struct {
 func (h *ChatHandler) Recommendation(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, int(errorCode), errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
@@ -56,7 +56,8 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
-	questions, err := service.GenerateRelatedQuestions(user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	ctx := c.Request.Context()
+	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		jsonInternalError(c, err)
 		return

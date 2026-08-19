@@ -30,10 +30,10 @@ import (
 	"net/http"
 	"time"
 
+	mcpclient "ragflow/internal/utility"
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-
-	mcpclient "ragflow/internal/utility"
 )
 
 // MCPToolAdapter wraps a single MCP-discovered tool descriptor as an
