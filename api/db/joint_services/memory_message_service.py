@@ -60,6 +60,8 @@ async def save_to_memory(memory_id: str, message_dict: dict):
             get_memory_type_human(memory.memory_type),
             message_dict.get("user_input", ""),
             message_dict.get("agent_response", ""),
+            system_prompt=memory.system_prompt,
+            user_prompt=memory.user_prompt,
             llm_id=memory.llm_id,
         )
         if memory.memory_type != MemoryType.RAW.value
@@ -124,6 +126,8 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         get_memory_type_human(memory.memory_type),
         message_dict.get("user_input", ""),
         message_dict.get("agent_response", ""),
+        system_prompt=memory.system_prompt,
+        user_prompt=memory.user_prompt,
         task_id=task_id,
         llm_id=memory.llm_id,
     )
