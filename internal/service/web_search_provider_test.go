@@ -319,7 +319,7 @@ func TestRetrieveSerplyWebSearchSkipsResultsWithoutDescription(t *testing.T) {
 			"results": [
 				{"title": "No snippet", "link": "https://example.com/empty", "description": ""},
 				{"title": "Blank snippet", "link": "https://example.com/blank", "description": " \t\n"},
-				{"title": "RAGFlow", "link": "https://example.com/ragflow", "description": "An open-source RAG engine."}
+				{"title": "RAGFlow", "link": "https://example.com/ragflow", "description": " \tAn open-source RAG engine.\n"}
 			]
 		}`))
 	}))
@@ -336,6 +336,9 @@ func TestRetrieveSerplyWebSearchSkipsResultsWithoutDescription(t *testing.T) {
 	}
 	if chunks[0]["docnm_kwd"] != "RAGFlow" {
 		t.Fatalf("title = %#v", chunks[0]["docnm_kwd"])
+	}
+	if chunks[0]["content_with_weight"] != "An open-source RAG engine." {
+		t.Fatalf("content = %#v", chunks[0]["content_with_weight"])
 	}
 }
 

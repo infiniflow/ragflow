@@ -62,7 +62,7 @@ class Serply:
             for result in results:
                 if not isinstance(result, dict):
                     continue
-                content = _serply_text(result.get("description"))
+                content = _serply_text(result.get("description")).strip()
                 if not content:
                     continue
                 normalized_results.append(

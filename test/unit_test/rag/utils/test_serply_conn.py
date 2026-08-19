@@ -29,12 +29,17 @@ class _Response:
                 {
                     "title": "RAGFlow",
                     "link": "https://example.com/ragflow",
-                    "description": "RAGFlow is an open-source RAG engine.",
+                    "description": " \tRAGFlow is an open-source RAG engine.\n",
                 },
                 {
                     "title": "No snippet",
                     "link": "https://example.com/empty",
                     "description": "",
+                },
+                {
+                    "title": "Blank snippet",
+                    "link": "https://example.com/blank",
+                    "description": " \t\n",
                 },
             ]
         }
