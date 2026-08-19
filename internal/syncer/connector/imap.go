@@ -696,7 +696,10 @@ func (c *realIMAPClient) List(ctx context.Context) ([]string, error) {
 }
 
 func (c *realIMAPClient) SelectMailbox(ctx context.Context, mailbox string) error {
-	_, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true}).Wait()
+	// Send a real SELECT, not EXAMINE. go-imap emits EXAMINE when ReadOnly
+	// is set, which some servers acknowledge without entering the selected
+	// state. Fetches already use Peek, so a writable SELECT is read-safe.
+	_, err := c.client.Select(mailbox, nil).Wait()
 	return err
 }
 
