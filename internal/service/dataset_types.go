@@ -115,9 +115,9 @@ type MetadataConfigField struct {
 
 // MetadataConfigRequest mirrors PUT /datasets/:dataset_id/metadata/config.
 type MetadataConfigRequest struct {
-	Metadata             []MetadataConfigField `json:"metadata"`
-	BuiltInMetadata      []MetadataConfigField `json:"built_in_metadata"`
-	BuiltInMetadataCamel []MetadataConfigField `json:"builtInMetadata,omitempty"`
+	Enabled         *bool                 `json:"enabled,omitempty"`
+	Fields          []MetadataConfigField `json:"fields"`
+	BuiltInMetadata []MetadataConfigField `json:"built_in_metadata"`
 }
 
 // CreateDatasetRequest represents the request for creating a dataset.

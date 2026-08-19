@@ -239,15 +239,17 @@ func TestBuildParserConfig_BuiltinExtractorKeepsTagFileID(t *testing.T) {
 			}
 			checked++
 			overrides := map[string]any{
-				s.CpnID: map[string]any{"tag_file_id": "file-123"},
+				s.CpnID: map[string]any{
+					"tags": map[string]any{"top_n": 5, "tag_file_id": "file-123"},
+				},
 			}
 			result := BuildParserConfig(dslJSON, overrides)
 			params, ok := result[s.CpnID].(map[string]any)
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
 			}
-			tagFileID := params["tag_file_id"]
-			if tags, ok := params["tags"].(map[string]any); ok && tags["tag_file_id"] != nil {
+			var tagFileID any
+			if tags, ok := params["tags"].(map[string]any); ok {
 				tagFileID = tags["tag_file_id"]
 			}
 			if tagFileID != "file-123" {
@@ -394,9 +396,9 @@ func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 			"keywords": map[string]any{
 				"top_n": 5,
 			},
-			"enable_summary": 1,
 			"llm_id":         "gpt-4",
 			"temperature":    0.7,
+			"enable_summary": 1, // legacy flat param should be dropped
 		},
 	}
 
@@ -418,74 +420,8 @@ func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 	if ext["llm_id"] != "gpt-4" {
 		t.Errorf("expected llm_id == gpt-4, got: %v", ext["llm_id"])
 	}
-	if _, ok := ext["enable_summary"]; !ok {
-		t.Errorf("expected legacy flat field enable_summary to be kept for backward compatibility, got: %v", ext["enable_summary"])
-	}
-}
-
-func TestCleanComponentParams_KeepsLegacyExtractorParams(t *testing.T) {
-	dsl := map[string]any{
-		"components": map[string]any{
-			"Extractor:AutoExtractDefault": map[string]any{
-				"obj": map[string]any{
-					"component_name": "Extractor",
-					"params":         map[string]any{},
-				},
-			},
-		},
-	}
-	dslJSON, err := json.Marshal(dsl)
-	if err != nil {
-		t.Fatalf("marshal dsl: %v", err)
-	}
-
-	legacyConfig := map[string]any{
-		"Extractor:AutoExtractDefault": map[string]any{
-			"auto_keywords":   4,
-			"auto_questions":  2,
-			"auto_tags":       3,
-			"tag_file_id":     "tag-file-1",
-			"enable_summary":  1,
-			"enable_metadata": 1,
-			"metadata_config": map[string]any{
-				"enabled": true,
-				"metadata": []any{
-					map[string]any{"key": "cat", "type": "string"},
-				},
-			},
-			"sys_prompt": "legacy summary sys prompt",
-			"llm_id":     "gpt-4",
-		},
-	}
-
-	result := CleanComponentParams(dslJSON, legacyConfig)
-	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
-	}
-
-	kw, ok := ext["keywords"].(map[string]any)
-	if !ok || kw["top_n"] != 4 {
-		t.Errorf("expected keywords.top_n == 4, got: %#v", ext["keywords"])
-	}
-	q, ok := ext["questions"].(map[string]any)
-	if !ok || q["top_n"] != 2 {
-		t.Errorf("expected questions.top_n == 2, got: %#v", ext["questions"])
-	}
-	tags, ok := ext["tags"].(map[string]any)
-	if !ok || tags["top_n"] != 3 || tags["tag_file_id"] != "tag-file-1" {
-		t.Errorf("expected tags.top_n == 3 / tag_file_id == tag-file-1, got: %#v", ext["tags"])
-	}
-	sum, ok := ext["summary"].(map[string]any)
-	if !ok || sum["enabled"] != true || sum["system_prompt"] != "legacy summary sys prompt" {
-		t.Errorf("expected summary.enabled == true / system_prompt == legacy summary sys prompt, got: %#v", ext["summary"])
-	}
-	meta, ok := ext["metadata"].(map[string]any)
-	if !ok || meta["enabled"] != true {
-		t.Errorf("expected metadata.enabled == true, got: %#v", ext["metadata"])
-	}
-	if ext["llm_id"] != "gpt-4" {
-		t.Errorf("expected llm_id == gpt-4, got: %#v", ext["llm_id"])
+	if _, ok := ext["enable_summary"]; ok {
+		t.Errorf("expected legacy flat field enable_summary to be dropped, got: %v", ext["enable_summary"])
 	}
 }
 
@@ -506,12 +442,14 @@ func TestCleanComponentParams_ExtractorBuiltInMetadataRetained(t *testing.T) {
 
 	rawConfig := map[string]any{
 		"Extractor:AutoExtractDefault": map[string]any{
-			"enable_metadata": 1,
-			"metadata": []map[string]any{
-				{"key": "custom_field", "type": "string"},
-			},
-			"built_in_metadata": []map[string]any{
-				{"key": "doc_name", "type": "string"},
+			"metadata": map[string]any{
+				"enabled": true,
+				"metadata": []map[string]any{
+					{"key": "custom_field", "type": "string"},
+				},
+				"built_in_metadata": []map[string]any{
+					{"key": "doc_name", "type": "string"},
+				},
 			},
 		},
 	}
@@ -529,33 +467,13 @@ func TestCleanComponentParams_ExtractorBuiltInMetadataRetained(t *testing.T) {
 	if meta["enabled"] != true {
 		t.Errorf("expected enabled == true, got: %#v", meta["enabled"])
 	}
-	mFields, ok := meta["metadata"].([]any)
+	mFields, ok := meta["metadata"].([]map[string]any)
 	if !ok || len(mFields) != 1 {
 		t.Errorf("expected 1 metadata field, got: %#v", meta["metadata"])
 	}
-	bFields, ok := meta["built_in_metadata"].([]any)
+	bFields, ok := meta["built_in_metadata"].([]map[string]any)
 	if !ok || len(bFields) != 1 {
 		t.Errorf("expected 1 built_in_metadata field, got: %#v", meta["built_in_metadata"])
-	}
-}
-
-func TestNormalizeExtractorParams_MetadataNoAutoEnable(t *testing.T) {
-	raw := map[string]any{
-		"metadata": []any{
-			map[string]any{"key": "cat", "type": "string"},
-		},
-		"built_in_metadata": []any{
-			map[string]any{"key": "file_name", "type": "string"},
-		},
-	}
-
-	out := NormalizeExtractorParams(raw)
-	meta, ok := out["metadata"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected metadata map, got %#v", out["metadata"])
-	}
-	if meta["enabled"] == true {
-		t.Errorf("metadata should NOT auto-enable without explicit enable_metadata flag: %#v", meta)
 	}
 }
 
@@ -575,10 +493,12 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			name: "keywords flat conversion",
+			name: "modular keywords preserved",
 			input: map[string]any{
-				"auto_keywords":       5,
-				"keywords_sys_prompt": "custom kw prompt",
+				"keywords": map[string]any{
+					"top_n":         5,
+					"system_prompt": "custom kw prompt",
+				},
 			},
 			validate: func(t *testing.T, out map[string]any) {
 				kw, ok := out["keywords"].(map[string]any)
@@ -588,10 +508,12 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			name: "questions flat conversion",
+			name: "modular questions preserved",
 			input: map[string]any{
-				"auto_questions":       3,
-				"questions_sys_prompt": "custom q prompt",
+				"questions": map[string]any{
+					"top_n":         3,
+					"system_prompt": "custom q prompt",
+				},
 			},
 			validate: func(t *testing.T, out map[string]any) {
 				q, ok := out["questions"].(map[string]any)
@@ -601,10 +523,12 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			name: "tags topn_tags alias and tag_file_id",
+			name: "modular tags preserved",
 			input: map[string]any{
-				"topn_tags":   7,
-				"tag_file_id": "file-123",
+				"tags": map[string]any{
+					"top_n":       7,
+					"tag_file_id": "file-123",
+				},
 			},
 			validate: func(t *testing.T, out map[string]any) {
 				tag, ok := out["tags"].(map[string]any)
@@ -614,23 +538,12 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			name: "tags auto_tags precedence over topn_tags",
+			name: "modular summary preserved",
 			input: map[string]any{
-				"auto_tags": 2,
-				"topn_tags": 9,
-			},
-			validate: func(t *testing.T, out map[string]any) {
-				tag, ok := out["tags"].(map[string]any)
-				if !ok || tag["top_n"] != 2 {
-					t.Errorf("expected auto_tags precedence 2, got %#v", out["tags"])
-				}
-			},
-		},
-		{
-			name: "summary enabled via field_name == summary",
-			input: map[string]any{
-				"field_name": "summary",
-				"sys_prompt": "summary prompt",
+				"summary": map[string]any{
+					"enabled":       true,
+					"system_prompt": "summary prompt",
+				},
 			},
 			validate: func(t *testing.T, out map[string]any) {
 				sum, ok := out["summary"].(map[string]any)
@@ -640,14 +553,16 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			name: "metadata explicit enable with map slices",
+			name: "modular metadata preserved",
 			input: map[string]any{
-				"enable_metadata": 1,
-				"metadata": []map[string]any{
-					{"key": "cat", "type": "string"},
-				},
-				"built_in_metadata": []map[string]any{
-					{"key": "file_name", "type": "string"},
+				"metadata": map[string]any{
+					"enabled": true,
+					"metadata": []map[string]any{
+						{"key": "cat", "type": "string"},
+					},
+					"built_in_metadata": []map[string]any{
+						{"key": "file_name", "type": "string"},
+					},
 				},
 			},
 			validate: func(t *testing.T, out map[string]any) {
@@ -655,11 +570,11 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 				if !ok || meta["enabled"] != true {
 					t.Fatalf("expected enabled == true, got %#v", out["metadata"])
 				}
-				mList, ok := meta["metadata"].([]any)
+				mList, ok := meta["metadata"].([]map[string]any)
 				if !ok || len(mList) != 1 {
 					t.Errorf("metadata slice mismatch: %#v", meta["metadata"])
 				}
-				bList, ok := meta["built_in_metadata"].([]any)
+				bList, ok := meta["built_in_metadata"].([]map[string]any)
 				if !ok || len(bList) != 1 {
 					t.Errorf("built_in_metadata slice mismatch: %#v", meta["built_in_metadata"])
 				}

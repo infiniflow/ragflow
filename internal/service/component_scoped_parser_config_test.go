@@ -10,7 +10,7 @@ import (
 func TestApplyComponentScopedParserConfig_SyncsExtractorAndCompiler(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"enable_metadata": true,
-		"metadata": []any{
+		"fields": []any{
 			map[string]any{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []any{
@@ -29,15 +29,20 @@ func TestApplyComponentScopedParserConfig_SyncsExtractorAndCompiler(t *testing.T
 	if extractor["llm_id"] != "llm-default" {
 		t.Fatalf("extractor llm_id = %#v, want llm-default", extractor["llm_id"])
 	}
-	if extractor["enable_metadata"] != 1 {
-		t.Fatalf("extractor enable_metadata = %#v, want 1", extractor["enable_metadata"])
+	if _, ok := extractor["enable_metadata"]; ok {
+		t.Fatalf("extractor enable_metadata should not be present, got %#v", extractor["enable_metadata"])
 	}
-	wantFields := []any{
-		map[string]any{"key": "author", "type": "string"},
-		map[string]any{"key": "document_name", "type": "string"},
+	wantMetadata := map[string]any{
+		"enabled": true,
+		"fields": []any{
+			map[string]any{"key": "author", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "document_name", "type": "string"},
+		},
 	}
-	if !reflect.DeepEqual(extractor["metadata"], wantFields) {
-		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], wantFields)
+	if !reflect.DeepEqual(extractor["metadata"], wantMetadata) {
+		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], wantMetadata)
 	}
 
 	compiler := got["Compiler:KnownSwiftLions"].(map[string]any)
@@ -72,7 +77,7 @@ func TestApplyComponentScopedParserConfig_PreservesExplicitExtractorLLMID(t *tes
 func TestApplyComponentScopedParserConfig_AcceptsTypedMetadataSlices(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"enable_metadata": true,
-		"metadata": []map[string]interface{}{
+		"fields": []map[string]interface{}{
 			{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []map[string]interface{}{
@@ -84,26 +89,34 @@ func TestApplyComponentScopedParserConfig_AcceptsTypedMetadataSlices(t *testing.
 	got := ApplyComponentScopedParserConfig(parserConfig, "tenant-llm")
 	extractor := got["Extractor:AutoExtractDefault"].(map[string]any)
 
-	wantFields := []any{
-		map[string]interface{}{"key": "author", "type": "string"},
-		map[string]interface{}{"key": "document_name", "type": "string"},
+	wantMetadata := map[string]any{
+		"enabled": true,
+		"fields": []any{
+			map[string]interface{}{"key": "author", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]interface{}{"key": "document_name", "type": "string"},
+		},
 	}
-	if !reflect.DeepEqual(extractor["metadata"], wantFields) {
-		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], wantFields)
+	if !reflect.DeepEqual(extractor["metadata"], wantMetadata) {
+		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], wantMetadata)
 	}
 }
 
 func TestApplyComponentScopedParserConfig_ClearsExtractorMetadataWhenDisabled(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"enable_metadata": false,
-		"metadata":        []map[string]interface{}{},
+		"fields":          []map[string]interface{}{},
 		"built_in_metadata": []map[string]interface{}{
 			{"key": "document_name", "type": "string"},
 		},
 		"Extractor:AutoExtractDefault": map[string]any{
 			"enable_metadata": 1,
-			"metadata": []any{
-				map[string]any{"key": "stale", "type": "string"},
+			"metadata": map[string]any{
+				"enabled": true,
+				"fields": []any{
+					map[string]any{"key": "stale", "type": "string"},
+				},
 			},
 		},
 	}
@@ -111,11 +124,18 @@ func TestApplyComponentScopedParserConfig_ClearsExtractorMetadataWhenDisabled(t 
 	got := ApplyComponentScopedParserConfig(parserConfig, "tenant-llm")
 	extractor := got["Extractor:AutoExtractDefault"].(map[string]any)
 
-	if extractor["enable_metadata"] != 0 {
-		t.Fatalf("extractor enable_metadata = %#v, want 0", extractor["enable_metadata"])
+	if _, ok := extractor["enable_metadata"]; ok {
+		t.Fatalf("extractor enable_metadata should not be present, got %#v", extractor["enable_metadata"])
 	}
-	if !reflect.DeepEqual(extractor["metadata"], []any{}) {
-		t.Fatalf("extractor metadata = %#v, want empty list", extractor["metadata"])
+	wantMetadata := map[string]any{
+		"enabled": false,
+		"fields":  []any{},
+		"built_in_metadata": []any{
+			map[string]interface{}{"key": "document_name", "type": "string"},
+		},
+	}
+	if !reflect.DeepEqual(extractor["metadata"], wantMetadata) {
+		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], wantMetadata)
 	}
 }
 
@@ -124,24 +144,38 @@ func TestApplyComponentScopedParserConfig_DoesNotTreatDocumentMetadataValuesAsSc
 		"metadata": map[string]interface{}{
 			"author": "Alice",
 		},
-		"Extractor:AutoExtractDefault": map[string]any{
-			"enable_metadata": 1,
-			"metadata": []any{
-				map[string]any{"key": "author", "type": "string"},
-			},
-		},
+		"Extractor:AutoExtractDefault": map[string]any{},
 	}
 
 	got := ApplyComponentScopedParserConfig(parserConfig, "tenant-llm")
 	extractor := got["Extractor:AutoExtractDefault"].(map[string]any)
 
-	if extractor["enable_metadata"] != 1 {
-		t.Fatalf("extractor enable_metadata = %#v, want 1", extractor["enable_metadata"])
+	wantMetadata := map[string]any{
+		"enabled":           false,
+		"fields":            []any{},
+		"built_in_metadata": []any{},
 	}
+	if !reflect.DeepEqual(extractor["metadata"], wantMetadata) {
+		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], wantMetadata)
+	}
+}
+
+func TestMergeMetadataFields_MergesFieldsAndBuiltIn(t *testing.T) {
+	parserConfig := entity.JSONMap{
+		"fields": []any{
+			map[string]any{"key": "author", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "document_name", "type": "string"},
+		},
+	}
+
+	got := mergeMetadataFields(parserConfig)
 	want := []any{
 		map[string]any{"key": "author", "type": "string"},
+		map[string]any{"key": "document_name", "type": "string"},
 	}
-	if !reflect.DeepEqual(extractor["metadata"], want) {
-		t.Fatalf("extractor metadata = %#v, want %#v", extractor["metadata"], want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mergeMetadataFields = %#v, want %#v", got, want)
 	}
 }

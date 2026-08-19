@@ -18,8 +18,17 @@ func ApplyComponentScopedParserConfig(
 	}
 
 	enableMetadata := parserConfigTruthy(parserConfig["enable_metadata"])
-	metadataFields := mergeMetadataFields(parserConfig)
-	hasMetadataConfig := hasMetadataConfigShape(parserConfig)
+	if !enableMetadata {
+		if metaMap, ok := parserConfig["metadata"].(map[string]any); ok {
+			enableMetadata = parserConfigTruthy(metaMap["enabled"])
+		}
+	}
+	if !enableMetadata {
+		enableMetadata = parserConfigTruthy(parserConfig["enabled"])
+	}
+
+	metadataFields := extractFieldList(parserConfig, "fields", "metadata")
+	builtInMetadataFields := extractFieldList(parserConfig, "built_in_metadata", "")
 
 	for cpnID, raw := range parserConfig {
 		params, ok := raw.(map[string]any)
@@ -33,12 +42,11 @@ func ApplyComponentScopedParserConfig(
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}
-			if enableMetadata && len(metadataFields) > 0 {
-				params["enable_metadata"] = 1
-				params["metadata"] = metadataFields
-			} else if hasMetadataConfig {
-				params["enable_metadata"] = 0
-				params["metadata"] = []any{}
+			delete(params, "enable_metadata")
+			params["metadata"] = map[string]any{
+				"enabled":           enableMetadata,
+				"fields":            metadataFields,
+				"built_in_metadata": builtInMetadataFields,
 			}
 		case strings.HasPrefix(cpnLower, "compiler:") || strings.HasPrefix(cpnLower, "compiler_"):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
@@ -51,19 +59,59 @@ func ApplyComponentScopedParserConfig(
 }
 
 func mergeMetadataFields(parserConfig entity.JSONMap) []any {
-	var out []any
-	for _, key := range []string{"metadata", "built_in_metadata"} {
-		for _, item := range anySlice(parserConfig[key]) {
-			field, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			name, _ := field["key"].(string)
-			if strings.TrimSpace(name) == "" {
-				continue
-			}
-			out = append(out, field)
+	custom := extractFieldList(parserConfig, "fields", "metadata")
+	builtIn := extractFieldList(parserConfig, "built_in_metadata", "")
+	out := make([]any, 0, len(custom)+len(builtIn))
+	out = append(out, custom...)
+	out = append(out, builtIn...)
+	return out
+}
+
+func extractFieldList(parserConfig entity.JSONMap, primaryKey, fallbackKey string) []any {
+	if parserConfig == nil {
+		return []any{}
+	}
+	if raw, ok := parserConfig[primaryKey]; ok && raw != nil {
+		if slice := extractValidFields(raw); len(slice) > 0 || primaryKey == "fields" {
+			return slice
 		}
+	}
+	if fallbackKey != "" {
+		if raw, ok := parserConfig[fallbackKey]; ok && raw != nil {
+			if slice := extractValidFields(raw); len(slice) > 0 {
+				return slice
+			}
+		}
+	}
+	if metaMap, ok := parserConfig["metadata"].(map[string]any); ok {
+		if raw, ok := metaMap[primaryKey]; ok && raw != nil {
+			return extractValidFields(raw)
+		}
+		if fallbackKey != "" {
+			if raw, ok := metaMap[fallbackKey]; ok && raw != nil {
+				return extractValidFields(raw)
+			}
+		}
+	}
+	return []any{}
+}
+
+func extractValidFields(value any) []any {
+	items := anySlice(value)
+	if items == nil {
+		return []any{}
+	}
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		field, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := field["key"].(string)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		out = append(out, field)
 	}
 	return out
 }
@@ -78,6 +126,27 @@ func anySlice(value any) []any {
 			out = append(out, item)
 		}
 		return out
+	case []map[string]string:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			m := make(map[string]any, len(item))
+			for k, v := range item {
+				m[k] = v
+			}
+			out = append(out, m)
+		}
+		return out
+	case []MetadataConfigField:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, map[string]any{
+				"key":         item.Key,
+				"type":        item.Type,
+				"description": item.Description,
+				"enum":        item.Enum,
+			})
+		}
+		return out
 	default:
 		return nil
 	}
@@ -90,10 +159,16 @@ func hasMetadataConfigShape(parserConfig entity.JSONMap) bool {
 	if _, ok := parserConfig["enable_metadata"]; ok {
 		return true
 	}
-	for _, key := range []string{"metadata", "built_in_metadata"} {
+	if _, ok := parserConfig["enabled"]; ok {
+		return true
+	}
+	for _, key := range []string{"fields", "metadata", "built_in_metadata"} {
 		if anySlice(parserConfig[key]) != nil {
 			return true
 		}
+	}
+	if _, ok := parserConfig["metadata"].(map[string]any); ok {
+		return true
 	}
 	return false
 }

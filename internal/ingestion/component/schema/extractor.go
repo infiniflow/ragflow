@@ -76,32 +76,29 @@ func (ExtractorFromUpstream) Validate() error { return nil }
 
 // KeywordExtractConfig configures automatic keyword extraction.
 type KeywordExtractConfig struct {
-	TopN         int    `json:"top_n,omitempty"`
-	SystemPrompt string `json:"system_prompt,omitempty"`
+	TopN int `json:"top_n"`
 }
 
 // QuestionExtractConfig configures automatic question generation.
 type QuestionExtractConfig struct {
-	TopN         int    `json:"top_n,omitempty"`
-	SystemPrompt string `json:"system_prompt,omitempty"`
+	TopN int `json:"top_n"`
 }
 
 // TagExtractConfig configures automatic tag extraction.
 type TagExtractConfig struct {
-	TopN      int    `json:"top_n,omitempty"`
+	TopN      int    `json:"top_n"`
 	TagFileID string `json:"tag_file_id,omitempty"`
 }
 
 // SummaryExtractConfig configures summary / enhanced context extraction.
 type SummaryExtractConfig struct {
-	Enabled      bool   `json:"enabled,omitempty"`
-	SystemPrompt string `json:"system_prompt,omitempty"`
+	Enabled bool `json:"enabled"`
 }
 
 // MetadataExtractConfig configures structured metadata extraction.
 type MetadataExtractConfig struct {
-	Enabled         bool                      `json:"enabled,omitempty"`
-	Metadata        []common.MetadataFieldDef `json:"metadata,omitempty"`
+	Enabled         bool                      `json:"enabled"`
+	Fields          []common.MetadataFieldDef `json:"fields,omitempty"`
 	BuiltInMetadata []common.MetadataFieldDef `json:"built_in_metadata,omitempty"`
 }
 
@@ -109,9 +106,7 @@ type MetadataExtractConfig struct {
 // Fully modularized into base settings and 5 sub-extraction tasks.
 type ExtractorParam struct {
 	// Base settings
-	FieldName    string `json:"field_name,omitempty"`
-	LLMID        string `json:"llm_id,omitempty"`
-	SystemPrompt string `json:"system_prompt,omitempty"`
+	LLMID string `json:"llm_id,omitempty"`
 
 	// Modular sub-configs
 	Keywords  KeywordExtractConfig  `json:"keywords,omitempty"`
@@ -124,9 +119,7 @@ type ExtractorParam struct {
 // Defaults returns the default ExtractorParam.
 func (ExtractorParam) Defaults() ExtractorParam {
 	return ExtractorParam{
-		FieldName:    "",
-		LLMID:        "",
-		SystemPrompt: "",
+		LLMID: "",
 	}
 }
 

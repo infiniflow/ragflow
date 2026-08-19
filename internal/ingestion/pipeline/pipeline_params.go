@@ -28,29 +28,10 @@ var llmRuntimeParamKeys = map[string]struct{}{
 	"maxTokensEnabled":        {},
 }
 
-// extractorLegacyParamKeys contains legacy flat extractor fields preserved for backward compatibility.
-var extractorLegacyParamKeys = map[string]struct{}{
-	"auto_keywords":        {},
-	"keywords_sys_prompt":  {},
-	"auto_questions":       {},
-	"questions_sys_prompt": {},
-	"auto_tags":            {},
-	"topn_tags":            {},
-	"tag_file_id":          {},
-	"enable_summary":       {},
-	"sys_prompt":           {},
-	"enable_metadata":      {},
-	"metadata_config":      {},
-	"built_in_metadata":    {},
-}
-
-// extractorValidParamKeys is dynamically derived from schema.ExtractorParam + LLM hyper-parameters + legacy keys.
+// extractorValidParamKeys is dynamically derived from schema.ExtractorParam + LLM hyper-parameters.
 var extractorValidParamKeys = func() map[string]struct{} {
 	keys := extractJSONTags(schema.ExtractorParam{})
 	for k := range llmRuntimeParamKeys {
-		keys[k] = struct{}{}
-	}
-	for k := range extractorLegacyParamKeys {
 		keys[k] = struct{}{}
 	}
 	return keys
@@ -166,8 +147,7 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 	return result
 }
 
-// NormalizeExtractorParams normalizes a raw Extractor parameters map from either
-// legacy flat fields or mixed structures into the canonical modular v2 format.
+// NormalizeExtractorParams normalizes a raw Extractor parameters map into the canonical modular format.
 func NormalizeExtractorParams(raw map[string]any) map[string]any {
 	if raw == nil {
 		return map[string]any{}
@@ -183,28 +163,6 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		for k, v := range kwRaw {
 			kw[k] = v
 		}
-		if _, has := kw["top_n"]; !has {
-			if v, ok := out["auto_keywords"]; ok {
-				kw["top_n"] = v
-			}
-		}
-		if _, has := kw["system_prompt"]; !has {
-			if v, ok := out["keywords_sys_prompt"]; ok {
-				kw["system_prompt"] = v
-			}
-		}
-		out["keywords"] = kw
-	} else if out["auto_keywords"] != nil || out["keywords_sys_prompt"] != nil {
-		kw := map[string]any{
-			"top_n":         0,
-			"system_prompt": "",
-		}
-		if v, ok := out["auto_keywords"]; ok {
-			kw["top_n"] = v
-		}
-		if v, ok := out["keywords_sys_prompt"]; ok {
-			kw["system_prompt"] = v
-		}
 		out["keywords"] = kw
 	}
 
@@ -213,28 +171,6 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		q := make(map[string]any, len(qRaw))
 		for k, v := range qRaw {
 			q[k] = v
-		}
-		if _, has := q["top_n"]; !has {
-			if v, ok := out["auto_questions"]; ok {
-				q["top_n"] = v
-			}
-		}
-		if _, has := q["system_prompt"]; !has {
-			if v, ok := out["questions_sys_prompt"]; ok {
-				q["system_prompt"] = v
-			}
-		}
-		out["questions"] = q
-	} else if out["auto_questions"] != nil || out["questions_sys_prompt"] != nil {
-		q := map[string]any{
-			"top_n":         0,
-			"system_prompt": "",
-		}
-		if v, ok := out["auto_questions"]; ok {
-			q["top_n"] = v
-		}
-		if v, ok := out["questions_sys_prompt"]; ok {
-			q["system_prompt"] = v
 		}
 		out["questions"] = q
 	}
@@ -245,32 +181,6 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		for k, v := range tagRaw {
 			tag[k] = v
 		}
-		if _, has := tag["top_n"]; !has {
-			if v, ok := out["auto_tags"]; ok {
-				tag["top_n"] = v
-			} else if v, ok := out["topn_tags"]; ok {
-				tag["top_n"] = v
-			}
-		}
-		if _, has := tag["tag_file_id"]; !has {
-			if v, ok := out["tag_file_id"]; ok {
-				tag["tag_file_id"] = v
-			}
-		}
-		out["tags"] = tag
-	} else if out["auto_tags"] != nil || out["topn_tags"] != nil || out["tag_file_id"] != nil {
-		tag := map[string]any{
-			"top_n":       0,
-			"tag_file_id": "",
-		}
-		if v, ok := out["auto_tags"]; ok {
-			tag["top_n"] = v
-		} else if v, ok := out["topn_tags"]; ok {
-			tag["top_n"] = v
-		}
-		if v, ok := out["tag_file_id"]; ok {
-			tag["tag_file_id"] = v
-		}
 		out["tags"] = tag
 	}
 
@@ -279,30 +189,6 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		sum := make(map[string]any, len(sumRaw))
 		for k, v := range sumRaw {
 			sum[k] = v
-		}
-		if _, has := sum["enabled"]; !has {
-			if v, ok := out["enable_summary"]; ok {
-				sum["enabled"] = isTruthy(v)
-			}
-		}
-		if _, has := sum["system_prompt"]; !has {
-			if v, ok := out["sys_prompt"]; ok {
-				sum["system_prompt"] = v
-			}
-		}
-		out["summary"] = sum
-	} else if out["enable_summary"] != nil || out["sys_prompt"] != nil || out["field_name"] == "summary" {
-		sum := map[string]any{
-			"enabled":       false,
-			"system_prompt": "",
-		}
-		if v, ok := out["enable_summary"]; ok {
-			sum["enabled"] = isTruthy(v)
-		} else if out["field_name"] == "summary" {
-			sum["enabled"] = true
-		}
-		if v, ok := out["sys_prompt"]; ok {
-			sum["system_prompt"] = v
 		}
 		out["summary"] = sum
 	}
@@ -313,77 +199,10 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		for k, v := range metaRaw {
 			meta[k] = v
 		}
-		if _, has := meta["enabled"]; !has {
-			if v, ok := out["enable_metadata"]; ok {
-				meta["enabled"] = isTruthy(v)
-			}
-		}
-		if _, has := meta["built_in_metadata"]; !has {
-			if v, ok := out["built_in_metadata"]; ok {
-				meta["built_in_metadata"] = v
-			}
-		}
-		out["metadata"] = meta
-	} else if metaConf, ok := out["metadata_config"].(map[string]any); ok {
-		meta := make(map[string]any, len(metaConf))
-		for k, v := range metaConf {
-			meta[k] = v
-		}
-		out["metadata"] = meta
-	} else if out["enable_metadata"] != nil || out["metadata"] != nil || out["built_in_metadata"] != nil {
-		meta := map[string]any{
-			"enabled":           false,
-			"metadata":          []any{},
-			"built_in_metadata": []any{},
-		}
-		if v, ok := out["enable_metadata"]; ok {
-			meta["enabled"] = isTruthy(v)
-		}
-		if v, ok := out["metadata"]; ok {
-			if arr := anySlice(v); arr != nil {
-				meta["metadata"] = arr
-			}
-		}
-		if v, ok := out["built_in_metadata"]; ok {
-			if arr := anySlice(v); arr != nil {
-				meta["built_in_metadata"] = arr
-			}
-		}
 		out["metadata"] = meta
 	}
 
 	return out
-}
-
-func isTruthy(v any) bool {
-	switch val := v.(type) {
-	case bool:
-		return val
-	case float64:
-		return val > 0
-	case int:
-		return val > 0
-	case int64:
-		return val > 0
-	case string:
-		return val == "1" || strings.EqualFold(val, "true")
-	}
-	return false
-}
-
-func anySlice(value any) []any {
-	switch typed := value.(type) {
-	case []any:
-		return typed
-	case []map[string]any:
-		out := make([]any, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, item)
-		}
-		return out
-	default:
-		return nil
-	}
 }
 
 // BuildParserConfig builds the final parser_config by starting from the DSL
