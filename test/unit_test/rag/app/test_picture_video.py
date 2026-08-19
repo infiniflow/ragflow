@@ -48,7 +48,9 @@ def _load_picture_module(tokenized_texts, ocr_text="", vision_error=""):
 
     def resolve_default_model(*_args, **_kwargs):
         if vision_error:
-            raise LookupError(vision_error)
+            # get_tenant_default_model_by_type raises a bare Exception when no
+            # default model is set, not LookupError.
+            raise Exception(vision_error)  # noqa: TRY002
         return {}
 
     tenant_model_service = ModuleType("api.db.joint_services.tenant_model_service")
@@ -187,3 +189,35 @@ def test_parser_reports_failure_when_ocr_finds_no_text(ocr_text):
     assert chunks == []
     assert not tokenized_texts
     assert [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == ["No default image2text model is set."]
+
+
+def test_ocr_only_fallback_is_reported_as_degraded():
+    """The OCR-only fallback keeps the task successful but must not report a clean
+    parse: the vision failure is surfaced as a [WARN] message instead of prog=-1,
+    so a misconfigured model stays visible to the operator."""
+
+    tokenized_texts = []
+    picture = _load_picture_module(
+        tokenized_texts,
+        ocr_text="invoice total 42",
+        vision_error="No default image2text model is set.",
+    )
+
+    callback_calls = []
+    chunks = picture.chunk(
+        "scan.jpg",
+        _jpeg_bytes(),
+        "tenant",
+        "English",
+        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+    )
+
+    assert len(chunks) == 1
+    assert [kwargs.get("prog") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == []
+
+    warnings = [kwargs["msg"] for _args, kwargs in callback_calls if "msg" in kwargs and kwargs["msg"].startswith("[WARN]")]
+    assert len(warnings) == 1, "the vision failure was not reported as a degraded parse"
+    assert "No default image2text model is set." in warnings[0]
+
+    progressed = [args[0] for args, _kwargs in callback_calls if args]
+    assert 0.8 not in progressed, "the fallback still reports a clean 0.8 success"

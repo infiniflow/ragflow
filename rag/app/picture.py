@@ -113,7 +113,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         except Exception as e:
             if txt:
                 logging.warning(f"CV LLM unavailable, indexing OCR text instead: {e}")
-                callback(0.8, f"CV LLM unavailable ({e}), indexing OCR text.")
+                callback(msg=f"[WARN] CV LLM unavailable ({e}), indexing OCR text only.")
                 tokenize(doc, txt, eng, language=lang)
                 return attach_media_context([doc], 0, image_ctx)
             callback(prog=-1, msg=str(e))
