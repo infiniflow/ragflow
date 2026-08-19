@@ -388,6 +388,7 @@ async def _run_workflow_session(
                 canvas.cancel_task()
                 yield ("data:" + json.dumps({"code": 500, "message": str(exc), "data": False}, ensure_ascii=False) + "\n\n")
             finally:
+                canvas.close()
                 if not done_sent:
                     done_sent = True
                     yield "data:[DONE]\n\n"
@@ -428,6 +429,7 @@ async def _run_workflow_session(
     except Exception as exc:
         logging.exception(exc)
         canvas.cancel_task()
+        canvas.close()
         return get_result(data=f"**ERROR**: {str(exc)}")
 
     if not final_ans:
@@ -442,6 +444,7 @@ async def _run_workflow_session(
             False,
         )
         await commit_runtime_replica()
+        canvas.close()
         return get_result(data={"session_id": session_id})
 
     if "data" not in final_ans or not isinstance(final_ans["data"], dict):
@@ -455,6 +458,7 @@ async def _run_workflow_session(
 
     flush_segment()
     await persist_workflow_session()
+    canvas.close()
     return get_result(data=final_ans)
 
 
@@ -535,6 +539,7 @@ async def create_agent_session(agent_id, tenant_id):
         "version_title": version_title,
     }
     API4ConversationService.save(**conv)
+    canvas.close()
     return get_result(data=_normalize_agent_session(conv))
 
 
@@ -1058,7 +1063,10 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
         if not exists:
             return get_data_error_result(message="canvas not found.")
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
-        return get_json_result(data=canvas.get_component_input_form(component_id))
+        try:
+            return get_json_result(data=canvas.get_component_input_form(component_id))
+        finally:
+            canvas.close()
     except Exception as exc:
         return server_error_response(exc)
 
@@ -1096,6 +1104,7 @@ async def debug_agent_component(agent_id, component_id, tenant_id):
                     for c in iter_obj:
                         txt += c
                 outputs[k] = txt
+        canvas.close()
         return get_json_result(data=outputs)
     except Exception as exc:
         return server_error_response(exc)
@@ -1273,19 +1282,22 @@ async def reset_agent(agent_id, tenant_id):
 
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         canvas.reset()
-        dsl = json.loads(str(canvas))
-        UserCanvasService.update_by_id(agent_id, {"dsl": dsl})
-        replica_ok = CanvasReplicaService.replace_for_set(
-            canvas_id=agent_id,
-            tenant_id=str(tenant_id),
-            runtime_user_id=str(tenant_id),
-            dsl=dsl,
-            canvas_category=user_canvas.canvas_category,
-            title=user_canvas.title,
-        )
-        if not replica_ok:
-            return get_data_error_result(message="agent reset, but replica sync failed.")
-        return get_json_result(data=dsl)
+        try:
+            dsl = json.loads(str(canvas))
+            UserCanvasService.update_by_id(agent_id, {"dsl": dsl})
+            replica_ok = CanvasReplicaService.replace_for_set(
+                canvas_id=agent_id,
+                tenant_id=str(tenant_id),
+                runtime_user_id=str(tenant_id),
+                dsl=dsl,
+                canvas_category=user_canvas.canvas_category,
+                title=user_canvas.title,
+            )
+            if not replica_ok:
+                return get_data_error_result(message="agent reset, but replica sync failed.")
+            return get_json_result(data=dsl)
+        finally:
+            canvas.close()
     except Exception as exc:
         return server_error_response(exc)
 
@@ -2466,6 +2478,8 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                         )
                     except Exception:
                         logging.exception("Failed to append webhook trace")
+            finally:
+                canvas.close()
 
         task = asyncio.create_task(background_run())
         if isinstance(task, asyncio.Task):
@@ -2534,6 +2548,8 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                         },
                     )
                 return {"code": 400, "message": str(e), "success": False}
+            finally:
+                canvas.close()
 
         result = await sse()
         return Response(

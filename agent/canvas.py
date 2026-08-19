@@ -185,6 +185,11 @@ class Graph:
                         except Exception:
                             logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
+        try:
+            self._thread_pool.shutdown(wait=True)
+        except Exception:
+            logging.exception("Error shutting down canvas thread pool")
+
     @staticmethod
     def _get_component_name(dsl, cid):
         for n in dsl.get("graph", {}).get("nodes", []):
@@ -959,10 +964,24 @@ class Canvas(Graph):
         if window_size <= 0:
             return convs
         for role, obj in self.history[window_size * -2 :]:
+            if obj is None:
+                continue
             if isinstance(obj, dict):
-                convs.append({"role": role, "content": obj.get("content", "")})
+                content = obj.get("content")
             else:
-                convs.append({"role": role, "content": str(obj)})
+                content = str(obj)
+            # Сообщения с пустым текстом (например, терминальный компонент
+            # вернул только вложение/файл без текста) не должны попадать в
+            # контекст LLM: провайдеры (YandexGPT и др.) отклоняют их с
+            # ошибкой "empty message text", из-за чего повторный проход по
+            # цепочке в той же сессии завершается с ошибкой.
+            if content is None:
+                continue
+            if isinstance(content, str) and not content.strip():
+                continue
+            if isinstance(content, (list, tuple)) and not content:
+                continue
+            convs.append({"role": role, "content": content})
         return convs
 
     def add_user_input(self, question):
