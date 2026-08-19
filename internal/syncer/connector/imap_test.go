@@ -393,6 +393,39 @@ func TestIMAPParseMessageSkipsUnsupportedAttachment(t *testing.T) {
 	}
 }
 
+func TestIMAPParseMessageIgnoresOversizedTextAttachment(t *testing.T) {
+	sizeThreshold := int64(16)
+	var b strings.Builder
+	b.WriteString("From: Sender <sender@example.com>\r\n")
+	b.WriteString("To: Recipient <recipient@example.com>\r\n")
+	b.WriteString("Subject: Oversized text attachment\r\n")
+	b.WriteString("Date: Mon, 2 Jan 2026 09:00:00 +0000\r\n")
+	b.WriteString("Message-ID: <msg5@example.com>\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\r\n\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Disposition: attachment; filename=\"oversized.txt\"\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.WriteString(strings.Repeat("x", 1024) + "\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.WriteString("Hello body\r\n")
+	b.WriteString("--BOUNDARY--\r\n")
+
+	emailDoc, attachments, err := parseIMAPMessage([]byte(b.String()), sizeThreshold)
+	if err != nil {
+		t.Fatalf("parseIMAPMessage failed: %v", err)
+	}
+	if string(emailDoc.Blob) != "Hello body" {
+		t.Fatalf("email body = %q, want %q", emailDoc.Blob, "Hello body")
+	}
+	if len(attachments) != 0 {
+		t.Fatalf("attachments = %d, want 0 oversized text attachments", len(attachments))
+	}
+}
+
 func TestIMAPPruneReturnsSlimDocs(t *testing.T) {
 	client := &fakeIMAPClient{
 		mailboxes: []string{"INBOX"},

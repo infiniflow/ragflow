@@ -481,7 +481,10 @@ func parseIMAPMessage(raw []byte, sizeThreshold int64) (SourceDocument, []Source
 		return SourceDocument{}, nil, fmt.Errorf("imap: failed to read message")
 	}
 
-	body, attachments := walkIMAPParts(entity, sizeThreshold)
+	body, attachments, err := walkIMAPParts(entity, sizeThreshold)
+	if err != nil {
+		return SourceDocument{}, nil, fmt.Errorf("imap: walk message parts: %w", err)
+	}
 	header := entity.Header
 	subject := decodedIMAPHeader(header, "Subject")
 	if subject == "" {
@@ -541,24 +544,23 @@ func parseIMAPMessage(raw []byte, sizeThreshold int64) (SourceDocument, []Source
 }
 
 // walkIMAPParts collects the first decodable text body and the attachments.
-func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapAttachment) {
+func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapAttachment, error) {
 	var body string
+	var htmlBody string
 	var attachments []imapAttachment
-	_ = entity.Walk(func(path []int, part *message.Entity, partErr error) error {
+	err := entity.Walk(func(path []int, part *message.Entity, partErr error) error {
+		if partErr != nil {
+			return partErr
+		}
 		if part == nil {
 			return nil
 		}
 		if part.MultipartReader() != nil {
 			return nil
 		}
-func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapAttachment) {
-	var body string
-	var htmlBody string
-	var attachments []imapAttachment
-	_ = entity.Walk(func(path []int, part *message.Entity, partErr error) error {
 		payload, err := io.ReadAll(part.Body)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		disposition, dispositionParams, _ := part.Header.ContentDisposition()
@@ -567,16 +569,18 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 		filename := firstNonEmpty(dispositionParams["filename"], contentTypeParams["name"])
 		isAttachment := strings.HasPrefix(dispositionLower, "attachment") ||
 			(strings.HasPrefix(dispositionLower, "inline") && filename != "")
-		if isAttachment && len(payload) > 0 && int64(len(payload)) <= sizeThreshold {
-			name := strings.TrimSpace(filename)
-			if name == "" {
-				name = "attachment.bin"
+		if isAttachment {
+			if len(payload) > 0 && int64(len(payload)) <= sizeThreshold {
+				name := strings.TrimSpace(filename)
+				if name == "" {
+					name = "attachment.bin"
+				}
+				attachments = append(attachments, imapAttachment{
+					filename:    name,
+					contentType: contentType,
+					content:     payload,
+				})
 			}
-			attachments = append(attachments, imapAttachment{
-				filename:    name,
-				contentType: contentType,
-				content:     payload,
-			})
 			return nil
 		}
 		if !utf8.Valid(payload) {
@@ -594,11 +598,13 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 		}
 		return nil
 	})
+	if err != nil {
+		return "", nil, err
+	}
 	if body == "" {
 		body = htmlBody
 	}
-	return body, attachments
-}
+	return body, attachments, nil
 }
 
 func decodedIMAPHeader(header message.Header, key string) string {
