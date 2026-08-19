@@ -114,6 +114,23 @@ func multipartIMAPEmail(id, subject, date, body, attachmentName string, attachme
 	return []byte(b.String())
 }
 
+func multipartIMAPEmailWithCharset(id, subject, date, charset string, body []byte) []byte {
+	var b strings.Builder
+	b.WriteString("From: Sender <sender@example.com>\r\n")
+	b.WriteString("To: Recipient <recipient@example.com>\r\n")
+	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("Date: " + date + "\r\n")
+	b.WriteString("Message-ID: <" + id + "@example.com>\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\r\n\r\n")
+	b.WriteString("--BOUNDARY\r\n")
+	b.WriteString("Content-Type: text/plain; charset=" + charset + "\r\n")
+	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
+	b.Write(body)
+	b.WriteString("\r\n--BOUNDARY--\r\n")
+	return []byte(b.String())
+}
+
 func newTestIMAPConnector(client *fakeIMAPClient, batchSize int) *IMAPConnector {
 	return &IMAPConnector{
 		host:          "imap.example.com",
@@ -423,6 +440,50 @@ func TestIMAPParseMessageIgnoresOversizedTextAttachment(t *testing.T) {
 	}
 	if len(attachments) != 0 {
 		t.Fatalf("attachments = %d, want 0 oversized text attachments", len(attachments))
+	}
+}
+
+func TestIMAPParseMessageDecodesISO88591Body(t *testing.T) {
+	raw := multipartIMAPEmailWithCharset("msg6", "Latin body", "Mon, 2 Jan 2026 09:00:00 +0000", "iso-8859-1", []byte("caf\xe9"))
+	emailDoc, attachments, err := parseIMAPMessage(raw, defaultIMAPSizeThreshold)
+	if err != nil {
+		t.Fatalf("parseIMAPMessage failed: %v", err)
+	}
+	if string(emailDoc.Blob) != "caf\u00e9" {
+		t.Fatalf("email body = %q, want %q", emailDoc.Blob, "caf\u00e9")
+	}
+	if len(attachments) != 0 {
+		t.Fatalf("attachments = %d, want 0", len(attachments))
+	}
+}
+
+func TestIMAPParseMessageDecodesWindows1252Body(t *testing.T) {
+	raw := multipartIMAPEmailWithCharset("msg7", "Euro body", "Mon, 2 Jan 2026 09:00:00 +0000", "windows-1252", []byte("price: 5\x80"))
+	emailDoc, attachments, err := parseIMAPMessage(raw, defaultIMAPSizeThreshold)
+	if err != nil {
+		t.Fatalf("parseIMAPMessage failed: %v", err)
+	}
+	if string(emailDoc.Blob) != "price: 5\u20ac" {
+		t.Fatalf("email body = %q, want %q", emailDoc.Blob, "price: 5\u20ac")
+	}
+	if len(attachments) != 0 {
+		t.Fatalf("attachments = %d, want 0", len(attachments))
+	}
+}
+
+func TestIMAPParseMessageKeepsBodyOverAttachmentThreshold(t *testing.T) {
+	sizeThreshold := int64(16)
+	body := strings.Repeat("y", 64)
+	raw := multipartIMAPEmailWithCharset("msg8", "Long body", "Mon, 2 Jan 2026 09:00:00 +0000", "utf-8", []byte(body))
+	emailDoc, attachments, err := parseIMAPMessage(raw, sizeThreshold)
+	if err != nil {
+		t.Fatalf("parseIMAPMessage failed: %v", err)
+	}
+	if string(emailDoc.Blob) != body {
+		t.Fatalf("email body = %q, want %q", emailDoc.Blob, body)
+	}
+	if len(attachments) != 0 {
+		t.Fatalf("attachments = %d, want 0", len(attachments))
 	}
 }
 

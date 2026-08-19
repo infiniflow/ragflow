@@ -37,6 +37,9 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
+	// Register the charset decoder so text/* parts in non-UTF-8 charsets
+	// (e.g. ISO-8859-1, Windows-1252) are decoded to UTF-8 on read.
+	_ "github.com/emersion/go-message/charset"
 	xhtml "golang.org/x/net/html"
 
 	"ragflow/internal/utility"
@@ -558,20 +561,26 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 		if part.MultipartReader() != nil {
 			return nil
 		}
-		payload, err := io.ReadAll(io.LimitReader(part.Body, sizeThreshold+1))
-		if err != nil {
-			return err
-		}
-		oversized := int64(len(payload)) > sizeThreshold
-
 		disposition, dispositionParams, _ := part.Header.ContentDisposition()
 		contentType, contentTypeParams, _ := part.Header.ContentType()
 		dispositionLower := strings.ToLower(disposition)
 		filename := firstNonEmpty(dispositionParams["filename"], contentTypeParams["name"])
 		isAttachment := strings.HasPrefix(dispositionLower, "attachment") ||
 			(strings.HasPrefix(dispositionLower, "inline") && filename != "")
+
+		var payload []byte
+		var err error
 		if isAttachment {
-			if !oversized && len(payload) > 0 {
+			payload, err = io.ReadAll(io.LimitReader(part.Body, sizeThreshold+1))
+		} else {
+			payload, err = io.ReadAll(part.Body)
+		}
+		if err != nil {
+			return err
+		}
+
+		if isAttachment {
+			if len(payload) > 0 && int64(len(payload)) <= sizeThreshold {
 				name := strings.TrimSpace(filename)
 				if name == "" {
 					name = "attachment.bin"
@@ -582,23 +591,26 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 					content:     payload,
 				})
 			}
-		} else if !oversized && utf8.Valid(payload) {
-			switch strings.ToLower(contentType) {
-			case "text/plain":
-				if body == "" {
-					body = string(payload)
-				}
-			case "text/html":
-				if htmlBody == "" {
-					htmlBody = imapHTMLToText(string(payload))
-				}
+			// Walk only advances after the current part body is fully consumed;
+			// drain anything beyond the capped read so the next part is reached.
+			if _, err := io.Copy(io.Discard, part.Body); err != nil {
+				return err
 			}
+			return nil
 		}
 
-		// Walk only advances after the current part body is fully consumed;
-		// drain anything beyond the capped read so the next part is reached.
-		if _, err := io.Copy(io.Discard, part.Body); err != nil {
-			return err
+		if !utf8.Valid(payload) {
+			return nil
+		}
+		switch strings.ToLower(contentType) {
+		case "text/plain":
+			if body == "" {
+				body = string(payload)
+			}
+		case "text/html":
+			if htmlBody == "" {
+				htmlBody = imapHTMLToText(string(payload))
+			}
 		}
 		return nil
 	})
