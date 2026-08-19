@@ -97,11 +97,11 @@ def _box(left, top, right, bottom):
 
 
 def test_tile_starts_cover_axis_without_small_edge_tiles():
-    starts = tile_starts(length=5000, tile_size=2048, overlap=256)
+    starts = tile_starts(length=5000, tile_size=2880, overlap=288)
 
-    assert starts == [0, 1792, 2952]
-    assert starts[-1] + 2048 == 5000
-    assert all(next_start <= start + 2048 for start, next_start in pairwise(starts))
+    assert starts == [0, 2120]
+    assert starts[-1] + 2880 == 5000
+    assert all(next_start <= start + 2880 for start, next_start in pairwise(starts))
 
 
 def test_text_detector_preserves_single_pass_for_regular_document_images(ocr_module):
@@ -132,8 +132,8 @@ def test_text_detector_tiles_large_images(ocr_module):
     detector._detect = detect
     boxes, elapsed = detector(np.zeros((1000, 5000, 3), dtype=np.uint8))
 
-    assert calls == [(1000, 2048, 3)] * 3
-    assert {(int(box[0][0]), int(box[0][1])) for box in boxes} == {(0, 0), (1792, 0), (2952, 0)}
+    assert calls == [(1000, 2880, 3)] * 2
+    assert {(int(box[0][0]), int(box[0][1])) for box in boxes} == {(0, 0), (2120, 0)}
     assert elapsed >= 0
 
 
@@ -147,37 +147,32 @@ def test_tiled_detection_maps_every_tile_back_to_image_coordinates():
 
     boxes = detect_tiled_boxes(image, detect_tile)
 
-    assert tile_shapes == [(2048, 2048, 3)] * 9
-    assert len(boxes) == 9
+    assert tile_shapes == [(2880, 2880, 3)] * 4
+    assert len(boxes) == 4
     assert {(int(box[0][0]), int(box[0][1])) for box in boxes} == {
         (0, 0),
-        (1792, 0),
-        (2952, 0),
-        (0, 1792),
-        (1792, 1792),
-        (2952, 1792),
-        (0, 1952),
-        (1792, 1952),
-        (2952, 1952),
+        (2120, 0),
+        (0, 1120),
+        (2120, 1120),
     }
 
 
 def test_tiled_detection_deduplicates_boxes_from_overlap():
-    image = np.zeros((1000, 3840, 3), dtype=np.uint8)
+    image = np.zeros((1000, 5472, 3), dtype=np.uint8)
     calls = 0
 
     def detect_tile(_tile):
         nonlocal calls
         calls += 1
         if calls == 1:
-            return np.asarray([_box(1800, 100, 1900, 140)])
+            return np.asarray([_box(2600, 100, 2700, 140)])
         return np.asarray([_box(8, 100, 108, 140)])
 
     boxes = detect_tiled_boxes(image, detect_tile)
 
     assert calls == 2
     assert len(boxes) == 1
-    np.testing.assert_array_equal(boxes[0], _box(1800, 100, 1900, 140))
+    np.testing.assert_array_equal(boxes[0], _box(2600, 100, 2700, 140))
 
 
 def test_tiled_detection_preserves_overlapping_boxes_from_one_tile():
@@ -202,10 +197,10 @@ def test_deduplication_keeps_complete_detection():
 
 
 def test_deduplication_merges_detections_clipped_at_opposite_tile_edges():
-    left_tile_box = _box(1700, 100, 2047, 140)
-    right_tile_box = _box(1792, 100, 2100, 140)
+    left_tile_box = _box(2500, 100, 2879, 140)
+    right_tile_box = _box(2592, 100, 2992, 140)
 
     boxes = deduplicate_boxes([left_tile_box, right_tile_box])
 
     assert len(boxes) == 1
-    np.testing.assert_array_equal(boxes[0], _box(1700, 100, 2100, 140))
+    np.testing.assert_array_equal(boxes[0], _box(2500, 100, 2992, 140))
