@@ -1112,7 +1112,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
       thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: 'Instant responses',
+      thinkingLevelLowDescription: 'Fast responses',
       thinkingLevelMedium: 'Medium',
       thinkingLevelMediumDescription: 'Balanced speed & depth',
       thinkingLevelHigh: 'High',
