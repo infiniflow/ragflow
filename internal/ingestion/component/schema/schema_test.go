@@ -504,8 +504,8 @@ func TestTokenizerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestExtractorParamDefaults(t *testing.T) {
 	p := ExtractorParam{}.Defaults()
-	if p.FieldName != "" {
-		t.Errorf("default field_name should be empty, got %q", p.FieldName)
+	if p.LLMID != "" {
+		t.Errorf("default llm_id should be empty, got %q", p.LLMID)
 	}
 	if err := p.Validate(); err != nil {
 		t.Fatalf("default ExtractorParam should pass Validate, got %v", err)
@@ -516,8 +516,8 @@ func TestExtractorParamValidate(t *testing.T) {
 	if err := (&ExtractorParam{}).Validate(); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if err := (&ExtractorParam{FieldName: "summary"}).Validate(); err != nil {
-		t.Fatalf("Validate with field_name should pass, got %v", err)
+	if err := (&ExtractorParam{LLMID: "model@provider"}).Validate(); err != nil {
+		t.Fatalf("Validate should pass, got %v", err)
 	}
 }
 

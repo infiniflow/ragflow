@@ -275,6 +275,36 @@ func TestDiscordValidateNoNetwork(t *testing.T) {
 	}
 }
 
+func TestDiscordConnectorValidateConnectorSetting(t *testing.T) {
+	fixture := newDiscordFixture()
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"general"},
+	})
+	connector.baseURL = server.URL
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+	if fixture.requests.Load() == 0 {
+		t.Fatalf("ValidateConnectorSetting made no network requests")
+	}
+
+	empty := newDiscordTestConnector(t, map[string]any{
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"missing"},
+	})
+	empty.baseURL = server.URL
+	var valErr *ConnectorValidationError
+	if err := empty.ValidateConnectorSetting(context.Background(), nil); !errors.As(err, &valErr) {
+		t.Fatalf("ValidateConnectorSetting empty err = %v, want ConnectorValidationError", err)
+	}
+}
+
 func TestDiscordOpenSyncMergesBatches(t *testing.T) {
 	fixture := newDiscordFixture()
 	base := mustTime(t, "2026-08-14T10:00:00Z")

@@ -577,6 +577,11 @@ class TaskHandler:
         task_dataset_id = ctx.kb_id
         task_doc_id = ctx.doc_id
         task_start_ts = timer()
+
+        def on_chunking_start(wait_time):
+            nonlocal task_start_ts
+            task_start_ts += wait_time
+
         doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
         ctx.raw_task["llm_id"] = doc_task_llm_id
 
@@ -590,7 +595,7 @@ class TaskHandler:
         if binary is None:
             raise FileNotFoundError(f"Can not find file <{ctx.name}> from minio. Could you try it again.")
 
-        chunks = await chunk_service.build_chunks(binary)
+        chunks = await chunk_service.build_chunks(binary, on_chunking_start)
         ctx.recording_context.record("chunks", chunks)
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         ctx.recording_context.record("chunk_ids_count", len(chunk_ids))
@@ -767,6 +772,7 @@ class TaskHandler:
             "compile_kwd",
         ]
         order_by = OrderByExpr()
+        order_by.asc("chunk_order_int")
         order_by.asc("page_num_int")
         order_by.asc("top_int")
 

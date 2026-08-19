@@ -60,7 +60,7 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 }
 
 // TestNavInputFromProducts_WikiExcluded covers the dispatch boundary: wiki
-// products never become nav inputs (they go to the replace-only wiki merge).
+// products never become nav inputs (they go to the page-specific wiki merge).
 func TestNavInputFromProducts_WikiExcluded(t *testing.T) {
 	products := []kccommon.Product{
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantWiki,

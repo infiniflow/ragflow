@@ -157,6 +157,7 @@ export interface DynamicFormRef {
   submit: () => void;
   isDirty: () => boolean;
   getValues: (name?: string) => any;
+  getFilteredValues: () => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
@@ -516,7 +517,6 @@ export const RenderField = ({
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
-            console.log('multi select value', fieldProps);
             const finalFieldProps = {
               ...fieldProps,
               onValueChange: (value: string[]) => {
@@ -531,10 +531,6 @@ export const RenderField = ({
                 variant="inverted"
                 maxCount={100}
                 {...finalFieldProps}
-                // onValueChange={(data) => {
-                //   console.log(data);
-                //   field.onChange?.(data);
-                // }}
                 options={field.options as MultiSelectOptionType[]}
                 disabled={field.disabled}
               />
@@ -761,7 +757,6 @@ const DynamicForm = {
               combinedErrors[key] = combinedErrors[key][0];
             }
           }
-          console.log('combinedErrors', combinedErrors);
           return {
             values: Object.keys(combinedErrors).length ? {} : data,
             errors: combinedErrors,
@@ -861,6 +856,7 @@ const DynamicForm = {
           },
           isDirty: () => form.formState.isDirty,
           getValues: form.getValues,
+          getFilteredValues: () => filterActiveValues(form.getValues()),
           reset: (values?: T) => {
             if (values) {
               form.reset(values);
@@ -985,30 +981,17 @@ const DynamicForm = {
           (async () => {
             try {
               const beValid = await form.trigger();
-              console.log('form valid', beValid, form);
-              // if (beValid) {
-              //   form.handleSubmit(async (values) => {
-              //     console.log('form values', values);
-              //     submitFunc?.(values);
-              //   })();
-              // }
 
               if (beValid && submitFunc) {
                 form.handleSubmit(async (values) => {
                   const filteredValues = (form as any).filterActiveValues
                     ? (form as any).filterActiveValues(values)
                     : values;
-                  console.log(
-                    'filtered form values in saving button',
-                    filteredValues,
-                  );
                   submitFunc(filteredValues);
                 })();
               }
             } catch (e) {
               console.error(e);
-            } finally {
-              console.log('form submit3');
             }
           })();
         }}

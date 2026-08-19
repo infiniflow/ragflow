@@ -35,7 +35,6 @@ import (
 //
 // DeepDoc is mandatory (DLA+TSR are inseparable from the pipeline).
 //
-//	BATCH_SKIP_OCR=1   skip image OCR (DLA+TSR kept)
 //	BATCH_COUNT=N      limit to first N PDFs (by file size, smallest first)
 //	BATCH_SINGLE=name  process exactly one PDF (full filename)
 //
@@ -62,9 +61,8 @@ func TestBatchResults(t *testing.T) {
 	}
 	deepDoc := pdf.DocAnalyzer(ddClient)
 
-	variant := variantFromEnv()
-	t.Logf("DeepDoc available — DLA+TSR%s enabled (%d PDFs)",
-		map[bool]string{true: ", image OCR skipped", false: ", OCR enabled"}[variant == "noocr"], len(pdfs))
+	variant := "ocr"
+	t.Logf("DeepDoc available — DLA+TSR+OCR enabled (%d PDFs)", len(pdfs))
 
 	dirs := mkOutputDirs(variant)
 
@@ -82,13 +80,6 @@ func setupLogger() {
 		level = slog.LevelWarn
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
-}
-
-func variantFromEnv() string {
-	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
-		return "noocr"
-	}
-	return "ocr"
 }
 
 type outputDirs struct {
@@ -182,7 +173,6 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 	t.Helper()
 	var results []tool.BatchResult
 	totalChars := 0
-	skipOCR := common.GetEnv(common.EnvBatchSkipOCR) == "1"
 
 	for i, name := range pdfs {
 		label := fmt.Sprintf("[%d/%d] %s", i+1, len(pdfs), name)
@@ -197,7 +187,7 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 		}
 
 		// ── parse ──
-		res, err := parseOne(pdfDir, name, deepDoc, skipOCR)
+		res, err := parseOne(pdfDir, name, deepDoc)
 		if err != nil {
 			results = append(results, tool.BatchResult{File: name, Error: err.Error()})
 			t.Logf("%s — %v", label, err)
@@ -223,7 +213,7 @@ type parseOneResult struct {
 	result pdf.ParseResult
 }
 
-func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer, skipOCR bool) (*parseOneResult, error) {
+func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer) (*parseOneResult, error) {
 	data, err := os.ReadFile(filepath.Join(pdfDir, name))
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
@@ -239,7 +229,6 @@ func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer, skipOCR bool) (*pars
 	chars, _ := extractPageStats(eng)
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.SkipOCR = skipOCR
 	p := NewParser(cfg)
 	t0 := time.Now()
 	parsed, err := p.ParseRaw(context.Background(), eng, deepDoc)

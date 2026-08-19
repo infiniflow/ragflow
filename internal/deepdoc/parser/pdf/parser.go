@@ -167,7 +167,7 @@ func (p *Parser) extractOutlines(engine pdf.PDFEngine) []pdf.Outline {
 // artifacts are returned in pageResult for the global assembly phase.
 //
 // Zoom retry is per-page: if the default zoom produces no boxes and
-// conditions allow (Zoom < 9, !SkipOCR, render succeeded), the page is
+// conditions allow (Zoom < 9, render succeeded), the page is
 // re-rendered at Config.Zoom × DlaScale and OCR/DLA are re-run. This
 // replaces the old document-wide retryZoom pass and ensures only pages
 // that actually need a higher zoom pay the memory cost.
@@ -223,7 +223,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 
 	// Per-page zoom retry: if no boxes were produced at the default zoom
 	// and conditions allow, re-render at a higher zoom and re-run OCR/DLA.
-	if len(annotated) == 0 && p.Config.Zoom >= 1.0 && !p.Config.SkipOCR && renderErr == nil {
+	if len(annotated) == 0 && p.Config.Zoom >= 1.0 && renderErr == nil {
 		// Cap the retry zoom so a large Config.Zoom cannot drive the retry
 		// render to an unsafe DPI and spike memory on large pages.
 		const maxRetryZoom = 9.0
@@ -308,7 +308,7 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	var ocrBoxes []pdf.TextBox
 	ocrUsed := false
 
-	if !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
+	if renderErr == nil && pageImg != nil {
 		hasCleanChars := len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars)
 		if hasCleanChars {
 			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)

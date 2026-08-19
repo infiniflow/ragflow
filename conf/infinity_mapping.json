@@ -64,6 +64,8 @@
 	"slug_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"title_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"topic_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"plan_group_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"generation_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"page_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"entity_names_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"entity_names": {"type": "json", "default": "[]", "enabled": false},

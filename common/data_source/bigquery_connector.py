@@ -138,6 +138,32 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         self._pending_sync_cursor_value: Any = None
         self._pending_sync_cursor_id: Any = None
 
+    @classmethod
+    def build_connector(cls, config: Dict[str, Any]) -> "BigQueryConnector":
+        connector_kwargs: Dict[str, Any] = {
+            "project_id": config.get("project_id", ""),
+            "dataset_id": config.get("dataset_id") or None,
+            "table_id": config.get("table_id") or None,
+            "location": config.get("location") or None,
+            "query": config.get("query", ""),
+            "content_columns": config.get("content_columns", ""),
+            "metadata_columns": config.get("metadata_columns", ""),
+            "id_column": config.get("id_column") or None,
+            "timestamp_column": config.get("timestamp_column") or None,
+            "use_query_cache": config.get("use_query_cache", True),
+        }
+        if config.get("batch_size") is not None:
+            connector_kwargs["batch_size"] = int(config["batch_size"])
+        if config.get("page_size") is not None:
+            connector_kwargs["page_size"] = int(config["page_size"])
+        if config.get("maximum_bytes_billed") is not None:
+            connector_kwargs["maximum_bytes_billed"] = int(config["maximum_bytes_billed"])
+        if config.get("job_timeout_ms") is not None:
+            connector_kwargs["job_timeout_ms"] = int(config["job_timeout_ms"])
+        connector = cls(**connector_kwargs)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------ #
     # Credentials & client
     # ------------------------------------------------------------------ #

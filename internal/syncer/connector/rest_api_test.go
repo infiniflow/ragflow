@@ -751,6 +751,28 @@ func TestRestAPIValidateLive(t *testing.T) {
 	}
 }
 
+func TestRestAPIValidateConnectorSetting(t *testing.T) {
+	withRestAPITestHooks(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items": []}`))
+	}))
+	defer server.Close()
+
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":            server.URL,
+		"content_fields": "title",
+	})
+	if err := c.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("requests = %d, want 1", requests.Load())
+	}
+}
+
 func TestRestAPIMaxPages(t *testing.T) {
 	withRestAPITestHooks(t)
 	var requests atomic.Int32
