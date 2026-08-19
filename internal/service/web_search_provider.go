@@ -318,14 +318,15 @@ func retrieveSerplyWebSearch(
 	chunks := make([]map[string]interface{}, 0, len(results))
 	docAggs := make([]interface{}, 0, len(results))
 	for _, result := range results {
-		if result.Description == "" {
+		description := strings.TrimSpace(result.Description)
+		if description == "" {
 			continue
 		}
 		chunkID := "serply-" + result.Link
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            chunkID,
-			"content_ltks":        tokenizeText(result.Description),
-			"content_with_weight": result.Description,
+			"content_ltks":        tokenizeText(description),
+			"content_with_weight": description,
 			"doc_id":              chunkID,
 			"docnm_kwd":           result.Title,
 			"kb_id":               []interface{}{},

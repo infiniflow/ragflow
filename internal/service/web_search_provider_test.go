@@ -318,6 +318,7 @@ func TestRetrieveSerplyWebSearchSkipsResultsWithoutDescription(t *testing.T) {
 		_, _ = response.Write([]byte(`{
 			"results": [
 				{"title": "No snippet", "link": "https://example.com/empty", "description": ""},
+				{"title": "Blank snippet", "link": "https://example.com/blank", "description": " \t\n"},
 				{"title": "RAGFlow", "link": "https://example.com/ragflow", "description": "An open-source RAG engine."}
 			]
 		}`))

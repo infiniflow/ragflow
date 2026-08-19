@@ -81,8 +81,9 @@ class Serply:
     def retrieve_chunks(self, question: str) -> dict[str, list]:
         chunks = []
         doc_aggs = []
-        logger.info("[Serply]Q: %s", question)
-        for result in self.search(question):
+        results = self.search(question)
+        logger.info("Serply search returned %d results", len(results))
+        for result in results:
             chunk_id = get_uuid()
             chunks.append(
                 {
@@ -110,7 +111,6 @@ class Serply:
                     "url": result["url"],
                 }
             )
-            logger.info("[Serply]R: %s...", result["content"][:128])
         return {"chunks": chunks, "doc_aggs": doc_aggs}
 
 
