@@ -524,12 +524,15 @@ def test_hard_split_lossless_with_real_truncate():
     spec.loader.exec_module(real_token_utils)
 
     # Multibyte, no sentence boundary -> forces the hard-split fallback path.
-    body = "中文混合English文本再混入一些标点符号，" * 30
+    body = "中文混合English文本再混入一些标点符号\uff0c" * 30
     items = [{"text": body, "doc_type_kwd": "text"}]
 
     with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _g):
-        # Swap the 1-token-per-char stub for the REAL tiktoken-backed truncate.
+        # Swap the 1-token-per-char stub for the REAL tiktoken-backed truncate
+        # AND the real token counter, so the cap is enforced and verified in
+        # real token units (not characters).
         common_module.truncate = real_token_utils.truncate
+        common_module.num_tokens_from_string = real_token_utils.num_tokens_from_string
 
         param = common_module.TitleChunkerParam()
         param.method = "hierarchy"
@@ -542,4 +545,8 @@ def test_hard_split_lossless_with_real_truncate():
         chunks = process._outputs.get("chunks", [])
 
     assert len(chunks) > 1, "expected the oversized chunk to be hard-split"
+    for ck in chunks:
+        # Every emitted piece must honour the 20-token cap under the real
+        # tokenizer, not just be a lossless concatenation.
+        assert real_token_utils.num_tokens_from_string(ck["text"]) <= 20, f"hard-split chunk exceeds token cap: {ck['text']!r}"
     assert "".join(ck["text"] for ck in chunks) == body + "\n"
