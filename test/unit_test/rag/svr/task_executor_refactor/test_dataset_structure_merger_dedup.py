@@ -55,8 +55,8 @@ def _entity_row(name: str, *, type_: str = "org", description: str | None = None
 async def test_merge_bucket_dedups_chunks_docs_descriptions_and_names_per_group():
     rows = [
         _entity_row("Apple Inc", description="A tech company.", chunks=["c1", "c2"], doc_id="docA"),
-        # duplicate doc_id (docA) and duplicate chunk (c2); longer name/description should win as "best"
-        _entity_row("Apple Incorporated", description="Maker of iPhone and iPad devices worldwide.", chunks=["c2", "c3"], doc_id="docA"),
+        # same group (grouping is by lowercased name + type, no alias merging); duplicate doc_id (docA) and duplicate chunk (c2); longest description should win as "best"
+        _entity_row("APPLE INC", description="Maker of iPhone and iPad devices worldwide.", chunks=["c2", "c3"], doc_id="docA"),
         # exact duplicate name + description of row 1 (existing-ID overlap); duplicate chunk c1
         _entity_row("Apple Inc", description="A tech company.", chunks=["c1", "c4"], doc_id="docB"),
         # malformed row: no chunks/doc_id/description at all, and a name duplicate of row 1 & 3
@@ -77,7 +77,7 @@ async def test_merge_bucket_dedups_chunks_docs_descriptions_and_names_per_group(
 
     payload_out = json.loads(apple["content_with_weight"])
     assert payload_out["description"] == "Maker of iPhone and iPad devices worldwide."
-    assert payload_out["name"] == "Apple Incorporated"
+    assert payload_out["name"].lower() == "apple inc"  # original casing kept; which casing wins is not pinned
 
     widget = by_name_kwd["widget co"]
     assert widget["source_chunk_ids"] == ["c5"]
