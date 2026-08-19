@@ -152,6 +152,9 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: decode canvas DSL: %w", err)
 	}
+	if err := ValidatePipeline(cnv); err != nil {
+		return nil, err
+	}
 	// Capture the canonical canvas DSL bytes for the resume-time DSL
 	// fingerprint. json.Marshal sorts map keys, so this is stable across
 	// re-decodes of the same logical DSL (formatting-independent).
@@ -168,6 +171,24 @@ func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pip
 		o(p)
 	}
 	return p, nil
+}
+
+// ValidatePipeline enforces ingestion pipeline constraints.
+// Specifically, at most one Extractor component is permitted in the graph.
+func ValidatePipeline(cnv *canvas.Canvas) error {
+	if cnv == nil {
+		return nil
+	}
+	extractorCount := 0
+	for id, comp := range cnv.Components {
+		if isExtractorComponent(id, comp.Obj.ComponentName) {
+			extractorCount++
+		}
+	}
+	if extractorCount > 1 {
+		return fmt.Errorf("pipeline validation error: at most 1 Extractor component is allowed, found %d", extractorCount)
+	}
+	return nil
 }
 
 // WithComponentFactory installs an instance-scoped factory override for this

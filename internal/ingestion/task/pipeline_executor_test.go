@@ -575,3 +575,25 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 		t.Fatalf("compiler products: got %d, want 2", n)
 	}
 }
+
+func TestBuiltInMetadata_ZeroExtractorFallback(t *testing.T) {
+	// Scenario: User constructed a pipeline with 0 Extractor components,
+	// but dataset parser_config has top-level built_in_metadata.
+	parserConfig := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+			map[string]any{"key": "update_time", "type": "time"},
+		},
+	}
+
+	arr, enabled := builtInMetadataFromParserConfig(parserConfig)
+	if !enabled {
+		t.Errorf("expected builtInMetadataFromParserConfig enabled=true for zero-extractor pipeline with top-level built_in_metadata")
+	}
+	if len(arr) != 2 {
+		t.Errorf("expected 2 built-in metadata items, got %d", len(arr))
+	}
+}
