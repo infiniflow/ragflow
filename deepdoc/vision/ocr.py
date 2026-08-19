@@ -485,7 +485,7 @@ class TextDetector:
         self.close()
 
 
-class OCR:
+class  OCR:
     def __init__(self, model_dir=None):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!

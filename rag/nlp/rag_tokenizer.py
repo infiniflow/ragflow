@@ -16,6 +16,18 @@
 
 import infinity.rag_tokenizer
 
+# Monkey-patch datrie.Trie to add has_keys_with_prefix (missing in newer datrie versions)
+import datrie
+if not hasattr(datrie.Trie, "has_keys_with_prefix"):
+    def _has_keys_with_prefix(self, prefix):
+        """Check if any key in the trie starts with the given prefix."""
+        for key in self.keys():
+            if key.startswith(prefix):
+                return True
+        return False
+
+    datrie.Trie.has_keys_with_prefix = _has_keys_with_prefix
+
 
 class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
     def tokenize(self, line: str) -> str:

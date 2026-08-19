@@ -1,0 +1,35 @@
+# DeepDoc 独立服务 - 基于已有的 RAGFlow 镜像
+# 挂载本地修改后的代码，避免 restart_workers 参数问题
+
+services:
+  deepdoc:
+    image: infiniflow/ragflow:v0.26.4
+    container_name: deepdoc
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        # 安装兼容版本的 litserve
+        /ragflow/.venv/bin/pip3 install litserve==0.2.2 python-multipart -i https://mirrors.aliyun.com/pypi/simple --trusted-host mirrors.aliyun.com
+        # 启动 deepdoc server（使用挂载的修改后代码）
+        cd /ragflow
+        /ragflow/.venv/bin/python3 -m deepdoc.server.deepdoc_server \
+          --port 9390 \
+          --model-dir /ragflow/rag/res/deepdoc \
+          --log-level INFO
+    ports:
+      - "9390:9390"
+    volumes:
+      # 挂载本地修改后的 deepdoc_server.py（移除 restart_workers 参数）
+      - E:/github_myrepo/ragflow/ragflow/deepdoc/server/deepdoc_server.py:/ragflow/deepdoc/server/deepdoc_server.py
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9390/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+    restart: unless-stopped
+
+networks:
+  ragflow:
+    driver: bridge

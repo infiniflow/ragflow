@@ -89,16 +89,21 @@ class RAGFlowPdfParser:
             self.layouter = LayoutRecognizer(recognizer_domain)
         self.tbl_det = TableStructureRecognizer()
 
-        self.updown_cnt_mdl = xgb.Booster()
-        # xgboost model is very small; using CPU explicitly
-        self.updown_cnt_mdl.set_param({"device": "cpu"})
-        logging.info("updown_cnt_mdl initialized on CPU")
+        self.updown_cnt_mdl = None
         try:
-            model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
-            self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
-        except Exception:
-            model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"))
-            self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+            self.updown_cnt_mdl = xgb.Booster()
+            # xgboost model is very small; using CPU explicitly
+            self.updown_cnt_mdl.set_param({"device": "cpu"})
+            logging.info("updown_cnt_mdl initialized on CPU")
+            try:
+                model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
+                self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+            except Exception:
+                model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"))
+                self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+        except Exception as e:
+            logging.warning(f"Failed to load xgboost model: {e}. Text concatenation will use fallback method.")
+            self.updown_cnt_mdl = None
 
         self.page_from = 0
         self.column_num = 1
@@ -168,8 +173,8 @@ class RAGFlowPdfParser:
             tks_down[-1] == tks_up[-1] if tks_down and tks_up else False,
             max(down["in_row"], up["in_row"]),
             abs(down["in_row"] - up["in_row"]),
-            len(tks_down) == 1 and rag_tokenizer.tag(tks_down[0]).find("n") >= 0,
-            len(tks_up) == 1 and rag_tokenizer.tag(tks_up[0]).find("n") >= 0,
+            len(tks_down) == 1 and (lambda t: isinstance(t, str) and t.find("n") >= 0)(rag_tokenizer.tag(tks_down[0])),
+            len(tks_up) == 1 and (lambda t: isinstance(t, str) and t.find("n") >= 0)(rag_tokenizer.tag(tks_up[0])),
         ]
         return fea
 
@@ -1110,7 +1115,6 @@ class RAGFlowPdfParser:
 
     def _concat_downward(self, concat_between_pages=True):
         self.boxes = Recognizer.sort_Y_firstly(self.boxes, 0)
-        return
 
         # count boxes in the same row as a feature
         for i in range(len(self.boxes)):
@@ -1150,7 +1154,7 @@ class RAGFlowPdfParser:
                     if not concat_between_pages and down["page_number"] > up["page_number"]:
                         break
 
-                    if up.get("R", "") != down.get("R", "") and up["text"][-1] != "，":
+                    if up.get("R", "") != down.get("R", "") and up["text"] and up["text"][-1] != "，":
                         i += 1
                         continue
 
@@ -1175,9 +1179,15 @@ class RAGFlowPdfParser:
                         continue
 
                     fea = self._updown_concat_features(up, down)
-                    if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
-                        i += 1
-                        continue
+                    if self.updown_cnt_mdl is not None:
+                        if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
+                            i += 1
+                            continue
+                    else:
+                        # Fallback: simple distance-based merge
+                        if self._y_dis(up, down) > self._height(up) * 1.5:
+                            i += 1
+                            continue
                     dfs(down, i + 1)
                     boxes.pop(i)
                     return

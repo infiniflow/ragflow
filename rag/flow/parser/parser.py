@@ -355,7 +355,7 @@ class Parser(ProcessBase):
         parser_model_name = None
         parse_method = raw_parse_method
         parse_method = parse_method or ""
-        if isinstance(raw_parse_method, str):
+        if isinstance(raw_parse_method, str): 
             lowered = raw_parse_method.lower()
             if lowered.endswith("@mineru"):
                 parser_model_name = raw_parse_method
