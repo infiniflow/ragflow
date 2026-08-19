@@ -204,3 +204,14 @@ def test_deduplication_merges_detections_clipped_at_opposite_tile_edges():
 
     assert len(boxes) == 1
     np.testing.assert_array_equal(boxes[0], _box(2500, 100, 2992, 140))
+
+
+def test_deduplication_merges_every_box_in_a_cross_tile_overlap_chain():
+    left_box = _box(0, 0, 100, 40)
+    right_box = _box(100, 0, 200, 40)
+    bridge_box = _box(50, 0, 150, 40)
+
+    boxes = deduplicate_boxes([left_box, right_box, bridge_box])
+
+    assert len(boxes) == 1
+    np.testing.assert_array_equal(boxes[0], _box(0, 0, 200, 40))

@@ -44,10 +44,12 @@ def tile_starts(length: int, tile_size: int, overlap: int) -> list[int]:
 
 
 def _box_bounds(box: np.ndarray) -> tuple[float, float, float, float]:
+    """Return an axis-aligned bounding rectangle for a quadrilateral."""
     return float(np.min(box[:, 0])), float(np.min(box[:, 1])), float(np.max(box[:, 0])), float(np.max(box[:, 1]))
 
 
 def _intersection_over_smaller(bounds_a: tuple[float, float, float, float], bounds_b: tuple[float, float, float, float]) -> float:
+    """Measure intersection relative to the smaller rectangle."""
     left = max(bounds_a[0], bounds_b[0])
     top = max(bounds_a[1], bounds_b[1])
     right = min(bounds_a[2], bounds_b[2])
@@ -60,6 +62,7 @@ def _intersection_over_smaller(bounds_a: tuple[float, float, float, float], boun
 
 
 def _axis_aligned_box(bounds: tuple[float, float, float, float]) -> np.ndarray:
+    """Convert rectangle bounds to a clockwise quadrilateral."""
     left, top, right, bottom = bounds
     return np.asarray([[left, top], [right, top], [right, bottom], [left, bottom]], dtype=np.float32)
 
@@ -85,6 +88,7 @@ def deduplicate_boxes(
     kept_boxes: list[np.ndarray] = []
     kept_bounds: list[tuple[float, float, float, float]] = []
     kept_sources: list[set[int]] = []
+    active: list[bool] = []
 
     for candidate_index in candidate_indices:
         candidate_bounds = bounds[candidate_index]
@@ -93,40 +97,44 @@ def deduplicate_boxes(
         right_cell = int(candidate_bounds[2] // cell_size)
         bottom_cell = int(candidate_bounds[3] // cell_size)
         cells = [(x, y) for x in range(left_cell, right_cell + 1) for y in range(top_cell, bottom_cell + 1)]
-        nearby = {index for cell in cells for index in spatial_index[cell]}
+        nearby = {index for cell in cells for index in spatial_index[cell] if active[index]}
 
         duplicates = [index for index in nearby if sources[candidate_index] not in kept_sources[index] and _intersection_over_smaller(candidate_bounds, kept_bounds[index]) >= overlap_threshold]
         if duplicates:
-            duplicate_index = max(duplicates, key=lambda index: _intersection_over_smaller(candidate_bounds, kept_bounds[index]))
-            duplicate_bounds = kept_bounds[duplicate_index]
+            duplicate_index = min(duplicates)
             merged_bounds = (
-                min(candidate_bounds[0], duplicate_bounds[0]),
-                min(candidate_bounds[1], duplicate_bounds[1]),
-                max(candidate_bounds[2], duplicate_bounds[2]),
-                max(candidate_bounds[3], duplicate_bounds[3]),
+                min(candidate_bounds[0], *(kept_bounds[index][0] for index in duplicates)),
+                min(candidate_bounds[1], *(kept_bounds[index][1] for index in duplicates)),
+                max(candidate_bounds[2], *(kept_bounds[index][2] for index in duplicates)),
+                max(candidate_bounds[3], *(kept_bounds[index][3] for index in duplicates)),
             )
-            if merged_bounds != duplicate_bounds:
+            if merged_bounds != kept_bounds[duplicate_index]:
                 kept_boxes[duplicate_index] = _axis_aligned_box(merged_bounds)
-                kept_bounds[duplicate_index] = merged_bounds
-                merged_left_cell = int(merged_bounds[0] // cell_size)
-                merged_top_cell = int(merged_bounds[1] // cell_size)
-                merged_right_cell = int(merged_bounds[2] // cell_size)
-                merged_bottom_cell = int(merged_bounds[3] // cell_size)
-                for x in range(merged_left_cell, merged_right_cell + 1):
-                    for y in range(merged_top_cell, merged_bottom_cell + 1):
-                        if duplicate_index not in spatial_index[(x, y)]:
-                            spatial_index[(x, y)].append(duplicate_index)
-            kept_sources[duplicate_index].add(sources[candidate_index])
+            kept_bounds[duplicate_index] = merged_bounds
+            kept_sources[duplicate_index] = {sources[candidate_index]}.union(*(kept_sources[index] for index in duplicates))
+            for index in duplicates:
+                if index != duplicate_index:
+                    active[index] = False
+
+            merged_left_cell = int(merged_bounds[0] // cell_size)
+            merged_top_cell = int(merged_bounds[1] // cell_size)
+            merged_right_cell = int(merged_bounds[2] // cell_size)
+            merged_bottom_cell = int(merged_bounds[3] // cell_size)
+            for x in range(merged_left_cell, merged_right_cell + 1):
+                for y in range(merged_top_cell, merged_bottom_cell + 1):
+                    if duplicate_index not in spatial_index[(x, y)]:
+                        spatial_index[(x, y)].append(duplicate_index)
             continue
 
         kept_index = len(kept_boxes)
         kept_boxes.append(boxes[candidate_index])
         kept_bounds.append(candidate_bounds)
         kept_sources.append({sources[candidate_index]})
+        active.append(True)
         for cell in cells:
             spatial_index[cell].append(kept_index)
 
-    return kept_boxes
+    return [box for index, box in enumerate(kept_boxes) if active[index]]
 
 
 def detect_tiled_boxes(
