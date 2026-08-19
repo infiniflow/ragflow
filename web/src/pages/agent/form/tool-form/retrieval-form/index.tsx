@@ -21,6 +21,10 @@ import {
   RetrievalPartialSchema,
   useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '../../retrieval-form/use-stale-dataset-validation';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
@@ -32,14 +36,22 @@ export const FormSchema = z.object({
 const RetrievalForm = () => {
   const defaultValues = useValues();
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   const ownerTenantId = useOwnerTenantId();
 

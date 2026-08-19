@@ -1,12 +1,17 @@
 import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { useFetchAllKnowledgeList } from '@/hooks/use-knowledge-request';
+import {
+  useFetchAllKnowledgeList,
+  useStaleDatasetIds,
+} from '@/hooks/use-knowledge-request';
 import { useFetchAllMemoryList } from '@/hooks/use-memory-request';
 import { BaseNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
+import { TriangleAlert } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NodeHandleId, RetrievalFrom } from '../../constant';
 import { RetrievalFormSchemaType } from '../../form/retrieval-form/next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
@@ -26,10 +31,18 @@ function InnerRetrievalNode({
   const knowledgeBaseIds: string[] = get(data, 'form.dataset_ids', []);
   const memoryIds: string[] = get(data, 'form.memory_ids', []);
   const { list: knowledgeList } = useFetchAllKnowledgeList(true);
+  const { t } = useTranslation();
 
   const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId: id });
 
   const isMemory = data.form?.retrieval_from === RetrievalFrom.Memory;
+
+  // Mirror the form's stale-dataset validation: a persisted id referencing a
+  // dataset that has since been deleted or emptied of chunks is flagged on
+  // the node as well. Stays empty while the lookup is in flight.
+  const { staleDatasetIds } = useStaleDatasetIds(
+    isMemory ? [] : knowledgeBaseIds,
+  );
 
   const memoryList = useFetchAllMemoryList();
 
@@ -71,17 +84,32 @@ function InnerRetrievalNode({
 
             const item = knowledgeList.find((y) => id === y.id);
             const label = getLabel(id);
+            // A variable reference (has a label) is never stale; a dataset id
+            // that no longer resolves to a usable dataset is.
+            const isStale = !label && staleDatasetIds.has(id);
 
             return (
-              <div className={styles.nodeText} key={id}>
+              <div
+                className={classNames(styles.nodeText, {
+                  'border border-state-error !bg-state-error-5': isStale,
+                })}
+                key={id}
+                title={isStale ? t('chat.datasetUnavailable') : undefined}
+              >
                 <div className="flex items-center gap-1.5">
-                  <RAGFlowAvatar
-                    className="size-6 rounded-lg"
-                    avatar={item?.avatar}
-                    name={item ? item?.name : id}
-                  />
+                  {isStale ? (
+                    <TriangleAlert className="size-4 shrink-0 text-state-error" />
+                  ) : (
+                    <RAGFlowAvatar
+                      className="size-6 rounded-lg"
+                      avatar={item?.avatar}
+                      name={item ? item?.name : id}
+                    />
+                  )}
 
-                  <div className={'truncate flex-1'}>{label || item?.name}</div>
+                  <div className={'truncate flex-1'}>
+                    {label || item?.name || id}
+                  </div>
                 </div>
               </div>
             );

@@ -40,6 +40,10 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { UserIdFormField } from '../components/user-id-form-field';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from './use-stale-dataset-validation';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
@@ -150,14 +154,22 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(node?.id, form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <Form {...form}>
