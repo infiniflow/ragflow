@@ -8,6 +8,13 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
+// RowsToHTML renders a table grid to HTML. The output is intentionally
+// compact (no inter-tag whitespace) and the caption is html-escaped. This
+// diverges from Python's __html_table, which emits newlines between rows and
+// leaves the caption unescaped; the difference is HTML serialization only and
+// never affects cell content (gridSim=100% in the parity harness). Registered
+// as go_intentional in table/testdata/parity/known_diffs.json
+// (rule "table-html-emission-format").
 func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, spanInfo map[[2]int][2]int, covered map[[2]int]bool) string {
 	var b strings.Builder
 	b.WriteString("<table>")

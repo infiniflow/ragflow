@@ -95,6 +95,31 @@ func GroupTSRCellsToRows(cells []pdf.TSRCell) [][]pdf.TSRCell {
 // picked, matching Python. See go_intentional rule
 // table-cell-fill-filled-threshold-0.85.
 func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
+	FillCellTextFromBoxesWithRows(cells, boxes, nil)
+}
+
+// FillCellTextFromBoxesWithRows is FillCellTextFromBoxes with the per-row
+// strip X range taken from the original TSR "table row" component bboxes
+// instead of the grid column union.
+//
+// Python matches a box to a row via find_overlapped_with_threshold(box,
+// rows) where rows are the raw TSR row components (gather(".* (row|header)")
+// in pdf_parser.py:602) and overlapped_area divides by the row's own bbox.
+// Go's grid is a TSR-row × column cross-product; its cells always span the
+// full column union, so the old strip X range was wider than the row
+// component's true bbox. When TSR emits a row whose line does not cover a
+// table edge (e.g. 13_crosspage_table.pdf page 2 row 44: x0=106.9 vs the
+// grid's x0=90.8), a col-0 box straddling that row and the one above it
+// can pass the 0.3 threshold against the full-width strip while Python
+// rejects it against the true bbox — so Go assigned the box one row lower
+// than Python.
+//
+// rowStrips are the TSR "table row" components (data rows only — header /
+// projrowheader components are excluded by the caller). Each is matched to a
+// grid row band by Y coordinate via matchRowStrip, so the override applies to
+// every data row regardless of whether the table has a header. Rows with no
+// matching TSR row component (e.g. header rows) keep the grid-union strip X.
+func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
 	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
 	if len(cells) == 0 || len(boxes) == 0 {
 		return
@@ -155,6 +180,20 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 		sort.Slice(rows[ri].cells, func(a, b int) bool {
 			return cells[rows[ri].cells[a]].X0 < cells[rows[ri].cells[b]].X0
 		})
+	}
+	// Replace each grid row's strip X with the matching TSR "table row"
+	// component's own bbox X (see FillCellTextFromBoxesWithRows doc). Matching
+	// is by Y band, not positional index, so the override applies to every
+	// data row independently of whether the table has a header: header /
+	// projrowheader components are simply absent from rowStrips and fall back
+	// to the grid-union strip X, which is correct for header rows. This
+	// replaces the former all-or-nothing `len(rowStrips) == len(rows)` guard,
+	// which silently disabled the override for any table that had a header.
+	for ri := range rows {
+		if sx0, sx1, ok := matchRowStrip(rowStrips, rows[ri].y0); ok {
+			rows[ri].stripX0 = sx0
+			rows[ri].stripX1 = sx1
+		}
 	}
 
 	// Accumulate box text per target cell so multiple boxes in one cell join.
@@ -278,6 +317,24 @@ func BoxMatchesCell(cell pdf.TSRCell, box pdf.TextBox, cellIsEmpty bool) bool {
 		return inter/boxArea >= 0.3 // Python's find_overlapped_with_threshold default
 	}
 	return inter/boxArea >= 0.85
+}
+
+// matchRowStrip finds the TSR "table row" component whose Y0 matches the grid
+// row band y0 within yTol, returning its X range. A header / projrowheader
+// component (not collected into rowStrips by the caller) returns ok=false, so
+// that row keeps the grid-union strip X — correct for header rows. Matching by
+// Y (not positional index) lets the strip-X override apply to every data row
+// even when the table also has a header, instead of the former
+// all-or-nothing `len(rowStrips) == len(rows)` guard that silently disabled
+// the override for any header-bearing table.
+func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool) {
+	const yTol = 1e-6
+	for _, rs := range rowStrips {
+		if math.Abs(rs.Y0-y0) <= yTol {
+			return rs.X0, rs.X1, true
+		}
+	}
+	return 0, 0, false
 }
 
 // isCaptionBox checks if a text box is a table/figure caption,
