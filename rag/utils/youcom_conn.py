@@ -91,8 +91,14 @@ class YouCom:
                         }
                     )
             return normalized_results[:YOUCOM_RESULT_COUNT]
+        except requests.HTTPError as error:
+            # Never log the exception message: requests builds it from the
+            # response URL, and the query is a URL parameter here.
+            status = error.response.status_code if error.response is not None else "unknown"
+            logger.error("You.com search failed: HTTP %s", status)
+            return []
         except (requests.RequestException, TypeError, ValueError) as error:
-            logger.error("You.com search failed: %s", _safe_error_message(error, self.api_key))
+            logger.error("You.com search failed: %s", type(error).__name__)
             return []
 
     def retrieve_chunks(self, question: str) -> dict[str, list]:
@@ -144,8 +150,3 @@ def _youcom_content(result: dict[str, Any]) -> str:
 
 def _youcom_text(value: Any) -> str:
     return "" if value is None else str(value)
-
-
-def _safe_error_message(error: Exception, api_key: str) -> str:
-    message = str(error) or error.__class__.__name__
-    return message.replace(api_key, "[REDACTED]") if api_key else message

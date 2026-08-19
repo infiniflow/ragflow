@@ -148,17 +148,49 @@ def test_youcom_search_returns_empty_on_malformed_payloads(monkeypatch):
     assert youcom_conn.YouCom("").search("q") == []
 
 
-def test_youcom_search_returns_empty_and_redacts_the_key_on_request_errors(monkeypatch, caplog):
+class _ErrorResponse:
+    """A response whose raise_for_status() carries the full request URL, the way
+    requests builds it — including the query string."""
+
+    status_code = 402
+    url = "https://api.you.com/v1/agents/search?query=my%20private%20query&count=6"
+
+    def raise_for_status(self):
+        raise youcom_conn.requests.HTTPError(
+            f"402 Client Error: Payment Required for url: {self.url}",
+            response=self,
+        )
+
+    def json(self):  # pragma: no cover - never reached
+        return {}
+
+
+def test_youcom_search_never_logs_the_query_or_key_on_http_errors(monkeypatch, caplog):
+    """The query is a URL parameter, so the requests error message contains it."""
+    monkeypatch.setattr(youcom_conn.requests, "get", lambda *a, **k: _ErrorResponse())
+
+    with caplog.at_level("ERROR"):
+        assert youcom_conn.YouCom("ydc-secret").search("my private query") == []
+
+    assert "my private query" not in caplog.text
+    assert "my%20private%20query" not in caplog.text
+    assert "ydc-secret" not in caplog.text
+    # Only the status code is useful and safe to record.
+    assert "402" in caplog.text
+
+
+def test_youcom_search_logs_only_the_exception_type_on_transport_errors(monkeypatch, caplog):
     def fake_get(url, *, headers, params, timeout):
-        raise youcom_conn.requests.HTTPError("401 for https://api.you.com/v1/search?key=ydc-secret")
+        raise youcom_conn.requests.ConnectionError(f"failed connecting to {url}?query=my%20private%20query")
 
     monkeypatch.setattr(youcom_conn.requests, "get", fake_get)
 
     with caplog.at_level("ERROR"):
-        assert youcom_conn.YouCom("ydc-secret").search("q") == []
+        assert youcom_conn.YouCom("ydc-secret").search("my private query") == []
 
+    assert "my%20private%20query" not in caplog.text
     assert "ydc-secret" not in caplog.text
-    assert "[REDACTED]" in caplog.text
+    assert "ConnectionError" in caplog.text
 
 
 def test_youcom_retrieve_chunks_returns_ragflow_chunk_shape(monkeypatch):
