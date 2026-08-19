@@ -186,35 +186,21 @@ func TestBuildComponentParams_GoldenCoversAllTemplates(t *testing.T) {
 func TestBuiltInMetadataFromParserConfig_ExtractorNodeParams(t *testing.T) {
 	pc := entity.JSONMap{
 		"Extractor:AutoExtractDefault": map[string]any{
-			"enable_metadata": 1,
-			"built_in_metadata": []any{
-				map[string]any{"key": "update_time", "type": "time"},
-				map[string]any{"key": "file_name", "type": "string"},
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "update_time", "type": "time"},
+					map[string]any{"key": "file_name", "type": "string"},
+				},
 			},
 		},
 	}
 	cfg, enabled := builtInMetadataFromParserConfig(pc)
 	if !enabled {
-		t.Fatal("auto metadata should be enabled from extractor node params")
+		t.Fatal("auto metadata should be enabled from extractor node modular config")
 	}
 	if len(cfg) != 2 {
 		t.Fatalf("built-in config len = %d, want 2", len(cfg))
-	}
-}
-
-func TestBuiltInMetadataFromParserConfig_TopLevelFallback(t *testing.T) {
-	pc := entity.JSONMap{
-		"enable_metadata": true,
-		"built_in_metadata": []any{
-			map[string]any{"key": "file_name", "type": "string"},
-		},
-	}
-	cfg, enabled := builtInMetadataFromParserConfig(pc)
-	if !enabled {
-		t.Fatal("auto metadata should be enabled from top-level config")
-	}
-	if len(cfg) != 1 {
-		t.Fatalf("built-in config len = %d, want 1", len(cfg))
 	}
 }
 
@@ -241,13 +227,15 @@ func TestBuiltInMetadataFromParserConfig_MultiExtractorDeterministic(t *testing.
 	// Extractor:A must deterministically win regardless of Go map iteration order.
 	pc := entity.JSONMap{
 		"Extractor:B": map[string]any{
-			"enable_metadata": 1,
-			"built_in_metadata": []any{
-				map[string]any{"key": "file_name", "type": "string"},
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "file_name", "type": "string"},
+				},
 			},
 		},
 		"Extractor:A": map[string]any{
-			"metadata_config": map[string]any{
+			"metadata": map[string]any{
 				"enabled": true,
 				"built_in_metadata": []any{
 					map[string]any{"key": "update_time", "type": "time"},

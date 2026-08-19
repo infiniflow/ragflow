@@ -77,11 +77,12 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
-	metadata := parserConfigValueOrEmptyList(kb.ParserConfig, "metadata")
+	_, enabled, metadata, builtInMetadata := modularMetadataConfig(kb.ParserConfig)
 
 	return map[string]interface{}{
+		"enabled":           enabled,
 		"metadata":          metadata,
-		"built_in_metadata": parserConfigValueOrEmptyList(kb.ParserConfig, "built_in_metadata"),
+		"built_in_metadata": builtInMetadata,
 	}, common.CodeSuccess, nil
 }
 
@@ -122,20 +123,26 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	if parserConfig == nil {
 		parserConfig = entity.JSONMap{}
 	}
-	parserConfig["metadata"] = metadata
-	parserConfig["built_in_metadata"] = builtInMetadata
-	// enable_metadata state machine:
-	// - If req.Enabled is explicitly set: use *req.Enabled.
-	// - If nil (uninitialized dataset): auto-enable if metadata fields exist.
-	// - If false (explicitly disabled by user): preserve false even when fields are added.
-	// - If fields are empty: auto-disable to avoid invoking extractor on empty schema.
-	if req.Enabled != nil {
-		parserConfig["enable_metadata"] = *req.Enabled
-	} else if parserConfig["enable_metadata"] == nil {
-		parserConfig["enable_metadata"] = len(metadata) > 0 || len(builtInMetadata) > 0
-	} else if len(metadata) == 0 && len(builtInMetadata) == 0 {
-		parserConfig["enable_metadata"] = false
+	present, currentEnabled, _, _ := modularMetadataConfig(parserConfig)
+	enabled := false
+	switch {
+	case req.Enabled != nil:
+		enabled = *req.Enabled
+	case present:
+		enabled = currentEnabled
+	default:
+		enabled = len(metadata) > 0 || len(builtInMetadata) > 0
 	}
+	if len(metadata) == 0 && len(builtInMetadata) == 0 {
+		enabled = false
+	}
+	parserConfig["metadata"] = map[string]any{
+		"enabled":           enabled,
+		"metadata":          metadata,
+		"built_in_metadata": builtInMetadata,
+	}
+	delete(parserConfig, "enable_metadata")
+	delete(parserConfig, "built_in_metadata")
 	if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
 		parserConfig = service.ApplyComponentScopedParserConfig(
 			parserConfig,
@@ -148,7 +155,42 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}
 
 	return map[string]interface{}{
+		"enabled":           enabled,
 		"metadata":          metadata,
 		"built_in_metadata": builtInMetadata,
 	}, common.CodeSuccess, nil
+}
+
+// modularMetadataConfig reads the modular dataset-level metadata object
+// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. Missing
+// or malformed config yields a disabled, empty result.
+func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
+	if parserConfig == nil {
+		return false, false, []any{}, []any{}
+	}
+	metaObj, ok := parserConfig["metadata"].(map[string]any)
+	if !ok {
+		return false, false, []any{}, []any{}
+	}
+	enabled, _ := metaObj["enabled"].(bool)
+	metadata := anyOrEmptyList(metaObj["metadata"])
+	builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+	return true, enabled, metadata, builtIn
+}
+
+func anyOrEmptyList(value any) []any {
+	if value == nil {
+		return []any{}
+	}
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	if list, ok := value.([]map[string]any); ok {
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return []any{}
 }

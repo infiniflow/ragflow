@@ -303,9 +303,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config
-// (update_time / file_name) and whether auto-metadata is enabled. Supports
-// modular metadata_config sub-objects as well as legacy flat fields on
-// Extractor nodes and top-level parser_config.
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
 	var extractorKeys []string
 	for k := range parserConfig {
@@ -325,58 +326,7 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 					return arr, enabled
 				}
 			}
-			if metaConf, ok := node["metadata_config"].(map[string]any); ok {
-				enabled := parserConfigBool(metaConf["enabled"])
-				if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-					return arr, enabled
-				}
-			}
-			enabled := parserConfigBool(node["enable_metadata"])
-			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
-				return arr, enabled
-			}
 		}
-	}
-	topLevelSet, topLevelEnabled := false, false
-	if v, exists := parserConfig["enable_metadata"]; exists {
-		topLevelSet = true
-		topLevelEnabled = parserConfigBool(v)
-	}
-
-	// resolveEnabled decides whether built-in metadata applies when it lives
-	// inside a modular metadata / metadata_config sub-object. An explicit
-	// top-level enable_metadata=false is the authoritative off switch and
-	// cannot be re-opened by a sub-object's enabled; otherwise the sub-object's
-	// enabled decides, defaulting to true under an explicit top-level true and
-	// to off when no top-level flag is present.
-	resolveEnabled := func(sub map[string]any) bool {
-		if topLevelSet {
-			if !topLevelEnabled {
-				return false
-			}
-			if v, exists := sub["enabled"]; exists {
-				return parserConfigBool(v)
-			}
-			return true
-		}
-		if v, exists := sub["enabled"]; exists {
-			return parserConfigBool(v)
-		}
-		return false
-	}
-
-	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
-		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, resolveEnabled(metaObj)
-		}
-	}
-	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
-		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, resolveEnabled(metaConf)
-		}
-	}
-	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
-		return arr, topLevelEnabled
 	}
 	return nil, false
 }

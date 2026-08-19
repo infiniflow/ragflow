@@ -233,13 +233,18 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-1").
 		Update("parser_config", entity.JSONMap{
-			"enable_metadata": false,
+			"metadata": map[string]any{
+				"enabled":           false,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			},
 			"Extractor:AutoExtractDefault": map[string]any{
 				"metadata": map[string]any{
 					"enabled": true,
-					"fields": []any{
+					"metadata": []any{
 						map[string]any{"key": "stale", "type": "string"},
 					},
+					"built_in_metadata": []any{},
 				},
 			},
 		}).Error; err != nil {
@@ -284,14 +289,18 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 		t.Fatalf("expected modular metadata map in extractor, got %#v", extractor["metadata"])
 	}
 	if enabled, ok := extractorMeta["enabled"].(bool); !ok || enabled {
-		t.Fatalf("extractor metadata.enabled = %#v, want false when top-level flag stays disabled", extractorMeta["enabled"])
+		t.Fatalf("extractor metadata.enabled = %#v, want false when dataset-level flag stays disabled", extractorMeta["enabled"])
 	}
 
 	// State 2: When enabled, updating fields updates component with enabled = true
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-1").
 		Update("parser_config", entity.JSONMap{
-			"enable_metadata":              true,
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			},
 			"Extractor:AutoExtractDefault": map[string]any{},
 		}).Error; err != nil {
 		t.Fatalf("reset parser_config: %v", err)
@@ -363,8 +372,15 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to fetch persisted dataset: %v", err)
 	}
-	if enabled, ok := persisted.ParserConfig["enable_metadata"].(bool); !ok || enabled {
-		t.Fatalf("expected parser_config.enable_metadata == false after emptying fields, got %#v", persisted.ParserConfig["enable_metadata"])
+	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("enable_metadata should be absent, got %#v", persisted.ParserConfig["enable_metadata"])
+	}
+	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata map, got %#v", persisted.ParserConfig["metadata"])
+	}
+	if enabled, ok := metaObj["enabled"].(bool); !ok || enabled {
+		t.Fatalf("expected modular metadata.enabled == false after emptying fields, got %#v", metaObj["enabled"])
 	}
 }
 
