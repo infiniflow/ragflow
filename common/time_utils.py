@@ -152,11 +152,11 @@ def format_iso_8601_to_ymd_hms(time_str: str) -> str:
         # ``dateutil.parser.isoparse`` accepts every ISO 8601 form the LLM
         # extraction prompt can plausibly emit, including ordinal dates
         # (``2024-001T12:00:00``) that stdlib ``datetime.fromisoformat``
-        # rejects. Strip the tz offset so ``strftime`` formats the wall
-        # clock unchanged, matching the legacy return path.
+        # rejects. Drop the tz offset so ``strftime`` formats the wall
+        # clock unchanged.
         dt = parser.isoparse(time_str).replace(tzinfo=None)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception as e:
+    except (ValueError, OverflowError) as e:
         # Surface the rejected value and exception so callers (and log readers)
         # can identify which field of which memory failed to parse, instead
         # of silently writing the unparsed string into a timestamp column.

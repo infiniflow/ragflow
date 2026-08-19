@@ -16,6 +16,8 @@
 
 import time
 import datetime
+from unittest.mock import patch
+
 import pytest
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp, datetime_format, delta_seconds, format_iso_8601_to_ymd_hms
 
@@ -719,3 +721,14 @@ class TestFormatIso8601ToYmdHms:
         """Empty input returns "" — matches the convention used by the caller
         for the ``invalid_at`` field when the model omits it."""
         assert format_iso_8601_to_ymd_hms("") == ""
+
+    def test_unrelated_runtime_error_propagates(self):
+        """Only (ValueError, OverflowError) are caught. Unrelated runtime
+        errors (TypeError, AttributeError, etc.) must surface so they're
+        not silently converted into empty timestamps — the empty-string
+        return is reserved for "couldn't parse a string"."""
+        # ``parser`` is imported inside format_iso_8601_to_ymd_hms, so the
+        # patch target is the dateutil module's ``isoparse`` attribute.
+        with patch("dateutil.parser.isoparse", side_effect=TypeError("boom")):
+            with pytest.raises(TypeError, match="boom"):
+                format_iso_8601_to_ymd_hms("2024-01-01T12:00:00Z")
