@@ -558,10 +558,11 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 		if part.MultipartReader() != nil {
 			return nil
 		}
-		payload, err := io.ReadAll(part.Body)
+		payload, err := io.ReadAll(io.LimitReader(part.Body, sizeThreshold+1))
 		if err != nil {
 			return err
 		}
+		oversized := int64(len(payload)) > sizeThreshold
 
 		disposition, dispositionParams, _ := part.Header.ContentDisposition()
 		contentType, contentTypeParams, _ := part.Header.ContentType()
@@ -570,7 +571,7 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 		isAttachment := strings.HasPrefix(dispositionLower, "attachment") ||
 			(strings.HasPrefix(dispositionLower, "inline") && filename != "")
 		if isAttachment {
-			if len(payload) > 0 && int64(len(payload)) <= sizeThreshold {
+			if !oversized && len(payload) > 0 {
 				name := strings.TrimSpace(filename)
 				if name == "" {
 					name = "attachment.bin"
@@ -581,20 +582,23 @@ func walkIMAPParts(entity *message.Entity, sizeThreshold int64) (string, []imapA
 					content:     payload,
 				})
 			}
-			return nil
-		}
-		if !utf8.Valid(payload) {
-			return nil
-		}
-		switch strings.ToLower(contentType) {
-		case "text/plain":
-			if body == "" {
-				body = string(payload)
+		} else if !oversized && utf8.Valid(payload) {
+			switch strings.ToLower(contentType) {
+			case "text/plain":
+				if body == "" {
+					body = string(payload)
+				}
+			case "text/html":
+				if htmlBody == "" {
+					htmlBody = imapHTMLToText(string(payload))
+				}
 			}
-		case "text/html":
-			if htmlBody == "" {
-				htmlBody = imapHTMLToText(string(payload))
-			}
+		}
+
+		// Walk only advances after the current part body is fully consumed;
+		// drain anything beyond the capped read so the next part is reached.
+		if _, err := io.Copy(io.Discard, part.Body); err != nil {
+			return err
 		}
 		return nil
 	})
