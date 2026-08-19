@@ -171,9 +171,7 @@ def test_search_message_rejects_top_n_above_rest_api_max(monkeypatch):
     monkeypatch.setattr(
         module,
         "request",
-        SimpleNamespace(
-            args=_DummyArgs({"memory_id": "m1", "query": "hello", "top_n": "500"})
-        ),
+        SimpleNamespace(args=_DummyArgs({"memory_id": "m1", "query": "hello", "top_n": "500"})),
     )
 
     async def _search_message(_filter_dict, _params):
