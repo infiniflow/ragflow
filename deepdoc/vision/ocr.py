@@ -31,6 +31,7 @@ import numpy as np
 import cv2
 import onnxruntime as ort
 
+from .ocr_tiling import DEFAULT_TILE_OVERLAP, DEFAULT_TILE_SIZE, DEFAULT_TILING_THRESHOLD, detect_tiled_boxes, tile_starts
 from .postprocess import build_post_process
 
 loaded_models = {}
@@ -452,7 +453,7 @@ class TextDetector:
             del self.predictor
         gc.collect()
 
-    def __call__(self, img):
+    def _detect(self, img):
         ori_im = img.copy()
         data = {"image": img}
 
@@ -480,6 +481,28 @@ class TextDetector:
         dt_boxes = self.filter_tag_det_res(dt_boxes, ori_im.shape)
 
         return dt_boxes, time.time() - st
+
+    def __call__(self, img):
+        height, width = img.shape[:2]
+        if height <= DEFAULT_TILING_THRESHOLD and width <= DEFAULT_TILING_THRESHOLD:
+            return self._detect(img)
+
+        row_count = len(tile_starts(height, DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP))
+        column_count = len(tile_starts(width, DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP))
+        logging.debug(
+            "Run tiled OCR text detection for %dx%d image using %d overlapping tiles",
+            width,
+            height,
+            row_count * column_count,
+        )
+        start = time.time()
+        boxes = detect_tiled_boxes(
+            img,
+            lambda tile: self._detect(tile)[0],
+            tile_size=DEFAULT_TILE_SIZE,
+            overlap=DEFAULT_TILE_OVERLAP,
+        )
+        return boxes, time.time() - start
 
     def __del__(self):
         self.close()
