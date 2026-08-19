@@ -98,7 +98,7 @@ type SummaryExtractConfig struct {
 // MetadataExtractConfig configures structured metadata extraction.
 type MetadataExtractConfig struct {
 	Enabled         bool                      `json:"enabled"`
-	Fields          []common.MetadataFieldDef `json:"fields,omitempty"`
+	Metadata        []common.MetadataFieldDef `json:"metadata,omitempty"`
 	BuiltInMetadata []common.MetadataFieldDef `json:"built_in_metadata,omitempty"`
 }
 

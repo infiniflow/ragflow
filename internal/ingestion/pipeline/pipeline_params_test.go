@@ -589,5 +589,3 @@ func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
 		})
 	}
 }
-
-

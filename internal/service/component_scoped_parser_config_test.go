@@ -10,7 +10,7 @@ import (
 func TestApplyComponentScopedParserConfig_SyncsExtractorAndCompiler(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"enable_metadata": true,
-		"fields": []any{
+		"metadata": []any{
 			map[string]any{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []any{
@@ -34,7 +34,7 @@ func TestApplyComponentScopedParserConfig_SyncsExtractorAndCompiler(t *testing.T
 	}
 	wantMetadata := map[string]any{
 		"enabled": true,
-		"fields": []any{
+		"metadata": []any{
 			map[string]any{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []any{
@@ -77,7 +77,7 @@ func TestApplyComponentScopedParserConfig_PreservesExplicitExtractorLLMID(t *tes
 func TestApplyComponentScopedParserConfig_AcceptsTypedMetadataSlices(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"enable_metadata": true,
-		"fields": []map[string]interface{}{
+		"metadata": []map[string]interface{}{
 			{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []map[string]interface{}{
@@ -91,7 +91,7 @@ func TestApplyComponentScopedParserConfig_AcceptsTypedMetadataSlices(t *testing.
 
 	wantMetadata := map[string]any{
 		"enabled": true,
-		"fields": []any{
+		"metadata": []any{
 			map[string]interface{}{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []any{
@@ -106,7 +106,7 @@ func TestApplyComponentScopedParserConfig_AcceptsTypedMetadataSlices(t *testing.
 func TestApplyComponentScopedParserConfig_ClearsExtractorMetadataWhenDisabled(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"enable_metadata": false,
-		"fields":          []map[string]interface{}{},
+		"metadata":        []map[string]interface{}{},
 		"built_in_metadata": []map[string]interface{}{
 			{"key": "document_name", "type": "string"},
 		},
@@ -114,7 +114,7 @@ func TestApplyComponentScopedParserConfig_ClearsExtractorMetadataWhenDisabled(t 
 			"enable_metadata": 1,
 			"metadata": map[string]any{
 				"enabled": true,
-				"fields": []any{
+				"metadata": []any{
 					map[string]any{"key": "stale", "type": "string"},
 				},
 			},
@@ -128,8 +128,8 @@ func TestApplyComponentScopedParserConfig_ClearsExtractorMetadataWhenDisabled(t 
 		t.Fatalf("extractor enable_metadata should not be present, got %#v", extractor["enable_metadata"])
 	}
 	wantMetadata := map[string]any{
-		"enabled": false,
-		"fields":  []any{},
+		"enabled":  false,
+		"metadata": []any{},
 		"built_in_metadata": []any{
 			map[string]interface{}{"key": "document_name", "type": "string"},
 		},
@@ -152,7 +152,7 @@ func TestApplyComponentScopedParserConfig_DoesNotTreatDocumentMetadataValuesAsSc
 
 	wantMetadata := map[string]any{
 		"enabled":           false,
-		"fields":            []any{},
+		"metadata":          []any{},
 		"built_in_metadata": []any{},
 	}
 	if !reflect.DeepEqual(extractor["metadata"], wantMetadata) {
@@ -162,7 +162,7 @@ func TestApplyComponentScopedParserConfig_DoesNotTreatDocumentMetadataValuesAsSc
 
 func TestMergeMetadataFields_MergesFieldsAndBuiltIn(t *testing.T) {
 	parserConfig := entity.JSONMap{
-		"fields": []any{
+		"metadata": []any{
 			map[string]any{"key": "author", "type": "string"},
 		},
 		"built_in_metadata": []any{

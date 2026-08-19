@@ -253,8 +253,8 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			} else if v, ok := metaRaw["enabled"]; ok {
 				p.Metadata.Enabled = mapInt(v) == 1
 			}
-			if v, ok := metaRaw["fields"]; ok {
-				p.Metadata.Fields = parseMetadataFieldDefs(v)
+			if v, ok := metaRaw["metadata"]; ok {
+				p.Metadata.Metadata = parseMetadataFieldDefs(v)
 			}
 			if v, ok := metaRaw["built_in_metadata"]; ok {
 				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
@@ -482,9 +482,9 @@ func toExtractorEinoMessages(msgs []eschema.Message) []*eschema.Message {
 // input map. Computed once at the top of Invoke so the rest of
 // the function reads as straight-line code.
 type extractorInputs struct {
-	llmID       string
-	lang        string
-	chunks      []map[string]any
+	llmID  string
+	lang   string
+	chunks []map[string]any
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
 	// (or the chat-model default) decides. The keyword/question helpers set it to
@@ -809,12 +809,12 @@ func (c *ExtractorComponent) autoExtractionJob(ctx context.Context, db *gorm.DB,
 // runAutoKeywords/runAutoQuestions shape but parses a JSON object and
 // merges into the chunk's metadata map.
 func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
-	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Fields) == 0 {
+	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
 		return nil
 	}
 	// Render the field schema into the prompt, mirroring Python's
 	// turn2jsonschema(metadata_conf) rendered into the META_DATA template.
-	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Fields)
+	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
 	if len(schemaMap) == 0 {
 		return nil
 	}
@@ -1430,7 +1430,6 @@ func buildExtractorMessages(systemPrompt, chunkText string) []eschema.Message {
 	out = append(out, eschema.Message{Role: eschema.User, Content: userContent})
 	return out
 }
-
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when

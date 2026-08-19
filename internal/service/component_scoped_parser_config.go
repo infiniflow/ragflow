@@ -45,7 +45,7 @@ func ApplyComponentScopedParserConfig(
 			delete(params, "enable_metadata")
 			params["metadata"] = map[string]any{
 				"enabled":           enableMetadata,
-				"fields":            metadataFields,
+				"metadata":          metadataFields,
 				"built_in_metadata": builtInMetadataFields,
 			}
 		case strings.HasPrefix(cpnLower, "compiler:") || strings.HasPrefix(cpnLower, "compiler_"):

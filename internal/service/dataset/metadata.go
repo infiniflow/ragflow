@@ -77,17 +77,10 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
-	fields := parserConfigValueOrEmptyList(kb.ParserConfig, "fields")
-	if slice, ok := fields.([]interface{}); ok && len(slice) == 0 {
-		if legacy := parserConfigValueOrEmptyList(kb.ParserConfig, "metadata"); legacy != nil {
-			if legSlice, ok := legacy.([]interface{}); ok && len(legSlice) > 0 {
-				fields = legacy
-			}
-		}
-	}
+	metadata := parserConfigValueOrEmptyList(kb.ParserConfig, "metadata")
 
 	return map[string]interface{}{
-		"fields":            fields,
+		"metadata":          metadata,
 		"built_in_metadata": parserConfigValueOrEmptyList(kb.ParserConfig, "built_in_metadata"),
 	}, common.CodeSuccess, nil
 }
@@ -116,7 +109,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 		req = &service.MetadataConfigRequest{}
 	}
 
-	fields, err := normalizeMetadataConfigFields(req.Fields, "fields")
+	metadata, err := normalizeMetadataConfigFields(req.Metadata, "metadata")
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -129,7 +122,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	if parserConfig == nil {
 		parserConfig = entity.JSONMap{}
 	}
-	parserConfig["fields"] = fields
+	parserConfig["metadata"] = metadata
 	parserConfig["built_in_metadata"] = builtInMetadata
 	// enable_metadata state machine:
 	// - If req.Enabled is explicitly set: use *req.Enabled.
@@ -139,8 +132,8 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	if req.Enabled != nil {
 		parserConfig["enable_metadata"] = *req.Enabled
 	} else if parserConfig["enable_metadata"] == nil {
-		parserConfig["enable_metadata"] = len(fields) > 0 || len(builtInMetadata) > 0
-	} else if len(fields) == 0 && len(builtInMetadata) == 0 {
+		parserConfig["enable_metadata"] = len(metadata) > 0 || len(builtInMetadata) > 0
+	} else if len(metadata) == 0 && len(builtInMetadata) == 0 {
 		parserConfig["enable_metadata"] = false
 	}
 	if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
@@ -155,7 +148,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}
 
 	return map[string]interface{}{
-		"fields":            fields,
+		"metadata":          metadata,
 		"built_in_metadata": builtInMetadata,
 	}, common.CodeSuccess, nil
 }

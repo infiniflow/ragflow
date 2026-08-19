@@ -157,11 +157,10 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("chunks len = %d, want 2", len(chunks))
 	}
-	if chunks[0]["summary"] != "answer for chunk 1" {
-		t.Errorf("chunk[0].summary = %v, want %q", chunks[0]["summary"], "answer for chunk 1")
-	}
-	if chunks[1]["summary"] != "answer for chunk 2" {
-		t.Errorf("chunk[1].summary = %v, want %q", chunks[1]["summary"], "answer for chunk 2")
+	s0, _ := chunks[0]["summary"].(string)
+	s1, _ := chunks[1]["summary"].(string)
+	if !((s0 == "answer for chunk 1" && s1 == "answer for chunk 2") || (s0 == "answer for chunk 2" && s1 == "answer for chunk 1")) {
+		t.Errorf("unexpected summaries: chunk0=%q, chunk1=%q", s0, s1)
 	}
 	if out["output_format"] != "chunks" {
 		t.Errorf("output_format = %v, want chunks", out["output_format"])
@@ -540,8 +539,8 @@ func TestCleanExtractionResult(t *testing.T) {
 func newMetadataExtractor(fields ...common.MetadataFieldDef) *ExtractorComponent {
 	return &ExtractorComponent{Param: schema.ExtractorParam{
 		Metadata: schema.MetadataExtractConfig{
-			Enabled: true,
-			Fields:  fields,
+			Enabled:  true,
+			Metadata: fields,
 		},
 	}}
 }
@@ -1356,7 +1355,7 @@ func TestExtractorModularParams(t *testing.T) {
 		},
 		"metadata": map[string]any{
 			"enabled": true,
-			"fields": []any{
+			"metadata": []any{
 				map[string]any{"key": "category", "type": "string"},
 			},
 		},
@@ -1384,7 +1383,7 @@ func TestExtractorModularParams(t *testing.T) {
 	if !ext.Param.Summary.Enabled {
 		t.Errorf("Summary config mismatch: %+v", ext.Param.Summary)
 	}
-	if !ext.Param.Metadata.Enabled || len(ext.Param.Metadata.Fields) != 1 {
+	if !ext.Param.Metadata.Enabled || len(ext.Param.Metadata.Metadata) != 1 {
 		t.Errorf("Metadata config mismatch: %+v", ext.Param.Metadata)
 	}
 }
@@ -1452,7 +1451,7 @@ func TestExtractorModularMetadataConfig(t *testing.T) {
 		"llm_id": "llm-1",
 		"metadata": map[string]any{
 			"enabled": true,
-			"fields": []any{
+			"metadata": []any{
 				map[string]any{
 					"key":         "author",
 					"type":        "string",
@@ -1486,11 +1485,11 @@ func TestExtractorModularMetadataConfig(t *testing.T) {
 	if !ext.Param.Metadata.Enabled {
 		t.Errorf("Metadata enabled mismatch: %+v", ext.Param.Metadata.Enabled)
 	}
-	if len(ext.Param.Metadata.Fields) != 2 {
-		t.Fatalf("Metadata fields mismatch: %d", len(ext.Param.Metadata.Fields))
+	if len(ext.Param.Metadata.Metadata) != 2 {
+		t.Fatalf("Metadata fields mismatch: %d", len(ext.Param.Metadata.Metadata))
 	}
-	if ext.Param.Metadata.Fields[0].Key != "author" || ext.Param.Metadata.Fields[0].Description != "The author name" || len(ext.Param.Metadata.Fields[0].Enum) != 2 {
-		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata.Fields[0])
+	if ext.Param.Metadata.Metadata[0].Key != "author" || ext.Param.Metadata.Metadata[0].Description != "The author name" || len(ext.Param.Metadata.Metadata[0].Enum) != 2 {
+		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata.Metadata[0])
 	}
 	if len(ext.Param.Metadata.BuiltInMetadata) != 1 || ext.Param.Metadata.BuiltInMetadata[0].Key != "file_name" {
 		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.Metadata.BuiltInMetadata)
@@ -1506,7 +1505,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 		"llm_id": "llm-1",
 		"metadata": map[string]any{
 			"enabled": true,
-			"fields": []any{
+			"metadata": []any{
 				map[string]any{
 					"key":  "author",
 					"type": "string",

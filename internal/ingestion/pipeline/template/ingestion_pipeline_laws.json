@@ -215,7 +215,7 @@
                         },
                         "metadata": {
                             "enabled": false,
-                            "fields": [],
+                            "metadata": [],
                             "built_in_metadata": []
                         }
                     }
