@@ -15,9 +15,8 @@
 //
 
 // PairChunker emits one chunk per two-column record parsed from the
-// upstream payload. It is the generalized successor of the former
-// QAChunker component: the two-column record extraction is shared, and
-// the `mode` parameter selects how each record is turned into a chunk.
+// upstream payload. The `mode` parameter selects how each record is
+// turned into a chunk.
 //
 // Only mode "qa" (question-answer pairs, the default) is implemented today:
 //   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)

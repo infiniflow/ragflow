@@ -295,12 +295,10 @@ func TestPairChunker_ModeDefaultsToQA(t *testing.T) {
 func TestPairChunker_ModeRejectsUnknown(t *testing.T) {
 	// The generic two-column chunker exposes a `mode` selector; today only
 	// "qa" is implemented, so any other mode must fail fast at construction
-	// instead of silently producing QA output.
-	for _, mode := range []string{"tag", "Table", ""} {
-		params := map[string]any{}
-		if mode != "" {
-			params["mode"] = mode
-		}
+	// instead of silently producing QA output. An explicit empty mode
+	// defaults to "qa".
+	for _, mode := range []string{"", "tag", "Table"} {
+		params := map[string]any{"mode": mode}
 		_, err := NewPairChunker(params)
 		if mode == "" {
 			if err != nil {

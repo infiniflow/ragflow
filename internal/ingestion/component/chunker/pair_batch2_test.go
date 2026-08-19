@@ -41,9 +41,8 @@ func pairInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	return chunks
 }
 
-// TestPairChunker_DefaultLangIsChinese exercises migration :
-// when no language is supplied, Python defaults to Chinese prefixes
-// ("问题："/"回答："); the legacy Go code defaulted to English.
+// TestPairChunker_DefaultLangIsChinese verifies that when no language is
+// supplied the chunker uses Chinese prefixes ("问题："/"回答："), not English.
 func TestPairChunker_DefaultLangIsChinese(t *testing.T) {
 	inputs := map[string]any{
 		"name":          "test.txt",
@@ -63,10 +62,9 @@ func TestPairChunker_DefaultLangIsChinese(t *testing.T) {
 	}
 }
 
-// TestRmQAPrefixStripsMultipleSeparators exercises migration diff
-// Chunker-2.12: the prefix regex must allow one-or-more separator chars
-// (Python uses `[\t:： ]+`), so "Q:: answer" is fully stripped. The legacy
-// Go pattern only matched a single separator, leaving ": answer".
+// TestRmQAPrefixStripsMultipleSeparators pins the prefix regex: it must
+// allow one-or-more separator chars (Python uses `[\t:： ]+`), so
+// "Q:: answer" is fully stripped rather than leaving ": answer".
 func TestRmQAPrefixStripsMultipleSeparators(t *testing.T) {
 	if got := rmQAPrefix("Q:: answer"); got != "answer" {
 		t.Errorf("multi-separator prefix not fully stripped: got %q", got)
@@ -79,9 +77,8 @@ func TestRmQAPrefixStripsMultipleSeparators(t *testing.T) {
 	}
 }
 
-// TestPairChunker_SetsTopInt exercises migration  (top_int):
-// each QA chunk must carry the source row index in `top_int`, matching
-// Python beAdoc(..., row_num=i).
+// TestPairChunker_SetsTopInt verifies that each QA chunk carries the source
+// row index in `top_int`, matching Python beAdoc(..., row_num=i).
 func TestPairChunker_SetsTopInt(t *testing.T) {
 	inputs := map[string]any{
 		"name":          "test.txt",
@@ -107,10 +104,9 @@ func TestPairChunker_SetsTopInt(t *testing.T) {
 	}
 }
 
-// TestPairChunker_CarriesImageAndPositions exercises migration diff
-// Chunker-1.8 (image / positions): when the upstream JSON item already
-// carries an image id and pdf positions, the QA chunk must preserve them
-// (Python beAdocPdf sets d["image"] and add_positions).
+// TestPairChunker_CarriesImageAndPositions verifies that when the upstream
+// JSON item already carries an image id and pdf positions, the QA chunk
+// preserves them (Python beAdocPdf sets d["image"] and add_positions).
 func TestPairChunker_CarriesImageAndPositions(t *testing.T) {
 	inputs := map[string]any{
 		"name":          "test.pdf",
