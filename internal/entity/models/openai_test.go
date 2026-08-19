@@ -44,7 +44,6 @@ func TestBuildRequestBodyIncludesGenerationConfig(t *testing.T) {
 		t.Fatalf("top_p = %v, want %v", body["top_p"], topP)
 	}
 }
-
 func TestOpenAIConfigAdvertisedAudioModelsHaveSuffixes(t *testing.T) {
 	raw, err := os.ReadFile("../../../conf/models/openai.json")
 	if err != nil {

@@ -205,6 +205,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		genConfig["presence_penalty"] = *req.PresencePenalty
 	}
 	if req.MaxTokens != nil {
+		if *req.MaxTokens <= 0 {
+			common.ErrorWithCode(c, common.CodeBadRequest, "`max_tokens` must be greater than 0.")
+			return
+		}
 		genConfig["max_tokens"] = *req.MaxTokens
 	}
 

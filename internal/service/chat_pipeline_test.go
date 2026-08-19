@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -1491,5 +1492,32 @@ func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
 	}
 	if dialog.LLMSetting["max_tokens"] != float64(1024) {
 		t.Fatalf("dialog max_tokens was mutated: %v", dialog.LLMSetting["max_tokens"])
+	}
+}
+
+func TestBuildChatConfigIgnoresNonPositiveMaxTokens(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(0)},
+	}
+	cfg := BuildChatConfig(dialog, nil)
+	if cfg.MaxTokens != nil {
+		t.Fatalf("persisted max_tokens=0 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+
+	cfg = BuildChatConfig(&entity.Chat{}, map[string]interface{}{"max_tokens": -1})
+	if cfg.MaxTokens != nil {
+		t.Fatalf("request max_tokens=-1 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsNonPositive(t *testing.T) {
+	for _, value := range []int{0, -1} {
+		cfg := &modelModule.ChatConfig{MaxTokens: &value}
+		if adjusted, ok := clampChatConfigMaxTokens(cfg, 1000, 100); ok {
+			t.Fatalf("max_tokens=%d unexpectedly clamped to %d", value, adjusted)
+		}
+		if cfg.MaxTokens != nil {
+			t.Fatalf("max_tokens=%d should be cleared before provider request, got %v", value, *cfg.MaxTokens)
+		}
 	}
 }

@@ -4192,7 +4192,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := chatConfigInt(dialog.LLMSetting["max_tokens"]); ok {
+		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
 			i := v
 			cfg.MaxTokens = &i
 		}
@@ -4232,7 +4232,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := chatConfigInt(config["max_tokens"]); ok {
+		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
 			i := v
 			cfg.MaxTokens = &i
 		}
@@ -4273,6 +4273,10 @@ func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedT
 		return 0, false
 	}
 	adjusted := *cfg.MaxTokens
+	if adjusted <= 0 {
+		cfg.MaxTokens = nil
+		return 0, false
+	}
 	remainingTokens := modelMaxTokens - usedTokenCount
 	if remainingTokens < 0 {
 		remainingTokens = 0
@@ -4282,6 +4286,14 @@ func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedT
 	}
 	cfg.MaxTokens = &adjusted
 	return adjusted, true
+}
+
+func chatConfigPositiveInt(value interface{}) (int, bool) {
+	v, ok := chatConfigInt(value)
+	if !ok || v <= 0 {
+		return 0, false
+	}
+	return v, true
 }
 
 func chatConfigInt(value interface{}) (int, bool) {
