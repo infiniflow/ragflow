@@ -936,9 +936,14 @@ class GaussDBDatabaseLock(PostgresDatabaseLock):
 
     def __init__(self, lock_name, timeout=10, db=None):
         super().__init__(lock_name, timeout=timeout, db=db)
-        self.timeout = max(float(timeout), 0.0)
+        self.timeout = float(timeout)
 
     def lock(self):
+        if self.timeout < 0:
+            cursor = self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+            cursor.fetchone()
+            return True
+
         deadline = time.monotonic() + self.timeout
         while True:
             cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
