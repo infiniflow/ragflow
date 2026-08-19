@@ -133,6 +133,24 @@ type engineWriter struct {
 	eng engine.DocEngine
 }
 
+func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return nil
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
+		"id": ids, "kb_id": kb, "available_int": 1, "scope_kwd": "dataset", "compile_kwd": compileKwdWikiPage,
+	}, baseName, kb)
+	return err
+}
+
 // datasetStructureSupported reports whether the running doc engine can filter
 // the dataset-structure fields (knowledge_graph_kwd + scope_kwd + raw
 // compile_kwd) this feature writes/deletes. Only infinity and elasticsearch
@@ -646,7 +664,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		m["kc_kind"] = kind
 	}
 	// wiki_incremental port: preserve the original creation timestamp across a
-	// replace-only merge. If the incoming merged product already carries
+	// page merge. If the incoming merged product already carries
 	// created_at_unix (restored by the Reader from create_timestamp_flt), reuse
 	// it; otherwise stamp a fresh now() (first creation). This is what stops every
 	// rebuild from re-stamping the creation time.
@@ -683,6 +701,12 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	}
 	if v := metaString(p.Meta, "topic"); v != "" {
 		m["topic_kwd"] = v
+	}
+	if v := metaString(p.Meta, "plan_group"); v != "" {
+		m["plan_group_kwd"] = v
+	}
+	if v := metaString(p.Meta, "generation"); v != "" {
+		m["generation_kwd"] = v
 	}
 	if v := metaString(p.Meta, "summary"); v != "" {
 		m["summary_with_weight"] = v
@@ -930,7 +954,7 @@ func metaInt(m map[string]any, key string) (int64, bool) {
 // metaFloat extracts a float64 from a map value that may be boxed as float64,
 // int64, int, or string — the engine/JSON round-trip does not guarantee a
 // single numeric type. Used to recover create_timestamp_flt so the reader can
-// preserve the original creation time across a replace-only merge.
+// preserve the original creation time across a page merge.
 func metaFloat(m map[string]any, key string) (float64, bool) {
 	switch v := m[key].(type) {
 	case float64:

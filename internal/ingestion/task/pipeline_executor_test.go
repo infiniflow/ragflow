@@ -526,9 +526,9 @@ func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 	}
 }
 
-func TestCountDistinctChunkIDs(t *testing.T) {
+func TestCountOriginalChunkIDs(t *testing.T) {
 	// Empty list
-	if n := countDistinctChunkIDs(nil); n != 0 {
+	if n := countOriginalChunkIDs(nil); n != 0 {
 		t.Fatalf("nil chunks: got %d, want 0", n)
 	}
 
@@ -538,7 +538,7 @@ func TestCountDistinctChunkIDs(t *testing.T) {
 		{"id": "b"},
 		{"id": "c"},
 	}
-	if n := countDistinctChunkIDs(chunks); n != 3 {
+	if n := countOriginalChunkIDs(chunks); n != 3 {
 		t.Fatalf("all unique: got %d, want 3", n)
 	}
 
@@ -550,7 +550,7 @@ func TestCountDistinctChunkIDs(t *testing.T) {
 		{"id": "z"},
 		{"id": "y"}, // duplicate of [1]
 	}
-	if n := countDistinctChunkIDs(chunks); n != 3 {
+	if n := countOriginalChunkIDs(chunks); n != 3 {
 		t.Fatalf("with duplicates: got %d, want 3", n)
 	}
 
@@ -560,7 +560,18 @@ func TestCountDistinctChunkIDs(t *testing.T) {
 		{"text": "no id"},
 		{"id": "two"},
 	}
-	if n := countDistinctChunkIDs(chunks); n != 2 {
+	if n := countOriginalChunkIDs(chunks); n != 2 {
 		t.Fatalf("mixed present/absent ids: got %d, want 2", n)
+	}
+
+	// Compiler products are stored as chunks too, but are derived artifacts.
+	chunks = []map[string]any{
+		{"id": "source-1"},
+		{"id": "source-2"},
+		{"id": "wiki-page-1", "compile_kwd": "wiki_page"},
+		{"id": "wiki-section-1", "compile_kwd": "wiki_section"},
+	}
+	if n := countOriginalChunkIDs(chunks); n != 2 {
+		t.Fatalf("compiler products: got %d, want 2", n)
 	}
 }
