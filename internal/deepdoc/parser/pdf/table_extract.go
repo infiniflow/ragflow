@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
@@ -116,12 +117,24 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		if firstCellTop == 1e9 {
 			firstCellTop = cells[0].Y0
 		}
-		boxInCrop = make([]pdf.TextBox, 0, len(tm.BoxIdx))
+		tableBoxes := make([]pdf.TextBox, 0, len(tm.BoxIdx))
 		for _, idx := range tm.BoxIdx {
 			b := boxes[idx]
 			if b.Bottom*scale-cropOffY < firstCellTop {
 				continue
 			}
+			tableBoxes = append(tableBoxes, b)
+		}
+		// Collapse overlapping/adjacent OCR boxes before cell-fill, mirroring
+		// Python's pipeline order: _naive_vertical_merge runs before
+		// construct_table, so overlapping boxes are merged before they reach
+		// cell assignment. Go runs table cell-fill per-page (here), before the
+		// document-wide vertical merge in buildLayout, so it must run its own
+		// collapse on this table's box subset first or overlapping OCR boxes
+		// duplicate text across cells.
+		tableBoxes = lyt.NaiveVerticalMerge(tableBoxes, nil, nil, nil)
+		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
+		for _, b := range tableBoxes {
 			boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
 		}
 	}
