@@ -22,13 +22,13 @@ import (
 	"testing"
 )
 
-// qaInvoke is a small helper that runs the QA chunker on a upstream-style
+// pairInvoke is a small helper that runs the pair chunker on an upstream-style
 // input map and returns the produced chunks as generic maps.
-func qaInvoke(t *testing.T, inputs map[string]any) []map[string]any {
+func pairInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	t.Helper()
-	c, err := NewQAChunker(map[string]any{})
+	c, err := NewPairChunker(map[string]any{})
 	if err != nil {
-		t.Fatalf("NewQAChunker: %v", err)
+		t.Fatalf("NewPairChunker: %v", err)
 	}
 	out, err := c.Invoke(context.Background(), nil, inputs)
 	if err != nil {
@@ -41,16 +41,16 @@ func qaInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	return chunks
 }
 
-// TestQAChunker_DefaultLangIsChinese exercises migration :
+// TestPairChunker_DefaultLangIsChinese exercises migration :
 // when no language is supplied, Python defaults to Chinese prefixes
 // ("问题："/"回答："); the legacy Go code defaulted to English.
-func TestQAChunker_DefaultLangIsChinese(t *testing.T) {
+func TestPairChunker_DefaultLangIsChinese(t *testing.T) {
 	inputs := map[string]any{
 		"name":          "test.txt",
 		"output_format": "text",
 		"text":          "What is RAG?\tRAG retrieves then generates.",
 	}
-	chunks := qaInvoke(t, inputs)
+	chunks := pairInvoke(t, inputs)
 	if len(chunks) == 0 {
 		t.Fatalf("no chunks produced")
 	}
@@ -79,16 +79,16 @@ func TestRmQAPrefixStripsMultipleSeparators(t *testing.T) {
 	}
 }
 
-// TestQAChunker_SetsTopInt exercises migration  (top_int):
+// TestPairChunker_SetsTopInt exercises migration  (top_int):
 // each QA chunk must carry the source row index in `top_int`, matching
 // Python beAdoc(..., row_num=i).
-func TestQAChunker_SetsTopInt(t *testing.T) {
+func TestPairChunker_SetsTopInt(t *testing.T) {
 	inputs := map[string]any{
 		"name":          "test.txt",
 		"output_format": "text",
 		"text":          "Q1\tA1\nQ2\tA2",
 	}
-	chunks := qaInvoke(t, inputs)
+	chunks := pairInvoke(t, inputs)
 	if len(chunks) != 2 {
 		t.Fatalf("want 2 QA chunks, got %d", len(chunks))
 	}
@@ -107,11 +107,11 @@ func TestQAChunker_SetsTopInt(t *testing.T) {
 	}
 }
 
-// TestQAChunker_CarriesImageAndPositions exercises migration diff
+// TestPairChunker_CarriesImageAndPositions exercises migration diff
 // Chunker-1.8 (image / positions): when the upstream JSON item already
 // carries an image id and pdf positions, the QA chunk must preserve them
 // (Python beAdocPdf sets d["image"] and add_positions).
-func TestQAChunker_CarriesImageAndPositions(t *testing.T) {
+func TestPairChunker_CarriesImageAndPositions(t *testing.T) {
 	inputs := map[string]any{
 		"name":          "test.pdf",
 		"output_format": "json",
@@ -123,7 +123,7 @@ func TestQAChunker_CarriesImageAndPositions(t *testing.T) {
 			},
 		},
 	}
-	chunks := qaInvoke(t, inputs)
+	chunks := pairInvoke(t, inputs)
 	if len(chunks) != 1 {
 		t.Fatalf("want 1 QA chunk, got %d", len(chunks))
 	}
