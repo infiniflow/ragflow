@@ -309,7 +309,8 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
 	var extractorKeys []string
 	for k := range parserConfig {
-		if strings.HasPrefix(k, "Extractor") {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
 			extractorKeys = append(extractorKeys, k)
 		}
 	}
@@ -318,6 +319,12 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 	for _, k := range extractorKeys {
 		nodeRaw := parserConfig[k]
 		if node, ok := nodeRaw.(map[string]any); ok {
+			if metaObj, ok := node["metadata"].(map[string]any); ok {
+				enabled := parserConfigBool(metaObj["enabled"])
+				if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
+					return arr, enabled
+				}
+			}
 			if metaConf, ok := node["metadata_config"].(map[string]any); ok {
 				enabled := parserConfigBool(metaConf["enabled"])
 				if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
@@ -330,14 +337,18 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 			}
 		}
 	}
+	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
+		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
+			return arr, true
+		}
+	}
 	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
-		enabled := parserConfigBool(metaConf["enabled"])
 		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, enabled
+			return arr, true
 		}
 	}
 	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
-		return arr, parserConfigBool(parserConfig["enable_metadata"])
+		return arr, true
 	}
 	return nil, false
 }

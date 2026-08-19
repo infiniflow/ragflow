@@ -570,10 +570,6 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		apiKey = "x"
 	}
 
-	// Verify the API key against the provider.
-	// Mirrors Python's verify_api_key (provider_api_service.py:596).
-	modelVerifyResult := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
-
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
@@ -598,17 +594,9 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
 	}
 
-	// Add models with verify result in extra.
+	// Add models to the instance.
 	if len(modelInfo) > 0 {
 		for _, model := range modelInfo {
-			if model.Extra == nil {
-				model.Extra = make(map[string]interface{})
-			}
-			verifyStatus := modelVerifyResult[model.ModelName]
-			if verifyStatus == "" {
-				verifyStatus = entity.ModelVerifyUnknown
-			}
-			model.Extra["verify"] = verifyStatus
 			if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
 				return common.CodeServerError, err
 			}
@@ -624,13 +612,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
 		if factoryProvider != nil {
 			for _, llm := range factoryProvider.Models {
-				verifyStatus := modelVerifyResult[llm.Name]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				extraMap := map[string]interface{}{
-					"verify": verifyStatus,
-				}
+				extraMap := make(map[string]interface{})
 				if llm.Tools != nil {
 					extraMap["is_tools"] = llm.Tools.Support
 				}
@@ -696,58 +678,6 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 
 	return common.CodeSuccess, nil
-}
-
-// verifyProviderAPIKey verifies the API key against the provider by calling
-// the driver's CheckConnection. It returns a map from model name to verify
-// status (success/fail/unknown).
-func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
-	result := make(map[string]string)
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		// Provider not in system pool — mark all models as unknown.
-		for _, model := range modelInfo {
-			result[model.ModelName] = entity.ModelVerifyUnknown
-		}
-		return result
-	}
-
-	apiKey = strings.TrimSpace(apiKey)
-	region = strings.TrimSpace(region)
-	baseURL = strings.TrimSpace(baseURL)
-	if region == "" {
-		region = "default"
-	}
-
-	driver := providerInfo.ModelDriver
-	if strings.EqualFold(providerInfo.Class, "local") {
-		var err error
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
-		if err != nil {
-			for _, model := range modelInfo {
-				result[model.ModelName] = entity.ModelVerifyFail
-			}
-			return result
-		}
-	}
-
-	apiConfig := &modelModule.APIConfig{
-		ApiKey:  &apiKey,
-		Region:  &region,
-		BaseURL: &baseURL,
-	}
-
-	verifyErr := driver.CheckConnection(ctx, apiConfig)
-	verifyStatus := entity.ModelVerifySuccess
-	if verifyErr != nil {
-		verifyStatus = entity.ModelVerifyFail
-	}
-
-	for _, model := range modelInfo {
-		result[model.ModelName] = verifyStatus
-	}
-	return result
 }
 
 // addModelToInstance creates a single model under the given provider instance.
@@ -1982,7 +1912,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 	return nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -2012,12 +1942,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	// Normalize api_key: VLLM with empty api_key defaults to "x".
 	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
 		apiKey = "x"
-	}
-
-	// Verify API key if requested.
-	modelVerifyResult := make(map[string]string)
-	if verify {
-		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
 	}
 
 	// Update instance record.
@@ -2096,17 +2020,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		for _, mdl := range modelInfo {
 			if mdl.ModelName == "" {
 				continue
-			}
-			// Attach verify status.
-			if verify {
-				verifyStatus := modelVerifyResult[mdl.ModelName]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				if mdl.Extra == nil {
-					mdl.Extra = make(map[string]interface{})
-				}
-				mdl.Extra["verify"] = verifyStatus
 			}
 
 			if existingMdl, exists := existingModelMap[mdl.ModelName]; exists {

@@ -391,8 +391,9 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 		var (
 			valErr  *syncerconnector.ConnectorValidationError
 			credErr *syncerconnector.ConnectorMissingCredentialError
+			rateErr *syncerconnector.RateLimitTriedTooManyTimesError
 		)
-		if errors.As(err, &valErr) || errors.As(err, &credErr) {
+		if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
 			common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 			return
 		}
