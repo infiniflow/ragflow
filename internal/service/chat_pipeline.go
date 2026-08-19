@@ -988,17 +988,9 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		// Adjust max_tokens so the LLM has room within the total budget.
-		if chat.LLMSetting != nil {
-			if mt, ok := chat.LLMSetting["max_tokens"].(float64); ok {
-				original := int(mt)
-				adjusted := original
-				if adjusted > modelMaxTokens-usedTokenCount {
-					adjusted = modelMaxTokens - usedTokenCount
-				}
-				chat.LLMSetting["max_tokens"] = float64(adjusted)
-				common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
-			}
+		chatCfg := BuildChatConfig(chat, kwargs)
+		if adjusted, ok := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); ok {
+			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
 		}
 
 		// === Phase 11: Drive LLM + Decorate Answer ===
@@ -1060,8 +1052,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-
-			chatCfg := BuildChatConfig(chat, kwargs)
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1257,8 +1247,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Non-streaming: get the answer synchronously.
 			var answer string
 			var err error
-			chatCfg := BuildChatConfig(chat, kwargs)
-
 			// Tool routing: use tool-loop when tools are bound.
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
@@ -4204,14 +4192,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigInt(dialog.LLMSetting["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := dialog.LLMSetting["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
@@ -4244,14 +4232,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := config["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigInt(config["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := config["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(config["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := config["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(config["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := config["do_sample"].(bool); ok {
@@ -4278,6 +4266,52 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	}
 
 	return cfg
+}
+
+func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool) {
+	if cfg == nil || cfg.MaxTokens == nil {
+		return 0, false
+	}
+	adjusted := *cfg.MaxTokens
+	remainingTokens := modelMaxTokens - usedTokenCount
+	if remainingTokens < 0 {
+		remainingTokens = 0
+	}
+	if adjusted > remainingTokens {
+		adjusted = remainingTokens
+	}
+	cfg.MaxTokens = &adjusted
+	return adjusted, true
+}
+
+func chatConfigInt(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+func chatConfigFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {

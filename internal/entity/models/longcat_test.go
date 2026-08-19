@@ -296,7 +296,7 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
-		for _, k := range []string{"stop", "reasoning_effort", "response_format", "tools", "tool_choice", "presence_penalty", "frequency_penalty", "n", "logprobs"} {
+		for _, k := range []string{"stop", "max_tokens", "reasoning_effort", "response_format", "tools", "tool_choice", "presence_penalty", "frequency_penalty", "n", "logprobs"} {
 			if _, present := body[k]; present {
 				t.Errorf("undocumented field %q must not be sent: %v", k, body[k])
 			}

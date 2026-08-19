@@ -1442,15 +1442,22 @@ func TestBuildChatConfig_RequestOverrides(t *testing.T) {
 		LLMSetting: entity.JSONMap{
 			"temperature": 0.5,
 			"top_p":       0.9,
+			"max_tokens":  float64(512),
 		},
 	}
-	req := map[string]interface{}{"temperature": temp}
+	req := map[string]interface{}{
+		"temperature": temp,
+		"max_tokens":  128,
+	}
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected request temperature %v, got %v", temp, cfg.Temperature)
 	}
 	if cfg.TopP == nil || *cfg.TopP != 0.9 {
 		t.Fatalf("expected dialog top_p 0.9 to be preserved, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 128 {
+		t.Fatalf("expected request max_tokens 128, got %v", cfg.MaxTokens)
 	}
 }
 
@@ -1463,5 +1470,26 @@ func TestBuildChatConfig_FromEmptyDialog(t *testing.T) {
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected temperature %v, got %v", temp, cfg.Temperature)
+	}
+}
+
+func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(1024)},
+	}
+	cfg := BuildChatConfig(dialog, map[string]interface{}{"max_tokens": 700})
+
+	adjusted, ok := clampChatConfigMaxTokens(cfg, 1000, 450)
+	if !ok {
+		t.Fatal("expected max_tokens to be clamped")
+	}
+	if adjusted != 550 {
+		t.Fatalf("adjusted max_tokens = %d, want 550", adjusted)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 550 {
+		t.Fatalf("config max_tokens = %v, want 550", cfg.MaxTokens)
+	}
+	if dialog.LLMSetting["max_tokens"] != float64(1024) {
+		t.Fatalf("dialog max_tokens was mutated: %v", dialog.LLMSetting["max_tokens"])
 	}
 }

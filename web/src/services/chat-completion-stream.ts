@@ -33,6 +33,11 @@ export type CompletionChunk = {
   [key: string]: any;
 };
 
+function normalizeThinkingForRequest(thinking?: Variable['thinking']) {
+  if (thinking === 'enabled' || thinking === 'disabled') return thinking;
+  return undefined;
+}
+
 export function requestChatCompletionStream(
   {
     chatId,
@@ -52,6 +57,7 @@ export function requestChatCompletionStream(
     max_tokens,
     thinking,
   } = llmSetting ?? {};
+  const requestThinking = normalizeThinkingForRequest(thinking);
 
   return fetch(api.completionUrl, {
     method: 'POST',
@@ -71,7 +77,7 @@ export function requestChatCompletionStream(
       ...(frequency_penalty === undefined ? {} : { frequency_penalty }),
       ...(presence_penalty === undefined ? {} : { presence_penalty }),
       ...(max_tokens === undefined ? {} : { max_tokens }),
-      ...(thinking === undefined ? {} : { thinking }),
+      ...(requestThinking === undefined ? {} : { thinking: requestThinking }),
     }),
     signal,
   });

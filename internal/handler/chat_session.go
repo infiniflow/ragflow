@@ -237,7 +237,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		"llm_id",
 		"pass_all_history_messages", "pass_all_history",
 		"store_history_messages", "store_history",
-		"legacy", "stream",
+		"legacy", "stream", "thinking",
 		"temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens",
 	}
 	for _, key := range knownKeys {
