@@ -179,6 +179,12 @@ func (p *Parser) extractOutlines(engine pdf.PDFEngine) []pdf.Outline {
 func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder,
 ) pageResult {
+	// Stamp the page number up front so replay DocAnalyzers can route their
+	// per-page lookups in BOTH the OCR path (processPageBoxes -> OCRDetect/
+	// OCRRecognize) and the DLA/TSR path (enrichOnePageWithDeepDoc also stamps
+	// it later; this covers the earlier OCR calls). Production analyzers ignore
+	// the key, so this is behavior-neutral.
+	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	chars, extractErr := engine.ExtractChars(pg)
 	if extractErr != nil {
 		slog.Warn("processPage: ExtractChars failed", "page", pg, "err", extractErr)
@@ -492,6 +498,12 @@ func (p *Parser) buildLayout(ctx context.Context,
 	pageEnglish map[int]bool,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
+
+	// Collapse OCR duplicates BEFORE any merge step: overlapping same-text /
+	// substring boxes must be dropped while still independent, otherwise
+	// TextMerge/NaiveVerticalMerge concatenate them into duplicated text.
+	boxes = lyt.DedupIdenticalText(boxes)
+	boxes = lyt.DedupSubstringOverlaps(boxes)
 
 	boxes = lyt.AssignColumn(boxes)
 	boxes = lyt.TextMerge(boxes, medianHeights)

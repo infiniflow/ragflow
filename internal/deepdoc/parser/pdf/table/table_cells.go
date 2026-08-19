@@ -95,6 +95,30 @@ func GroupTSRCellsToRows(cells []pdf.TSRCell) [][]pdf.TSRCell {
 // picked, matching Python. See go_intentional rule
 // table-cell-fill-filled-threshold-0.85.
 func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
+	FillCellTextFromBoxesWithRows(cells, boxes, nil)
+}
+
+// FillCellTextFromBoxesWithRows is FillCellTextFromBoxes with the per-row
+// strip X range taken from the original TSR "table row" component bboxes
+// instead of the grid column union.
+//
+// Python matches a box to a row via find_overlapped_with_threshold(box,
+// rows) where rows are the raw TSR row components (gather(".* (row|header)")
+// in pdf_parser.py:602) and overlapped_area divides by the row's own bbox.
+// Go's grid is a TSR-row × column cross-product; its cells always span the
+// full column union, so the old strip X range was wider than the row
+// component's true bbox. When TSR emits a row whose line does not cover a
+// table edge (e.g. 13_crosspage_table.pdf page 2 row 44: x0=106.9 vs the
+// grid's x0=90.8), a col-0 box straddling that row and the one above it
+// can pass the 0.3 threshold against the full-width strip while Python
+// rejects it against the true bbox — so Go assigned the box one row lower
+// than Python.
+//
+// rowStrips must be the TSR row components in the same top-to-bottom order
+// as the grid rows (GroupCells sorts them with SortYFirstly). When its
+// length does not match the number of row bands (degenerate span-covered
+// rows), it is ignored and the grid union is used as before.
+func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
 	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
 	if len(cells) == 0 || len(boxes) == 0 {
 		return
@@ -155,6 +179,14 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 		sort.Slice(rows[ri].cells, func(a, b int) bool {
 			return cells[rows[ri].cells[a]].X0 < cells[rows[ri].cells[b]].X0
 		})
+	}
+	// Replace the grid-union strip X with the TSR row component's own bbox X
+	// when provided and aligned (see FillCellTextFromBoxesWithRows doc).
+	if len(rowStrips) == len(rows) {
+		for ri := range rows {
+			rows[ri].stripX0 = rowStrips[ri].X0
+			rows[ri].stripX1 = rowStrips[ri].X1
+		}
 	}
 
 	// Accumulate box text per target cell so multiple boxes in one cell join.
