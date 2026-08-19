@@ -359,7 +359,6 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 			ModelTypes: []string{"chat", "vision"},
 			MaxTokens:  8192,
 		}},
-		true,
 	)
 	if err != nil {
 		t.Fatalf("AlterProviderInstance() error = %v", err)

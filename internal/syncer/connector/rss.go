@@ -135,6 +135,13 @@ func (c *RSSConnector) OpenPrune(ctx context.Context, request PruneRequest) (Pru
 	return &rssPruneSession{documents: documents, batchSize: c.batchSize}, nil
 }
 
+// ValidateConnectorSetting validates RSS settings from an unsaved config.
+func (c *RSSConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
+}
+
 // loadEntries fetches and parses the configured feed.
 func (c *RSSConnector) loadEntries(ctx context.Context) ([]rssEntry, error) {
 	if c.entries != nil {

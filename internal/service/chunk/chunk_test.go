@@ -405,6 +405,10 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
 		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
 	}
+	mustNot, ok := engine.searchReq.Filter["must_not"].(map[string]interface{})
+	if !ok || mustNot["exists"] != "compile_kwd" {
+		t.Fatalf("must_not filter = %#v, want compile_kwd existence exclusion", engine.searchReq.Filter["must_not"])
+	}
 	if slices.Contains(engine.searchReq.SelectFields, "content") {
 		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
 	}

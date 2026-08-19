@@ -87,7 +87,7 @@ package main
 
 import (
     "context"
-    "ragflow/internal/harness/core"
+    agentcore "ragflow/internal/harness/core"
     "ragflow/internal/harness/core/schema"
 )
 
@@ -1068,7 +1068,7 @@ builder.AddNodeWithOptions("risky_node", nodeFunc, harness.NodeOptions{
 
 ```go
 import (
-    "ragflow/internal/harness/core"
+    agentcore "ragflow/internal/harness/core"
     "ragflow/internal/harness/core/middlewares/filesystem"
     "ragflow/internal/harness/core/middlewares/summarization"
     "ragflow/internal/harness/core/middlewares/subagent"

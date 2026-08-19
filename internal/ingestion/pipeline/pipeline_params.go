@@ -2,19 +2,90 @@ package pipeline
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 
 	"go.uber.org/zap"
 )
 
+// llmRuntimeParamKeys contains generic LLM hyper-parameters and UI switches common to LLM-based components.
+var llmRuntimeParamKeys = map[string]struct{}{
+	"llm_id":                  {},
+	"temperature":             {},
+	"top_p":                   {},
+	"max_tokens":              {},
+	"presence_penalty":        {},
+	"frequency_penalty":       {},
+	"outputs":                 {},
+	"temperatureEnabled":      {},
+	"topPEnabled":             {},
+	"presencePenaltyEnabled":  {},
+	"frequencyPenaltyEnabled": {},
+	"maxTokensEnabled":        {},
+}
+
+// extractorValidParamKeys is dynamically derived from schema.ExtractorParam + LLM hyper-parameters.
+var extractorValidParamKeys = func() map[string]struct{} {
+	keys := extractJSONTags(schema.ExtractorParam{})
+	for k := range llmRuntimeParamKeys {
+		keys[k] = struct{}{}
+	}
+	return keys
+}()
+
+// extractJSONTags returns all top-level json tag names from a struct.
+func extractJSONTags(v any) map[string]struct{} {
+	tags := make(map[string]struct{})
+	t := reflect.TypeOf(v)
+	if t == nil {
+		return tags
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return tags
+	}
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name := strings.Split(tag, ",")[0]
+		if name != "" {
+			tags[name] = struct{}{}
+		}
+	}
+	return tags
+}
+
+// isExtractorComponent returns true if the component name or component ID
+// indicates an Extractor component.
+func isExtractorComponent(cpnID, componentName string) bool {
+	lowerName := strings.ToLower(componentName)
+	lowerID := strings.ToLower(cpnID)
+	return lowerName == "extractor" ||
+		strings.HasPrefix(lowerID, "extractor:") ||
+		strings.HasPrefix(lowerID, "extractor_")
+}
+
+// getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
+func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
+	if isExtractorComponent(cpnID, "") {
+		return extractorValidParamKeys, true
+	}
+	return nil, false
+}
+
 // CleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
 // Keys containing ':' are treated as component IDs; they are kept only when both
-// the cpnID AND the param name exist in the DSL schema. Keys without ':' (legacy
-// flat fields such as chunk_token_num, image_context_size) are dropped with a
-// warning — they do not belong in the new component-params world.
+// the cpnID AND the param name exist in the DSL schema or the component's dynamic
+// parameter schema (e.g. Extractor modular features). Keys without ':' (legacy
+// flat fields) are dropped with a warning.
 func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
 	schemas, err := ExtractAllComponentParams(dslJSON)
 	if err != nil {
@@ -49,18 +120,22 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		if !ok {
 			continue
 		}
+		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
+		if hasDynamic {
+			params = NormalizeExtractorParams(params)
+		}
 		cleaned := make(map[string]any, len(params))
 		for pk, pv := range params {
 			if _, ok := validKeys[pk]; ok {
 				cleaned[pk] = pv
 				continue
 			}
-			// Auto metadata params are valid extractor params even when a
-			// builtin template does not declare them (the frontend stores
-			// them on the node params); keep them through the filter.
-			if isExtractorComponent(key) && isAutoMetadataParam(pk) {
-				cleaned[pk] = pv
-				continue
+			// Extractor and dynamic components: check reflection-driven whitelist
+			if hasDynamic {
+				if _, ok := dynamicWhitelist[pk]; ok {
+					cleaned[pk] = pv
+					continue
+				}
 			}
 			common.Warn("CleanComponentParams: dropping unknown param",
 				zap.String("cpnID", key), zap.String("param", pk))
@@ -70,6 +145,64 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 	}
 	return result
+}
+
+// NormalizeExtractorParams normalizes a raw Extractor parameters map into the canonical modular format.
+func NormalizeExtractorParams(raw map[string]any) map[string]any {
+	if raw == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		out[k] = v
+	}
+
+	// 1. Keywords
+	if kwRaw, ok := out["keywords"].(map[string]any); ok {
+		kw := make(map[string]any, len(kwRaw))
+		for k, v := range kwRaw {
+			kw[k] = v
+		}
+		out["keywords"] = kw
+	}
+
+	// 2. Questions
+	if qRaw, ok := out["questions"].(map[string]any); ok {
+		q := make(map[string]any, len(qRaw))
+		for k, v := range qRaw {
+			q[k] = v
+		}
+		out["questions"] = q
+	}
+
+	// 3. Tags
+	if tagRaw, ok := out["tags"].(map[string]any); ok {
+		tag := make(map[string]any, len(tagRaw))
+		for k, v := range tagRaw {
+			tag[k] = v
+		}
+		out["tags"] = tag
+	}
+
+	// 4. Summary
+	if sumRaw, ok := out["summary"].(map[string]any); ok {
+		sum := make(map[string]any, len(sumRaw))
+		for k, v := range sumRaw {
+			sum[k] = v
+		}
+		out["summary"] = sum
+	}
+
+	// 5. Metadata
+	if metaRaw, ok := out["metadata"].(map[string]any); ok {
+		meta := make(map[string]any, len(metaRaw))
+		for k, v := range metaRaw {
+			meta[k] = v
+		}
+		out["metadata"] = meta
+	}
+
+	return out
 }
 
 // BuildParserConfig builds the final parser_config by starting from the DSL
@@ -155,21 +288,4 @@ func ResolveComponentParamsDefaultsFromIDs(parserID string, pipelineID *string) 
 		out[k] = v
 	}
 	return out, nil
-}
-
-// isExtractorComponent reports whether a component id is an Extractor node
-// (component ids are "<ComponentName>:<name>" or "<ComponentName>_<name>").
-func isExtractorComponent(cpnID string) bool {
-	lower := strings.ToLower(cpnID)
-	return strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_")
-}
-
-// isAutoMetadataParam reports whether a param belongs to the Auto metadata
-// feature (enable_metadata toggle + metadata / built_in_metadata schemas).
-func isAutoMetadataParam(param string) bool {
-	switch param {
-	case "enable_metadata", "metadata", "built_in_metadata":
-		return true
-	}
-	return false
 }

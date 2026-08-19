@@ -250,6 +250,23 @@ func (c *DiscordConnector) Validate(ctx context.Context) error {
 	return nil
 }
 
+// ValidateConnectorSetting validates Discord settings from an unsaved config.
+func (c *DiscordConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	if err := c.Validate(ctx); err != nil {
+		return err
+	}
+	targets, err := c.listTargets(ctx)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return &ConnectorValidationError{Message: "Discord connector found no accessible text channels"}
+	}
+	return nil
+}
+
 // OpenSync opens one sync session over the configured channels and threads.
 func (c *DiscordConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	targets, err := c.listTargets(ctx)

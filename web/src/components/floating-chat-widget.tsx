@@ -22,6 +22,7 @@ import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
+import { removeThinkSection } from '@/utils/chat';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -662,7 +663,7 @@ const FloatingChatWidget = () => {
                           role="toolbar"
                         >
                           <CopyToClipboard
-                            text={message.content}
+                            text={removeThinkSection(message.content)}
                             className="border-0"
                             size="icon-xs"
                           />
@@ -877,7 +878,7 @@ const FloatingChatWidget = () => {
                             role="toolbar"
                           >
                             <CopyToClipboard
-                              text={message.content}
+                              text={removeThinkSection(message.content)}
                               className="border-0"
                               size="icon-xs"
                             />

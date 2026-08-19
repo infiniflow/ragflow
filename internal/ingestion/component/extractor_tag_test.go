@@ -45,7 +45,7 @@ func pushExtractorTagTargetResolverStub(t *testing.T) {
 
 func TestExtractorTags_NoTagFileID(t *testing.T) {
 	pushExtractorTagChatStub(t, nil)
-	comp, _ := NewExtractorComponent(map[string]any{"auto_tags": 3})
+	comp, _ := NewExtractorComponent(map[string]any{"tags": map[string]any{"top_n": 3}})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "test"},
@@ -65,7 +65,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 
 func TestExtractorTags_NoLLMID(t *testing.T) {
 	pushExtractorTagChatStub(t, nil)
-	comp, _ := NewExtractorComponent(map[string]any{"auto_tags": 3})
+	comp, _ := NewExtractorComponent(map[string]any{"tags": map[string]any{"top_n": 3}})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "some unrelated text"},
@@ -85,9 +85,13 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	pushExtractorTagTargetResolverStub(t)
 
 	comp, _ := NewExtractorComponent(map[string]any{
-		"llm_id":        "test@test",
-		"auto_tags":     3,
-		"auto_keywords": 3,
+		"llm_id": "test@test",
+		"tags": map[string]any{
+			"top_n": 3,
+		},
+		"keywords": map[string]any{
+			"top_n": 3,
+		},
 	})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{

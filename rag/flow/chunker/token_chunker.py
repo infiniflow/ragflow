@@ -19,6 +19,7 @@ from copy import deepcopy
 from common.float_utils import normalize_overlapped_percent
 from common.token_utils import num_tokens_from_string
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.chunker._sentence_boundary import SENTENCE_BOUNDARY_PATTERN
 from rag.flow.chunker.schema import TokenChunkerFromUpstream
 from rag.flow.parser.pdf_chunk_metadata import (
     PDF_POSITIONS_KEY,
@@ -173,8 +174,7 @@ def _build_json_chunks(json_result, delimiter_pattern):
 
 def _take_sentences(text, need_tokens, from_end=False):
     # Take text from one side until the target token budget is reached.
-    split_pat = r"([。!?？；！\n]|\. )"
-    texts = re.split(split_pat, text or "", flags=re.DOTALL)
+    texts = re.split(SENTENCE_BOUNDARY_PATTERN, text or "", flags=re.DOTALL)
     sentences = []
     for i in range(0, len(texts), 2):
         sentences.append(texts[i] + (texts[i + 1] if i + 1 < len(texts) else ""))
@@ -373,7 +373,7 @@ def _split_chunk_docs_by_children(chunks, pattern):
 
         split_texts = _split_text_by_pattern(chunk.get("text", ""), pattern)
 
-        mom = chunk.get("text", "")
+        mom = chunk.get("text", "").removeprefix("\n")
         for text in split_texts:
             if not text.strip():
                 continue
@@ -428,7 +428,7 @@ class TokenChunker(ProcessBase):
                     for text in _split_text_by_pattern(c, custom_pattern):
                         if not text.strip():
                             continue
-                        docs.append({"text": text, "mom": c})
+                        docs.append({"text": text, "mom": c.removeprefix("\n")})
                 self.set_output("chunks", docs)
             else:
                 self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])
