@@ -348,7 +348,7 @@ class ExcelProcessor(ComponentBase, ABC):
                     for sheet_name, df in dfs.items():
                         # Sanitize sheet name (max 31 chars, no special or reserved names)
                         original_name = str(sheet_name)
-                        normalized_name = re.sub(r"[\\/*?:\[\]]", "_", original_name).strip("'")
+                        normalized_name = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\\/*?:\[\]]", "_", original_name).strip("'")
                         if normalized_name.casefold() == "history":
                             normalized_name = f"{normalized_name}_"
                         base_name = normalized_name[:31] or "Sheet"

@@ -76,6 +76,7 @@ def test_output_excel_sanitizes_and_deduplicates_sheet_names(monkeypatch):
         "History": [{"amount": 40}],
         "": [{"amount": 50}],
         long_sheet_name: [{"amount": 60}],
+        "Nul\x00Name": [{"amount": 70}],
     }
     component = module.ExcelProcessor.__new__(module.ExcelProcessor)
     component._canvas = SimpleNamespace(
@@ -107,4 +108,5 @@ def test_output_excel_sanitizes_and_deduplicates_sheet_names(monkeypatch):
         "History_",
         "Sheet",
         "A" * 31,
+        "Nul_Name",
     ]
