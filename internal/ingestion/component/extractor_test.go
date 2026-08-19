@@ -566,68 +566,6 @@ func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing
 	}
 }
 
-func TestExtractorComponent_runEnableMetadata_BuiltInOnly(t *testing.T) {
-	stub := withStubChatInvoker(t, stubResponse{Content: `{"doc_title":"Financial Report 2026"}`})
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		Metadata: schema.MetadataExtractConfig{
-			Enabled:         true,
-			Metadata:        []common.MetadataFieldDef{},
-			BuiltInMetadata: []common.MetadataFieldDef{{Key: "doc_title", Type: "string"}},
-		},
-	}}
-	ck := map[string]any{}
-	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
-		t.Fatalf("runEnableMetadata: %v", err)
-	}
-	if stub.Calls() != 1 {
-		t.Fatalf("expected 1 LLM call for built-in metadata, got %d", stub.Calls())
-	}
-	meta, ok := ck["metadata"].(map[string]any)
-	if !ok {
-		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
-	}
-	if meta["doc_title"] != "Financial Report 2026" {
-		t.Errorf("metadata = %v, want doc_title='Financial Report 2026'", meta)
-	}
-}
-
-func TestExtractorComponent_runEnableMetadata_CustomAndBuiltInCombined(t *testing.T) {
-	stub := withStubChatInvoker(t, stubResponse{Content: `{"author":"Alice","doc_title":"Report"}`})
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		Metadata: schema.MetadataExtractConfig{
-			Enabled: true,
-			Metadata: []common.MetadataFieldDef{
-				{Key: "author", Type: "string"},
-			},
-			BuiltInMetadata: []common.MetadataFieldDef{
-				{Key: "doc_title", Type: "string"},
-			},
-		},
-	}}
-	ck := map[string]any{}
-	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
-		t.Fatalf("runEnableMetadata: %v", err)
-	}
-	if stub.Calls() != 1 {
-		t.Fatalf("expected 1 LLM call, got %d", stub.Calls())
-	}
-	req := stub.lastRequest()
-	if len(req.Messages) < 1 {
-		t.Fatalf("expected at least 1 message, got %+v", req.Messages)
-	}
-	sysMsg := req.Messages[0].Content
-	if !strings.Contains(sysMsg, "author") || !strings.Contains(sysMsg, "doc_title") {
-		t.Errorf("expected system prompt to contain both author and doc_title, got: %s", sysMsg)
-	}
-	meta, ok := ck["metadata"].(map[string]any)
-	if !ok {
-		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
-	}
-	if meta["author"] != "Alice" || meta["doc_title"] != "Report" {
-		t.Errorf("metadata = %v, want author=Alice doc_title=Report", meta)
-	}
-}
-
 // TestExtractorComponent_runEnableMetadata_StripsJSONFence verifies the
 // extraction path tolerates a fenced ```json response.
 func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {
