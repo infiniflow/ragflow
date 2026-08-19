@@ -48,6 +48,7 @@ export interface Variable {
   presence_penalty?: number;
   temperature?: number;
   top_p?: number;
+  thinking?: 'default' | 'enabled' | 'disabled';
   tenant_llm_id?: string;
   model_type?: string;
 }
