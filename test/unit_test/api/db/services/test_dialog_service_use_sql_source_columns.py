@@ -520,4 +520,7 @@ def test_async_chat_skips_sql_retrieval_for_mixed_tenant_field_map_datasets(monk
     result = asyncio.run(_collect())
 
     assert len(retriever.calls) == 1
+    call_args = retriever.calls[0]["args"]
+    assert set(call_args[2]) == {"tenant-a", "tenant-b"}
+    assert call_args[3] == ["kb-a", "kb-b"]
     assert result[0]["answer"] == "stub answer"
