@@ -5,11 +5,37 @@ import (
 	"image"
 	"log/slog"
 	"math"
+	"strings"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
+)
+
+// pageNumCtxKey / tableIdxCtxKey let a DocAnalyzer that replays
+// pre-computed Python intermediates (the pipeline-parity harness) recover
+// which page, and which per-page table, a DLA/TSR call refers to. The
+// production DeepDoc analyzer ignores them; they matter only for replay
+// tests, where the DocAnalyzer interface cannot otherwise carry page
+// context (pages are processed concurrently and TSR receives a cropped
+// image with no page identifier).
+type replayCtxKey int
+
+const (
+	pageNumCtxKey replayCtxKey = iota
+	tableIdxCtxKey
+	// cropOffXKey / cropOffYKey carry the crop origin (image pixels) of the
+	// table region that processOneTable hands to TSR. A replay TableBuilder
+	// reads them to map Python's page-space TSR cells into the exact crop
+	// space Go uses, so cells and boxInCrop share one coordinate frame.
+	cropOffXKey
+	cropOffYKey
+	// ocrBoxIdxCtxKey carries the index of the OCR detect box that a
+	// per-crop OCRRecognize call belongs to (stamped by ocrDetectAndRecognize
+	// before recognition). The Phase 3 replay analyzer reads it to return the
+	// Python-dumped recognized text for that box instead of running OCR.
+	ocrBoxIdxCtxKey
 )
 
 // enrichOnePageWithDeepDoc runs DLA+TSR for a single page and returns
@@ -49,6 +75,9 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	if docAnalyzer == nil || !docAnalyzer.Health() || renderErr != nil || pageImg == nil {
 		return pageBoxes, nil, nil
 	}
+	// Stamp the page number before DLA so a replay analyzer can map the call
+	// back to the correct Python DLA page. The production analyzer ignores it.
+	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	regions, err := p.inferDLA(ctx, docAnalyzer, pageImg)
 	if err != nil {
 		slog.Warn("DLA failed", "page", pg, "err", err)
@@ -64,8 +93,11 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 
 	tableMatches := tbl.MatchTableRegions(annotated, regions, scale)
 	var items []pdf.TableItem
-	for _, tm := range tableMatches {
-		item := p.processOneTable(ctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
+	for i, tm := range tableMatches {
+		// Stamp the per-page table index so a replay analyzer can map a
+		// TSR call back to the correct Python intermediate table.
+		tctx := context.WithValue(ctx, tableIdxCtxKey, i)
+		item := p.processOneTable(tctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
 		if item.ImageB64 != "" || len(item.Cells) > 0 || len(item.Positions) > 0 {
 			items = append(items, item)
 		}
@@ -81,6 +113,8 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if cropErr != nil {
 		return pdf.TableItem{}
 	}
+	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
+	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
 	autoRotate := p.Config.AutoRotateTables != nil && *p.Config.AutoRotateTables
 	bestAngle := 0
 	origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
@@ -94,12 +128,15 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if encErr != nil {
 		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
 	}
-	cells, tsrErr := p.inferTSR(ctx, tb, tsrImg)
+	// Hand the crop origin to TSR so a replay TableBuilder can map Python
+	// page-space TSR cells into this exact crop frame. Production callers
+	// (DeepDocTableBuilder) ignore the value and use the cropped image pixels.
+	tsrCtx := context.WithValue(ctx, cropOffXKey, cropOffX)
+	tsrCtx = context.WithValue(tsrCtx, cropOffYKey, cropOffY)
+	cells, tsrErr := p.inferTSR(tsrCtx, tb, tsrImg)
 	if tsrErr != nil {
 		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 	}
-	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
-	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {
 		if bestAngle != 0 {
@@ -117,6 +154,14 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		if firstCellTop == 1e9 {
 			firstCellTop = cells[0].Y0
 		}
+		// Collapse overlapping/adjacent OCR boxes before cell-fill, mirroring
+		// Python's pipeline order — _naive_vertical_merge runs before
+		// construct_table, so overlapping boxes are merged before they reach
+		// cell assignment. Go runs table cell-fill per-page (here), before the
+		// document-wide vertical merge in buildLayout, so it must run its own
+		// collapse on this table's box subset first or overlapping OCR boxes
+		// duplicate text across cells (e.g. 13_crosspage_table page 2:
+		// '2024-43 2024-44' y=(1014,1045) + nested '2024-44' y=(1032,1045)).
 		tableBoxes := make([]pdf.TextBox, 0, len(tm.BoxIdx))
 		for _, idx := range tm.BoxIdx {
 			b := boxes[idx]
@@ -125,13 +170,6 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			}
 			tableBoxes = append(tableBoxes, b)
 		}
-		// Collapse overlapping/adjacent OCR boxes before cell-fill, mirroring
-		// Python's pipeline order: _naive_vertical_merge runs before
-		// construct_table, so overlapping boxes are merged before they reach
-		// cell assignment. Go runs table cell-fill per-page (here), before the
-		// document-wide vertical merge in buildLayout, so it must run its own
-		// collapse on this table's box subset first or overlapping OCR boxes
-		// duplicate text across cells.
 		tableBoxes = lyt.NaiveVerticalMerge(tableBoxes, nil, nil, nil)
 		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
 		for _, b := range tableBoxes {
@@ -150,8 +188,24 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if len(cells) > 0 {
 		grid = tb.GroupCells(cells)
 		if len(grid) > 0 {
+			// Pass the original TSR "table row" bboxes to cell fill so the
+			// box→row matching uses the row component's own X range, exactly
+			// like Python's find_overlapped_with_threshold over the raw row
+			// components. Using the grid column union instead (wider X) can
+			// push a col-0 box that straddles a row pair into the lower row
+			// (13_crosspage_table page 2 rows 43/44: row 44's line starts at
+			// x=106.9 while the grid union starts at 90.8, so '2024-43
+			// 2024-44' overlaps row 44 ~21% against the true bbox but ~50%
+			// against the union; Python keeps it in row 43).
+			tsrRows := make([]pdf.TSRCell, 0, len(cells))
+			for _, c := range cells {
+				if strings.HasSuffix(c.Label, "table row") {
+					tsrRows = append(tsrRows, c)
+				}
+			}
+			tbl.SortYFirstly(tsrRows, 10)
 			flat := tbl.FlattenGrid(grid)
-			tbl.FillCellTextFromBoxes(flat, boxInCrop)
+			tbl.FillCellTextFromBoxesWithRows(flat, boxInCrop, tsrRows)
 			idx := 0
 			for ri := range grid {
 				for ci := range grid[ri] {
