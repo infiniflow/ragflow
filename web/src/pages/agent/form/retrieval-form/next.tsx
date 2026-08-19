@@ -21,6 +21,10 @@ import {
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -40,10 +44,6 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { UserIdFormField } from '../components/user-id-form-field';
-import {
-  useRevalidateStaleDatasetIds,
-  useStaleDatasetFormSchema,
-} from './use-stale-dataset-validation';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {

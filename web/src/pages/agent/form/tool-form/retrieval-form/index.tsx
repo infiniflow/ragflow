@@ -7,6 +7,10 @@ import { SimilaritySliderFormField } from '@/components/similarity-slider';
 
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -21,10 +25,6 @@ import {
   RetrievalPartialSchema,
   useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
-import {
-  useRevalidateStaleDatasetIds,
-  useStaleDatasetFormSchema,
-} from '../../retrieval-form/use-stale-dataset-validation';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
