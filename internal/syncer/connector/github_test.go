@@ -310,6 +310,9 @@ func githubValidationDoJSON(t *testing.T, ok map[string]string, fail map[string]
 		if err != nil {
 			t.Fatalf("parse api url: %v", err)
 		}
+		if strings.HasPrefix(parsed.Path, "/repos/") || strings.Contains(parsed.Path, "/contents") {
+			t.Fatalf("ValidateConnectorSetting should not call repository or contents endpoint: %s", parsed.Path)
+		}
 		if apiErr, exists := fail[parsed.Path]; exists {
 			return nil, apiErr
 		}
@@ -324,9 +327,9 @@ func githubValidationDoJSON(t *testing.T, ok map[string]string, fail map[string]
 	}
 }
 
-// TestGitHubValidateConnectorSettingSingleRepo verifies a single repo name and
-// its contents are validated.
-func TestGitHubValidateConnectorSettingSingleRepo(t *testing.T) {
+// TestGitHubValidateConnectorSettingSingleRepoSkipsRepoAccess verifies test
+// connection does not probe repository or contents endpoints.
+func TestGitHubValidateConnectorSettingSingleRepoSkipsRepoAccess(t *testing.T) {
 	connector, err := NewGitHubConnector(map[string]any{
 		"repository_owner": "openai",
 		"repository_name":  "ragflow",
@@ -338,8 +341,8 @@ func TestGitHubValidateConnectorSettingSingleRepo(t *testing.T) {
 	connector.baseURL = "https://api.github.test"
 	connector.doJSON = githubValidationDoJSON(t,
 		map[string]string{
-			"/repos/openai/ragflow":          `{"full_name":"openai/ragflow"}`,
-			"/repos/openai/ragflow/contents": `[]`,
+			"/orgs/openai":       `{"login":"openai"}`,
+			"/orgs/openai/repos": `[{"full_name":"openai/ragflow"}]`,
 		},
 		nil,
 	)
@@ -348,11 +351,12 @@ func TestGitHubValidateConnectorSettingSingleRepo(t *testing.T) {
 	}
 }
 
-// TestGitHubValidateConnectorSettingSingleRepoNotFound verifies a missing repo name fails.
-func TestGitHubValidateConnectorSettingSingleRepoNotFound(t *testing.T) {
+// TestGitHubValidateConnectorSettingMultipleReposSkipsRepoAccess verifies comma-separated repository names
+// do not trigger repository-level access probes during test connection.
+func TestGitHubValidateConnectorSettingMultipleReposSkipsRepoAccess(t *testing.T) {
 	connector, err := NewGitHubConnector(map[string]any{
 		"repository_owner": "openai",
-		"repository_name":  "missing",
+		"repository_name":  "missing, ragflow",
 		"credentials":      map[string]any{"github_access_token": "token"},
 	})
 	if err != nil {
@@ -360,18 +364,14 @@ func TestGitHubValidateConnectorSettingSingleRepoNotFound(t *testing.T) {
 	}
 	connector.baseURL = "https://api.github.test"
 	connector.doJSON = githubValidationDoJSON(t,
-		nil,
-		map[string]*githubAPIError{
-			"/repos/openai/missing": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
+		map[string]string{
+			"/orgs/openai":       `{"login":"openai"}`,
+			"/orgs/openai/repos": `[{"full_name":"openai/ragflow"}]`,
 		},
+		nil,
 	)
-	err = connector.ValidateConnectorSetting(context.Background(), nil)
-	var valErr *ConnectorValidationError
-	if !errors.As(err, &valErr) {
-		t.Fatalf("err = %v, want ConnectorValidationError", err)
-	}
-	if got, want := valErr.Message, "GitHub repository not found with name: openai/missing"; got != want {
-		t.Fatalf("message = %q, want %q", got, want)
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 }
 
@@ -389,67 +389,13 @@ func TestGitHubValidateConnectorSettingUnauthorized(t *testing.T) {
 	connector.doJSON = githubValidationDoJSON(t,
 		nil,
 		map[string]*githubAPIError{
-			"/repos/openai/ragflow": {Status: http.StatusUnauthorized, Message: `{"message":"Bad credentials"}`},
+			"/orgs/openai": {Status: http.StatusUnauthorized, Message: `{"message":"Bad credentials"}`},
 		},
 	)
 	err = connector.ValidateConnectorSetting(context.Background(), nil)
 	var credErr *ConnectorMissingCredentialError
 	if !errors.As(err, &credErr) {
 		t.Fatalf("err = %v, want ConnectorMissingCredentialError", err)
-	}
-}
-
-// TestGitHubValidateConnectorSettingMultipleReposPartial verifies at least one accessible repo passes.
-func TestGitHubValidateConnectorSettingMultipleReposPartial(t *testing.T) {
-	connector, err := NewGitHubConnector(map[string]any{
-		"repository_owner": "openai",
-		"repository_name":  "missing, ragflow",
-		"credentials":      map[string]any{"github_access_token": "token"},
-	})
-	if err != nil {
-		t.Fatalf("NewGitHubConnector failed: %v", err)
-	}
-	connector.baseURL = "https://api.github.test"
-	connector.doJSON = githubValidationDoJSON(t,
-		map[string]string{
-			"/repos/openai/ragflow":          `{"full_name":"openai/ragflow"}`,
-			"/repos/openai/ragflow/contents": `[]`,
-		},
-		map[string]*githubAPIError{
-			"/repos/openai/missing": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
-		},
-	)
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
-		t.Fatalf("ValidateConnectorSetting: %v", err)
-	}
-}
-
-// TestGitHubValidateConnectorSettingMultipleReposAllFail verifies all failing repos are reported.
-func TestGitHubValidateConnectorSettingMultipleReposAllFail(t *testing.T) {
-	connector, err := NewGitHubConnector(map[string]any{
-		"repository_owner": "openai",
-		"repository_name":  "missing, private",
-		"credentials":      map[string]any{"github_access_token": "token"},
-	})
-	if err != nil {
-		t.Fatalf("NewGitHubConnector failed: %v", err)
-	}
-	connector.baseURL = "https://api.github.test"
-	connector.doJSON = githubValidationDoJSON(t,
-		nil,
-		map[string]*githubAPIError{
-			"/repos/openai/missing": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
-			"/repos/openai/private": {Status: http.StatusForbidden, Message: `{"message":"Resource not accessible by personal access token"}`},
-		},
-	)
-	err = connector.ValidateConnectorSetting(context.Background(), nil)
-	var valErr *ConnectorValidationError
-	if !errors.As(err, &valErr) {
-		t.Fatalf("err = %v, want ConnectorValidationError", err)
-	}
-	want := "None of the specified repositories could be accessed: Repository 'missing': Not Found, Repository 'private': Resource not accessible by personal access token"
-	if valErr.Message != want {
-		t.Fatalf("message = %q, want %q", valErr.Message, want)
 	}
 }
 
