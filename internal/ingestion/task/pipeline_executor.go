@@ -212,7 +212,7 @@ func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutpu
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Chunks:           chunks,
-		ChunkCount:       countDistinctChunkIDs(chunks),
+		ChunkCount:       countOriginalChunkIDs(chunks),
 		TokenConsumption: indexdoc.GetEmbeddingTokenConsumption(pipelineOutput),
 		Duration:         time.Since(start).Seconds(),
 	}, nil
@@ -281,7 +281,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 	}
 
-	chunkCount := countDistinctChunkIDs(chunks)
+	// Compilation products are derived artifacts and must not inflate the
+	// document's source chunk counter shown by the document list API.
+	chunkCount := countOriginalChunkIDs(chunks)
 
 	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
 		s.taskCtx.Doc.ParserConfig,
@@ -361,15 +363,20 @@ func docNameValue(name *string) string {
 	return *name
 }
 
-// countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.
+// countOriginalChunkIDs returns the number of distinct source chunk IDs in the
+// slice. Knowledge-compiler products are also emitted as index chunks, but
+// carry compile_kwd and must not be included in the document's chunk_count.
 // After ProcessChunksForPipeline, every chunk carries an "id" field computed
 // from xxhash(text+docID). Chunks with identical text share the same id and
 // the search engine treats them as upserts, so the effective stored chunk count
 // is the number of unique ids — not len(chunks). Mirrors the index-side
 // deduplication that happens at write time.
-func countDistinctChunkIDs(chunks []map[string]any) int {
+func countOriginalChunkIDs(chunks []map[string]any) int {
 	seen := make(map[string]struct{}, len(chunks))
 	for _, ck := range chunks {
+		if _, compiled := ck["compile_kwd"]; compiled {
+			continue
+		}
 		id, _ := ck["id"].(string)
 		if id == "" {
 			continue

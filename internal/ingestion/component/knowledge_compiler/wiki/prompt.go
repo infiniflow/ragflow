@@ -9,11 +9,7 @@ import (
 
 const wikiMapSystem = `You are a knowledge extraction engine. Extract structured knowledge from the provided document sections. Return ONLY valid JSON matching the schema exactly. Never include text outside the JSON object. Keep the source language of the document.`
 
-const wikiReduceSystem = `You are a knowledge synthesis engine. Normalize and deduplicate the structured extracts while preserving source_chunk_ids provenance. Claims, relations, and topics are pass-through facts; do not invent new ones. Return ONLY valid JSON matching the same schema.`
-
 const wikiPlanSystem = `You are a knowledge compilation planner. Given structured knowledge, produce a wiki page plan. Return ONLY valid JSON.`
-
-const wikiRefineSystem = `You are a technical writer. Write a complete wiki page from the plan, evidence checklist, and source text. Preserve factual density, keep the source language, and return only markdown.`
 
 const wikiReduceEntityDisambiguateSystem = `You are a knowledge canonicalization engine. Decide whether two named entities refer to the same real-world concept. Return ONLY valid JSON.`
 
@@ -187,6 +183,8 @@ Return JSON:
 {
   "action": "UPDATE | CREATE",
   "slug": "string",
+  "topic": "string",
+  "entity_names": ["string"],
   "reason": "string"
 }
 
@@ -194,6 +192,11 @@ Rules:
 - Choose UPDATE only when the planned page and candidate refer to the same underlying entity, concept, or topic.
 - Prefer CREATE when the overlap is weak, ambiguous, or just generally related.
 - If action is UPDATE, slug must be exactly one candidate slug.
+- If action is UPDATE, entity_names must contain the complete membership set
+  for the target page. Remove members that no longer belong and include newly
+  routed members. If membership is unchanged, repeat the candidate members.
+- topic must be the final topic label for the page. If action is CREATE, use a
+  concise topic label grounded in the planned page and candidates.
 - Return only JSON.`
 
 const wikiRefineWriterExample = `Each page must be a proper encyclopedic article, not a flat bullet list:
