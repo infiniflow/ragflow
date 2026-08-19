@@ -132,6 +132,12 @@ class BaseTitleChunker(ABC):
                 # Tokenizer unavailable/failed; fall back to a character prefix
                 # so the ceiling still holds instead of raising.
                 head = rest[:cap]
+            # truncate decodes the first `cap` tokens; when that lands mid
+            # multibyte character it emits a U+FFFD, which is not a true prefix
+            # of `rest`. Trim it so the rest[len(head):] advance stays lossless
+            # and no character is dropped at the split boundary.
+            if head and not rest.startswith(head):
+                head = head[:-1]
             if not head:
                 out.append(rest)
                 break
@@ -219,6 +225,13 @@ class BaseTitleChunker(ABC):
                 out.append(chunk)
                 continue
             out.extend(self._split_text_chunk_by_cap(chunk, cap))
+        if len(out) != len(chunks):
+            logger.info(
+                "title chunker token cap enforced: cap=%s chunks %d -> %d",
+                cap,
+                len(chunks),
+                len(out),
+            )
         return out
 
     def extract_line_records(self):
