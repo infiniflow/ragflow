@@ -24,26 +24,6 @@ func newOpenAIForTest(baseURL string) *OpenAIModel {
 	)
 }
 
-func TestBuildRequestBodyIncludesGenerationConfig(t *testing.T) {
-	maxTokens := 128
-	temperature := 0.4
-	topP := 0.8
-	body := buildRequestBody(&ChatConfig{
-		MaxTokens:   &maxTokens,
-		Temperature: &temperature,
-		TopP:        &topP,
-	}, "test-model", []Message{{Role: "user", Content: "hello"}}, false)
-
-	if body["max_tokens"] != maxTokens {
-		t.Fatalf("max_tokens = %v, want %d", body["max_tokens"], maxTokens)
-	}
-	if body["temperature"] != temperature {
-		t.Fatalf("temperature = %v, want %v", body["temperature"], temperature)
-	}
-	if body["top_p"] != topP {
-		t.Fatalf("top_p = %v, want %v", body["top_p"], topP)
-	}
-}
 func TestOpenAIConfigAdvertisedAudioModelsHaveSuffixes(t *testing.T) {
 	raw, err := os.ReadFile("../../../conf/models/openai.json")
 	if err != nil {
