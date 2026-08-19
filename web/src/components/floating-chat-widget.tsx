@@ -646,7 +646,11 @@ const FloatingChatWidget = () => {
                     ) : (
                       <div className="space-y-2">
                         <FloatingChatWidgetMarkdown
-                          loading={false}
+                          loading={
+                            enableStreaming &&
+                            sendLoading &&
+                            index === displayMessages.length - 1
+                          }
                           content={message.content}
                           reference={
                             findReferenceByMessageId?.(message.id) ||
@@ -861,7 +865,11 @@ const FloatingChatWidget = () => {
                       ) : (
                         <div className="space-y-2">
                           <FloatingChatWidgetMarkdown
-                            loading={false}
+                            loading={
+                              enableStreaming &&
+                              sendLoading &&
+                              index === displayMessages.length - 1
+                            }
                             content={message.content}
                             reference={
                               findReferenceByMessageId?.(message.id) ||

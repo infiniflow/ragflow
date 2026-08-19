@@ -434,14 +434,45 @@ func (s *BotService) ChatbotCompletion(
 	// Sending accumulated full text on every frame interacts badly with
 	// the front-end's start_to_think/end_to_think marker append, causing
 	// reasoning content to leak into the visible answer.
+	return s.streamChatbotTurn(ctx, session, req.Question, messageID, results), common.CodeSuccess, nil
+}
+
+// streamChatbotTurn translates pipeline results into python-shaped
+// chatbot SSE frames and persists the finished turn. It mirrors
+// conversation_service.py structure_answer:
+//
+//   - Every non-final frame forwards only its own delta with an empty
+//     reference object; only the final frame carries the retrieval
+//     reference.
+//   - The final frame's `answer` is empty whenever text was already
+//     streamed as deltas (python async_chat sets final["answer"] = ""),
+//     so accumulating consumers do not double the text. The full text
+//     is only sent when nothing was streamed (single-shot results such
+//     as the structured-SQL path or error frames).
+//   - The persisted assistant turn is the raw streamed text, NOT the
+//     decorated final answer. The decorated text carries server-side
+//     [ID:n] citation markers; persisting it feeds fabricated markers
+//     back into the next turn's prompt, and models that imitate the
+//     history format then emit markers for turns whose retrieval
+//     returned nothing — which the widget renders as a citation icon
+//     with "Reference unavailable".
+func (s *BotService) streamChatbotTurn(
+	ctx context.Context,
+	session *entity.API4Conversation,
+	question, messageID string,
+	results <-chan AsyncChatResult,
+) <-chan ChatbotSSEFrame {
 	out := make(chan ChatbotSSEFrame, 16)
 	go func() {
 		defer close(out)
-		var (
-			fullAnswer string
-			finalRef   map[string]any
-			errored    bool
-		)
+		// rawAnswer is the accumulated wire text (deltas plus the
+		// <think>/</think> tags the marker frames stand for), i.e. what
+		// the client already rendered. fullAnswer additionally tracks
+		// the decorated final answer for error detection and the
+		// no-delta fallback.
+		var rawAnswer, fullAnswer string
+		var finalRef map[string]any
+		var errored bool
 		for res := range results {
 			if res.Final {
 				if res.Answer != "" {
@@ -459,8 +490,14 @@ func (s *BotService) ChatbotCompletion(
 				if strings.HasPrefix(fullAnswer, "**ERROR**") {
 					errored = true
 				}
+				finalData := ""
+				if rawAnswer == "" {
+					// Nothing was streamed as deltas; the final
+					// frame is the only carrier of the text.
+					finalData = fullAnswer
+				}
 				out <- ChatbotSSEFrame{
-					Data:      fullAnswer,
+					Data:      finalData,
 					Reference: referenceOrEmpty(finalRef),
 					SessionID: session.ID,
 					Final:     true,
@@ -470,6 +507,11 @@ func (s *BotService) ChatbotCompletion(
 			if res.StartToThink || res.EndToThink {
 				// Marker frames carry no text; the front-end appends
 				// <think> / </think> to the accumulated answer.
+				if res.StartToThink {
+					rawAnswer += "<think>"
+				} else {
+					rawAnswer += "</think>"
+				}
 				out <- ChatbotSSEFrame{
 					Data:         "",
 					Reference:    map[string]any{},
@@ -479,6 +521,7 @@ func (s *BotService) ChatbotCompletion(
 				}
 				continue
 			}
+			rawAnswer += res.Answer
 			fullAnswer += res.Answer
 			if len(res.Reference) > 0 {
 				// The pipeline only populates Reference on the final
@@ -504,18 +547,22 @@ func (s *BotService) ChatbotCompletion(
 		// stream — the answer has already been produced. On a
 		// pipeline-level error ("**ERROR**" answer) nothing is
 		// persisted, matching the python exception path.
+		persisted := rawAnswer
+		if persisted == "" {
+			persisted = fullAnswer
+		}
 		if !errored {
-			if pErr := s.persistChatbotTurn(ctx, session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
+			if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef); pErr != nil {
 				common.Error("bot: ChatbotCompletion session update failed",
 					pErr,
-					zap.String("dialog_id", dialogID),
+					zap.String("dialog_id", session.DialogID),
 					zap.String("session_id", session.ID),
 				)
 			}
 		}
 		out <- ChatbotSSEFrame{Done: true}
 	}()
-	return out, common.CodeSuccess, nil
+	return out
 }
 
 // buildChatbotPipelineMessages projects the session.Message JSON
