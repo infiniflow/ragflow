@@ -43,11 +43,45 @@ func ApplyComponentScopedParserConfig(
 				params["llm_id"] = llmID
 			}
 			delete(params, "enable_metadata")
-			params["metadata"] = map[string]any{
-				"enabled":           enableMetadata,
-				"metadata":          metadataFields,
-				"built_in_metadata": builtInMetadataFields,
+
+			hasTopLevelFields := len(metadataFields) > 0 || len(builtInMetadataFields) > 0
+
+			if hasTopLevelFields {
+				params["metadata"] = map[string]any{
+					"enabled":           enableMetadata,
+					"metadata":          metadataFields,
+					"built_in_metadata": builtInMetadataFields,
+				}
+			} else {
+				nodeCustom := extractFieldList(params, "fields", "metadata")
+				nodeBuiltIn := extractFieldList(params, "built_in_metadata", "")
+				nodeEnabled := false
+
+				if metaMap, ok := params["metadata"].(map[string]any); ok && metaMap["enabled"] != nil {
+					nodeEnabled = parserConfigTruthy(metaMap["enabled"])
+				} else if mcMap, ok := params["metadata_config"].(map[string]any); ok && mcMap["enabled"] != nil {
+					nodeEnabled = parserConfigTruthy(mcMap["enabled"])
+				} else if params["enable_metadata"] != nil {
+					nodeEnabled = parserConfigTruthy(params["enable_metadata"])
+				} else if enableMetadata {
+					nodeEnabled = true
+				}
+
+				if len(nodeCustom) > 0 || len(nodeBuiltIn) > 0 || nodeEnabled {
+					params["metadata"] = map[string]any{
+						"enabled":           nodeEnabled,
+						"metadata":          nodeCustom,
+						"built_in_metadata": nodeBuiltIn,
+					}
+				} else {
+					params["metadata"] = map[string]any{
+						"enabled":           false,
+						"metadata":          []any{},
+						"built_in_metadata": []any{},
+					}
+				}
 			}
+			delete(params, "metadata_config")
 		case strings.HasPrefix(cpnLower, "compiler:") || strings.HasPrefix(cpnLower, "compiler_"):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
@@ -83,13 +117,19 @@ func extractFieldList(parserConfig entity.JSONMap, primaryKey, fallbackKey strin
 			}
 		}
 	}
-	if metaMap, ok := parserConfig["metadata"].(map[string]any); ok {
-		if raw, ok := metaMap[primaryKey]; ok && raw != nil {
-			return extractValidFields(raw)
-		}
-		if fallbackKey != "" {
-			if raw, ok := metaMap[fallbackKey]; ok && raw != nil {
-				return extractValidFields(raw)
+	for _, subKey := range []string{"metadata", "metadata_config"} {
+		if metaMap, ok := parserConfig[subKey].(map[string]any); ok {
+			if raw, ok := metaMap[primaryKey]; ok && raw != nil {
+				if slice := extractValidFields(raw); len(slice) > 0 {
+					return slice
+				}
+			}
+			if fallbackKey != "" {
+				if raw, ok := metaMap[fallbackKey]; ok && raw != nil {
+					if slice := extractValidFields(raw); len(slice) > 0 {
+						return slice
+					}
+				}
 			}
 		}
 	}
