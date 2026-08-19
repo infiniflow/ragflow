@@ -989,7 +989,13 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if adjusted, ok := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); ok {
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
+			}
+			return
+		} else if ok {
 			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
 		}
 
@@ -4268,24 +4274,24 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	return cfg
 }
 
-func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool) {
+func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
+	if usedTokenCount >= modelMaxTokens {
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+	}
 	if cfg == nil || cfg.MaxTokens == nil {
-		return 0, false
+		return 0, false, nil
 	}
 	adjusted := *cfg.MaxTokens
 	if adjusted <= 0 {
 		cfg.MaxTokens = nil
-		return 0, false
+		return 0, false, nil
 	}
 	remainingTokens := modelMaxTokens - usedTokenCount
-	if remainingTokens < 0 {
-		remainingTokens = 0
-	}
 	if adjusted > remainingTokens {
 		adjusted = remainingTokens
 	}
 	cfg.MaxTokens = &adjusted
-	return adjusted, true
+	return adjusted, true, nil
 }
 
 func chatConfigPositiveInt(value interface{}) (int, bool) {

@@ -1480,7 +1480,10 @@ func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
 	}
 	cfg := BuildChatConfig(dialog, map[string]interface{}{"max_tokens": 700})
 
-	adjusted, ok := clampChatConfigMaxTokens(cfg, 1000, 450)
+	adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 450)
+	if err != nil {
+		t.Fatalf("clampChatConfigMaxTokens returned error: %v", err)
+	}
 	if !ok {
 		t.Fatal("expected max_tokens to be clamped")
 	}
@@ -1513,11 +1516,27 @@ func TestBuildChatConfigIgnoresNonPositiveMaxTokens(t *testing.T) {
 func TestClampChatConfigMaxTokensRejectsNonPositive(t *testing.T) {
 	for _, value := range []int{0, -1} {
 		cfg := &modelModule.ChatConfig{MaxTokens: &value}
-		if adjusted, ok := clampChatConfigMaxTokens(cfg, 1000, 100); ok {
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 100); err != nil {
+			t.Fatalf("max_tokens=%d returned unexpected error: %v", value, err)
+		} else if ok {
 			t.Fatalf("max_tokens=%d unexpectedly clamped to %d", value, adjusted)
 		}
 		if cfg.MaxTokens != nil {
 			t.Fatalf("max_tokens=%d should be cleared before provider request, got %v", value, *cfg.MaxTokens)
+		}
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
+	for _, usedTokenCount := range []int{1000, 1001} {
+		maxTokens := 700
+		cfg := &modelModule.ChatConfig{MaxTokens: &maxTokens}
+
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, usedTokenCount); err == nil {
+			t.Fatalf("usedTokenCount=%d expected capacity error, got adjusted=%d ok=%t", usedTokenCount, adjusted, ok)
+		}
+		if cfg.MaxTokens == nil || *cfg.MaxTokens != maxTokens {
+			t.Fatalf("capacity error should not set max_tokens to zero, got %v", cfg.MaxTokens)
 		}
 	}
 }
