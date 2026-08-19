@@ -87,6 +87,17 @@
       "reason": "Go cell text fill (internal/deepdoc/parser/pdf/table/table_cells.go FillCellTextFromBoxes) runs on the raw OCR boxes inside processOneTable, BEFORE buildLayout's NaiveVerticalMerge. Python fills cells inside construct_table (deepdoc/vision/table_structure_recognizer.py:156) AFTER _naive_vertical_merge, so boxes overlapping in Y are merged first. For 14_text_table_interleaved table 2, OCR boxes 'Software Hardware' (y 270-300) and 'Hardware' (y 287.7-300) overlap; both go to Go's row band 2 (vertical-overlap ratio 0.53 vs 0.44) and concatenate to 'Software Hardware Hardware', while Python collapses them and the final HTML keeps 'Software Hardware' in row 1. Replicated Python find_overlapped_with_threshold + gather/layouts_cleanup (rows unchanged, R=row2) but the final HTML differs — the divergence stems from the box set that reach construct_table after Python's downstream merge, which dump data cannot fully reproduce; instrumenting Python's self.boxes mid-pipeline is required to close it exactly."
     },
     {
+      "id": "table-crosspage-merge-seam-duplication",
+      "tag": "go_bug",
+      "kind": "cross_page_merge",
+      "applies_to": ["13_crosspage_table.pdf"],
+      "fields": ["MergeTablesAcrossPages", "processOneTable", "FillCellTextFromBoxes"],
+      "owner_fix_side": "go",
+      "status": "open",
+      "tracking": "MergeTablesAcrossPages (table/table_merge.go) concatenates per-page grids via stackGrids + padGridCols (by index) WITHOUT deduplicating the page-seam row. When a label/value box straddles the page boundary it is detected on both the anchor page and the continuation page, so the stacked grid emits the seam value twice (e.g. Go '2024-06 2024-07 2024-07' where Python emits a single cell '2024-06 2024-07') plus an empty row where Python merged the two boundary rows into one. Close it by detecting the seam-row overlap (same logical row present on both pages by content/Y proximity) and collapsing it into a single row instead of concatenating.",
+      "reason": "13_crosspage_table.pdf is a multi-page table (Python golden = single 81x5 grid). Go's pipeline parses each page into its own TableItem grid, then MergeTablesAcrossPages stacks the per-page grids. A month-label box that crosses the page boundary is captured by OCR/DLA on BOTH pages, so both per-page grids contain that month; concatenation yields the seam value duplicated and an extra empty row. Python's construct_table builds ONE grid from the whole table and merges the boundary rows into a single cell, so it never duplicates. Cell-level diff (TestPipelineParity13CrosspageSeam) shows the dominant divergence is the seam duplication (~29 seam rows; the rest are leading/trailing-whitespace only, normalized by TrimSpace): Go emits c0='2024-06 2024-07 2024-07' (3 tokens) + an empty preceding row, Python c0='2024-06 2024-07' (2 tokens). gridSim=98.3%. Tracked as open go_bug; NOT exempted from the harness FAIL count (13 is a lockedGridPDF)."
+    },
+    {
       "id": "table-rotation-split-vs-merged-grid",
       "tag": "go_intentional",
       "kind": "table_segmentation",
