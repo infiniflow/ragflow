@@ -17,7 +17,8 @@
 import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
-  initialExtractorValues,
+  getInitialExtractorValues,
+  initialGoExtractorValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
@@ -29,6 +30,7 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
+import { isGoBackend } from '@/utils/backend-runtime';
 import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -96,6 +98,12 @@ export function transformExtractorConfigToForm(
     result.prompts = config.prompts[0]?.content ?? '';
   }
 
+  // The nested per-feature configs are Go-only; the Python extractor form
+  // consumes the legacy flat fields as-is.
+  if (!isGoBackend()) {
+    return result;
+  }
+
   const isSummaryEnabled =
     config.summary?.enabled !== undefined
       ? Boolean(config.summary?.enabled)
@@ -110,7 +118,7 @@ export function transformExtractorConfigToForm(
     top_n:
       config.keywords?.top_n ??
       config.auto_keywords ??
-      initialExtractorValues.keywords.top_n,
+      initialGoExtractorValues.keywords.top_n,
     system_prompt:
       config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
   };
@@ -118,7 +126,7 @@ export function transformExtractorConfigToForm(
     top_n:
       config.questions?.top_n ??
       config.auto_questions ??
-      initialExtractorValues.questions.top_n,
+      initialGoExtractorValues.questions.top_n,
     system_prompt:
       config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
   };
@@ -126,7 +134,7 @@ export function transformExtractorConfigToForm(
     top_n:
       config.tags?.top_n ??
       config.auto_tags ??
-      initialExtractorValues.tags.top_n,
+      initialGoExtractorValues.tags.top_n,
     tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
   };
   result.summary = {
@@ -337,7 +345,7 @@ function normalizeOperatorForm(
       };
     case Operator.Extractor:
       return {
-        ...cloneDeep(initialExtractorValues),
+        ...cloneDeep(getInitialExtractorValues()),
         ...rawForm,
       };
     case Operator.Tokenizer:
