@@ -425,3 +425,99 @@ def test_async_chat_sql_retrieval_uses_dataset_owner_tenant_not_dialog_tenant(mo
     assert captured_calls[0]["tenant_id"] == "dataset-owner-tenant"
     assert captured_calls[0]["kb_ids"] == ["kb-shared"]
     assert result[0]["answer"] == "sql answer"
+
+
+@pytest.mark.p2
+def test_async_chat_skips_sql_retrieval_for_mixed_tenant_field_map_datasets(monkeypatch):
+    """Regression test: SQL retrieval must not silently pick one tenant's index
+    when the field-map datasets referenced by a chat span multiple tenants.
+
+    use_sql() queries a single tenant's doc-store index per call, and re-running
+    it once per tenant inline is too slow (each call round-trips an LLM to
+    generate SQL). So when the datasets span more than one tenant, SQL retrieval
+    is skipped entirely and the flow falls back to vector search, instead of
+    querying only one tenant's index and dropping the other tenants' data.
+    """
+    kb_a = SimpleNamespace(id="kb-a", tenant_id="tenant-a", parser_config={"field_map": {"product": "Product Name"}})
+    kb_b = SimpleNamespace(id="kb-b", tenant_id="tenant-b", parser_config={"field_map": {"product": "Product Name"}})
+
+    retriever = _StubAsyncRetriever(
+        {
+            "total": 1,
+            "chunks": [
+                {
+                    "chunk_id": "chunk-1",
+                    "content_ltks": "chunk text",
+                    "content_with_weight": "Chunk text from dataset.",
+                    "doc_id": "doc-1",
+                    "docnm_kwd": "doc.txt",
+                    "kb_id": "kb-a",
+                    "important_kwd": [],
+                    "positions": [],
+                    "vector": [0.1, 0.2],
+                }
+            ],
+            "doc_aggs": [],
+        }
+    )
+    chat_model = _StubChatModel(["stub answer"])
+    dialog = SimpleNamespace(
+        kb_ids=["kb-a", "kb-b"],
+        llm_id="chat-model",
+        tenant_llm_id="",
+        tenant_id="tenant-a",
+        llm_setting={},
+        similarity_threshold=0.1,
+        vector_similarity_weight=0.2,
+        top_n=8,
+        top_k=32,
+        meta_data_filter=None,
+        prompt_config={
+            "quote": False,
+            "keyword": False,
+            "tts": False,
+            "empty_response": "",
+            "system": "Use only this knowledge: {knowledge}",
+            "parameters": [{"key": "knowledge", "optional": False}],
+            "reasoning": False,
+            "toc_enhance": False,
+            "use_kg": False,
+        },
+    )
+
+    def _unexpected_use_sql(*_args, **_kwargs):
+        raise AssertionError("use_sql must not be called for mixed-tenant field-map datasets")
+
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(
+        dialog_service,
+        "resolve_model_config",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096, "model_type": "chat"},
+    )
+    monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "get_models",
+        lambda _dialog, **_kwargs: ([kb_a, kb_b], object(), None, chat_model, None),
+    )
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {"product": "Product Name"})
+    monkeypatch.setattr(dialog_service, "use_sql", _unexpected_use_sql)
+    monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)
+    monkeypatch.setattr(
+        dialog_service,
+        "kb_prompt",
+        lambda kbinfos, _max_tokens: ["Chunk text from dataset."] if kbinfos["chunks"] else [],
+    )
+    monkeypatch.setattr(dialog_service, "message_fit_in", lambda msg, _max_tokens: (0, msg))
+
+    async def _collect():
+        items = []
+        async for item in dialog_service.async_chat(dialog, [{"role": "user", "content": "How many products?"}], stream=False):
+            items.append(item)
+        return items
+
+    result = asyncio.run(_collect())
+
+    assert len(retriever.calls) == 1
+    assert result[0]["answer"] == "stub answer"
