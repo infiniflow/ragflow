@@ -319,6 +319,25 @@ def test_media_context_preserves_media_without_positions(monkeypatch):
 
 
 @pytest.mark.p1
+def test_media_context_preserves_image_payload_type(monkeypatch):
+    import rag.nlp as nlp
+    from PIL import Image
+
+    image = Image.new("RGB", (1, 1))
+    sections = [("Context before.", "@@1\t0\t10\t0\t5##")]
+    media = [((image, ["Figure 1"]), [(0, 0, 1, 10, 20)])]
+
+    monkeypatch.setattr(nlp, "tokenize", lambda d, text, _eng, language="English": d.update({"content_with_weight": text}))
+    contextualized = nlp.append_context2table_image4pdf(sections, media, 1)
+
+    rows = contextualized[0][0][1]
+    assert isinstance(rows, list)
+    assert "Context before." in rows[0]
+    assert "Figure 1" in rows[0]
+    assert [chunk["doc_type_kwd"] for chunk in nlp.tokenize_table(contextualized, {}, False)] == ["image"]
+
+
+@pytest.mark.p1
 @pytest.mark.parametrize("parse_method", ["naive", "manual", "paper"])
 def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_method):
     module = _load_mineru_parser(monkeypatch)
