@@ -19,6 +19,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,14 +41,15 @@ const (
 
 // GitHubConnector reads GitHub issues and pull requests.
 type GitHubConnector struct {
-	owner         string
-	repos         []string
-	includePRs    bool
-	includeIssues bool
-	token         string
-	batchSize     int
-	baseURL       string
-	doJSON        func(ctx context.Context, apiURL string, out any) (http.Header, error)
+	owner          string
+	repos          []string
+	repositoryName string
+	includePRs     bool
+	includeIssues  bool
+	token          string
+	batchSize      int
+	baseURL        string
+	doJSON         func(ctx context.Context, apiURL string, out any) (http.Header, error)
 }
 
 // NewGitHubConnector creates a GitHub connector from Python-compatible config.
@@ -59,13 +61,14 @@ func NewGitHubConnector(config map[string]any) (*GitHubConnector, error) {
 		baseURL = "https://api.github.com"
 	}
 	return &GitHubConnector{
-		owner:         strings.TrimSpace(stringConfig(config["repository_owner"])),
-		repos:         splitGitHubRepos(stringConfig(config["repository_name"])),
-		includePRs:    configBoolDefault(config["include_pull_requests"], true),
-		includeIssues: configBoolDefault(config["include_issues"], true),
-		token:         strings.TrimSpace(token),
-		batchSize:     configInt(config["batch_size"], defaultGitHubBatchSize),
-		baseURL:       baseURL,
+		owner:          strings.TrimSpace(stringConfig(config["repository_owner"])),
+		repos:          splitGitHubRepos(stringConfig(config["repository_name"])),
+		repositoryName: strings.TrimSpace(stringConfig(config["repository_name"])),
+		includePRs:     configBoolDefault(config["include_pull_requests"], true),
+		includeIssues:  configBoolDefault(config["include_issues"], true),
+		token:          strings.TrimSpace(token),
+		batchSize:      configInt(config["batch_size"], defaultGitHubBatchSize),
+		baseURL:        baseURL,
 	}, nil
 }
 
@@ -98,22 +101,183 @@ func (c *GitHubConnector) ValidateConnectorSetting(ctx context.Context, request 
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
 	if c == nil {
-		return fmt.Errorf("github connector is nil")
-	}
-	if c.owner == "" {
-		return fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided")
+		return &ConnectorValidationError{Message: "github connector is nil"}
 	}
 	if c.token == "" {
-		return fmt.Errorf("Missing github_access_token in credentials")
+		return &ConnectorMissingCredentialError{Message: "Missing github_access_token in credentials"}
+	}
+	if c.owner == "" {
+		return &ConnectorValidationError{Message: "Invalid connector settings: 'repo_owner' must be provided."}
 	}
 	if c.batchSize <= 0 {
-		return fmt.Errorf("batch_size must be a positive integer")
+		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
 	}
-	var user map[string]any
-	if _, err := c.getJSON(ctx, c.apiURL("/user", nil), &user); err != nil {
+
+	if c.repositoryName != "" {
+		if strings.Contains(c.repositoryName, ",") {
+			return c.validateConfiguredRepos(ctx)
+		}
+		return c.validateSingleRepo(ctx, strings.TrimSpace(c.repositoryName))
+	}
+	return c.validateOwner(ctx)
+}
+
+// validateConfiguredRepos validates comma-separated repository names, succeeding
+// if at least one repository is accessible.
+func (c *GitHubConnector) validateConfiguredRepos(ctx context.Context) error {
+	if len(c.repos) == 0 {
+		return &ConnectorValidationError{Message: "Invalid connector settings: No valid repository names provided."}
+	}
+	validationErrors := []string{}
+	for _, repoName := range c.repos {
+		if err := c.verifyRepo(ctx, repoName); err != nil {
+			validationErrors = append(validationErrors, fmt.Sprintf("Repository '%s': %s", repoName, githubErrorDetail(err)))
+			continue
+		}
+		return nil
+	}
+	return &ConnectorValidationError{Message: "None of the specified repositories could be accessed: " + strings.Join(validationErrors, ", ")}
+}
+
+// validateSingleRepo validates a single repository name.
+func (c *GitHubConnector) validateSingleRepo(ctx context.Context, repoName string) error {
+	if err := c.verifyRepo(ctx, repoName); err != nil {
+		var apiErr *githubAPIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			return &ConnectorValidationError{Message: fmt.Sprintf("GitHub repository not found with name: %s/%s", c.owner, repoName)}
+		}
+		return classifyGitHubError(err)
+	}
+	return nil
+}
+
+// verifyRepo checks that a repository is accessible and its contents can be read.
+func (c *GitHubConnector) verifyRepo(ctx context.Context, repoName string) error {
+	fullName := url.PathEscape(c.owner) + "/" + url.PathEscape(repoName)
+	var repo githubRepo
+	if _, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName, nil), &repo); err != nil {
+		return err
+	}
+	var contents any
+	if _, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/contents", nil), &contents); err != nil {
 		return err
 	}
 	return nil
+}
+
+// validateOwner validates the owner as an organization or a user with repositories.
+func (c *GitHubConnector) validateOwner(ctx context.Context) error {
+	err := c.validateOrgRepos(ctx)
+	if err == nil {
+		return nil
+	}
+	var apiErr *githubAPIError
+	if errors.As(err, &apiErr) {
+		if isGitHubMissingSSO(apiErr.Message) {
+			const ssoGuideLink = "https://docs.github.com/en/enterprise-cloud@latest/authentication/authenticating-with-saml-single-sign-on/authorizing-a-personal-access-token-for-use-with-saml-single-sign-on"
+			return &ConnectorValidationError{Message: fmt.Sprintf("Your GitHub token is missing authorization to access the `%s` organization. Please follow the guide to authorize your token: %s", c.owner, ssoGuideLink)}
+		}
+		// The owner is not accessible as an organization; try as a user.
+		userErr := c.validateUserRepos(ctx)
+		if userErr == nil {
+			return nil
+		}
+		var userAPIErr *githubAPIError
+		if errors.As(userErr, &userAPIErr) && userAPIErr.Status == http.StatusNotFound {
+			return &ConnectorValidationError{Message: fmt.Sprintf("GitHub user or organization not found: %s", c.owner)}
+		}
+		return classifyGitHubError(userErr)
+	}
+	return classifyGitHubError(err)
+}
+
+// validateOrgRepos validates the owner as a GitHub organization with repositories.
+func (c *GitHubConnector) validateOrgRepos(ctx context.Context) error {
+	var org map[string]any
+	if _, err := c.getJSON(ctx, c.apiURL("/orgs/"+url.PathEscape(c.owner), nil), &org); err != nil {
+		return err
+	}
+	hasRepos, err := c.ownerHasRepos(ctx, "/orgs/"+url.PathEscape(c.owner)+"/repos")
+	if err != nil {
+		return err
+	}
+	if !hasRepos {
+		return &ConnectorValidationError{Message: fmt.Sprintf("Found no repos for organization: %s. Does the credential have the right scopes?", c.owner)}
+	}
+	return nil
+}
+
+// validateUserRepos validates the owner as a GitHub user with repositories.
+func (c *GitHubConnector) validateUserRepos(ctx context.Context) error {
+	var user map[string]any
+	if _, err := c.getJSON(ctx, c.apiURL("/users/"+url.PathEscape(c.owner), nil), &user); err != nil {
+		return err
+	}
+	hasRepos, err := c.ownerHasRepos(ctx, "/users/"+url.PathEscape(c.owner)+"/repos")
+	if err != nil {
+		return err
+	}
+	if !hasRepos {
+		return &ConnectorValidationError{Message: fmt.Sprintf("Found no repos for user: %s. Does the credential have the right scopes?", c.owner)}
+	}
+	return nil
+}
+
+// ownerHasRepos reports whether an org or user owner has at least one visible repository.
+func (c *GitHubConnector) ownerHasRepos(ctx context.Context, path string) (bool, error) {
+	query := url.Values{"per_page": {"1"}}
+	var batch []githubRepo
+	if _, err := c.getJSON(ctx, c.apiURL(path, query), &batch); err != nil {
+		return false, err
+	}
+	return len(batch) > 0, nil
+}
+
+// classifyGitHubError maps a GitHub API error to a typed connector error.
+func classifyGitHubError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var apiErr *githubAPIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	switch apiErr.Status {
+	case http.StatusUnauthorized:
+		return &ConnectorMissingCredentialError{Message: "GitHub credential appears to be invalid or expired (HTTP 401)."}
+	case http.StatusForbidden:
+		return &ConnectorValidationError{Message: "Your GitHub token does not have sufficient permissions for this repository (HTTP 403)."}
+	default:
+		return &ConnectorValidationError{Message: fmt.Sprintf("Unexpected GitHub error (status=%d): %s", apiErr.Status, apiErr.Message)}
+	}
+}
+
+// githubErrorDetail returns a GitHub API error message suitable for validation details.
+func githubErrorDetail(err error) string {
+	var apiErr *githubAPIError
+	if errors.As(err, &apiErr) {
+		if message := githubErrorBodyMessage(apiErr.Message); message != "" {
+			return message
+		}
+		return apiErr.Message
+	}
+	return err.Error()
+}
+
+// githubErrorBodyMessage extracts the message field from a GitHub API error body.
+func githubErrorBodyMessage(body string) string {
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal([]byte(body), &payload) == nil && payload.Message != "" {
+		return payload.Message
+	}
+	return ""
+}
+
+// isGitHubMissingSSO reports whether a GitHub API error body requires organization SSO authorization.
+func isGitHubMissingSSO(body string) bool {
+	return strings.Contains(strings.ToLower(body), "you must grant your personal access token access to this organization")
 }
 
 // OpenSync opens one GitHub sync session.
@@ -309,7 +473,7 @@ func (c *GitHubConnector) getJSON(ctx context.Context, apiURL string, out any) (
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("GitHub API returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &githubAPIError{Status: resp.StatusCode, Message: strings.TrimSpace(string(body))}
 	}
 	if err = json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return nil, err
@@ -622,6 +786,19 @@ func (s *githubPruneSession) advanceRepo() {
 
 type githubRepo struct {
 	FullName string `json:"full_name"`
+}
+
+// githubAPIError is a GitHub API error with its HTTP status.
+type githubAPIError struct {
+	Status  int
+	Message string
+}
+
+func (e *githubAPIError) Error() string {
+	if e.Status == 0 {
+		return e.Message
+	}
+	return fmt.Sprintf("GitHub API returned HTTP %d: %s", e.Status, e.Message)
 }
 
 type githubSyncCursor struct {
