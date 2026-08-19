@@ -22,8 +22,9 @@
 //   - HTML (xlsx/xls)  → table-based Q&A (first two columns)
 //   - JSON (pdf, docx) → delimiter-based on structured text sections
 //
-// Every Q&A pair becomes a single chunk with content_with_weight
-// formatted as "Question: {q}\tAnswer: {a}".
+// Every Q&A pair becomes a single chunk whose text is
+// "Question: {q}\tAnswer: {a}" (ingestion renames text to
+// content_with_weight at the index boundary).
 package chunker
 
 import (
@@ -131,11 +132,16 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		if isMarkdown {
 			answer = renderMarkdown(answer)
 		}
+		// Text is the pipeline's canonical chunk carrier: ingestion hashes
+		// it into the chunk id and renames it to content_with_weight. A
+		// content_with_weight-only chunk would share one empty-text id with
+		// every sibling and the index write would collapse all Q&A pairs
+		// into a single chunk.
 		chunk := schema.ChunkDoc{
-			ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
-			DocType:           "text",
-			ContentLtks:       contentLTKS,
-			ContentSmLtks:     contentSMLTKS,
+			Text:          fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
+			DocType:       "text",
+			ContentLtks:   contentLTKS,
+			ContentSmLtks: contentSMLTKS,
 		}
 		//
 		// index), image id + coordinates carried from the source item.
@@ -218,7 +224,9 @@ func extractQATable(htmlStr string) []qaPair {
 			}
 		}
 		if len(texts) >= 2 {
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1]})
+			// RowNum mirrors Python qa.py's enumerate over the extracted
+			// pairs (beAdoc(..., row_num=ii)) → top_int.
+			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)})
 		}
 	}
 	return pairs
