@@ -141,11 +141,9 @@ type ExtractorOutputs struct {
 	// OutputFormat is always "chunks".
 	OutputFormat string `json:"output_format,omitempty"`
 
-	// Chunks is the enriched chunk list. When the Extractor ran over
-	// a non-empty input list, each chunk gains a new key named after
-	// FieldName (e.g., field_name="summary" -> chunk["summary"]). When
-	// the Extractor ran over an empty input, Chunks contains a single
-	// entry with one key (FieldName) holding the LLM result.
+	// Chunks is the enriched chunk list. Each chunk is enriched with
+	// modular extraction fields (important_kwd, question_kwd, tag_kwd,
+	// summary, metadata).
 	Chunks []map[string]any `json:"chunks,omitempty"`
 
 	// Error is set when the component short-circuits with an error
