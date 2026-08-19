@@ -114,10 +114,11 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 // rejects it against the true bbox — so Go assigned the box one row lower
 // than Python.
 //
-// rowStrips must be the TSR row components in the same top-to-bottom order
-// as the grid rows (GroupCells sorts them with SortYFirstly). When its
-// length does not match the number of row bands (degenerate span-covered
-// rows), it is ignored and the grid union is used as before.
+// rowStrips are the TSR "table row" components (data rows only — header /
+// projrowheader components are excluded by the caller). Each is matched to a
+// grid row band by Y coordinate via matchRowStrip, so the override applies to
+// every data row regardless of whether the table has a header. Rows with no
+// matching TSR row component (e.g. header rows) keep the grid-union strip X.
 func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
 	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
 	if len(cells) == 0 || len(boxes) == 0 {
@@ -180,12 +181,18 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			return cells[rows[ri].cells[a]].X0 < cells[rows[ri].cells[b]].X0
 		})
 	}
-	// Replace the grid-union strip X with the TSR row component's own bbox X
-	// when provided and aligned (see FillCellTextFromBoxesWithRows doc).
-	if len(rowStrips) == len(rows) {
-		for ri := range rows {
-			rows[ri].stripX0 = rowStrips[ri].X0
-			rows[ri].stripX1 = rowStrips[ri].X1
+	// Replace each grid row's strip X with the matching TSR "table row"
+	// component's own bbox X (see FillCellTextFromBoxesWithRows doc). Matching
+	// is by Y band, not positional index, so the override applies to every
+	// data row independently of whether the table has a header: header /
+	// projrowheader components are simply absent from rowStrips and fall back
+	// to the grid-union strip X, which is correct for header rows. This
+	// replaces the former all-or-nothing `len(rowStrips) == len(rows)` guard,
+	// which silently disabled the override for any table that had a header.
+	for ri := range rows {
+		if sx0, sx1, ok := matchRowStrip(rowStrips, rows[ri].y0); ok {
+			rows[ri].stripX0 = sx0
+			rows[ri].stripX1 = sx1
 		}
 	}
 
@@ -310,6 +317,24 @@ func BoxMatchesCell(cell pdf.TSRCell, box pdf.TextBox, cellIsEmpty bool) bool {
 		return inter/boxArea >= 0.3 // Python's find_overlapped_with_threshold default
 	}
 	return inter/boxArea >= 0.85
+}
+
+// matchRowStrip finds the TSR "table row" component whose Y0 matches the grid
+// row band y0 within yTol, returning its X range. A header / projrowheader
+// component (not collected into rowStrips by the caller) returns ok=false, so
+// that row keeps the grid-union strip X — correct for header rows. Matching by
+// Y (not positional index) lets the strip-X override apply to every data row
+// even when the table also has a header, instead of the former
+// all-or-nothing `len(rowStrips) == len(rows)` guard that silently disabled
+// the override for any header-bearing table.
+func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool) {
+	const yTol = 1e-6
+	for _, rs := range rowStrips {
+		if math.Abs(rs.Y0-y0) <= yTol {
+			return rs.X0, rs.X1, true
+		}
+	}
+	return 0, 0, false
 }
 
 // isCaptionBox checks if a text box is a table/figure caption,

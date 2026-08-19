@@ -348,6 +348,14 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 		}
 	}
 
+	// Mark OCR-derived boxes so OCR-only post-processing (layout.Dedup*)
+	// can scope itself to them and never de-duplicate char-path content.
+	if ocrUsed {
+		for i := range ocrBoxes {
+			ocrBoxes[i].IsOCR = true
+		}
+	}
+
 	return ocrBoxes, chars, ocrUsed
 }
 

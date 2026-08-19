@@ -274,3 +274,47 @@ func TestFillCellTextFromBoxes_RowStripUsesTSRRowBBox(t *testing.T) {
 		t.Errorf("row1 col0 = %q, want empty (box belongs to row 0)", flat[2].Text)
 	}
 }
+
+// TestFillCellTextFromBoxes_RowStripHeaderTable locks that the TSR row-strip
+// override applies to data rows even when the table HAS a header. The caller
+// (table_extract.go) collects only "table row" components into rowStrips and
+// excludes header / projrowheader; the former all-or-nothing guard
+// (len(rowStrips) == len(rows)) disabled the override for any header-bearing
+// table. Matching is now by Y, so data rows get the narrow strip X while the
+// header row keeps the grid-union X and is unaffected.
+func TestFillCellTextFromBoxes_RowStripHeaderTable(t *testing.T) {
+	// 3 grid rows: header + 2 data rows. Header is wider in Y only.
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 3000, Y1: 50}, // header row
+		},
+		{
+			{X0: 0, Y0: 50, X1: 3000, Y1: 100}, // data row A (full width)
+		},
+		{
+			{X0: 0, Y0: 100, X1: 3000, Y1: 150}, // data row B (narrow on left)
+		},
+	}
+	// Only data rows are collected into rowStrips (header excluded), matching
+	// production: data A full-width, data B narrow (x0=57).
+	rowStrips := []pdf.TSRCell{
+		{X0: 0, Y0: 50, X1: 3000, Y1: 100},
+		{X0: 57, Y0: 100, X1: 1400, Y1: 150}, // narrow left edge
+	}
+	// Box spans both data rows but is outside data row B's narrow strip
+	// (x0=57), so it must land in data row A.
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 60, Bottom: 140, Text: "AB"}}
+
+	flat := FlattenGrid(grid)
+	FillCellTextFromBoxesWithRows(flat, boxes, rowStrips)
+
+	if flat[1].Text != "AB" { // header=row0, data A=row1
+		t.Fatalf("data row A (flat[1]) = %q, want AB (override must apply to header tables)", flat[1].Text)
+	}
+	if flat[2].Text != "" { // data B=row2
+		t.Errorf("data row B (flat[2]) = %q, want empty (box rejected by narrow strip)", flat[2].Text)
+	}
+	if flat[0].Text != "" { // header row: box does not overlap it
+		t.Errorf("header row (flat[0]) = %q, want empty", flat[0].Text)
+	}
+}

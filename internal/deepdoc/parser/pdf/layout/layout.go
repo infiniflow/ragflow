@@ -35,6 +35,12 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 	}
 	groups := make(map[key][]int, len(boxes))
 	for i, b := range boxes {
+		// Only OCR boxes are de-duplicated: char-path digital-PDF boxes may
+		// legitimately repeat the same text (clauses, headings) and must be
+		// kept verbatim — dropping them would silently lose content.
+		if !b.IsOCR {
+			continue
+		}
 		t := strings.TrimSpace(b.Text)
 		if t == "" {
 			continue
@@ -114,12 +120,17 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 		if drop[i] {
 			continue
 		}
+		// Only OCR-vs-OCR pairs are collapsed (see DedupIdenticalText): a
+		// char-path box is never treated as a fragment of another.
+		if !boxes[i].IsOCR {
+			continue
+		}
 		ai := strings.TrimSpace(boxes[i].Text)
 		if ai == "" {
 			continue
 		}
 		for j := range boxes {
-			if i == j || drop[j] || boxes[i].PageNumber != boxes[j].PageNumber {
+			if i == j || drop[j] || boxes[i].PageNumber != boxes[j].PageNumber || !boxes[j].IsOCR {
 				continue
 			}
 			aj := strings.TrimSpace(boxes[j].Text)
