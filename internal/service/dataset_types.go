@@ -115,6 +115,7 @@ type MetadataConfigField struct {
 
 // MetadataConfigRequest mirrors PUT /datasets/:dataset_id/metadata/config.
 type MetadataConfigRequest struct {
+	Enabled         *bool                 `json:"enabled,omitempty"`
 	Metadata        []MetadataConfigField `json:"metadata"`
 	BuiltInMetadata []MetadataConfigField `json:"built_in_metadata"`
 }

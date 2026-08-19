@@ -155,7 +155,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		return in.chunks, nil
 	}
 
-	topN := c.Param.AutoTags
+	topN := c.Param.Tags.TopN
 
 	var examples []schema.TaggedChunk
 	var docsToTag []map[string]any
@@ -218,22 +218,22 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 }
 
 func (c *ExtractorComponent) resolveTagSource(ctx context.Context) (*indexedTagSource, bool) {
-	if c.Param.TagFileID == "" {
+	if c.Param.Tags.TagFileID == "" {
 		return nil, false
 	}
 	return c.loadTagFileIndexed(ctx)
 }
 
 func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTagSource, bool) {
-	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, c.Param.TagFileID)
+	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, c.Param.Tags.TagFileID)
 	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
-		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.TagFileID, err))
+		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.Tags.TagFileID, err))
 		return nil, false
 	}
 	cacheKey := tagSourceFileCacheKey(f)
 	if cached, ok := tagSourceFileIndexCache.load(cacheKey); ok {
 		common.Info("extractor tags: reused tag source file index",
-			zap.String("file_id", c.Param.TagFileID),
+			zap.String("file_id", c.Param.Tags.TagFileID),
 			zap.String("bucket", f.ParentID),
 			zap.String("key", *f.Location),
 		)
@@ -256,7 +256,7 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTa
 	}
 	indexed = tagSourceFileIndexCache.store(cacheKey, indexed)
 	common.Info("extractor tags: loaded tag source file",
-		zap.String("file_id", c.Param.TagFileID),
+		zap.String("file_id", c.Param.Tags.TagFileID),
 		zap.String("bucket", f.ParentID),
 		zap.String("key", *f.Location),
 		zap.Int64("size", f.Size),

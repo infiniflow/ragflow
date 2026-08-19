@@ -938,6 +938,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       knowledgeBases: '知识库',
       knowledgeBasesPlaceholder: '请选择',
       knowledgeBasesMessage: '请选择',
+      datasetUnavailable: '所选知识库不可用（已删除或无 chunk），请重新选择',
       knowledgeBasesTip:
         '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
