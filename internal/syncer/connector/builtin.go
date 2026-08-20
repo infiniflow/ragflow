@@ -44,6 +44,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
+	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
