@@ -357,9 +357,10 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.16, "[MinerU] Rendering PDF pages...")
         try:
-            with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
-                self.pdf = pdf
-                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
+                    self.pdf = pdf
+                    self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
         except Exception as e:
             self.page_images = None
             self.total_page = 0
