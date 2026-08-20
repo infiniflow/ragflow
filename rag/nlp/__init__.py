@@ -801,7 +801,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     return chunks
 
 
-def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False):
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False, section_page_offset: int = 0):
     from deepdoc.parser import PdfParser
 
     if table_context_size <= 0:
@@ -837,6 +837,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
+            page += section_page_offset
             page_bucket[page].append(((left, right, top, bottom), txt))
 
     def upper_context(page, i):

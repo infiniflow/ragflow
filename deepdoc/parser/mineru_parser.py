@@ -146,6 +146,8 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.outlines = []
+        self.page_from = 0
+        self.page_to = MAXIMUM_PAGE_NUMBER
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
@@ -919,7 +921,9 @@ class MinerUParser(RAGFlowPdfParser):
                 continue
 
             position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""
-            positions = [(page, left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(position_tag) for page in pages]
+            # MinerU numbers pages from zero within the selected PDF slice.
+            # Media positions leave the parser in the document-global domain.
+            positions = [(page + self.page_from, left, right, top, bottom) for pages, left, right, top, bottom in self.extract_positions(position_tag) for page in pages]
 
             if output_type == MinerUContentType.TABLE:
                 text = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
@@ -1050,7 +1054,7 @@ class MinerUParser(RAGFlowPdfParser):
         if callback:
             callback(0.15, f"[MinerU] Output directory: {out_dir}")
 
-        self.__images__(pdf, zoomin=1, callback=callback)
+        self.__images__(pdf, zoomin=1, page_from=page_from, page_to=page_to, callback=callback)
 
         try:
             options = MinerUParseOptions(
