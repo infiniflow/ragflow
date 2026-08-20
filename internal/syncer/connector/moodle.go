@@ -17,6 +17,7 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,6 +49,14 @@ var (
 	moodleRetryBaseDelay = time.Second
 	moodleRetryBackoff   = 2
 )
+var (
+	// moodleMaxResponseSize caps REST JSON responses. Package variable so
+	// tests can shrink it.
+	moodleMaxResponseSize int64 = 32 * 1024 * 1024
+	// moodleMaxDownloadSize caps file downloads. Package variable so
+	// tests can shrink it.
+	moodleMaxDownloadSize int64 = 100 * 1024 * 1024
+)
 
 // MoodleConnector reads course content from a Moodle LMS through its REST web
 // service API.
@@ -56,7 +65,6 @@ type MoodleConnector struct {
 	token     string
 	batchSize int
 
-	client *http.Client
 	// restCall is a test hook that replaces the live web service transport.
 	restCall func(ctx context.Context, function string, params map[string]any, out any) error
 }
@@ -65,18 +73,10 @@ type MoodleConnector struct {
 func NewMoodleConnector(config map[string]any) (*MoodleConnector, error) {
 	credentials := configAnyMap(config["credentials"])
 	batchSize := configInt(firstNonEmpty(stringConfig(config["sync_batch_size"]), stringConfig(config["batch_size"])), defaultMoodleBatchSize)
-	client := &http.Client{Timeout: moodleRequestTimeout}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= moodleMaxRedirects {
-			return fmt.Errorf("Moodle request stopped after %d redirects", moodleMaxRedirects)
-		}
-		return assertMoodleURLSafe(req.Context(), req.URL.String())
-	}
 	return &MoodleConnector{
 		moodleURL: strings.TrimRight(strings.TrimSpace(stringConfig(config["moodle_url"])), "/"),
 		token:     strings.TrimSpace(stringConfig(credentials["moodle_token"])),
 		batchSize: batchSize,
-		client:    client,
 	}, nil
 }
 
@@ -141,7 +141,10 @@ func (c *MoodleConnector) OpenPrune(ctx context.Context, request PruneRequest) (
 	}
 	var documents []SlimDocument
 	for _, course := range courses {
-		sections := c.getCourseContents(ctx, course.ID)
+		sections, err := c.getCourseContents(ctx, course.ID)
+		if err != nil {
+			return nil, err
+		}
 		for _, section := range sections {
 			for _, module := range section.Modules {
 				slimID := moodleSlimDocIDForModule(module)
@@ -216,9 +219,6 @@ func (c *MoodleConnector) callREST(ctx context.Context, function string, params 
 		return c.restCall(ctx, function, params, out)
 	}
 	endpoint := c.moodleURL + moodleRESTPath
-	if err := assertMoodleURLSafe(ctx, endpoint); err != nil {
-		return err
-	}
 	form := url.Values{}
 	form.Set("wstoken", c.token)
 	form.Set("wsfunction", function)
@@ -233,19 +233,17 @@ func (c *MoodleConnector) callREST(ctx context.Context, function string, params 
 			form.Set(key, typed)
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.client.Do(req)
+	resp, err := c.moodleHTTPDo(ctx, http.MethodPost, endpoint, []byte(form.Encode()), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, moodleMaxResponseSize+1))
 	if err != nil {
 		return err
+	}
+	if int64(len(body)) > moodleMaxResponseSize {
+		return fmt.Errorf("Moodle REST response exceeds maximum size of %d bytes", moodleMaxResponseSize)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return moodleRESTError(body, resp.StatusCode)
@@ -343,14 +341,7 @@ func (c *MoodleConnector) getForumDiscussions(ctx context.Context, forumID int64
 
 func (c *MoodleConnector) downloadFile(ctx context.Context, fileURL string) ([]byte, error) {
 	downloadURL := addMoodleToken(fileURL, c.token)
-	if err := assertMoodleURLSafe(ctx, downloadURL); err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.moodleHTTPDo(ctx, http.MethodGet, downloadURL, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +349,14 @@ func (c *MoodleConnector) downloadFile(ctx context.Context, fileURL string) ([]b
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("Moodle file download failed with status %d for %s", resp.StatusCode, moodleRedactedURL(fileURL))
 	}
-	return io.ReadAll(resp.Body)
+	blob, err := io.ReadAll(io.LimitReader(resp.Body, moodleMaxDownloadSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(blob)) > moodleMaxDownloadSize {
+		return nil, fmt.Errorf("Moodle file download exceeds maximum size of %d bytes", moodleMaxDownloadSize)
+	}
+	return blob, nil
 }
 
 func addMoodleToken(fileURL, token string) string {
@@ -375,64 +373,72 @@ func addMoodleToken(fileURL, token string) string {
 	return fileURL + delimiter + "token=" + token
 }
 
-func moodleHTMLToMarkdown(html string) string {
+func moodleHTMLToMarkdown(html string) (string, error) {
 	converter := md.NewConverter("", true, &md.Options{EmDelimiter: "*"})
 	out, err := converter.ConvertString(html)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("Moodle HTML to Markdown conversion failed: %w", err)
 	}
-	return out
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
 // Document building
 // ---------------------------------------------------------------------------
 
-func (c *MoodleConnector) courseDocuments(ctx context.Context, request SyncRequest, course moodleCourse, sections []moodleSection) []SourceDocument {
+func (c *MoodleConnector) courseDocuments(ctx context.Context, request SyncRequest, course moodleCourse, sections []moodleSection) ([]SourceDocument, error) {
 	var documents []SourceDocument
 	for _, section := range sections {
 		for _, module := range section.Modules {
-			documents = append(documents, c.moduleDocuments(ctx, request, course, section, module)...)
+			docs, err := c.moduleDocuments(ctx, request, course, section, module)
+			if err != nil {
+				return nil, err
+			}
+			documents = append(documents, docs...)
 		}
 	}
-	return documents
+	return documents, nil
 }
 
-func (c *MoodleConnector) moduleDocuments(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) []SourceDocument {
+func (c *MoodleConnector) moduleDocuments(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) ([]SourceDocument, error) {
 	var document *SourceDocument
+	var err error
 	switch module.ModName {
 	case "label", "url":
-		return nil
+		return nil, nil
 	case "resource":
-		document = c.resourceDocument(ctx, request, course, section, module)
+		document, err = c.resourceDocument(ctx, request, course, section, module)
 	case "page":
-		document = c.pageDocument(ctx, request, course, section, module)
+		document, err = c.pageDocument(ctx, request, course, section, module)
 	case "forum":
-		document = c.forumDocument(ctx, request, course, section, module)
+		document, err = c.forumDocument(ctx, request, course, section, module)
 	case "assign", "quiz":
-		document = c.activityDocument(ctx, request, course, section, module)
+		document, err = c.activityDocument(ctx, request, course, section, module)
 	case "book":
-		document = c.bookDocument(ctx, request, course, section, module)
+		document, err = c.bookDocument(ctx, request, course, section, module)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if document == nil {
-		return nil
+		return nil, nil
 	}
-	return []SourceDocument{*document}
+	return []SourceDocument{*document}, nil
 }
 
-func (c *MoodleConnector) resourceDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) *SourceDocument {
+func (c *MoodleConnector) resourceDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) (*SourceDocument, error) {
 	if len(module.Contents) == 0 || module.Contents[0].FileURL == "" {
-		return nil
+		return nil, nil
 	}
 	fileInfo := module.Contents[0]
 	fileName := path.Base(fileInfo.Filename)
 	ts := moodleMaxTimestamp(module.TimeCreated, module.TimeModified, fileInfo.TimeModified)
 	if !includeMoodleModule(request, ts) {
-		return nil
+		return nil, nil
 	}
 	blob, err := c.downloadFile(ctx, fileInfo.FileURL)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	extension := filepath.Ext(fileName)
 	if extension == "" {
@@ -450,22 +456,22 @@ func (c *MoodleConnector) resourceDocument(ctx context.Context, request SyncRequ
 		UpdatedAt:          moodleTime(ts),
 		SizeBytes:          int64(len(blob)),
 		Metadata:           c.fileModuleMetadata(course, section, module, fileInfo, fileSize, fileName),
-	}
+	}, nil
 }
 
-func (c *MoodleConnector) pageDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) *SourceDocument {
+func (c *MoodleConnector) pageDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) (*SourceDocument, error) {
 	if len(module.Contents) == 0 || module.Contents[0].FileURL == "" {
-		return nil
+		return nil, nil
 	}
 	fileInfo := module.Contents[0]
 	fileName := path.Base(fileInfo.Filename)
 	ts := moodleMaxTimestamp(module.TimeCreated, module.TimeModified, fileInfo.TimeModified)
 	if !includeMoodleModule(request, ts) {
-		return nil
+		return nil, nil
 	}
 	blob, err := c.downloadFile(ctx, fileInfo.FileURL)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	extension := filepath.Ext(fileName)
 	if extension == "" {
@@ -483,25 +489,32 @@ func (c *MoodleConnector) pageDocument(ctx context.Context, request SyncRequest,
 		UpdatedAt:          moodleTime(ts),
 		SizeBytes:          int64(len(blob)),
 		Metadata:           c.fileModuleMetadata(course, section, module, fileInfo, fileSize, fileName),
-	}
+	}, nil
 }
 
-func (c *MoodleConnector) forumDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) *SourceDocument {
+func (c *MoodleConnector) forumDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) (*SourceDocument, error) {
 	if module.Instance == nil {
-		return nil
+		return nil, nil
 	}
 	if !includeMoodleModule(request, module.windowTimestamp()) {
-		return nil
+		return nil, nil
 	}
 	discussions, err := c.getForumDiscussions(ctx, *module.Instance)
-	if err != nil || len(discussions) == 0 {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if len(discussions) == 0 {
+		return nil, nil
 	}
 	markdown := []string{"# " + module.Name + "\n"}
 	latest := moodleMaxTimestamp(module.TimeCreated, module.TimeModified)
 	discussionMetadata := make([]map[string]any, 0, len(discussions))
 	for _, discussion := range discussions {
-		markdown = append(markdown, fmt.Sprintf("## %s\n\n%s\n\n---\n", discussion.Name, moodleHTMLToMarkdown(discussion.Message)))
+		body, err := moodleHTMLToMarkdown(discussion.Message)
+		if err != nil {
+			return nil, err
+		}
+		markdown = append(markdown, fmt.Sprintf("## %s\n\n%s\n\n---\n", discussion.Name, body))
 		latest = maxInt64(latest, derefInt64(discussion.TimeModified))
 		discussionMetadata = append(discussionMetadata, map[string]any{
 			"id":            discussion.ID,
@@ -525,17 +538,21 @@ func (c *MoodleConnector) forumDocument(ctx context.Context, request SyncRequest
 		UpdatedAt:          moodleTime(latest),
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
-	}
+	}, nil
 }
 
-func (c *MoodleConnector) activityDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) *SourceDocument {
+func (c *MoodleConnector) activityDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) (*SourceDocument, error) {
 	if module.Description == "" {
-		return nil
+		return nil, nil
 	}
 	if !includeMoodleModule(request, module.windowTimestamp()) {
-		return nil
+		return nil, nil
 	}
-	markdown := fmt.Sprintf("# %s\n\n**Type:** %s\n\n%s", module.Name, capitalizeMoodleType(module.ModName), moodleHTMLToMarkdown(module.Description))
+	body, err := moodleHTMLToMarkdown(module.Description)
+	if err != nil {
+		return nil, err
+	}
+	markdown := fmt.Sprintf("# %s\n\n**Type:** %s\n\n%s", module.Name, capitalizeMoodleType(module.ModName), body)
 	ts := moodleMaxTimestamp(module.TimeCreated, module.TimeModified, module.Added)
 	metadata := moodleBaseMetadata(c, course, section, module)
 	metadata["activity_type"] = module.ModName
@@ -551,12 +568,12 @@ func (c *MoodleConnector) activityDocument(ctx context.Context, request SyncRequ
 		UpdatedAt:          moodleTime(ts),
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
-	}
+	}, nil
 }
 
-func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) *SourceDocument {
+func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest, course moodleCourse, section moodleSection, module moodleModule) (*SourceDocument, error) {
 	if len(module.Contents) == 0 {
-		return nil
+		return nil, nil
 	}
 	var chapters []moodleContent
 	for _, content := range module.Contents {
@@ -565,10 +582,10 @@ func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest,
 		}
 	}
 	if len(chapters) == 0 {
-		return nil
+		return nil, nil
 	}
 	if !includeMoodleModule(request, module.windowTimestamp()) {
-		return nil
+		return nil, nil
 	}
 	latest := moodleMaxTimestamp(module.TimeCreated, module.TimeModified)
 	for _, content := range module.Contents {
@@ -580,14 +597,18 @@ func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest,
 	for _, chapter := range chapters {
 		blob, err := c.downloadFile(ctx, chapter.FileURL)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		markdownParts = append(markdownParts, moodleHTMLToMarkdown(string(blob))+"\n\n---\n")
+		body, err := moodleHTMLToMarkdown(string(blob))
+		if err != nil {
+			return nil, err
+		}
+		markdownParts = append(markdownParts, body+"\n\n---\n")
 		chapterMetadata = append(chapterMetadata, map[string]any{
 			"chapter_id":    chapter.ChapterID,
 			"title":         chapter.Title,
 			"filename":      chapter.Filename,
-			"fileurl":       chapter.FileURL,
+			"fileurl":       moodleRedactedURL(chapter.FileURL),
 			"time_created":  chapter.TimeCreated,
 			"time_modified": chapter.TimeModified,
 			"size":          chapter.FileSize,
@@ -606,13 +627,13 @@ func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest,
 		UpdatedAt:          moodleTime(latest),
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
-	}
+	}, nil
 }
 
 func (c *MoodleConnector) fileModuleMetadata(course moodleCourse, section moodleSection, module moodleModule, fileInfo moodleContent, fileSize int64, fileName string) map[string]any {
 	metadata := moodleBaseMetadata(c, course, section, module)
 	metadata["module_instance"] = module.Instance
-	metadata["file_url"] = fileInfo.FileURL
+	metadata["file_url"] = moodleRedactedURL(fileInfo.FileURL)
 	metadata["file_name"] = fileName
 	metadata["file_size"] = fileSize
 	metadata["file_type"] = fileInfo.MIMEType
@@ -680,8 +701,14 @@ func (s *moodleSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			if course.ID <= s.resumeAfterCourseID {
 				continue
 			}
-			sections := s.connector.getCourseContents(ctx, course.ID)
-			documents := s.connector.courseDocuments(ctx, s.request, course, sections)
+			sections, err := s.connector.getCourseContents(ctx, course.ID)
+			if err != nil {
+				return SyncBatch{}, err
+			}
+			documents, err := s.connector.courseDocuments(ctx, s.request, course, sections)
+			if err != nil {
+				return SyncBatch{}, err
+			}
 			if len(documents) == 0 {
 				continue
 			}
@@ -853,14 +880,24 @@ func validateMoodleURLForSSRF(rawURL string) error {
 	if strings.EqualFold(hostname, "localhost") {
 		return &ConnectorValidationError{Message: fmt.Sprintf("Moodle URL hostname %q is not allowed (localhost is blocked).", hostname)}
 	}
-	if restAPISSRFAllowLoopback {
-		return nil
-	}
 	addrs, err := net.LookupIP(hostname)
 	if err != nil {
 		// Resolution failure is not an SSRF condition by itself; the
 		// per-request check surfaces it if it matters.
 		return nil
+	}
+	if restAPISSRFAllowLoopback {
+		allLoopback := true
+		for _, addr := range addrs {
+			if !addr.IsLoopback() {
+				allLoopback = false
+				break
+			}
+		}
+		if allLoopback {
+			return nil
+		}
+		// Not all loopback — fall through to normal validation.
 	}
 	for _, addr := range addrs {
 		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr)) {
@@ -872,32 +909,133 @@ func validateMoodleURLForSSRF(rawURL string) error {
 	return nil
 }
 
-func assertMoodleURLSafe(ctx context.Context, rawURL string) error {
+// moodleAssertURLSafe validates a per-request URL for SSRF, HTTPS, and
+// same-origin policy. It returns the hostname and first validated IP so the
+// caller can pin DNS for the actual dial.
+func moodleAssertURLSafe(ctx context.Context, rawURL, originURL string) (string, net.IP, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("Moodle URL is missing a host.")
+		return "", nil, fmt.Errorf("Moodle URL is missing a host.")
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("Disallowed URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
+		return "", nil, fmt.Errorf("Disallowed URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
 	}
 	hostname := parsed.Hostname()
 	if hostname == "" {
-		return fmt.Errorf("Moodle URL is missing a host.")
+		return "", nil, fmt.Errorf("Moodle URL is missing a host.")
+	}
+	// Reject cross-origin targets: every request must go to the configured
+	// Moodle host.
+	if originURL != "" {
+		if origin, err := url.Parse(originURL); err == nil && origin.Hostname() != "" {
+			if !strings.EqualFold(hostname, origin.Hostname()) {
+				return "", nil, fmt.Errorf("Moodle URL host %q does not match configured origin %q.", hostname, origin.Hostname())
+			}
+		}
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
-		return fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
 	}
 	if len(addrs) == 0 {
-		return fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
+		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
 	}
 	if restAPISSRFAllowLoopback {
-		return nil
+		allLoopback := true
+		for _, addr := range addrs {
+			if !addr.IP.IsLoopback() {
+				allLoopback = false
+				break
+			}
+		}
+		if allLoopback {
+			return hostname, addrs[0].IP, nil
+		}
+		// Not all loopback — fall through to normal validation.
 	}
+	var first net.IP
 	for _, addr := range addrs {
 		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr.IP)) {
-			return fmt.Errorf("Moodle URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
+			return "", nil, fmt.Errorf("Moodle URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
+		}
+		if first == nil {
+			first = addr.IP
 		}
 	}
-	return nil
+	if first == nil {
+		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
+	}
+	return hostname, first, nil
+}
+
+// moodleHTTPDo sends an HTTP request with DNS-pinned transport and manual
+// redirect handling. Each hop is independently validated for SSRF, HTTPS, and
+// same-origin policy, preventing DNS rebinding and redirect-based bypasses.
+func (c *MoodleConnector) moodleHTTPDo(ctx context.Context, method, rawURL string, body []byte, headers map[string]string) (*http.Response, error) {
+	currentURL := rawURL
+	currentMethod := method
+	currentBody := body
+	for hop := 0; hop <= moodleMaxRedirects; hop++ {
+		hostname, pinIP, err := moodleAssertURLSafe(ctx, currentURL, c.moodleURL)
+		if err != nil {
+			return nil, err
+		}
+		transport := newRestAPIPinnedTransport(hostname, pinIP)
+		client := &http.Client{
+			Transport: transport,
+			Timeout:   moodleRequestTimeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		var bodyReader io.Reader
+		if currentBody != nil {
+			bodyReader = bytes.NewReader(currentBody)
+		}
+		req, err := http.NewRequestWithContext(ctx, currentMethod, currentURL, bodyReader)
+		if err != nil {
+			transport.CloseIdleConnections()
+			return nil, err
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			transport.CloseIdleConnections()
+			return nil, err
+		}
+		if !restAPIIsRedirect(resp.StatusCode) {
+			resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
+			return resp, nil
+		}
+		location := resp.Header.Get("Location")
+		resp.Body.Close()
+		transport.CloseIdleConnections()
+		if location == "" {
+			return nil, fmt.Errorf("Moodle redirect with empty Location header")
+		}
+		nextURL, err := restAPIResolveURL(currentURL, location)
+		if err != nil {
+			return nil, err
+		}
+		currentURL = nextURL
+		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
+			currentMethod = http.MethodGet
+			currentBody = nil
+		}
+	}
+	return nil, fmt.Errorf("Moodle request stopped after %d redirects", moodleMaxRedirects)
+}
+
+// moodleRedactedURL strips query and fragment from a URL so that tokens or
+// other sensitive query parameters are not persisted in document metadata.
+func moodleRedactedURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }

@@ -461,11 +461,17 @@ func TestMoodleConnectorOpenSyncCheckpointAdvancesPerCourse(t *testing.T) {
 }
 
 func TestMoodleHTMLToMarkdown(t *testing.T) {
-	out := moodleHTMLToMarkdown("<p>Hello <strong>world</strong> and <em>you</em></p>")
+	out, err := moodleHTMLToMarkdown("<p>Hello <strong>world</strong> and <em>you</em></p>")
+	if err != nil {
+		t.Fatalf("moodleHTMLToMarkdown: %v", err)
+	}
 	if !strings.Contains(out, "**world**") || !strings.Contains(out, "*you*") {
 		t.Fatalf("markdown = %q", out)
 	}
-	out = moodleHTMLToMarkdown("<h1>Title</h1><p>Body</p>")
+	out, err = moodleHTMLToMarkdown("<h1>Title</h1><p>Body</p>")
+	if err != nil {
+		t.Fatalf("moodleHTMLToMarkdown: %v", err)
+	}
 	if !strings.Contains(out, "# Title") || !strings.Contains(out, "Body") {
 		t.Fatalf("markdown = %q", out)
 	}
@@ -525,5 +531,159 @@ func TestMoodleConnectorValidateConnectorSetting(t *testing.T) {
 	connector := mustMoodleConnector(t, server.URL)
 	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+}
+
+func TestMoodleRedactedURL(t *testing.T) {
+	original := "https://moodle.example.com/pluginfile.php/guides/guide.pdf?token=secret&forcedownload=1"
+	redacted := moodleRedactedURL(original)
+	if strings.Contains(redacted, "token") || strings.Contains(redacted, "?") {
+		t.Fatalf("redacted URL still contains query params: %q", redacted)
+	}
+	want := "https://moodle.example.com/pluginfile.php/guides/guide.pdf"
+	if redacted != want {
+		t.Fatalf("redacted URL = %q, want %q", redacted, want)
+	}
+}
+
+func TestMoodleConnectorDownloadErrorFailsCourse(t *testing.T) {
+	withMoodleTestHooks(t)
+	server := newTestMoodleServer(t, func(serverURL string) moodleTestFixtures {
+		return moodleTestFixtures{
+			courses: `[{"id":1,"fullname":"Course One","shortname":"c1"}]`,
+			contents: map[string]string{
+				"1": `[{"id":11,"name":"Week 1","section":0,"modules":[` +
+					`{"id":100,"name":"Guide","modname":"resource","instance":7,"visible":1,"groupmode":0,"timecreated":1000000000,"timemodified":1700000000,"contents":[{"type":"file","filename":"guide.pdf","filepath":"/","filesize":123,"fileurl":"` + serverURL + `/pluginfile.php/nonexistent/guide.pdf","mimetype":"application/pdf","timemodified":1700000000}]}` +
+					`]}]`,
+			},
+			files: map[string]string{},
+		}
+	})
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	_, err = session.NextBatch(context.Background())
+	if err == nil {
+		t.Fatalf("expected NextBatch to fail when a download fails")
+	}
+}
+
+func TestMoodleConnectorMetadataRedactsFileURL(t *testing.T) {
+	withMoodleTestHooks(t)
+	server := newTestMoodleServer(t, func(serverURL string) moodleTestFixtures {
+		return moodleTestFixtures{
+			courses: `[{"id":1,"fullname":"Course One","shortname":"c1"}]`,
+			contents: map[string]string{
+				"1": `[{"id":11,"name":"Week 1","section":0,"modules":[` +
+					`{"id":100,"name":"Guide","modname":"resource","instance":7,"visible":1,"groupmode":0,"timecreated":1000000000,"timemodified":1700000000,"contents":[{"type":"file","filename":"guide.pdf","filepath":"/","filesize":123,"fileurl":"` + serverURL + `/pluginfile.php/guides/guide.pdf?forcedownload=1","mimetype":"application/pdf","timemodified":1700000000}]}` +
+					`]}]`,
+			},
+			files: map[string]string{
+				"/pluginfile.php/guides/guide.pdf": "%PDF-1.4 fake",
+			},
+		}
+	})
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	documents := collectMoodleDocuments(t, session)
+	for _, doc := range documents {
+		if doc.SourceID != "moodle_resource_100" {
+			continue
+		}
+		fileURL, ok := doc.Metadata["file_url"].(string)
+		if !ok {
+			t.Fatalf("file_url not a string: %T", doc.Metadata["file_url"])
+		}
+		if strings.Contains(fileURL, "?") {
+			t.Fatalf("file_url should be redacted (no query): %q", fileURL)
+		}
+	}
+}
+
+func TestMoodleAssertURLSafeRejectsCrossOrigin(t *testing.T) {
+	origLoopback := restAPISSRFAllowLoopback
+	restAPISSRFAllowLoopback = false
+	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+
+	_, _, err := moodleAssertURLSafe(context.Background(), "https://evil.com/api", "https://example.com")
+	if err == nil {
+		t.Fatalf("expected cross-origin rejection")
+	}
+}
+
+func TestMoodleAssertURLSafeLoopbackAllAddresses(t *testing.T) {
+	origLoopback := restAPISSRFAllowLoopback
+	restAPISSRFAllowLoopback = true
+	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+
+	// All loopback → allowed.
+	_, _, err := moodleAssertURLSafe(context.Background(), "http://127.0.0.1/path", "http://127.0.0.1")
+	if err != nil {
+		t.Fatalf("expected loopback to be allowed: %v", err)
+	}
+
+	// Not all loopback (private address) → rejected even with loopback flag.
+	_, _, err = moodleAssertURLSafe(context.Background(), "http://10.0.0.1/path", "http://10.0.0.1")
+	if err == nil {
+		t.Fatalf("expected non-loopback private address to be rejected even with loopback flag")
+	}
+}
+
+func TestMoodleConnectorRESTResponseSizeCap(t *testing.T) {
+	withMoodleTestHooks(t)
+	origMax := moodleMaxResponseSize
+	moodleMaxResponseSize = 10
+	defer func() { moodleMaxResponseSize = origMax }()
+
+	server := newTestMoodleServer(t, func(serverURL string) moodleTestFixtures {
+		fixtures := fullSyncMoodleFixtures(serverURL)
+		fixtures.siteInfoBody = `{"sitename":"Test Moodle with a very long name that exceeds the cap"}`
+		return fixtures
+	})
+	connector := mustMoodleConnector(t, server.URL)
+	err := connector.Validate(context.Background())
+	if err == nil {
+		t.Fatalf("expected oversize response error")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("expected oversize error, got: %v", err)
+	}
+}
+
+func TestMoodleConnectorDownloadSizeCap(t *testing.T) {
+	withMoodleTestHooks(t)
+	origMax := moodleMaxDownloadSize
+	moodleMaxDownloadSize = 10
+	defer func() { moodleMaxDownloadSize = origMax }()
+
+	server := newTestMoodleServer(t, func(serverURL string) moodleTestFixtures {
+		return moodleTestFixtures{
+			courses: `[{"id":1,"fullname":"Course One","shortname":"c1"}]`,
+			contents: map[string]string{
+				"1": `[{"id":11,"name":"Week 1","section":0,"modules":[` +
+					`{"id":100,"name":"Guide","modname":"resource","instance":7,"visible":1,"groupmode":0,"timecreated":1000000000,"timemodified":1700000000,"contents":[{"type":"file","filename":"guide.pdf","filepath":"/","filesize":123,"fileurl":"` + serverURL + `/pluginfile.php/guides/guide.pdf","mimetype":"application/pdf","timemodified":1700000000}]}` +
+					`]}]`,
+			},
+			files: map[string]string{
+				"/pluginfile.php/guides/guide.pdf": "this content is longer than ten bytes",
+			},
+		}
+	})
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	_, err = session.NextBatch(context.Background())
+	if err == nil {
+		t.Fatalf("expected oversize download error")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("expected oversize error, got: %v", err)
 	}
 }
