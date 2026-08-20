@@ -8,15 +8,16 @@ package pdf
 //
 // Only PDFs that actually reach gridSim=100% AND structureSim=100% (the only
 // divergence left being non-cell-text: caption/body/format outside table cells)
-// belong here. Known-unfixed content/structure gaps (e.g. 13_crosspage_table,
-// 14_text_table_interleaved, table_rotation_test) must NOT be locked, or the
-// harness both accepts and forbids the same gap — a contradiction. Keep this
-// set in lock-step with known_diffs.json: a PDF listed here must have
-// gridSim=100% and structureSim=100% (or be exempted as go_intentional), never
-// an open/accepted_at_merge failure.
+// belong here. Known-unfixed content/structure gaps (e.g. table_rotation_test)
+// must NOT be locked, or the harness both accepts and forbids the same gap — a
+// contradiction. Keep this set in lock-step with known_diffs.json: a PDF listed
+// here must have gridSim=100% and structureSim=100% (or be exempted as
+// go_intentional), never an open/accepted_at_merge failure.
 func parityLockedGridPDFs() map[string]bool {
 	return map[string]bool{
-		"06_table_content.pdf": true,
-		"18_table_caption.pdf": true,
+		"06_table_content.pdf":          true,
+		"13_crosspage_table.pdf":        true,
+		"14_text_table_interleaved.pdf": true,
+		"18_table_caption.pdf":          true,
 	}
 }

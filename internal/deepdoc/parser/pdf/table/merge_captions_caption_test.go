@@ -151,7 +151,11 @@ func TestMergeCaptions_ReadingOrderByTop(t *testing.T) {
 func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	table := pdf.Section{
 		Text: "<table><tr><th >Month</th><th >Revenue</th></tr></table>", LayoutType: pdf.LayoutTypeTable,
-		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777}}, // tall (3-page span collapsed)
+		// Cross-page merged table: Positions[0] keeps ONLY the first page's
+		// geometry (pages=[0], the page-0 band), exactly like 13's real merged
+		// table. A caption on a LATER page of the same table lands inside this
+		// band in page-local coordinates (gapY=0) and must still attach.
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777}},
 	}
 	for _, c := range []struct {
 		name    string
@@ -160,9 +164,9 @@ func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 		{"above", pdf.Section{
 			Text: "Extended Financial Report", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 183, Right: 412, Top: 64, Bottom: 82}}}},
-		{"below", pdf.Section{
+		{"later-page-inside-band", pdf.Section{
 			Text: "Table: Monthly financial summary FY2024", LayoutType: pdf.DLALabelTableCaption,
-			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 62, Right: 250, Top: 790, Bottom: 802}}}},
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 62, Right: 250, Top: 154, Bottom: 167}}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sections := []pdf.Section{table, c.caption}
@@ -176,5 +180,64 @@ func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 				t.Errorf("caption near tall-table edge must attach (was dropped by center-distance): want %q, got %q", want, result[0].Text)
 			}
 		})
+	}
+}
+
+// TestMergeCaptions_CaptionOtherPageDoesNotAttach locks the page-scope guard:
+// a caption clearly ABOVE or BELOW a table's Y band on a DIFFERENT page must
+// NOT attach. The edge-distance alone is page-local-coordinate blind — a
+// page-N caption whose page-local Y is above a page-0 table's band gets a
+// small edge gap (gapY>0) and would wrongly attach. Only captions on a
+// different page that VERTICALLY OVERLAP the band (gapY==0, the cross-page
+// table continuation case, see TallTableCaptionNearEdgeAttaches) may attach.
+func TestMergeCaptions_CaptionOtherPageDoesNotAttach(t *testing.T) {
+	table := pdf.Section{
+		Text: "<table><tr><th >Month</th><th >Revenue</th></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		// SINGLE-page table on page 0 only.
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777}},
+	}
+	// Page-1 caption ABOVE the page-0 table's Y band (page-local Y 64-82 is
+	// above band top 98) — on a different page, gapY>0 must reject it.
+	caption := pdf.Section{
+		Text: "Table 1: Revenue", LayoutType: pdf.DLALabelTableCaption,
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 183, Right: 412, Top: 64, Bottom: 82}},
+	}
+	sections := []pdf.Section{table, caption}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+	// No table on the caption's page -> orphaned caption (dropped), table unchanged.
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (table unchanged, orphaned caption dropped), got %d: %v", len(result), textsOf(result))
+	}
+	if strings.Contains(result[0].Text, "<caption>") {
+		t.Errorf("caption above a table on a DIFFERENT page must not attach: %q", result[0].Text)
+	}
+}
+
+// TestMergeCaptions_FigureCaptionRawText locks that a figure caption attaching
+// to its figure section is concatenated as RAW text, NOT wrapped in a
+// <caption> element. The <caption> element is table-specific (matching
+// Python's __html_table); a figure section carries an image, not a table, so
+// wrapping its text in <caption> would emit meaningless HTML. Figure caption
+// handling is outside this PR's scope, so the pre-existing raw-text behavior
+// must be preserved.
+func TestMergeCaptions_FigureCaptionRawText(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "", LayoutType: pdf.LayoutTypeFigure,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Figure 1: Revenue trend by quarter", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
+	}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if got.Text != "Figure 1: Revenue trend by quarter" {
+		t.Errorf("figure caption must be appended as raw text, got %q", got.Text)
+	}
+	if strings.Contains(got.Text, "<caption>") {
+		t.Errorf("figure section must NOT be wrapped in a <caption> element (table-specific): %q", got.Text)
 	}
 }

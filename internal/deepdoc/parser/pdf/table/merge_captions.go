@@ -65,7 +65,16 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		for i, e := range entries {
 			texts[i] = e.text
 		}
-		injectCaption(&sections[idx], texts)
+		if sections[idx].LayoutType == pdf.LayoutTypeTable {
+			injectCaption(&sections[idx], texts)
+			continue
+		}
+		// Non-table target (figure): keep the historical raw-text
+		// concatenation. The <caption> element is table-specific; wrapping a
+		// figure section's text in it would emit meaningless HTML in a figure
+		// section (which carries an image, not a table). Figure captions are
+		// out of this PR's scope, so preserve their pre-existing behavior.
+		appendRawCaptions(&sections[idx], texts)
 	}
 	// Remove caption sections in reverse order.
 	n := len(sections)
@@ -164,6 +173,21 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 	}
 	cp := caption.Positions[0]
 	ccx := (cp.Left + cp.Right) / 2
+	// Page-scope guard: a caption on a DIFFERENT page may attach only when it
+	// VERTICALLY OVERLAPS the table's Y band (gapY==0). That is the cross-page
+	// table continuation case — a merged cross-page table's Positions[0] keeps
+	// only the FIRST page's geometry (pages=[0]), so a caption on a later page
+	// of the same table lands inside that band in page-local coordinates (13's
+	// page-2 caption 'Table: Monthly financial summary FY2024' at page-local
+	// Y=154 sits inside the page-0 band 98-777). A caption clearly ABOVE or
+	// BELOW a table on a different page (gapY>0) is a false attachment:
+	// page-local Y ranges repeat on every page, so such a caption only
+	// "happens" to line up with an unrelated single-page table.
+	capKnown := len(cp.PageNumbers) > 0
+	capPage := 0
+	if capKnown {
+		capPage = cp.PageNumbers[0]
+	}
 	for i, t := range sections {
 		if t.LayoutType != pdf.LayoutTypeTable || len(t.Positions) == 0 {
 			continue
@@ -178,6 +202,21 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 		} else if cp.Top >= tp.Bottom {
 			gapY = cp.Top - tp.Bottom
 		}
+		if capKnown {
+			onPage := len(tp.PageNumbers) == 0 // unknown table page → don't restrict
+			for _, p := range tp.PageNumbers {
+				if p == capPage {
+					onPage = true
+					break
+				}
+			}
+			// Different page: reject unless vertically overlapping (cross-page
+			// table continuation). A caption above/below on another page is a
+			// false attachment (see function comment).
+			if !onPage && gapY > 0 {
+				continue
+			}
+		}
 		// Horizontal center offset: a caption far to the side ranks worse.
 		dx := (tp.Left+tp.Right)/2 - ccx
 		if dx < 0 {
@@ -190,6 +229,32 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 		}
 	}
 	return bestIdx, bestDist
+}
+
+// appendRawCaptions concatenates caption texts onto a non-table section
+// (figure) as raw text, preserving the historical behavior before the
+// <caption> injection existed. The <caption> element is table-specific and
+// would be meaningless in a figure section's text.
+func appendRawCaptions(target *pdf.Section, captions []string) {
+	var b strings.Builder
+	for _, c := range captions {
+		t := strings.TrimSpace(c)
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(t)
+	}
+	if b.Len() == 0 {
+		return
+	}
+	if target.Text != "" {
+		target.Text += " " + b.String()
+	} else {
+		target.Text = b.String()
+	}
 }
 
 // injectCaption concatenates the given caption texts (already grouped per

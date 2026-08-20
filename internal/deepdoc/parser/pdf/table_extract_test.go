@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"strings"
 	"testing"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
@@ -294,5 +295,28 @@ func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
 	}
 	if nonEmpty != 1 {
 		t.Fatalf("nonEmpty cells = %d (row0=%q row1=%q), want exactly 1: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", nonEmpty, row0, row1)
+	}
+}
+
+// TestDedupNestedBoxes_IdenticalBBoxKeepsContent locks that two boxes with
+// IDENTICAL bbox AND identical text are not BOTH dropped. The containment
+// check drops the inner box when its bbox lies fully inside the outer's and
+// the outer text contains the inner's — but for identical bboxes each box is
+// "inside" the other, so both get marked for removal and the cell content
+// vanishes. Only STRICT containment may drop; identical-bbox boxes must keep
+// at least one copy.
+func TestDedupNestedBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+	}
+	got := dedupNestedBoxes(boxes)
+	if len(got) == 0 {
+		t.Fatal("identical bbox+text boxes were BOTH dropped — content loss; at least one copy must survive")
+	}
+	for _, b := range got {
+		if strings.TrimSpace(b.Text) != "Revenue" {
+			t.Errorf("surviving box text = %q, want %q", b.Text, "Revenue")
+		}
 	}
 }
