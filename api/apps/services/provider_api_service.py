@@ -1230,6 +1230,9 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
+    if not model_obj:
+        return False, f"Model '{model_name}' not added for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+
     to_update = {}
     if "status" in update_dict and update_dict.get("status") != model_obj.status:
         to_update.update({"status": update_dict["status"]})
