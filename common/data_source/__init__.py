@@ -111,7 +111,7 @@ def build_connector_for_source(source: str, config: dict[str, Any]) -> Any:
     if connector_cls is None:
         raise ConnectorValidationError(f"Unsupported data source type: {source}")
     if connector_cls is BlobStorageConnector:
-        return connector_cls.build_connector(config, bucket_type=source)
+        return connector_cls.build_connector(config, bucket_type=config.get("bucket_type") or source)
     if connector_cls is RDBMSConnector:
         return connector_cls.build_connector(config, db_type=source)
     return connector_cls.build_connector(config)
