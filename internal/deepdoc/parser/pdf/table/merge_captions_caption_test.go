@@ -107,3 +107,74 @@ func TestMergeCaptions_SingleCaptionPerTable(t *testing.T) {
 		t.Errorf("second caption sentence lost in combined <caption>: %q", got)
 	}
 }
+
+// TestMergeCaptions_ReadingOrderByTop locks that multiple captions attached to
+// the SAME table are concatenated in READING order (top→bottom), matching the
+// PDF layout and Python's construct_table. Real case 06_table_content.pdf has
+// "The following table summarizes..." ABOVE the table (top=105) and "Table 1:
+// Quarterly sales..." BELOW it (top=248), but Go's sections list carries the
+// lower one first — so a pure section-order concatenation produces a reversed
+// (unnatural) caption. Sorting by the caption box's top edge restores reading
+// order.
+func TestMergeCaptions_ReadingOrderByTop(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td >Category</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 159, Right: 393, Top: 130, Bottom: 336}}},
+		// Lower caption box FIRST in section order, despite being BELOW the
+		// table's caption ("Table 1..." sits inside the table band, top=248).
+		{Text: "Table 1: Quarterly sales by product category (in USD)", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 62, Right: 303, Top: 248, Bottom: 261}}},
+		// Upper caption box SECOND in section order, though it is ABOVE the
+		// table (top=105). Reading order must place it FIRST.
+		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 107, Right: 501, Top: 105, Bottom: 118}}},
+	}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (table with combined caption), got %d: %v", len(result), textsOf(result))
+	}
+	want := "<caption>The following table summarizes the quarterly sales performance Table 1: Quarterly sales by product category (in USD)</caption>"
+	if !strings.Contains(result[0].Text, want) {
+		t.Errorf("caption must be concatenated in reading order (top→bottom):\n  want %q\n  got  %q", want, result[0].Text)
+	}
+}
+
+// TestMergeCaptions_TallTableCaptionNearEdgeAttaches locks the fix for the
+// cross-page-table caption drop (13/14): a caption sitting just above or below
+// a TALL table (a cross-page table's section is one tall merged region) was
+// REJECTED by findNearestParent because the distance was measured to the
+// table's CENTER — for a tall table the center is far from the edge, so
+// center-distance exceeded maxCaptionGap and the caption was dropped (real
+// content loss, e.g. 13's 'Extended Financial Report' and 14's 'Table 1:
+// Revenue'). The distance must be measured to the table's NEAREST EDGE.
+func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
+	table := pdf.Section{
+		Text: "<table><tr><th >Month</th><th >Revenue</th></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 82, Right: 513, Top: 98, Bottom: 777}}, // tall (3-page span collapsed)
+	}
+	for _, c := range []struct {
+		name    string
+		caption pdf.Section
+	}{
+		{"above", pdf.Section{
+			Text: "Extended Financial Report", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 183, Right: 412, Top: 64, Bottom: 82}}}},
+		{"below", pdf.Section{
+			Text: "Table: Monthly financial summary FY2024", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 62, Right: 250, Top: 790, Bottom: 802}}}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sections := []pdf.Section{table, c.caption}
+			figures := pdf.CollectFigures(sections)
+			result := MergeCaptions(sections, figures)
+			if len(result) != 1 {
+				t.Fatalf("expected 1 section (table with caption), got %d: %v", len(result), textsOf(result))
+			}
+			want := "<caption>" + c.caption.Text + "</caption>"
+			if !strings.Contains(result[0].Text, want) {
+				t.Errorf("caption near tall-table edge must attach (was dropped by center-distance): want %q, got %q", want, result[0].Text)
+			}
+		})
+	}
+}
