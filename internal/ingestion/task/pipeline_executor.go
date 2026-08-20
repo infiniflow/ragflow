@@ -19,6 +19,7 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/utility"
 	"sort"
@@ -68,7 +69,7 @@ type PipelineExecutor struct {
 	// builtinPipeline marks a run backed by the embedded builtin pipeline
 	// registry instead of a user_canvas row. canvasID then carries the
 	// parser_id, so the operation log must fall back to document fields for
-	// its pipeline identity (mirroring the Python operation-log path).
+	// its pipeline identity.
 	builtinPipeline bool
 
 	indexWriter     *chunkIndexWriter
@@ -147,8 +148,7 @@ func (s *PipelineExecutor) WithLoadDSLFunc(f func(ctx context.Context, canvasID 
 
 // WithBuiltinPipeline marks the run as a builtin (registry-backed) pipeline so
 // the operation log skips the user_canvas lookup and titles itself from the
-// document's parser_id, mirroring record_pipeline_operation in
-// api/db/services/pipeline_operation_log_service.py.
+// document's parser_id.
 func (s *PipelineExecutor) WithBuiltinPipeline() *PipelineExecutor {
 	s.builtinPipeline = true
 	return s
@@ -499,9 +499,8 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 
 	// Pipeline identity for the log row. Without a user pipeline the row is
 	// titled with the document's parser_id and reuses the document thumbnail
-	// as avatar, matching the Python fallback in
-	// PipelineOperationLogService.create. Built-in runs never hit user_canvas:
-	// their canvasID is the parser_id, not a canvas row.
+	// as avatar. Built-in runs never hit user_canvas: their canvasID is the
+	// parser_id, not a canvas row.
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
@@ -513,7 +512,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 					pipelineTitle = *canvas.Title
 				}
 				pipelineAvatar = canvas.Avatar
-			} else if err != nil && !dao.IsNotFoundErr(err) {
+			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
 				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 			}
 		}

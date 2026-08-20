@@ -391,6 +391,9 @@ func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) 
 	if captured.PipelineTitle == nil || *captured.PipelineTitle != "general" {
 		t.Fatalf("PipelineTitle = %v, want \"general\" fallback", captured.PipelineTitle)
 	}
+	if captured.PipelineID == nil || *captured.PipelineID != "canvas-gone" {
+		t.Fatalf("PipelineID = %v, want \"canvas-gone\"", captured.PipelineID)
+	}
 }
 
 // =============================================================================
