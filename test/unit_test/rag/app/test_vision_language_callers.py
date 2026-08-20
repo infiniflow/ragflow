@@ -152,3 +152,50 @@ def test_mineru_forwards_dataset_language_to_parser(monkeypatch):
     assert tables == []
     assert returned_parser is parser
     assert parser.parse_pdf.call_args.kwargs["lang"] == "Japanese"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "parser_error",
+    [
+        RuntimeError("[MinerU] server request failed"),
+        FileNotFoundError("[MinerU] PDF not found"),
+    ],
+)
+def test_mineru_propagates_parser_error(monkeypatch, parser_error):
+    parser = Mock()
+    parser.parse_pdf.side_effect = parser_error
+    ocr_model = Mock(mdl=parser)
+    callback = Mock()
+    monkeypatch.setattr(naive, "resolve_model_config", Mock(return_value={"llm_name": "mineru"}))
+    monkeypatch.setattr(naive, "LLMBundle", Mock(return_value=ocr_model))
+
+    with pytest.raises(type(parser_error)) as exc_info:
+        naive.by_mineru(
+            "document.pdf",
+            binary=b"pdf",
+            callback=callback,
+            mineru_llm_name="mineru",
+            tenant_id="tenant-id",
+            vision_model=object(),
+        )
+
+    assert exc_info.value is parser_error
+    callback.assert_not_called()
+
+
+@pytest.mark.p1
+def test_mineru_raises_when_model_is_not_configured(monkeypatch):
+    callback = Mock()
+    monkeypatch.setattr(naive, "get_first_provider_model_name", Mock(return_value=None))
+    monkeypatch.setattr(naive, "ensure_mineru_from_env", Mock(return_value=None))
+
+    with pytest.raises(RuntimeError, match="MinerU model not found or not configured"):
+        naive.by_mineru(
+            "document.pdf",
+            binary=b"pdf",
+            callback=callback,
+            tenant_id="tenant-id",
+        )
+
+    callback.assert_not_called()
