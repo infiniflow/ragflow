@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/nlp"
@@ -1061,6 +1062,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 			return err
 		}
 	}
+	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
 
 	return nil
 }
@@ -1201,6 +1203,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if err != nil {
 		return fmt.Errorf("failed to update chunk: %w", err)
 	}
+	if req.Content != nil || req.Available != nil {
+		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+	}
 
 	return nil
 }
@@ -1273,6 +1278,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
+		s.markWikiDirty(ctx, targetTenantID, doc.KbID, req.DocID, req.ChunkIDs)
 	}
 
 	return deletedCount, nil
@@ -1408,6 +1414,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if err = s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
+	s.markWikiDirty(ctx, kb.TenantID, req.DatasetID, req.DocumentID, []string{chunkID})
 
 	renamedChunk := map[string]interface{}{
 		"id":                 chunkID,
@@ -1428,6 +1435,15 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 
 	return &service.AddChunkResponse{Chunk: renamedChunk}, nil
+}
+
+func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, documentID string, chunkIDs []string) {
+	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.MarkWikiDocumentDirty(markCtx, tenantID, datasetID, documentID, chunkIDs); err != nil {
+		common.Warn("chunk mutation: failed to schedule Wiki refresh",
+			zap.String("document_id", documentID), zap.Error(err))
+	}
 }
 
 type addChunkError struct {

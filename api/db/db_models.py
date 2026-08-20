@@ -936,9 +936,14 @@ class GaussDBDatabaseLock(PostgresDatabaseLock):
 
     def __init__(self, lock_name, timeout=10, db=None):
         super().__init__(lock_name, timeout=timeout, db=db)
-        self.timeout = max(float(timeout), 0.0)
+        self.timeout = float(timeout)
 
     def lock(self):
+        if self.timeout < 0:
+            cursor = self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+            cursor.fetchone()
+            return True
+
         deadline = time.monotonic() + self.timeout
         while True:
             cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
@@ -966,9 +971,17 @@ class GaussDBDatabaseLock(PostgresDatabaseLock):
 
 
 class MysqlDatabaseLock:
+    # Finite wait used for negative advisory-lock timeouts.
+    BLOCKING_TIMEOUT = 60
+
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
-        self.timeout = int(timeout)
+        timeout = int(timeout)
+        if timeout < 0:
+            logging.debug("Normalizing negative advisory-lock timeout to %d seconds", self.BLOCKING_TIMEOUT)
+            self.timeout = self.BLOCKING_TIMEOUT
+        else:
+            self.timeout = timeout
         self.db = db if db else DB
 
     @with_retry(max_retries=3, retry_delay=1.0)
@@ -1321,7 +1334,7 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
+    suffix = EmptyStringCharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     content_hash = CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True)
 
@@ -1895,6 +1908,7 @@ GAUSSDB_EMPTY_STRING_COMPATIBLE_COLUMNS = (
     ("dialog", ("llm_id", "rerank_id")),
     ("memory", ("embd_id", "llm_id")),
     ("file", ("source_type",)),
+    ("document", ("suffix",)),
     ("system_settings", ("value",)),
     ("task", ("task_type",)),
     ("sync_logs", ("error_msg", "full_exception_trace")),
@@ -2395,7 +2409,7 @@ def migrate_db():
     alter_db_add_column(migrator, "mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict))
     alter_db_rename_column(migrator, "task", "process_duation", "process_duration")
     alter_db_rename_column(migrator, "document", "process_duation", "process_duration")
-    alter_db_add_column(migrator, "document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
+    alter_db_add_column(migrator, "document", "suffix", EmptyStringCharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))

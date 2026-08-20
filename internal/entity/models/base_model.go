@@ -517,6 +517,10 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 			reqBody["top_p"] = *cfg.TopP
 		}
 
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
 		if cfg.Stop != nil {
 			reqBody["stop"] = *cfg.Stop
 		}

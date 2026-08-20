@@ -46,7 +46,8 @@ export function UpdateRunProgress({
         <span className="size-2 rounded-full bg-accent-primary" />
         {data?.compilationError
           ? data.compilationError
-          : t('knowledgeCompilation.compiling', {
+          : data?.currentPhase ||
+            t('knowledgeCompilation.compiling', {
               defaultValue: 'Compiling…',
             })}
         {!data?.compilationError && (

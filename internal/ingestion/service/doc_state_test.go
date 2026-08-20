@@ -255,3 +255,30 @@ func TestDocStateUpdater_BuiltInMetadataEmptyConfig(t *testing.T) {
 		t.Errorf("empty built-in config must be a no-op, got %v", svc.metaData)
 	}
 }
+
+func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:               "doc-1",
+		DocName:             "report.pdf",
+		AutoMetadataEnabled: false,
+		BuiltInMetadataConfig: []any{
+			map[string]any{"key": "file_name", "type": "string"},
+			map[string]any{"key": "update_time", "type": "time"},
+		},
+		Metadata:         map[string]any{"author": "Alice"},
+		ChunkCount:       1,
+		TokenConsumption: 1,
+	})
+	if _, ok := svc.metaData["file_name"]; ok {
+		t.Fatalf("built_in must not be written when enabled=false, got %v", svc.metaData)
+	}
+	if _, ok := svc.metaData["update_time"]; ok {
+		t.Fatalf("built_in must not be written when enabled=false, got %v", svc.metaData)
+	}
+	if svc.metaData["author"] != "Alice" {
+		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
+	}
+}

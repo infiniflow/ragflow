@@ -3,11 +3,12 @@ package table
 import (
 	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"sort"
 	"strings"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ── TSR cell grouping ──────────────────────────────────────────────────
@@ -95,6 +96,31 @@ func GroupTSRCellsToRows(cells []pdf.TSRCell) [][]pdf.TSRCell {
 // picked, matching Python. See go_intentional rule
 // table-cell-fill-filled-threshold-0.85.
 func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
+	FillCellTextFromBoxesWithRows(cells, boxes, nil)
+}
+
+// FillCellTextFromBoxesWithRows is FillCellTextFromBoxes with the per-row
+// strip X range taken from the original TSR "table row" component bboxes
+// instead of the grid column union.
+//
+// Python matches a box to a row via find_overlapped_with_threshold(box,
+// rows) where rows are the raw TSR row components (gather(".* (row|header)")
+// in pdf_parser.py:602) and overlapped_area divides by the row's own bbox.
+// Go's grid is a TSR-row × column cross-product; its cells always span the
+// full column union, so the old strip X range was wider than the row
+// component's true bbox. When TSR emits a row whose line does not cover a
+// table edge (e.g. 13_crosspage_table.pdf page 2 row 44: x0=106.9 vs the
+// grid's x0=90.8), a col-0 box straddling that row and the one above it
+// can pass the 0.3 threshold against the full-width strip while Python
+// rejects it against the true bbox — so Go assigned the box one row lower
+// than Python.
+//
+// rowStrips are the TSR "table row" components (data rows only — header /
+// projrowheader components are excluded by the caller). Each is matched to a
+// grid row band by Y coordinate via matchRowStrip, so the override applies to
+// every data row regardless of whether the table has a header. Rows with no
+// matching TSR row component (e.g. header rows) keep the grid-union strip X.
+func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
 	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
 	if len(cells) == 0 || len(boxes) == 0 {
 		return
@@ -156,6 +182,20 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 			return cells[rows[ri].cells[a]].X0 < cells[rows[ri].cells[b]].X0
 		})
 	}
+	// Replace each grid row's strip X with the matching TSR "table row"
+	// component's own bbox X (see FillCellTextFromBoxesWithRows doc). Matching
+	// is by Y band, not positional index, so the override applies to every
+	// data row independently of whether the table has a header: header /
+	// projrowheader components are simply absent from rowStrips and fall back
+	// to the grid-union strip X, which is correct for header rows. This
+	// replaces the former all-or-nothing `len(rowStrips) == len(rows)` guard,
+	// which silently disabled the override for any table that had a header.
+	for ri := range rows {
+		if sx0, sx1, ok := matchRowStrip(rowStrips, rows[ri].y0); ok {
+			rows[ri].stripX0 = sx0
+			rows[ri].stripX1 = sx1
+		}
+	}
 
 	// Accumulate box text per target cell so multiple boxes in one cell join.
 	cellText := make([]string, len(cells))
@@ -171,7 +211,36 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 		if boxArea <= 0 {
 			continue
 		}
-		// 1. Best row by vertical-overlap ratio (>= 0.3), tie-broken by _ov.
+		// 1. Best row: prefer the row the box BEGINS in.
+		//
+		// Python's construct_table groups boxes into rows by each box's TSR
+		// row label (b["R"]) — the row the box STARTS in — not by spatial
+		// overlap (pdf_parser.py construct_table:176-192). When a label or
+		// value box spans two adjacent data rows (e.g. a Month cell merged
+		// across a pair of rows, or a Margin cell repeated across a seam),
+		// Go must place it in the UPPER row to match Python. Without this,
+		// FillCellTextFromBoxes picked the MAX-overlap row (usually the
+		// lower one) and the doubled text landed one row too low, which is
+		// the 13_crosspage_table.pdf divergence (tracked as go_bug
+		// table-crosspage-merge-seam-duplication, whose root cause is this
+		// row-selection rule, not the cross-page merge itself).
+		//
+		// We therefore prefer the topmost row band whose Y range CONTAINS the
+		// box's TOP edge. Top-containment is a stronger, non-spurious signal
+		// than the 0.3 area ratio (a box whose top sits inside a band clearly
+		// belongs to that row even when its 2D overlap ratio is below 0.3, as
+		// happens for a narrow Month box whose width gives a small area
+		// ratio). Only when no band contains the top edge do we fall back to
+		// the original max-overlap (ov, ov2) rule, so single-row boxes and
+		// genuinely lower-row boxes are unchanged.
+		topR := -1
+		for ri := range rows {
+			rb := &rows[ri]
+			if b.Top >= rb.y0 && b.Top <= rb.y1 {
+				topR = ri
+				break
+			}
+		}
 		bestR := -1
 		bestOv, bestOv2 := 0.3, 0.0
 		for ri := range rows {
@@ -182,16 +251,21 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 			strip := pdf.TSRCell{X0: rb.stripX0, Y0: rb.y0, X1: rb.stripX1, Y1: rb.y1}
 			inter := util.OverlapInter(&strip, &b)
 			ov := inter / boxArea
+			if ov < 0.3 {
+				continue
+			}
 			ov2 := 0.0
 			if a := util.Area(&strip); a > 0 {
 				ov2 = inter / a
 			}
-			// Skip unless strictly better than the current best, mirroring
-			// Python's (ov, _ov) tuple ordering in find_overlapped_with_threshold.
-			if !(ov > bestOv || (ov == bestOv && ov2 > bestOv2)) {
-				continue
+			// Fallback: keep the max-overlap (ov, ov2) best, mirroring
+			// Python's find_overlapped_with_threshold tuple ordering.
+			if ov > bestOv || (ov == bestOv && ov2 > bestOv2) {
+				bestR, bestOv, bestOv2 = ri, ov, ov2
 			}
-			bestR, bestOv, bestOv2 = ri, ov, ov2
+		}
+		if topR >= 0 {
+			bestR = topR
 		}
 		if bestR < 0 {
 			continue
@@ -280,9 +354,31 @@ func BoxMatchesCell(cell pdf.TSRCell, box pdf.TextBox, cellIsEmpty bool) bool {
 	return inter/boxArea >= 0.85
 }
 
+// matchRowStrip finds the TSR "table row" component whose Y0 matches the grid
+// row band y0 within yTol, returning its X range. A header / projrowheader
+// component (not collected into rowStrips by the caller) returns ok=false, so
+// that row keeps the grid-union strip X — correct for header rows. Matching by
+// Y (not positional index) lets the strip-X override apply to every data row
+// even when the table also has a header, instead of the former
+// all-or-nothing `len(rowStrips) == len(rows)` guard that silently disabled
+// the override for any header-bearing table.
+func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool) {
+	const yTol = 1e-6
+	for _, rs := range rowStrips {
+		if math.Abs(rs.Y0-y0) <= yTol {
+			return rs.X0, rs.X1, true
+		}
+	}
+	return 0, 0, false
+}
+
 // isCaptionBox checks if a text box is a table/figure caption,
 // matching Python is_caption().  Captions should not enter table cells.
-var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+|(?i)Table\s+\d+`)
+// reCaption backs IsCaptionBox and must mirror Python's start-anchored
+// is_caption: only a line BEGINNING with a caption marker counts. The English
+// alternatives are start-anchored with ^ for the same reason as
+// reTableCaptionText/reFigureCaptionText.
+var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+|(?i)^Table\s+\d+`)
 
 func IsCaptionBox(text string, layoutType string) bool {
 	if strings.Contains(layoutType, "caption") {
@@ -292,11 +388,16 @@ func IsCaptionBox(text string, layoutType string) bool {
 }
 
 // reTableCaptionText matches text patterns that indicate a table caption
-// (as opposed to a figure caption). Python is_caption uses the same set.
-var reTableCaptionText = regexp.MustCompile(`^表|(?i)Table\s+\d+`)
+// (as opposed to a figure caption). Python is_caption uses re.match, which is
+// start-anchored, so a body paragraph that merely MENTIONS "Table N"
+// mid-sentence is NOT a caption. The English alternatives below are therefore
+// start-anchored with ^: an unanchored alternative wrongly classifies such a
+// paragraph as a caption and MergeCaptions then drops it (go_bug
+// table-text-interleaved-paragraph-dropped).
+var reTableCaptionText = regexp.MustCompile(`^表|(?i)^Table\s+\d+`)
 
 // reFigureCaptionText matches text patterns that indicate a figure caption.
-var reFigureCaptionText = regexp.MustCompile(`^图|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+`)
+var reFigureCaptionText = regexp.MustCompile(`^图|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+`)
 
 // captionKind returns "table" if the section is a table caption,
 // "figure" if a figure caption, or "" if not a caption.
