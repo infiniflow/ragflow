@@ -52,7 +52,9 @@ export function SwitchFormField({
             'justify-between': !vertical,
           })}
         >
-          <FormLabel tooltip={tooltip}>{label}</FormLabel>
+          <FormLabel className="w-fit" tooltip={tooltip}>
+            {label}
+          </FormLabel>
           <FormControl>
             <Switch
               checked={field.value}
