@@ -1094,6 +1094,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyMessage: '请输入你的 Querit API Key',
       serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入你的 Serply API Key',
+      youcomApiKeyTip:
+        '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
+      youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',

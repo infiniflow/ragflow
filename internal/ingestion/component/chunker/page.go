@@ -14,13 +14,13 @@
 //  limitations under the License.
 //
 
-// PresentationChunker emits one chunk per upstream slide or page.
+// PageChunker emits one chunk per upstream slide or page.
 // It is the faithful Go port of the Python `presentation` chunk method
 // (rag/app/presentation.py), whose docstring states: "Every page will
 // be treated as a chunk."
 //
 // Unlike TokenChunker (which merges slides into a single chunk) or
-// OneChunker (which collapses many slides into one), PresentationChunker
+// OneChunker (which collapses many slides into one), PageChunker
 // keeps each slide as the unit of chunking. The upstream parser produces
 // one record per slide with text and slide_number; this chunker passes
 // each through unchanged. Note that the PPTX/PPT path does not emit image
@@ -38,43 +38,43 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNamePresentationChunker = "PresentationChunker"
+const ComponentNamePageChunker = "PageChunker"
 
-type presentationChunkerParam struct{}
+type pageChunkerParam struct{}
 
-func (p *presentationChunkerParam) Update(conf map[string]any) {}
+func (p *pageChunkerParam) Update(conf map[string]any) {}
 
-func (presentationChunkerParam) Defaults() presentationChunkerParam {
-	return presentationChunkerParam{}
+func (pageChunkerParam) Defaults() pageChunkerParam {
+	return pageChunkerParam{}
 }
 
-func (presentationChunkerParam) Validate() error { return nil }
+func (pageChunkerParam) Validate() error { return nil }
 
-type PresentationChunkerComponent struct {
+type PageChunkerComponent struct {
 	name  string
-	param presentationChunkerParam
+	param pageChunkerParam
 }
 
-func NewPresentationChunker(params map[string]any) (runtime.Component, error) {
-	p := presentationChunkerParam{}.Defaults()
+func NewPageChunker(params map[string]any) (runtime.Component, error) {
+	p := pageChunkerParam{}.Defaults()
 	(&p).Update(params)
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-	return &PresentationChunkerComponent{
-		name:  ComponentNamePresentationChunker,
+	return &PageChunkerComponent{
+		name:  ComponentNamePageChunker,
 		param: p,
 	}, nil
 }
-func (c *PresentationChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
+func (c *PageChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
-func (c *PresentationChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
+func (c *PageChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *PresentationChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+func (c *PageChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 
-func (c *PresentationChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
@@ -108,5 +108,5 @@ func slideItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 }
 
 func init() {
-	MustRegisterChunker(ComponentNamePresentationChunker)
+	MustRegisterChunker(ComponentNamePageChunker)
 }

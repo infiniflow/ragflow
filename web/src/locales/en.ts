@@ -1206,6 +1206,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
+      youcomApiKeyTip:
+        'Optional. You.com works without a key on its rate-limited endpoint; add a key to lift those limits.',
+      youcomApiKeyMessage: 'Optional — leave blank to use the free tier',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
