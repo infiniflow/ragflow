@@ -311,7 +311,6 @@ func TestRecordPipelineLog_BuiltinUsesParserIDFallback(t *testing.T) {
 
 	var captured *entity.PipelineOperationLog
 	svc := mustNewPipelineExecutor(t, taskCtx, "general", 0).
-		WithBuiltinPipeline().
 		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
 			captured = log
 			return nil
@@ -347,6 +346,7 @@ func TestRecordPipelineLog_CustomCanvasTitle(t *testing.T) {
 
 	taskCtx := makeTaskCtx()
 	taskCtx.Doc.ParserID = "general"
+	taskCtx.PipelineID = "canvas-1"
 
 	var captured *entity.PipelineOperationLog
 	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0).
@@ -376,6 +376,7 @@ func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) 
 
 	taskCtx := makeTaskCtx()
 	taskCtx.Doc.ParserID = "general"
+	taskCtx.PipelineID = "canvas-gone"
 
 	var captured *entity.PipelineOperationLog
 	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-gone", 0).
@@ -486,7 +487,10 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	logged := false
 	inserted := false
 
-	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
+	taskCtx := makeTaskCtx()
+	taskCtx.PipelineID = "flow-1"
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
 		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
 			return `{"nodes":[{"id":"n1"}],"edges":[]}`, "flow-corrected", nil
 		}).

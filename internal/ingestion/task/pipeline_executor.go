@@ -66,11 +66,6 @@ type PipelineExecutor struct {
 	taskCtx     *TaskContext
 	canvasID    string
 	docBulkSize int
-	// builtinPipeline marks a run backed by the embedded builtin pipeline
-	// registry instead of a user_canvas row. canvasID then carries the
-	// parser_id, so the operation log must fall back to document fields for
-	// its pipeline identity.
-	builtinPipeline bool
 
 	indexWriter     *chunkIndexWriter
 	logCreateFunc   func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error
@@ -143,14 +138,6 @@ func (s *PipelineExecutor) WithLogCreateFunc(f func(ctx context.Context, db *gor
 
 func (s *PipelineExecutor) WithLoadDSLFunc(f func(ctx context.Context, canvasID string) (string, string, error)) *PipelineExecutor {
 	s.loadDSLFunc = f
-	return s
-}
-
-// WithBuiltinPipeline marks the run as a builtin (registry-backed) pipeline so
-// the operation log skips the user_canvas lookup and titles itself from the
-// document's parser_id.
-func (s *PipelineExecutor) WithBuiltinPipeline() *PipelineExecutor {
-	s.builtinPipeline = true
 	return s
 }
 
@@ -497,14 +484,15 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		}
 	}
 
-	// Pipeline identity for the log row. Without a user pipeline the row is
-	// titled with the document's parser_id and reuses the document thumbnail
-	// as avatar. Built-in runs never hit user_canvas: their canvasID is the
-	// parser_id, not a canvas row.
+	// Pipeline identity for the log row. A document without a user pipeline
+	// selection runs on a builtin registry pipeline: its canvasID is the
+	// parser_id, not a canvas row, so the log is titled with the document's
+	// parser_id, reuses the document thumbnail as avatar, and leaves
+	// pipeline_id empty.
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
-	if !s.builtinPipeline {
+	if s.taskCtx.PipelineID != "" {
 		pipelineID = &s.canvasID
 		if db != nil {
 			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {

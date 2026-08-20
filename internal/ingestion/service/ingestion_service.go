@@ -964,7 +964,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	}
 	if isBuiltin {
 		// Builtin path: load DSL from the embedded registry, skipping canvas DB lookup.
-		executor.WithBuiltinPipeline().WithLoadDSLFunc(func(ctx context.Context, _ string) (string, string, error) {
+		executor.WithLoadDSLFunc(func(ctx context.Context, _ string) (string, string, error) {
 			common.Info(fmt.Sprintf("load built in DSL for: %s", parserID))
 			dsl, lerr := pipelinepkg.LoadBuiltinDSL(parserID)
 			if lerr != nil {
