@@ -17,7 +17,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
+	"ragflow/internal/agent/runtime"
 	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
@@ -60,6 +62,8 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 // generous room to emit the entity/concept/claim/relation/topic JSON without
 // hitting the output-token limit and truncating the payload.
 const wikiMapTokenBudget = 2048
+
+const wikiRefineProgressStep = 5
 
 // wikiMapMaxTokens derives the extraction output budget from the model's
 // context length and the per-batch input budget: once the batch has consumed
@@ -105,6 +109,15 @@ type wikiPipeline struct {
 	// hard cap; testable and reported for observability.
 	planCapacityExcluded int
 	neighborCache        map[string]*common.WikiPageCandidate
+	incremental          bool
+	activeStateKey       string
+	previousActiveState  wikiMapActiveSnapshot
+	nextActiveState      wikiMapActiveSnapshot
+	affectedPageSlugs    map[string]struct{}
+	removedPageSlugs     []string
+	mapChanged           bool
+	affectedTerms        map[string]struct{}
+	pendingActiveState   *common.WikiMapActiveState
 }
 
 type wikiExtract struct {
@@ -114,6 +127,16 @@ type wikiExtract struct {
 	Relations []wikiRelation `json:"relations"`
 	Topics    []string       `json:"topics"`
 	Mode      string         `json:"mode,omitempty"`
+}
+
+type wikiMapActiveSnapshot struct {
+	Chunks map[string]wikiMapActiveChunk `json:"chunks"`
+	Plan   []wikiPlanPage                `json:"plan"`
+}
+
+type wikiMapActiveChunk struct {
+	Key     string      `json:"key"`
+	Extract wikiExtract `json:"extract"`
 }
 
 type wikiEntity struct {
@@ -219,16 +242,21 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		zap.Int("chunks", len(inputs.Chunks)),
 		zap.Bool("chat_ready", deps.Chat != nil),
 		zap.Bool("embed_ready", deps.Embed != nil))
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki Started: input_chunks=%d", len(inputs.Chunks)))
 	p := &wikiPipeline{
-		ctx:           ctx,
-		deps:          deps,
-		param:         param,
-		inputs:        inputs,
-		docID:         docID,
-		tenantID:      deps.TenantID,
-		datasetID:     deps.DatasetID,
-		llmID:         llmID,
-		neighborCache: make(map[string]*common.WikiPageCandidate),
+		ctx:               ctx,
+		deps:              deps,
+		param:             param,
+		inputs:            inputs,
+		docID:             docID,
+		tenantID:          deps.TenantID,
+		datasetID:         deps.DatasetID,
+		llmID:             llmID,
+		neighborCache:     make(map[string]*common.WikiPageCandidate),
+		affectedPageSlugs: make(map[string]struct{}),
+	}
+	if incremental, ok := inputs.VariantSpecific["wiki_incremental"].(bool); ok {
+		p.incremental = incremental
 	}
 	if err := p.run(); err != nil {
 		appcommon.Error("wiki: Run pipeline failed", err,
@@ -244,6 +272,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		zap.Int("refined_pages", len(p.pages)))
 
 	products := buildWikiPageProducts(p.tenantID, p.docID, p.pages)
+	pageProducts, sectionProducts := countWikiProducts(products)
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki Done: input_chunks=%d output_products=%d wiki_pages=%d wiki_sections=%d", len(inputs.Chunks), len(products), pageProducts, sectionProducts))
 	appcommon.Info("wiki: built page products",
 		zap.String("dataset_id", deps.DatasetID),
 		zap.String("doc_id", docID),
@@ -304,6 +334,11 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	out := common.Outputs{
 		Products:          prod,
 		DuplicatesDropped: stats.DuplicatesDropped,
+		AffectedPageSlugs: sortedStringSet(p.affectedPageSlugs),
+		RemovedPageSlugs:  append([]string(nil), p.removedPageSlugs...),
+	}
+	if p.pendingActiveState != nil {
+		out.WikiActiveStates = append(out.WikiActiveStates, *p.pendingActiveState)
 	}
 	return out, nil
 }
@@ -325,8 +360,10 @@ func (p *wikiPipeline) runKey() string {
 
 func (p *wikiPipeline) run() error {
 	if len(p.inputs.Chunks) == 0 {
+		runtime.ReportProgressMessage(p.ctx, "Compiler", "Wiki Empty: input_chunks=0 output_products=0")
 		return nil
 	}
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki MAP Started: input_chunks=%d", len(p.inputs.Chunks)))
 	if err := p.runMap(); err != nil {
 		return err
 	}
@@ -335,6 +372,7 @@ func (p *wikiPipeline) run() error {
 		zap.String("doc_id", p.runKey()),
 		zap.Int("batches", len(p.mapExtracts)),
 		zap.Int("raw_entities", countExtractEntities(p.mapExtracts)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki MAP Done: input_chunks=%d output_batches=%d entities=%d concepts=%d claims=%d relations=%d topics=%d", len(p.inputs.Chunks), len(p.mapExtracts), countExtractEntities(p.mapExtracts), countExtractConcepts(p.mapExtracts), countExtractClaims(p.mapExtracts), countExtractRelations(p.mapExtracts), countExtractTopics(p.mapExtracts)))
 	appcommon.Debug("wiki: MAP intermediate",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
@@ -343,6 +381,7 @@ func (p *wikiPipeline) run() error {
 		zap.Strings("concepts", extractConceptDebug(p.mapExtracts)),
 		zap.Strings("claims", extractClaimDebug(p.mapExtracts)),
 		zap.Strings("relations", extractRelationDebug(p.mapExtracts)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REDUCE Started: input_entities=%d input_concepts=%d input_claims=%d input_relations=%d", countExtractEntities(p.mapExtracts), countExtractConcepts(p.mapExtracts), countExtractClaims(p.mapExtracts), countExtractRelations(p.mapExtracts)))
 	reduced := reduceExtracts(p.mapExtracts)
 	p.reduced = reduced
 	appcommon.Debug("wiki: REDUCE exact done",
@@ -370,12 +409,14 @@ func (p *wikiPipeline) run() error {
 		zap.String("doc_id", p.runKey()),
 		zap.Int("entities", len(p.reduced.Entities)),
 		zap.Int("claims", len(p.reduced.Claims)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REDUCE Done: output_entities=%d output_concepts=%d output_claims=%d output_relations=%d", len(p.reduced.Entities), len(p.reduced.Concepts), len(p.reduced.Claims), len(p.reduced.Relations)))
 	// PLAN (B-mode only): LLM-based page plan + reconcile against existing pages.
 	// Mode A (param.PlanEnabled() == false, the default) skips the planner entirely — every
 	// extracted entity/concept becomes its own flat page (1 identity = 1 page), so
 	// the wiki is a flat encyclopedia without PLAN-grouped pages. See buildModeAPlan.
 	var plan wikiPlan
 	var err error
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki PLAN Started: input_entities=%d input_concepts=%d input_relations=%d", len(p.reduced.Entities), len(p.reduced.Concepts), len(p.reduced.Relations)))
 	if p.param.PlanEnabled() {
 		plan, err = p.runPlan()
 		if err != nil {
@@ -389,11 +430,13 @@ func (p *wikiPipeline) run() error {
 		appcommon.Info("wiki: PLAN (A-mode flat) done", zap.String("dataset_id", p.datasetID), zap.String("doc_id", p.runKey()), zap.Int("plan_pages", len(plan.Pages)))
 	}
 	p.plan = plan
+	p.selectAffectedPages(plan.Pages)
 	appcommon.Info("wiki: PLAN done",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
 		zap.Int("plan_pages", len(plan.Pages)),
 		zap.Int("capacity_excluded", p.planCapacityExcluded))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki PLAN Done: output_pages=%d topics=%d", len(plan.Pages), countPlanTopics(plan.Pages)))
 	appcommon.Debug("wiki: PLAN intermediate",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
@@ -402,11 +445,20 @@ func (p *wikiPipeline) run() error {
 		zap.Int("plan_pages", len(plan.Pages)),
 		zap.Int("capacity_excluded", p.planCapacityExcluded),
 		zap.Strings("pages", planPagesDebug(plan.Pages)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Started: input_pages=%d", len(p.plan.Pages)))
 	pages, err := p.runRefine()
 	if err != nil {
 		return err
 	}
 	p.pages = pages
+	activeState, err := p.buildActiveMapState(plan.Pages)
+	if err != nil {
+		return err
+	}
+	if activeState != nil {
+		p.pendingActiveState = activeState
+	}
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Done: input_pages=%d output_pages=%d", len(p.plan.Pages), len(pages)))
 	appcommon.Info("wiki: REFINE done",
 		zap.String("dataset_id", p.datasetID),
 		zap.String("doc_id", p.runKey()),
@@ -426,6 +478,62 @@ func countExtractEntities(extracts []wikiExtract) int {
 		n += len(e.Entities)
 	}
 	return n
+}
+
+func countExtractConcepts(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Concepts)
+	}
+	return n
+}
+
+func countExtractClaims(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Claims)
+	}
+	return n
+}
+
+func countExtractRelations(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Relations)
+	}
+	return n
+}
+
+func countExtractTopics(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Topics)
+	}
+	return n
+}
+
+func countPlanTopics(pages []wikiPlanPage) int {
+	topics := make(map[string]struct{})
+	for _, page := range pages {
+		topic := strings.TrimSpace(page.Topic)
+		if topic != "" {
+			topics[topic] = struct{}{}
+		}
+	}
+	return len(topics)
+}
+
+func countWikiProducts(products []common.Product) (pages, sections int) {
+	for _, product := range products {
+		kind, _ := product.Meta["kind"].(string)
+		switch kind {
+		case "page":
+			pages++
+		case "section":
+			sections++
+		}
+	}
+	return pages, sections
 }
 
 // --- Debug helpers: compact per-item descriptors for the stage-intermediate
@@ -714,14 +822,23 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 // order regardless of completion order (no concurrent append to a shared slice).
 // When no submitter is wired, jobs run serially (historic default).
 func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
-	pages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
-	if len(pages) == 0 {
+	allPages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
+	if len(allPages) == 0 {
 		return nil, nil
+	}
+	pages := allPages
+	if p.incremental {
+		pages = pages[:0:0]
+		for _, page := range allPages {
+			if _, affected := p.affectedPageSlugs[page.Slug]; affected {
+				pages = append(pages, page)
+			}
+		}
 	}
 	pageTitles := map[string]string{}
 	slugToPageType := map[string]string{}
-	allPlanSlugs := make([]string, 0, len(pages))
-	for _, page := range pages {
+	allPlanSlugs := make([]string, 0, len(allPages))
+	for _, page := range allPages {
 		if page.Slug == "" {
 			continue
 		}
@@ -739,6 +856,8 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 
 	results := make([]wikiPageResult, len(pages))
 	jobs := make([]func() error, 0, len(pages))
+	var progressMu sync.Mutex
+	completed := 0
 	for i, planItem := range pages {
 		i, planItem := i, planItem
 		jobs = append(jobs, func() error {
@@ -750,6 +869,12 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 				return err
 			}
 			results[i] = res
+			progressMu.Lock()
+			completed++
+			if shouldReportRefineProgress(completed, len(pages)) {
+				runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Progress: completed_pages=%d total_pages=%d", completed, len(pages)))
+			}
+			progressMu.Unlock()
 			return nil
 		})
 	}
@@ -757,6 +882,10 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 		return nil, err
 	}
 	return results, nil
+}
+
+func shouldReportRefineProgress(completed, total int) bool {
+	return completed > 0 && total > 0 && (completed%wikiRefineProgressStep == 0 || completed == total)
 }
 
 // runRefinePage generates one page result from a normalized plan page. UPDATE

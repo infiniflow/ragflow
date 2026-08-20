@@ -42,6 +42,24 @@ func (p *wikiPipeline) runVersionedMap() error {
 		return err
 	}
 	llmFingerprint := wikiMapHash(p.llmID)
+	p.activeStateKey = wikiMapHash(strings.Join([]string{
+		p.tenantID, p.datasetID, p.docID, templateFingerprint, llmFingerprint, "active",
+	}, "\x00"))
+	p.previousActiveState = wikiMapActiveSnapshot{Chunks: map[string]wikiMapActiveChunk{}}
+	if activeStore, ok := p.deps.WikiMapVersions.(common.WikiMapActiveStateStore); ok {
+		payload, err := activeStore.GetWikiMapActiveState(p.ctx, p.tenantID, p.datasetID, p.activeStateKey)
+		if err != nil {
+			return fmt.Errorf("wiki: load active MAP state: %w", err)
+		}
+		if len(payload) > 0 {
+			if err := json.Unmarshal(payload, &p.previousActiveState); err != nil {
+				return fmt.Errorf("wiki: decode active MAP state: %w", err)
+			}
+		}
+	}
+	if p.previousActiveState.Chunks == nil {
+		p.previousActiveState.Chunks = map[string]wikiMapActiveChunk{}
+	}
 
 	versions := make([]wikiMapChunkVersion, 0, len(p.inputs.Chunks))
 	keys := make([]string, 0, len(p.inputs.Chunks))
@@ -149,6 +167,32 @@ func (p *wikiPipeline) runVersionedMap() error {
 		}
 	}
 	p.mapExtracts = append(p.mapExtracts, uncachedExtracts...)
+	p.nextActiveState = wikiMapActiveSnapshot{Chunks: make(map[string]wikiMapActiveChunk, len(versions))}
+	currentChunkIDs := make(map[string]struct{}, len(versions))
+	for _, version := range versions {
+		currentChunkIDs[version.chunk.ID] = struct{}{}
+		extract := extracts[version.index]
+		p.nextActiveState.Chunks[version.chunk.ID] = wikiMapActiveChunk{Key: version.key, Extract: extract}
+		previous, existed := p.previousActiveState.Chunks[version.chunk.ID]
+		if !existed || previous.Key != version.key {
+			p.mapChanged = true
+			p.addAffectedExtractTerms(previous.Extract)
+			p.addAffectedExtractTerms(extract)
+		}
+	}
+	for chunkID, previous := range p.previousActiveState.Chunks {
+		if _, active := currentChunkIDs[chunkID]; active {
+			continue
+		}
+		p.mapChanged = true
+		p.addAffectedExtractTerms(previous.Extract)
+	}
+	if len(uncacheable) > 0 {
+		p.mapChanged = true
+		for _, extract := range uncachedExtracts {
+			p.addAffectedExtractTerms(extract)
+		}
+	}
 	return nil
 }
 

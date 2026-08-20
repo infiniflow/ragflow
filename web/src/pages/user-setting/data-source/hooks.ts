@@ -329,11 +329,9 @@ export const useTestDataSource = (
       });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
-      } else {
-        message.error(data.message || t('setting.dataSourceTestFailed'));
       }
     } catch {
-      message.error(t('setting.dataSourceTestFailed'));
+      // The request interceptor owns error notifications for failed requests.
     } finally {
       setLoading(false);
     }

@@ -24,23 +24,14 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-func TestComputeOverlapPrefix_StripsTagsAndCounts(t *testing.T) {
-	prev := strings.Repeat("word ", 20) + "@@1\t2.3## tail"
-	overlap, n := computeOverlapPrefix(prev, 30)
-	if strings.Contains(overlap, "@@") || strings.Contains(overlap, "##") {
-		t.Errorf("overlap must strip parser tags, got %q", overlap)
-	}
-	if n <= 0 {
-		t.Errorf("overlap token count must be >0, got %d", n)
-	}
-	if tokenizeStr(overlap) != n {
-		t.Errorf("reported tokens %d != tokenizeStr(overlap) %d", n, tokenizeStr(overlap))
-	}
-}
+// Hard-cap contract tests: no text chunk may exceed the token target. The
+// merge decision uses the RUNNING SUM of per-unit counts (#17948), so the
+// assertions below pin that sum; the end-to-end tests additionally assert the
+// re-tokenized emitted text stays within the budget for their fixtures.
 
-func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
+func TestMergeByTokenSizeFromJSON_HardCapNoOvershoot(t *testing.T) {
 	// Eight 25-token-ish sections under a 50-token budget must pack without
-	// any chunk exceeding the budget (Python test_strict_cap_no_overlap).
+	// any chunk's running sum exceeding the budget (no one-unit overflow).
 	const budget = 50
 	sections := make([]schema.ChunkDoc, 0, 8)
 	for i := 0; i < 8; i++ {
@@ -49,32 +40,21 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0)
 	merged := got[0]
 	if len(merged) < 3 {
 		t.Fatalf("want >=3 chunks, got %d", len(merged))
 	}
-	// OVER_CAP (Python's canonical default) permits a chunk to exceed budget
-	// by at most one incoming unit: a chunk is closed right after the
-	// overflowing merge, so its running-sum token count is <= budget+unit.
-	// The reconstructed chunk text carries the "\n" joins between units, and
-	// cl100k is non-additive across joins, so the actual token count can land
-	// a little above budget+unit; allow one extra unit of slack (matching the
-	// sibling TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow tolerance
-	// for the same cl100k delta). Python's naive_merge produces the same 3
-	// chunks here, so this pins the faithful boundary, not the old re-tokenized
-	// (under-packed) one.
-	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range merged {
-		n := tokenizeStr(ck.Text)
-		if n > budget+2*unit {
-			t.Errorf("chunk %d exceeds budget by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+		if n := intValue(ck.TKNums); n > budget {
+			t.Errorf("chunk %d running sum %d exceeds budget %d", i, n, budget)
 		}
 	}
 }
 
-func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
-	// With a tight budget, overlap must never push a chunk over the cap.
+func TestMergeByTokenSizeFromJSON_OverlapStrictCap(t *testing.T) {
+	// With overlap the overlap prefix is trimmed so it never pushes a chunk
+	// over the budget.
 	const budget = 25
 	sections := make([]schema.ChunkDoc, 0, 20)
 	for i := 0; i < 20; i++ {
@@ -83,42 +63,43 @@ func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, schema.MergeOverCap)
-	unit := tokenizeStr(sections[0].Text)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20)
 	for i, ck := range got[0] {
-		// OVER_CAP allows one boundary overflow (prev + one unit). The JSON
-		// path joins units with "\n" and cl100k is not additive across joins,
-		// so an overflow-closed chunk can land a little above budget+unit;
-		// allow one extra unit of slack for the separators + cl100k delta.
-		// Overlap is only ever prepended when it still fits budget, so the
-		// only chunks that exceed budget are the overflow-closed ones.
-		if n := tokenizeStr(ck.Text); n > budget+2*unit {
-			t.Errorf("chunk %d exceeds budget+two-units with overlap: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+		if n := intValue(ck.TKNums); n > budget {
+			t.Errorf("chunk %d exceeds budget with overlap: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-func TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole(t *testing.T) {
-	// Per the #17808 contract an over-budget unit is never atom-split: it
-	// stands alone as one chunk and the model layer truncates it later.
+func TestMergeByTokenSizeFromJSON_OversizedUnitSplit(t *testing.T) {
+	// A single over-budget unit is no longer kept whole (#17799 replaced by the
+	// hard cap): it is re-split into <= budget pieces and the concatenated
+	// pieces reproduce the original text exactly (lossless).
 	const budget = 30
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	items := [][]schema.ChunkDoc{{
 		{Text: long, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(long))},
 	}}
-	got := mergeByTokenSizeFromJSON(items, budget, 0, schema.MergeOverCap)
-	if len(got) != 1 || len(got[0]) != 1 {
-		t.Fatalf("over-budget unit must stay whole, got %d chunk(s)", len(got[0]))
+	got := mergeByTokenSizeFromJSON(items, budget, 0)
+	merged := got[0]
+	if len(merged) < 2 {
+		t.Fatalf("oversized unit must be split, got %d chunk(s)", len(merged))
 	}
-	if got[0][0].Text != long {
-		t.Errorf("over-budget chunk text changed: got %q", got[0][0].Text)
+	var joined string
+	for i, ck := range merged {
+		if n := tokenizeStr(ck.Text); n > budget {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
+		}
+		joined += ck.Text
+	}
+	if joined != long {
+		t.Errorf("split not lossless:\n got %q\nwant %q", joined, long)
 	}
 }
 
 func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	// End-to-end text path: long multi-paragraph input under a tight budget.
 	const budget = 40
-	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("word ", 15)))
 	var b strings.Builder
 	for i := 0; i < 30; i++ {
 		b.WriteString(strings.TrimSpace(strings.Repeat("word ", 15)))
@@ -139,24 +120,16 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	}
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
-		// OVER_CAP allows one boundary overflow (prev + one unit).
-		if n := tokenizeStr(text); n > budget+unit {
-			t.Errorf("chunk %d exceeds budget+one-unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-// TestMergeByTokenSize_OversizedUnitStaysWhole mirrors
-// TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole on the text path: a
-// single block of text that exceeds chunk_token_size and contains no
-// sentence delimiter must be emitted as ONE whole chunk — never atom-split.
-// This pins the #17799 contract invariant on the text path (the JSON path
-// is already covered by TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole).
-func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
+func TestMergeByTokenSize_OversizedBoundarylessRunSplit(t *testing.T) {
+	// A single boundary-less run longer than chunk_token_size must be hard
+	// token-split into <= budget pieces (never kept whole).
 	const budget = 30
-	// One long run with no '\n' / '!?' / '。；！？' delimiter: the text path
-	// splits oversized sections only on sentenceDelimiter, so this whole
-	// run is one unit that still exceeds the budget and must stay whole.
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	comp, err := NewTokenChunker(map[string]any{
 		"delimiter_mode":   "delimiter",
@@ -167,83 +140,19 @@ func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
 	}
 	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil, nil)
 	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 1 {
-		t.Fatalf("over-budget unit must stay whole, got %d chunk(s)", len(chunks))
+	if len(chunks) < 2 {
+		t.Fatalf("oversized run must be split, got %d chunk(s)", len(chunks))
 	}
-	text, _ := chunks[0]["text"].(string)
-	if text != long {
-		t.Errorf("over-budget chunk text changed: got %q", text)
-	}
-}
-
-func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
-	// UNDER_CAP (under_cap=true) must never let a chunk exceed the token
-	// target: a projected join that would overflow starts a fresh chunk
-	// instead of merge-then-close (OVER_CAP). This exercises the seam that
-	// lets Go follow Python's no-overflow (UNDER_CAP) strategy without
-	// changing the default (OVER_CAP) behavior.
-	const sentence = "word word word word word word word word word word word word word " // 12 words
-	sentenceN := tokenizeStr(sentence)
-	budget := sentenceN*4 + 2 // four sentences fit, five overflow.
-	if budget < sentenceN*2 {
-		budget = sentenceN * 2
-	}
-	var b strings.Builder
-	for i := 0; i < 12; i++ {
-		b.WriteString(sentence)
-		b.WriteString("! ")
-	}
-
-	run := func(underCap bool) []map[string]any {
-		comp, err := NewTokenChunker(map[string]any{
-			"delimiter_mode":   "delimiter",
-			"chunk_token_size": budget,
-			"under_cap":        underCap,
-		})
-		if err != nil {
-			t.Fatalf("NewTokenChunker: %v", err)
-		}
-		out := comp.(*TokenChunkerComponent).mergeByTokenSize(b.String(), nil, nil)
-		chunks, _ := out["chunks"].([]map[string]any)
-		return chunks
-	}
-
-	respect := run(true)
-	if len(respect) < 2 {
-		t.Fatalf("UNDER_CAP: want multiple chunks, got %d", len(respect))
-	}
-	for i, ck := range respect {
+	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
 		if n := tokenizeStr(text); n > budget {
-			t.Errorf("UNDER_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
-		}
-	}
-
-	// Control: OVER_CAP (default) must follow its one-boundary-overflow
-	// contract on the same input, proving the toggle changes behavior rather
-	// than being a no-op. With the running-sum merge decision (faithful to
-	// Python's naive_merge), a chunk may hold prev (<= budget) + one unit, so
-	// its running-sum token count is <= budget+unit; the reconstructed text
-	// carries the "\n" joins and cl100k is non-additive across them, so allow
-	// the same one-extra-unit slack. For this particular input Python's
-	// OVER_CAP does not actually exceed budget, but it still permits the
-	// one-unit overflow that UNDER_CAP forbids, so the two strategies produce
-	// different chunk counts — proving the toggle is live.
-	over := run(false)
-	if len(over) == len(respect) {
-		t.Errorf("OVER_CAP produced the same chunk count as UNDER_CAP (%d); toggle may be a no-op", len(over))
-	}
-	for i, ck := range over {
-		text, _ := ck["text"].(string)
-		if tokenizeStr(text) > budget+sentenceN {
-			t.Errorf("OVER_CAP chunk %d exceeds one-unit overflow contract: tokens=%d (cap=%d unit=%d)", i, tokenizeStr(text), budget, sentenceN)
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
+func TestInvokeTextPayload_HardCapEndToEnd(t *testing.T) {
 	const budget = 32
-	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("alpha ", 12)))
 	var b strings.Builder
 	for i := 0; i < 20; i++ {
 		b.WriteString(strings.TrimSpace(strings.Repeat("alpha ", 12)))
@@ -273,25 +182,14 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 	}
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
-		// OVER_CAP allows one boundary overflow (prev + one unit).
-		if n := tokenizeStr(text); n > budget+unit {
-			t.Errorf("chunk %d exceeds budget+one-unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-// TestInvokeJSONPayload_UnderCapEndToEnd exercises the UNDER_CAP strategy on
-// the JSON path end-to-end (invokeJSONPayload). Many single-line JSON items
-// are flattened into one global merge sequence, and under_cap=true must keep
-// every chunk within chunk_token_size. The OVER_CAP control is asserted to
-// pack fewer chunks than UNDER_CAP, proving the toggle is live on the JSON
-// path — not just the text path covered by TestInvokeTextPayload_StrictCapEndToEnd.
-func TestInvokeJSONPayload_UnderCapEndToEnd(t *testing.T) {
+func TestInvokeJSONPayload_HardCapEndToEnd(t *testing.T) {
 	const budget = 32
-	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("alpha ", 12)))
-
-	// Each item is one ~unit-sized token block; 24 items give the global
-	// merge plenty to accumulate.
 	var items []map[string]any
 	for i := 0; i < 24; i++ {
 		items = append(items, map[string]any{
@@ -299,113 +197,74 @@ func TestInvokeJSONPayload_UnderCapEndToEnd(t *testing.T) {
 			"doc_type_kwd": "text",
 		})
 	}
-
-	run := func(underCap bool) []map[string]any {
-		comp, err := NewTokenChunker(map[string]any{
-			"delimiter_mode":   "delimiter",
-			"delimiters":       []string{"\n"},
-			"chunk_token_size": budget,
-			"under_cap":        underCap,
-		})
-		if err != nil {
-			t.Fatalf("NewTokenChunker: %v", err)
-		}
-		out, err := comp.Invoke(context.Background(), nil, map[string]any{
-			"name":          "doc.json",
-			"output_format": "json",
-			"json":          items,
-		})
-		if err != nil {
-			t.Fatalf("Invoke: %v", err)
-		}
-		if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
-			t.Fatalf("Invoke error payload: %s", errMsg)
-		}
-		chunks, _ := out["chunks"].([]map[string]any)
-		return chunks
+	comp, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":   "delimiter",
+		"delimiters":       []string{"\n"},
+		"chunk_token_size": budget,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
 	}
-
-	// UNDER_CAP: no chunk may exceed the token target.
-	under := run(true)
-	if len(under) < 2 {
-		t.Fatalf("UNDER_CAP: want multiple chunks, got %d", len(under))
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.json",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
-	for i, ck := range under {
+	if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
+		t.Fatalf("Invoke error payload: %s", errMsg)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) < 2 {
+		t.Fatalf("want multiple chunks, got %d", len(chunks))
+	}
+	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
 		if n := tokenizeStr(text); n > budget {
-			t.Errorf("UNDER_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
-		}
-	}
-
-	// OVER_CAP control: the same input packs fewer chunks (it allows one
-	// boundary overflow per chunk), proving the toggle is live on the JSON
-	// path. Equal lengths would mean under_cap is a no-op here.
-	over := run(false)
-	if len(over) >= len(under) {
-		t.Errorf("OVER_CAP should pack fewer chunks than UNDER_CAP (over=%d under=%d); toggle may be a no-op on the JSON path", len(over), len(under))
-	}
-	for i, ck := range over {
-		text, _ := ck["text"].(string)
-		// OVER_CAP may overflow by at most one unit.
-		if n := tokenizeStr(text); n > budget+unit {
-			t.Errorf("OVER_CAP chunk %d overflows by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-// TestMergeDecisionOverCapVsUnderCapBoundary pins the semantic difference
-// between the two merge strategies at the exact boundary
-// (prevTokens+incomingTokens > target while incomingTokens <= target),
-// independent of BPE text-token-count fluctuations. OVER_CAP must
-// merge-then-close (a chunk may exceed target by at most one unit); UNDER_CAP
-// must start a fresh chunk (strict no-overflow). This restores the strong
-// constraint that the under_cap toggle is live — the integration test in
-// TestMergeByTokenSize_UnderCapNoOverflow can only assert that the two
-// strategies produce a different chunk COUNT, because on repetitive text the
-// re-tokenized merged chunk can fall back under budget (cl100k is
-// non-additive across the join). A regression that turns OVER_CAP into a
-// no-op would not be caught there, but is caught here.
-func TestMergeDecisionOverCapVsUnderCapBoundary(t *testing.T) {
-	const prevT, incT = 10, 10
-	target := prevT + incT - 1 // boundary: running sum > target, unit fits
-	if incT > target {
-		t.Fatalf("bad fixture: incoming unit must fit target (incT=%d target=%d)", incT, target)
-	}
-
+// TestMergeUnits_UnderCapBoundaryDecision pins the boundary semantics of the
+// hard-cap merge independent of BPE text-token-count fluctuations: an exact-fit
+// join (prev+incoming == target) merges; an overflowing join starts a fresh
+// chunk; an oversized incoming unit is expanded into <= target pieces instead of
+// standing alone.
+func TestMergeUnits_UnderCapBoundaryDecision(t *testing.T) {
 	units := []schema.ChunkDoc{
-		{Text: "prev text", TKNums: intPtr(prevT), CKType: "text"},
-		{Text: "incoming text", TKNums: intPtr(incT), CKType: "text"},
+		{Text: "prev text", TKNums: intPtr(10), CKType: "text"},
+		{Text: "incoming text", TKNums: intPtr(10), CKType: "text"},
+	}
+	// prev+incoming == target: merge into one chunk.
+	got := mergeUnits(units, 20, 0, "\n")
+	if len(got) != 1 {
+		t.Fatalf("exact-fit join: want 1 merged chunk, got %d", len(got))
+	}
+	if sum := intValue(got[0].TKNums); sum != 20 {
+		t.Errorf("merged chunk running sum: want 20, got %d", sum)
 	}
 
-	// OVER_CAP at the boundary: the overflowing incoming is merged into the
-	// previous chunk (merge-then-close) — a single merged chunk carrying the
-	// running sum prevT+incT.
-	over := mergeUnits(units, target, 0, schema.MergeOverCap, "\n")
-	if len(over) != 1 {
-		t.Fatalf("OVER_CAP at boundary: want 1 merged chunk, got %d", len(over))
-	}
-	if got := intValue(over[0].TKNums); got != prevT+incT {
-		t.Errorf("OVER_CAP merged chunk running sum: want %d, got %d", prevT+incT, got)
+	// prev+incoming > target: fresh chunk, no overflow.
+	over := mergeUnits(units, 19, 0, "\n")
+	if len(over) != 2 {
+		t.Fatalf("overflowing join: want 2 chunks, got %d", len(over))
 	}
 
-	// UNDER_CAP at the boundary: the overflowing incoming starts a fresh chunk.
-	under := mergeUnits(units, target, 0, schema.MergeUnderCap, "\n")
-	if len(under) != 2 {
-		t.Fatalf("UNDER_CAP at boundary: want 2 chunks, got %d", len(under))
-	}
-
-	// Both strategies must still refuse to merge an incoming unit that
-	// already exceeds target — it stands alone as its own chunk.
+	// An oversized incoming unit is expanded (split) instead of standing whole.
 	big := []schema.ChunkDoc{
-		{Text: "prev text", TKNums: intPtr(prevT), CKType: "text"},
-		{Text: "incoming text", TKNums: intPtr(target + 5), CKType: "text"},
+		{Text: "prev text", TKNums: intPtr(10), CKType: "text"},
+		{Text: strings.Repeat("word ", 100), TKNums: intPtr(100), CKType: "text"},
 	}
-	overBig := mergeUnits(big, target, 0, schema.MergeOverCap, "\n")
-	if len(overBig) != 2 {
-		t.Errorf("OVER_CAP with oversized incoming: want 2 chunks (stands alone), got %d", len(overBig))
+	bigMerged := mergeUnits(big, 30, 0, "\n")
+	if len(bigMerged) < 2 {
+		t.Fatalf("oversized incoming unit must be split, got %d chunk(s)", len(bigMerged))
 	}
-	underBig := mergeUnits(big, target, 0, schema.MergeUnderCap, "\n")
-	if len(underBig) != 2 {
-		t.Errorf("UNDER_CAP with oversized incoming: want 2 chunks (stands alone), got %d", len(underBig))
+	for i, ck := range bigMerged {
+		if n := intValue(ck.TKNums); n > 30 {
+			t.Errorf("chunk %d exceeds target: tokens=%d", i, n)
+		}
 	}
 }

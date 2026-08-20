@@ -23,8 +23,11 @@ import (
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 
+	"gorm.io/gorm"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/service/nav"
 )
 
@@ -480,31 +483,204 @@ type WikiAlteration struct {
 
 // GetWikiAlteration returns the wiki alteration summary for a dataset.
 func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID, datasetID string) (*WikiAlteration, error) {
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
-		[]string{"source_doc_ids"}, 0, 10000, nil)
-	if err != nil {
-		return nil, err
-	}
 	involved := map[string]struct{}{}
-	for _, c := range chunks {
-		for _, d := range toStringSlice(c["source_doc_ids"]) {
-			involved[d] = struct{}{}
+	for offset := 0; ; offset += 1000 {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
+			[]string{"source_doc_ids"}, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range chunks {
+			for _, d := range toStringSlice(c["source_doc_ids"]) {
+				if d != "" {
+					involved[d] = struct{}{}
+				}
+			}
+		}
+		if len(chunks) == 0 || int64(offset+len(chunks)) >= total {
+			break
 		}
 	}
-	ids := make([]string, 0, len(involved))
-	for d := range involved {
-		ids = append(ids, d)
+	// The database is the source of truth for the current document set. The
+	// previous implementation returned the source_doc_ids from the compiled
+	// pages as both sides of the comparison, which made deletion impossible to
+	// observe. In particular, a deleted document remains in source_doc_ids until
+	// the dataset-level consumer removes the old page.
+	var documents []entity.Document
+	if err := dao.DB.WithContext(ctx).Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
+		return nil, fmt.Errorf("list dataset documents for wiki alteration: %w", err)
+	}
+	eligible := make(map[string]struct{}, len(documents))
+	for i := range documents {
+		if documents[i].Status != nil && *documents[i].Status == "0" {
+			continue
+		}
+		pipelineID := ""
+		if documents[i].PipelineID != nil {
+			pipelineID = *documents[i].PipelineID
+		}
+		ok, err := s.documentHasWikiTemplate(ctx, tenantID, documents[i].ParserConfig, pipelineID)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			eligible[documents[i].ID] = struct{}{}
+		}
+	}
+
+	removedIDs := setDifference(involved, eligible)
+	newlyUploadedIDs := setDifference(eligible, involved)
+	return &WikiAlteration{
+		Removed:             len(removedIDs),
+		NewlyUploaded:       len(newlyUploadedIDs),
+		RemovedDocIDs:       removedIDs,
+		NewlyUploadedDocIDs: newlyUploadedIDs,
+		InvolvedDocIDs:      sortedSetKeys(involved),
+		EligibleDocIDs:      sortedSetKeys(eligible),
+	}, nil
+}
+
+// documentHasWikiTemplate reports whether a document's saved pipeline config
+// contains a valid wiki compiler template. A document is eligible only when it
+// is configured for wiki compilation; treating every document in the dataset
+// as eligible would hide both template removal and document deletion.
+func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string) (bool, error) {
+	ok, err := s.valueHasWikiTemplate(ctx, tenantID, config)
+	if err != nil || ok {
+		return ok, err
+	}
+	if pipelineID == "" {
+		return false, nil
+	}
+	var canvas entity.UserCanvas
+	if err := dao.DB.WithContext(ctx).Where("id = ?", pipelineID).First(&canvas).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load pipeline %q for wiki alteration: %w", pipelineID, err)
+	}
+	return s.valueHasWikiTemplate(ctx, tenantID, canvas.DSL)
+}
+
+// valueHasWikiTemplate recursively inspects persisted parser/pipeline JSON.
+// Pipeline DSLs and document parser configs use different nesting layouts, so
+// looking only at a single top-level Compiler key misses pipeline documents.
+func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenantID string, value interface{}) (bool, error) {
+	if items, ok := value.([]interface{}); ok {
+		for _, item := range items {
+			if found, err := s.valueHasWikiTemplate(ctx, tenantID, item); err != nil || found {
+				return found, err
+			}
+		}
+		return false, nil
+	}
+	params, isMap := value.(map[string]interface{})
+	if !isMap {
+		if typed, ok := value.(entity.JSONMap); ok {
+			params = map[string]interface{}(typed)
+			isMap = true
+		}
+	}
+	if !isMap {
+		return false, nil
+	}
+	if id, ok := params["compilation_template_id"].(string); ok && id != "" {
+		var template entity.CompilationTemplate
+		if err := dao.DB.WithContext(ctx).
+			Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND status = ?", id, tenantID, string(entity.StatusValid)).
+			First(&template).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return false, nil
+			}
+			return false, fmt.Errorf("load wiki compilation template %q: %w", id, err)
+		}
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	if groupID, ok := params["compilation_template_group_id"].(string); ok && groupID != "" {
+		if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+			return found, err
+		}
+	}
+	if rawGroupIDs, ok := params["compilation_template_group_ids"]; ok {
+		groupIDs := []string{}
+		switch values := rawGroupIDs.(type) {
+		case string:
+			groupIDs = append(groupIDs, values)
+		case []interface{}:
+			for _, value := range values {
+				if groupID, ok := value.(string); ok {
+					groupIDs = append(groupIDs, groupID)
+				}
+			}
+		case []string:
+			groupIDs = values
+		}
+		for _, groupID := range groupIDs {
+			if strings.TrimSpace(groupID) != "" {
+				if found, err := s.groupHasWikiTemplate(ctx, tenantID, groupID); err != nil || found {
+					return found, err
+				}
+			}
+		}
+	}
+	for _, child := range params {
+		if found, err := s.valueHasWikiTemplate(ctx, tenantID, child); err != nil || found {
+			return found, err
+		}
+	}
+	return false, nil
+}
+
+func (s *DatasetArtifactService) groupHasWikiTemplate(ctx context.Context, tenantID, groupID string) (bool, error) {
+	var group entity.CompilationTemplateGroup
+	if err := dao.DB.WithContext(ctx).
+		Where("id = ? AND (tenant_id = ? OR tenant_id = '') AND status = ?", groupID, tenantID, string(entity.StatusValid)).
+		First(&group).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	var templates []entity.CompilationTemplate
+	if err := dao.DB.WithContext(ctx).Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).Find(&templates).Error; err != nil {
+		return false, fmt.Errorf("load compilation template group %q: %w", groupID, err)
+	}
+	for _, template := range templates {
+		if templateKind(template) == "wiki" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func templateKind(template entity.CompilationTemplate) string {
+	if kind, ok := template.Config["kind"].(string); ok && strings.TrimSpace(kind) != "" {
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+	return strings.ToLower(strings.TrimSpace(template.Kind))
+}
+
+func setDifference(left, right map[string]struct{}) []string {
+	ids := make([]string, 0)
+	for id := range left {
+		if _, ok := right[id]; !ok {
+			ids = append(ids, id)
+		}
 	}
 	sort.Strings(ids)
-	return &WikiAlteration{
-		Removed:             0,
-		NewlyUploaded:       0,
-		RemovedDocIDs:       []string{},
-		NewlyUploadedDocIDs: []string{},
-		InvolvedDocIDs:      ids,
-		EligibleDocIDs:      ids,
-	}, nil
+	return ids
+}
+
+func sortedSetKeys(set map[string]struct{}) []string {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ClearWiki deletes all wiki artifacts for a dataset.
@@ -791,6 +967,10 @@ func toStringSlice(v interface{}) []string {
 	case string:
 		if t == "" {
 			return []string{}
+		}
+		var decoded interface{}
+		if json.Unmarshal([]byte(t), &decoded) == nil {
+			return toStringSlice(decoded)
 		}
 		return []string{t}
 	case []interface{}:

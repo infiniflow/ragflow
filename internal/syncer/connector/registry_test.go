@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"strings"
 	"testing"
 )
@@ -28,11 +30,13 @@ func TestRegistryOpenFromConfig(t *testing.T) {
 
 func TestRegistryOpenUsesTaskFactory(t *testing.T) {
 	registry := NewRegistry()
-	registry.Register("rss", func(ctx context.Context, taskContext any) (Connector, error) {
+	registry.Register("rss", func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
 		return NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml"})
 	})
 
-	connector, err := registry.Open(context.Background(), struct{ Connector struct{ Source string } }{Connector: struct{ Source string }{Source: "rss"}})
+	connector, err := registry.Open(context.Background(), dao.SyncTaskContext{
+		Connector: entity.Connector{Source: "rss"},
+	})
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
