@@ -472,6 +472,13 @@ func (s *mysqlScheduler) SetError(ctx context.Context, datasetID, token, errMsg 
 
 const progressMessageMaxLength = 3000
 
+func timestampProgressMessage(message string) string {
+	if message == "" {
+		return ""
+	}
+	return time.Now().Format("15:04:05") + " " + message
+}
+
 func appendProgressMessage(previous, message string) string {
 	if message == "" {
 		return previous
