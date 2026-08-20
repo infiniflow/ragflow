@@ -364,29 +364,25 @@ func TestTokenChunker_PrefersUpstreamChunks(t *testing.T) {
 }
 
 // TestTokenChunker_NewAcceptsPythonOverlappedRange covers Chunker-2.6:
-// overlapped_percent uses Python's [0,90] integer-percentage semantics,
-// accepting both a [0,1) fraction and a [0,90] percentage (the latter
-// normalized via normalizeOverlappedPercent).
+// overlapped_percent wire values are [0,1) ratios normalized to [0,90] percent.
 func TestTokenChunker_NewAcceptsPythonOverlappedRange(t *testing.T) {
-	// Values that should be valid in the Python range (fractions and
-	// percentages, including out-of-range inputs that Python clamps).
-	for _, pct := range []float64{0, 0.1, 0.5, 15, 30, 50, 90, 95, -5} {
+	for _, ratio := range []float64{0, 0.1, 0.15, 0.3, 0.5, 0.9, 0.95, -0.05} {
 		conf := map[string]any{
 			"delimiter_mode":     "token_size",
 			"chunk_token_size":   100,
-			"overlapped_percent": pct,
+			"overlapped_percent": ratio,
 		}
 		_, err := NewTokenChunker(conf)
 		if err != nil {
-			t.Errorf("overlapped_percent=%v: unexpected error: %v", pct, err)
+			t.Errorf("overlapped_percent=%v: unexpected error: %v", ratio, err)
 		}
 	}
 }
 
 // TestNormalizeOverlappedPercent is the Go port of Python
-// common/float_utils.py:50-58 normalize_overlapped_percent. .
-// Python's user-facing input is a [0,1) fraction; the helper converts it to
-// the [0,90] integer-percentage scale the merge math expects.
+// common/float_utils.py normalize_overlapped_percent.
+// Wire configs store a [0,1) ratio; the helper converts it to the [0,90]
+// integer-percentage scale the merge math expects.
 func TestNormalizeOverlappedPercent(t *testing.T) {
 	cases := []struct {
 		name string
@@ -394,31 +390,26 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 		want float64
 	}{
 		{"zero", 0, 0},
-		{"fraction 0.1 -> 10", 0.1, 10},
-		{"fraction 0.29 -> 29 (round, was 28 trunc)", 0.29, 29},
-		{"fraction 0.3 -> 30", 0.3, 30},
-		{"fraction 0.5 -> 50", 0.5, 50},
-		{"fraction 0.57 -> 57 (round, was 56 trunc)", 0.57, 57},
-		{"fraction 0.93 -> 90 (clamp after round)", 0.93, 90},
-		{"fraction 0.95 -> 90 (clamp)", 0.95, 90},
-		{"percent 15", 15, 15},
-		{"int truncation 33.3 -> 33", 33.3, 33},
-		{"clamp 95 -> 90", 95, 90},
-		{"clamp -5 -> 0", -5, 0},
-		{"negative fraction -0.1 -> 0", -0.1, 0},
-		{`numeric string "10" -> 10`, "10", 10},
-		{`numeric string fraction "0.1" -> 10`, "0.1", 10},
+		{"ratio 0.1 -> 10", 0.1, 10},
+		{"ratio 0.15 -> 15", 0.15, 15},
+		{"ratio 0.29 -> 29 (round, was 28 trunc)", 0.29, 29},
+		{"ratio 0.3 -> 30", 0.3, 30},
+		{"ratio 0.333 -> 33", 0.333, 33},
+		{"ratio 0.5 -> 50", 0.5, 50},
+		{"ratio 0.57 -> 57 (round, was 56 trunc)", 0.57, 57},
+		{"ratio 0.93 -> 90 (clamp after round)", 0.93, 90},
+		{"ratio 0.95 -> 90 (clamp)", 0.95, 90},
+		{"percent-style 15 rejected -> 0", 15, 0},
+		{"percent-style 33.3 rejected -> 0", 33.3, 0},
+		{"ratio >= 1 rejected -> 0", 1.0, 0},
+		{"negative ratio -0.1 -> 0", -0.1, 0},
+		{`numeric string ratio "0.1" -> 10`, "0.1", 10},
+		{`numeric string percent "10" rejected -> 0`, "10", 0},
 		{"bad string -> 0", "abc", 0},
 		{"nil -> 0", nil, 0},
-		// Huge out-of-range values must clamp to 90 (not 0). Go's
-		// float->int is implementation-defined past int's range, so the
-		// clamp must run before truncation (review finding #4). Python's
-		// normalize_overlapped_percent returns 90 for these, not 0.
-		{"huge 1e300 -> 90", 1e300, 90},
-		{"huge -1e300 -> 0", -1e300, 0},
-		{"huge math.MaxFloat64 -> 90", math.MaxFloat64, 90},
-		{"huge math.MaxFloat64 +1 -> 90 (clamp pre-round)", math.MaxFloat64 + 1, 90},
-		{`numeric string fraction "0.29" -> 29`, "0.29", 29},
+		{"huge ratio >= 1 -> 0", 1e300, 0},
+		{"huge negative ratio -> 0", -1e300, 0},
+		{`numeric string ratio "0.29" -> 29`, "0.29", 29},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -461,9 +452,9 @@ func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
 		in   any
 		want float64
 	}{
-		{"clamp 95 -> 90", 95, 90},
-		{"clamp -5 -> 0", -5, 0},
-		{"fraction 0.1 -> 10", 0.1, 10},
+		{"ratio 0.95 -> 90", 0.95, 90},
+		{"negative ratio -0.05 -> 0", -0.05, 0},
+		{"ratio 0.1 -> 10", 0.1, 10},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -484,11 +475,8 @@ func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
 }
 
 // TestTokenChunkerParam_ValidateOverlappedRange covers the strict overlap
-// handling in TokenChunkerParam.Validate (review findings #3 + #4):
-// a directly-constructed struct with a [0,1) fraction is scaled to its
-// [0,90] percent (so 0.3 means 30%, matching the config path), while
-// out-of-range values are rejected — the config path (Update) clamps
-// instead, so this is the only guard that catches a bad literal.
+// handling in TokenChunkerParam.Validate: OverlappedPercent is stored as an
+// integer percentage in [0, 90] after wire ratios are normalized by Update.
 func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -496,14 +484,12 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 		want    float64 // expected stored value after Validate when err==nil
 		wantErr bool
 	}{
-		{"fraction 0.3 -> 30", 0.3, 30, false},
-		{"fraction 0.29 -> 29 (round, was 28 trunc)", 0.29, 29, false},
-		{"fraction 0.57 -> 57 (round, was 56 trunc)", 0.57, 57, false},
 		{"percent 0", 0, 0, false},
 		{"percent 30", 30, 30, false},
 		{"percent 90 (boundary)", 90, 90, false},
 		{"percent 95 -> error", 95, 0, true},
 		{"negative -5 -> error", -5, 0, true},
+		{"ratio-looking 0.3 stored as 0.3 percent", 0.3, 0.3, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

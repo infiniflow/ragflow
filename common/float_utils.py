@@ -51,15 +51,18 @@ def get_float(v):
 
 
 def normalize_overlapped_percent(overlapped_percent):
+    """Convert a [0, 1) overlap ratio to an integer percent in [0, 90].
+
+    Wire configs (parser_config, token chunker DSL) store overlapped_percent as a
+    ratio, e.g. 0.3 for 30%. Merge math expects an integer percentage.
+    """
     try:
-        value = float(overlapped_percent)
+        ratio = float(overlapped_percent)
     except (TypeError, ValueError):
         return 0
-    if 0 < value < 1:
-        value *= 100
-    if value < 0:
-        value = 0
-    if value > 90:
-        value = 90
+    if not math.isfinite(ratio) or ratio < 0 or ratio >= 1:
+        return 0
+    percent = ratio * 100
     # Match Go's math.Round (away from zero at .5) rather than Python round().
-    return math.floor(value + 0.5)
+    rounded = math.floor(percent + 0.5)
+    return max(0, min(rounded, 90))
