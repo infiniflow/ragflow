@@ -321,14 +321,14 @@ func (c *MoodleConnector) getCourses(ctx context.Context) ([]moodleCourse, error
 	return courses, nil
 }
 
-func (c *MoodleConnector) getCourseContents(ctx context.Context, courseID int64) []moodleSection {
+func (c *MoodleConnector) getCourseContents(ctx context.Context, courseID int64) ([]moodleSection, error) {
 	var sections []moodleSection
 	if err := retryMoodle(ctx, func() error {
 		return c.callREST(ctx, "core_course_get_contents", map[string]any{"courseid": courseID}, &sections)
 	}); err != nil {
-		return nil
+		return nil, fmt.Errorf("Moodle course %d contents failed: %w", courseID, err)
 	}
-	return sections
+	return sections, nil
 }
 
 func (c *MoodleConnector) getForumDiscussions(ctx context.Context, forumID int64) ([]moodleDiscussion, error) {
