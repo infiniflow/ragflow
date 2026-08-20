@@ -56,7 +56,7 @@ export default function SearchPage() {
       <div className="flex gap-3 flex-1 min-w-0 bg-bg-base border-0.5 border-border-button">
         <div className="flex-1 min-w-0 overflow-hidden">
           {!isSearching && (
-            <div className="animate-fade-in-down">
+            <div className="animate-fade-in-down h-full overflow-x-hidden overflow-y-auto">
               <SearchHome
                 setIsSearching={setIsSearching}
                 isSearching={isSearching}
