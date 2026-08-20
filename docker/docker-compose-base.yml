@@ -296,7 +296,7 @@ services:
       - ragflow-go
     image: nats:2.14.2
     ports:
-      - ${NATS_PORT:-4222}:4222
+      - ${EXPOSE_NATS_PORT:-4222}:4222
       - "8222:8222"
     volumes:
       - nats_data:/data
@@ -376,7 +376,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${EXPOSE_CLICKHOUSE_TCP_PORT:-9900}:9000
       - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
     env_file: .env
     environment:
