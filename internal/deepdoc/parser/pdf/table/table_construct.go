@@ -79,6 +79,9 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 			item.Rows = RowsToStrings(rows)
 		}
 		spanInfo, covered := CalSpans(rows)
+		if item != nil {
+			MarkCoveredCells(item.Grid, covered)
+		}
 		return RowsToHTML(rows, caption, hdrs, spanInfo, covered)
 	}
 	// Fallback: boxes with R/C annotations.

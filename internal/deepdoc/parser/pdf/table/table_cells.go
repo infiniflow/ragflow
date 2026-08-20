@@ -130,6 +130,14 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 	// row×column cross-product, so every cell in a row shares the same Y band.
 	// A row band spans the full table width (union of its cells), matching
 	// Python's full-width "table row" components.
+	//
+	// Spanning cells are folded into the nearest band by Y0 instead of opening
+	// their own band. GroupCells extends a span cell's bbox across the covered
+	// region, so its Y0 differs from the sibling cells' Y0; a separate band
+	// would span several TSR rows and the top-containment rule would swallow
+	// every covered box into it, emptying the real rows (11→6 in dell/
+	// screenshot real-PDF parity). Python assigns boxes to rows by TSR row
+	// component overlap only — spanning cells never define a row.
 	type rowBand struct {
 		y0, y1  float64
 		stripX0 float64
@@ -142,10 +150,14 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 	// Y0 value, and distinct rows differ by at least a row height, so a tiny
 	// epsilon is enough and never merges two real rows.
 	const yTol = 1e-6
+	// Pass 1: build bands from non-spanning cells only.
 	for i := range cells {
 		c := &cells[i]
 		if c.X1 <= c.X0 || c.Y1 <= c.Y0 {
 			continue // degenerate / span-covered cell: not a fill target
+		}
+		if strings.Contains(c.Label, "spanning") {
+			continue
 		}
 		rb := &rowBand{}
 		found := false
@@ -172,6 +184,34 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			rb.y1 = c.Y1
 		}
 		rb.cells = append(rb.cells, i)
+	}
+	// Pass 2: fold spanning cells into the nearest band by Y0. GroupCells
+	// extends a span cell's bbox across the covered region, so its Y0 differs
+	// from its own row's other cells; a separate band would span several TSR
+	// rows and the top-containment rule would swallow every covered box into
+	// it, emptying the real rows (dell/screenshot 11→6). Python assigns boxes
+	// to rows by TSR row component overlap only — spanning cells never define
+	// a row. The span cell stays a fill target in that band (its covered
+	// boxes' R/C labels still point at the span cell's column), but it must
+	// NOT extend the band's Y/X geometry — its bbox already covers the span.
+	for i := range cells {
+		c := &cells[i]
+		if c.X1 <= c.X0 || c.Y1 <= c.Y0 {
+			continue
+		}
+		if !strings.Contains(c.Label, "spanning") {
+			continue
+		}
+		best, bestD := -1, math.Inf(1)
+		for ri := range rows {
+			if d := math.Abs(rows[ri].y0 - c.Y0); d < bestD {
+				best, bestD = ri, d
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		rows[best].cells = append(rows[best].cells, i)
 	}
 	// Stable ordering: rows top-to-bottom, cells left-to-right (matches
 	// Python's first-wins tie-breaking in find_overlapped_with_threshold /
