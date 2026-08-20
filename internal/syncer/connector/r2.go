@@ -38,6 +38,7 @@ import (
 const (
 	defaultR2BatchSize     = 2
 	defaultR2SizeThreshold = 20 * 1024 * 1024
+	r2ListPageSize         = 1000
 	r2Source               = "r2"
 )
 
@@ -103,7 +104,18 @@ func (c *R2Connector) Validate(ctx context.Context) error {
 func (c *R2Connector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return c.Validate(ctx)
+	if err := c.Validate(ctx); err != nil {
+		return err
+	}
+	client, err := c.ensureClient(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(c.bucketName)})
+	if err != nil {
+		return fmt.Errorf("access Cloudflare R2 bucket %q: %w", c.bucketName, err)
+	}
+	return nil
 }
 
 // OpenSync opens one Cloudflare R2 sync session.
@@ -204,7 +216,7 @@ func (c *R2Connector) collectObjects(ctx context.Context) ([]r2Object, error) {
 	var objects []r2Object
 	startAfter := ""
 	for {
-		page, nextStartAfter, hasMore, err := c.listObjectPage(ctx, startAfter, int32(c.batchSize))
+		page, nextStartAfter, hasMore, err := c.listObjectPage(ctx, startAfter, r2ListPageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -217,8 +229,9 @@ func (c *R2Connector) collectObjects(ctx context.Context) ([]r2Object, error) {
 		if !hasMore {
 			break
 		}
+		previousStartAfter := startAfter
 		startAfter = strings.TrimPrefix(nextStartAfter, r2SourceID(c.bucketName, ""))
-		if startAfter == "" {
+		if startAfter == "" || startAfter == previousStartAfter {
 			break
 		}
 	}
