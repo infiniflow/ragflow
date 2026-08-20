@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -57,33 +58,61 @@ func TestTokenChunker_TextOverlapPreservesInterLineSpace(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	// OVER_CAP (Python's canonical default) overflow-merges the first two
-	// groups (alpha+beta) into chunk0 and then starts a fresh, overlap-prefixed
-	// chunk1 for gamma.
-	if len(chunks) != 2 {
-		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	if len(chunks) == 0 {
+		t.Fatalf("expected chunks, got none")
 	}
 	got := make([]string, len(chunks))
 	for i, ck := range chunks {
 		s, _ := ck["text"].(string)
 		got[i] = s
+		// Hard cap: no chunk may exceed the token budget.
+		if n := tokenizeStr(s); n > 64 {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=64)", i, n)
+		}
 	}
 
 	// The regression this test pins: the inter-line trailing space of every
 	// line must be preserved across a merge/overlap boundary (Python emits
-	// "alpha \nbeta", not "alpha\nbeta"). Under OVER_CAP the alpha→beta
-	// boundary is inside chunk0 and the beta→gamma boundary is inside the
-	// overlap-prefixed chunk1.
-	if !strings.Contains(got[0], "alpha \nbeta") {
-		t.Errorf("chunk[0] lost inter-line space before newline: %q", got[0])
+	// "alpha \nbeta", not "alpha\nbeta"). No emitted chunk may contain a
+	// space-less "\n" boundary, and at least one space-preserving boundary must
+	// actually appear (otherwise the fixture no longer exercises the path).
+	spacePreserved := 0
+	for i, s := range got {
+		if strings.Contains(s, "alpha\nbeta") {
+			t.Errorf("chunk[%d] has space-less alpha/beta boundary (bug present): %q", i, s)
+		}
+		if strings.Contains(s, "beta\ngamma") {
+			t.Errorf("chunk[%d] has space-less beta/gamma boundary (bug present): %q", i, s)
+		}
+		if strings.Contains(s, "alpha \nbeta") || strings.Contains(s, "beta \ngamma") {
+			spacePreserved++
+		}
 	}
-	if strings.Contains(got[0], "alpha\nbeta") {
-		t.Errorf("chunk[0] has space-less boundary (bug present): %q", got[0])
+	if spacePreserved == 0 {
+		t.Errorf("no chunk preserved an inter-line space across a boundary; the regression fixture is not exercised")
 	}
-	if !strings.Contains(got[1], "beta \ngamma") {
-		t.Errorf("chunk[1] lost inter-line space before newline: %q", got[1])
+}
+
+// TestOverlapTailPositions_VisibleTextOffsets pins the visible-text offset
+// contract: overlapCut/overlapFitPrefix measure the cut on the tag-free visible
+// text, so overlapTailPositions must map item spans using the same visible
+// lengths. A coordinate tag in an earlier item must not shift the boundaries of
+// later items (which would pull head coordinates into the overlap tail).
+func TestOverlapTailPositions_VisibleTextOffsets(t *testing.T) {
+	items := []mergeItem{
+		// visible text "hello world" (11 runes); the tag inflates the RAW length
+		// to 23 runes.
+		{Text: "hello@@1\t2\t3\t4## world", PDFPositions: json.RawMessage(`[["p0"]]`), Positions: json.RawMessage(`[["q0"]]`)},
+		{Text: "tail", PDFPositions: json.RawMessage(`[["p1"]]`), Positions: json.RawMessage(`[["q1"]]`)},
 	}
-	if strings.Contains(got[1], "beta\ngamma") {
-		t.Errorf("chunk[1] has space-less boundary (bug present): %q", got[1])
+	// Visible layout: item0 [0,11), joinSep "\n" at 11, item1 [12,16). An
+	// overlapStart of 12 lands in item1 only, so item0's head coordinates must
+	// NOT be included.
+	pdf, pos := overlapTailPositions(items, 12, "\n")
+	if string(pdf) != `[["p1"]]` {
+		t.Errorf("pdf positions = %s, want only item1 [\"p1\"] (item0 head must be excluded)", pdf)
+	}
+	if string(pos) != `[["q1"]]` {
+		t.Errorf("positions = %s, want only item1 [\"q1\"] (item0 head must be excluded)", pos)
 	}
 }
