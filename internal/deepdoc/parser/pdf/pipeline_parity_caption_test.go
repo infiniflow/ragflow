@@ -69,13 +69,14 @@ func replayPipelineText(t *testing.T, name string) (goText, pyText string) {
 	return goText, pyText
 }
 
-// TestPipelineParity14InterleavedParagraphDropped exposes the open go_bug
-// table-text-interleaved-paragraph-dropped: 14_text_table_interleaved.pdf has
-// a body paragraph interleaved BEFORE Table 1 ("... Table 1 shows
-// revenuebycategory."). Python extracts it as a text section; Go drops it
-// entirely. This is a REAL content loss (the text is absent from Go's
-// sections), not an HTML-emission difference. The test is RED while the bug
-// exists and turns green once Go retains the paragraph.
+// TestPipelineParity14InterleavedParagraphDropped is the end-to-end regression
+// guard for the resolved go_bug table-text-interleaved-paragraph-dropped:
+// 14_text_table_interleaved.pdf has a body paragraph interleaved BEFORE Table 1
+// ("... Table 1 shows revenuebycategory."). Python extracts it as a text
+// section; Go must keep it too. The paragraph was previously dropped because an
+// unanchored "Table N" caption regex mislabeled it a caption and MergeCaptions
+// removed it. This test is GREEN now (Go retains the paragraph) and turns RED
+// again if that content loss ever regresses.
 func TestPipelineParity14InterleavedParagraphDropped(t *testing.T) {
 	name := "14_text_table_interleaved.pdf"
 	goText, pyText := replayPipelineText(t, name)
@@ -83,11 +84,9 @@ func TestPipelineParity14InterleavedParagraphDropped(t *testing.T) {
 	if !strings.Contains(pyText, want) {
 		t.Fatalf("test setup error: Python golden does not contain %q", want)
 	}
-	if strings.Contains(goText, want) {
-		t.Logf("RESOLVED go_bug table-text-interleaved-paragraph-dropped: Go now emits the interleaved body paragraph")
-		return
+	if !strings.Contains(goText, want) {
+		t.Errorf("REGRESSION go_bug table-text-interleaved-paragraph-dropped: Go output is missing the interleaved body paragraph containing %q (Python keeps it). Real content loss, not HTML format.", want)
 	}
-	t.Errorf("OPEN go_bug table-text-interleaved-paragraph-dropped: Go output is missing the interleaved body paragraph containing %q (Python keeps it). Real content loss, not HTML format.", want)
 }
 
 // TestPipelineParityCaptionOmission documents the go_intentional divergence

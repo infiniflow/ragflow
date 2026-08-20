@@ -374,7 +374,11 @@ func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool)
 
 // isCaptionBox checks if a text box is a table/figure caption,
 // matching Python is_caption().  Captions should not enter table cells.
-var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+|(?i)Table\s+\d+`)
+// reCaption backs IsCaptionBox and must mirror Python's start-anchored
+// is_caption: only a line BEGINNING with a caption marker counts. The English
+// alternatives are start-anchored with ^ for the same reason as
+// reTableCaptionText/reFigureCaptionText.
+var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+|(?i)^Table\s+\d+`)
 
 func IsCaptionBox(text string, layoutType string) bool {
 	if strings.Contains(layoutType, "caption") {
@@ -384,11 +388,16 @@ func IsCaptionBox(text string, layoutType string) bool {
 }
 
 // reTableCaptionText matches text patterns that indicate a table caption
-// (as opposed to a figure caption). Python is_caption uses the same set.
-var reTableCaptionText = regexp.MustCompile(`^表|(?i)Table\s+\d+`)
+// (as opposed to a figure caption). Python is_caption uses re.match, which is
+// start-anchored, so a body paragraph that merely MENTIONS "Table N"
+// mid-sentence is NOT a caption. The English alternatives below are therefore
+// start-anchored with ^: an unanchored alternative wrongly classifies such a
+// paragraph as a caption and MergeCaptions then drops it (go_bug
+// table-text-interleaved-paragraph-dropped).
+var reTableCaptionText = regexp.MustCompile(`^表|(?i)^Table\s+\d+`)
 
 // reFigureCaptionText matches text patterns that indicate a figure caption.
-var reFigureCaptionText = regexp.MustCompile(`^图|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+`)
+var reFigureCaptionText = regexp.MustCompile(`^图|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+`)
 
 // captionKind returns "table" if the section is a table caption,
 // "figure" if a figure caption, or "" if not a caption.
