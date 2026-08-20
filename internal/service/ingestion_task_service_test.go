@@ -64,8 +64,10 @@ func TestIngestionTaskServiceCreateForDocumentsMirrorsRunningToDocument(t *testi
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("progress", 0.42).Error; err != nil {
-		t.Fatalf("set progress: %v", err)
+	staleMsg := "Previous run failed"
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{"progress": 0.42, "progress_msg": staleMsg}).Error; err != nil {
+		t.Fatalf("set stale progress: %v", err)
 	}
 
 	publisher := &recordingTaskPublisher{}
@@ -90,6 +92,55 @@ func TestIngestionTaskServiceCreateForDocumentsMirrorsRunningToDocument(t *testi
 	}
 	if doc.Progress != 0 {
 		t.Fatalf("document progress = %v, want 0 after enqueue mirror", doc.Progress)
+	}
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != "Task is queued..." {
+		t.Fatalf("document progress_msg = %v, want %q after enqueue mirror", doc.ProgressMsg, "Task is queued...")
+	}
+	if doc.ProcessBeginAt == nil {
+		t.Fatal("document process_begin_at should be set by the enqueue mirror")
+	}
+}
+
+// A cancel that commits before the enqueue mirror must not be overwritten
+// back to RUNNING: CancelDocParse writes run=CANCEL as the last step of the
+// cancel flow, so the mirror's begin2parse-style conditional update skips the
+// document and both commit orders converge to CANCEL.
+func TestIngestionTaskServiceCreateForDocumentsSkipsMirrorAfterCancel(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	cancelRun := string(entity.TaskStatusCancel)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{"run": cancelRun, "progress": -1.0}).Error; err != nil {
+		t.Fatalf("set cancelled state: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	ctx := t.Context()
+	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if len(resp) != 1 || !strings.HasPrefix(resp[0].Result, "task_id:") {
+		t.Fatalf("unexpected responses: %+v", resp)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Run == nil || *doc.Run != cancelRun {
+		t.Fatalf("document run = %v, want %q preserved (mirror must skip a cancelled document)", doc.Run, cancelRun)
+	}
+	if doc.Progress != -1.0 {
+		t.Fatalf("document progress = %v, want -1 preserved from the cancel", doc.Progress)
 	}
 }
 

@@ -71,6 +71,18 @@ func (dao *DocumentDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, 
 	return db.WithContext(ctx).Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// UpdateByIDIfNotCancelled updates document by ID with the given fields, but
+// only when the document's run status is not CANCEL. Mirrors the WHERE clause
+// of Python's DocumentService.begin2parse: a concurrent cancel writes
+// run=CANCEL as the last step of the cancel flow, so the conditional keeps an
+// enqueue-time status mirror from overwriting a cancel that already committed.
+func (dao *DocumentDAO) UpdateByIDIfNotCancelled(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.Document{}).
+		Where("id = ?", id).
+		Where("run IS NULL OR run <> ?", string(entity.TaskStatusCancel)).
+		Updates(updates).Error
+}
+
 // IncrementCounts atomically increments chunk_num, token_num, and process_duration for a document
 func (dao *DocumentDAO) IncrementCounts(ctx context.Context, db *gorm.DB, id string, kbID string, chunkNum int64, tokenNum int64, duration float64) error {
 	return db.WithContext(ctx).Model(&entity.Document{}).
