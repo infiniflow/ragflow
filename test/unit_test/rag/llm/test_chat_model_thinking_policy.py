@@ -31,7 +31,7 @@ def test_qwen3_uses_system_disabled_default():
     )
 
     assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is False
+    assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def test_qwen3_can_enable_thinking_explicitly():
@@ -43,7 +43,27 @@ def test_qwen3_can_enable_thinking_explicitly():
     )
 
     assert gen_conf == {"temperature": 0.2}
-    assert kwargs["extra_body"] == {"seed": 1, "enable_thinking": True}
+    assert kwargs["extra_body"] == {"seed": 1, "chat_template_kwargs": {"enable_thinking": True}}
+
+
+def test_qwen3_preserves_existing_chat_template_kwargs():
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3-plus",
+        backend="base",
+        gen_conf={"thinking": "disabled"},
+        request_kwargs={
+            "extra_body": {
+                "seed": 1,
+                "chat_template_kwargs": {"enable_thinking": True, "custom_template_flag": "keep"},
+            }
+        },
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"] == {
+        "seed": 1,
+        "chat_template_kwargs": {"enable_thinking": False, "custom_template_flag": "keep"},
+    }
 
 
 def test_qwen3_preview_variant_forces_thinking_true():
