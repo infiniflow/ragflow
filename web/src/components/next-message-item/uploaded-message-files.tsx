@@ -19,48 +19,15 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import api from '@/utils/api';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import FileIcon from '../file-icon';
 import { useAuthenticatedImageUrl } from '../image';
 import SvgIcon from '../svg-icon';
+import { getFileMimeType, isImageFile } from './utils';
 
 interface IProps {
   files?: File[] | IDocumentInfo[] | UploadResponseDataType[];
-}
-
-const ImageExtensions = [
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'bmp',
-  'webp',
-  'svg',
-  'ico',
-  'avif',
-];
-
-function getFileMimeType(
-  file: File | IDocumentInfo | UploadResponseDataType,
-): string {
-  if (file instanceof File) {
-    return file.type;
-  }
-  if ('mime_type' in file && typeof file.mime_type === 'string') {
-    return file.mime_type;
-  }
-  return '';
-}
-
-function isImageFile(
-  file: File | IDocumentInfo | UploadResponseDataType,
-): boolean {
-  const mimeType = getFileMimeType(file);
-  if (mimeType) {
-    return mimeType.startsWith('image/');
-  }
-  return ImageExtensions.includes(getExtension(file.name));
 }
 
 // Zoomable thumbnail for files already uploaded to the server: chat uploads
@@ -99,7 +66,17 @@ function UploadedFileImage({
 
 // Zoomable thumbnail for local files that have not been sent yet.
 function LocalFileImage({ file, name }: { file: File; name: string }) {
-  const objectUrl = useMemo(() => URL.createObjectURL(file), [file]);
+  const [objectUrl, setObjectUrl] = useState('');
+
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!objectUrl) {
+    return null;
+  }
 
   return (
     <PhotoView src={objectUrl}>
