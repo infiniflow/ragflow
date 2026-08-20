@@ -117,6 +117,41 @@ func TestApplyComponentScopedParserConfig_NoDatasetMetadataDisablesNode(t *testi
 	}
 }
 
+func TestApplyComponentScopedParserConfig_DatasetMetadataIsAuthoritative(t *testing.T) {
+	parserConfig := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "dataset_field", "type": "string"},
+			},
+			"built_in_metadata": []any{},
+		},
+		"Extractor:CanvasNode": map[string]any{
+			"metadata": map[string]any{
+				"enabled": false,
+				"metadata": []any{
+					map[string]any{"key": "node_field", "type": "string"},
+				},
+				"built_in_metadata": []any{},
+			},
+		},
+	}
+
+	got := ApplyComponentScopedParserConfig(parserConfig, "tenant-llm")
+	node := got["Extractor:CanvasNode"].(map[string]any)
+	meta, ok := node["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected node metadata map, got %T: %#v", node["metadata"], node["metadata"])
+	}
+	if enabled, _ := meta["enabled"].(bool); !enabled {
+		t.Fatalf("expected dataset metadata enabled=true, got false")
+	}
+	fields, ok := meta["metadata"].([]any)
+	if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "dataset_field" {
+		t.Fatalf("expected dataset_field to replace node_field, got %#v", meta["metadata"])
+	}
+}
+
 func TestApplyComponentScopedParserConfig_PreservesNodeOnlyMetadata(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"Extractor:CanvasNode": map[string]any{

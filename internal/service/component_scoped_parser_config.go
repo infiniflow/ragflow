@@ -11,8 +11,10 @@ import (
 // onto every Extractor node and strips the legacy flat metadata fields
 // (enable_metadata / metadata_config / built_in_metadata / fields) both at the
 // top level and on nodes. Legacy flat metadata forms are intentionally not
-// supported. It mutates the provided map in place and returns it for
-// convenience.
+// supported. When a dataset-level modular metadata config is present it is
+// authoritative and replaces each Extractor node's metadata; when absent, the
+// node's own modular metadata is preserved. It mutates the provided map in
+// place and returns it for convenience.
 func ApplyComponentScopedParserConfig(
 	parserConfig entity.JSONMap,
 	llmID string,

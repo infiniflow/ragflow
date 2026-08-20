@@ -253,14 +253,19 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	if next == nil {
 		next = entity.JSONMap{}
 	}
-	value, ok := incoming["metadata"]
-	if !ok {
-		value, ok = existing["metadata"]
-	}
-	if ok {
-		if mm, isMap := value.(map[string]any); isMap {
-			next["metadata"] = mm
+	var mm map[string]any
+	if incoming != nil {
+		if v, ok := incoming["metadata"].(map[string]any); ok {
+			mm = v
 		}
+	}
+	if mm == nil && existing != nil {
+		if v, ok := existing["metadata"].(map[string]any); ok {
+			mm = v
+		}
+	}
+	if mm != nil {
+		next["metadata"] = mm
 	}
 	return next
 }
