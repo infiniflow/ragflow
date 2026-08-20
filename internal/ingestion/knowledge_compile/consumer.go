@@ -238,6 +238,21 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	}
 }
 
+func (c *Consumer) reportProgress(ctx context.Context, tenant, datasetID, token string, progress float64, phase, message string) {
+	if err := c.scheduler.UpdateProgress(ctx, datasetID, token, progress, phase, message); err != nil {
+		common.Warn("knowledge_compile: failed to update progress",
+			zap.String("dataset_id", datasetID),
+			zap.String("phase", phase),
+			zap.Error(err))
+	}
+	common.Info("knowledge_compile: progress",
+		zap.String("dataset_id", datasetID),
+		zap.String("tenant_id", tenant),
+		zap.Float64("progress", progress),
+		zap.String("phase", phase),
+		zap.String("message", message))
+}
+
 var errClaimSuperseded = errors.New("knowledge_compile: claim superseded by rewrite")
 
 // withWriteLock runs a destructive side effect fn under the scheduler's
@@ -444,6 +459,7 @@ func filterWikiPageCandidates(candidates []kccommon.Product) []kccommon.Product 
 // returns an error if any reader/dedup/writer step fails so the caller can
 // leave the batch for reclamation instead of acking dropped work.
 func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, entries []BacklogEntry) error {
+	c.reportProgress(ctx, tenant, kb, token, 0.05, "classifying", fmt.Sprintf("Classifying %d scheduling entries", len(entries)))
 	common.Info("knowledge_compile: processing claimed batch",
 		zap.String("dataset_id", kb),
 		zap.String("tenant_id", tenant),
@@ -469,20 +485,24 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// write wins, which is exactly the re-parse (completed last) vs delete
 	// (deleted last) semantics we want.
 	type docState struct {
-		winEvent EventType
-		variants []string
+		winEvent      EventType
+		variants      []string
+		affectedSlugs []string
+		removedSlugs  []string
 	}
 	byDoc := make(map[string]*docState, len(entries))
 	for _, e := range entries {
 		et := EventType(e.EventType)
 		st := byDoc[e.DocID]
 		if st == nil {
-			byDoc[e.DocID] = &docState{winEvent: et, variants: e.Variants}
+			byDoc[e.DocID] = &docState{winEvent: et, variants: e.Variants, affectedSlugs: e.AffectedSlugs, removedSlugs: e.RemovedSlugs}
 			continue
 		}
 		// Later entries overwrite earlier ones: last event wins.
 		st.winEvent = et
 		st.variants = e.Variants
+		st.affectedSlugs = e.AffectedSlugs
+		st.removedSlugs = e.RemovedSlugs
 	}
 	for docID, st := range byDoc {
 		switch st.winEvent {
@@ -505,7 +525,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			}
 			// Preserve the winning event's variants so the dispatch below can
 			// route this doc to the matching dataset-level compile path (A0-4).
-			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Variants: st.variants})
+			completed = append(completed, BacklogEntry{
+				DocID: docID, EventType: string(EventTypeCompleted), Variants: st.variants,
+				AffectedSlugs: st.affectedSlugs, RemovedSlugs: st.removedSlugs,
+			})
 		}
 	}
 	// Sort for deterministic iteration in the delete/load passes below.
@@ -527,8 +550,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		zap.Strings("entries", entryDetails))
 
 	if len(deleted) == 0 && len(completed) == 0 {
+		c.reportProgress(ctx, tenant, kb, token, 1, "completed", "No document products require merging")
 		return nil
 	}
+	c.reportProgress(ctx, tenant, kb, token, 0.12, "deleting", fmt.Sprintf("Deleting products for %d document(s)", len(deleted)))
 
 	deduper, err := c.factory(tenant)
 	if err != nil || deduper == nil {
@@ -614,6 +639,25 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// completed and deleted is a stale tombstone: the deletion wins, so we skip
 	// its completion.
 	var incoming []kccommon.Product
+	wikiScoped := false
+	wikiFullRefresh := false
+	wikiAffectedSet := map[string]struct{}{}
+	for _, entry := range completed {
+		if !variantsContain(entry.Variants, "wiki") && len(entry.Variants) != 0 {
+			continue
+		}
+		if len(entry.AffectedSlugs) == 0 && len(entry.RemovedSlugs) == 0 {
+			wikiFullRefresh = true
+			continue
+		}
+		wikiScoped = true
+		for _, slug := range append(append([]string(nil), entry.AffectedSlugs...), entry.RemovedSlugs...) {
+			if slug != "" {
+				wikiAffectedSet[slug] = struct{}{}
+			}
+		}
+	}
+	c.reportProgress(ctx, tenant, kb, token, 0.28, "loading_products", fmt.Sprintf("Loading products for %d document(s)", len(completed)))
 	for _, e := range completed {
 		if deletedSet[e.DocID] {
 			continue
@@ -628,7 +672,27 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		// doc-level rows of an earlier variant in storage; without this gate those
 		// would leak into the nav/structure paths despite the event asking only
 		// for, say, wiki. Legacy events with empty Variants keep all products.
-		incoming = append(incoming, productsForVariants(docProducts, e.Variants)...)
+		selected := productsForVariants(docProducts, e.Variants)
+		if wikiScoped && !wikiFullRefresh {
+			for _, product := range selected {
+				if product.Variant != kccommon.VariantWiki {
+					incoming = append(incoming, product)
+				}
+			}
+		} else {
+			incoming = append(incoming, selected...)
+		}
+	}
+	if wikiScoped && !wikiFullRefresh {
+		reader, ok := c.reader.(documentWikiPageReader)
+		if !ok {
+			return fmt.Errorf("knowledge_compile: reader does not support scoped Wiki page loading")
+		}
+		pages, err := reader.LoadDocumentWikiPagesBySlugs(ctx, tenant, kb, sortedStringSet(wikiAffectedSet))
+		if err != nil {
+			return err
+		}
+		incoming = append(incoming, pages...)
 	}
 
 	// A0-4 dispatch: route tree/structure products to the dataset-navigation tree
@@ -638,6 +702,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// so both upsert their summary into the cross-document nav tree; wiki products
 	// continue to the page-specific evidence merge.
 	navIn := navInputFromProducts(kb, incoming)
+	c.reportProgress(ctx, tenant, kb, token, 0.40, "merging_navigation", fmt.Sprintf("Merging navigation products: %d", len(navIn)))
 	if len(navIn) > 0 {
 		ns := nav.GetNavService()
 		if ns == nil {
@@ -661,6 +726,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		}
 		return err
 	}
+	c.reportProgress(ctx, tenant, kb, token, 0.50, "merging_structure", fmt.Sprintf("Merging structure products: %d", len(incoming)))
 
 	// wiki_incremental port (M1): the dataset-level merge only processes wiki
 	// PAGES. A wiki doc yields both page and section products (Meta.kind
@@ -671,13 +737,32 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// contract. Legacy rows whose kind is empty are derived in the Reader; only
 	// truly page-kind wiki products proceed.
 	candidates := filterWikiPageCandidates(incoming)
-	entityMerged, topicCandidates, err := c.mergeEntityModeCandidates(ctx, tenant, kb, candidates)
+	c.reportProgress(ctx, tenant, kb, token, 0.54, "filtering_candidates", fmt.Sprintf("Filtering Wiki page candidates: %d", len(candidates)))
+	useExistingWikiBody := !wikiScoped || wikiFullRefresh
+	entityMerged, topicCandidates, err := c.mergeEntityModeCandidates(ctx, tenant, kb, candidates, useExistingWikiBody)
 	if err != nil {
 		return err
 	}
+	// A Wiki page is identified by its page type and canonical slug. Do not use
+	// content KNN or an LLM to decide whether two pages are the same: different
+	// slugs are distinct pages, while equal slugs are deterministically folded.
+	topicMerged, err := c.mergeWikiProductsBySlug(ctx, tenant, kb, topicCandidates, useExistingWikiBody)
+	if err != nil {
+		return err
+	}
+	entityMerged = append(entityMerged, topicMerged...)
+	if wikiScoped && !wikiFullRefresh {
+		if err := c.deleteMissingScopedWikiPages(ctx, tenant, kb, token, wikiAffectedSet, entityMerged); err != nil {
+			return err
+		}
+	}
+	c.reportProgress(ctx, tenant, kb, token, 0.58, "merging_by_slug", fmt.Sprintf("Merging Wiki pages by slug: %d", len(entityMerged)))
 	// Entity pages have stable page identity and must bypass topic-mode KNN and
 	// Page-specific entity/concept merging. Only topic-mode pages continue below.
-	candidates = topicCandidates
+	// The slug-only merge above has already handled every Wiki page candidate.
+	// Leave the legacy generic dedup path with no candidates so it cannot apply
+	// content similarity or LLM merge decisions to Wiki pages.
+	candidates = nil
 	// In-memory dedup among the completed batch first.
 	candidates, dedupErr := deduper.Dedup(ctx, candidates)
 	if dedupErr != nil {
@@ -837,6 +922,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	if err := runCompilerJobs(ctx, jobs); err != nil {
 		return err
 	}
+	c.reportProgress(ctx, tenant, kb, token, 0.72, "routing_pages", fmt.Sprintf("Routing %d Wiki pages against existing products", len(candidates)))
 
 	// KNN only narrows topic-page candidates. When the hit is a topic page,
 	// require an explicit topic match or an LLM topic-route decision before
@@ -892,6 +978,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	var newMerged []kccommon.Product
 	newMerged = append(newMerged, entityMerged...)
 	if len(groupsByID) > 0 {
+		c.reportProgress(ctx, tenant, kb, token, 0.82, "llm_merge", fmt.Sprintf("Merging %d candidate groups with the LLM", len(groupsByID)))
 		// Diagnostics: summarize the KNN groups before the LLM merge decision so
 		// the reader can see which existing merged rows were hit and by how many
 		// candidates (e.g. whether a "吕布" candidate hit an existing 吕布 row and
@@ -943,6 +1030,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	mergedFinal = append(mergedFinal, unmatched...)
 	mergedFinal, staleTopicIDs := mergeTopicProducts(tenant, kb, mergedFinal)
 	mergedFinal = refreshWikiProductVectors(ctx, tenant, mergedFinal)
+	c.reportProgress(ctx, tenant, kb, token, 0.90, "writing_products", fmt.Sprintf("Writing %d merged products", len(mergedFinal)))
 	if err := c.withWriteLock(ctx, kb, token, func() error {
 		if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
 			return err
@@ -973,6 +1061,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// then just drops any stale graph rows). The graph is reconstructible, so the
 	// cost of an occasional no-op reprojection is accepted. It is also a locked
 	// destructive side effect for the same TOCTOU reasons as WriteMerged.
+	c.reportProgress(ctx, tenant, kb, token, 0.97, "projecting_graph", "Projecting the Wiki graph")
 	if err := c.withWriteLock(ctx, kb, token, func() error {
 		return c.writer.ProjectWikiGraph(ctx, tenant, kb)
 	}); err != nil {
@@ -996,6 +1085,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		zap.Int("completed_docs", len(completed)),
 		zap.Int("deleted_docs", len(deleted)),
 		zap.Int("merged_rows_written", len(mergedFinal)))
+	c.reportProgress(ctx, tenant, kb, token, 1, "completed", fmt.Sprintf("Wiki compilation completed: %d merged products", len(mergedFinal)))
 	return nil
 }
 
@@ -1007,13 +1097,12 @@ func copyMeta(input map[string]any) map[string]any {
 	return output
 }
 
-// mergeEntityModeCandidates handles the stage-3 entity page contract. Entity
-// and concept pages are keyed by their deterministic slug, not by embedding
-// proximity. A batch may contain evidence for the same page from multiple
+// mergeEntityModeCandidates handles entity/concept pages by their deterministic
+// page identity. A batch may contain evidence for the same page from multiple
 // documents; fold it before WriteMerged and retain the existing page body when
-// it is already present. Topic pages remain on the KNN/LLM route below.
-func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb string, candidates []kccommon.Product) ([]kccommon.Product, []kccommon.Product, error) {
-	groups := make(map[string][]kccommon.Product)
+// it is already present. Topic pages are returned for the same slug-only path.
+func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb string, candidates []kccommon.Product, useExisting bool) ([]kccommon.Product, []kccommon.Product, error) {
+	var entityCandidates []kccommon.Product
 	var topic []kccommon.Product
 	for _, candidate := range candidates {
 		pageType := strings.ToLower(strings.TrimSpace(metaString(candidate.Meta, "page_type")))
@@ -1021,40 +1110,64 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 			topic = append(topic, candidate)
 			continue
 		}
-		key := datasetLevelID(tenant, kb, candidate)
-		groups[key] = append(groups[key], candidate)
+		entityCandidates = append(entityCandidates, candidate)
 	}
-	if len(groups) == 0 {
-		return nil, topic, nil
+	merged, err := c.mergeWikiProductsBySlug(ctx, tenant, kb, entityCandidates, useExisting)
+	return merged, topic, err
+}
+
+// mergeWikiProductsBySlug folds document-level Wiki pages into the dataset
+// level using only page_type + slug. Equal identities are merged; different
+// slugs remain independent pages. Existing dataset pages are loaded by slug so
+// an incremental update can merge into the already-persisted page without any
+// content-similarity or LLM routing decision.
+func (c *Consumer) mergeWikiProductsBySlug(ctx context.Context, tenant, kb string, candidates []kccommon.Product, useExisting bool) ([]kccommon.Product, error) {
+	if len(candidates) == 0 {
+		return nil, nil
 	}
-	keys := make([]string, 0, len(groups))
-	for key := range groups {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	reader, canLoadExisting := c.reader.(mergedProductReader)
-	deps, depsErr := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
-	merged := make([]kccommon.Product, 0, len(keys))
-	for _, key := range keys {
-		var current kccommon.Product
-		if canLoadExisting {
-			var err error
-			current, err = reader.LoadMergedProduct(ctx, tenant, kb, key)
-			if err != nil {
-				return nil, nil, err
+	existingByKey := make(map[string]kccommon.Product)
+	if reader, ok := c.reader.(mergedWikiPageReader); ok && useExisting {
+		existing, err := reader.LoadMergedWikiPages(ctx, tenant, kb)
+		if err != nil {
+			return nil, err
+		}
+		for _, page := range existing {
+			if key := wikiPageMergeKey(page); key != "" {
+				existingByKey[key] = page
 			}
 		}
+	}
+
+	groups := make(map[string][]kccommon.Product)
+	order := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		key := wikiPageMergeKey(candidate)
+		if key == "" {
+			// A malformed page without a slug cannot be safely merged with another
+			// page. Keep it isolated so it remains visible for diagnosis.
+			key = "id\x00" + candidate.ID
+		}
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], candidate)
+	}
+
+	merged := make([]kccommon.Product, 0, len(order))
+	for _, key := range order {
+		current, exists := existingByKey[key]
 		for _, candidate := range groups[key] {
 			candidate.Merged = true
 			candidate.DocID = kb
-			if current.ID == "" {
+			if !exists || current.ID == "" {
 				current = candidate
+				exists = true
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(metaString(current.Meta, "page_type")), "topic") {
+				current = mergeTopicPage(current, candidate)
 			} else {
-				if depsErr == nil {
-					current = c.synthesizeEntityPage(ctx, deps, current, candidate)
-				} else {
-					current = wikiEntityMerge(current, candidate)
-				}
+				current = wikiEntityMerge(current, candidate)
 			}
 		}
 		if current.ID != "" {
@@ -1063,29 +1176,121 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 			merged = append(merged, current)
 		}
 	}
-	return merged, topic, nil
+	if err := rewriteMergedWikiPages(ctx, tenant, merged); err != nil {
+		return nil, err
+	}
+	return merged, nil
 }
 
-// synthesizeEntityPage updates one entity page from the complete old and new
-// evidence. Unlike topic-mode replacement, the model receives both bodies and
-// is required to preserve every factual block. If the model cannot be resolved
-// (for example in an offline test), the deterministic block union remains safe.
-func (c *Consumer) synthesizeEntityPage(ctx context.Context, deps kccommon.Deps, existing, incoming kccommon.Product) kccommon.Product {
-	merged := wikiEntityMerge(existing, incoming)
+const wikiPageRewriteSystemPrompt = `You are the final editor for a knowledge-base Wiki page.
+Rewrite the supplied evidence into one coherent Markdown page.
+Preserve every factual detail from the evidence, including names, dates, numbers,
+relationships, quoted statements, and links. Do not invent facts or remove
+information merely to shorten the page. Organize duplicated or fragmented
+evidence into a clear structure. Return Markdown only, without commentary about
+the editing process.`
+
+// rewriteMergedWikiPages lets the LLM compose the final dataset-level page
+// after deterministic slug grouping has selected the evidence that belongs to
+// that page. The calls are independent and use the shared compiler pool.
+func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon.Product) error {
+	if len(pages) == 0 {
+		return nil
+	}
+	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	if err != nil {
+		return fmt.Errorf("resolve Wiki page rewrite dependencies: %w", err)
+	}
 	if deps.Chat == nil {
-		return merged
+		return fmt.Errorf("Wiki page rewrite chat model is unavailable")
 	}
-	resp, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
-		LLMID:        defaultLLMID,
-		SystemPrompt: "You are an entity wiki editor. Rewrite the complete page from both evidence versions. Preserve every supported factual statement, do not invent facts, and return only Markdown.",
-		UserPrompt: fmt.Sprintf("Entity page: %s\n\nEXISTING PAGE:\n%s\n\nNEW EVIDENCE PAGE:\n%s\n\nWrite the complete merged page. Do not omit facts that appear in either version.",
-			metaString(existing.Meta, "title"), existing.Content, incoming.Content),
+	maxTokens := deps.ModelMaxOutput
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
+	jobs := make([]CompilerJob, 0, len(pages))
+	for i := range pages {
+		idx := i
+		jobs = append(jobs, func() error {
+			page := pages[idx]
+			prompt := fmt.Sprintf("PAGE TYPE: %s\nTITLE: %s\nTOPIC: %s\nENTITIES: %s\nSUMMARY: %s\n\nEVIDENCE MARKDOWN:\n%s",
+				metaString(page.Meta, "page_type"),
+				metaString(page.Meta, "title"),
+				metaString(page.Meta, "topic"),
+				strings.Join(metaStringSlice(page.Meta, "entity_names"), ", "),
+				metaString(page.Meta, "summary"),
+				page.Content)
+			response, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
+				LLMID:        defaultLLMID,
+				SystemPrompt: wikiPageRewriteSystemPrompt,
+				UserPrompt:   prompt,
+				Temperature:  floatPtr(0.1),
+				MaxTokens:    &maxTokens,
+			})
+			if err != nil {
+				return fmt.Errorf("rewrite Wiki page %q: %w", metaString(page.Meta, "slug"), err)
+			}
+			if response == nil {
+				return fmt.Errorf("rewrite Wiki page %q returned no response", metaString(page.Meta, "slug"))
+			}
+			content := strings.TrimSpace(response.Content)
+			if content == "" {
+				return fmt.Errorf("rewrite Wiki page %q returned empty content", metaString(page.Meta, "slug"))
+			}
+			pages[idx].Content = content
+			return nil
+		})
+	}
+	return SubmitCompilerJobs(ctx, jobs)
+}
+
+func floatPtr(value float64) *float64 { return &value }
+
+func wikiPageMergeKey(product kccommon.Product) string {
+	slug := strings.TrimSpace(metaString(product.Meta, "slug"))
+	if slug == "" {
+		return ""
+	}
+	pageType := strings.ToLower(strings.TrimSpace(metaString(product.Meta, "page_type")))
+	return pageType + "\x00" + strings.ToLower(strings.Join(strings.Fields(slug), " "))
+}
+
+type mergedWikiPageDeleter interface {
+	DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error
+}
+
+func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current []kccommon.Product) error {
+	reader, readerOK := c.reader.(mergedWikiPageReader)
+	deleter, writerOK := c.writer.(mergedWikiPageDeleter)
+	if !readerOK || !writerOK {
+		return fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
+	}
+	present := make(map[string]struct{}, len(current))
+	for _, page := range current {
+		if slug := metaString(page.Meta, "slug"); slug != "" {
+			present[slug] = struct{}{}
+		}
+	}
+	existing, err := reader.LoadMergedWikiPages(ctx, tenant, kb)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0)
+	for _, page := range existing {
+		slug := metaString(page.Meta, "slug")
+		if _, scoped := affected[slug]; !scoped {
+			continue
+		}
+		if _, remains := present[slug]; !remains && page.ID != "" {
+			ids = append(ids, page.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return c.withWriteLock(ctx, kb, token, func() error {
+		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, ids)
 	})
-	if err != nil || resp == nil || strings.TrimSpace(resp.Content) == "" {
-		return merged
-	}
-	merged.Content = strings.TrimSpace(resp.Content)
-	return merged
 }
 
 func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) []kccommon.Product {
@@ -1112,6 +1317,24 @@ func productContentsForEmbedding(products []kccommon.Product) []string {
 		contents[i] = products[i].Content
 	}
 	return contents
+}
+
+func variantsContain(variants []string, wanted string) bool {
+	for _, variant := range variants {
+		if variant == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // candidateIdentity returns a compact identity string for a product, preferring

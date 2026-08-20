@@ -517,16 +517,17 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		return errors.New("database error (Document update)")
 	}
 
-	if s.docEngine == nil {
-		return nil
+	if s.docEngine != nil {
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		if err := s.docEngine.UpdateChunks(
+			ctx,
+			map[string]interface{}{"doc_id": doc.ID},
+			map[string]interface{}{"available_int": status},
+			indexName,
+			doc.KbID,
+		); err != nil {
+			return err
+		}
 	}
-
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	return s.docEngine.UpdateChunks(
-		ctx,
-		map[string]interface{}{"doc_id": doc.ID},
-		map[string]interface{}{"available_int": status},
-		indexName,
-		doc.KbID,
-	)
+	return nil
 }

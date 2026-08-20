@@ -56,6 +56,29 @@ func TestFakeSchedulerReclaimsInterruptedClaim(t *testing.T) {
 	}
 }
 
+func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
+	f := NewFakeScheduler()
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	claim, ok, err := f.Claim(t.Context(), "kb1")
+	if err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := f.UpdateProgress(t.Context(), "kb1", claim.Token, 0.5, "routing_pages", "Routing pages"); err != nil {
+		t.Fatalf("update progress: %v", err)
+	}
+	if err := f.UpdateProgress(t.Context(), "kb1", "stale-token", 0.9, "wrong", "Should be ignored"); err != nil {
+		t.Fatalf("stale update: %v", err)
+	}
+	f.mu.Lock()
+	row := f.rows["kb1"]
+	f.mu.Unlock()
+	if row.progress != 0.5 || row.currentPhase != "routing_pages" || row.progressMsg != "Routing pages" {
+		t.Fatalf("unexpected progress state: %+v", row)
+	}
+}
+
 func TestWithWriteLockRejectsSupersededClaim(t *testing.T) {
 	f := NewFakeScheduler()
 	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}); err != nil {
@@ -152,5 +175,22 @@ func TestFakeSchedulerPublishCarriesVariants(t *testing.T) {
 	}
 	if res.Entries[1].Variants != nil {
 		t.Fatalf("deleted event should carry nil variants, got %+v", res.Entries[1])
+	}
+}
+
+func TestFakeSchedulerPublishWikiCompletedCarriesPageScope(t *testing.T) {
+	f := NewFakeScheduler()
+	if err := f.PublishWikiCompleted(t.Context(), "t1", "kb1", "d1", []string{"topic/a"}, []string{"entity/b"}); err != nil {
+		t.Fatalf("publish scoped Wiki completion: %v", err)
+	}
+	result, ok, err := f.Claim(t.Context(), "kb1")
+	if err != nil || !ok || len(result.Entries) != 1 {
+		t.Fatalf("claim scoped Wiki completion: result=%+v ok=%v err=%v", result, ok, err)
+	}
+	entry := result.Entries[0]
+	if !reflect.DeepEqual(entry.Variants, []string{"wiki"}) ||
+		!reflect.DeepEqual(entry.AffectedSlugs, []string{"topic/a"}) ||
+		!reflect.DeepEqual(entry.RemovedSlugs, []string{"entity/b"}) {
+		t.Fatalf("scoped Wiki fields were not preserved: %+v", entry)
 	}
 }

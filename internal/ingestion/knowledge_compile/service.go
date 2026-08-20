@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"time"
 
-	"gorm.io/gorm"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // Option configures a Consumer.
@@ -128,11 +130,16 @@ func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
 	// startup indefinitely. The caller's ctx is also honoured (cancelled on
 	// shutdown).
+	runCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := s.Provision(ctx); err != nil {
 		return err
 	}
+	if err := db.WithContext(ctx).AutoMigrate(&entity.WikiDocumentDirty{}); err != nil {
+		return err
+	}
 	SetScheduler(s)
+	go runWikiDirtyWorker(runCtx, db, s.holder)
 	return nil
 }
