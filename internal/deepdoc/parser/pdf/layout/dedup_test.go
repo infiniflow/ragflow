@@ -242,6 +242,30 @@ func TestDedupSubstringOverlaps_PartialYOverlapKept(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_HorizontalOverhangKept locks the horizontal-
+// containment boundary: a box FULLY inside in Y but extending horizontally
+// beyond the containing box (to either side) must be KEPT — it is not an OCR
+// fragment of the container (e.g. an adjacent-column line whose text happens
+// to be a whitespace-normalized substring of the paragraph). Only a box fully
+// inside on BOTH axes is collapsed. This pins the boxInside hardening that the
+// whitespace-insensitive match otherwise leaves exposed (a plain horizontal
+// intersect used to pass the X check).
+func TestDedupSubstringOverlaps_HorizontalOverhangKept(t *testing.T) {
+	outer := pdf.TextBox{
+		Text: "the quick brown fox jumps over the lazy dog near the river bank", PageNumber: 0, Top: 100, Bottom: 130, X0: 60, X1: 260, IsOCR: true,
+	}
+	right := pdf.TextBox{
+		Text: "brown fox jumps over the lazy", PageNumber: 0, Top: 105, Bottom: 120, X0: 240, X1: 320, IsOCR: true, // X1 extends past outer.X1
+	}
+	left := pdf.TextBox{
+		Text: "lazy dog near the river", PageNumber: 0, Top: 105, Bottom: 120, X0: 40, X1: 120, IsOCR: true, // X0 extends past outer.X0
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, right, left})
+	if len(got) != 3 {
+		t.Fatalf("horizontally-overhanging substrings must be kept, got %d boxes", len(got))
+	}
+}
+
 // TestDedupSubstringOverlaps_TallerFragmentKept locks the defensive invariant:
 // a PHYSICALLY TALLER box whose SHORT text is a substring of a shorter, contained
 // box's longer text is NOT silently dropped. Collapse requires the substring-text
@@ -261,6 +285,30 @@ func TestDedupSubstringOverlaps_TallerFragmentKept(t *testing.T) {
 	}
 }
 
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_EqualAfterNorm locks the
+// `>=` branch: two boxes whose text differs ONLY by whitespace placement
+// ("-name:" vs "- name:") normalize to the SAME text and must collapse when
+// geometrically contained. The legacy `len(ai) == len(aj)` skip would have
+// kept the duplicate; whitespace normalization makes the two look identical,
+// and boxInside decides the containment.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_EqualAfterNorm(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "-name:", // OCR recognizer stripped the space after '-'
+		PageNumber: 0, Top: 100, Bottom: 120, X0: 60, X1: 120, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "- name:",                                              // char-layer text kept the space
+		PageNumber: 0, Top: 105, Bottom: 115, X0: 60, X1: 120, IsOCR: true, // fully inside outer
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("whitespace-equal contained fragment must be dropped, got %d boxes", len(got))
+	}
+	if got[0].Text != outer.Text {
+		t.Fatalf("outer box must be kept, got %q", got[0].Text)
+	}
+}
+
 // TestDedupSubstringOverlaps_CharPathKept locks that a char-path box whose text
 // is a substring of another char-path box is NEVER collapsed — e.g. a repeated
 // heading inside another paragraph's text range on a digital PDF. Only OCR
@@ -275,5 +323,100 @@ func TestDedupSubstringOverlaps_CharPathKept(t *testing.T) {
 	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
 	if len(got) != 2 {
 		t.Fatalf("char-path substring must be kept, got %d boxes (lost content?)", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive locks that a substring box
+// whose char-derived text preserves the PDF's original spaces is STILL
+// collapsed when the containing OCR box carries a space-stripped recognition.
+// ocrMergeChars fills inner line boxes with char-layer text that keeps spaces
+// ("- name: SSL_CERT_FILE", "⽂章 中 提到") while the outer paragraph/OCR box
+// carries the recognizer's joined text ("-name: SSL_CERT_FILE",
+// "⽂章中提到"); the two are no longer contiguous substrings of each other
+// byte-wise, so dedup must compare whitespace-normalized text. This is the
+// root cause of the ocr_real text gaps (plugin-daemon/RAG分词/三国人物
+// duplicated lines after vertical merge).
+func TestDedupSubstringOverlaps_WhitespaceInsensitive(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "直接⽤rag分词建⽴索引，这时⽤分词1来查询，服务体系?都会保留，因为根据rag分词不会删除标点。但是，在原⽂中，并没有服务体系?这样的⽂字，因此这个短语查询⽆法命中。",
+		PageNumber: 0, Top: 100, Bottom: 400, X0: 60, X1: 520, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "直接⽤ rag 分词建⽴索引，这时⽤分词 1 来查询",                           // char layer kept the PDF's original spaces
+		PageNumber: 0, Top: 120, Bottom: 135, X0: 60, X1: 520, IsOCR: true, // fully inside outer
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("whitespace-divergent substring fragment must be dropped, got %d boxes: %+v", len(got), got)
+	}
+	if got[0].Text != outer.Text {
+		t.Fatalf("outer paragraph must be kept, got %q", got[0].Text)
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_CJK uses the CJK case from
+// RAG分词召回分析.pdf: the outer OCR box joined CJK without spaces while the
+// inner char-derived fragment kept per-word spaces ("⽂章 中 提到" vs "⽂章中提到").
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_CJK(t *testing.T) {
+	outer := pdf.TextBox{
+		Text:       "⽤Python⽣成的分词1为：⽂章中提到了哪些健康服务体系?",
+		PageNumber: 0, Top: 100, Bottom: 400, X0: 60, X1: 520, IsOCR: true,
+	}
+	inner := pdf.TextBox{
+		Text:       "⽂章 中 提到 了 哪些 健康 服务体系", // char layer preserved spaces between CJK words
+		PageNumber: 0, Top: 150, Bottom: 165, X0: 60, X1: 520, IsOCR: true,
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{outer, inner})
+	if len(got) != 1 {
+		t.Fatalf("CJK whitespace-divergent fragment must be dropped, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_DifferentColumnKept locks
+// the boundary guard: whitespace normalization must NOT let a substring box in
+// a DIFFERENT column (disjoint X) be dropped — the geometry check still
+// governs, only the text comparison became whitespace-insensitive.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_DifferentColumnKept(t *testing.T) {
+	colA := pdf.TextBox{
+		Text: "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", PageNumber: 0, Top: 100, Bottom: 115, X0: 60, X1: 260, IsOCR: true,
+	}
+	colB := pdf.TextBox{
+		Text: "line x x x x x x x x x", PageNumber: 0, Top: 100, Bottom: 115, X0: 320, X1: 520, IsOCR: true, // disjoint X
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{colA, colB})
+	if len(got) != 2 {
+		t.Fatalf("different-column whitespace-divergent substring must be kept, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_DisjointYKept locks that a
+// whitespace-divergent substring at a DISJOINT Y position is kept — a real
+// repeated heading, not an OCR fragment.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_DisjointYKept(t *testing.T) {
+	full := pdf.TextBox{
+		Text: "Conclusion summary of the whole document body text", PageNumber: 0, Top: 100, Bottom: 115, IsOCR: true,
+	}
+	repeat := pdf.TextBox{
+		Text: "C o n c l u s i o n", PageNumber: 0, Top: 300, Bottom: 315, IsOCR: true, // disjoint Y
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
+	if len(got) != 2 {
+		t.Fatalf("disjoint-Y whitespace-divergent substring must be kept, got %d boxes", len(got))
+	}
+}
+
+// TestDedupSubstringOverlaps_WhitespaceInsensitive_CharPathKept locks that a
+// char-path (IsOCR=false) box is never collapsed even when its whitespace-
+// normalized text is a substring of another char-path box.
+func TestDedupSubstringOverlaps_WhitespaceInsensitive_CharPathKept(t *testing.T) {
+	full := pdf.TextBox{
+		Text: "本协议终止后保密条款继续有效双方仍应承担保密义务", PageNumber: 0, Top: 100, Bottom: 120,
+	}
+	repeat := pdf.TextBox{
+		Text: "保密 条款 继续 有效", PageNumber: 0, Top: 110, Bottom: 118, // nested substring, char path
+	}
+	got := DedupSubstringOverlaps([]pdf.TextBox{full, repeat})
+	if len(got) != 2 {
+		t.Fatalf("char-path whitespace-divergent substring must be kept, got %d boxes", len(got))
 	}
 }
