@@ -15,36 +15,39 @@ import (
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
-// TestPipelineParity13CrosspageSeam exposes the cross-page table-merge seam
-// divergence for 13_crosspage_table.pdf (tracked as go_bug rule
-// table-crosspage-merge-seam-duplication in table/testdata/parity/known_diffs.json).
+// TestPipelineParity13CrosspageSeam is the focused, cell-level counterpart to
+// the harness divergence for 13_crosspage_table.pdf (tracked as go_bug rule
+// table-crosspage-merge-seam-duplication in
+// table/testdata/parity/known_diffs.json, now resolved).
 //
-// 13 is a multi-page table: Python's golden is ONE 81x5 grid. Go parses each
-// page into its own TableItem grid, then MergeTablesAcrossPages
-// (table/table_merge.go) stacks the per-page grids via stackGrids + padGridCols
-// (by index) WITHOUT deduplicating the page-seam row. When a label/value box
-// straddles the page boundary it is captured by OCR/DLA on BOTH the anchor page
-// and the continuation page, so the stacked grid emits the seam value twice
-// plus an empty row where Python merged the two boundary rows into one cell.
+// 13 is a multi-page table: Python's golden is ONE 81x5 grid. The divergence is
+// NOT the cross-page merge — each per-page grid is correct and MergeTablesAcrossPages
+// (table/table_merge.go) stacks them correctly. The real cause was
+// FillCellTextFromBoxesWithRows (table/table_cells.go) picking the row with the
+// MAX 2D-overlap, which placed a box spanning two adjacent data rows in the
+// LOWER row. Python's construct_table groups boxes into rows by each box's TSR
+// row label b["R"] — the row the box STARTS in — so the same box lands in the
+// UPPER row (pdf_parser.py construct_table:176-192).
 //
-// Concretely the cell-level diff shows, at every page seam, Go emitting
+// Concretely the cell-level diff showed, at the page seam, Go emitting
 //
-//	c0 = "2024-06 2024-07 2024-07"   (3 tokens) preceded by an EMPTY row
+//	c0 = "2024-06 2024-07 2024-07"   (3 tokens) one row too low
 //
 // while Python emits a single cell
 //
 //	c0 = "2024-06 2024-07"           (2 tokens)
 //
-// The residual leading/trailing-whitespace diffs are normalized by TrimSpace in
-// the harness and are not the real bug. The dominant, real divergence is the
-// seam duplication, which drives gridSim to ~98.3% (13 is a lockedGridPDF, so
-// the harness already flags it as a FAIL).
+// The fix prefers the topmost row band whose Y range CONTAINS the box's TOP edge
+// (top-containment), matching Python's R-grouping. The residual
+// leading/trailing-whitespace diffs are normalized by the harness gridSim guard
+// and are not the real bug; after the fix the dominant divergence (seam
+// duplication) is gone and gridSim=100.0%.
 //
-// This test is the focused, cell-level counterpart to that harness FAIL: it
-// asserts the seam-duplication bug signature (a Go cell whose whitespace-split
-// tokens contain a repeated token, e.g. "2024-07 2024-07") is absent. It
-// currently FAILS, documenting the open go_bug; it becomes a green regression
-// guard once MergeTablesAcrossPages collapses the duplicated seam row.
+// This test asserts the seam-duplication bug signature (a Go cell whose
+// whitespace-split tokens contain a repeated token, e.g. "2024-07 2024-07") is
+// absent AND gridSim==100. It is the green regression guard for rule
+// table-crosspage-merge-seam-duplication; if FillCellTextFromBoxesWithRows
+// regresses to max-overlap row selection, this test fails again.
 func TestPipelineParity13CrosspageSeam(t *testing.T) {
 	name := "13_crosspage_table.pdf"
 	base := filepath.Join("testdata", "output", "py", "ocr")
@@ -148,15 +151,16 @@ func TestPipelineParity13CrosspageSeam(t *testing.T) {
 		if len(seamDup) > 0 {
 			ex = fmt.Sprintf("e.g. %q vs Python %q", seamDup[0].goVal, seamDup[0].pyVal)
 		}
-		t.Errorf("OPEN go_bug table-crosspage-merge-seam-duplication: %d Go cells contain a duplicated seam token, gridSim=%.1f%% (%s). "+
-			"MergeTablesAcrossPages must collapse the page-seam row instead of concatenating it.",
+		t.Errorf("REGRESSION table-crosspage-merge-seam-duplication (resolved): %d Go cells contain a duplicated seam token, gridSim=%.1f%% (%s). "+
+			"FillCellTextFromBoxesWithRows must place a straddling box in the topmost row band containing its top edge (top-containment), matching Python's R-grouping, not max-overlap.",
 			len(seamDup), gridSim, ex)
 	}
 }
 
 // hasRepeatedToken reports whether s, split on whitespace, contains the same
-// non-empty token twice consecutively — the signature of a cross-page seam
-// value duplicated by MergeTablesAcrossPages (e.g. "2024-07 2024-07").
+// non-empty token twice consecutively — the signature of a box placed one row
+// too low by FillCellTextFromBoxesWithRows, duplicating a value across the
+// seam (e.g. "2024-07 2024-07").
 func hasRepeatedToken(s string) bool {
 	toks := strings.Fields(s)
 	for i := 1; i < len(toks); i++ {
