@@ -276,6 +276,11 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			wantCode: common.CodeDataError,
 		},
 		{
+			name:     "rate limit failure",
+			err:      &syncerconnector.RateLimitTriedTooManyTimesError{Message: "REST API rate limited"},
+			wantCode: common.CodeDataError,
+		},
+		{
 			name:     "unexpected failure",
 			err:      fmt.Errorf("boom"),
 			wantCode: common.CodeServerError,

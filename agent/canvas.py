@@ -354,7 +354,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": [],
             "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
         # Aggregated provider token usage (prompt/completion/total) across every LLM
@@ -373,7 +373,7 @@ class Canvas(Graph):
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
             if "sys.date" not in self.globals:
-                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
                 "sys.query": "",
@@ -381,7 +381,7 @@ class Canvas(Graph):
                 "sys.conversation_turns": 0,
                 "sys.files": [],
                 "sys.history": [],
-                "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -487,7 +487,7 @@ class Canvas(Graph):
             reset_llm_request_context(_req_ctx_token)
 
     async def _run_impl(self, **kwargs):
-        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()

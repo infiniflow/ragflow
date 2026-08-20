@@ -636,7 +636,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// existing dataset-level merge path below. This is the per-variant dispatch
 	// the plan requires: tree and structure both produce a nav by-product (B2),
 	// so both upsert their summary into the cross-document nav tree; wiki products
-	// continue to the replace-only merge.
+	// continue to the page-specific evidence merge.
 	navIn := navInputFromProducts(kb, incoming)
 	if len(navIn) > 0 {
 		ns := nav.GetNavService()
@@ -671,6 +671,13 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// contract. Legacy rows whose kind is empty are derived in the Reader; only
 	// truly page-kind wiki products proceed.
 	candidates := filterWikiPageCandidates(incoming)
+	entityMerged, topicCandidates, err := c.mergeEntityModeCandidates(ctx, tenant, kb, candidates)
+	if err != nil {
+		return err
+	}
+	// Entity pages have stable page identity and must bypass topic-mode KNN and
+	// Page-specific entity/concept merging. Only topic-mode pages continue below.
+	candidates = topicCandidates
 	// In-memory dedup among the completed batch first.
 	candidates, dedupErr := deduper.Dedup(ctx, candidates)
 	if dedupErr != nil {
@@ -738,6 +745,27 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		unmatched   []kccommon.Product
 		groupsMu    sync.Mutex
 	)
+	// Exact topic recall is independent of page-content KNN. A page can use
+	// different wording from the existing topic while still belonging to the
+	// same topic, so consult the current dataset pages before running KNN.
+	topicPagesByKey := make(map[string]kccommon.Product)
+	if pageReader, ok := c.reader.(mergedWikiPageReader); ok {
+		existingPages, err := pageReader.LoadMergedWikiPages(ctx, tenant, kb)
+		if err != nil {
+			return err
+		}
+		for _, page := range existingPages {
+			if !isTopicPage(page) {
+				continue
+			}
+			key := topicKey(productTopic(page))
+			if key != "" {
+				if _, exists := topicPagesByKey[key]; !exists {
+					topicPagesByKey[key] = page
+				}
+			}
+		}
+	}
 	// The KNN pass is docengine-bounded (vector search), not CPU-bounded, so we
 	// fan it out across the shared global compilerPool (vCPU-sized). Output order
 	// is irrelevant: merged rows are upserted by their idempotent dataset-level
@@ -745,6 +773,19 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	jobs := make([]CompilerJob, 0, len(candidates))
 	for _, cand := range candidates {
 		cand := cand
+		if isTopicPage(cand) {
+			if existing, ok := topicPagesByKey[topicKey(productTopic(cand))]; ok {
+				groupsMu.Lock()
+				g := groupsByID[existing.ID]
+				if g == nil {
+					g = &mergeGroup{existing: existing, score: 1}
+					groupsByID[existing.ID] = g
+				}
+				g.candidates = append(g.candidates, cand)
+				groupsMu.Unlock()
+				continue
+			}
+		}
 		jobs = append(jobs, func() error {
 			var vec64 []float64
 			if len(cand.Vector) > 0 {
@@ -797,10 +838,59 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		return err
 	}
 
+	// KNN only narrows topic-page candidates. When the hit is a topic page,
+	// require an explicit topic match or an LLM topic-route decision before
+	// allowing the generic Wiki evidence merge to fold the pages together.
+	// Otherwise semantically unrelated pages with similar prose would inherit
+	// the existing page's topic.
+	router, hasRouter := deduper.(topicRouter)
+	if hasRouter || len(groupsByID) > 0 {
+		for _, group := range groupsByID {
+			if !isTopicPage(group.existing) {
+				continue
+			}
+			accepted := make([]kccommon.Product, 0, len(group.candidates))
+			for _, candidate := range group.candidates {
+				if !isTopicPage(candidate) {
+					candidate.Merged = true
+					candidate.DocID = kb
+					unmatched = append(unmatched, candidate)
+					continue
+				}
+				if topicKey(productTopic(candidate)) == topicKey(productTopic(group.existing)) {
+					accepted = append(accepted, candidate)
+					continue
+				}
+				merge, routedTopic := false, ""
+				if hasRouter {
+					var err error
+					merge, routedTopic, err = router.RouteTopic(ctx, candidate, group.existing)
+					if err != nil {
+						return err
+					}
+				}
+				if !merge {
+					candidate.Merged = true
+					candidate.DocID = kb
+					unmatched = append(unmatched, candidate)
+					continue
+				}
+				if routedTopic == "" {
+					routedTopic = productTopic(group.existing)
+				}
+				candidate = prepareTopicProduct(candidate, routedTopic)
+				candidate.Meta["title"] = routedTopic
+				accepted = append(accepted, candidate)
+			}
+			group.candidates = accepted
+		}
+	}
+
 	// Fold every KNN group into the LLM in a single batch round-trip (one
 	// DecideBatch call instead of one Decide per pair), then collect the
 	// updated existing rows and the candidates judged distinct (new rows).
 	var newMerged []kccommon.Product
+	newMerged = append(newMerged, entityMerged...)
 	if len(groupsByID) > 0 {
 		// Diagnostics: summarize the KNN groups before the LLM merge decision so
 		// the reader can see which existing merged rows were hit and by how many
@@ -851,8 +941,22 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	mergedFinal := make([]kccommon.Product, 0, len(newMerged)+len(unmatched))
 	mergedFinal = append(mergedFinal, newMerged...)
 	mergedFinal = append(mergedFinal, unmatched...)
+	mergedFinal, staleTopicIDs := mergeTopicProducts(tenant, kb, mergedFinal)
+	mergedFinal = refreshWikiProductVectors(ctx, tenant, mergedFinal)
 	if err := c.withWriteLock(ctx, kb, token, func() error {
-		return c.writer.WriteMerged(ctx, tenant, kb, mergedFinal)
+		if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
+			return err
+		}
+		if len(staleTopicIDs) == 0 {
+			return nil
+		}
+		deleter, ok := c.writer.(interface {
+			DeleteMergedWikiPages(context.Context, string, string, []string) error
+		})
+		if !ok {
+			return fmt.Errorf("wiki topic merge requires page deletion support for %d stale page(s)", len(staleTopicIDs))
+		}
+		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, staleTopicIDs)
 	}); err != nil {
 		if errors.Is(err, errClaimSuperseded) {
 			common.Info("knowledge_compile: batch stale before write, aborting (rewrite barrier)",
@@ -893,6 +997,121 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		zap.Int("deleted_docs", len(deleted)),
 		zap.Int("merged_rows_written", len(mergedFinal)))
 	return nil
+}
+
+func copyMeta(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input)+2)
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+// mergeEntityModeCandidates handles the stage-3 entity page contract. Entity
+// and concept pages are keyed by their deterministic slug, not by embedding
+// proximity. A batch may contain evidence for the same page from multiple
+// documents; fold it before WriteMerged and retain the existing page body when
+// it is already present. Topic pages remain on the KNN/LLM route below.
+func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb string, candidates []kccommon.Product) ([]kccommon.Product, []kccommon.Product, error) {
+	groups := make(map[string][]kccommon.Product)
+	var topic []kccommon.Product
+	for _, candidate := range candidates {
+		pageType := strings.ToLower(strings.TrimSpace(metaString(candidate.Meta, "page_type")))
+		if pageType != "entity" && pageType != "concept" {
+			topic = append(topic, candidate)
+			continue
+		}
+		key := datasetLevelID(tenant, kb, candidate)
+		groups[key] = append(groups[key], candidate)
+	}
+	if len(groups) == 0 {
+		return nil, topic, nil
+	}
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	reader, canLoadExisting := c.reader.(mergedProductReader)
+	deps, depsErr := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	merged := make([]kccommon.Product, 0, len(keys))
+	for _, key := range keys {
+		var current kccommon.Product
+		if canLoadExisting {
+			var err error
+			current, err = reader.LoadMergedProduct(ctx, tenant, kb, key)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		for _, candidate := range groups[key] {
+			candidate.Merged = true
+			candidate.DocID = kb
+			if current.ID == "" {
+				current = candidate
+			} else {
+				if depsErr == nil {
+					current = c.synthesizeEntityPage(ctx, deps, current, candidate)
+				} else {
+					current = wikiEntityMerge(current, candidate)
+				}
+			}
+		}
+		if current.ID != "" {
+			current.Merged = true
+			current.DocID = kb
+			merged = append(merged, current)
+		}
+	}
+	return merged, topic, nil
+}
+
+// synthesizeEntityPage updates one entity page from the complete old and new
+// evidence. Unlike topic-mode replacement, the model receives both bodies and
+// is required to preserve every factual block. If the model cannot be resolved
+// (for example in an offline test), the deterministic block union remains safe.
+func (c *Consumer) synthesizeEntityPage(ctx context.Context, deps kccommon.Deps, existing, incoming kccommon.Product) kccommon.Product {
+	merged := wikiEntityMerge(existing, incoming)
+	if deps.Chat == nil {
+		return merged
+	}
+	resp, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
+		LLMID:        defaultLLMID,
+		SystemPrompt: "You are an entity wiki editor. Rewrite the complete page from both evidence versions. Preserve every supported factual statement, do not invent facts, and return only Markdown.",
+		UserPrompt: fmt.Sprintf("Entity page: %s\n\nEXISTING PAGE:\n%s\n\nNEW EVIDENCE PAGE:\n%s\n\nWrite the complete merged page. Do not omit facts that appear in either version.",
+			metaString(existing.Meta, "title"), existing.Content, incoming.Content),
+	})
+	if err != nil || resp == nil || strings.TrimSpace(resp.Content) == "" {
+		return merged
+	}
+	merged.Content = strings.TrimSpace(resp.Content)
+	return merged
+}
+
+func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) []kccommon.Product {
+	if len(products) == 0 {
+		return products
+	}
+	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	if err != nil || deps.Embed == nil {
+		return products
+	}
+	vectors, err := deps.Embed.Encode(ctx, productContentsForEmbedding(products))
+	if err != nil || len(vectors) != len(products) {
+		return products
+	}
+	for i := range products {
+		products[i].Vector = vectors[i]
+	}
+	return products
+}
+
+func productContentsForEmbedding(products []kccommon.Product) []string {
+	contents := make([]string, len(products))
+	for i := range products {
+		contents[i] = products[i].Content
+	}
+	return contents
 }
 
 // candidateIdentity returns a compact identity string for a product, preferring

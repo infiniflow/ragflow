@@ -24,6 +24,8 @@ require (
 	github.com/cloudwego/eino v0.9.14
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-message v0.18.2
 	github.com/eric642/e2b-go-sdk v0.1.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -77,6 +79,8 @@ require (
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.7
 )
+
+require github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect

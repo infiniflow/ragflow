@@ -1,4 +1,5 @@
 import {
+  addTenantParams,
   buildModelValue,
   getEmbeddingBaseName,
   parseModelUuid,
@@ -158,5 +159,31 @@ describe('getEmbeddingBaseName — dataset co-selection grouping', () => {
   test('empty and undefined values produce an empty base name', () => {
     expect(getEmbeddingBaseName('')).toBe('');
     expect(getEmbeddingBaseName(undefined)).toBe('');
+  });
+});
+
+describe('addTenantParams — clearing model selections', () => {
+  test('clears a stale tenant rerank model id when rerank is explicitly cleared', () => {
+    expect(
+      addTenantParams(
+        {
+          rerank_id: '',
+          tenant_rerank_id: 'stale-tenant-model-id',
+        },
+        '/api/v1/chats/chat-id',
+      ),
+    ).toEqual({
+      rerank_id: '',
+      tenant_rerank_id: null,
+    });
+  });
+
+  test('preserves the tenant rerank model id when rerank is not part of the request', () => {
+    expect(
+      addTenantParams(
+        { tenant_rerank_id: 'existing-tenant-model-id' },
+        '/api/v1/chats/chat-id',
+      ),
+    ).toEqual({ tenant_rerank_id: 'existing-tenant-model-id' });
   });
 });

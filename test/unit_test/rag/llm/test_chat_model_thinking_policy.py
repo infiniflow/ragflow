@@ -188,6 +188,43 @@ def test_glm_thinking_maps_to_zhipu_payload():
     assert gen_conf["thinking"] == {"type": "enabled"}
 
 
+def test_deepseek_thinking_disabled_via_extra_body():
+    # litellm 1.82.x DeepSeek transformation drops `thinking` from the top
+    # level (only {"type": "enabled"} survives) and rejects reasoning_effort
+    # alongside thinking: disabled. The toggle must be carried in extra_body
+    # and any reasoning_effort stripped. When unspecified, default to disabled.
+    for gen_input in (
+        {"thinking": "disabled", "reasoning_effort": "high"},
+        {"thinking": "default"},
+        {"temperature": 0.5},
+    ):
+        gen_conf, kwargs = _apply_model_family_policies(
+            "deepseek-v4-flash",
+            backend="litellm",
+            provider=SupportedLiteLLMProvider.DeepSeek,
+            gen_conf=dict(gen_input),
+            request_kwargs={},
+        )
+        assert kwargs == {}
+        assert "thinking" not in gen_conf
+        assert "reasoning_effort" not in gen_conf
+        assert gen_conf["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_thinking_enabled_via_extra_body():
+    gen_conf, kwargs = _apply_model_family_policies(
+        "deepseek-v4-flash",
+        backend="litellm",
+        provider=SupportedLiteLLMProvider.DeepSeek,
+        gen_conf={"thinking": "enabled"},
+        request_kwargs={},
+    )
+
+    assert kwargs == {}
+    assert "thinking" not in gen_conf
+    assert gen_conf["extra_body"]["thinking"] == {"type": "enabled"}
+
+
 def test_litellm_provider_body_fields_move_to_extra_body_before_drop_params():
     completion_args = {
         "model": "kimi-latest",

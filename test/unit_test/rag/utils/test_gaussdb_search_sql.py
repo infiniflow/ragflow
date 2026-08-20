@@ -176,6 +176,28 @@ def test_tc_ret_109_chinese_ngram_query_preserves_english_semantics_and_highligh
     assert conn.get_highlight(result, ["深圳数据", "深圳"], "content_with_weight") == {"overlap": "<em>深圳数据</em>库审计"}
 
 
+def test_tc_ret_111_minimum_should_match_uses_partial_unique_terms_and_term_scores():
+    builder = GaussDBSearchBuilder(schema="public")
+    keywords = ["你好", "一下", "王楠", "简历", "大概", "介绍", "一下"]
+
+    match_sql, match_params = builder._build_text_match_expr(keywords, minimum_should_match=0.3)
+    score_sql, score_params = builder.build_text_score_expr(keywords, minimum_should_match=0.3)
+
+    unique_terms = ["你好", "一下", "王楠", "简历", "大概", "介绍"]
+    assert " OR " in match_sql
+    assert match_params == unique_terms
+    assert " / 6.0)" in score_sql
+    assert score_params == [term for term in unique_terms for _field in builder.FTS_WEIGHTS]
+    assert builder._minimum_should_match_count(0.3, 6) == 1
+    assert builder._minimum_should_match_count("50%", 6) == 3
+    assert builder._minimum_should_match_count(2, 6) == 2
+
+    two_match_sql, two_match_params = builder._build_text_match_expr(keywords, minimum_should_match=2)
+    assert "CASE WHEN" in two_match_sql
+    assert ">= 2" in two_match_sql
+    assert two_match_params == unique_terms * 2
+
+
 def test_tc_ret_203_vector_search_filters_invalid_placeholder_vectors():
     builder = GaussDBSearchBuilder(schema="public")
     sql, params = builder.build_search_sql(

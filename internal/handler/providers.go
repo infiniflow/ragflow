@@ -502,7 +502,6 @@ type AlterProviderInstanceRequest struct {
 	BaseURL      string                            `json:"base_url"`
 	Region       string                            `json:"region"`
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
-	Verify       *bool                             `json:"verify"`
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -531,12 +530,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	verify := true
-	if req.Verify != nil {
-		verify = *req.Verify
-	}
-
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, req.ModelInfo, verify)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

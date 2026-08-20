@@ -99,6 +99,11 @@ type TextBox struct {
 	LayoutNo    string
 	ColID       int
 	R           int
+	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
+	// ocrMergeChars), as opposed to one built from embedded PDF chars
+	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
+	// so char-path digital PDFs are never silently de-duplicated.
+	IsOCR bool
 	// Post-TSR table annotation fields (Python: R/H/C/SP tags)
 	RTop, RBott   float64
 	HTop, HBott   float64
@@ -212,7 +217,6 @@ type ParserConfig struct {
 	AutoRotateTables   *bool
 	SeparateTablesFigs bool
 	SortByTop          bool
-	SkipOCR            bool
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.

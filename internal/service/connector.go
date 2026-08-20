@@ -428,7 +428,22 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 	if !ok {
 		return ErrConnectorTestUnsupported
 	}
-	return validator.ValidateConnectorSetting(ctx, connectorConfig)
+	return wrapConnectorValidationError(validator.ValidateConnectorSetting(ctx, connectorConfig))
+}
+
+func wrapConnectorValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var (
+		valErr  *syncerconnector.ConnectorValidationError
+		credErr *syncerconnector.ConnectorMissingCredentialError
+		rateErr *syncerconnector.RateLimitTriedTooManyTimesError
+	)
+	if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
+		return err
+	}
+	return &syncerconnector.ConnectorValidationError{Message: err.Error()}
 }
 
 func testConnectorSettings(stored *entity.Connector, request entity.JSONMap) (string, entity.JSONMap, error) {
