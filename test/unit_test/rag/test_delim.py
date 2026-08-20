@@ -405,18 +405,25 @@ def test_naive_merge_tooltip_example_uses_all_three_delimiters():
         assert not any(c == delim for c in stripped), (delim, stripped)
 
 
-def test_naive_merge_wrapped_single_char_bypasses_chunk_token_num():
-    # `` `;` `` is a wrapped one-character delimiter; has_custom must
-    # still be true so each segment becomes its own chunk.
-    from rag.nlp import naive_merge
+def test_naive_merge_wrapped_single_char_still_capped(monkeypatch):
+    # `` `;` `` is a wrapped one-character delimiter; it splits like any
+    # other delimiter and the segments still merge up to chunk_token_num
+    # (#18552). This file's autouse fixture forces every section over any
+    # budget, which would make the merge moot — re-patch a tiny counter so
+    # the grouping actually merges, then one chunk holds every segment.
+    from rag import nlp
 
-    chunks = naive_merge(
+    monkeypatch.setattr(nlp, "num_tokens_from_string", lambda _s: 1)
+
+    chunks = nlp.naive_merge(
         ["aa;bb;cc"],
-        chunk_token_num=10**9,
+        chunk_token_num=100,
         delimiter="`;`",
     )
-    stripped = [c.strip() for c in chunks if c.strip()]
-    assert stripped == ["aa", "bb", "cc"], stripped
+    assert len(chunks) == 1, chunks
+    for piece in ["aa", "bb", "cc"]:
+        assert piece in chunks[0], (piece, chunks)
+    assert ";" not in chunks[0], chunks
 
 
 def test_naive_merge_skips_empty_segments_from_adjacent_delimiters():
@@ -427,10 +434,13 @@ def test_naive_merge_skips_empty_segments_from_adjacent_delimiters():
         chunk_token_num=10**9,
         delimiter="`;`",
     )
-    stripped = [c.strip() for c in chunks if c.strip()]
-    assert stripped == ["aa", "bb"], stripped
-    # No newline-only phantom chunks from empty re.split pieces.
-    assert all(c.strip() for c in chunks if c), chunks
+    # The empty segment between the adjacent delimiters produces no phantom
+    # chunk: one merged chunk whose pieces are exactly the two non-empty ones.
+    assert len(chunks) == 1, chunks
+    for piece in ["aa", "bb"]:
+        assert piece in chunks[0], (piece, chunks)
+    # No newline-only phantom pieces from empty re.split segments.
+    assert all(part.strip() for part in chunks[0].splitlines() if part), chunks
 
 
 # --------------------------------------------------------------------------- #
