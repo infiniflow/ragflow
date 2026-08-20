@@ -604,7 +604,7 @@ var componentNameToNodeTypeMap = map[string]string{
 	"TokenChunker":       "chunkerNode",
 	"TitleChunker":       "chunkerNode",
 	"OneChunker":         "chunkerNode",
-	"PairChunker":        "chunkerNode",
+	"QAChunker":          "chunkerNode",
 	"TableChunker":       "chunkerNode",
 	"PageChunker":        "chunkerNode",
 	"Extractor":          "contextNode",

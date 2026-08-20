@@ -14,11 +14,9 @@
 //  limitations under the License.
 //
 
-// PairChunker emits one chunk per two-column record parsed from the
-// upstream payload. The `mode` parameter selects how each record is
-// turned into a chunk.
+// QAChunker extracts question-answer pairs from parsed content.
 //
-// Only mode "qa" (question-answer pairs, the default) is implemented:
+// Input formats and extraction strategies:
 //   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
 //   - Markdown (md)    → heading-based Q&A
 //   - HTML (xlsx/xls)  → table-based Q&A (first two columns)
@@ -46,69 +44,49 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNamePairChunker = "PairChunker"
+const ComponentNameQAChunker = "QAChunker"
 
-type pairChunkerParam struct {
-	// Mode selects the pair output schema. Only "qa" is implemented;
-	// any other mode fails at construction.
-	Mode string `json:"mode,omitempty"`
+type qaChunkerParam struct {
 	Lang string `json:"lang,omitempty"`
 }
 
-func (p *pairChunkerParam) Update(conf map[string]any) {
+func (p *qaChunkerParam) Update(conf map[string]any) {
 	if v, ok := conf["lang"]; ok {
 		if s, ok := v.(string); ok {
 			p.Lang = s
 		}
 	}
-	if v, ok := conf["mode"]; ok {
-		if s, ok := v.(string); ok {
-			p.Mode = s
-		}
-	}
 }
 
-func (pairChunkerParam) Defaults() pairChunkerParam {
-	return pairChunkerParam{Mode: "qa"}
-}
+func (qaChunkerParam) Defaults() qaChunkerParam { return qaChunkerParam{} }
 
-func (p *pairChunkerParam) Validate() error {
-	if p.Mode == "" {
-		p.Mode = "qa"
-	}
-	switch p.Mode {
-	case "qa":
-		return nil
-	default:
-		return fmt.Errorf("PairChunker: unsupported mode %q (only \"qa\" is implemented)", p.Mode)
-	}
-}
+func (qaChunkerParam) Validate() error { return nil }
 
-type PairChunkerComponent struct {
+type QAChunkerComponent struct {
 	name  string
-	param pairChunkerParam
+	param qaChunkerParam
 }
 
-func NewPairChunker(params map[string]any) (runtime.Component, error) {
-	p := pairChunkerParam{}.Defaults()
+func NewQAChunker(params map[string]any) (runtime.Component, error) {
+	p := qaChunkerParam{}.Defaults()
 	(&p).Update(params)
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-	return &PairChunkerComponent{
-		name:  ComponentNamePairChunker,
+	return &QAChunkerComponent{
+		name:  ComponentNameQAChunker,
 		param: p,
 	}, nil
 }
-func (c *PairChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
+func (c *QAChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
-func (c *PairChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
+func (c *QAChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *PairChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 
-func (c *PairChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
@@ -143,45 +121,38 @@ func (c *PairChunkerComponent) invoke(_ context.Context, inputs map[string]any) 
 		qaPairs = extractQAJSON(upstream.JSONResult)
 	}
 
-	var chunks []schema.ChunkDoc
-	switch c.param.Mode {
-	case "qa":
-		// Q&A output: one chunk per (question, answer) pair, with the
-		// question tokenized for retrieval and the pair prefixed as
-		// "Question: {q}\tAnswer: {a}".
-		chunks = make([]schema.ChunkDoc, 0, len(qaPairs))
-		lang, _ := inputs["lang"].(string)
-		tok := tokenizer.New(lang)
-		for _, pair := range qaPairs {
-			contentLTKS, _ := tok.Tokenize(pair.Question)
-			contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
-			answer := rmQAPrefix(pair.Answer)
-			if isMarkdown {
-				answer = renderMarkdown(answer)
-			}
-			chunk := schema.ChunkDoc{
-				ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
-				DocType:           "text",
-				ContentLtks:       contentLTKS,
-				ContentSmLtks:     contentSMLTKS,
-			}
-			//
-			// index), image id + coordinates carried from the source item.
-			if pair.RowNum >= 0 {
-				chunk.TopInt = []int{pair.RowNum}
-			}
-			if pair.Image != "" {
-				chunk.Image = pair.Image
-				chunk.DocType = "image"
-			}
-			if len(pair.PDFPositions) > 0 {
-				chunk.PDFPositions = pair.PDFPositions
-			}
-			if len(pair.Positions) > 0 {
-				chunk.Positions = pair.Positions
-			}
-			chunks = append(chunks, chunk)
+	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
+	lang, _ := inputs["lang"].(string)
+	tok := tokenizer.New(lang)
+	for _, pair := range qaPairs {
+		contentLTKS, _ := tok.Tokenize(pair.Question)
+		contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
+		answer := rmQAPrefix(pair.Answer)
+		if isMarkdown {
+			answer = renderMarkdown(answer)
 		}
+		chunk := schema.ChunkDoc{
+			ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
+			DocType:           "text",
+			ContentLtks:       contentLTKS,
+			ContentSmLtks:     contentSMLTKS,
+		}
+		//
+		// index), image id + coordinates carried from the source item.
+		if pair.RowNum >= 0 {
+			chunk.TopInt = []int{pair.RowNum}
+		}
+		if pair.Image != "" {
+			chunk.Image = pair.Image
+			chunk.DocType = "image"
+		}
+		if len(pair.PDFPositions) > 0 {
+			chunk.PDFPositions = pair.PDFPositions
+		}
+		if len(pair.Positions) > 0 {
+			chunk.Positions = pair.Positions
+		}
+		chunks = append(chunks, chunk)
 	}
 
 	return chunkOutputs(chunks), nil
@@ -465,5 +436,5 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 }
 
 func init() {
-	MustRegisterChunker(ComponentNamePairChunker)
+	MustRegisterChunker(ComponentNameQAChunker)
 }

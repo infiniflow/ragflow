@@ -719,8 +719,8 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "Extractor") {
 				t.Skip("template includes real Extractor and requires model credentials; covered separately from File/Parser/Chunker/Tokenizer e2e")
 			}
-			if templateUsesComponent(t, templateBytes, "PairChunker") {
-				t.Skip("template uses PairChunker which requires Q&A-structured content; covered separately")
+			if templateUsesComponent(t, templateBytes, "QAChunker") {
+				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
 			}
 			if templateUsesComponent(t, templateBytes, "Compiler") {
 				t.Skip("template uses Compiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")

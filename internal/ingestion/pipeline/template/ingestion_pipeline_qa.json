@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "PairChunker:TidyCloudsThink"
+                    "QAChunker:TidyCloudsThink"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -129,15 +129,15 @@
                     }
                 },
                 "upstream": [
-                    "PairChunker:TidyCloudsThink"
+                    "QAChunker:TidyCloudsThink"
                 ]
             },
-            "PairChunker:TidyCloudsThink": {
+            "QAChunker:TidyCloudsThink": {
                 "downstream": [
                     "Tokenizer:ColdCloudsDream"
                 ],
                 "obj": {
-                    "component_name": "PairChunker",
+                    "component_name": "QAChunker",
                     "params": {
                         "outputs": {
                             "chunks": {
@@ -165,15 +165,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-PairChunker:TidyCloudsThinkend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-QAChunker:TidyCloudsThinkend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "PairChunker:TidyCloudsThink",
+                    "target": "QAChunker:TidyCloudsThink",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__PairChunker:TidyCloudsThinkstart-Tokenizer:ColdCloudsDreamend",
-                    "source": "PairChunker:TidyCloudsThink",
+                    "id": "xy-edge__QAChunker:TidyCloudsThinkstart-Tokenizer:ColdCloudsDreamend",
+                    "source": "QAChunker:TidyCloudsThink",
                     "sourceHandle": "start",
                     "target": "Tokenizer:ColdCloudsDream",
                     "targetHandle": "end"
@@ -295,10 +295,10 @@
                                 }
                             }
                         },
-                        "label": "PairChunker",
+                        "label": "QAChunker",
                         "name": "QA Chunker_0"
                     },
-                    "id": "PairChunker:TidyCloudsThink",
+                    "id": "QAChunker:TidyCloudsThink",
                     "measured": {
                         "height": 74,
                         "width": 200

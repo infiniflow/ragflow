@@ -51,8 +51,8 @@ func newChunkerByName(name string, params map[string]any) (runtime.Component, er
 		return NewManualChunker(params)
 	case ComponentNameHierarchyTitleChunker:
 		return NewHierarchyTitleChunker(params)
-	case ComponentNamePairChunker:
-		return NewPairChunker(params)
+	case ComponentNameQAChunker:
+		return NewQAChunker(params)
 	case ComponentNameOneChunker:
 		return NewOneChunker(params)
 	case ComponentNameTableChunker:

@@ -24,12 +24,12 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
-func TestPairChunker_Registered(t *testing.T) {
-	factory, _, _, ok := runtime.DefaultRegistry.Lookup("PairChunker")
+func TestQAChunker_Registered(t *testing.T) {
+	factory, _, _, ok := runtime.DefaultRegistry.Lookup("QAChunker")
 	if !ok {
-		t.Fatal("PairChunker not found in registry")
+		t.Fatal("QAChunker not found in registry")
 	}
-	comp, err := factory("PairChunker", nil)
+	comp, err := factory("QAChunker", nil)
 	if err != nil {
 		t.Fatalf("factory failed: %v", err)
 	}
@@ -38,8 +38,8 @@ func TestPairChunker_Registered(t *testing.T) {
 	}
 }
 
-func TestPairChunker_DelimiterTab(t *testing.T) {
-	comp, err := NewPairChunker(map[string]any{"lang": "english"})
+func TestQAChunker_DelimiterTab(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,8 +63,8 @@ func TestPairChunker_DelimiterTab(t *testing.T) {
 	}
 }
 
-func TestPairChunker_DelimiterComma(t *testing.T) {
-	comp, err := NewPairChunker(map[string]any{"lang": "english"})
+func TestQAChunker_DelimiterComma(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +88,8 @@ func TestPairChunker_DelimiterComma(t *testing.T) {
 	}
 }
 
-func TestPairChunker_Markdown(t *testing.T) {
-	comp, err := NewPairChunker(nil)
+func TestQAChunker_Markdown(t *testing.T) {
+	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +108,8 @@ func TestPairChunker_Markdown(t *testing.T) {
 	}
 }
 
-func TestPairChunker_HTMLTable(t *testing.T) {
-	comp, err := NewPairChunker(nil)
+func TestQAChunker_HTMLTable(t *testing.T) {
+	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,8 +128,8 @@ func TestPairChunker_HTMLTable(t *testing.T) {
 	}
 }
 
-func TestPairChunker_RmQAPrefix(t *testing.T) {
-	comp, err := NewPairChunker(map[string]any{"lang": "english"})
+func TestQAChunker_RmQAPrefix(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +149,8 @@ func TestPairChunker_RmQAPrefix(t *testing.T) {
 	}
 }
 
-func TestPairChunker_Empty(t *testing.T) {
-	comp, err := NewPairChunker(nil)
+func TestQAChunker_Empty(t *testing.T) {
+	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,8 +169,8 @@ func TestPairChunker_Empty(t *testing.T) {
 	}
 }
 
-func TestPairChunker_CaseInsensitivePrefix(t *testing.T) {
-	comp, err := NewPairChunker(map[string]any{"lang": "english"})
+func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,8 +193,8 @@ func TestPairChunker_CaseInsensitivePrefix(t *testing.T) {
 	}
 }
 
-func TestPairChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
-	comp, err := NewPairChunker(map[string]any{"lang": "english"})
+func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,14 +213,14 @@ func TestPairChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
 	}
 	cww, _ := chunks[0]["content_with_weight"].(string)
 	// Python qa.py:241 uses `[\t:： ]+`, so a space is a valid separator:
-	// a leading "A"/"Q" followed by a space is stripped. .
+	// a leading "A"/"Q" followed by a space is stripped.
 	if cww != "Question: language model is useful\tAnswer: How does it work" {
 		t.Fatalf("space-separator prefix not stripped: %q", cww)
 	}
 }
 
-func TestPairChunker_HeadingNoTrailingSpace(t *testing.T) {
-	comp, err := NewPairChunker(nil)
+func TestQAChunker_HeadingNoTrailingSpace(t *testing.T) {
+	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,8 +239,8 @@ func TestPairChunker_HeadingNoTrailingSpace(t *testing.T) {
 	}
 }
 
-func TestPairChunker_ChineseLang(t *testing.T) {
-	comp, err := NewPairChunker(map[string]any{"lang": "Chinese"})
+func TestQAChunker_ChineseLang(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "Chinese"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,57 +263,8 @@ func TestPairChunker_ChineseLang(t *testing.T) {
 	}
 }
 
-func TestPairChunker_ModeDefaultsToQA(t *testing.T) {
-	// mode is optional and defaults to "qa": constructing without a mode
-	// yields the canonical question/answer behaviour.
-	comp, err := NewPairChunker(nil)
-	if err != nil {
-		t.Fatalf("NewPairChunker with no mode: %v", err)
-	}
-	if got := comp.(*PairChunkerComponent).param.Mode; got != "qa" {
-		t.Fatalf("default mode = %q, want %q", got, "qa")
-	}
-	inputs := map[string]any{
-		"name":          "test.txt",
-		"output_format": "text",
-		"text":          "What is Go?\tGo is a programming language.",
-	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
-	if err != nil {
-		t.Fatalf("Invoke failed: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 1 {
-		t.Fatalf("expected 1 chunk, got %d", len(chunks))
-	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "问题：What is Go?\t回答：Go is a programming language." {
-		t.Fatalf("unexpected content: %q", cww)
-	}
-}
-
-func TestPairChunker_ModeRejectsUnknown(t *testing.T) {
-	// The generic two-column chunker exposes a `mode` selector; only
-	// "qa" is implemented, so any other mode must fail fast at construction
-	// instead of silently producing QA output. An explicit empty mode
-	// defaults to "qa".
-	for _, mode := range []string{"", "tag", "Table"} {
-		params := map[string]any{"mode": mode}
-		_, err := NewPairChunker(params)
-		if mode == "" {
-			if err != nil {
-				t.Fatalf("empty mode should default to qa, got error: %v", err)
-			}
-			continue
-		}
-		if err == nil {
-			t.Fatalf("mode %q should be rejected, got no error", mode)
-		}
-	}
-}
-
-func TestPairChunker_MarkdownRendersHTML(t *testing.T) {
-	comp, err := NewPairChunker(nil)
+func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
+	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
