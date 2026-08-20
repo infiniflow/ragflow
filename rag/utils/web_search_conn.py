@@ -18,10 +18,12 @@ import logging
 from typing import Protocol
 
 from rag.utils.querit_conn import Querit
+from rag.utils.serply_conn import Serply
 from rag.utils.tavily_conn import Tavily
 
 WEB_SEARCH_PROVIDER_TAVILY = "tavily"
 WEB_SEARCH_PROVIDER_QUERIT = "querit"
+WEB_SEARCH_PROVIDER_SERPLY = "serply"
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,8 @@ def has_web_search_provider(prompt_config: dict | None) -> bool:
         return bool(_get_api_key(prompt_config, "tavily_api_key"))
     if provider == WEB_SEARCH_PROVIDER_QUERIT:
         return bool(_get_api_key(prompt_config, "querit_api_key"))
+    if provider == WEB_SEARCH_PROVIDER_SERPLY:
+        return bool(_get_api_key(prompt_config, "serply_api_key"))
     return False
 
 
@@ -53,7 +57,7 @@ def create_web_search_provider(prompt_config: dict | None) -> WebSearchProvider 
         return None
 
     provider = prompt_config.get("web_search_provider", WEB_SEARCH_PROVIDER_TAVILY)
-    if provider not in (WEB_SEARCH_PROVIDER_TAVILY, WEB_SEARCH_PROVIDER_QUERIT):
+    if provider not in (WEB_SEARCH_PROVIDER_TAVILY, WEB_SEARCH_PROVIDER_QUERIT, WEB_SEARCH_PROVIDER_SERPLY):
         logger.debug("Web search provider resolution: provider=%s status=invalid", provider)
         return None
     if not has_web_search_provider(prompt_config):
@@ -63,4 +67,6 @@ def create_web_search_provider(prompt_config: dict | None) -> WebSearchProvider 
     logger.debug("Web search provider resolution: provider=%s status=resolved", provider)
     if provider == WEB_SEARCH_PROVIDER_QUERIT:
         return Querit(_get_api_key(prompt_config, "querit_api_key"))
+    if provider == WEB_SEARCH_PROVIDER_SERPLY:
+        return Serply(_get_api_key(prompt_config, "serply_api_key"))
     return Tavily(_get_api_key(prompt_config, "tavily_api_key"))

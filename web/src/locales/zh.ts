@@ -954,6 +954,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         {knowledge}
         以上是知识库。`,
       systemMessage: '请输入',
+      knowledgePlaceholderMessage:
+        '已选择知识库但系统提示词中缺少 {knowledge} 占位符，检索到的内容将无法注入。请在系统提示词中添加 {knowledge}，或移除已选择的知识库。',
       systemTip:
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
@@ -1005,15 +1007,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
-      thinkingLevelNone: '简单',
-      thinkingLevelLow: '轻度',
-      thinkingLevelLowDescription: '即时响应',
-      thinkingLevelMedium: '中',
+      thinkingLevelNone: 'None',
+      thinkingLevelLow: 'Low',
+      thinkingLevelLowDescription: '快速响应',
+      thinkingLevelMedium: 'Medium',
       thinkingLevelMediumDescription: '平衡速度与深度',
-      thinkingLevelHigh: '高',
+      thinkingLevelHigh: 'High',
       thinkingLevelHighDescription: '深度推理',
-      thinkingLevelUltra: '极高',
-      thinkingLevelUltraDescription: '最大认知投入',
+      thinkingLevelUltra: 'Ultra',
+      thinkingLevelUltraDescription: '尽力思考',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -1090,6 +1092,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入你的 Querit API Key',
+      serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
+      serplyApiKeyMessage: '请输入你的 Serply API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',

@@ -35,6 +35,25 @@ describe('getWebSearchApiKey', () => {
     expect(getWebSearchApiKey(promptConfig)).toBe('querit-test');
   });
 
+  it('uses only the selected Serply key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Serply,
+      serply_api_key: 'serply-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBe('serply-test');
+  });
+
+  it('does not fall back to Tavily when Serply is selected without a key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Serply,
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+
   it('does not fall back to Tavily when Querit is selected without a key', () => {
     const promptConfig = {
       web_search_provider: WebSearchProvider.Querit,

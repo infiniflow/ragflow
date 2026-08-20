@@ -22,8 +22,19 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 			} else {
 				sections[target].Text = s.Text
 			}
+			captions = append(captions, i)
+			continue
 		}
-		captions = append(captions, i)
+		// No merge target. A FIGURE caption is kept as its own section: a pure
+		// image figure has no text section (BoxesToSections skips empty figure
+		// boxes), so removing it would drop caption text that Python keeps
+		// (07_mixed_content 'Figure 1/2'). A TABLE caption without a table
+		// section is a DLA mislabel (e.g. rotate_270's rotated text labeled
+		// "table") — keep the historical removal so rotated-page text is not
+		// duplicated.
+		if captionType != pdf.LayoutTypeFigure {
+			captions = append(captions, i)
+		}
 	}
 	// Remove caption sections in reverse order.
 	n := len(sections)

@@ -27,6 +27,7 @@ import (
 // source registers both the task-context factory (used by the syncer runtime)
 // and the raw-config factory (used by the test-connection endpoint).
 func RegisterBuiltIns(registry *Registry) {
+	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
@@ -35,6 +36,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "google-drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_cloud_storage", NewGoogleCloudStorageConnector)
+	registerBuiltIn(registry, "imap", NewIMAPConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
 	registerBuiltIn(registry, "notion", NewNotionConnector)
 	registerBuiltIn(registry, "rest_api", NewRestAPIConnector)
