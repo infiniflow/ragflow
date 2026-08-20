@@ -3,6 +3,8 @@ package indexdoc
 import (
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // =============================================================================
@@ -459,5 +461,32 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 	want := []string{"a", "b"}
 	if len(kwd) != len(want) || kwd[0] != "a" || kwd[1] != "b" {
 		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
+	}
+}
+
+// TestProcessChunksForPipeline_DistinctIDsFromContentWithWeight pins the id
+// fallback for chunks that carry only content_with_weight (e.g. QAChunker
+// output): ids must be derived from the content, not from the absent "text"
+// key, or every chunk of a document collapses onto one id and all but one
+// are overwritten at index time.
+func TestProcessChunksForPipeline_DistinctIDsFromContentWithWeight(t *testing.T) {
+	chunks := []map[string]any{
+		{"content_with_weight": "Question: Q1\tAnswer: A1"},
+		{"content_with_weight": "Question: Q2\tAnswer: A2"},
+	}
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "qa.txt", time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	id0, _ := chunks[0]["id"].(string)
+	id1, _ := chunks[1]["id"].(string)
+	if id0 == "" || id1 == "" {
+		t.Fatalf("ids should be non-empty, got %q and %q", id0, id1)
+	}
+	if id0 == id1 {
+		t.Fatalf("ids must differ for distinct content, both = %q", id0)
+	}
+	if want := common.ChunkID("doc-1", "Question: Q1\tAnswer: A1"); id0 != want {
+		t.Errorf("id0 = %q, want %q", id0, want)
 	}
 }

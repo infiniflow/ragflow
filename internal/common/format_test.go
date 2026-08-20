@@ -75,3 +75,29 @@ func TestBaseModelName(t *testing.T) {
 		})
 	}
 }
+func TestChunkIDForChunk(t *testing.T) {
+	t.Run("prefers content_with_weight", func(t *testing.T) {
+		ck := map[string]any{"content_with_weight": "cww", "text": "plain"}
+		if got, want := ChunkIDForChunk("doc-1", ck), ChunkID("doc-1", "cww"); got != want {
+			t.Fatalf("ChunkIDForChunk = %q, want %q", got, want)
+		}
+	})
+	t.Run("falls back to text", func(t *testing.T) {
+		ck := map[string]any{"text": "plain"}
+		if got, want := ChunkIDForChunk("doc-1", ck), ChunkID("doc-1", "plain"); got != want {
+			t.Fatalf("ChunkIDForChunk = %q, want %q", got, want)
+		}
+	})
+	t.Run("empty content hashes empty string", func(t *testing.T) {
+		ck := map[string]any{}
+		if got, want := ChunkIDForChunk("doc-1", ck), ChunkID("doc-1", ""); got != want {
+			t.Fatalf("ChunkIDForChunk = %q, want %q", got, want)
+		}
+	})
+	t.Run("non-string content_with_weight falls back to text", func(t *testing.T) {
+		ck := map[string]any{"content_with_weight": 42, "text": "plain"}
+		if got, want := ChunkIDForChunk("doc-1", ck), ChunkID("doc-1", "plain"); got != want {
+			t.Fatalf("ChunkIDForChunk = %q, want %q", got, want)
+		}
+	})
+}

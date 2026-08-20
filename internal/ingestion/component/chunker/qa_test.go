@@ -22,6 +22,9 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component"
+	"ragflow/internal/storage"
 )
 
 func TestQAChunker_Registered(t *testing.T) {
@@ -285,5 +288,286 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 	if !strings.Contains(cww, "<strong>bold</strong>") &&
 		!strings.Contains(cww, "<b>bold</b>") {
 		t.Fatalf("markdown not rendered to HTML: %q", cww)
+	}
+}
+
+// withQAMemoryStorage swaps the global storage factory for an
+// in-memory backend and restores it on cleanup. Mirrors
+// withMemoryStorage in internal/ingestion/component/file_test.go.
+func withQAMemoryStorage(t *testing.T) *storage.MemoryStorage {
+	t.Helper()
+	factory := storage.GetStorageFactory()
+	prev := factory.GetStorage()
+	ms := storage.NewMemoryStorage().(*storage.MemoryStorage)
+	factory.SetStorage(ms)
+	t.Cleanup(func() { factory.SetStorage(prev) })
+	return ms
+}
+
+// TestQAChunker_TxtReacquiresRawFromStorage is the regression test for
+// txt QA files producing zero chunks: the upstream text parser shreds
+// tab-separated Q&A lines into delimiter-less fragments, so the chunker
+// must re-read the raw file bytes from storage (mirrors Python qa.py).
+func TestQAChunker_TxtReacquiresRawFromStorage(t *testing.T) {
+	ms := withQAMemoryStorage(t)
+	ctx := context.Background()
+	raw := "What is Go?\tGo is a programming language.\nWhat is Rust?\tRust is a systems language.\n"
+	if err := ms.Put(ctx, "kb-1", "qa.txt", []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"output_format": "json",
+		// What the shredded upstream payload looks like: no delimiter
+		// survives in any fragment, so JSON extraction yields nothing.
+		"json": []map[string]any{
+			{"text": "What is Go?"},
+			{"text": " Go is a programming language."},
+			{"text": "What is Rust?"},
+			{"text": " Rust is a systems language."},
+		},
+		"bucket": "kb-1",
+		"path":   "qa.txt",
+	}
+	out, err := comp.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if msg, ok := out["_ERROR"]; ok {
+		t.Fatalf("unexpected _ERROR: %v", msg)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if want := "Question: What is Go?\tAnswer: Go is a programming language."; cww != want {
+		t.Fatalf("unexpected content: %q, want %q", cww, want)
+	}
+}
+
+// TestQAChunker_TxtReacquiresRawViaDocID covers the doc_id-driven
+// storage resolution path (no explicit bucket/path on the wire).
+func TestQAChunker_TxtReacquiresRawViaDocID(t *testing.T) {
+	ms := withQAMemoryStorage(t)
+	ctx := context.Background()
+	if err := ms.Put(ctx, "kb-1", "loc/qa.txt", []byte("Q1\tA1\n")); err != nil {
+		t.Fatal(err)
+	}
+	prev := component.ResolveDocumentStorageOverride
+	component.ResolveDocumentStorageOverride = func(docID string) (*component.DocumentStorageRef, error) {
+		if docID != "doc-1" {
+			t.Errorf("unexpected doc_id: %q", docID)
+		}
+		return &component.DocumentStorageRef{Bucket: "kb-1", Path: "loc/qa.txt"}, nil
+	}
+	t.Cleanup(func() { component.ResolveDocumentStorageOverride = prev })
+
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "Q1"}},
+		"doc_id":        "doc-1",
+	}
+	out, err := comp.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if want := "Question: Q1\tAnswer: A1"; cww != want {
+		t.Fatalf("unexpected content: %q, want %q", cww, want)
+	}
+}
+
+// TestQAChunker_MarkdownReacquiresRawFromStorage covers heading-based
+// md QA files: block-split markdown items carry no delimiter, so the
+// raw file must be re-read (Python qa.py md branch).
+func TestQAChunker_MarkdownReacquiresRawFromStorage(t *testing.T) {
+	ms := withQAMemoryStorage(t)
+	ctx := context.Background()
+	raw := "# What is Go?\nGo is a **programming** language.\n\n# What is Rust?\nRust is a systems language.\n"
+	if err := ms.Put(ctx, "kb-1", "qa.md", []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "What is Go?"},
+			{"text": "Go is a **programming** language."},
+		},
+		"bucket": "kb-1",
+		"path":   "qa.md",
+	}
+	out, err := comp.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if !strings.Contains(cww, "Question: What is Go?") {
+		t.Fatalf("unexpected content: %q", cww)
+	}
+	if !strings.Contains(cww, "<strong>programming</strong>") &&
+		!strings.Contains(cww, "<b>programming</b>") {
+		t.Fatalf("markdown answer not rendered to HTML: %q", cww)
+	}
+}
+
+// TestQAChunker_TxtNoStorageRefFallsBackToPayload verifies that a txt
+// input without any storage reference keeps the pre-existing payload
+// behavior (direct-fed canvas runs, unit tests).
+func TestQAChunker_TxtNoStorageRefFallsBackToPayload(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "What is Go?\tGo is a programming language."}},
+	}
+	out, err := comp.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if msg, ok := out["_ERROR"]; ok {
+		t.Fatalf("unexpected _ERROR: %v", msg)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+}
+
+// TestQAChunker_TxtStorageFailureFallsBackToPayload verifies that a
+// storage read failure degrades to the upstream payload with a warning
+// rather than failing the component.
+func TestQAChunker_TxtStorageFailureFallsBackToPayload(t *testing.T) {
+	withQAMemoryStorage(t) // object intentionally absent
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "What is Go?\tGo is a programming language."}},
+		"bucket":        "kb-1",
+		"path":          "missing.txt",
+	}
+	out, err := comp.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if msg, ok := out["_ERROR"]; ok {
+		t.Fatalf("unexpected _ERROR: %v", msg)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+}
+
+// TestQAChunker_TxtReacquireStripsBOM verifies a UTF-8 BOM does not
+// leak into the first question.
+func TestQAChunker_TxtReacquireStripsBOM(t *testing.T) {
+	ms := withQAMemoryStorage(t)
+	ctx := context.Background()
+	if err := ms.Put(ctx, "kb-1", "qa.txt", []byte("\ufeffQ1\tA1\n")); err != nil {
+		t.Fatal(err)
+	}
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "Q1"}},
+		"bucket":        "kb-1",
+		"path":          "qa.txt",
+	}
+	out, err := comp.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if want := "Question: Q1\tAnswer: A1"; cww != want {
+		t.Fatalf("unexpected content: %q, want %q", cww, want)
+	}
+}
+
+// TestQAChunker_DecoratorAssignsDistinctIDs pins the chunk-id regression
+// where the registration decorator hashed ck["text"] — absent on QA chunks
+// (they carry content_with_weight) — collapsing every QA chunk of a
+// document onto the same id, so all but one chunk were silently
+// overwritten at index time.
+func TestQAChunker_DecoratorAssignsDistinctIDs(t *testing.T) {
+	ms := withQAMemoryStorage(t)
+	ctx := context.Background()
+	raw := "What is Go?\tGo is a programming language.\nWhat is Rust?\tRust is a systems language.\n"
+	if err := ms.Put(ctx, testKBID, "qa.txt", []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decorated := &imageUploadDecorator{inner: comp}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"kb_id":         testKBID,
+		"doc_id":        testDocID,
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "What is Go?"}}, // shredded upstream payload; raw bytes win
+		"bucket":        testKBID,
+		"path":          "qa.txt",
+	}
+	out, err := decorated.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	seen := map[string]bool{}
+	for i, ck := range chunks {
+		id, _ := ck["id"].(string)
+		if id == "" {
+			t.Fatalf("chunk %d has empty id", i)
+		}
+		if seen[id] {
+			t.Fatalf("chunk %d duplicates id %q — chunks would overwrite each other", i, id)
+		}
+		seen[id] = true
+		cww, _ := ck["content_with_weight"].(string)
+		if want := common.ChunkID(testDocID, cww); id != want {
+			t.Errorf("chunk %d id = %q, want %q (xxhash of content_with_weight)", i, id, want)
+		}
 	}
 }

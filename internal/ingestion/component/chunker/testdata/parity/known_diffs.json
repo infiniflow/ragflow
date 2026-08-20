@@ -8,7 +8,7 @@
       "applies_to": ["*"],
       "fields": ["id"],
       "permanent": true,
-      "reason": "register.go MustRegisterChunker wraps every chunker in imageUploadDecorator, which writes ck[\"id\"] = common.ChunkID(doc_id, text) before any image upload so uploadChunkImage and the persist stage share one chunk identity. Python derives chunk ids outside the chunker, so its _finalize_json_chunks output has no id."
+      "reason": "register.go MustRegisterChunker wraps every chunker in imageUploadDecorator, which writes ck[\"id\"] = common.ChunkIDForChunk(doc_id, ck) — hashing content_with_weight (falling back to text) — before any image upload so uploadChunkImage and the persist stage share one chunk identity. Python derives chunk ids outside the chunker, so its _finalize_json_chunks output has no id."
     },
     {
       "id": "go-only-token-metadata",

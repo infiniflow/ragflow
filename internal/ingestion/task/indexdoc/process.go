@@ -55,12 +55,11 @@ func GetEmbeddingTokenConsumption(output map[string]any) int {
 }
 
 // ProcessChunksForPipeline mutates chunks into the pre-index structure used by
-// the pipeline and returns merged metadata. It returns an error if a chunk's
-// "text" field is present but not a string: that is an upstream contract
-// violation (the chunker/parser must emit string text), and continuing would
-// collapse every such chunk onto the same empty-text ChunkID, silently
-// overwriting each other in the index. The caller fails the task so the
-// violation surfaces instead of corrupting the index.
+// the pipeline and returns merged metadata. Chunks missing an "id" get one
+// derived from their content (content_with_weight, else text) via
+// common.ChunkIDForChunk — the same hash input Python uses — so chunks that
+// carry only content_with_weight (e.g. QAChunker output) still receive
+// distinct ids instead of collapsing onto one empty-text id.
 //
 // Note: kb_id is intentionally NOT stamped here. It is an index-physical
 // concern owned by the search engine at the write boundary (ES chunk.go
@@ -86,8 +85,7 @@ func ProcessChunksForPipeline(
 		ck["create_timestamp_flt"] = timestamp
 
 		if _, exists := ck["id"]; !exists {
-			text, _ := ck["text"].(string)
-			ck["id"] = common.ChunkID(docID, text)
+			ck["id"] = common.ChunkIDForChunk(docID, ck)
 		}
 
 		cleanupConsumedChunkFields(ck)

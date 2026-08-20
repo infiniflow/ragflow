@@ -188,3 +188,18 @@ func IsValidString(v interface{}) bool {
 func ChunkID(docID, text string) string {
 	return fmt.Sprintf("%016x", xxhash.Sum64String(text+docID))
 }
+
+// ChunkIDForChunk derives the deterministic id of a chunk map using the same
+// hash input as Python: content_with_weight when present, falling back to
+// text otherwise (Python hashes content_with_weight after renaming text to
+// it — rag/svr/task_executor.py). Chunkers that emit only
+// content_with_weight (e.g. QAChunker) must not be keyed on the absent
+// "text" key: that would collapse every chunk of a document onto the same
+// id and silently overwrite all but one chunk at index time.
+func ChunkIDForChunk(docID string, ck map[string]any) string {
+	content, _ := ck["content_with_weight"].(string)
+	if content == "" {
+		content, _ = ck["text"].(string)
+	}
+	return ChunkID(docID, content)
+}

@@ -73,13 +73,13 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	}
 	kbID, docID := resolveImageUploadContext(ctx, inputs)
 
-	// Compute and write the deterministic chunk id (component.ChunkID) for
-	// every chunk. This happens here — before any upload — so uploadChunkImage
+	// Compute and write the deterministic chunk id for every chunk from its
+	// content (content_with_weight, else text) — the same hash input Python
+	// uses. This happens here — before any upload — so uploadChunkImage
 	// can read ck["id"] without deriving it itself. Downstream, the persist
 	// stage reuses the same formula as a fallback when ck["id"] is absent.
 	for _, ck := range chunks {
-		text, _ := ck["text"].(string)
-		ck["id"] = common.ChunkID(docID, text)
+		ck["id"] = common.ChunkIDForChunk(docID, ck)
 	}
 
 	// kb_id is empty only in canvas debug (dry-run) mode; production ingestion

@@ -22,6 +22,13 @@
 //   - HTML (xlsx/xls)  → table-based Q&A (first two columns)
 //   - JSON (pdf, docx) → delimiter-based on structured text sections
 //
+// Raw-text QA formats (txt, md/markdown/mdx) are re-parsed from the
+// original file bytes re-acquired from storage: the upstream Parser
+// shreds text into sentence fragments (split at ！？。；) and markdown
+// into blocks, which destroys the line/heading question/answer pairing.
+// This mirrors Python qa.py, which always parses the raw file bytes for
+// these formats.
+//
 // Every Q&A pair becomes a single chunk with content_with_weight
 // formatted as "Question: {q}\tAnswer: {a}".
 package chunker
@@ -32,6 +39,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"log/slog"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -40,6 +49,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -83,10 +93,10 @@ func (c *QAChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 func (c *QAChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
 func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	return c.invoke(ctx, inputs)
+	return c.invoke(ctx, db, inputs)
 }
 
-func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *QAChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
@@ -107,19 +117,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		qPrefix, aPrefix = "Question: ", "Answer: "
 	}
 
-	var qaPairs []qaPair
-	var isMarkdown bool
-	switch upstream.OutputFormat {
-	case schema.PayloadFormatHTML:
-		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult))
-	case schema.PayloadFormatMarkdown:
-		qaPairs = extractQAMarkdown(stringPtrVal(upstream.MarkdownResult))
-		isMarkdown = true
-	case schema.PayloadFormatText:
-		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
-	default:
-		qaPairs = extractQAJSON(upstream.JSONResult)
-	}
+	qaPairs, isMarkdown := extractQAPairs(ctx, db, upstream)
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
 	lang, _ := inputs["lang"].(string)
@@ -156,6 +154,89 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	}
 
 	return chunkOutputs(chunks), nil
+}
+
+// extractQAPairs selects the Q&A extraction strategy. Raw-text QA
+// formats (txt, md/markdown/mdx) are parsed from the original file
+// bytes re-acquired from storage — the upstream Parser shreds them
+// past the point where question/answer pairing survives (mirrors
+// Python qa.py, which always reads the raw file for these formats).
+// When no storage reference is present (unit tests, canvas runs
+// without a File upstream), the upstream payload is used as-is.
+func extractQAPairs(ctx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream) ([]qaPair, bool) {
+	if isRawTextQAFile(upstream.Name) {
+		raw, err := reacquireQARawText(ctx, db, upstream)
+		if err != nil {
+			slog.Warn("QAChunker: re-acquire raw source failed; falling back to upstream payload",
+				"name", upstream.Name, "err", err)
+		} else if raw != "" {
+			if isMarkdownQAFile(upstream.Name) {
+				return extractQAMarkdown(raw), true
+			}
+			return extractQAText(raw), false
+		}
+	}
+	return extractQAPairsFromPayload(upstream)
+}
+
+func extractQAPairsFromPayload(upstream schema.ChunkerFromUpstream) ([]qaPair, bool) {
+	switch upstream.OutputFormat {
+	case schema.PayloadFormatHTML:
+		return extractQATable(stringPtrVal(upstream.HTMLResult)), false
+	case schema.PayloadFormatMarkdown:
+		return extractQAMarkdown(stringPtrVal(upstream.MarkdownResult)), true
+	case schema.PayloadFormatText:
+		return extractQAText(stringPtrVal(upstream.TextResult)), false
+	default:
+		return extractQAJSON(upstream.JSONResult), false
+	}
+}
+
+// isRawTextQAFile reports whether name is a QA format parsed from raw
+// file text, mirroring the Python qa.py extension branches
+// (txt → delimiter-based, md/markdown/mdx → heading-based).
+func isRawTextQAFile(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".txt", ".md", ".markdown", ".mdx":
+		return true
+	}
+	return false
+}
+
+func isMarkdownQAFile(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".md", ".markdown", ".mdx":
+		return true
+	}
+	return false
+}
+
+// reacquireQARawText re-reads the source document bytes from storage
+// using the same resolution as the PDF crop path (explicit bucket/path
+// first, then doc_id-driven resolution). It returns ("", nil) when no
+// storage reference is present so callers fall back to the upstream
+// payload.
+func reacquireQARawText(ctx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream) (string, error) {
+	var data []byte
+	var err error
+	switch {
+	case upstream.Bucket != "" && upstream.Path != "":
+		data, err = component.FetchBinary(ctx, upstream.Bucket, upstream.Path)
+	case upstream.DocID != "":
+		var ref *component.DocumentStorageRef
+		ref, err = component.ResolveDocumentStorage(ctx, db, upstream.DocID)
+		if err == nil && ref != nil {
+			data, err = component.FetchBinary(ctx, ref.Bucket, ref.Path)
+		}
+	default:
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	// Strip a UTF-8 BOM so the first question does not start with U+FEFF
+	// (Python get_text strips it via codec detection).
+	return strings.TrimPrefix(string(data), "\ufeff"), nil
 }
 
 func renderMarkdown(s string) string {
