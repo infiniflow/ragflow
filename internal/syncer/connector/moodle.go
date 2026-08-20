@@ -584,13 +584,13 @@ func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest,
 	if len(chapters) == 0 {
 		return nil, nil
 	}
-	if !includeMoodleModule(request, module.windowTimestamp()) {
-		return nil, nil
-	}
 	latest := moodleMaxTimestamp(module.TimeCreated, module.TimeModified)
 	for _, content := range module.Contents {
 		latest = maxInt64(latest, derefInt64(content.TimeCreated))
 		latest = maxInt64(latest, derefInt64(content.TimeModified))
+	}
+	if !includeMoodleModule(request, latest) {
+		return nil, nil
 	}
 	markdownParts := []string{"# " + module.Name + "\n"}
 	chapterMetadata := make([]map[string]any, 0, len(chapters))
