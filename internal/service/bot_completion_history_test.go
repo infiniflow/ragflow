@@ -823,3 +823,45 @@ func TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted(t *testing.T) {
 		t.Errorf("error turns must not persist, got %+v", turns)
 	}
 }
+
+// TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire covers a pipeline-level
+// failure that arrives AFTER partial deltas were already streamed
+// (chat_pipeline.go reports a mid-stream driver error as a final
+// "**ERROR**" result): the final frame must still carry the error text —
+// dropping it would leave the client with a silently truncated partial
+// answer — and nothing is persisted.
+func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s5")
+	svc := NewBotService(nil, nil)
+
+	results := make(chan AsyncChatResult, 2)
+	results <- AsyncChatResult{Answer: "partial", Reference: map[string]any{}}
+	results <- AsyncChatResult{Answer: "**ERROR**: boom", Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s5", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q5", "msg-s5", results) {
+		frames = append(frames, f)
+	}
+	if len(frames) != 3 || !frames[2].Done {
+		t.Fatalf("want delta + final + done, got %+v", frames)
+	}
+	if frames[0].Data != "partial" {
+		t.Errorf("delta frame = %q, want partial", frames[0].Data)
+	}
+	if !frames[1].Final || frames[1].Data != "**ERROR**: boom" {
+		t.Errorf("error final after deltas must carry the error text, got %+v", frames[1])
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s5", "dlg-s1")
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	if turns := parseChatbotTurns(row.Message); len(turns) != 0 {
+		t.Errorf("error turns must not persist, got %+v", turns)
+	}
+}

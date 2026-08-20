@@ -447,8 +447,9 @@ func (s *BotService) ChatbotCompletion(
 //   - The final frame's `answer` is empty whenever text was already
 //     streamed as deltas (python async_chat sets final["answer"] = ""),
 //     so accumulating consumers do not double the text. The full text
-//     is only sent when nothing was streamed (single-shot results such
-//     as the structured-SQL path or error frames).
+//     is sent when nothing was streamed (single-shot results such as
+//     the structured-SQL path) and on error finals, so a mid-stream
+//     pipeline failure still reaches the wire after partial deltas.
 //   - The persisted assistant turn is the raw streamed text, NOT the
 //     decorated final answer. The decorated text carries server-side
 //     [ID:n] citation markers; persisting it feeds fabricated markers
@@ -491,9 +492,12 @@ func (s *BotService) streamChatbotTurn(
 					errored = true
 				}
 				finalData := ""
-				if rawAnswer == "" {
-					// Nothing was streamed as deltas; the final
-					// frame is the only carrier of the text.
+				if rawAnswer == "" || errored {
+					// The final frame is the only carrier of the text
+					// when nothing was streamed as deltas; on a
+					// pipeline-level error it must still carry the
+					// error text even after partial deltas, or the
+					// client would see a silently truncated answer.
 					finalData = fullAnswer
 				}
 				out <- ChatbotSSEFrame{
