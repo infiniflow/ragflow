@@ -95,7 +95,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := strings.ToLower(strings.TrimSpace(p.ParseMethod))
 	switch method {
 	case "tcadp":
-		return parsePresentationWithTCADP(ctx,
+		return parseWithTCADP(ctx,
 			filename, data, strings.ToUpper(p.format),
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,

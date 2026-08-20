@@ -13,12 +13,20 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-// parsePresentationWithTCADP sends binary presentation (PPTX/PPT) data
-// to the TCADP cloud reconstruction service and returns the structured
-// parse result. Mirrors the spreadsheet-family parseSpreadsheetWithTCADP
-// in xls_tcadp.go
-func parsePresentationWithTCADP(ctx context.Context, filename string, data []byte, fileType string,
-	tcadpAPIServer, tcadpAPIKey, tableResultType, markdownImageResponseType string,
+// parseWithTCADP submits binary data to the TCADP cloud reconstruction service
+// and returns the structured parse result.
+//
+// Shared by all three TCADP-using parser families (PDF, spreadsheet,
+// presentation). Each family wraps this with its own thin function that
+// supplies its parameters (env-fallbacks, fileType, table/format config)
+// so the TCADP API contract lives in one place.
+func parseWithTCADP(
+	ctx context.Context,
+	filename string,
+	data []byte,
+	fileType string,
+	tcadpAPIServer, tcadpAPIKey string,
+	tableResultType, markdownImageResponseType string,
 	outputFormat string,
 ) ParseResult {
 	if len(data) == 0 {
