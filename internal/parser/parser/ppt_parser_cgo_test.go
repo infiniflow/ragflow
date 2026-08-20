@@ -99,8 +99,8 @@ func TestPPTXParser_ParseWithResult_MultiSlide_CGO(t *testing.T) {
 }
 
 // TestPPTXParser_ParseWithResult_EmptySlide_CGO verifies that a slide
-// without extractable text still yields its own JSON item (empty text),
-// matching the python parser which appends one text per slide.
+// without extractable text still yields its own JSON item with an
+// empty text field, so slide numbering stays aligned with the deck.
 func TestPPTXParser_ParseWithResult_EmptySlide_CGO(t *testing.T) {
 	ctx := t.Context()
 	p := NewPPTXParser()

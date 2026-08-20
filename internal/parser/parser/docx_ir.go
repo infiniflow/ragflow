@@ -15,10 +15,12 @@
 //
 
 // Package parser: this file holds the pure-Go office_oxide IR data
-// model and JSON helpers for DOCX. It is intentionally cgo-free so
-// that postprocessing (docx_postprocess.go) and unit tests run
-// without the office_oxide native library. The cgo boundary lives
-// entirely in docx_parser.go (officeOxide.OpenFromBytes).
+// model and JSON helpers shared by the DOCX and presentation parsers.
+// It is intentionally cgo-free so that postprocessing
+// (docx_postprocess.go), per-slide section building (pptx_ir.go), and
+// unit tests run without the office_oxide native library. The cgo
+// boundary lives in docx_parser.go / pptx_parser.go
+// (officeOxide.OpenFromBytes).
 
 package parser
 
@@ -55,6 +57,7 @@ type docxIRElement struct {
 	Level   int              `json:"level"`   // heading level (1-6) or list nesting level
 	Style   string           `json:"style"`   // Word style name (e.g. "Normal", "Heading 1")
 	Content json.RawMessage  `json:"content"` // rich text runs or block-level content; decoded per type
+	Text    string           `json:"text"`    // payload of a bare "text" block; not part of the current IR schema
 	Data    []byte           `json:"data"`    // raw image bytes (for "image" type)
 	Rows    []docxIRRow      `json:"rows"`    // table rows
 	Ordered bool             `json:"ordered"` // true=numbered list, false=bullet list (for "list" type)
@@ -93,7 +96,7 @@ type docxIRList struct {
 }
 
 type docxIRRun struct {
-	Type    string          `json:"type"` // "text", "image"
+	Type    string          `json:"type"` // "text", "line_break", "image"
 	Text    string          `json:"text"`
 	Content []docxIRElement `json:"content"` // nested elements (used in table cells)
 }
@@ -106,11 +109,17 @@ type docxIRCell struct {
 	Content []docxIRElement `json:"content"` // nested paragraphs inside table cell
 }
 
+// joinDOCXIRRuns concatenates inline runs into plain text. Hard line
+// breaks become newlines so multi-line text keeps its line structure;
+// non-text payloads (e.g. inline images) contribute no characters.
 func joinDOCXIRRuns(runs []docxIRRun) string {
 	var b strings.Builder
 	for _, r := range runs {
-		if r.Type == "text" {
+		switch r.Type {
+		case "text":
 			b.WriteString(r.Text)
+		case "line_break":
+			b.WriteByte('\n')
 		}
 	}
 	return b.String()
@@ -193,14 +202,19 @@ func docxIRTableToHTML(el docxIRElement) string {
 }
 
 // docxElementText returns the plain-text rendering of any supported
-// IR element type. Used by extractDOCXFiguresFromIR so that tables,
-// lists, and text boxes contribute to image surrounding context
-// instead of becoming empty flatBlocks (which would drop adjacent
-// VLM context). Returns "" for image and unknown types.
+// IR element type. Used by buildPPTXJSONSections to flatten one slide
+// section, and by extractDOCXFiguresFromIR so that tables, lists, and
+// text boxes contribute to image surrounding context instead of
+// becoming empty flatBlocks (which would drop adjacent VLM context).
+// A bare "text" block is not part of the current IR schema, but is
+// passed through so its payload is never silently dropped. Returns ""
+// for image and unknown types.
 func docxElementText(el docxIRElement) string {
 	switch el.Type {
 	case "paragraph", "heading":
 		return joinDOCXIRRuns(el.contentRuns())
+	case "text":
+		return el.Text
 	case "table":
 		var lines []string
 		for _, row := range el.Rows {
