@@ -120,18 +120,24 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	return chunkFromRecords(parentCtx, db, inputs, p, records)
+	return chunkFromRecords(parentCtx, db, inputs, p, records, p.ChunkTokenCap)
 }
 
 // chunkFromRecords runs the shared GroupTitle / Manual grouping pipeline over
 // an already-extracted record list: resolve heading levels, split into
-// sections, merge adjacent text records, build chunks, and perform on-demand
-// PDF cropping. GroupTitleChunker feeds records in input order; ManualChunker
-// feeds them after a (page, top, left) resort. Sharing this body guarantees
-// both strategies emit byte-identical output for coordinate-free input (the
-// docx manual branch) — the no-regression contract locked by
-// TestManualChunker_NoPositionsEqualsGroupChunker.
-func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam, records []lineRecord) (map[string]any, error) {
+// sections, merge adjacent text records, build chunks, enforce the token cap
+// (title family only), and perform on-demand PDF cropping. GroupTitleChunker
+// feeds records in input order; ManualChunker feeds them after a (page, top,
+// left) resort. Sharing this body keeps both strategies byte-identical for
+// coordinate-free input as long as no built chunk exceeds the token cap
+// (TestManualChunker_NoPositionsEqualsGroupChunker); once one does, only
+// GroupTitleChunker re-splits it (ManualChunker is exempt).
+//
+// tokenCap is the title-family token ceiling (chunk_token_cap). ManualChunker
+// must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
+// p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
+// on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
+func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
 	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -169,6 +175,13 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]
 		zap.Int("groups", len(groups)),
 	)
 	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	// Enforce the title-family token ceiling (chunk_token_cap) right after
+	// build_chunks and BEFORE the on-demand crop, mirroring Python's
+	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
+	// tokenCap=0, so this is a no-op there.
+	if tokenCap > 0 {
+		chunks = enforceTitleTokenCap(chunks, tokenCap)
+	}
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
 		zap.String("variant", "group"),

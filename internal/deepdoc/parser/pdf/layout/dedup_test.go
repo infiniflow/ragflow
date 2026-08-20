@@ -6,23 +6,24 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// TestDedupIdenticalText locks that boxes carrying TRIM-EQUAL text (identical
-// after strings.TrimSpace — trailing whitespace normalized) on the SAME page
-// with DISJOINT Y bands are collapsed to one. OCR repeatedly detects the same
-// text at different Y positions (09_crosspage_paragraph detects each paragraph
-// 5-6x per page, all disjoint), and Python's downstream merge collapses these;
-// Go must too, or the replay output duplicates paragraphs.
+// TestDedupIdenticalText locks that a rolling-stride CHAIN of identical-text
+// boxes (>= pseudoDupChainMin disjoint same-X copies, e.g. 09_crosspage_paragraph
+// detects each paragraph 14-18x per page) is collapsed to one, while a
+// cross-page copy and unrelated text are kept.
 func TestDedupIdenticalText(t *testing.T) {
 	long := "paragraph one with enough words to qualify as a real paragraph duplicate text for collapsing"
 	boxes := []pdf.TextBox{
 		{Text: long, PageNumber: 0, Top: 100, Bottom: 115, X0: 60, X1: 520, IsOCR: true},
-		{Text: long, PageNumber: 0, Top: 300, Bottom: 315, X0: 60, X1: 520, IsOCR: true}, // disjoint dup -> drop
+		{Text: long, PageNumber: 0, Top: 200, Bottom: 215, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 300, Bottom: 315, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 400, Bottom: 415, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 500, Bottom: 515, X0: 60, X1: 520, IsOCR: true}, // 5-copy chain -> collapse
 		{Text: long, PageNumber: 1, Top: 100, Bottom: 115, X0: 60, X1: 520, IsOCR: true}, // other page -> keep
-		{Text: "paragraph two", PageNumber: 0, Top: 200, Bottom: 215, IsOCR: true},
+		{Text: "paragraph two", PageNumber: 0, Top: 600, Bottom: 615, IsOCR: true},
 	}
 	got := DedupIdenticalText(boxes)
 	if len(got) != 3 {
-		t.Fatalf("want 3 boxes (1 disjoint dup dropped), got %d: %+v", len(got), got)
+		t.Fatalf("want 3 boxes (5-copy chain collapsed to 1), got %d: %+v", len(got), got)
 	}
 	if got[0].Text != long || got[1].Text != long {
 		t.Fatalf("page-0 and page-1 copies must both be kept in order")
@@ -49,16 +50,20 @@ func TestDedupIdenticalText_YOverlap(t *testing.T) {
 }
 
 // TestDedupIdenticalText_WhitespaceSensitive ensures trimming does not merge
-// boxes that differ only by trailing spaces into a false duplicate.
+// boxes that differ only by trailing spaces into a false duplicate — the
+// trimmed-equal copies are still grouped and a full CHAIN collapses.
 func TestDedupIdenticalText_WhitespaceSensitive(t *testing.T) {
 	long := "a sufficiently long repeated sentence that qualifies as a paragraph"
 	boxes := []pdf.TextBox{
 		{Text: long, PageNumber: 0, Top: 10, Bottom: 20, X0: 60, X1: 520, IsOCR: true},
-		{Text: long + " ", PageNumber: 0, Top: 90, Bottom: 100, X0: 60, X1: 520, IsOCR: true}, // 80pt gap > 4x height
+		{Text: long + " ", PageNumber: 0, Top: 90, Bottom: 100, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 170, Bottom: 180, X0: 60, X1: 520, IsOCR: true},
+		{Text: long + " ", PageNumber: 0, Top: 250, Bottom: 260, X0: 60, X1: 520, IsOCR: true},
+		{Text: long, PageNumber: 0, Top: 330, Bottom: 340, X0: 60, X1: 520, IsOCR: true}, // 5-copy trimmed-equal chain
 	}
 	got := DedupIdenticalText(boxes)
 	if len(got) != 1 {
-		t.Fatalf("trimmed-equal texts should be treated as duplicates, got %d", len(got))
+		t.Fatalf("trimmed-equal 5-copy chain should collapse to 1, got %d", len(got))
 	}
 }
 
@@ -92,18 +97,40 @@ func TestDedupIdenticalText_AdjacentRepeatsKept(t *testing.T) {
 	}
 }
 
-// TestDedupIdenticalText_StridedPseudoDuplicate collapses identical text far
-// apart (>4x height) at the same X — the OCR rolling-stride duplicate
-// (eval_single_wide / 09_crosspage_paragraph).
+// TestDedupIdenticalText_StridedPseudoDuplicate collapses a rolling-stride
+// CHAIN of identical text far apart (>4x height) at the same X — the OCR
+// rolling-stride duplicate (eval_single_wide / 09_crosspage_paragraph). A
+// chain needs pseudoDupChainMin copies; short pairs are real content and are
+// kept (see TestDedupIdenticalText_ShortPairKept).
 func TestDedupIdenticalText_StridedPseudoDuplicate(t *testing.T) {
 	long := "a sufficiently long repeated sentence that qualifies as a paragraph duplicate"
-	boxes := []pdf.TextBox{
-		{Text: long, PageNumber: 0, Top: 100, Bottom: 115, X0: 60, X1: 520, IsOCR: true},
-		{Text: long, PageNumber: 0, Top: 300, Bottom: 315, X0: 60, X1: 520, IsOCR: true}, // 200pt gap -> drop
+	var boxes []pdf.TextBox
+	for i := 0; i < pseudoDupChainMin; i++ {
+		top := float64(100 + i*200)
+		boxes = append(boxes, pdf.TextBox{
+			Text: long, PageNumber: 0, Top: top, Bottom: top + 15, X0: 60, X1: 520, IsOCR: true,
+		})
 	}
 	got := DedupIdenticalText(boxes)
 	if len(got) != 1 {
-		t.Fatalf("strided pseudo-duplicate must be dropped, got %d boxes", len(got))
+		t.Fatalf("5-copy strided pseudo-duplicate chain must collapse to 1, got %d boxes", len(got))
+	}
+}
+
+// TestDedupIdenticalText_ShortPairKept locks the eval_two_* fix: a same-text
+// group of only 2-4 copies (distinct physical lines that happen to share text,
+// e.g. the template rows of eval_two_wide_gutter / eval_two_indented_first_para)
+// is NOT a rolling-stride OCR pseudo-duplicate — every copy is a real line and
+// must be kept verbatim. Dropping any copy silently loses document content.
+func TestDedupIdenticalText_ShortPairKept(t *testing.T) {
+	row := "line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxXx"
+	boxes := []pdf.TextBox{
+		{Text: row, PageNumber: 0, Top: 165, Bottom: 176, X0: 54, X1: 229, IsOCR: true},
+		{Text: row, PageNumber: 0, Top: 300, Bottom: 311, X0: 54, X1: 229, IsOCR: true}, // far-apart identical row -> keep
+	}
+	got := DedupIdenticalText(boxes)
+	if len(got) != 2 {
+		t.Fatalf("2-copy identical row pair must be kept (real content), got %d boxes", len(got))
 	}
 }
 

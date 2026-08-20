@@ -210,6 +210,9 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			o.Products[i].Variant = variant
 		}
 		out.Products = append(out.Products, o.Products...)
+		out.AffectedPageSlugs = append(out.AffectedPageSlugs, o.AffectedPageSlugs...)
+		out.RemovedPageSlugs = append(out.RemovedPageSlugs, o.RemovedPageSlugs...)
+		out.WikiActiveStates = append(out.WikiActiveStates, o.WikiActiveStates...)
 	}
 
 	// Convert the compiled products into chunk-aligned docs (matching
@@ -246,7 +249,52 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		zap.Int("wiki_relation", relationCount),
 		zap.Int("chunk_docs", len(compiled)),
 	)
-	return mergeChunks(inputs, compiled), nil
+	result := mergeChunks(inputs, compiled)
+	if len(out.AffectedPageSlugs) > 0 {
+		result["wiki_affected_slugs"] = uniqueSorted(out.AffectedPageSlugs)
+	}
+	if len(out.RemovedPageSlugs) > 0 {
+		result["wiki_removed_slugs"] = uniqueSorted(out.RemovedPageSlugs)
+	}
+	if len(out.WikiActiveStates) > 0 {
+		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
+	}
+	return result, nil
+}
+
+// wikiActiveStateValues keeps the component output checkpoint-safe. Pipeline
+// node outputs cross an eino serialization boundary, so package-specific Go
+// structs must not escape in map[string]any values.
+func wikiActiveStateValues(states []common.WikiMapActiveState) []map[string]any {
+	values := make([]map[string]any, 0, len(states))
+	for _, state := range states {
+		values = append(values, map[string]any{
+			"key":         state.Key,
+			"tenant_id":   state.TenantID,
+			"dataset_id":  state.DatasetID,
+			"document_id": state.DocumentID,
+			"payload":     string(state.Payload),
+		})
+	}
+	return values
+}
+
+func uniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // resolveTemplateSpecs resolves the configured compilation template spec(s) to
