@@ -100,8 +100,9 @@ type SummaryExtractConfig struct {
 
 // MetadataExtractConfig configures structured metadata extraction.
 type MetadataExtractConfig struct {
-	Enabled  bool                      `json:"enabled"`
-	Metadata []common.MetadataFieldDef `json:"metadata,omitempty"`
+	Enabled         bool                      `json:"enabled"`
+	Metadata        []common.MetadataFieldDef `json:"metadata,omitempty"`
+	BuiltInMetadata []common.MetadataFieldDef `json:"built_in_metadata,omitempty"`
 }
 
 // ExtractorParam is the static configuration for the Extractor component.
