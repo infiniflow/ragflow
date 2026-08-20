@@ -533,7 +533,7 @@ class UpdateDocumentReq(Base):
         """Validate an optional document parser method."""
         if chunk_method:
             # Validate chunk method if present
-            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
+            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "audio", "tag"}
             if chunk_method not in valid_chunk_method:
                 raise PydanticCustomError("format_invalid", "`chunk_method` {chunk_method} doesn't exist", {"chunk_method": chunk_method})
 
@@ -1197,6 +1197,6 @@ def validate_chunk_method(doc, chunk_method=None):
     """
     if chunk_method is not None and len(chunk_method) == 0:  # will not be detected in UpdateDocumentReq
         return "`chunk_method` (empty string) is not valid", RetCode.DATA_ERROR
-    if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
+    if (doc.type == FileType.VISUAL and chunk_method != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and chunk_method != "presentation"):
         return "Not supported yet!", RetCode.DATA_ERROR
     return None, None

@@ -267,6 +267,11 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     doc = docs[0]
 
+    # Keep parser selection consistent with upload when switching to the
+    # built-in parsing path.
+    if update_doc_req.chunk_method:
+        req["chunk_method"] = update_doc_req.chunk_method = FileService.get_parser(doc.type, doc.name, update_doc_req.chunk_method)
+
     # further check with inner status (from DB)
     error_msg, error_code = validate_document_update_fields(update_doc_req, doc, req)
     if error_msg:
