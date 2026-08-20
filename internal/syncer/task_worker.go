@@ -32,6 +32,7 @@ import (
 // TaskWorker consumes claimed task envelopes and runs coordinators.
 type TaskWorker struct {
 	queue       <-chan TaskEnvelope
+	taskDAO     *dao.SyncTaskDAO
 	taskService *service.SyncTaskService
 	coordinator *TaskCoordinator
 	locker      ConnectorLocker
@@ -39,8 +40,8 @@ type TaskWorker struct {
 }
 
 // NewTaskWorker creates a bounded task worker pool.
-func NewTaskWorker(queue <-chan TaskEnvelope, taskService *service.SyncTaskService, coordinator *TaskCoordinator, locker ConnectorLocker) *TaskWorker {
-	return &TaskWorker{queue: queue, taskService: taskService, coordinator: coordinator, locker: locker}
+func NewTaskWorker(queue <-chan TaskEnvelope, taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, coordinator *TaskCoordinator, locker ConnectorLocker) *TaskWorker {
+	return &TaskWorker{queue: queue, taskDAO: taskDAO, taskService: taskService, coordinator: coordinator, locker: locker}
 }
 
 // WithScheduler attaches the event scheduler used for one-shot task publishing.
@@ -98,15 +99,15 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	}
 
 	// get the whole context by task_id from nats
-	taskContext, err := w.taskService.GetContext(ctx, envelope.TaskID)
+	taskContext, err := w.taskDAO.GetTaskContext(ctx, envelope.TaskID)
 	if err != nil {
 		if ctx.Err() != nil { // exiting
-			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), envelope.TaskID)
+			_ = w.taskDAO.RescheduleClaimed(context.WithoutCancel(ctx), envelope.TaskID)
 			nackEnvelope(envelope)
 			return
 		}
-		if failErr := w.taskService.Fail(ctx, envelope.TaskID, "", err); failErr != nil { // getContext failed
-			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), envelope.TaskID)
+		if failErr := w.taskDAO.FailTask(ctx, envelope.TaskID, "", syncTaskErrorMessage(err), 1); failErr != nil { // getContext failed
+			_ = w.taskDAO.RescheduleClaimed(context.WithoutCancel(ctx), envelope.TaskID)
 			nackEnvelope(envelope)
 			return
 		}
@@ -117,7 +118,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	// lock the connector and the KB
 	lease, locked := w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
 	if !locked {
-		_ = w.taskService.RescheduleClaimed(ctx, taskContext.Task.ID)
+		_ = w.taskDAO.RescheduleClaimed(ctx, taskContext.Task.ID)
 		w.scheduleRetry(ctx, taskContext.Task.ID, 3*time.Second)
 		ackEnvelope(envelope)
 		return
@@ -133,15 +134,15 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		if ctx.Err() != nil { // the task is canceled by system, this need to rerun
-			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
+			_ = w.taskDAO.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 			w.scheduleRetry(context.WithoutCancel(ctx), taskContext.Task.ID, 3*time.Second)
 			ackEnvelope(envelope)
 			return
 		}
 		if isTransientSyncError(err) {
-			attempts, failed, transientErr := w.taskService.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, err, maxTransientTaskRetries)
+			attempts, failed, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), maxTransientTaskRetries)
 			if transientErr != nil {
-				_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
+				_ = w.taskDAO.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 				nackEnvelope(envelope)
 				return
 			}
@@ -152,15 +153,15 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			ackEnvelope(envelope)
 			return
 		}
-		if failErr := w.taskService.Fail(ctx, taskContext.Task.ID, taskContext.Connector.ID, fmt.Errorf("sync task failed: %w", err)); failErr != nil {
-			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
+		if failErr := w.taskDAO.FailTask(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(fmt.Errorf("sync task failed: %w", err)), 1); failErr != nil {
+			_ = w.taskDAO.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
 			nackEnvelope(envelope)
 			return
 		}
 		ackEnvelope(envelope)
 		return
 	}
-	logSyncTaskDuration(taskContext, startedAt) // Todo delete soon
+	logSyncTaskDuration(taskContext, startedAt)
 	w.scheduleNext(ctx, outcome.NextTaskID)
 	ackEnvelope(envelope)
 }
@@ -169,7 +170,7 @@ func (w *TaskWorker) scheduleNext(ctx context.Context, taskID string) {
 	if w.scheduler == nil || taskID == "" {
 		return
 	}
-	task, err := w.taskService.GetScheduledTask(ctx, taskID)
+	task, err := w.taskDAO.GetScheduledTask(ctx, taskID)
 	if err != nil {
 		common.Warn("syncer schedule next task lookup failed", zap.String("task_id", taskID), zap.Error(err))
 		return
@@ -193,7 +194,7 @@ func (w *TaskWorker) scheduleRetryIfTaskScheduled(ctx context.Context, taskID st
 	if w.scheduler == nil || taskID == "" {
 		return
 	}
-	taskContext, err := w.taskService.GetContext(ctx, taskID)
+	taskContext, err := w.taskDAO.GetTaskContext(ctx, taskID)
 	if err != nil {
 		common.Warn("syncer retry task lookup failed", zap.String("task_id", taskID), zap.Error(err))
 		return
@@ -202,6 +203,13 @@ func (w *TaskWorker) scheduleRetryIfTaskScheduled(ctx context.Context, taskID st
 		return
 	}
 	w.scheduleRetry(ctx, taskID, delay)
+}
+
+func syncTaskErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // transientRetryDelay return retry delay
@@ -217,7 +225,7 @@ func transientRetryDelay(attempts int64) time.Duration {
 	return time.Duration(1<<shift) * 30 * time.Second
 }
 
-func logTransientSyncRetry(taskContext service.SyncTaskContext, attempts int64, failed bool, err error) {
+func logTransientSyncRetry(taskContext dao.SyncTaskContext, attempts int64, failed bool, err error) {
 	message := "sync task transient retry scheduled"
 	if failed {
 		message = "sync task failed after transient retries"

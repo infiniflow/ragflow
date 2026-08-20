@@ -311,21 +311,20 @@ func insertSyncLog(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, taskTyp
 // newTestRegistry creates a mock connector registry.
 func newTestRegistry(connectors map[string]*connectormock.Connector) *syncerconnector.Registry {
 	registry := syncerconnector.NewRegistry()
-	registry.Register("mock", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row := taskContext.(dao.SyncTaskContext)
-		return connectors[row.Connector.ID], nil
+	registry.Register("mock", func(ctx context.Context, taskContext dao.SyncTaskContext) (syncerconnector.Connector, error) {
+		return connectors[taskContext.Connector.ID], nil
 	})
 	return registry
 }
 
 // newCoordinator creates a test coordinator.
-func newCoordinator(taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore) *TaskCoordinator {
-	return newCoordinatorWithCheckpoints(taskService, registry, sink, pruneService, store, newMemorySyncCheckpointStore())
+func newCoordinator(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore) *TaskCoordinator {
+	return newCoordinatorWithCheckpoints(taskDAO, taskService, registry, sink, pruneService, store, newMemorySyncCheckpointStore())
 }
 
-func newCoordinatorWithCheckpoints(taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore, checkpoints SyncCheckpointStore) *TaskCoordinator {
+func newCoordinatorWithCheckpoints(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore, checkpoints SyncCheckpointStore) *TaskCoordinator {
 	executor := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 16})
-	return NewTaskCoordinator(TaskCoordinatorConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor, checkpoints)
+	return NewTaskCoordinator(SyncRunnerConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskDAO, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor, checkpoints)
 }
 
 // TestClaimBlocksSameConnectorKBRunningTasks verifies DB-backed task mutual exclusion.
@@ -333,7 +332,8 @@ func TestClaimBlocksSameConnectorKBRunningTasks(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	insertSyncLog(t, db, "conn-1", "kb-1", "task-2", dao.TaskTypePrune)
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	claimed, err := taskService.Claim(t.Context(), "task-1")
 	if err != nil {
 		t.Fatalf("claim task-1: %v", err)
@@ -356,7 +356,8 @@ func TestClaimAllowsSameConnectorDifferentKB(t *testing.T) {
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	insertKnowledgebaseMapping(t, db, "conn-1", "kb-2")
 	insertSyncLog(t, db, "conn-1", "kb-2", "task-2", dao.TaskTypeSync)
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	for _, taskID := range []string{"task-1", "task-2"} {
 		claimed, err := taskService.Claim(t.Context(), taskID)
 		if err != nil {
@@ -370,7 +371,7 @@ func TestClaimAllowsSameConnectorDifferentKB(t *testing.T) {
 
 // TestSchedulerRequiresBroker verifies JetStream is mandatory for the scheduler.
 func TestSchedulerRequiresBroker(t *testing.T) {
-	scheduler := NewScheduler(make(chan TaskEnvelope, 1), service.NewSyncTaskService(dao.NewSyncTaskDAO(nil)))
+	scheduler := NewScheduler(make(chan TaskEnvelope, 1), dao.NewSyncTaskDAO(nil))
 	err := scheduler.Run(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "NATS broker") {
 		t.Fatalf("Run error = %v, want missing broker", err)
@@ -381,9 +382,9 @@ func TestSchedulerRequiresBroker(t *testing.T) {
 func TestNATSSchedulerPublishesDueTasksWithoutClaiming(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
 	broker := &fakeSyncTaskBroker{}
-	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, broker)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
 	if err := scheduler.publishStartupTasks(t.Context()); err != nil {
 		t.Fatalf("publish startup tasks: %v", err)
 	}
@@ -415,9 +416,9 @@ func TestNATSSchedulerStartupDelaysFreshScheduledTask(t *testing.T) {
 		t.Fatalf("set task update time: %v", err)
 	}
 
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
 	broker := &fakeSyncTaskBroker{}
-	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, broker)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
 	if err := scheduler.publishStartupTasks(t.Context()); err != nil {
 		t.Fatalf("publish startup tasks: %v", err)
 	}
@@ -442,9 +443,9 @@ func TestNATSSchedulerRecoversRunningTasksOnStartup(t *testing.T) {
 	if err := db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
 		t.Fatalf("mark connector running: %v", err)
 	}
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
 	broker := &fakeSyncTaskBroker{}
-	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, broker)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
 
 	if err := scheduler.publishStartupTasks(t.Context()); err != nil {
 		t.Fatalf("publish startup tasks: %v", err)
@@ -483,9 +484,9 @@ func TestNATSSchedulerStartupPublishesDueTasks(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("set fresh task update time: %v", err)
 	}
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
 	broker := &fakeSyncTaskBroker{}
-	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, broker)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
 
 	if err := scheduler.publishStartupTasks(t.Context()); err != nil {
 		t.Fatalf("publish fresh startup tasks: %v", err)
@@ -512,9 +513,9 @@ func TestNATSSchedulerStartupPublishesDueTasks(t *testing.T) {
 
 // TestNATSSchedulerBuffersPushedTasks verifies enqueueHandle buffers pushed NATS handles in the local queue.
 func TestNATSSchedulerBuffersPushedTasks(t *testing.T) {
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(nil))
+	taskDAO := dao.NewSyncTaskDAO(nil)
 	queue := make(chan TaskEnvelope, 2)
-	scheduler := NewNATSScheduler(queue, taskService, &fakeSyncTaskBroker{})
+	scheduler := NewNATSScheduler(queue, taskDAO, &fakeSyncTaskBroker{})
 	handles := []common.TaskHandle{
 		&fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}},
 		&fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-2", TaskType: common.TaskTypeSyncer}},
@@ -558,7 +559,7 @@ func TestWorkersRunDifferentConnectorsInParallel(t *testing.T) {
 		"conn-2": {SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "b", UpdatedAt: now}}}}},
 	}
 	queue := make(chan TaskEnvelope, 2)
-	worker := NewTaskWorker(queue, taskService, newCoordinator(taskService, newTestRegistry(connectors), sink, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(queue, taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(connectors), sink, nil, fakeStore{}), NewConnectorLock())
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	go worker.Run(ctx, 2)
@@ -577,14 +578,16 @@ func TestWorkersRunDifferentConnectorsInParallel(t *testing.T) {
 func TestNATSTaskWorkerClaimsAndAcksOnSuccess(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	now := time.Now()
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "a", UpdatedAt: now}}}}}
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
 	worker := NewTaskWorker(
 		make(chan TaskEnvelope, 1),
+		taskDAO,
 		taskService,
-		newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}),
+		newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}),
 		NewConnectorLock(),
 	)
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
@@ -608,9 +611,10 @@ func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
 	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
 	if handle.acks != 1 || handle.nacks != 0 {
 		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
@@ -628,9 +632,10 @@ func TestNATSTaskWorkerRetriesStillScheduledUnclaimedTask(t *testing.T) {
 		t.Fatalf("mark connector running: %v", err)
 	}
 
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
-	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, &fakeSyncTaskBroker{})
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock()).WithScheduler(scheduler)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, &fakeSyncTaskBroker{})
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock()).WithScheduler(scheduler)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-2", TaskType: common.TaskTypeSyncer}}
 
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-2", Handle: handle})
@@ -657,9 +662,10 @@ func TestNATSTaskWorkerDoesNotRetryCompletedUnclaimedTask(t *testing.T) {
 		t.Fatalf("mark done: %v", err)
 	}
 
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
-	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskService, &fakeSyncTaskBroker{})
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock()).WithScheduler(scheduler)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, &fakeSyncTaskBroker{})
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock()).WithScheduler(scheduler)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
 
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
@@ -690,7 +696,7 @@ func TestSameConnectorDifferentKBsRunInParallel(t *testing.T) {
 	sink := &fakeSink{delay: 100 * time.Millisecond}
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "a", UpdatedAt: time.Now()}}}}}
 	queue := make(chan TaskEnvelope, 2)
-	worker := NewTaskWorker(queue, taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(queue, taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	go worker.Run(ctx, 2)
@@ -738,7 +744,7 @@ func TestConnectorKBLockSerializesSyncAndPrune(t *testing.T) {
 		PruneBatches: []syncerconnector.PruneBatch{{Documents: []syncerconnector.SlimDocument{{SourceID: "a"}}}},
 	}
 	pruneService := service.NewSyncPruneService(&fakeDeleter{}, fakeStore{ids: map[string]struct{}{}})
-	worker := NewTaskWorker(make(chan TaskEnvelope, 2), taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, pruneService, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 2), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, pruneService, fakeStore{}), NewConnectorLock())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -797,8 +803,8 @@ func TestSyncRunnerSubmitsBatchesBeforeWaiting(t *testing.T) {
 		},
 	}
 	sink := &fakeSink{delay: 80 * time.Millisecond}
-	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
-	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
 	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -812,7 +818,8 @@ func TestSyncRunnerProcessesBatchJobsInParallel(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	now := time.Now()
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{
 		{Documents: []syncerconnector.SourceDocument{{SourceID: "a", UpdatedAt: now}}},
@@ -820,8 +827,8 @@ func TestSyncRunnerProcessesBatchJobsInParallel(t *testing.T) {
 		{Documents: []syncerconnector.SourceDocument{{SourceID: "c", UpdatedAt: now}}},
 	}}
 	sink := &fakeSink{delay: 80 * time.Millisecond}
-	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
-	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
 	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -858,13 +865,14 @@ func TestFingerprintSkipsUnchangedDocument(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("set running task: %v", err)
 	}
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	legacyID := service.Hash128("conn-1:source-1")
 	store := fakeStore{ids: map[string]struct{}{legacyID: {}}, fingerprints: map[string]string{legacyID: "fp-1"}}
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Fingerprint: "fp-1", FetchRef: &syncerconnector.FetchReference{Key: "lazy"}, UpdatedAt: time.Now()}}}}}
 	sink := &fakeSink{}
-	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, store)
-	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, store)
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
 	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -895,11 +903,12 @@ func TestAutoParseFlagFlowsToSink(t *testing.T) {
 		t.Fatalf("disable auto_parse: %v", err)
 	}
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
 	sink := &fakeSink{}
-	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
-	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
 	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -914,11 +923,12 @@ func TestCompleteSyncSchedulesNextRun(t *testing.T) {
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
 	_ = db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	now := time.Now()
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: now}}}}}
-	coordinator := newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{})
-	taskContext, _ := taskService.GetContext(t.Context(), "task-1")
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{})
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
 	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -947,7 +957,8 @@ func TestCancelStopsRunningSync(t *testing.T) {
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
 	_ = db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	now := time.Now()
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{
 		{SourceID: "source-1", Blob: []byte("one"), UpdatedAt: now},
@@ -967,7 +978,7 @@ func TestCancelStopsRunningSync(t *testing.T) {
 			})
 		},
 	}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 
 	if calls := sink.callCount(); calls != 1 {
@@ -1003,14 +1014,15 @@ func TestSyncRunnerResultWaitHonorsCancel(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
-	taskContext, err := taskService.GetContext(t.Context(), "task-1")
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
 	if err != nil {
 		t.Fatalf("get context: %v", err)
 	}
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
 	queue := &SyncJobQueue{taskID: "task-1", jobs: make(chan *syncJob, 1)}
-	runner := NewSyncRunner(TaskCoordinatorConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskService, &fakeSink{}, service.NewDocumentIDResolver(fakeStore{}), queue, newMemorySyncCheckpointStore())
+	runner := NewSyncRunner(SyncRunnerConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskDAO, taskService, &fakeSink{}, service.NewDocumentIDResolver(fakeStore{}), queue, newMemorySyncCheckpointStore())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -1041,11 +1053,12 @@ func TestBatchFailureDoesNotAdvanceWaterline(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
 	sink := &fakeSink{errBySourceID: map[string]error{"bad": errors.New("boom")}}
 	queue := make(chan TaskEnvelope, 1)
-	worker := NewTaskWorker(queue, taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(queue, taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 	var task entity.SyncLogs
 	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
@@ -1064,9 +1077,10 @@ func TestTransientFailureReschedulesTask(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncErrAt: 1}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 
 	var task entity.SyncLogs
@@ -1091,9 +1105,10 @@ func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2)}).Error; err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncErrAt: 1}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 
 	var task entity.SyncLogs
@@ -1116,7 +1131,8 @@ func TestTransientFetchFailureSavesCompletedBatchCheckpoint(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	checkpoints := newMemorySyncCheckpointStore()
 	firstTime := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
 	connector := &connectormock.Connector{
@@ -1126,7 +1142,7 @@ func TestTransientFetchFailureSavesCompletedBatchCheckpoint(t *testing.T) {
 			Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", UpdatedAt: &firstTime, SourceID: "source-1"},
 		}},
 	}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinatorWithCheckpoints(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}, checkpoints), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}, checkpoints), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 
 	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
@@ -1157,7 +1173,8 @@ func TestSyncCheckpointDeletedAfterSuccess(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	checkpoints := newMemorySyncCheckpointStore()
 
 	firstTime := time.Date(2026, 8, 11, 1, 0, 0, 0, time.UTC)
@@ -1172,7 +1189,7 @@ func TestSyncCheckpointDeletedAfterSuccess(t *testing.T) {
 			Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-2", UpdatedAt: &secondTime, SourceID: "source-2"},
 		},
 	}}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinatorWithCheckpoints(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}, checkpoints), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}, checkpoints), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 
 	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
@@ -1189,7 +1206,8 @@ func TestSyncCheckpointStopsBeforeFailedBatch(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	checkpoints := newMemorySyncCheckpointStore()
 
 	firstTime := time.Date(2026, 8, 11, 1, 0, 0, 0, time.UTC)
@@ -1205,7 +1223,7 @@ func TestSyncCheckpointStopsBeforeFailedBatch(t *testing.T) {
 		},
 	}}
 	sink := &fakeSink{errBySourceID: map[string]error{"bad": errors.New("boom")}}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinatorWithCheckpoints(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 
 	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
@@ -1233,7 +1251,7 @@ func TestSyncCheckpointStopsBeforeFailedBatch(t *testing.T) {
 		Documents:  []syncerconnector.SourceDocument{{SourceID: "second-good", Blob: []byte("c"), UpdatedAt: thirdTime}},
 		Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-3", UpdatedAt: &thirdTime, SourceID: "second-good"},
 	}}}
-	resumeWorker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinatorWithCheckpoints(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": resumeConnector}), &fakeSink{}, nil, fakeStore{}, checkpoints), NewConnectorLock())
+	resumeWorker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": resumeConnector}), &fakeSink{}, nil, fakeStore{}, checkpoints), NewConnectorLock())
 	resumeWorker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 	if len(resumeConnector.SyncRequests) != 1 {
 		t.Fatalf("sync requests = %d, want 1", len(resumeConnector.SyncRequests))
@@ -1268,13 +1286,14 @@ func TestSyncRunnerClampsWaterlineToWindowEnd(t *testing.T) {
 		t.Fatalf("mark running: %v", err)
 	}
 
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	future := time.Date(2036, 6, 28, 9, 44, 0, 0, time.UTC)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{
 		Documents:  []syncerconnector.SourceDocument{{SourceID: "future", Blob: []byte("future"), UpdatedAt: future}},
 		Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-future", UpdatedAt: &future, SourceID: "future"},
 	}}}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	before := time.Now().UTC()
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 	after := time.Now().UTC().Add(time.Second)
@@ -1302,13 +1321,14 @@ func TestFullSyncWaterlineUsesWindowEnd(t *testing.T) {
 		t.Fatalf("mark running: %v", err)
 	}
 
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	oldSourceTime := time.Date(2025, 5, 17, 12, 39, 23, 0, time.UTC)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{
 		Documents:  []syncerconnector.SourceDocument{{SourceID: "old", Blob: []byte("old"), UpdatedAt: oldSourceTime}},
 		Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-old", UpdatedAt: &oldSourceTime, SourceID: "old"},
 	}}}
-	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	before := time.Now().UTC()
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 	after := time.Now().UTC().Add(time.Second)
@@ -1325,38 +1345,18 @@ func TestFullSyncWaterlineUsesWindowEnd(t *testing.T) {
 	}
 }
 
-// TestRecoverStaleRunningTasks verifies timeout recovery.
-func TestRecoverStaleRunningTasks(t *testing.T) {
-	db := setupSyncerDB(t)
-	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	started := time.Now().Add(-2 * time.Hour)
-	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "time_started": started}).Error; err != nil {
-		t.Fatalf("mark running: %v", err)
-	}
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
-	if err := taskService.RecoverStaleRunning(t.Context(), time.Now()); err != nil {
-		t.Fatalf("recover: %v", err)
-	}
-	var task entity.SyncLogs
-	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
-		t.Fatalf("load task: %v", err)
-	}
-	if task.Status != dao.SyncStatusSchedule {
-		t.Fatalf("status = %s, want schedule", task.Status)
-	}
-}
-
 // TestPruneSourceFailureDoesNotDelete verifies incomplete source listings never delete.
 func TestPruneSourceFailureDoesNotDelete(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypePrune)
 	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
-	taskService := service.NewSyncTaskService(dao.NewSyncTaskDAO(db))
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
 	deleter := &fakeDeleter{}
 	pruneService := service.NewSyncPruneService(deleter, fakeStore{ids: map[string]struct{}{"stale": {}}})
 	connector := &connectormock.Connector{PruneErrAt: 1, PruneBatches: []syncerconnector.PruneBatch{{Documents: []syncerconnector.SlimDocument{{SourceID: "keep"}}}}}
 	queue := make(chan TaskEnvelope, 1)
-	worker := NewTaskWorker(queue, taskService, newCoordinator(taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, pruneService, fakeStore{}), NewConnectorLock())
+	worker := NewTaskWorker(queue, taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, pruneService, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
 	if len(deleter.deleted) != 0 {
 		t.Fatalf("deleted %v despite incomplete snapshot", deleter.deleted)
@@ -1388,7 +1388,7 @@ func TestMockSessionEOF(t *testing.T) {
 // TestTaskExecutionDeadlineCapsConnectorTimeout verifies tasks cannot outlive the connector lock lease.
 func TestTaskExecutionDeadlineCapsConnectorTimeout(t *testing.T) {
 	now := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
-	taskContext := service.SyncTaskContext{}
+	taskContext := dao.SyncTaskContext{}
 	taskContext.Connector.TimeoutSecs = int64(connectorLockTTL.Seconds()) + 60
 	lease := ConnectorLockLease{ExpiresAt: now.Add(10 * time.Minute)}
 	if got, want := taskExecutionDeadline(now, taskContext, lease), lease.ExpiresAt.Add(-connectorLockSafetyMargin); !got.Equal(want) {
