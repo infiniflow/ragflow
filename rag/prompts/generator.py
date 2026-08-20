@@ -303,7 +303,9 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     rendered_sys_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE).render()
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query, languages=languages)
 
-    ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}], {"temperature": 0.2})
+    # Cross-language expansion feeds directly into retrieval. Sampling here can
+    # make the retrieval test and an agent search different rewritten queries.
+    ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}], {"temperature": 0})
     if ans.find("**ERROR**") >= 0:
         logging.info("[cross_languages] LLM returned error, falling back to original query")
         return query

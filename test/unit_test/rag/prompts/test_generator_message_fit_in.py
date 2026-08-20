@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import importlib.util
 import sys
 from pathlib import Path
@@ -170,3 +171,41 @@ def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
     assert used_tokens == expected_total
     assert trimmed[0]["content"] == "s" * system_len
     assert trimmed[-1]["content"] == user_content
+
+
+@pytest.mark.p1
+def test_cross_languages_uses_deterministic_generation(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    generator.CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE = "Translate the query."
+    generator.CROSS_LANGUAGES_USER_PROMPT_TEMPLATE = "Query: {{ query }}\nLanguages: {{ languages | join(', ') }}"
+    captured = {}
+
+    class _ChatModel:
+        async def async_chat(self, system_prompt, messages, generation_config):
+            captured["system_prompt"] = system_prompt
+            captured["messages"] = messages
+            captured["generation_config"] = generation_config
+            return "English translation===中文翻译"
+
+    constants = sys.modules["common.constants"]
+    constants.LLMType = SimpleNamespace(CHAT="chat", VISION="vision")
+
+    llm_service = ModuleType("api.db.services.llm_service")
+    llm_service.LLMBundle = lambda *_args, **_kwargs: _ChatModel()
+    monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service)
+
+    tenant_model_service = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_service.resolve_model_config = lambda *_args, **_kwargs: {}
+    tenant_model_service.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
+    tenant_model_service.resolve_model_type = lambda *_args, **_kwargs: "chat"
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service)
+
+    result = asyncio.run(generator.cross_languages("tenant-1", None, "original query", ["English", "Chinese"]))
+
+    assert result == "English translation\n中文翻译"
+    assert captured["generation_config"] == {"temperature": 0}
+    assert len(captured["messages"]) == 1
+    assert captured["messages"][0]["role"] == "user"
+    assert "original query" in captured["messages"][0]["content"]
+    assert "English" in captured["messages"][0]["content"]
+    assert "Chinese" in captured["messages"][0]["content"]
