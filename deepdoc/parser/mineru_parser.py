@@ -868,7 +868,17 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.EQUATION:
                     section = output.get("text", "")
                 case MinerUContentType.CODE:
-                    section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
+                    code_body = output.get("code_body", "")
+                    code_caption = "\n".join(output.get("code_caption", []))
+                    if code_caption:
+                        # MinerU VLM returns a fenced body while the pipeline backend
+                        # may return plain code. Replace only one complete outer fence.
+                        outer_fence = re.fullmatch(r"```[^`\r\n]*\r?\n(?P<body>.*)\r?\n```", code_body, flags=re.DOTALL)
+                        if outer_fence:
+                            code_body = outer_fence.group("body")
+                        section = f"```{code_caption}\n{code_body}\n```"
+                    else:
+                        section = code_body
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
                 case MinerUContentType.HEADER | MinerUContentType.FOOTER | MinerUContentType.PAGE_NUMBER | MinerUContentType.DISCARDED:

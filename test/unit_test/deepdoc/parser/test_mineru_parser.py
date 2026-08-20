@@ -201,6 +201,37 @@ def test_transfer_to_sections_only_sanitizes_tables(monkeypatch, output, expecte
 
 
 @pytest.mark.p1
+@pytest.mark.parametrize(
+    ("code_body", "expected_body"),
+    [
+        ("```txt\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```\nList<String> names = new ArrayList<String>();\n```", "List<String> names = new ArrayList<String>();"),
+        ("```txt\nList<String> names = new ArrayList<String>();\n``` trailing", "```txt\nList<String> names = new ArrayList<String>();\n``` trailing"),
+    ],
+)
+def test_transfer_to_sections_wraps_caption_and_unwrapped_body_in_fence(
+    monkeypatch: pytest.MonkeyPatch,
+    code_body: str,
+    expected_body: str,
+) -> None:
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    caption = "Java / C# style"
+    output = {
+        "type": module.MinerUContentType.CODE,
+        "code_body": code_body,
+        "code_caption": [caption],
+        "page_idx": 0,
+        "bbox": (97, 195, 579, 252),
+    }
+
+    sections = parser._transfer_to_sections([output], parse_method="raw")
+
+    assert len(sections) == 1
+    assert sections[0][0] == f"```{caption}\n{expected_body}\n```"
+
+
+@pytest.mark.p1
 @pytest.mark.parametrize("transfer", ["sections", "tables"])
 def test_empty_table_fallback_is_logged(monkeypatch, caplog, transfer):
     module = _load_mineru_parser(monkeypatch)
