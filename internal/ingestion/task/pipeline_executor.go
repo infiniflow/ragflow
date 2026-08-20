@@ -303,9 +303,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 }
 
 // builtInMetadataFromParserConfig extracts the built-in metadata config
-// (update_time / file_name) and whether auto-metadata is enabled. Supports
-// modular metadata_config sub-objects as well as legacy flat fields on
-// Extractor nodes and top-level parser_config.
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
 func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
 	var extractorKeys []string
 	for k := range parserConfig {
@@ -320,37 +321,29 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 		nodeRaw := parserConfig[k]
 		if node, ok := nodeRaw.(map[string]any); ok {
 			if metaObj, ok := node["metadata"].(map[string]any); ok {
-				enabled := parserConfigBool(metaObj["enabled"])
-				if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-					return arr, enabled
-				}
-			}
-			if metaConf, ok := node["metadata_config"].(map[string]any); ok {
-				enabled := parserConfigBool(metaConf["enabled"])
-				if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-					return arr, enabled
-				}
-			}
-			enabled := parserConfigBool(node["enable_metadata"])
-			if arr, ok := node["built_in_metadata"].([]any); ok && len(arr) > 0 {
-				return arr, enabled
+				arr := metadataFieldSlice(metaObj["built_in_metadata"])
+				return arr, parserConfigBool(metaObj["enabled"])
 			}
 		}
-	}
-	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
-		if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, true
-		}
-	}
-	if metaConf, ok := parserConfig["metadata_config"].(map[string]any); ok {
-		if arr, ok := metaConf["built_in_metadata"].([]any); ok && len(arr) > 0 {
-			return arr, true
-		}
-	}
-	if arr, ok := parserConfig["built_in_metadata"].([]any); ok && len(arr) > 0 {
-		return arr, true
 	}
 	return nil, false
+}
+
+// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
+// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
+// construction) into a []any.
+func metadataFieldSlice(value any) []any {
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	if list, ok := value.([]map[string]any); ok {
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return nil
 }
 
 // parserConfigBool coerces a parser_config boolean-like value (bool / number)

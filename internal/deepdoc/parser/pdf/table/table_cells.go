@@ -3,11 +3,12 @@ package table
 import (
 	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"sort"
 	"strings"
+
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ── TSR cell grouping ──────────────────────────────────────────────────
@@ -210,7 +211,36 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 		if boxArea <= 0 {
 			continue
 		}
-		// 1. Best row by vertical-overlap ratio (>= 0.3), tie-broken by _ov.
+		// 1. Best row: prefer the row the box BEGINS in.
+		//
+		// Python's construct_table groups boxes into rows by each box's TSR
+		// row label (b["R"]) — the row the box STARTS in — not by spatial
+		// overlap (pdf_parser.py construct_table:176-192). When a label or
+		// value box spans two adjacent data rows (e.g. a Month cell merged
+		// across a pair of rows, or a Margin cell repeated across a seam),
+		// Go must place it in the UPPER row to match Python. Without this,
+		// FillCellTextFromBoxes picked the MAX-overlap row (usually the
+		// lower one) and the doubled text landed one row too low, which is
+		// the 13_crosspage_table.pdf divergence (tracked as go_bug
+		// table-crosspage-merge-seam-duplication, whose root cause is this
+		// row-selection rule, not the cross-page merge itself).
+		//
+		// We therefore prefer the topmost row band whose Y range CONTAINS the
+		// box's TOP edge. Top-containment is a stronger, non-spurious signal
+		// than the 0.3 area ratio (a box whose top sits inside a band clearly
+		// belongs to that row even when its 2D overlap ratio is below 0.3, as
+		// happens for a narrow Month box whose width gives a small area
+		// ratio). Only when no band contains the top edge do we fall back to
+		// the original max-overlap (ov, ov2) rule, so single-row boxes and
+		// genuinely lower-row boxes are unchanged.
+		topR := -1
+		for ri := range rows {
+			rb := &rows[ri]
+			if b.Top >= rb.y0 && b.Top <= rb.y1 {
+				topR = ri
+				break
+			}
+		}
 		bestR := -1
 		bestOv, bestOv2 := 0.3, 0.0
 		for ri := range rows {
@@ -221,16 +251,21 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			strip := pdf.TSRCell{X0: rb.stripX0, Y0: rb.y0, X1: rb.stripX1, Y1: rb.y1}
 			inter := util.OverlapInter(&strip, &b)
 			ov := inter / boxArea
+			if ov < 0.3 {
+				continue
+			}
 			ov2 := 0.0
 			if a := util.Area(&strip); a > 0 {
 				ov2 = inter / a
 			}
-			// Skip unless strictly better than the current best, mirroring
-			// Python's (ov, _ov) tuple ordering in find_overlapped_with_threshold.
-			if !(ov > bestOv || (ov == bestOv && ov2 > bestOv2)) {
-				continue
+			// Fallback: keep the max-overlap (ov, ov2) best, mirroring
+			// Python's find_overlapped_with_threshold tuple ordering.
+			if ov > bestOv || (ov == bestOv && ov2 > bestOv2) {
+				bestR, bestOv, bestOv2 = ri, ov, ov2
 			}
-			bestR, bestOv, bestOv2 = ri, ov, ov2
+		}
+		if topR >= 0 {
+			bestR = topR
 		}
 		if bestR < 0 {
 			continue
@@ -339,7 +374,11 @@ func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool)
 
 // isCaptionBox checks if a text box is a table/figure caption,
 // matching Python is_caption().  Captions should not enter table cells.
-var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+|(?i)Table\s+\d+`)
+// reCaption backs IsCaptionBox and must mirror Python's start-anchored
+// is_caption: only a line BEGINNING with a caption marker counts. The English
+// alternatives are start-anchored with ^ for the same reason as
+// reTableCaptionText/reFigureCaptionText.
+var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+|(?i)^Table\s+\d+`)
 
 func IsCaptionBox(text string, layoutType string) bool {
 	if strings.Contains(layoutType, "caption") {
@@ -349,11 +388,16 @@ func IsCaptionBox(text string, layoutType string) bool {
 }
 
 // reTableCaptionText matches text patterns that indicate a table caption
-// (as opposed to a figure caption). Python is_caption uses the same set.
-var reTableCaptionText = regexp.MustCompile(`^表|(?i)Table\s+\d+`)
+// (as opposed to a figure caption). Python is_caption uses re.match, which is
+// start-anchored, so a body paragraph that merely MENTIONS "Table N"
+// mid-sentence is NOT a caption. The English alternatives below are therefore
+// start-anchored with ^: an unanchored alternative wrongly classifies such a
+// paragraph as a caption and MergeCaptions then drops it (go_bug
+// table-text-interleaved-paragraph-dropped).
+var reTableCaptionText = regexp.MustCompile(`^表|(?i)^Table\s+\d+`)
 
 // reFigureCaptionText matches text patterns that indicate a figure caption.
-var reFigureCaptionText = regexp.MustCompile(`^图|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+`)
+var reFigureCaptionText = regexp.MustCompile(`^图|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+`)
 
 // captionKind returns "table" if the section is a table caption,
 // "figure" if a figure caption, or "" if not a caption.
