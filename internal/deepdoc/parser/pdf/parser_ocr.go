@@ -29,7 +29,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
 
 	var result []pdf.TextBox
-	for _, b := range boxes {
+	for i, b := range boxes {
 		x0 := int(math.Min(b.X0, math.Min(b.X1, math.Min(b.X2, b.X3))))
 		y0 := int(math.Min(b.Y0, math.Min(b.Y1, math.Min(b.Y2, b.Y3))))
 		x1 := int(math.Max(b.X0, math.Max(b.X1, math.Max(b.X2, b.X3))))
@@ -50,7 +50,11 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 			{X: b.X2, Y: b.Y2},
 			{X: b.X3, Y: b.Y3},
 		})
-		texts, recErr := p.ocrRecognizeWithRotation(ctx, doc, cropped)
+		// Stamp the detect-box index so a replay DocAnalyzer can route this
+		// recognition back to the Python-dumped text for the same box. The
+		// production analyzer ignores the key.
+		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, i)
+		texts, recErr := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
 			continue
@@ -150,6 +154,10 @@ func ocrBestScore(texts []pdf.OCRText) float64 {
 type ocrDetectBox struct {
 	box            pdf.TextBox
 	x0, y0, x1, y1 float64
+	// srcIdx is the box's index in the OCRDetect result (before detectBoxes
+	// re-sorts). It routes per-box OCR fallback (buildTextBoxes) back to the
+	// same Python-dumped box in replay, matching ocrDetectAndRecognize.
+	srcIdx int
 }
 
 func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
@@ -174,7 +182,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 	imgH := float64(imgBounds.Dy()) / scale
 
 	boxes := make([]ocrDetectBox, 0, len(ocrDetectBoxes))
-	for _, b := range ocrDetectBoxes {
+	for i, b := range ocrDetectBoxes {
 		x0 := min(b.X0, b.X1, b.X2, b.X3) / scale
 		y0 := min(b.Y0, b.Y1, b.Y2, b.Y3) / scale
 		x1 := max(b.X0, b.X1, b.X2, b.X3) / scale
@@ -196,7 +204,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 		}
 		boxes = append(boxes, ocrDetectBox{box: pdf.TextBox{
 			X0: x0, X1: x1, Top: y0, Bottom: y1, PageNumber: pageNum,
-		}, x0: x0, y0: y0, x1: x1, y1: y1})
+		}, x0: x0, y0: y0, x1: x1, y1: y1, srcIdx: i})
 	}
 
 	if len(boxes) > 1 {
@@ -335,7 +343,12 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
 			})
-			texts, err := p.ocrRecognizeWithRotation(ctx, doc, cropped)
+			// Stamp the source detect-box index so a replay DocAnalyzer routes
+			// this fallback to the same Python-dumped box (detectBoxes may have
+			// re-sorted, so use srcIdx, not the loop index). The production
+			// analyzer ignores the key.
+			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, boxes[idx].srcIdx)
+			texts, err := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
 			if err != nil {
 				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
 				continue

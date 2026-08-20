@@ -95,6 +95,31 @@ func GroupTSRCellsToRows(cells []pdf.TSRCell) [][]pdf.TSRCell {
 // picked, matching Python. See go_intentional rule
 // table-cell-fill-filled-threshold-0.85.
 func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
+	FillCellTextFromBoxesWithRows(cells, boxes, nil)
+}
+
+// FillCellTextFromBoxesWithRows is FillCellTextFromBoxes with the per-row
+// strip X range taken from the original TSR "table row" component bboxes
+// instead of the grid column union.
+//
+// Python matches a box to a row via find_overlapped_with_threshold(box,
+// rows) where rows are the raw TSR row components (gather(".* (row|header)")
+// in pdf_parser.py:602) and overlapped_area divides by the row's own bbox.
+// Go's grid is a TSR-row × column cross-product; its cells always span the
+// full column union, so the old strip X range was wider than the row
+// component's true bbox. When TSR emits a row whose line does not cover a
+// table edge (e.g. 13_crosspage_table.pdf page 2 row 44: x0=106.9 vs the
+// grid's x0=90.8), a col-0 box straddling that row and the one above it
+// can pass the 0.3 threshold against the full-width strip while Python
+// rejects it against the true bbox — so Go assigned the box one row lower
+// than Python.
+//
+// rowStrips are the TSR "table row" components (data rows only — header /
+// projrowheader components are excluded by the caller). Each is matched to a
+// grid row band by Y coordinate via matchRowStrip, so the override applies to
+// every data row regardless of whether the table has a header. Rows with no
+// matching TSR row component (e.g. header rows) keep the grid-union strip X.
+func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
 	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
 	if len(cells) == 0 || len(boxes) == 0 {
 		return
@@ -155,6 +180,20 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 		sort.Slice(rows[ri].cells, func(a, b int) bool {
 			return cells[rows[ri].cells[a]].X0 < cells[rows[ri].cells[b]].X0
 		})
+	}
+	// Replace each grid row's strip X with the matching TSR "table row"
+	// component's own bbox X (see FillCellTextFromBoxesWithRows doc). Matching
+	// is by Y band, not positional index, so the override applies to every
+	// data row independently of whether the table has a header: header /
+	// projrowheader components are simply absent from rowStrips and fall back
+	// to the grid-union strip X, which is correct for header rows. This
+	// replaces the former all-or-nothing `len(rowStrips) == len(rows)` guard,
+	// which silently disabled the override for any table that had a header.
+	for ri := range rows {
+		if sx0, sx1, ok := matchRowStrip(rowStrips, rows[ri].y0); ok {
+			rows[ri].stripX0 = sx0
+			rows[ri].stripX1 = sx1
+		}
 	}
 
 	// Accumulate box text per target cell so multiple boxes in one cell join.
@@ -278,6 +317,24 @@ func BoxMatchesCell(cell pdf.TSRCell, box pdf.TextBox, cellIsEmpty bool) bool {
 		return inter/boxArea >= 0.3 // Python's find_overlapped_with_threshold default
 	}
 	return inter/boxArea >= 0.85
+}
+
+// matchRowStrip finds the TSR "table row" component whose Y0 matches the grid
+// row band y0 within yTol, returning its X range. A header / projrowheader
+// component (not collected into rowStrips by the caller) returns ok=false, so
+// that row keeps the grid-union strip X — correct for header rows. Matching by
+// Y (not positional index) lets the strip-X override apply to every data row
+// even when the table also has a header, instead of the former
+// all-or-nothing `len(rowStrips) == len(rows)` guard that silently disabled
+// the override for any header-bearing table.
+func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool) {
+	const yTol = 1e-6
+	for _, rs := range rowStrips {
+		if math.Abs(rs.Y0-y0) <= yTol {
+			return rs.X0, rs.X1, true
+		}
+	}
+	return 0, 0, false
 }
 
 // isCaptionBox checks if a text box is a table/figure caption,
@@ -406,127 +463,155 @@ func containsCJK(s string) bool {
 	return false
 }
 
-// HeaderSetWithBlockType returns the set of rows that are header rows, combining
-// THREE additive signals to match Python's construct_table header detection
-// (table_structure_recognizer.py:336-348):
+// HeaderSetWithBlockType returns the set of rows that are header rows, matching
+// Python's construct_table header detection (table_structure_recognizer.py:336-348).
+// Python scores every row independently (no early stop) and, per column, counts
+// the cell toward the header when it has a geometric H OR (for numeric-dominant
+// tables) the cell is non-numeric; a numeric cell in a numeric-dominant table is
+// skipped entirely (it neither helps nor hurts).
 //
-//  1. Geometric: a box overlapping the header region by ≥0.3 has box.H>0
-//     (AnnotateTableBoxes sets it against grid[0], the first grid row). A row is
-//     a header when more than half of its columns have such a box — the same
-//     column-majority Python applies (per-column any(a.get("H") for a in arr),
-//     then per-row h/cnt > 0.5). Go hardcodes the header region to grid[0], so
-//     this matches Python for the common header-on-row-0 case but is an
-//     approximation, not a 1:1 port.
-//  2. blockType (Python: max_type == "Nu" and btype != "Nu"): only contributes
-//     for numeric-dominant tables, then per-row majority.
-//  3. TSR label (Go-only model-agnostic fallback; Python has no exact
-//     equivalent): a cell whose Label contains "header" counts, then per-row
-//     majority.
+// Go folds Python's geometric (box.H>0) and blockType signals into ONE per-cell
+// pass with that exact predicate, so a row is a header when more than half of its
+// columns (including skipped numeric ones, matching Python's h/cnt) satisfy it.
+// box.H is set by AnnotateTableBoxes against the header-labeled cells (Python
+// t_recognizer.py: gather(r".*header$")), not grid[0].
 //
-// A row is a header if ANY signal flags it (no mutually-exclusive gate).
-//
-// Python divergence: Python stops at the first row that fails the majority (a
-// contiguous header prefix); Go scores each row independently and adds signals,
-// so a later row that independently clears the majority is still flagged.
+// A THIRD, additive signal is Go-only: a TSR cell whose Label contains "header"
+// (Python has no exact equivalent) also promotes a row via the same >0.5
+// row-majority. A row is a header if ANY signal flags it.
 //
 // boxes may be nil (e.g. the test-only cell-grouping path); the geometric signal
 // is then skipped and only blockType + label are consulted.
 func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]bool {
-	// Compute dominant block type across all cells.
+	// Compute dominant block type across all cells (Python: max_type, derived
+	// from box btype with first-seen tie-breaking). Track first-seen order so
+	// the tie rule matches Python's Counter+max (first max wins on ties).
 	typeCounts := make(map[string]int)
+	order := []string{}
+	seen := make(map[string]bool)
 	for _, row := range rows {
 		for _, cell := range row {
-			t := strings.TrimSpace(cell.Text)
-			if t != "" {
-				typeCounts[BlockType(t)]++
+			if t := strings.TrimSpace(cell.Text); t != "" {
+				bt := BlockType(t)
+				if !seen[bt] {
+					seen[bt] = true
+					order = append(order, bt)
+				}
+				typeCounts[bt]++
 			}
 		}
 	}
 	maxType := ""
-	maxCount := 0
-	for t, c := range typeCounts {
-		if c > maxCount {
-			maxType = t
-			maxCount = c
+	maxCount := -1
+	for _, t := range order {
+		if typeCounts[t] > maxCount {
+			maxType, maxCount = t, typeCounts[t]
 		}
 	}
 
-	hdrs := make(map[int]bool)
-
-	// Signal 2: blockType (numeric-dominant tables only).
-	for ri, row := range rows {
-		cnt, h := 0, 0
-		for _, cell := range row {
-			t := strings.TrimSpace(cell.Text)
-			if t == "" {
-				continue
-			}
-			cnt++
-			bt := BlockType(t)
-			// Python: max_type == "Nu" and cell btype == "Nu" → skip
-			if maxType == "Nu" && bt == "Nu" {
-				continue
-			}
-			// Python: max_type == "Nu" and cell btype != "Nu" → header
-			if maxType == "Nu" && bt != "Nu" {
-				h++
+	// Geometric H per cell, from boxes overlapping the header region (box.H > 0).
+	// colHit[row][col] = true when that column's cell has such a box.
+	//
+	// The boxes' R/C may have been assigned against the PRE-cleanup grid while
+	// `rows` here is POST-cleanup (CleanupOrphanColumns/Rows in ConstructTable
+	// removes empty rows/columns). So we re-derive (row, column) from geometry
+	// instead of trusting the stale R/C — matching Python, which keys the
+	// geometric H off the box itself and never re-indexes by a stale coordinate.
+	colHit := make(map[int]map[int]bool)
+	for i := range boxes {
+		b := boxes[i]
+		if b.H <= 0 {
+			continue
+		}
+		bestRi, bestCi, bestOv := -1, -1, 0.0
+		for ri, row := range rows {
+			for ci, cell := range row {
+				if tsrBoxOverlap(b, cell) {
+					continue // no overlap with this cell
+				}
+				if ov := util.OverlapInter(&b, &cell); ov > bestOv {
+					bestOv, bestRi, bestCi = ov, ri, ci
+				}
 			}
 		}
-		if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
-			hdrs[ri] = true
-		}
-	}
-
-	// Signal 3: TSR label "header" (additive, with 0.5 majority — fixes
-	// over-detection where a single mislabeled cell promoted a whole data row).
-	for ri, row := range rows {
-		cnt, h := 0, 0
-		for _, cell := range row {
-			t := strings.TrimSpace(cell.Text)
-			if t == "" {
-				continue
+		if bestRi >= 0 {
+			// Geometry resolved the cell against the (post-cleanup) rows.
+			if colHit[bestRi] == nil {
+				colHit[bestRi] = make(map[int]bool)
 			}
-			cnt++
-			if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
-				h++
-			}
-		}
-		if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
-			hdrs[ri] = true
-		}
-	}
-
-	// Signal 1: geometric H from boxes (additive, with the same column-majority
-	// Python uses). For each row, count how many of its columns have at least one
-	// box overlapping the header region (box.H > 0); mark the row when that
-	// fraction exceeds 0.5. This mirrors Python's per-column
-	// any(a.get("H") for a in arr) followed by its per-row h/cnt > 0.5 — distinct
-	// from the old BoxHeaderSet any-box rule, which flagged a whole row whenever a
-	// single stray box overlapped the header region (over-promotion).
-	if len(boxes) > 0 {
-		// colHit[row] = set of columns whose cell has an H>0 box.
-		colHit := make(map[int]map[int]bool)
-		for i := range boxes {
-			b := boxes[i]
-			if b.H <= 0 || b.R < 0 || b.R >= len(rows) {
-				continue
-			}
-			if b.C < 0 || b.C >= len(rows[b.R]) {
-				continue
-			}
+			colHit[bestRi][bestCi] = true
+		} else if b.R >= 0 && b.R < len(rows) && b.C >= 0 && b.C < len(rows[b.R]) {
+			// No geometric overlap (e.g. boxes supplied without coordinates):
+			// fall back to the box's own R/C when it is in range, so callers
+			// that pre-assigned a correct R/C still work.
 			if colHit[b.R] == nil {
 				colHit[b.R] = make(map[int]bool)
 			}
 			colHit[b.R][b.C] = true
 		}
+	}
+
+	hdrs := make(map[int]bool)
+
+	// Signals 1+2 folded (Python: construct_table, 336-348). Numeric-dominant
+	// table: a numeric cell is skipped (continue); otherwise the cell counts when
+	// it has H OR is non-numeric. Non-numeric table: the predicate reduces to
+	// any(H) — the geometric signal alone.
+	if maxType == "Nu" {
 		for ri, row := range rows {
-			n := len(row)
-			if n == 0 {
-				continue
+			cnt, h := 0, 0
+			for ci, cell := range row {
+				t := strings.TrimSpace(cell.Text)
+				if t == "" {
+					continue
+				}
+				cnt++
+				bt := BlockType(t)
+				if bt == "Nu" {
+					continue // numeric cell in a numeric table: ignored
+				}
+				if colHit[ri][ci] || bt != "Nu" {
+					h++
+				}
 			}
-			if float64(len(colHit[ri]))/float64(n) > 0.5 {
+			if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
 				hdrs[ri] = true
 			}
+		}
+	} else {
+		for ri, row := range rows {
+			cnt, h := 0, 0
+			for ci, cell := range row {
+				if strings.TrimSpace(cell.Text) == "" {
+					continue
+				}
+				cnt++
+				if colHit[ri][ci] {
+					h++
+				}
+			}
+			if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
+				hdrs[ri] = true
+			}
+		}
+	}
+
+	// Signal 3: TSR label "header" (additive Go-only fallback; Python has no
+	// exact equivalent), with the same >0.5 row-majority.
+	for ri, row := range rows {
+		cnt, h := 0, 0
+		for _, cell := range row {
+			t := strings.TrimSpace(cell.Text)
+			if t == "" {
+				continue
+			}
+			cnt++
+			if isHeaderLabel(cell.Label) {
+				h++
+			}
+		}
+		if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
+			hdrs[ri] = true
 		}
 	}
 

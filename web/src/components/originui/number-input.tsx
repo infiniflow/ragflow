@@ -32,6 +32,7 @@ const NumberInput = forwardRef<
     className,
     value: initialValue,
     onChange,
+    onBlur: onBlurProp,
     height,
     min = 0,
     max = Infinity,
@@ -128,23 +129,30 @@ const NumberInput = forwardRef<
     }
   };
 
-  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(() => {
-    isFocusedRef.current = false;
-    if (isNumber(value)) {
-      const finalValue = clamp(value);
-      if (finalValue !== value) {
+  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      isFocusedRef.current = false;
+      if (isNumber(value)) {
+        const finalValue = clamp(value);
+        if (finalValue !== value) {
+          setValue(finalValue);
+        }
+        onRangeViolation?.(false);
+        onChange?.(finalValue);
+      } else {
+        const previousValue = valueRef.current ?? min;
+        const finalValue = clamp(previousValue);
         setValue(finalValue);
+        onRangeViolation?.(false);
+        onChange?.(finalValue);
       }
-      onRangeViolation?.(false);
-      onChange?.(finalValue);
-    } else {
-      const previousValue = valueRef.current ?? min;
-      const finalValue = clamp(previousValue);
-      setValue(finalValue);
-      onRangeViolation?.(false);
-      onChange?.(finalValue);
-    }
-  }, [min, onChange, onRangeViolation, value, clamp]);
+      // Keep the caller's blur notification (e.g. react-hook-form's
+      // field.onBlur) alive — it is destructured out of props so that the
+      // spread below cannot silently replace this handler.
+      onBlurProp?.(e);
+    },
+    [min, onChange, onRangeViolation, onBlurProp, value, clamp],
+  );
 
   const handleFocus = useCallback(() => {
     isFocusedRef.current = true;

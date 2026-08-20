@@ -17,17 +17,16 @@ package knowledge_compile
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// TestWikiReplaceCopiesCandidateVector locks the wiki replace-only merge contract
-// (CodeRabbit Major): wikiReplace swaps the page body for the candidate's Markdown
-// AND must copy the candidate's embedding too. WriteMerged persists Product.Vector
-// without re-embedding, so keeping the existing row's vector would leave a stale
-// embedding for the old page body and break KNN similarity searches.
-func TestWikiReplaceCopiesCandidateVector(t *testing.T) {
+// TestWikiMergePreservesCandidateVector verifies that page evidence merging
+// retains both Markdown blocks and uses the candidate embedding for the merged
+// body.
+func TestWikiMergePreservesCandidateVector(t *testing.T) {
 	existing := kccommon.Product{
 		ID:       "kb/wiki/alpha",
 		DocID:    "kb",
@@ -55,14 +54,14 @@ func TestWikiReplaceCopiesCandidateVector(t *testing.T) {
 		},
 	}
 
-	groups := wikiDecideBatch(context.Background(), []MergeGroup{{
+	groups := wikiMergeBatch(context.Background(), []MergeGroup{{
 		Existing:   existing,
 		Candidates: []kccommon.Product{candidate},
 	}})
 
 	merged := groups[0].Merged
-	if merged.Content != "# new markdown" {
-		t.Fatalf("content = %q, want candidate markdown", merged.Content)
+	if !strings.Contains(merged.Content, "# old markdown") || !strings.Contains(merged.Content, "# new markdown") {
+		t.Fatalf("content = %q, want both evidence blocks", merged.Content)
 	}
 	if !groups[0].Duplicate {
 		t.Fatalf("wiki candidate must be marked duplicate (replacement)")
@@ -83,7 +82,37 @@ func TestWikiReplaceCopiesCandidateVector(t *testing.T) {
 	if merged.Meta["created_at"] != "2024-01-01" {
 		t.Fatalf("creation time must be preserved from the existing row, got %v", merged.Meta["created_at"])
 	}
-	if merged.Meta["run_id"] != "run-9" {
-		t.Fatalf("run_id must come from the candidate, got %v", merged.Meta["run_id"])
+}
+
+func TestWikiEntityMergeRetainsBothEvidenceBodies(t *testing.T) {
+	existing := kccommon.Product{
+		ID: "page-1", DocID: "kb", Variant: kccommon.VariantWiki,
+		Content: "# Alpha\n\nold evidence",
+		Meta:    map[string]any{"kind": "page", "slug": "entity/alpha", "page_type": "entity", "source_doc_ids": []string{"doc-1"}},
+	}
+	incoming := kccommon.Product{
+		ID: "doc-page", DocID: "doc-2", Variant: kccommon.VariantWiki,
+		Content: "# Alpha\n\nnew evidence",
+		Meta:    map[string]any{"kind": "page", "slug": "entity/alpha", "page_type": "entity", "source_doc_ids": []string{"doc-2"}},
+	}
+	merged := wikiEntityMerge(existing, incoming)
+	if merged.Content == existing.Content || merged.Content == incoming.Content {
+		t.Fatalf("entity merge discarded evidence: %q", merged.Content)
+	}
+	if len(metaStringSliceAny(merged.Meta, "source_doc_ids")) != 2 {
+		t.Fatalf("source docs = %#v, want both documents", merged.Meta["source_doc_ids"])
+	}
+	if merged.ID != existing.ID || merged.DocID != existing.DocID {
+		t.Fatalf("entity identity changed: %#v", merged)
+	}
+}
+
+func TestSplitMarkdownBlocksKeepsFencedCodeTogether(t *testing.T) {
+	blocks := splitMarkdownBlocks("before\n\n```go\nline one\n\nline two\n```\n\nafter")
+	if len(blocks) != 3 {
+		t.Fatalf("blocks=%d, want 3: %#v", len(blocks), blocks)
+	}
+	if !strings.Contains(blocks[1], "line one\n\nline two") {
+		t.Fatalf("fenced block was split: %q", blocks[1])
 	}
 }
