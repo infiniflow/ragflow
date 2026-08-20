@@ -15,6 +15,7 @@
 #
 import json
 import logging
+from json import JSONDecodeError
 import aiohttp
 from abc import ABC
 from datetime import datetime, timezone
