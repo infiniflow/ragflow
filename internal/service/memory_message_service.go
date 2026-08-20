@@ -377,7 +377,7 @@ func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageI
 	if err != nil {
 		return fmt.Errorf("marshal memory task message: %w", err)
 	}
-	if err := mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
+	if err = mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
 		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil
