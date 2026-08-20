@@ -89,38 +89,49 @@ func TestPipelineParity14InterleavedParagraphDropped(t *testing.T) {
 	}
 }
 
-// TestPipelineParityCaptionOmission documents the go_intentional divergence
-// table-html-emission-format: Go's RowsToHTML does NOT emit a <caption>
-// element, while Python embeds a descriptive <caption> inside each table. The
-// test is a REGRESSION GUARD — it passes today (Go omits caption text) and
-// flips if Go ever starts emitting caption text unexpectedly. The divergence
-// is non-cell-text (cell content + structure still match, gridSim/structSim
-// 100%), so it is deliberate, not a table-assembly bug.
-func TestPipelineParityCaptionOmission(t *testing.T) {
+// TestPipelineParityCaptionEmitted locks the fix for the content-loss half of
+// go_bug table-html-emission-format: Go used to DROP the standalone caption
+// section entirely, so the caption text vanished from output. Go now retains
+// it by injecting the caption text as a <caption> element inside the target
+// table's HTML (MergeCaptions -> injectCaption). This guard fails if the
+// retention ever regresses (caption dropped -> no <caption> emitted).
+//
+// Scope: only PDFs that actually carry a DLA "table caption" box (06/14/18).
+// For those, Go now emits <caption>; the emitted text is real PDF content, so
+// it must also appear somewhere in Python's full extracted text (proving Go
+// did not fabricate it). Go and Python CHOOSE different caption wording (a
+// caption-selection divergence — a separate, accepted go_intentional residual),
+// so we assert Go's EMITTED caption text, NOT byte-equality with Python's
+// <caption>. 13_crosspage_table has no DLA caption box, so MergeCaptions has
+// nothing to emit for it; its <caption> divergence is a separate DLA-labeling
+// issue and is out of scope here (tracked in known_diffs.json
+// table-html-emission-format).
+func TestPipelineParityCaptionEmitted(t *testing.T) {
 	pdfs := []string{
 		"06_table_content.pdf",
-		"13_crosspage_table.pdf",
 		"14_text_table_interleaved.pdf",
 		"18_table_caption.pdf",
 	}
 	captionRe := regexp.MustCompile(`(?is)<caption>(.*?)</caption>`)
+	wsRe := regexp.MustCompile(`\s+`)
 	for _, name := range pdfs {
 		t.Run(name, func(t *testing.T) {
 			goText, pyText := replayPipelineText(t, name)
-			caps := captionRe.FindAllStringSubmatch(pyText, -1)
+			caps := captionRe.FindAllStringSubmatch(goText, -1)
 			if len(caps) == 0 {
-				t.Fatalf("test setup error: Python golden has no <caption> for %s", name)
+				t.Fatalf("REGRESSION table-html-emission-format: Go emitted NO <caption> for %s — the standalone caption section was dropped (Python keeps caption text)", name)
 			}
 			for _, c := range caps {
-				caption := strings.TrimSpace(c[1])
+				caption := strings.TrimSpace(wsRe.ReplaceAllString(c[1], " "))
 				if caption == "" {
+					t.Errorf("REGRESSION table-html-emission-format: Go emitted an EMPTY <caption> for %s", name)
 					continue
 				}
-				if strings.Contains(goText, caption) {
-					t.Errorf("REGRESSION go_intentional table-html-emission-format: Go now emits caption text %q for %s — caption-omission divergence closed unexpectedly", caption, name)
+				if !strings.Contains(pyText, caption) {
+					t.Errorf("REGRESSION table-html-emission-format: Go's emitted caption %q for %s does not appear in Python's extracted text — caption text may be fabricated, not real PDF content", caption, name)
 				}
 			}
-			t.Logf("%s: Python has %d <caption> block(s); Go omits caption text (go_intentional)", name, len(caps))
+			t.Logf("%s: Go emits %d <caption> block(s), all real content (present in Python text)", name, len(caps))
 		})
 	}
 }
