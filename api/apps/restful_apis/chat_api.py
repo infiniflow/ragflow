@@ -23,10 +23,10 @@ import tempfile
 from copy import deepcopy
 from types import SimpleNamespace
 
-from quart import Response, request
+from quart import Response, g, request
 from werkzeug.exceptions import BadRequest
 
-from api.apps import current_user, login_required
+from api.apps import AUTH_API, current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
     get_api_key,
@@ -184,6 +184,26 @@ def _build_session_response(conv: dict) -> dict:
     conv["chat_id"] = conv.pop("dialog_id", conv.get("chat_id"))
     conv["messages"] = conv.pop("message", conv.get("messages", []))
     return conv
+
+
+def _resolve_session_user_id(req: dict) -> tuple[str | None, str | None]:
+    """Decide who a new session belongs to, returning (user_id, error_message).
+
+    An API key belongs to a backend acting on behalf of its own end users, so a
+    `user_id` in the body is honoured and stored verbatim. JWT and session callers
+    stay pinned to the authenticated principal: a browser client must not be able
+    to create a session attributed to somebody else, and the field is ignored
+    entirely rather than validated, so a malformed one cannot fail their request.
+    """
+    auth_type = getattr(g, "auth_type", None)
+    requested = req.get("user_id") if auth_type == AUTH_API else None
+    if requested is not None and not isinstance(requested, str):
+        return None, "`user_id` must be a string"
+    resolved = (requested or "").strip()[:255]
+    # The stored owner alone cannot say which path ran, since a client may send the
+    # principal's own id. Record the decision, never the id, which identifies an end user.
+    logging.info("chat session attribution: auth_type=%s owner=%s", auth_type, "client" if resolved else "principal")
+    return resolved or current_user.id, None
 
 
 async def _ensure_owned_chat(chat_id):
@@ -822,7 +842,7 @@ async def bulk_delete_chats():
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @login_required
 async def create_session(chat_id):
-    """Create a new conversation session for the given chat, owned by the authenticated user."""
+    """Create a new conversation session for the given chat."""
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -834,12 +854,15 @@ async def create_session(chat_id):
         if not isinstance(name, str) or not name.strip():
             return get_data_error_result(message="`name` can not be empty")
         name = name.strip()[:255]
+        user_id, err = _resolve_session_user_id(req)
+        if err:
+            return get_data_error_result(message=err)
         conv = {
             "id": get_uuid(),
             "dialog_id": chat_id,
             "name": name,
             "message": [{"role": "assistant", "content": dia.prompt_config.get("prologue", "")}],
-            "user_id": current_user.id,
+            "user_id": user_id,
             "reference": [],
         }
         ConversationService.save(**conv)

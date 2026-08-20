@@ -3653,7 +3653,7 @@ curl --request POST \
 - `"name"`: (*Body parameter*), `string`
   The name of the chat session to create.
 - `"user_id"`: (*Body parameter*), `string`
-  Optional user-defined ID.
+  Optional user-defined ID identifying the end user this session belongs to, so that sessions created through a single API key can later be listed and deleted per user. Honoured only when the request is authenticated with an API key, in which case a non-string value is rejected. Any other authentication, whether a JWT bearer token or a browser session, ignores the field entirely and the session is owned by the authenticated user. The stored value is stripped of surrounding whitespace and truncated to 255 characters, so filter the session list by that normalized form rather than by a longer original.
 
 #### Response
 

@@ -2256,6 +2256,7 @@ def _load_chat_api_module(monkeypatch):
 
     quart_mod = ModuleType("quart")
     quart_mod.request = SimpleNamespace(args=_Args(), headers={}, files=_AwaitableValue({}), method="POST")
+    quart_mod.g = SimpleNamespace()
     quart_mod.Response = _StubResponse
     quart_mod.jsonify = lambda payload: payload
     quart_mod.current_app = SimpleNamespace()
@@ -2263,6 +2264,7 @@ def _load_chat_api_module(monkeypatch):
 
     api_apps_mod = ModuleType("api.apps")
     api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.AUTH_API = "API"
     api_apps_mod.current_user = SimpleNamespace(id="authenticated-user")
     api_apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
