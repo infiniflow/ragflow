@@ -504,3 +504,33 @@ func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
 		t.Fatalf("expected metadata.enabled=true, got %#v", metaObj["enabled"])
 	}
 }
+
+func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetMetadataConfigKB(t, "kb-ok", "owner-1")
+	insertDatasetMetadataConfigDoc(t, "doc-ok", "kb-ok", entity.JSONMap{})
+	ctx := t.Context()
+
+	// Missing KB -> database layer should surface as CodeServerError / not found
+	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
+		ctx, "owner-1", "kb-missing", "doc-ok",
+		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
+	)
+	if code == common.CodeSuccess || err == nil {
+		t.Fatalf("expected error for missing kb, got code=%v err=%v", code, err)
+	}
+
+	// KB exists but tenant lookup fails (kb.TenantID points to missing tenant)
+	insertDatasetMetadataConfigKB(t, "kb-bad-tenant", "missing-tenant")
+	insertDatasetMetadataConfigDoc(t, "doc2", "kb-bad-tenant", entity.JSONMap{})
+	_, code, err = testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
+		ctx, "missing-tenant", "kb-bad-tenant", "doc2",
+		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
+	)
+	if code != common.CodeServerError || err == nil {
+		t.Fatalf("expected server error for tenant lookup failure, got code=%v err=%v", code, err)
+	}
+}
+
+

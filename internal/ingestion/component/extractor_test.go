@@ -1862,3 +1862,74 @@ func TestExtractor_ParseMetadataFieldDefs_MapSlice(t *testing.T) {
 		t.Errorf("parseMetadataFieldDefs failed for []common.MetadataFieldDef: %#v", directDefs)
 	}
 }
+
+func TestExtractorBuiltInDoesNotCallLLM(t *testing.T) {
+	// 1b39355c regressed by making runEnableMetadata fire when only built_in_metadata was configured.
+	// With the modular shape, BuiltInMetadata must never trigger an LLM call; it is applied by the finalizer.
+	stub := withStubChatInvoker(t)
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": true,
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+				map[string]any{"key": "update_time", "type": "time"},
+			},
+			"metadata": []any{},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	in := map[string]any{
+		"chunks": []map[string]any{{"text": "hello world"}},
+	}
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Fatalf("built_in-only must not call LLM, got %d calls, requests=%v", stub.calls.Load(), stub.requests)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+	if _, ok := chunks[0]["metadata"]; ok {
+		t.Fatalf("built_in must not produce chunk metadata, got %v", chunks[0]["metadata"])
+	}
+}
+
+func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
+	stub := withStubChatInvoker(t)
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": false,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	in := map[string]any{"chunks": []map[string]any{{"text": "hello"}}}
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Fatalf("enabled=false must not call LLM, got %d", stub.calls.Load())
+	}
+	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+}
+
+
