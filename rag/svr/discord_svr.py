@@ -15,9 +15,13 @@
 #
 import logging
 import discord
-import requests
+import aiohttp
 import base64
+import io
+import time
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 URL = '{YOUR_IP_ADDRESS:PORT}/v1/api/completion_aibotk'  # Default: https://cloud.ragflow.io/v1/api/completion_aibotk
 
@@ -36,7 +40,7 @@ client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    logging.info(f'We have logged in as {client.user}')
+    logger.info(f'We have logged in as {client.user}')
 
 
 @client.event
@@ -49,9 +53,19 @@ async def on_message(message):
         if len(message.content.split('> ')) == 1:
             await message.channel.send("Hi~ How can I help you? ")
         else:
-            JSON_DATA['word'] = message.content.split('> ')[1]
-            response = requests.post(URL, json=JSON_DATA)
-            response_data = response.json().get('data', [])
+            # Now that the request is awaited, two overlapping `on_message`
+            # handlers would race on a shared dict: one could overwrite `word`
+            # before the other's request is sent. Build a per-request payload.
+            payload = {**JSON_DATA, 'word': message.content.split('> ')[1]}
+            started_at = time.monotonic()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(URL, json=payload) as response:
+                    elapsed = time.monotonic() - started_at
+                    logger.info(
+                        'Completion request finished with status %s in %.3fs',
+                        response.status, elapsed
+                    )
+                    response_data = (await response.json()).get('data', [])
             image_bool = False
 
             for i in response_data:
@@ -60,14 +74,18 @@ async def on_message(message):
                 if i['type'] == 3:
                     image_bool = True
                     image_data = base64.b64decode(i['url'])
-                    with open('tmp_image.png', 'wb') as file:
-                        file.write(image_data)
-                    image = discord.File('tmp_image.png')
+                    image = discord.File(io.BytesIO(image_data), filename='image.png')
+                    logger.info('Built image attachment of %d bytes', len(image_data))
 
             await message.channel.send(f"{message.author.mention}{res}")
 
             if image_bool:
-                await message.channel.send(file=image)
+                try:
+                    await message.channel.send(file=image)
+                except Exception:
+                    logger.exception('Failed to send the image attachment')
+                else:
+                    logger.info('Image attachment sent')
 
 
 loop = asyncio.get_event_loop()
