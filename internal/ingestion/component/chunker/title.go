@@ -101,6 +101,9 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 	if v, ok := conf["root_chunk_as_heading"].(bool); ok {
 		p.TitleChunkerParam.RootChunkAsHeading = v
 	}
+	if v, ok := schema.NumericFromAny(conf["chunk_token_cap"]); ok {
+		p.TitleChunkerParam.ChunkTokenCap = int(v)
+	}
 }
 
 // parseLevels accepts a [[string]] representation — the natural
