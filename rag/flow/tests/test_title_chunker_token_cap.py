@@ -498,4 +498,55 @@ def test_tokenizer_failure_falls_back_to_char_count():
         chunks = process._outputs.get("chunks", [])
 
     assert len(chunks) > 1, "cap must still apply when the tokenizer reports 0"
+    for ck in chunks:
+        # The character-count fallback must still honour the ceiling, not just
+        # split somewhere: every emitted piece stays within the cap.
+        assert len(ck["text"]) <= 20, f"fallback chunk exceeds cap: {ck['text']!r}"
     assert "".join(ck["text"] for ck in chunks) == "x" * 100 + "\n"
+
+
+# --------------------------------------------------------------------------- #
+# 11. hard split is lossless with the REAL tiktoken-backed truncate           #
+# --------------------------------------------------------------------------- #
+def test_hard_split_lossless_with_real_truncate():
+    # _hard_split_by_tokens advances with rest[len(head):], which is only
+    # lossless if head is a true prefix of rest. The real truncate
+    # (encoder.decode(encoder.encode(s)[:n])) can decode a mid-multibyte token
+    # boundary as U+FFFD, which is NOT a prefix. This exercises the hard-split
+    # path with the real tokenizer on multibyte, boundary-less text and asserts
+    # the concatenated sub-chunks reproduce the original text exactly (no
+    # character dropped at the split boundary).
+    import importlib.util
+
+    root = Path(__file__).resolve().parents[3]
+    spec = importlib.util.spec_from_file_location("ragflow_real_token_utils", str(root / "common" / "token_utils.py"))
+    real_token_utils = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real_token_utils)
+
+    # Multibyte, no sentence boundary -> forces the hard-split fallback path.
+    body = "中文混合English文本再混入一些标点符号\uff0c" * 30
+    items = [{"text": body, "doc_type_kwd": "text"}]
+
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _g):
+        # Swap the 1-token-per-char stub for the REAL tiktoken-backed truncate
+        # AND the real token counter, so the cap is enforced and verified in
+        # real token units (not characters).
+        common_module.truncate = real_token_utils.truncate
+        common_module.num_tokens_from_string = real_token_utils.num_tokens_from_string
+
+        param = common_module.TitleChunkerParam()
+        param.method = "hierarchy"
+        param.chunk_token_cap = 20
+        process = common_module.ProcessBase(None, "title_chunker", param)
+        process._canvas = types.SimpleNamespace(_doc_id="doc", _tenant_id="tenant")
+        process._outputs = {}
+        chunker = hierarchy_module.HierarchyTitleChunker(process, _json_upstream(items))
+        asyncio.run(chunker.invoke())
+        chunks = process._outputs.get("chunks", [])
+
+    assert len(chunks) > 1, "expected the oversized chunk to be hard-split"
+    for ck in chunks:
+        # Every emitted piece must honour the 20-token cap under the real
+        # tokenizer, not just be a lossless concatenation.
+        assert real_token_utils.num_tokens_from_string(ck["text"]) <= 20, f"hard-split chunk exceeds token cap: {ck['text']!r}"
+    assert "".join(ck["text"] for ck in chunks) == body + "\n"

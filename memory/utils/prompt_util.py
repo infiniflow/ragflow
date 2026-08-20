@@ -77,7 +77,7 @@ You are an expert at analyzing conversations to extract structured memory.
         "semantic": [
             {
                 "content": "Clear factual statement",
-                "valid_at": "timestamp or empty",
+                "valid_at": "timestamp — use the conversation time when the fact has no date of its own",
                 "invalid_at": "timestamp or empty"
             }
         ]

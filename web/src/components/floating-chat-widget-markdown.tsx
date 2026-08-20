@@ -317,7 +317,7 @@ const FloatingChatWidgetMarkdown = ({
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
 
   return (
-    <div className="floating-chat-widget" dir={dir}>
+    <div className={styles['floating-chat-widget']} dir={dir}>
       <Markdown
         rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
         remarkPlugins={MarkdownRemarkPlugins}

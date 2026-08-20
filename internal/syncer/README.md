@@ -289,7 +289,7 @@ Supplementary details (beyond the diagram):
 - `registry.go`: registry mapping source names to connector factories.
 - `builtin.go`: registration entry for connectors built into the current binary.
 - `fingerprint.go`: stable fingerprint and file name normalization utilities.
-- `<source>.go`: per data-source implementations, e.g. `rss.go`, `github.go`, `gmail.go`, `google_drive.go`, `outlook.go`, `rest_api.go`, `mysql.go`, `postgresql.go`, `discord.go`.
+- `<source>.go`: per data-source implementations, e.g. `rss.go`, `github.go`, `gmail.go`, `imap.go`, `google_drive.go`, `outlook.go`, `rest_api.go`, `mysql.go`, `postgresql.go`, `discord.go`.
 - `<source>_test.go`: unit tests for each data source.
 - `mock/mock.go`: mock connector for syncer testing.
 
@@ -567,5 +567,4 @@ Tests that need real MySQL, MinIO, Elasticsearch, Infinity, LLMs, or external Sa
 > + [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
 > + [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
 > + [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
-
 

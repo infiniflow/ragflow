@@ -23,7 +23,7 @@ import {
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
-  initialExtractorValues,
+  getInitialExtractorValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
@@ -182,7 +182,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.TokenChunker]: initialTokenChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
-        ...initialExtractorValues,
+        ...getInitialExtractorValues(),
         llm_id: llmId,
         sys_prompt: t('flow.prompts.system.summary'),
         prompts: t('flow.prompts.user.summary'),

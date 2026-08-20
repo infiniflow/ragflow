@@ -219,6 +219,27 @@ func TestWebDAVConnectorValidate(t *testing.T) {
 	}
 }
 
+func TestWebDAVConnectorValidateConnectorSetting(t *testing.T) {
+	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
+
+	connector := webDAVTestConnector(t, server.URL, false, 2)
+	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting failed: %v", err)
+	}
+
+	missingCredentials, err := NewWebDAVConnector(map[string]any{
+		"base_url":    server.URL,
+		"credentials": map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("NewWebDAVConnector failed: %v", err)
+	}
+	err = missingCredentials.ValidateConnectorSetting(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "username and password") {
+		t.Fatalf("missing credentials error = %v", err)
+	}
+}
+
 func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 	server, authHeaders, _ := newWebDAVTestServer(t, webDAVTestTree())

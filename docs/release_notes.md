@@ -9,6 +9,63 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.27.0
+
+Released on Aug 19, 2026.
+
+### New features
+- Brand new document level and dataset level knowledge compilation, supporting Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and To Skills ([#16777](https://github.com/infiniflow/ragflow/pull/16777), [#17546](https://github.com/infiniflow/ragflow/pull/17546), [#16797](https://github.com/infiniflow/ragflow/pull/16797), [#16749](https://github.com/infiniflow/ragflow/pull/16749), [#16899](https://github.com/infiniflow/ragflow/pull/16899), [#17996](https://github.com/infiniflow/ragflow/pull/17996))
+- Brand new Agentic RAG with four thinking modes when answering - Low, Medium, High, and Ultra ([#18303](https://github.com/infiniflow/ragflow/pull/18303), [#18138](https://github.com/infiniflow/ragflow/pull/18138), [#17342](https://github.com/infiniflow/ragflow/pull/17342), [#17444](https://github.com/infiniflow/ragflow/pull/17444))
+
+### Improvements
+- Fully revamped model provider system for easier model configuration and management ([#16604](https://github.com/infiniflow/ragflow/pull/16604))
+
+### Model Support
+- Qwen 3.8 series ([#18368](https://github.com/infiniflow/ragflow/pull/18368))
+- Kimi K3 ([#17106](https://github.com/infiniflow/ragflow/pull/17106))
+- AIMLAPI ([#17311](https://github.com/infiniflow/ragflow/pull/17311))
+- GreenPT models ([#17447](https://github.com/infiniflow/ragflow/pull/17447))
+- AWS Bedrock Reranker ([#16960](https://github.com/infiniflow/ragflow/pull/16960))
+- OpenRouter Embedding ([#17213](https://github.com/infiniflow/ragflow/pull/17213))
+- FunASR/SenseVoice STT ([#16473](https://github.com/infiniflow/ragflow/pull/16473))
+- Fun-ASR-Flash support for Tongyi-Qianwen ([#16844](https://github.com/infiniflow/ragflow/pull/16844))
+- Mistral OCR document parser ([#17057](https://github.com/infiniflow/ragflow/pull/17057))
+
+### Infrastructure
+- New GaussDB database adapter ([#17703](https://github.com/infiniflow/ragflow/pull/17703))
+- SereneDB document storage engine support ([#17375](https://github.com/infiniflow/ragflow/pull/17375))
+- Tenki sandbox provider support ([#17305](https://github.com/infiniflow/ragflow/pull/17305))
+- Upgraded Infinity integration to 0.7.3 ([#18137](https://github.com/infiniflow/ragflow/pull/18137))
+
+### Tools
+- New Querit web search tool ([#17813](https://github.com/infiniflow/ragflow/pull/17813))
+
+### UI/UX
+- Markdown typography improvements ([#16752](https://github.com/infiniflow/ragflow/pull/16752))
+- Search/chat filters ([#16707](https://github.com/infiniflow/ragflow/pull/16707))
+
+### Bug fixes
+- Fixed server hang when parsing large files ([#17936](https://github.com/infiniflow/ragflow/pull/17936))
+- Fixed document upload hanging the whole service ([#17537](https://github.com/infiniflow/ragflow/pull/17537))
+- Fixed multi-model chat ignoring the passed model ([#18439](https://github.com/infiniflow/ragflow/pull/18439))
+- Fixed rerank model switch failing to save on the chat page ([#18357](https://github.com/infiniflow/ragflow/pull/18357))
+- Fixed preview failure for PDFs with Chinese filenames ([#18422](https://github.com/infiniflow/ragflow/pull/18422))
+- Fixed CID-font PDF preview ([#18249](https://github.com/infiniflow/ragflow/pull/18249))
+- Fixed invalid query strings breaking search ([#18217](https://github.com/infiniflow/ragflow/pull/18217))
+- Fixed dataset/document deletion blocking other API requests ([#17800](https://github.com/infiniflow/ragflow/pull/17800))
+- Fixed default delimiter stored as an escaped string instead of a real newline ([#17591](https://github.com/infiniflow/ragflow/pull/17591))
+- Fixed shared page language affecting the original website ([#18043](https://github.com/infiniflow/ragflow/pull/18043))
+- Fixed stale messages on session switch ([#18140](https://github.com/infiniflow/ragflow/pull/18140))
+- Fixed new sessions carrying over previous session messages ([#18078](https://github.com/infiniflow/ragflow/pull/18078))
+- Fixed SSE stream interruption when switching conversations ([#18037](https://github.com/infiniflow/ragflow/pull/18037))
+- Fixed overlapping Chinese text lines in DOCX preview ([#17693](https://github.com/infiniflow/ragflow/pull/17693))
+- Fixed admin password update crash for SSO users ([#16914](https://github.com/infiniflow/ragflow/pull/16914))
+- Fixed QA DOCX table parser dropping cells ([#17497](https://github.com/infiniflow/ragflow/pull/17497))
+- Fixed Q&A CSV parsing of fields starting with quotes ([#16881](https://github.com/infiniflow/ragflow/pull/16881))
+- Fixed tag CSV parser ignoring TAB delimiters ([#17496](https://github.com/infiniflow/ragflow/pull/17496))
+- Fixed incorrect task time display ([#18453](https://github.com/infiniflow/ragflow/pull/18453))
+- Fixed duplicate logs on PDF parse cancel ([#18435](https://github.com/infiniflow/ragflow/pull/18435))
+
 ## v0.26.4
 
 Released on July 7, 2026.

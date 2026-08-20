@@ -1040,6 +1040,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBases: 'Datasets',
       knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
+      datasetUnavailable:
+        'The selected knowledge base is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
@@ -1058,6 +1060,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
         - **Always consider** the entire conversation history.`,
       systemMessage: 'Please input!',
+      knowledgePlaceholderMessage:
+        'Datasets are selected but the {knowledge} placeholder is missing from the system prompt, so retrieved content cannot be injected. Add {knowledge} to the system prompt or remove the datasets.',
       systemTip:
         'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
       topN: 'Top N',
@@ -1108,7 +1112,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
       thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: 'Instant responses',
+      thinkingLevelLowDescription: 'Fast responses',
       thinkingLevelMedium: 'Medium',
       thinkingLevelMediumDescription: 'Balanced speed & depth',
       thinkingLevelHigh: 'High',
@@ -1199,6 +1203,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
+      serplyApiKeyTip:
+        'When Serply is selected, its web search results supplement dataset retrieval.',
+      serplyApiKeyMessage: 'Please enter your Serply API Key',
+      youcomApiKeyTip:
+        'Optional. You.com works without a key on its rate-limited endpoint; add a key to lift those limits.',
+      youcomApiKeyMessage: 'Optional — leave blank to use the free tier',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',

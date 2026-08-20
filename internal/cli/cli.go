@@ -81,6 +81,7 @@ type CommandLineConfig struct {
 	Verbose           bool
 	Interactive       bool
 	OutputFormat      OutputFormat
+	ShowVersion       bool
 	Command           *string
 }
 
@@ -110,6 +111,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		CLIMode:           APIMode,
 		AdminClientConfig: nil,
 		ShowHelp:          false,
+		ShowVersion:       false,
 		Verbose:           false,
 		Interactive:       true,
 		OutputFormat:      OutputFormatTable,
@@ -139,6 +141,8 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			commandLineConfig.CLIMode = AdminMode
 		case "--help", "-help":
 			commandLineConfig.ShowHelp = true
+		case "--version", "-V":
+			commandLineConfig.ShowVersion = true
 		default:
 			if !strings.HasPrefix(arg, "-") {
 				commandLineConfig.Interactive = false
@@ -170,7 +174,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					i++
 				}
 				continue
-			case "-v", "--verbose", "--help", "-help":
+			case "-v", "--verbose", "--help", "-help", "--version", "-V":
 				continue
 			case "--admin", "-admin":
 				return nil, fmt.Errorf("unexpected parameter: --admin")
@@ -311,7 +315,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					i++
 				}
 				continue
-			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
+			case "-v", "--verbose", "--admin", "-admin", "--help", "-help", "--version", "-V":
 				continue
 			case "-t", "--token":
 				return nil, fmt.Errorf("token is invalid in admin mode")
@@ -448,6 +452,7 @@ Options:
   -v, --verbose          Enable verbose logging (shows debug info)
   --admin, -admin        Run in admin mode
   --help                 Show this help message
+  -V, --version          Show version information
 
 Mode:
   --admin, -admin        Run in admin mode (prompt: RAGFlow(admin)>)
