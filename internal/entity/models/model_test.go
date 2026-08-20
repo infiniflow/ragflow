@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 // joinModelNames extracts model names from a ListModelResponse slice and
@@ -391,5 +393,49 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	}
 	if *glm51.MaxOutput != 128000 || *glm51.ContentLength != 200000 {
 		t.Errorf("GLM-5.1 max_output=%d content_length=%d", *glm51.MaxOutput, *glm51.ContentLength)
+	}
+}
+
+// all_models.json comes from an external catalog that labels vision-capable
+// models "vlm". The provider manager must normalize that to the canonical
+// "vision" at load time: a raw "vlm" shows up as a stray lowercase filter
+// category in provider model listings, and ModelTypeFromString maps it to 0,
+// so a tenant model saved with that type loses its type entirely.
+func TestInitProviderManagerNormalizesCatalogVLModelTypes(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "siliconflow.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	pm := GetProviderManager()
+	if pm == nil {
+		t.Fatal("provider manager is nil")
+	}
+
+	for _, model := range pm.AllModels {
+		for _, modelType := range model.ModelTypes {
+			if modelType == "vlm" {
+				t.Fatalf("catalog model %q exposes raw type %q, want normalized \"vision\"", model.Name, modelType)
+			}
+		}
+	}
+
+	// qwen/qwen3-vl-plus-2025-12-19 is declared ["chat","vlm"] in
+	// conf/all_models.json and must resolve to chat+vision.
+	model := pm.GetModelByNameOrAlias("qwen3-vl-plus-2025-12-19")
+	if model == nil {
+		t.Fatal("GetModelByNameOrAlias qwen3-vl-plus-2025-12-19: not found")
+	}
+	if len(model.ModelTypes) != 2 || model.ModelTypes[0] != "chat" || model.ModelTypes[1] != "vision" {
+		t.Errorf("qwen3-vl-plus-2025-12-19 model types=%v, want [chat vision]", model.ModelTypes)
+	}
+
+	// The normalized types must survive the save path: addModelToInstance ORs
+	// ModelTypeFromString over the type list, so "vlm" would silently drop to
+	// ModelType 0 while "vision" keeps the Image2Text bit.
+	if got := entity.ModelTypeFromStrings(model.ModelTypes); !got.Has(entity.ModelTypeImage2Text) || !got.Has(entity.ModelTypeChat) {
+		t.Errorf("qwen3-vl-plus-2025-12-19 ModelTypeFromStrings=%d, want chat|image2text bits", got)
 	}
 }

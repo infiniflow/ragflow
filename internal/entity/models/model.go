@@ -233,6 +233,23 @@ func GetProviderManager() *ProviderManager {
 	return providerManager
 }
 
+// normalizeModelTypes maps the external model catalog's type vocabulary onto
+// the canonical names understood by entity.ModelTypeFromString, conf/models
+// provider configs, and the web UI. conf/all_models.json (synced from an
+// upstream catalog) labels vision-capable models "vlm"; every consumer of the
+// provider manager expects "vision"/"image2text". Leaving "vlm" raw leaks it
+// into provider model listings (an extra lowercase "vlm" filter category in
+// the UI) and silently maps to ModelType 0 when a tenant model is saved,
+// dropping the type.
+func normalizeModelTypes(modelTypes []string) []string {
+	for i, modelType := range modelTypes {
+		if modelType == "vlm" {
+			modelTypes[i] = "vision"
+		}
+	}
+	return modelTypes
+}
+
 // InitProviderManager creates a new ProviderManager by reading all JSON files from a directory
 func InitProviderManager(dirPath string) error {
 	var providers []Provider
@@ -285,6 +302,7 @@ func InitProviderManager(dirPath string) error {
 				model.Class = &provider.Name
 			}
 
+			model.ModelTypes = normalizeModelTypes(model.ModelTypes)
 			model.ModelTypeMap = make(map[string]bool)
 			for _, modelType := range model.ModelTypes {
 				model.ModelTypeMap[modelType] = true
@@ -319,6 +337,10 @@ func InitProviderManager(dirPath string) error {
 	var allModels AllModels
 	if err = json.Unmarshal(data, &allModels); err != nil {
 		return fmt.Errorf("error parsing JSON from file 'conf/all_models.json': %w", err)
+	}
+
+	for idx := range allModels.Models {
+		allModels.Models[idx].ModelTypes = normalizeModelTypes(allModels.Models[idx].ModelTypes)
 	}
 
 	alias2ModelIndex := make(map[string]int)
