@@ -69,10 +69,13 @@ func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 }
 
 // TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
-// server-local wall-clock string (Python timestamp_to_date semantics), not
-// UTC — otherwise memories asked at 10:05 local show up as 02:05.
+// server-local wall-clock string, not UTC — otherwise memories asked at
+// 10:05 local show up as 02:05. The clock is pinned to a fixed instant in a
+// fixed non-UTC location so the assertion holds on any host, including UTC
+// CI runners.
 func TestBuildRawMessage_ValidAtServerLocal(t *testing.T) {
-	before := time.Now()
+	pinMemoryNow(t, time.Date(2026, 8, 20, 10, 5, 0, 0, time.FixedZone("UTC+8", 8*3600)))
+
 	raw := buildRawMessage(42, "mem-1", MemoryMessage{
 		UserID:        "u1",
 		AgentID:       "a1",
@@ -80,18 +83,13 @@ func TestBuildRawMessage_ValidAtServerLocal(t *testing.T) {
 		UserInput:     "hi",
 		AgentResponse: "hello",
 	})
-	after := time.Now()
 
 	got, ok := raw["valid_at"].(string)
 	if !ok {
 		t.Fatalf("valid_at = %#v, want string", raw["valid_at"])
 	}
-	stamped, err := time.ParseInLocation(memoryTimeLayout, got, time.Local)
-	if err != nil {
-		t.Fatalf("valid_at %q does not parse as %q: %v", got, memoryTimeLayout, err)
-	}
-	if stamped.Before(before.Add(-2*time.Second)) || stamped.After(after.Add(2*time.Second)) {
-		t.Fatalf("valid_at %q parses as %v, want server-local time in [%v, %v]", got, stamped, before, after)
+	if want := "2026-08-20 10:05:00"; got != want {
+		t.Fatalf("valid_at = %q, want server-local wall clock %q (UTC-shifted would be %q)", got, want, "2026-08-20 02:05:00")
 	}
 }
 

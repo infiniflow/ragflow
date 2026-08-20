@@ -24,6 +24,15 @@ import (
 	"time"
 )
 
+// pinMemoryNow fixes the memory wall clock at the given instant for the
+// duration of a test, restoring it afterwards.
+func pinMemoryNow(t *testing.T, instant time.Time) {
+	t.Helper()
+	orig := memoryNow
+	memoryNow = func() time.Time { return instant }
+	t.Cleanup(func() { memoryNow = orig })
+}
+
 // TestFormatMemoryTimeKeepsParsedWallClock: an offset-bearing or
 // Z-suffixed ISO timestamp must keep its own wall clock — never be
 // converted to UTC the way time.Time.UTC would.
@@ -35,6 +44,7 @@ func TestFormatMemoryTimeKeepsParsedWallClock(t *testing.T) {
 		want  string
 	}{
 		{name: "offset iso", value: "2026-08-20T10:05:00+08:00", want: "2026-08-20 10:05:00"},
+		{name: "offset iso with fractional seconds", value: "2026-08-20T10:05:00.123+08:00", want: "2026-08-20 10:05:00"},
 		{name: "zulu iso", value: "2026-08-20T02:05:00Z", want: "2026-08-20 02:05:00"},
 		{name: "naive iso", value: "2026-08-20T10:05:00", want: "2026-08-20 10:05:00"},
 		{name: "storage layout", value: "2026-08-20 10:05:00", want: "2026-08-20 10:05:00"},

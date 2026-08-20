@@ -214,9 +214,8 @@ func buildRawMessage(
 		"agent_id":     msg.AgentID,
 		"session_id":   msg.SessionID,
 		"content":      content,
-		// valid_at mirrors Python timestamp_to_date(current_timestamp()):
-		// server-local wall clock, not UTC.
-		"valid_at":   time.Now().Format(memoryTimeLayout),
+		// valid_at is stamped as server-local wall clock, not UTC.
+		"valid_at":   memoryNow().Format(memoryTimeLayout),
 		"invalid_at": nil,
 		"forget_at":  nil,
 		"status":     true,
