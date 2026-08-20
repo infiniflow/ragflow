@@ -258,3 +258,57 @@ func TestBuiltInMetadataFromParserConfig_MultiExtractorDeterministic(t *testing.
 		}
 	}
 }
+
+func TestBuiltInMetadataFromParserConfig_FirstMetadataNodeWins(t *testing.T) {
+	// The alphabetically-first Extractor node that declares metadata is the
+	// authoritative source, even when its built_in_metadata is empty.
+	pc := entity.JSONMap{
+		"Extractor:A": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"built_in_metadata": []any{},
+			},
+		},
+		"Extractor:B": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []any{
+					map[string]any{"key": "file_name", "type": "string"},
+				},
+			},
+		},
+	}
+
+	cfg, enabled := builtInMetadataFromParserConfig(pc)
+	if !enabled {
+		t.Fatalf("expected enabled=true from first metadata node, got false")
+	}
+	if len(cfg) != 0 {
+		t.Fatalf("expected empty built-in config from first metadata node, got %#v", cfg)
+	}
+}
+
+func TestBuiltInMetadataFromParserConfig_MapSliceBuiltIn(t *testing.T) {
+	pc := entity.JSONMap{
+		"Extractor:A": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"built_in_metadata": []map[string]any{
+					{"key": "update_time", "type": "time"},
+				},
+			},
+		},
+	}
+
+	cfg, enabled := builtInMetadataFromParserConfig(pc)
+	if !enabled {
+		t.Fatalf("expected enabled=true, got false")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("expected 1 built-in item from []map[string]any, got %d", len(cfg))
+	}
+	item, ok := cfg[0].(map[string]any)
+	if !ok || item["key"] != "update_time" {
+		t.Fatalf("expected update_time item, got %#v", cfg[0])
+	}
+}

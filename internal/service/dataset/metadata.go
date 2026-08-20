@@ -38,14 +38,22 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 		parserConfig = entity.JSONMap{}
 	}
 	parserConfig["metadata"] = metadata
-	if kb, kbErr := d.kbDAO.GetByID(ctx, dao.DB, datasetID); kbErr == nil && kb != nil {
-		if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
-			parserConfig = service.ApplyComponentScopedParserConfig(
-				parserConfig,
-				tenant.LLMID,
-			)
-		}
+	kb, kbErr := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if kbErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
+	if kb == nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
+	if tenantErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+	llmID := ""
+	if tenant != nil {
+		llmID = tenant.LLMID
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
@@ -133,7 +141,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	default:
 		enabled = len(metadata) > 0 || len(builtInMetadata) > 0
 	}
-	if len(metadata) == 0 && len(builtInMetadata) == 0 {
+	if req.Enabled == nil && len(metadata) == 0 && len(builtInMetadata) == 0 {
 		enabled = false
 	}
 	parserConfig["metadata"] = map[string]any{
@@ -143,12 +151,15 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	}
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "built_in_metadata")
-	if tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
-		parserConfig = service.ApplyComponentScopedParserConfig(
-			parserConfig,
-			tenant.LLMID,
-		)
+	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
+	if tenantErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
+	llmID := ""
+	if tenant != nil {
+		llmID = tenant.LLMID
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("update auto-metadata error.(Database error)")

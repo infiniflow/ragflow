@@ -102,6 +102,7 @@ func insertDatasetMetadataConfigDoc(t *testing.T, docID, datasetID string, parse
 func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "user-1")
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{"pages": []interface{}{1, 2}})
 
@@ -197,6 +198,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "owner-1")
 	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-1").
@@ -434,5 +436,71 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 	builtIn0, ok := builtIn[0].(map[string]interface{})
 	if !ok || builtIn0["key"] != "file_name" {
 		t.Fatalf("expected key file_name, got %#v", builtIn[0])
+	}
+}
+
+func TestUpdateMetadataConfig_TenantLookupFailureDoesNotPersist(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	// kb-1 points at a tenant that does not exist, so tenantDAO.GetByID fails.
+	insertDatasetMetadataConfigKB(t, "kb-1", "missing-tenant")
+
+	ctx := t.Context()
+	result, code, err := (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "missing-tenant", &service.MetadataConfigRequest{
+		Metadata: []service.MetadataConfigField{
+			{Key: "author", Type: "string"},
+		},
+		BuiltInMetadata: []service.MetadataConfigField{},
+	})
+	if code != common.CodeServerError || err == nil {
+		t.Fatalf("expected server error on tenant lookup failure, got code=%d err=%v result=%#v", code, err, result)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("parser config must not be persisted on tenant lookup failure, got %#v", persisted.ParserConfig)
+	}
+}
+
+func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
+
+	enabled := true
+	ctx := t.Context()
+	result, code, err := (&DatasetService{
+		kbDAO:     dao.NewKnowledgebaseDAO(),
+		tenantDAO: dao.NewTenantDAO(),
+	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+		Enabled:         &enabled,
+		Metadata:        []service.MetadataConfigField{},
+		BuiltInMetadata: []service.MetadataConfigField{},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateMetadataConfig failed: code=%d err=%v", code, err)
+	}
+	respEnabled, ok := result["enabled"].(bool)
+	if !ok || !respEnabled {
+		t.Fatalf("expected enabled=true in response, got %#v", result["enabled"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get kb: %v", err)
+	}
+	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata, got %#v", persisted.ParserConfig["metadata"])
+	}
+	if persistedEnabled, _ := metaObj["enabled"].(bool); !persistedEnabled {
+		t.Fatalf("expected metadata.enabled=true, got %#v", metaObj["enabled"])
 	}
 }

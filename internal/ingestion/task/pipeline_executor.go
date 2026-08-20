@@ -321,14 +321,29 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 		nodeRaw := parserConfig[k]
 		if node, ok := nodeRaw.(map[string]any); ok {
 			if metaObj, ok := node["metadata"].(map[string]any); ok {
-				enabled := parserConfigBool(metaObj["enabled"])
-				if arr, ok := metaObj["built_in_metadata"].([]any); ok && len(arr) > 0 {
-					return arr, enabled
-				}
+				arr := metadataFieldSlice(metaObj["built_in_metadata"])
+				return arr, parserConfigBool(metaObj["enabled"])
 			}
 		}
 	}
 	return nil, false
+}
+
+// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
+// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
+// construction) into a []any.
+func metadataFieldSlice(value any) []any {
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	if list, ok := value.([]map[string]any); ok {
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return nil
 }
 
 // parserConfigBool coerces a parser_config boolean-like value (bool / number)
