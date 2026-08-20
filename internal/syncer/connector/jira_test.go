@@ -251,20 +251,20 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rest/api/3/project/RAG", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, map[string]any{"key": "RAG"})
+		jiraWriteJSON(t, w, map[string]any{"key": "RAG"})
 	})
 	mux.HandleFunc("/rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("jql"); !strings.Contains(got, `project = "RAG"`) {
 			t.Errorf("jql = %q", got)
 			return
 		}
-		writeJSON(t, w, map[string]any{
+		jiraWriteJSON(t, w, map[string]any{
 			"issues": []map[string]any{{"id": "10000"}},
 		})
 	})
 	var server *httptest.Server
 	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(t, w, map[string]any{"issues": []map[string]any{jiraFixtureIssue(server.URL)}})
+		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{jiraFixtureIssue(server.URL)}})
 	})
 	mux.HandleFunc("/attachment/10001", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("attachment body"))
@@ -305,7 +305,7 @@ func jiraFixtureIssue(baseURL string) map[string]any {
 	}
 }
 
-func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
+func jiraWriteJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
