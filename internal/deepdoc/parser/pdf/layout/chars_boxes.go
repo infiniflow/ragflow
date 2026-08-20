@@ -29,6 +29,16 @@ func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 		return nil
 	}
 
+	// Strip templated watermark glyphs before grouping. Watermark strings
+	// are planted in the text layer by resume-portal / template sites and
+	// read as rotated single-character "lines" because they fail the
+	// vertical-overlap check. Dropping them here keeps the noise out of
+	// every downstream chunk (issue #18145).
+	chars = filterWatermarkChars(chars)
+	if len(chars) == 0 {
+		return nil
+	}
+
 	lines := GroupCharsToLines(chars, sortByTop)
 
 	// Page-level column gap threshold from ALL inter-char gaps.
