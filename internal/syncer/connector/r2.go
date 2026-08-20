@@ -325,11 +325,12 @@ func (s *r2SyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		last := documents[len(documents)-1]
 		updatedAt := last.UpdatedAt
+		cursor := r2SourceID(s.connector.bucketName, s.startAfter)
 		return SyncBatch{
 			Documents: documents,
 			Checkpoint: &SyncCheckpoint{
-				Cursor:    last.SourceID,
-				SourceID:  last.SourceID,
+				Cursor:    cursor,
+				SourceID:  cursor,
 				UpdatedAt: &updatedAt,
 			},
 		}, nil
