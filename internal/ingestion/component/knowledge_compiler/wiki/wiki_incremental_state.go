@@ -123,14 +123,6 @@ func (p *wikiPipeline) buildActiveMapState(plan []wikiPlanPage) (*common.WikiMap
 	}, nil
 }
 
-func (p *wikiPipeline) persistActiveMapState(state common.WikiMapActiveState) error {
-	activeStore, ok := p.deps.WikiMapVersions.(common.WikiMapActiveStateStore)
-	if !ok {
-		return nil
-	}
-	return activeStore.PutWikiMapActiveState(p.ctx, state)
-}
-
 func planPagesBySlug(pages []wikiPlanPage) map[string]wikiPlanPage {
 	result := make(map[string]wikiPlanPage, len(pages))
 	for _, page := range pages {

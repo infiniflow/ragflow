@@ -113,9 +113,11 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 		compiled = append(compiled, wikiCompiledRows(output)...)
 		affectedSlugs = append(affectedSlugs, stringValues(output["wiki_affected_slugs"])...)
 		removedSlugs = append(removedSlugs, stringValues(output["wiki_removed_slugs"])...)
-		if states, ok := output["wiki_active_map_states"].([]kc.WikiMapActiveState); ok {
-			activeStates = append(activeStates, states...)
+		states, err := wikiActiveStates(output)
+		if err != nil {
+			return fmt.Errorf("Wiki dirty compile document %s: %w", request.DocumentID, err)
 		}
+		activeStates = append(activeStates, states...)
 	}
 	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
 		return persistDirtyWikiActiveStates(ctx, request, activeStates)
@@ -346,10 +348,28 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 			return err
 		}
 	}
+	if fullReplace {
+		if err := clearWikiActiveStates(ctx, docEngine, request); err != nil {
+			return err
+		}
+	}
 	if err := putWikiActiveStates(ctx, docEngine, activeStates); err != nil {
 		return err
 	}
-	return knowledge_compile.PublishWikiCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, affectedSlugs, removedSlugs)
+	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"})
+}
+
+func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
+	_, err := docEngine.DeleteChunks(ctx, map[string]any{
+		"kb_id":          request.DatasetID,
+		"compile_kwd":    "wiki_map_active",
+		"available_int":  0,
+		"source_doc_ids": []string{request.DocumentID},
+	}, fmt.Sprintf("ragflow_%s", request.TenantID), request.DatasetID)
+	if err != nil {
+		return fmt.Errorf("clear Wiki active MAP state for document %s: %w", request.DocumentID, err)
+	}
+	return nil
 }
 
 func persistDirtyWikiActiveStates(ctx context.Context, request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) error {

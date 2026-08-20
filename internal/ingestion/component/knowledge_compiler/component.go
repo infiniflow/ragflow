@@ -257,9 +257,26 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		result["wiki_removed_slugs"] = uniqueSorted(out.RemovedPageSlugs)
 	}
 	if len(out.WikiActiveStates) > 0 {
-		result["wiki_active_map_states"] = out.WikiActiveStates
+		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
 	}
 	return result, nil
+}
+
+// wikiActiveStateValues keeps the component output checkpoint-safe. Pipeline
+// node outputs cross an eino serialization boundary, so package-specific Go
+// structs must not escape in map[string]any values.
+func wikiActiveStateValues(states []common.WikiMapActiveState) []map[string]any {
+	values := make([]map[string]any, 0, len(states))
+	for _, state := range states {
+		values = append(values, map[string]any{
+			"key":         state.Key,
+			"tenant_id":   state.TenantID,
+			"dataset_id":  state.DatasetID,
+			"document_id": state.DocumentID,
+			"payload":     string(state.Payload),
+		})
+	}
+	return values
 }
 
 func uniqueSorted(values []string) []string {

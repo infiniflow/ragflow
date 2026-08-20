@@ -123,19 +123,3 @@ func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string) erro
 	}
 	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil)
 }
-
-type wikiCompletedPublisher interface {
-	PublishWikiCompleted(ctx context.Context, tenantID, datasetID, docID string, affectedSlugs, removedSlugs []string) error
-}
-
-// PublishWikiCompleted records a scoped document-level Wiki update. Older
-// publisher implementations fall back to the ordinary completed event.
-func PublishWikiCompleted(ctx context.Context, tenantID, datasetID, docID string, affectedSlugs, removedSlugs []string) error {
-	if defaultPublisher == nil {
-		return nil
-	}
-	if publisher, ok := defaultPublisher.(wikiCompletedPublisher); ok {
-		return publisher.PublishWikiCompleted(ctx, tenantID, datasetID, docID, affectedSlugs, removedSlugs)
-	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), []string{"wiki"})
-}

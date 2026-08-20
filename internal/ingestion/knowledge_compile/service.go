@@ -79,6 +79,12 @@ func WithWriter(w Writer) Option { return func(c *Consumer) { c.writer = w } }
 // WithDeduperFactory overrides the per-tenant Deduper factory.
 func WithDeduperFactory(f DeduperFactory) Option { return func(c *Consumer) { c.factory = f } }
 
+// withWikiContributionStore overrides the durable document-contribution store
+// in package tests.
+func withWikiContributionStore(store wikiContributionStore) Option {
+	return func(c *Consumer) { c.contributions = store }
+}
+
 // defaultLLMID / defaultEmbedding are the model ids used when resolving LLM
 // deps for the dataset-level deduper. Set via SetModelConfig (typically from the
 // server bootstrap). Empty strings make the factory fall back to the noop

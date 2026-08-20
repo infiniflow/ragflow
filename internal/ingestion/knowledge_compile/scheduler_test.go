@@ -177,20 +177,3 @@ func TestFakeSchedulerPublishCarriesVariants(t *testing.T) {
 		t.Fatalf("deleted event should carry nil variants, got %+v", res.Entries[1])
 	}
 }
-
-func TestFakeSchedulerPublishWikiCompletedCarriesPageScope(t *testing.T) {
-	f := NewFakeScheduler()
-	if err := f.PublishWikiCompleted(t.Context(), "t1", "kb1", "d1", []string{"topic/a"}, []string{"entity/b"}); err != nil {
-		t.Fatalf("publish scoped Wiki completion: %v", err)
-	}
-	result, ok, err := f.Claim(t.Context(), "kb1")
-	if err != nil || !ok || len(result.Entries) != 1 {
-		t.Fatalf("claim scoped Wiki completion: result=%+v ok=%v err=%v", result, ok, err)
-	}
-	entry := result.Entries[0]
-	if !reflect.DeepEqual(entry.Variants, []string{"wiki"}) ||
-		!reflect.DeepEqual(entry.AffectedSlugs, []string{"topic/a"}) ||
-		!reflect.DeepEqual(entry.RemovedSlugs, []string{"entity/b"}) {
-		t.Fatalf("scoped Wiki fields were not preserved: %+v", entry)
-	}
-}

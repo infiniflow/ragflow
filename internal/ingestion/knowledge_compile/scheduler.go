@@ -65,11 +65,9 @@ const (
 // before this field existed; the consumer treats a nil/empty Variants as
 // "unknown/legacy" and falls back to the legacy unified path.
 type BacklogEntry struct {
-	DocID         string   `json:"doc_id"`
-	EventType     string   `json:"event_type"`
-	Variants      []string `json:"variants,omitempty"`
-	AffectedSlugs []string `json:"affected_slugs,omitempty"`
-	RemovedSlugs  []string `json:"removed_slugs,omitempty"`
+	DocID     string   `json:"doc_id"`
+	EventType string   `json:"event_type"`
+	Variants  []string `json:"variants,omitempty"`
 }
 
 // ClaimResult is returned by Scheduler.Claim: the KB's tenant plus the closed
@@ -220,13 +218,6 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 // producer never needs a separate Notify call.
 func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
 	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
-}
-
-func (s *mysqlScheduler) PublishWikiCompleted(ctx context.Context, tenantID, datasetID, docID string, affectedSlugs, removedSlugs []string) error {
-	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{
-		DocID: docID, EventType: string(EventTypeCompleted), Variants: []string{"wiki"},
-		AffectedSlugs: affectedSlugs, RemovedSlugs: removedSlugs,
-	})
 }
 
 // loadRow fetches the dataset scheduling row (no lock). Returns nil (no error)
@@ -787,13 +778,6 @@ func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 // Publish appends one doc event and pushes a notify (same contract as MySQL).
 func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
 	return f.publishEntry(tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
-}
-
-func (f *FakeScheduler) PublishWikiCompleted(_ context.Context, tenantID, datasetID, docID string, affectedSlugs, removedSlugs []string) error {
-	return f.publishEntry(tenantID, datasetID, BacklogEntry{
-		DocID: docID, EventType: string(EventTypeCompleted), Variants: []string{"wiki"},
-		AffectedSlugs: affectedSlugs, RemovedSlugs: removedSlugs,
-	})
 }
 
 func (f *FakeScheduler) publishEntry(tenantID, datasetID string, entry BacklogEntry) error {

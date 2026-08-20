@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"ragflow/internal/agent/runtime"
 	appcommon "ragflow/internal/common"
@@ -61,6 +62,8 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 // generous room to emit the entity/concept/claim/relation/topic JSON without
 // hitting the output-token limit and truncating the payload.
 const wikiMapTokenBudget = 2048
+
+const wikiRefineProgressStep = 5
 
 // wikiMapMaxTokens derives the extraction output budget from the model's
 // context length and the per-batch input budget: once the batch has consumed
@@ -454,11 +457,6 @@ func (p *wikiPipeline) run() error {
 	}
 	if activeState != nil {
 		p.pendingActiveState = activeState
-		if !p.incremental {
-			if err := p.persistActiveMapState(*activeState); err != nil {
-				return err
-			}
-		}
 	}
 	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Done: input_pages=%d output_pages=%d", len(p.plan.Pages), len(pages)))
 	appcommon.Info("wiki: REFINE done",
@@ -858,6 +856,8 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 
 	results := make([]wikiPageResult, len(pages))
 	jobs := make([]func() error, 0, len(pages))
+	var progressMu sync.Mutex
+	completed := 0
 	for i, planItem := range pages {
 		i, planItem := i, planItem
 		jobs = append(jobs, func() error {
@@ -869,6 +869,12 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 				return err
 			}
 			results[i] = res
+			progressMu.Lock()
+			completed++
+			if shouldReportRefineProgress(completed, len(pages)) {
+				runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Progress: completed_pages=%d total_pages=%d", completed, len(pages)))
+			}
+			progressMu.Unlock()
 			return nil
 		})
 	}
@@ -876,6 +882,10 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 		return nil, err
 	}
 	return results, nil
+}
+
+func shouldReportRefineProgress(completed, total int) bool {
+	return completed > 0 && total > 0 && (completed%wikiRefineProgressStep == 0 || completed == total)
 }
 
 // runRefinePage generates one page result from a normalized plan page. UPDATE

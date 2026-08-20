@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/nlp"
@@ -1061,6 +1062,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 			return err
 		}
 	}
+	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
 
 	return nil
 }
@@ -1201,7 +1203,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if err != nil {
 		return fmt.Errorf("failed to update chunk: %w", err)
 	}
-	s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+	if req.Content != nil || req.Available != nil {
+		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+	}
 
 	return nil
 }
