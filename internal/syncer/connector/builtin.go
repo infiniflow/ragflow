@@ -36,6 +36,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "google-drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_cloud_storage", NewGoogleCloudStorageConnector)
+	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
 	registerBuiltIn(registry, "notion", NewNotionConnector)
@@ -44,7 +45,6 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
-	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
