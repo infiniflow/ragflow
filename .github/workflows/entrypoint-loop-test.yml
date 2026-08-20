@@ -62,7 +62,12 @@ jobs:
           python-version: '3.13'
 
       - name: Install pytest
-        run: pip install pytest
+        # The project's pyproject.toml pins both pytest and pytest-asyncio
+        # with options like `asyncio_default_fixture_loop_scope` that fail
+        # strict config validation if pytest-asyncio is not installed.
+        # Even though this test does not use asyncio, the project's full
+        # pytest config is loaded by default, so we install both.
+        run: pip install 'pytest>=8.3.5' 'pytest-asyncio>=1.3.0'
 
       - name: Verify bash version
         id: bash-version
