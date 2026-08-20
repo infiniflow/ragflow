@@ -54,13 +54,15 @@ func TestPipelineParity(t *testing.T) {
 
 	filter := common.GetEnv(common.EnvBatchParityFilter)
 
-	// TSR-replay table PDFs that must hold full grid content parity — guards
-	// the replay TableIndex json tag / per-page index mapping / cumulative-Y
-	// handling against regressions. table_rotation_test.pdf is exempted: its
-	// gridSim<100% gap is the table segmentation divergence documented as
-	// go_intentional (rule table-rotation-split-vs-merged-grid in
-	// known_diffs.json), where Go's split matches the physical PDF and
-	// Python's merged 8x7 grid is a segmentation defect.
+	// TSR-replay table PDFs that must hold full grid content + structure
+	// parity — guards the replay TableIndex json tag / per-page index mapping
+	// / cumulative-Y handling / segmentation against regressions.
+	// table_rotation_test.pdf is exempted (not in the lock set): its
+	// STRUCTURAL divergence (Go 3x6 split vs Python 8x7 merge, structSim<100%
+	// though gridSim=100% because cell text is identical) is the table
+	// segmentation divergence documented as go_intentional (rule
+	// table-rotation-split-vs-merged-grid in known_diffs.json), where Go's
+	// split matches the physical PDF and Python's merged grid is a defect.
 	lockedGridPDFs := parityLockedGridPDFs()
 
 	// go_intentional rules exempt their applies_to PDFs from the FAIL count:
@@ -178,36 +180,52 @@ func TestPipelineParity(t *testing.T) {
 			status = "PASS"
 			detail = fmt.Sprintf("textSim=%.1f%%", sim)
 		case pyHasTables || goHasTables:
-			// Table PDFs not textSim=100% are judged on cell content first.
-			// gridSim==100% means Go's GroupCells + FillCellTextFromBoxes
-			// assembly matches Python's grid; the residual textSim gap is the
-			// HTML serialization layer (whitespace/join/header markup). That is
-			// a real divergence but HTML-only, so it is reported as GRID_OK —
-			// never mislabeled PASS — and classified via known_diffs.json.
+			// Table PDFs not textSim=100% are judged on cell content AND
+			// structure. gridSim (CharSimilarity over joined cell text) is
+			// order- and shape-blind, so a structural divergence (e.g. Go
+			// splitting a rotated table into 3x6 while Python merges it into
+			// 8x7) reads as gridSim=100% even though the grids are not the
+			// same table. gridStructureSimilarity is SHAPE-AWARE: it compares
+			// row/column structure ignoring cell text, so it catches exactly
+			// that class of divergence.
 			gridSim := tool.CharSimilarity(joinGrid(goRows), joinGrid(pyRows))
-			if gridSim >= 100.0 {
+			structureSim, shapeDetail := gridStructureSimilarity(goRows, pyRows)
+			// Full content parity = identical cell text AND identical
+			// structure. Only then is the residual textSim gap purely the
+			// HTML serialization layer, reported as GRID_OK (html-divergent).
+			contentMatch := gridSim >= 100.0 && structureSim >= 100.0
+			if contentMatch {
 				htmlDivergent++
 				status = "GRID_OK"
-				detail = fmt.Sprintf("gridSim=%.1f%% textSim=%.1f%% (HTML-format divergence)", gridSim, sim)
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (HTML-format divergence)", gridSim, structureSim, shapeDetail, sim)
 			} else if intentionalPDF(name) {
-				// go_intentional rule covers this PDF: the gridSim gap is a
-				// documented, deliberate divergence (Go at least as good as
-				// Python, e.g. table segmentation), so it is reported as
-				// INTENTIONAL and not counted as a content failure. It is
-				// still logged so a reader can see the gap.
+				// go_intentional rule covers this PDF: the divergence (cell
+				// content and/or structure) is a documented, deliberate one
+				// where Go is judged at least as good as Python (e.g. table
+				// segmentation). Reported as INTENTIONAL and not counted as a
+				// content failure. Still logged so a reader can see the gap.
 				intentional++
 				status = "INTENTIONAL"
-				detail = fmt.Sprintf("gridSim=%.1f%% textSim=%.1f%% (go_intentional: %s)", gridSim, sim, intentionalRuleID(knownDiffRules, name))
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (go_intentional: %s)", gridSim, structureSim, shapeDetail, sim, intentionalRuleID(knownDiffRules, name))
 			} else {
 				failed++
 				status = "FAIL"
-				detail = fmt.Sprintf("gridSim=%.1f%% textSim=%.1f%% (table grid content differs)", gridSim, sim)
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (table grid content/structure differs)", gridSim, structureSim, shapeDetail, sim)
+			}
+			// Regression guard: a go_intentional PDF whose divergence is
+			// STRUCTURAL (Go's table segmentation differs from Python's) must
+			// surface as INTENTIONAL, never be hidden under gridSim=100% as
+			// html-divergent. This is what caught table_rotation_test.pdf (Go
+			// 3x6 split vs Python 8x7 merge) being mislabeled before the
+			// structure metric existed.
+			if intentionalPDF(name) && structureSim < 100.0 && status != "INTENTIONAL" {
+				t.Errorf("REGRESSION %s: go_intentional structural divergence misclassified %s (must be INTENTIONAL)", name, status)
 			}
 			// Regression lock: TSR-replay table PDFs that reached full grid
-			// content parity must stay there (protects against regressions in
-			// the replay index/Y mapping).
-			if lockedGridPDFs[name] && gridSim < 100.0 {
-				t.Errorf("LOCKED %s: gridSim=%.1f%% regressed below 100%%", name, gridSim)
+			// content + structure parity must stay there (protects against
+			// regressions in the replay index/Y mapping or segmentation).
+			if lockedGridPDFs[name] && (gridSim < 100.0 || structureSim < 100.0) {
+				t.Errorf("LOCKED %s: gridSim=%.1f%% structSim=%.1f%% regressed below 100%%", name, gridSim, structureSim)
 			}
 		default:
 			failed++
