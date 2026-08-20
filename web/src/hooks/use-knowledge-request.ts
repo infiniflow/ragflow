@@ -1120,6 +1120,10 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
     queryKey: KnowledgeListKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
     gcTime: 0,
+    // Hold the previous result across id-list changes so consumers rendering
+    // from `data` don't flash an empty state while the next lookup is in
+    // flight.
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data } = await listDatasetByIds(sortedIds);
       return (data?.data ?? []) as IDataset[];
