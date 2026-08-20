@@ -38,6 +38,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "r2", NewR2Connector)
 	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
+	registerBuiltIn(registry, "jira", NewJiraConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
 	registerBuiltIn(registry, "notion", NewNotionConnector)
 	registerBuiltIn(registry, "rest_api", NewRestAPIConnector)
