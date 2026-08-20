@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -308,6 +309,13 @@ func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, ten
 
 // CreateFolder creates a new folder or virtual file
 func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID, fileType string) (map[string]interface{}, error) {
+	// "/" is the root folder name and the path separator used by recursive
+	// folder creation, so names containing it collide with the root folder
+	// and break path-based lookups.
+	if strings.Contains(name, "/") {
+		return nil, errors.New(`Folder name cannot contain "/"`)
+	}
+
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
@@ -424,6 +432,9 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 	if newName != "" {
 		if len(srcFileIDs) > 1 {
 			return false, "new name can only be used with a single file"
+		}
+		if strings.Contains(newName, "/") {
+			return false, `Name cannot contain "/"`
 		}
 
 		file := filesMap[srcFileIDs[0]]

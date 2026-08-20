@@ -22,6 +22,7 @@ export default {
       stop: '停止',
       resume: '恢复',
       namePlaceholder: '请输入名称',
+      nameSlashError: '名称不能包含 "/"',
       descriptionPlaceholder: '请输入描述',
       next: '下一步',
       create: '创建',

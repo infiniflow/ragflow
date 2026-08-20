@@ -414,6 +414,7 @@ export function FilesTable({
           onOk={onFileRenameOk}
           initialName={initialFileName}
           loading={fileRenameLoading}
+          forbidSlash
         ></RenameDialog>
       )}
     </>
