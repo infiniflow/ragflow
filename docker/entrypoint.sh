@@ -270,18 +270,18 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
         while true; do
             echo "Attempt to start Admin python server..."
-            "$PY" admin/server/admin_server.py
-            echo "Admin python server started"
-            sleep 1;
+            "$PY" admin/server/admin_server.py || true
+            echo "Admin python server exited, restarting in 1s..."
+            sleep 1
         done &
     fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Starting Admin go server..."
-            bin/ragflow_server --admin
-            echo "Admin go server started."
-            sleep 1;
+            bin/ragflow_server --admin || true
+            echo "Admin go server exited, restarting in 1s..."
+            sleep 1
         done &
     fi
 fi
@@ -293,18 +293,18 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
         while true; do
             echo "Attempt to start RAGFlow python server..."
-            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-            echo "RAGFlow python server started."
-            sleep 1;
+            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} || true
+            echo "RAGFlow python server exited, restarting in 1s..."
+            sleep 1
         done &
     fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         while true; do
             echo "Starting RAGFlow go server..."
-            bin/ragflow_server --api
-            echo "RAGFlow go server started."
-            sleep 1;
+            bin/ragflow_server --api || true
+            echo "RAGFlow go server exited, restarting in 1s..."
+            sleep 1
         done &
     fi
 fi
@@ -336,8 +336,9 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
             while true; do
                 echo "Starting go ingestor..."
-                bin/ragflow_server --ingestor
-                sleep 1;
+                bin/ragflow_server --ingestor || true
+                echo "Go ingestor exited, restarting in 1s..."
+                sleep 1
             done &
         fi
     else
@@ -354,8 +355,9 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
           if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
               while true; do
                   echo "Starting go ingestor..."
-                  bin/ragflow_server --ingestor
-                  sleep 1;
+                  bin/ragflow_server --ingestor || true
+                  echo "Go ingestor exited, restarting in 1s..."
+                  sleep 1
               done &
           fi
         done
