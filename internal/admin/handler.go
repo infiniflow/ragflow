@@ -270,14 +270,10 @@ func (h *Handler) CreateUser(c *gin.Context) {
 }
 
 func getUserName(c *gin.Context) (string, error) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return "", err
-	}
+	username := c.Param("username")
 	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
+		err := errors.New("Username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return "", err
 	}
 	return username, nil
@@ -466,10 +462,8 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 
 // DeleteUserAPIToken handle delete user API key
 func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	key := c.Param("token")
