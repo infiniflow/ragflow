@@ -356,7 +356,7 @@ func (c *MoodleConnector) downloadFile(ctx context.Context, fileURL string) ([]b
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("Moodle file download failed with status %d for %s", resp.StatusCode, downloadURL)
+		return nil, fmt.Errorf("Moodle file download failed with status %d for %s", resp.StatusCode, moodleRedactedURL(fileURL))
 	}
 	return io.ReadAll(resp.Body)
 }
