@@ -105,7 +105,11 @@ func splitMarkdownBlocks(markdown string) []string {
 }
 
 // unionWikiProvenance returns a new Meta map based on a (the existing row). The
-// candidate b overwrites kind / slug / page_type / title / summary /
+// candidate b contributes content metadata, while the existing page identity
+// (slug/title/page_type) remains authoritative because pages are merged only
+// when their canonical slug is equal. This prevents a retry or another
+// document's equivalent page from renaming the dataset-level page.
+// The candidate b overwrites kind / summary /
 // entity_names / related_kb_pages / outlinks. Identity and creation time
 // (created_at_unix, created_at) stay from a. Source provenance arrays
 // (source_doc_ids, source_chunk_ids) are unioned and deduped.
@@ -116,7 +120,7 @@ func unionWikiProvenance(a, b map[string]any) map[string]any {
 	}
 	// The incoming page replaces current page metadata. Identity and creation
 	// time remain from the existing row.
-	for _, key := range []string{"slug", "page_type", "title", "summary", "kind"} {
+	for _, key := range []string{"summary", "kind"} {
 		if v, ok := b[key]; ok {
 			out[key] = v
 		}

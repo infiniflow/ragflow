@@ -80,13 +80,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err = s.docEngine.UpdateChunks(
-				ctx,
-				map[string]interface{}{"doc_id": docID},
-				map[string]interface{}{"available_int": statusInt},
-				fmt.Sprintf("ragflow_%s", kb.TenantID),
-				doc.KbID,
-			)
+			err = s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 			if err != nil {
 				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()
@@ -99,6 +93,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				continue
 			}
 		}
+		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
 		result[docID] = map[string]string{"status": status}
 	}
 

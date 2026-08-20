@@ -51,6 +51,20 @@ func TestMarkCompiledProductsHidden(t *testing.T) {
 	}
 }
 
+func TestWikiActiveStatesDecodeCheckpointValues(t *testing.T) {
+	states, err := wikiActiveStates(map[string]any{
+		"wiki_active_map_states": []any{map[string]any{
+			"key": "state-1", "tenant_id": "tenant-1", "dataset_id": "kb-1", "document_id": "doc-1", "payload": `{"plan":[]}`,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("wikiActiveStates failed: %v", err)
+	}
+	if len(states) != 1 || states[0].Key != "state-1" || string(states[0].Payload) != `{"plan":[]}` {
+		t.Fatalf("decoded states = %#v", states)
+	}
+}
+
 func makeTaskCtx() *TaskContext {
 	return &TaskContext{
 		IngestionTask: &entity.IngestionTask{
