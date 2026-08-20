@@ -25,6 +25,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestQueueSaveToMemoryTask_NilService: a nil receiver surfaces
@@ -64,6 +65,33 @@ func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "AgentID") {
 		t.Errorf("error = %v, want AgentID-required error", err)
+	}
+}
+
+// TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
+// server-local wall-clock string (Python timestamp_to_date semantics), not
+// UTC — otherwise memories asked at 10:05 local show up as 02:05.
+func TestBuildRawMessage_ValidAtServerLocal(t *testing.T) {
+	before := time.Now()
+	raw := buildRawMessage(42, "mem-1", MemoryMessage{
+		UserID:        "u1",
+		AgentID:       "a1",
+		SessionID:     "s1",
+		UserInput:     "hi",
+		AgentResponse: "hello",
+	})
+	after := time.Now()
+
+	got, ok := raw["valid_at"].(string)
+	if !ok {
+		t.Fatalf("valid_at = %#v, want string", raw["valid_at"])
+	}
+	stamped, err := time.ParseInLocation(memoryTimeLayout, got, time.Local)
+	if err != nil {
+		t.Fatalf("valid_at %q does not parse as %q: %v", got, memoryTimeLayout, err)
+	}
+	if stamped.Before(before.Add(-2*time.Second)) || stamped.After(after.Add(2*time.Second)) {
+		t.Fatalf("valid_at %q parses as %v, want server-local time in [%v, %v]", got, stamped, before, after)
 	}
 }
 

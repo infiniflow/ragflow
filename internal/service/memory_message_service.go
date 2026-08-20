@@ -214,10 +214,12 @@ func buildRawMessage(
 		"agent_id":     msg.AgentID,
 		"session_id":   msg.SessionID,
 		"content":      content,
-		"valid_at":     time.Now().UTC().Format("2006-01-02 15:04:05"),
-		"invalid_at":   nil,
-		"forget_at":    nil,
-		"status":       true,
+		// valid_at mirrors Python timestamp_to_date(current_timestamp()):
+		// server-local wall clock, not UTC.
+		"valid_at":   time.Now().Format(memoryTimeLayout),
+		"invalid_at": nil,
+		"forget_at":  nil,
+		"status":     true,
 	}
 }
 

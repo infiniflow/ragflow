@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -171,6 +172,16 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 			}
 			if forgetAt, ok := docEngine.updateValue["forget_at"].(string); !ok || forgetAt == "" {
 				t.Fatalf("forget_at = %#v, want non-empty string", docEngine.updateValue["forget_at"])
+			} else {
+				// forget_at must be a server-local wall-clock string, matching
+				// Python timestamp_to_date — not a UTC-shifted one.
+				stamped, err := time.ParseInLocation(memoryTimeLayout, forgetAt, time.Local)
+				if err != nil {
+					t.Fatalf("forget_at %q does not parse as %q: %v", forgetAt, memoryTimeLayout, err)
+				}
+				if delta := time.Since(stamped); delta > 2*time.Minute || delta < -2*time.Minute {
+					t.Fatalf("forget_at %q parses as %v, want server-local now (±2min)", forgetAt, stamped)
+				}
 			}
 			_, hasCompanion := docEngine.updateValue["forget_at_flt"]
 			if hasCompanion != test.wantForgetAtCompanion {
