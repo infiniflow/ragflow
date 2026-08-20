@@ -124,6 +124,10 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 }
 
 func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
+	if n.jetStream == nil || n.stream == nil {
+		return nil, errors.New("NATS jetstream/stream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	accountInfo, err := n.jetStream.AccountInfo(ctx)

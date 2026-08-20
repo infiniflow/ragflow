@@ -23,6 +23,10 @@ func TestUninitializedEngineMethodsReturnErrors(t *testing.T) {
 		t.Fatalf("GetMessages on uninitialized engine: err = %v, want 'not properly initialized'", err)
 	}
 
+	if _, err := e.ShowMessageQueue(); err == nil || !strings.Contains(err.Error(), "not properly initialized") {
+		t.Fatalf("ShowMessageQueue on uninitialized engine: err = %v, want 'not properly initialized'", err)
+	}
+
 	if status := e.CheckStatus(); !strings.Contains(status, "not properly initialized") {
 		t.Fatalf("CheckStatus on uninitialized engine = %q, want 'not properly initialized'", status)
 	}
