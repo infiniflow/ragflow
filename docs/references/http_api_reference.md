@@ -2890,7 +2890,7 @@ curl --request POST \
     - `"or"`: Return results that satisfy *any* condition.
   - `"conditions"`: (*Body parameter*), `array`
     A list of metadata filter conditions.
-    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/metadata_management.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
       - `"not contains"`
