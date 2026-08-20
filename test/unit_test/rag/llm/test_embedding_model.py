@@ -25,7 +25,7 @@
   (the old ``8196`` overshoot is gone);
 * ``ZhipuEmbed`` / ``OllamaEmbed`` now batch — ``ceil(n / batch_size)`` requests
   with input order and output shape preserved.
-* OpenAI-compatible embedding providers receive only standard request fields.
+* Embedding providers receive only standard request fields.
 """
 
 import json
@@ -89,12 +89,12 @@ def _make_openai(cls=OpenAIEmbed, total_tokens=None):
 @pytest.mark.p1
 @pytest.mark.parametrize("embed_cls", [TogetherAIEmbed, OpenAI_APIEmbed])
 def test_openai_compatible_embedding_does_not_send_litellm_drop_params(embed_cls):
-    """Strict OpenAI-compatible APIs reject LiteLLM-only request fields."""
+    """Strict embedding APIs reject LiteLLM-only request fields."""
 
-    def _strict_create(input, model, **kwargs):
+    def _strict_create(**kwargs):
         if kwargs.get("extra_body", {}).get("drop_params"):
             raise RuntimeError("Unrecognized request arguments supplied: drop_params")
-        return _OpenAIResp([[0.0] for _ in input], total_tokens=1)
+        return _OpenAIResp([[0.0] for _ in kwargs["input"]], total_tokens=1)
 
     embed = _make_openai(cls=embed_cls)
     embed.client.embeddings.create = MagicMock(side_effect=_strict_create)
