@@ -112,6 +112,7 @@ func NewJiraConnector(config map[string]any) (*JiraConnector, error) {
 		commentEmailBlacklist: jiraStringSet(jiraStringSlice(config["comment_email_blacklist"])),
 		client:                &http.Client{Timeout: jiraRequestTimeout},
 	}
+	c.client.CheckRedirect = c.checkRedirect
 	if len(c.labelsToSkip) == 0 {
 		c.labelsToSkip = jiraStringSet(strings.Split(os.Getenv("JIRA_CONNECTOR_LABELS_TO_SKIP"), ","))
 	}
@@ -521,12 +522,15 @@ func (c *JiraConnector) doJiraJSON(ctx context.Context, method, apiPath string, 
 
 func (c *JiraConnector) downloadURL(ctx context.Context, rawURL string) ([]byte, error) {
 	parsed, err := url.Parse(rawURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("unsupported Jira attachment URL")
 	}
 	base, err := url.Parse(c.baseURL)
-	if err != nil || !strings.EqualFold(parsed.Host, base.Host) {
-		return nil, fmt.Errorf("Jira attachment host %q does not match the configured base URL", parsed.Host)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return nil, fmt.Errorf("invalid Jira base URL")
+	}
+	if !sameJiraOrigin(parsed, base) {
+		return nil, fmt.Errorf("Jira attachment origin %q does not match the configured base URL", parsed.Scheme+"://"+parsed.Host)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -542,6 +546,25 @@ func (c *JiraConnector) downloadURL(ctx context.Context, rawURL string) ([]byte,
 		return nil, &jiraAPIError{Status: resp.StatusCode, Message: resp.Status}
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, c.attachmentSizeLimit+1))
+}
+
+func (c *JiraConnector) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return fmt.Errorf("invalid Jira base URL")
+	}
+	if !sameJiraOrigin(req.URL, base) {
+		return fmt.Errorf("Jira redirect origin %q does not match the configured base URL", req.URL.Scheme+"://"+req.URL.Host)
+	}
+	c.authorize(req)
+	return nil
+}
+
+func sameJiraOrigin(candidate, base *url.URL) bool {
+	return strings.EqualFold(candidate.Scheme, base.Scheme) && strings.EqualFold(candidate.Host, base.Host)
 }
 
 func (c *JiraConnector) apiURL(apiPath string, query url.Values) string {

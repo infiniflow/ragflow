@@ -159,6 +159,94 @@ func TestJiraConnectorBuildJQLIgnoresQuotedOrderBy(t *testing.T) {
 	}
 }
 
+func TestJiraConnectorDownloadRejectsSchemeMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("request should not be sent for mismatched scheme")
+	}))
+	defer server.Close()
+
+	connector, err := NewJiraConnector(map[string]any{
+		"base_url":    server.URL,
+		"project_key": "RAG",
+		"credentials": map[string]any{
+			"jira_api_token": "token",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewJiraConnector failed: %v", err)
+	}
+	attachmentURL := "https://" + strings.TrimPrefix(server.URL, "http://") + "/attachment"
+
+	if _, err = connector.downloadURL(context.Background(), attachmentURL); err == nil {
+		t.Fatalf("downloadURL should reject attachment URL scheme mismatch")
+	}
+}
+
+func TestJiraConnectorDownloadRejectsCrossOriginRedirect(t *testing.T) {
+	destinationHit := false
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destinationHit = true
+	}))
+	defer destination.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL+"/attachment", http.StatusFound)
+	}))
+	defer source.Close()
+
+	connector, err := NewJiraConnector(map[string]any{
+		"base_url":    source.URL,
+		"project_key": "RAG",
+		"credentials": map[string]any{
+			"jira_api_token": "token",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewJiraConnector failed: %v", err)
+	}
+
+	if _, err = connector.downloadURL(context.Background(), source.URL+"/redirect"); err == nil {
+		t.Fatalf("downloadURL should reject cross-origin redirect")
+	}
+	if destinationHit {
+		t.Fatalf("cross-origin redirect target was requested")
+	}
+}
+
+func TestJiraConnectorDownloadKeepsAuthorizationOnSameOriginRedirect(t *testing.T) {
+	var server *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, server.URL+"/attachment", http.StatusFound)
+	})
+	mux.HandleFunc("/attachment", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("Authorization header = %q, want Bearer token", got)
+		}
+		_, _ = w.Write([]byte("attachment body"))
+	})
+	server = httptest.NewServer(mux)
+	defer server.Close()
+
+	connector, err := NewJiraConnector(map[string]any{
+		"base_url":    server.URL,
+		"project_key": "RAG",
+		"credentials": map[string]any{
+			"jira_api_token": "token",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewJiraConnector failed: %v", err)
+	}
+
+	blob, err := connector.downloadURL(context.Background(), server.URL+"/redirect")
+	if err != nil {
+		t.Fatalf("downloadURL failed: %v", err)
+	}
+	if string(blob) != "attachment body" {
+		t.Fatalf("downloaded body = %q", blob)
+	}
+}
+
 func jiraFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
