@@ -54,13 +54,11 @@ import (
 
 const ComponentNameGroupTitleChunker = "GroupTitleChunker"
 
-// MIN_GROUP_TOKENS / MAX_GROUP_TOKENS mirror the python constants in
-// group_chunker.py:22-23. They drive the merge heuristic for adjacent
-// text records.
-const (
-	minGroupTokens = 32
-	maxGroupTokens = 1024
-)
+// minGroupTokens mirrors MIN_GROUP_TOKENS (group_chunker.py:22): very
+// small chunks are allowed to absorb the next record regardless of
+// section change. The merge ceiling is the configurable chunk_token_cap
+// (group_chunker.py:90), not a fixed constant.
+const minGroupTokens = 32
 
 // resolveTargetLevel mirrors common.py:resolve_target_level: pick the
 // n-th smallest heading level from the per-line `levels` vector.
@@ -242,9 +240,14 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 			continue
 		}
 		tokenCount := tokenizer.NumTokensFromString(text)
+		// Merge ceiling mirrors group_chunker.py:90: the configurable
+		// chunk_token_cap (0/negative disables the ceiling). The post-build
+		// enforceTitleTokenCap stays the single hard guarantee for any
+		// residual over-cap chunk.
+		mergeCeilingOK := p.ChunkTokenCap <= 0 || tkCnt < p.ChunkTokenCap
 		shouldMerge := len(currentGroup) > 0 &&
 			currentGroup[0].isText() &&
-			(tkCnt < minGroupTokens || (tkCnt < maxGroupTokens && secID == lastSID))
+			(tkCnt < minGroupTokens || (mergeCeilingOK && secID == lastSID))
 		if shouldMerge {
 			currentGroup = append(currentGroup, rec)
 			tkCnt += tokenCount

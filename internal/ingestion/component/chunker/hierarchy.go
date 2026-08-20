@@ -38,7 +38,10 @@
 //     has no detectable heading levels (resolve_target_level → None),
 //     the run is packed into token-bounded groups (group variant
 //     budget) instead of one giant chunk, matching the classic
-//     rag/app/book.py naive_merge fallback.
+//     rag/app/book.py naive_merge fallback. When NO run in the document
+//     yields a heading, root_chunk_as_heading is suppressed too: with
+//     no heading anywhere there is no root heading, and the rewrite
+//     would drop the leading body chunk.
 //
 //   - No PDF-position / deepdoc awareness; structured chunk inputs
 //     use the same dfs over text records.
@@ -190,6 +193,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	var recordGroups [][]lineRecord
 	var textRun []lineRecord
 	var textLevels []int
+	sawHeading := false
 
 	flush := func() {
 		if len(textRun) == 0 {
@@ -209,10 +213,12 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 			// a single chunk and breaks retrieval. The classic python
 			// book chunker (rag/app/book.py) falls back to token-bounded
 			// naive_merge in exactly this case, so mirror that fallback
-			// here by packing the run with the same token budget the
-			// group variant uses (minGroupTokens/maxGroupTokens).
+			// here by packing the run with the same budget the group
+			// variant uses (minGroupTokens + the configurable
+			// chunk_token_cap merge ceiling).
 			recordGroups = append(recordGroups, groupRecords(textRun, make([]int, len(textRun)), p)...)
 		} else {
+			sawHeading = true
 			indexed := make([]indexedLine, len(textRun))
 			for j := range textRun {
 				indexed[j] = indexedLine{level: textLevels[j], index: j}
@@ -251,7 +257,19 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.Int("record_groups", len(recordGroups)),
 	)
 
-	chunks := buildChunksFromRecordGroups(recordGroups, p, isPlainTextFormat(inputs))
+	// A document whose text runs all missed heading detection has no root
+	// heading: every emitted chunk is plain body prose, so the
+	// root-as-heading rewrite would drop the leading body chunk and
+	// prepend its text to the rest. Suppress the rewrite for that case
+	// only; a document with any detected heading keeps the python
+	// behavior unchanged.
+	chunkParam := p
+	if p.RootChunkAsHeading && !sawHeading {
+		np := *p
+		np.RootChunkAsHeading = false
+		chunkParam = &np
+	}
+	chunks := buildChunksFromRecordGroups(recordGroups, chunkParam, isPlainTextFormat(inputs))
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks).

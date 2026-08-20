@@ -550,15 +550,10 @@ func TestHierarchyTitleChunker_NoHeadingsTokenFallback(t *testing.T) {
 	}
 	// Plain-prose book with 第N回-style markers that no configured
 	// heading family matches — mirrors the reported 红楼梦 txt case.
-	line := "第一回 " + strings.Repeat("红尘滚滚正文段落", 10)
-	var b strings.Builder
-	for i := 0; i < 120; i++ {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
+	src := headingLessProse(120)
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "hlm.txt",
-		"text": b.String(),
+		"text": src,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -567,20 +562,35 @@ func TestHierarchyTitleChunker_NoHeadingsTokenFallback(t *testing.T) {
 	if len(chunks) < 2 {
 		t.Fatalf("heading-less book collapsed into %d chunk(s), want >= 2", len(chunks))
 	}
-	lineTokens := tokenizer.NumTokensFromString(line)
+	// chunk_token_cap defaults to 512 and is the hard ceiling on every
+	// emitted text chunk (enforceTitleTokenCap).
+	const capTokens = 512
 	var all strings.Builder
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
 		if text == "" {
 			t.Errorf("chunk[%d] text is empty", i)
 		}
-		if got := tokenizer.NumTokensFromString(text); got > maxGroupTokens+lineTokens {
-			t.Errorf("chunk[%d] tokens = %d, want <= %d (budget + one-line overshoot)", i, got, maxGroupTokens+lineTokens)
+		if got := tokenizer.NumTokensFromString(text); got > capTokens {
+			t.Errorf("chunk[%d] tokens = %d, want <= %d (chunk_token_cap hard ceiling)", i, got, capTokens)
 		}
 		all.WriteString(text)
 	}
-	if !strings.Contains(all.String(), "第一回") {
-		t.Error("merged chunk text lost content")
+	// Full content preservation: the concatenated chunk text must
+	// reproduce the source text (whitespace-normalized), in order and
+	// with every repeated occurrence intact.
+	assertNormalizedTextEqual(t, all.String(), src)
+}
+
+// assertNormalizedTextEqual fails the test when got and want differ
+// after whitespace normalization, i.e. when chunking dropped,
+// duplicated, or reordered any source content.
+func assertNormalizedTextEqual(t *testing.T, got, want string) {
+	t.Helper()
+	g := strings.Join(strings.Fields(got), "")
+	w := strings.Join(strings.Fields(want), "")
+	if g != w {
+		t.Errorf("chunk text does not preserve the source content: got %d bytes, want %d bytes", len(g), len(w))
 	}
 }
 
@@ -605,7 +615,87 @@ func TestHierarchyTitleChunker_NoHeadingsSmallDoc(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want 1 for a short heading-less doc", len(chunks))
 	}
-	if text, _ := chunks[0]["text"].(string); !strings.Contains(text, "没有任何标题结构") {
-		t.Errorf("chunk text = %q, want it to contain the body", text)
+	text, _ := chunks[0]["text"].(string)
+	assertNormalizedTextEqual(t, text, "只是几行普通正文\n没有任何标题结构\n内容很短")
+}
+
+// headingLessProse returns n identical plain-prose lines whose 第N回-style
+// marker matches no configured heading family (the reported 红楼梦 txt case).
+func headingLessProse(n int) string {
+	line := "第一回 " + strings.Repeat("红尘滚滚正文段落", 10)
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
+	return b.String()
+}
+
+// TestHierarchyTitleChunker_NoHeadingsRootChunkAsHeading pins that
+// root_chunk_as_heading does not drop the leading body chunk when the
+// whole document is heading-less: with no heading anywhere there is no
+// root heading, so every body chunk must be preserved (wangq8 review).
+func TestHierarchyTitleChunker_NoHeadingsRootChunkAsHeading(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy":             5,
+		"levels":                [][]string{{`^# `}},
+		"root_chunk_as_heading": true,
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	src := headingLessProse(40)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name": "hlm.txt",
+		"text": src,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) < 2 {
+		t.Fatalf("heading-less book collapsed into %d chunk(s), want >= 2", len(chunks))
+	}
+	var all strings.Builder
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		all.WriteString(text)
+	}
+	assertNormalizedTextEqual(t, all.String(), src)
+}
+
+// TestHierarchyTitleChunker_NoHeadingsConfigurableCap pins that the
+// heading-less fallback budget follows the configurable chunk_token_cap
+// (xugangqiang review): with a 128-token cap every emitted chunk stays
+// within it and the content is fully preserved.
+func TestHierarchyTitleChunker_NoHeadingsConfigurableCap(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy":       5,
+		"levels":          [][]string{{`^# `}},
+		"chunk_token_cap": 128,
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	src := headingLessProse(40)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name": "hlm.txt",
+		"text": src,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) < 2 {
+		t.Fatalf("heading-less book collapsed into %d chunk(s), want >= 2", len(chunks))
+	}
+	var all strings.Builder
+	for i, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if got := tokenizer.NumTokensFromString(text); got > 128 {
+			t.Errorf("chunk[%d] tokens = %d, want <= 128 (configured chunk_token_cap)", i, got)
+		}
+		all.WriteString(text)
+	}
+	assertNormalizedTextEqual(t, all.String(), src)
 }
