@@ -132,7 +132,7 @@ func (c *JiraConnector) Validate(ctx context.Context) error {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return &ConnectorValidationError{Message: "invalid Jira base URL"}
 	}
-	if c.apiToken == "" && !(c.userEmail != "" && c.password != "") {
+	if c.apiToken == "" && (c.userEmail == "" || c.password == "") {
 		return &ConnectorMissingCredentialError{Message: "Jira credentials must include either an API token or username/password."}
 	}
 	if c.projectKey == "" && c.jqlQuery == "" {
@@ -205,8 +205,13 @@ func (c *JiraConnector) isCloud() bool {
 
 func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 	clauses := []string{}
+	orderBy := ""
 	if c.jqlQuery != "" {
-		clauses = append(clauses, "("+c.jqlQuery+")")
+		jqlQuery, ordering := splitJiraOrderBy(c.jqlQuery)
+		orderBy = ordering
+		if jqlQuery != "" {
+			clauses = append(clauses, "("+jqlQuery+")")
+		}
 	} else if c.projectKey != "" {
 		clauses = append(clauses, fmt.Sprintf("project = %q", c.projectKey))
 	}
@@ -232,15 +237,93 @@ func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 		clauses = append(clauses, fmt.Sprintf("updated <= %q", c.formatJQLTime(end)))
 	}
 	jql := strings.Join(clauses, " AND ")
-	if !strings.Contains(strings.ToLower(jql), "order by") {
-		jql += " ORDER BY updated ASC"
+	if orderBy == "" {
+		orderBy = "ORDER BY updated ASC"
 	}
-	return jql
+	if jql == "" {
+		return orderBy
+	}
+	return jql + " " + orderBy
 }
 
 func (c *JiraConnector) formatJQLTime(t time.Time) string {
 	offsetSeconds := int(c.timezoneOffset * 3600)
 	return t.UTC().In(time.FixedZone("jira", offsetSeconds)).Format("2006-01-02 15:04")
+}
+
+func splitJiraOrderBy(query string) (string, string) {
+	cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
+	orderStart := trailingJiraOrderByIndex(cleaned)
+	if orderStart < 0 {
+		return cleaned, ""
+	}
+	return strings.TrimSpace(cleaned[:orderStart]), strings.TrimSpace(cleaned[orderStart:])
+}
+
+func trailingJiraOrderByIndex(query string) int {
+	depth := 0
+	inQuote := rune(0)
+	escaped := false
+	for i, r := range query {
+		if inQuote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+		switch r {
+		case '\'', '"':
+			inQuote = r
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 && hasJiraOrderByAt(query, i) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func hasJiraOrderByAt(query string, index int) bool {
+	if index > 0 && isJiraWordByte(query[index-1]) {
+		return false
+	}
+	if !strings.EqualFold(query[index:min(index+5, len(query))], "order") {
+		return false
+	}
+	pos := index + 5
+	if pos >= len(query) || !isJiraWhitespace(query[pos]) {
+		return false
+	}
+	for pos < len(query) && isJiraWhitespace(query[pos]) {
+		pos++
+	}
+	if pos+2 > len(query) || !strings.EqualFold(query[pos:pos+2], "by") {
+		return false
+	}
+	after := pos + 2
+	return after == len(query) || !isJiraWordByte(query[after])
+}
+
+func isJiraWordByte(b byte) bool {
+	return b == '_' || b >= '0' && b <= '9' || b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z'
+}
+
+func isJiraWhitespace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
 func (c *JiraConnector) searchJQL(ctx context.Context, jql string, startAt, maxResults int, fields, nextPageToken string, out *jiraSearchPage) error {
@@ -437,6 +520,14 @@ func (c *JiraConnector) doJiraJSON(ctx context.Context, method, apiPath string, 
 }
 
 func (c *JiraConnector) downloadURL(ctx context.Context, rawURL string) ([]byte, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("unsupported Jira attachment URL")
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil || !strings.EqualFold(parsed.Host, base.Host) {
+		return nil, fmt.Errorf("Jira attachment host %q does not match the configured base URL", parsed.Host)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -561,7 +652,9 @@ func (s *jiraSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 	if checkpoint.Cursor != "" && json.Unmarshal([]byte(checkpoint.Cursor), &cursor) == nil {
 		s.startAt = cursor.StartAt
 		s.nextPageToken = cursor.NextPageToken
-		s.resumeSource = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+		if s.startAt == 0 && s.nextPageToken == "" {
+			s.resumeSource = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+		}
 		return
 	}
 	s.resumeSource = checkpoint.SourceID

@@ -118,6 +118,47 @@ func TestJiraConnectorRegisteredBuiltIn(t *testing.T) {
 	}
 }
 
+func TestJiraConnectorBuildJQLMovesUserOrderAfterFilters(t *testing.T) {
+	start := mustTime(t, "2026-01-02T12:00:00Z")
+	end := mustTime(t, "2026-01-04T00:00:00Z")
+	connector := &JiraConnector{
+		jqlQuery:       `status = "Done" ORDER BY priority DESC, updated ASC`,
+		timezoneOffset: 0,
+	}
+
+	got := connector.buildJQL(&start, end)
+	want := `(status = "Done") AND updated >= "2026-01-02 12:00" AND updated <= "2026-01-04 00:00" ORDER BY priority DESC, updated ASC`
+	if got != want {
+		t.Fatalf("buildJQL() = %q, want %q", got, want)
+	}
+}
+
+func TestJiraConnectorBuildJQLKeepsDefaultOrder(t *testing.T) {
+	connector := &JiraConnector{
+		jqlQuery:       `status = "Done"`,
+		timezoneOffset: 0,
+	}
+
+	got := connector.buildJQL(nil, time.Time{})
+	want := `(status = "Done") ORDER BY updated ASC`
+	if got != want {
+		t.Fatalf("buildJQL() = %q, want %q", got, want)
+	}
+}
+
+func TestJiraConnectorBuildJQLIgnoresQuotedOrderBy(t *testing.T) {
+	connector := &JiraConnector{
+		jqlQuery:       `summary ~ "order by updated"`,
+		timezoneOffset: 0,
+	}
+
+	got := connector.buildJQL(nil, time.Time{})
+	want := `(summary ~ "order by updated") ORDER BY updated ASC`
+	if got != want {
+		t.Fatalf("buildJQL() = %q, want %q", got, want)
+	}
+}
+
 func jiraFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -126,7 +167,8 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("jql"); !strings.Contains(got, `project = "RAG"`) {
-			t.Fatalf("jql = %q", got)
+			t.Errorf("jql = %q", got)
+			return
 		}
 		writeJSON(t, w, map[string]any{
 			"issues": []map[string]any{{"id": "10000"}},
@@ -179,7 +221,7 @@ func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
-		t.Fatalf("Encode JSON failed: %v", err)
+		t.Errorf("Encode JSON failed: %v", err)
 	}
 }
 
