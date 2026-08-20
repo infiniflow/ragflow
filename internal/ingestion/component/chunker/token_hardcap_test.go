@@ -325,3 +325,56 @@ func TestMergeByTokenSizeFromJSON_HardCapStrict(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeUnits_JoinSepAddsTokens pins the re-tokenize guard: joinSep (the
+// JSON path's "\n") can add tokens beyond the running sum, so the emitted text
+// of a merge that the running sum deems safe can still exceed target. The
+// merge must re-check the actual joined text and start a fresh chunk instead.
+func TestMergeUnits_JoinSepAddsTokens(t *testing.T) {
+	a := "word"
+	b := "pad"
+	na, nb := tokenizeStr(a), tokenizeStr(b)
+	target := na + nb // running sum exactly fits
+	if joinedTK := tokenizeStr(a + "\n" + b); joinedTK <= target {
+		t.Skipf("fixture: joinSep newline adds no token for these texts (joined=%d target=%d)", joinedTK, target)
+	}
+	got := mergeUnits([]schema.ChunkDoc{
+		{Text: a, TKNums: intPtr(na), CKType: "text"},
+		{Text: b, TKNums: intPtr(nb), CKType: "text"},
+	}, target, 0, "\n")
+	if len(got) != 2 {
+		t.Fatalf("joined text exceeds target via joinSep: want 2 chunks, got %d", len(got))
+	}
+	for i, ck := range got {
+		if n := tokenizeStr(ck.Text); n > target {
+			t.Errorf("chunk %d exceeds target: tokens=%d (cap=%d) text=%q", i, n, target, ck.Text)
+		}
+	}
+}
+
+// TestExpandOversizedUnits_AllWhitespaceOverCap pins the all-whitespace branch:
+// a whitespace-only unit whose token count exceeds the target must be hard-split
+// like any other oversized unit, not emitted as a single over-cap chunk. The
+// fixture avoids a leading "\n" (which the lead-glue branch already re-splits)
+// so it exercises the all-whitespace else branch in splitOversizedText.
+func TestExpandOversizedUnits_AllWhitespaceOverCap(t *testing.T) {
+	ws := strings.Repeat(" \n", 20) // 40 runes; each "\n" is one cl100k token
+	const target = 8
+	if n := tokenizeStr(ws); n <= target {
+		t.Skipf("fixture: whitespace tokenizes to %d <= target %d", n, target)
+	}
+	got := expandOversizedUnits([]schema.ChunkDoc{{Text: ws, CKType: "text"}}, target)
+	if len(got) < 2 {
+		t.Fatalf("all-whitespace unit over cap must be hard-split, got %d chunk(s)", len(got))
+	}
+	var joined string
+	for i, ck := range got {
+		if n := tokenizeStr(ck.Text); n > target {
+			t.Errorf("chunk %d exceeds target: tokens=%d (cap=%d)", i, n, target)
+		}
+		joined += ck.Text
+	}
+	if joined != ws {
+		t.Errorf("split not lossless:\n got=%q\nwant=%q", joined, ws)
+	}
+}

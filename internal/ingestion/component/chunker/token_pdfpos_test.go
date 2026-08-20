@@ -195,30 +195,32 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 	posD := json.RawMessage(`[[4,0,40,0,16]]`)
 	posE := json.RawMessage(`[[5,0,50,0,20]]`)
 	posF := json.RawMessage(`[[6,0,60,0,24]]`)
-	// 6 equal-length items (5 runes each). With chunkTokens=5 and each item
-	// TKNums=1, items 0..4 merge into one chunk (tk reaches 5); item5 starts a
-	// fresh chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of
-	// the 5-item previous chunk's text => only the last item ("eeeee", posE)
-	// intersects the tail. So chunk[1] must carry posE (tail) + posF (own), but
-	// NOT posA/posB/posC/posD.
+	// 6 single-token items. With chunkTokens=9 (5 item tokens + 4 joinSep "\n"
+	// tokens), items 0..4 merge into one chunk — the re-tokenize guard lets the
+	// joined text fill the cap exactly (9 tokens), and item5 starts a fresh
+	// chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of the
+	// 5-item previous chunk's text => only the last item ("e", posE) intersects
+	// the tail. So chunk[1] must carry posE (tail) + posF (own), but NOT
+	// posA/posB/posC/posD. (Texts are single-token so the re-tokenize guard's
+	// actual-count check agrees with the declared TKNums.)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "aaaaa", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posA},
-			{Text: "bbbbb", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posB},
-			{Text: "ccccc", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posC},
-			{Text: "ddddd", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posD},
-			{Text: "eeeee", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posE},
-			{Text: "fffff", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
+			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posA},
+			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posB},
+			{Text: "c", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posC},
+			{Text: "d", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posD},
+			{Text: "e", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posE},
+			{Text: "f", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 5, 20)
+	got := mergeByTokenSizeFromJSON(items, 9, 20)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 chunks (5 items merge, 6th starts fresh with partial overlap), got %d", len(merged))
 	}
 
 	// The new chunk's overlap text is the tail of the previous chunk.
-	if !strings.Contains(merged[1].Text, "eeeee") {
+	if !strings.Contains(merged[1].Text, "e") {
 		t.Errorf("chunk[1] missing overlap tail text from prev chunk: text=%q", merged[1].Text)
 	}
 	// The tail item's coordinates MUST be carried.

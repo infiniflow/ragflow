@@ -36,7 +36,10 @@ type mergeUnitsOracleRow struct {
 //
 // Contract mirrored here:
 //   - token counts are the RUNNING SUM of per-unit counts (never re-tokenizing
-//     the joined text);
+//     the joined text), but the merge ALSO re-checks the actual joined text
+//     against the target — joinSep (e.g. "\n" on the JSON path) can add tokens
+//     beyond the running sum, so a candidate whose joined text exceeds target
+//     starts a fresh chunk (hard-cap safety net, matching mergeUnits);
 //   - overlap>0 uses a SCALED threshold target*(100-overlap)/100 and prepends
 //     the previous chunk's tail, trimmed to fit the target (computeOverlapPrefix
 //   - overlapFitPrefix, matching mergeUnits);
@@ -70,6 +73,17 @@ func hardCapMergeUnitsOracle(texts []string, tkNums []int, kinds []string, targe
 		// UNDER_CAP: a projected join that would exceed target starts a fresh
 		// chunk. The scaled threshold reserves room for the overlap prefix.
 		startNew := float64(merged[prev].tk) > threshold || merged[prev].tk+tk > target
+		if !startNew {
+			// Hard-cap safety net: re-check the actual joined text (joinSep can
+			// add tokens beyond the running sum), mirroring mergeUnits.
+			cand := merged[prev].text + texts[i]
+			if merged[prev].text != "" && texts[i] != "" {
+				cand = merged[prev].text + joinSep + texts[i]
+			}
+			if tokenizeStr(cand) > target {
+				startNew = true
+			}
+		}
 		if startNew {
 			text := texts[i]
 			cpTk := tk
@@ -185,6 +199,17 @@ func TestMergeUnitsMatchesHardCapOracle(t *testing.T) {
 			tkNums: []int{tokenizeStr(strings.Repeat("word ", 10)), tokenizeStr(strings.Repeat("pad ", 10))},
 			kinds:  []string{"text", "text"},
 			target: 22, overlap: 20, joinSep: "\n",
+		},
+		{
+			// The re-tokenize guard (hard-cap safety net): the joined text
+			// (with joinSep "\n") exceeds target even though the running sum
+			// fits, so the merge must start a fresh chunk. Both mergeUnits and
+			// the oracle must fire the guard identically.
+			name:   "joinsep guard fires on actual joined text",
+			texts:  []string{"word", "pad"},
+			tkNums: []int{1, 1},
+			kinds:  []string{"text", "text"},
+			target: 2, overlap: 0, joinSep: "\n",
 		},
 	}
 	for _, c := range cases {

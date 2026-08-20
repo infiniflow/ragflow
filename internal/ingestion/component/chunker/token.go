@@ -838,6 +838,12 @@ func takeFromStart(text string, tokens int) string {
 //
 // Token counts use the RUNNING SUM of per-unit counts (never re-tokenizing the
 // joined string), matching Python's tk_nums += current["tk_nums"] (#17948).
+// As a hard-cap safety net the merge ALSO re-checks the actual joined text via
+// tokenizeStr before accepting a merge: joinSep (e.g. "\n" on the JSON path)
+// can add tokens beyond the running sum, so a candidate whose joined text
+// would exceed target starts a fresh chunk. The running-sum bookkeeping (and
+// therefore chunk TKNums) stays as-is — it matches Python and can under-report
+// the joinSep tokens by a few — while the emitted text never exceeds target.
 // Non-text units pass through unchanged and reset the merge run. joinSep is
 // "\n" for the JSON path and "" for the text path.
 // mergeItem records one source unit that contributed to a merged chunk: its
@@ -863,17 +869,22 @@ func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep strin
 		return nil, nil
 	}
 	// Items are concatenated with joinSep (a single "\n" for the JSON path),
-	// matching the merge join at mergeUnits.
+	// matching the merge join at mergeUnits. Offsets are measured on the
+	// TAG-FREE visible text so they line up with overlapCut/overlapFitPrefix,
+	// which carve the overlap from removeTag'd text; a coordinate tag in an
+	// earlier item must not shift the boundaries of later items.
+	visible := make([]string, len(prevItems))
 	total := 0
-	for _, it := range prevItems {
-		total += utf8.RuneCountInString(it.Text) + utf8.RuneCountInString(joinSep)
+	for i, it := range prevItems {
+		visible[i] = removeTag(it.Text)
+		total += utf8.RuneCountInString(visible[i]) + utf8.RuneCountInString(joinSep)
 	}
 	total -= utf8.RuneCountInString(joinSep)
 	var pdfAcc, posAcc json.RawMessage
 	offset := 0
-	for _, it := range prevItems {
+	for i, it := range prevItems {
 		start := offset
-		end := offset + utf8.RuneCountInString(it.Text)
+		end := offset + utf8.RuneCountInString(visible[i])
 		if start < total && end > overlapStart {
 			pdfAcc = extendRawJSONArray(pdfAcc, it.PDFPositions)
 			posAcc = extendRawJSONArray(posAcc, it.Positions)
@@ -931,6 +942,20 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 		// UNDER_CAP: a projected join that would exceed target starts a fresh
 		// chunk. The scaled threshold reserves room for the overlap prefix.
 		startNew := float64(intValue(prev.TKNums)) > threshold || intValue(prev.TKNums)+tk > target
+		if !startNew {
+			// The hard cap must hold on the ACTUAL joined text: joinSep (e.g.
+			// "\n" on the JSON path) can add tokens beyond the running sum, so
+			// re-check the candidate. The running-sum decision and bookkeeping
+			// stay unchanged (Python parity #17948); this guard only splits
+			// when the joined text itself would exceed target.
+			candidate := prev.Text + ck.Text
+			if prev.Text != "" && ck.Text != "" {
+				candidate = prev.Text + joinSep + ck.Text
+			}
+			if tokenizeStr(candidate) > target {
+				startNew = true
+			}
+		}
 		if startNew {
 			cp := cloneChunkDoc(ck)
 			if overlapPct > 0 && prev.Text != "" {
@@ -1082,9 +1107,14 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 				last.TKNums = intPtr(n)
 			}
 		} else {
-			// All-whitespace unit: keep it as one piece so the split stays
-			// lossless (downstream empty-chunk filters drop it).
-			pieces = append(pieces, schema.ChunkDoc{Text: wsPending, DocType: ck.DocType, TKNums: intPtr(tokenizeStr(wsPending)), CKType: "text"})
+			// All-whitespace unit: keep it lossless but still within the cap —
+			// hard-split like any other oversized text so a whitespace-only run
+			// whose token count exceeds the target cannot emit an over-cap chunk.
+			if n := tokenizeStr(wsPending); n > target {
+				pieces = append(pieces, hardSplitPiece(wsPending, ck.DocType, target)...)
+			} else {
+				pieces = append(pieces, schema.ChunkDoc{Text: wsPending, DocType: ck.DocType, TKNums: intPtr(n), CKType: "text"})
+			}
 		}
 	}
 	if len(pieces) == 0 {

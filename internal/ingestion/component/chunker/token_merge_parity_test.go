@@ -71,6 +71,12 @@ var mergeSourceLines = []string{
 // the token target, whereas Python's OVER_CAP closes a group right after an
 // overflowing merge (a chunk may exceed the target by one unit) and keeps an
 // oversized unit whole. The hard-cap behavior is documented in token.go.
+//
+// Whitespace exactness is OUTSIDE this oracle's contract: every emitted chunk
+// is trimmed and the sanity check compares the normalized word stream, so a
+// space/newline rewrite inside a chunk is not detected here. Whitespace
+// preservation is pinned by the dedicated suites instead — token_oversize_split_test.go
+// (lossless concatenation) and token_overlap_test.go (no space-less boundaries).
 func goMergeGroupsOracle(paragraphs []string, cap int, overlapPct float64) []string {
 	units := make([]schema.ChunkDoc, 0, len(paragraphs))
 	for _, p := range paragraphs {
