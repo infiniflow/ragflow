@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -139,18 +138,7 @@ func (c *R2Connector) OpenPrune(ctx context.Context, request PruneRequest) (Prun
 	if err := c.Validate(ctx); err != nil {
 		return nil, err
 	}
-	objects, err := c.collectObjects(ctx)
-	if err != nil {
-		return nil, err
-	}
-	documents := make([]SlimDocument, 0, len(objects))
-	for _, object := range objects {
-		if object.Key == "" || strings.HasSuffix(object.Key, "/") {
-			continue
-		}
-		documents = append(documents, SlimDocument{SourceID: r2SourceID(c.bucketName, object.Key)})
-	}
-	return &r2PruneSession{documents: documents, batchSize: c.batchSize}, nil
+	return &r2PruneSession{connector: c, batchSize: c.batchSize}, nil
 }
 
 // Fetch downloads a Cloudflare R2 object body.
@@ -210,35 +198,6 @@ func (c *R2Connector) listObjectPage(ctx context.Context, startAfter string, max
 		nextStartAfter = r2SourceID(c.bucketName, objects[len(objects)-1].Key)
 	}
 	return objects, nextStartAfter, aws.ToBool(output.IsTruncated), nil
-}
-
-func (c *R2Connector) collectObjects(ctx context.Context) ([]r2Object, error) {
-	var objects []r2Object
-	startAfter := ""
-	for {
-		page, nextStartAfter, hasMore, err := c.listObjectPage(ctx, startAfter, r2ListPageSize)
-		if err != nil {
-			return nil, err
-		}
-		for _, object := range page {
-			if object.Key == "" || strings.HasSuffix(object.Key, "/") {
-				continue
-			}
-			objects = append(objects, object)
-		}
-		if !hasMore {
-			break
-		}
-		previousStartAfter := startAfter
-		startAfter = strings.TrimPrefix(nextStartAfter, r2SourceID(c.bucketName, ""))
-		if startAfter == "" || startAfter == previousStartAfter {
-			break
-		}
-	}
-	sort.SliceStable(objects, func(i, j int) bool {
-		return objects[i].Key < objects[j].Key
-	})
-	return objects, nil
 }
 
 func (c *R2Connector) download(ctx context.Context, key string) ([]byte, error) {
@@ -398,22 +357,60 @@ func (o r2Object) isImage() bool {
 }
 
 type r2PruneSession struct {
-	documents  []SlimDocument
+	connector  *R2Connector
 	batchSize  int
-	batchIndex int
+	startAfter string
+	done       bool
+	buffer     []SlimDocument
 }
 
 // NextBatch returns the next Cloudflare R2 prune snapshot batch.
 func (s *r2PruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
-	if s.batchIndex >= len(s.documents) {
+	documents := make([]SlimDocument, 0, s.batchSize)
+	if len(s.buffer) > 0 {
+		n := s.batchSize
+		if n > len(s.buffer) {
+			n = len(s.buffer)
+		}
+		documents = append(documents, s.buffer[:n]...)
+		s.buffer = s.buffer[n:]
+	}
+	for len(documents) < s.batchSize && !s.done {
+		page, nextStartAfter, hasMore, err := s.connector.listObjectPage(ctx, s.startAfter, r2ListPageSize)
+		if err != nil {
+			return PruneBatch{}, err
+		}
+		previousStartAfter := s.startAfter
+		if hasMore {
+			next := strings.TrimPrefix(nextStartAfter, r2SourceID(s.connector.bucketName, ""))
+			if next == "" || next == previousStartAfter {
+				s.done = true
+			} else {
+				s.startAfter = next
+			}
+		} else {
+			s.done = true
+		}
+		remaining := s.batchSize - len(documents)
+		for _, object := range page {
+			if object.Key == "" || strings.HasSuffix(object.Key, "/") {
+				continue
+			}
+			doc := SlimDocument{SourceID: r2SourceID(s.connector.bucketName, object.Key)}
+			if remaining > 0 {
+				documents = append(documents, doc)
+				remaining--
+			} else {
+				s.buffer = append(s.buffer, doc)
+			}
+		}
+		if remaining <= 0 {
+			break
+		}
+	}
+	if len(documents) == 0 && len(s.buffer) == 0 && s.done {
 		return PruneBatch{}, io.EOF
 	}
-	end := s.batchIndex + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
-	}
-	documents := s.documents[s.batchIndex:end]
-	s.batchIndex = end
 	return PruneBatch{Documents: documents}, nil
 }
 
