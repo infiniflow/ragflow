@@ -1931,5 +1931,3 @@ func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
 }
-
-

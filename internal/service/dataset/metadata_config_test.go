@@ -532,5 +532,3 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 		t.Fatalf("expected server error for tenant lookup failure, got code=%v err=%v", code, err)
 	}
 }
-
-

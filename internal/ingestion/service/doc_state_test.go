@@ -282,4 +282,3 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
 	}
 }
-
