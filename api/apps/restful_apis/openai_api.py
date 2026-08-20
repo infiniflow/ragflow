@@ -301,12 +301,28 @@ async def openai_chat_completions(chat_id):
         doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
 
     msg = []
+    caller_system = []
     for message in messages:
         if message["role"] == "system":
+            # RAGFlow builds its own system prompt from the assistant config, so a
+            # caller-supplied system message cannot simply be forwarded. Dropping it
+            # outright silently loses per-request context that OpenAI clients
+            # legitimately put there (session facts, the end user's locale, ...), so
+            # fold the text into the first user turn instead.
+            if message.get("content"):
+                caller_system.append(message["content"])
             continue
         if message["role"] == "assistant" and not msg:
             continue
         msg.append(message)
+
+    if caller_system:
+        for i, m in enumerate(msg):
+            if m.get("role") == "user":
+                # Replace rather than mutate: these dicts are still owned by the
+                # request payload.
+                msg[i] = {**m, "content": "\n".join(caller_system) + "\n\n" + (m.get("content") or "")}
+                break
 
     tools = None
     toolcall_session = None
