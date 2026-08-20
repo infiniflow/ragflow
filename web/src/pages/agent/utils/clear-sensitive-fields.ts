@@ -6,6 +6,7 @@ const apiKeyOperators = [
   Operator.TavilyExtract,
   Operator.Google,
   Operator.KeenableSearch,
+  Operator.YouComSearch,
   Operator.BGPT,
   Operator.QueritContents,
   Operator.QueritSearch,
