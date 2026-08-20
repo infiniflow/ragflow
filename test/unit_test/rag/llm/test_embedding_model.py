@@ -25,6 +25,7 @@
   (the old ``8196`` overshoot is gone);
 * ``ZhipuEmbed`` / ``OllamaEmbed`` now batch — ``ceil(n / batch_size)`` requests
   with input order and output shape preserved.
+* OpenAI-compatible embedding providers receive only standard request fields.
 """
 
 import json
@@ -43,7 +44,9 @@ from rag.llm.embedding_model import (
     MistralEmbed,
     NvidiaEmbed,
     OllamaEmbed,
+    OpenAI_APIEmbed,
     OpenAIEmbed,
+    TogetherAIEmbed,
     ZhipuEmbed,
 )
 from common.exceptions import ModelException
@@ -81,6 +84,26 @@ def _make_openai(cls=OpenAIEmbed, total_tokens=None):
     embed.client = MagicMock()
     embed.client.embeddings.create = MagicMock(side_effect=_openai_create(total_tokens=total_tokens))
     return embed
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("embed_cls", [TogetherAIEmbed, OpenAI_APIEmbed])
+def test_openai_compatible_embedding_does_not_send_litellm_drop_params(embed_cls):
+    """Strict OpenAI-compatible APIs reject LiteLLM-only request fields."""
+
+    def _strict_create(input, model, **kwargs):
+        if kwargs.get("extra_body", {}).get("drop_params"):
+            raise RuntimeError("Unrecognized request arguments supplied: drop_params")
+        return _OpenAIResp([[0.0] for _ in input], total_tokens=1)
+
+    embed = _make_openai(cls=embed_cls)
+    embed.client.embeddings.create = MagicMock(side_effect=_strict_create)
+
+    vectors, tokens = embed.encode(["hello"])
+
+    assert vectors.shape == (1, 1)
+    assert tokens == 1
+    assert "extra_body" not in embed.client.embeddings.create.call_args.kwargs
 
 
 # --------------------------------------------------------------------------- #
