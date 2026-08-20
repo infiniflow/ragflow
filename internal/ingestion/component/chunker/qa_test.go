@@ -521,6 +521,92 @@ func TestQAChunker_TxtReacquireStripsBOM(t *testing.T) {
 	}
 }
 
+// TestQAChunker_TxtReacquireDecodesGBK verifies that a GBK-encoded qa.txt
+// is decoded instead of collapsing into U+FFFD replacement characters
+// (mirrors Python find_codec: utf-8 fails, then gbk/gb18030 succeeds;
+// GB18030 is a superset of GBK/GB2312, so one decoder covers all three).
+func TestQAChunker_TxtReacquireDecodesGBK(t *testing.T) {
+	ms := withQAMemoryStorage(t)
+	ctx := context.Background()
+	// "中文问题一\t中文回答一\n" encoded in GBK.
+	gbk := []byte{0xd6, 0xd0, 0xce, 0xc4, 0xce, 0xca, 0xcc, 0xe2, 0xd2, 0xbb, 0x09, 0xd6, 0xd0, 0xce, 0xc4, 0xbb, 0xd8, 0xb4, 0xf0, 0xd2, 0xbb, 0x0a}
+	if err := ms.Put(ctx, "kb-1", "qa.txt", gbk); err != nil {
+		t.Fatal(err)
+	}
+	comp, err := NewQAChunker(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "shredded fragment"}},
+		"bucket":        "kb-1",
+		"path":          "qa.txt",
+	}
+	out, err := comp.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if msg, ok := out["_ERROR"]; ok {
+		t.Fatalf("unexpected _ERROR: %v", msg)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if want := "问题：中文问题一\t回答：中文回答一"; cww != want {
+		t.Fatalf("unexpected content: %q, want %q", cww, want)
+	}
+}
+
+// TestQAChunker_TxtReacquireDecodesUTF16 covers UTF-16LE/BE qa.txt files
+// with a BOM: they must be decoded instead of producing replacement
+// characters and NULs (Python's utf_16 codec likewise requires the BOM).
+func TestQAChunker_TxtReacquireDecodesUTF16(t *testing.T) {
+	// "Q1\tA1\n" encoded in UTF-16 with a leading BOM.
+	cases := map[string][]byte{
+		"le": {0xff, 0xfe, 0x51, 0x00, 0x31, 0x00, 0x09, 0x00, 0x41, 0x00, 0x31, 0x00, 0x0a, 0x00},
+		"be": {0xfe, 0xff, 0x00, 0x51, 0x00, 0x31, 0x00, 0x09, 0x00, 0x41, 0x00, 0x31, 0x00, 0x0a},
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			ms := withQAMemoryStorage(t)
+			ctx := context.Background()
+			if err := ms.Put(ctx, "kb-1", "qa.txt", data); err != nil {
+				t.Fatal(err)
+			}
+			comp, err := NewQAChunker(map[string]any{"lang": "english"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			inputs := map[string]any{
+				"name":          "qa.txt",
+				"output_format": "json",
+				"json":          []map[string]any{{"text": "Q1"}},
+				"bucket":        "kb-1",
+				"path":          "qa.txt",
+			}
+			out, err := comp.Invoke(ctx, nil, inputs)
+			if err != nil {
+				t.Fatalf("Invoke failed: %v", err)
+			}
+			if msg, ok := out["_ERROR"]; ok {
+				t.Fatalf("unexpected _ERROR: %v", msg)
+			}
+			chunks, _ := out["chunks"].([]map[string]any)
+			if len(chunks) != 1 {
+				t.Fatalf("expected 1 chunk, got %d", len(chunks))
+			}
+			cww, _ := chunks[0]["content_with_weight"].(string)
+			if want := "Question: Q1\tAnswer: A1"; cww != want {
+				t.Fatalf("unexpected content: %q, want %q", cww, want)
+			}
+		})
+	}
+}
+
 // TestQAChunker_DecoratorAssignsDistinctIDs pins the chunk-id regression
 // where the registration decorator hashed ck["text"] — absent on QA chunks
 // (they carry content_with_weight) — collapsing every QA chunk of a

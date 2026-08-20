@@ -191,8 +191,11 @@ func ChunkID(docID, text string) string {
 
 // ChunkIDForChunk derives the deterministic id of a chunk map using the same
 // hash input as Python: content_with_weight when present, falling back to
-// text otherwise (Python hashes content_with_weight after renaming text to
-// it — rag/svr/task_executor.py). Chunkers that emit only
+// text otherwise. Both Python id sites in rag/svr/task_executor.py hash the
+// same chunk content: build_chunks→upload_to_minio hashes
+// content_with_weight directly, while the run_dataflow pipeline hashes
+// ck["text"] and only afterwards renames text to content_with_weight.
+// Chunkers that emit only
 // content_with_weight (e.g. QAChunker) must not be keyed on the absent
 // "text" key: that would collapse every chunk of a document onto the same
 // id and silently overwrite all but one chunk at index time.

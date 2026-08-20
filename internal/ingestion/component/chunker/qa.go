@@ -34,18 +34,25 @@
 package chunker
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
@@ -93,10 +100,6 @@ func (c *QAChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 func (c *QAChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
 func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	return c.invoke(ctx, db, inputs)
-}
-
-func (c *QAChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
@@ -234,9 +237,50 @@ func reacquireQARawText(ctx context.Context, db *gorm.DB, upstream schema.Chunke
 	if err != nil {
 		return "", err
 	}
-	// Strip a UTF-8 BOM so the first question does not start with U+FEFF
-	// (Python get_text strips it via codec detection).
-	return strings.TrimPrefix(string(data), "\ufeff"), nil
+	return decodeQARawText(data), nil
+}
+
+// decodeQARawText decodes raw QA file bytes to text, mirroring Python
+// get_text/find_codec (deepdoc/parser/utils.py, rag/nlp/__init__.py):
+// UTF-16 is honored only with a leading BOM (Python's utf_16 codec also
+// requires one), valid UTF-8 is used as-is, and anything else is decoded as
+// GB18030, a superset of GBK/GB2312 — the encodings chardet realistically
+// reports for CJK text. A leading U+FEFF is stripped so the first question
+// never starts with the BOM. Undecodable input falls back to the raw bytes
+// (Python decodes with errors="ignore", equally lossy).
+func decodeQARawText(data []byte) string {
+	switch {
+	case bytes.HasPrefix(data, []byte{0xFF, 0xFE}):
+		if s, ok := decodeQACharset(data[2:], unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)); ok {
+			return strings.TrimPrefix(s, "\ufeff")
+		}
+	case bytes.HasPrefix(data, []byte{0xFE, 0xFF}):
+		if s, ok := decodeQACharset(data[2:], unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM)); ok {
+			return strings.TrimPrefix(s, "\ufeff")
+		}
+	case utf8.Valid(data):
+		return strings.TrimPrefix(string(data), "\ufeff")
+	default:
+		if s, ok := decodeQACharset(data, simplifiedchinese.GB18030); ok {
+			return strings.TrimPrefix(s, "\ufeff")
+		}
+	}
+	return strings.TrimPrefix(string(data), "\ufeff")
+}
+
+// decodeQACharset decodes data with enc, rejecting output that contains
+// replacement characters (the same acceptance rule as the email parser's
+// decodeTransform).
+func decodeQACharset(data []byte, enc encoding.Encoding) (string, bool) {
+	decoded, err := io.ReadAll(transform.NewReader(bytes.NewReader(data), enc.NewDecoder()))
+	if err != nil {
+		return "", false
+	}
+	s := string(decoded)
+	if strings.ContainsRune(s, '\ufffd') {
+		return "", false
+	}
+	return s, true
 }
 
 func renderMarkdown(s string) string {
