@@ -78,7 +78,7 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
@@ -1107,41 +1107,6 @@ export const useFetchKnowledgeList = (
     isFetchingNextPage,
     handleScroll,
   };
-};
-
-/**
- * For consumers that need the COMPLETE list (no scroll UI).
- * Uses a large page size to minimize round-trips, and auto-loads
- * until exhausted.
- */
-export const useFetchAllKnowledgeList = (
-  shouldFilterListWithoutDocument: boolean = false,
-  keywords = '',
-): { list: IDataset[]; loading: boolean } => {
-  const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
-    shouldFilterListWithoutDocument,
-    keywords,
-    100,
-  );
-
-  useEffect(() => {
-    if (hasNextPage && !loading) {
-      fetchNextPage();
-    }
-  }, [hasNextPage, loading, fetchNextPage]);
-
-  return { list, loading };
-};
-
-export const useSelectKnowledgeOptions = () => {
-  const { list } = useFetchAllKnowledgeList();
-
-  const options = list?.map((item) => ({
-    label: item.name,
-    value: item.id,
-  }));
-
-  return options;
 };
 
 /**

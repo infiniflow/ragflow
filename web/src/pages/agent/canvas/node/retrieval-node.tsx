@@ -1,7 +1,7 @@
 import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import {
-  useFetchAllKnowledgeList,
+  useFetchDatasetsByIds,
   useStaleDatasetIds,
 } from '@/hooks/use-knowledge-request';
 import { useFetchAllMemoryList } from '@/hooks/use-memory-request';
@@ -30,19 +30,23 @@ function InnerRetrievalNode({
 }: NodeProps<BaseNode<RetrievalFormSchemaType>>) {
   const knowledgeBaseIds: string[] = get(data, 'form.dataset_ids', []);
   const memoryIds: string[] = get(data, 'form.memory_ids', []);
-  const { list: knowledgeList } = useFetchAllKnowledgeList(true);
   const { t } = useTranslation();
 
   const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId: id });
 
   const isMemory = data.form?.retrieval_from === RetrievalFrom.Memory;
 
+  const persistedDatasetIds = isMemory ? [] : knowledgeBaseIds;
+
+  // Resolve names/avatars for the persisted ids directly: the paginated
+  // knowledge list can miss them (unloaded pages, emptied datasets filtered
+  // out). Shares the byIds query with the staleness check below.
+  const { data: datasets } = useFetchDatasetsByIds(persistedDatasetIds);
+
   // Mirror the form's stale-dataset validation: a persisted id referencing a
   // dataset that has since been deleted or emptied of chunks is flagged on
   // the node as well. Stays empty while the lookup is in flight.
-  const { staleDatasetIds } = useStaleDatasetIds(
-    isMemory ? [] : knowledgeBaseIds,
-  );
+  const { staleDatasetIds } = useStaleDatasetIds(persistedDatasetIds);
 
   const memoryList = useFetchAllMemoryList();
 
@@ -82,7 +86,7 @@ function InnerRetrievalNode({
               );
             }
 
-            const item = knowledgeList.find((y) => id === y.id);
+            const item = datasets?.find((y) => id === y.id);
             const label = getLabel(id);
             // A variable reference (has a label) is never stale; a dataset id
             // that no longer resolves to a usable dataset is.
