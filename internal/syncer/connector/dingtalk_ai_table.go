@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,7 +49,6 @@ type DingTalkAITableConnector struct {
 	apiBaseURL  string
 	httpClient  *http.Client
 
-	now         func() time.Time
 	getSheets   func(ctx context.Context) ([]dingTalkAITableSheet, error)
 	listRecords func(ctx context.Context, sheetID, nextToken string, maxResults int) ([]dingTalkAITableRecord, string, error)
 }
@@ -57,18 +57,13 @@ type DingTalkAITableConnector struct {
 // Python-compatible config.
 func NewDingTalkAITableConnector(config map[string]any) (*DingTalkAITableConnector, error) {
 	credentials := configAnyMap(config["credentials"])
-	apiBaseURL := strings.TrimRight(strings.TrimSpace(stringConfig(config["api_base_url"])), "/")
-	if apiBaseURL == "" {
-		apiBaseURL = dingTalkAITableAPIBaseURL
-	}
 	return &DingTalkAITableConnector{
 		tableID:     strings.TrimSpace(stringConfig(config["table_id"])),
 		operatorID:  strings.TrimSpace(stringConfig(config["operator_id"])),
 		accessToken: stringConfig(credentials["access_token"]),
 		batchSize:   configInt(config["batch_size"], defaultDingTalkAITableBatchSize),
-		apiBaseURL:  apiBaseURL,
+		apiBaseURL:  dingTalkAITableAPIBaseURL,
 		httpClient:  &http.Client{Timeout: dingTalkAITableRequestTimeout},
-		now:         func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 
@@ -89,8 +84,8 @@ func (c *DingTalkAITableConnector) Validate(ctx context.Context) error {
 	if c.batchSize <= 0 {
 		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
 	}
-	if _, err := url.ParseRequestURI(c.apiBaseURL); err != nil {
-		return &ConnectorValidationError{Message: "DingTalk AI Table api_base_url is invalid"}
+	if err := validateDingTalkAITableAPIBaseURL(c.apiBaseURL); err != nil {
+		return err
 	}
 	if _, err := c.loadSheets(ctx); err != nil {
 		return &ConnectorValidationError{Message: fmt.Sprintf("DingTalk Notable credential validation failed: %v", err)}
@@ -103,7 +98,11 @@ func (c *DingTalkAITableConnector) Validate(ctx context.Context) error {
 func (c *DingTalkAITableConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return c.Validate(ctx)
+	candidate, err := NewDingTalkAITableConnector(request)
+	if err != nil {
+		return err
+	}
+	return candidate.Validate(ctx)
 }
 
 // OpenSync opens one DingTalk AI Table sync session.
@@ -148,6 +147,9 @@ func (c *DingTalkAITableConnector) validateStatic() error {
 	if c.batchSize <= 0 {
 		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
 	}
+	if err := validateDingTalkAITableAPIBaseURL(c.apiBaseURL); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -155,10 +157,6 @@ func (c *DingTalkAITableConnector) collectDocuments(ctx context.Context, request
 	sheets, err := c.loadSheets(ctx)
 	if err != nil {
 		return nil, err
-	}
-	now := c.now()
-	if now.IsZero() {
-		now = time.Now().UTC()
 	}
 	documents := []SourceDocument{}
 	for _, sheet := range sheets {
@@ -170,8 +168,11 @@ func (c *DingTalkAITableConnector) collectDocuments(ctx context.Context, request
 			if record.ID == "" {
 				continue
 			}
-			doc := c.recordDocument(sheet, record, now)
-			if !dingTalkAITableInWindow(doc.UpdatedAt, request) {
+			doc, hasUpdatedAt := c.recordDocument(sheet, record)
+			if !hasUpdatedAt && dingTalkAITableRequiresTimestamp(request) {
+				continue
+			}
+			if hasUpdatedAt && !dingTalkAITableInWindow(doc.UpdatedAt, request) {
 				continue
 			}
 			documents = append(documents, doc)
@@ -269,7 +270,17 @@ func (c *DingTalkAITableConnector) loadRecordPage(ctx context.Context, sheetID, 
 }
 
 func (c *DingTalkAITableConnector) doJSON(ctx context.Context, method, path string, body any, out any) error {
+	if err := validateDingTalkAITableAPIBaseURL(c.apiBaseURL); err != nil {
+		return err
+	}
 	target := c.apiBaseURL + path
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "https" || parsed.Host != "api.dingtalk.com" {
+		return &ConnectorValidationError{Message: "DingTalk AI Table requests must target https://api.dingtalk.com"}
+	}
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -305,13 +316,28 @@ func (c *DingTalkAITableConnector) doJSON(ctx context.Context, method, path stri
 	return nil
 }
 
-func (c *DingTalkAITableConnector) recordDocument(sheet dingTalkAITableSheet, record dingTalkAITableRecord, updatedAt time.Time) SourceDocument {
+func validateDingTalkAITableAPIBaseURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "api.dingtalk.com" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return &ConnectorValidationError{Message: "DingTalk AI Table API base URL must be https://api.dingtalk.com"}
+	}
+	return nil
+}
+
+func (c *DingTalkAITableConnector) recordDocument(sheet dingTalkAITableSheet, record dingTalkAITableRecord) (SourceDocument, bool) {
 	blob, err := json.MarshalIndent(record.Fields, "", "  ")
 	if err != nil {
 		blob = []byte("{}")
 	}
+	updatedAt, hasUpdatedAt := parseDingTalkAITableLastModifiedTime(record.LastModifiedTime)
 	semanticIdentifier := fmt.Sprintf("%s - Record %s", sheet.Name, record.ID)
-	for _, value := range record.Fields {
+	fieldNames := make([]string, 0, len(record.Fields))
+	for name := range record.Fields {
+		fieldNames = append(fieldNames, name)
+	}
+	sort.Strings(fieldNames)
+	for _, name := range fieldNames {
+		value := record.Fields[name]
 		if text, ok := value.(string); ok {
 			text = strings.TrimSpace(text)
 			if text != "" && len([]rune(text)) < 100 {
@@ -331,11 +357,11 @@ func (c *DingTalkAITableConnector) recordDocument(sheet dingTalkAITableSheet, re
 		SemanticIdentifier: semanticIdentifier,
 		Extension:          ".json",
 		Blob:               blob,
-		UpdatedAt:          updatedAt.UTC(),
+		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
 		Metadata:           metadata,
 		Fingerprint:        dingTalkAITableFingerprint(blob),
-	}
+	}, hasUpdatedAt
 }
 
 func (c *DingTalkAITableConnector) documentID(sheetID, recordID string) string {
@@ -343,9 +369,6 @@ func (c *DingTalkAITableConnector) documentID(sheetID, recordID string) string {
 }
 
 func dingTalkAITableInWindow(updatedAt time.Time, request SyncRequest) bool {
-	if updatedAt.IsZero() {
-		return true
-	}
 	if !request.FromBeginning && request.WindowStart != nil && updatedAt.Before(*request.WindowStart) {
 		return false
 	}
@@ -353,6 +376,40 @@ func dingTalkAITableInWindow(updatedAt time.Time, request SyncRequest) bool {
 		return false
 	}
 	return true
+}
+
+func dingTalkAITableRequiresTimestamp(request SyncRequest) bool {
+	return !request.FromBeginning && request.WindowStart != nil
+}
+
+func parseDingTalkAITableLastModifiedTime(value any) (time.Time, bool) {
+	var millis int64
+	switch typed := value.(type) {
+	case int:
+		millis = int64(typed)
+	case int64:
+		millis = typed
+	case float64:
+		millis = int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return time.Time{}, false
+		}
+		millis = parsed
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+		millis = parsed
+	default:
+		return time.Time{}, false
+	}
+	if millis <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(0, millis*int64(time.Millisecond)).UTC(), true
 }
 
 func dingTalkAITableFingerprint(blob []byte) string {
@@ -374,8 +431,9 @@ type dingTalkAITableSheet struct {
 }
 
 type dingTalkAITableRecord struct {
-	ID     string         `json:"id"`
-	Fields map[string]any `json:"fields"`
+	ID               string         `json:"id"`
+	Fields           map[string]any `json:"fields"`
+	LastModifiedTime any            `json:"lastModifiedTime"`
 }
 
 type dingTalkAITableSheetsResponse struct {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -44,14 +45,14 @@ func TestDingTalkAITableConnectorOpenSync(t *testing.T) {
 				writeJSON(t, w, map[string]any{
 					"nextToken": "page-2",
 					"records": []map[string]any{
-						{"id": "rec-1", "fields": map[string]any{"Title": "Roadmap", "Count": 3}},
+						{"id": "rec-1", "lastModifiedTime": int64(1780000000000), "fields": map[string]any{"Title": "Roadmap", "Count": 3}},
 					},
 				})
 				return
 			}
 			writeJSON(t, w, map[string]any{
 				"records": []map[string]any{
-					{"id": "rec-2", "fields": map[string]any{"Title": "Budget"}},
+					{"id": "rec-2", "lastModifiedTime": int64(1780000001000), "fields": map[string]any{"zTitle": "Wrong", "aTitle": "Budget"}},
 				},
 			})
 		default:
@@ -61,24 +62,25 @@ func TestDingTalkAITableConnectorOpenSync(t *testing.T) {
 	defer server.Close()
 
 	connector, err := NewDingTalkAITableConnector(map[string]any{
-		"table_id":     "table-1",
-		"operator_id":  "operator-1",
-		"batch_size":   1,
-		"api_base_url": server.URL,
-		"credentials":  map[string]any{"access_token": "token-1"},
+		"table_id":    "table-1",
+		"operator_id": "operator-1",
+		"batch_size":  1,
+		"credentials": map[string]any{"access_token": "token-1"},
 	})
 	if err != nil {
 		t.Fatalf("NewDingTalkAITableConnector failed: %v", err)
 	}
-	now := time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC)
-	connector.now = func() time.Time { return now }
+	connector.httpClient = dingTalkAITableTestHTTPClient(t, server)
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: now.Add(time.Hour)})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
-	defer session.Close()
-
+	defer func() {
+		if err := session.Close(); err != nil {
+			t.Errorf("Close failed: %v", err)
+		}
+	}()
 	first, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch first failed: %v", err)
@@ -92,6 +94,9 @@ func TestDingTalkAITableConnectorOpenSync(t *testing.T) {
 	}
 	if doc.SemanticIdentifier != "Projects - Roadmap" {
 		t.Fatalf("SemanticIdentifier = %q", doc.SemanticIdentifier)
+	}
+	if got := doc.UpdatedAt; !got.Equal(time.UnixMilli(1780000000000).UTC()) {
+		t.Fatalf("UpdatedAt = %s, want %s", got, time.UnixMilli(1780000000000).UTC())
 	}
 	if doc.Extension != ".json" || doc.SizeBytes != int64(len(doc.Blob)) || doc.Fingerprint == "" {
 		t.Fatalf("document shape = ext %q size %d fingerprint %q", doc.Extension, doc.SizeBytes, doc.Fingerprint)
@@ -110,6 +115,9 @@ func TestDingTalkAITableConnectorOpenSync(t *testing.T) {
 	if got := second.Documents[0].SourceID; got != "dingtalk_ai_table:table-1:sheet-1:rec-2" {
 		t.Fatalf("second SourceID = %q", got)
 	}
+	if got := second.Documents[0].SemanticIdentifier; got != "Projects - Budget" {
+		t.Fatalf("second SemanticIdentifier = %q", got)
+	}
 	_, err = session.NextBatch(context.Background())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("final error = %v, want EOF", err)
@@ -125,6 +133,7 @@ func TestDingTalkAITableConnectorOpenPrune(t *testing.T) {
 		operatorID:  "operator-1",
 		accessToken: "token-1",
 		batchSize:   10,
+		apiBaseURL:  dingTalkAITableAPIBaseURL,
 		getSheets: func(ctx context.Context) ([]dingTalkAITableSheet, error) {
 			return []dingTalkAITableSheet{{ID: "sheet-1", Name: "Projects"}}, nil
 		},
@@ -140,7 +149,11 @@ func TestDingTalkAITableConnectorOpenPrune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
-	defer session.Close()
+	defer func() {
+		if err := session.Close(); err != nil {
+			t.Errorf("Close failed: %v", err)
+		}
+	}()
 
 	batch, err := session.NextBatch(context.Background())
 	if err != nil {
@@ -156,21 +169,103 @@ func TestDingTalkAITableConnectorOpenPrune(t *testing.T) {
 	}
 }
 
+func TestDingTalkAITableConnectorOpenSyncFiltersByRecordLastModifiedTime(t *testing.T) {
+	windowStart := time.UnixMilli(1780000000000).UTC()
+	connector := &DingTalkAITableConnector{
+		tableID:     "table-1",
+		operatorID:  "operator-1",
+		accessToken: "token-1",
+		batchSize:   10,
+		apiBaseURL:  dingTalkAITableAPIBaseURL,
+		getSheets: func(ctx context.Context) ([]dingTalkAITableSheet, error) {
+			return []dingTalkAITableSheet{{ID: "sheet-1", Name: "Projects"}}, nil
+		},
+		listRecords: func(ctx context.Context, sheetID, nextToken string, maxResults int) ([]dingTalkAITableRecord, string, error) {
+			return []dingTalkAITableRecord{
+				{ID: "old", LastModifiedTime: windowStart.Add(-time.Millisecond).UnixMilli(), Fields: map[string]any{"Title": "Old"}},
+				{ID: "inside", LastModifiedTime: windowStart.Add(time.Millisecond).UnixMilli(), Fields: map[string]any{"Title": "Inside"}},
+				{ID: "missing", Fields: map[string]any{"Title": "Missing"}},
+				{ID: "invalid", LastModifiedTime: "invalid", Fields: map[string]any{"Title": "Invalid"}},
+			}, "", nil
+		},
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &windowStart, WindowEnd: windowStart.Add(time.Hour)})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer func() {
+		if err := session.Close(); err != nil {
+			t.Errorf("Close failed: %v", err)
+		}
+	}()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "dingtalk_ai_table:table-1:sheet-1:inside" {
+		t.Fatalf("documents = %#v, want only inside record", batch.Documents)
+	}
+}
+
 func TestDingTalkAITableConnectorValidateConnectorSetting(t *testing.T) {
-	connector, err := NewDingTalkAITableConnector(map[string]any{
+	config := map[string]any{
 		"table_id":    "table-1",
 		"operator_id": "operator-1",
 		"credentials": map[string]any{},
-	})
+	}
+	connector, err := NewDingTalkAITableConnector(config)
 	if err != nil {
 		t.Fatalf("NewDingTalkAITableConnector failed: %v", err)
 	}
 
-	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	err = connector.ValidateConnectorSetting(context.Background(), config)
 	var credErr *ConnectorMissingCredentialError
 	if !errors.As(err, &credErr) {
 		t.Fatalf("error = %v, want ConnectorMissingCredentialError", err)
 	}
+}
+
+func TestDingTalkAITableConnectorRejectsUnapprovedAPIBaseURL(t *testing.T) {
+	connector := &DingTalkAITableConnector{
+		tableID:     "table-1",
+		operatorID:  "operator-1",
+		accessToken: "token-1",
+		batchSize:   10,
+		apiBaseURL:  "http://example.com",
+		httpClient:  http.DefaultClient,
+	}
+
+	err := connector.doJSON(context.Background(), http.MethodGet, "/v1.0/notable/bases/table-1/sheets", nil, nil)
+	var validationErr *ConnectorValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error = %v, want ConnectorValidationError", err)
+	}
+}
+
+func dingTalkAITableTestHTTPClient(t *testing.T, server *httptest.Server) *http.Client {
+	t.Helper()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	return &http.Client{Transport: dingTalkAITableRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Scheme != "https" || req.URL.Host != "api.dingtalk.com" {
+			t.Fatalf("request URL = %s, want https://api.dingtalk.com", req.URL.String())
+		}
+		cloned := req.Clone(req.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		cloned.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})}
+}
+
+type dingTalkAITableRoundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f dingTalkAITableRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
