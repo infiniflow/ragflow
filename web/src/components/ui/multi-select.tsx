@@ -65,6 +65,7 @@ function MultiCommandItem({
         toggleOption(option.value);
       }}
       data-testid={optionTestId}
+      data-option-value={option.value}
       className={cn('cursor-pointer', {
         'cursor-not-allowed text-text-disabled': option.disabled,
       })}
@@ -281,7 +282,26 @@ export const MultiSelect = React.forwardRef<
       event: React.KeyboardEvent<HTMLInputElement>,
     ) => {
       if (event.key === 'Enter') {
-        setIsPopoverOpen(true);
+        if (!isPopoverOpen) {
+          setIsPopoverOpen(true);
+          return;
+        }
+        // cmdk's default Enter handling toggles the highlighted option, which
+        // deselects one that is already selected. Treat Enter on an
+        // already-selected option as confirmation instead: keep the selection
+        // and close the dropdown. Other items (unselected options, select
+        // all, clear, close) keep cmdk's default Enter handling.
+        const highlightedItem = event.currentTarget
+          .closest('[cmdk-root]')
+          ?.querySelector('[cmdk-item][aria-selected="true"]');
+        const optionValue =
+          highlightedItem instanceof HTMLElement
+            ? highlightedItem.dataset.optionValue
+            : undefined;
+        if (optionValue && selectedValues.includes(optionValue)) {
+          event.preventDefault();
+          setIsPopoverOpen(false);
+        }
       } else if (event.key === 'Backspace' && !event.currentTarget.value) {
         const newSelectedValues = [...selectedValues];
         const removableIndex = [...newSelectedValues]
