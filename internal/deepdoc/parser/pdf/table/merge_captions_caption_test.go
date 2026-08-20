@@ -71,3 +71,39 @@ func TestMergeCaptions_LeftMarginCaptionAttaches(t *testing.T) {
 		t.Errorf("left-margin caption dropped; sections = %v", textsOf(result))
 	}
 }
+
+// TestMergeCaptions_SingleCaptionPerTable locks the fix for invalid HTML where
+// a table with MORE THAN ONE caption box (e.g. a sentence above AND below the
+// table) produced multiple <caption> elements inside one <table>. The HTML
+// spec allows only ONE <caption> per table, so browsers/HTML parsers/Markdown
+// converters keep only the first and silently drop the rest — a real content
+// loss. MergeCaptions must collapse all captions attaching to the SAME table
+// into a SINGLE <caption> element (texts concatenated), retaining every
+// sentence.
+func TestMergeCaptions_SingleCaptionPerTable(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td >Category</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 159, Right: 393, Top: 130, Bottom: 336}}},
+		// Caption above (left margin) AND caption below the table — both attach to the same table.
+		{Text: "Table 1: Quarterly sales by product category (in USD)", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 61, Right: 144, Top: 219, Bottom: 231}}},
+		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 200, Right: 380, Top: 350, Bottom: 370}}},
+	}
+	figures := pdf.CollectFigures(sections)
+	result := MergeCaptions(sections, figures)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (table with combined caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0].Text
+	if n := strings.Count(got, "<caption>"); n != 1 {
+		t.Errorf("expected exactly ONE <caption> per table (HTML allows only one), got %d: %q", n, got)
+	}
+	// Both caption sentences must survive inside the single <caption>.
+	if !strings.Contains(got, "Table 1: Quarterly sales by product category (in USD)") {
+		t.Errorf("first caption sentence lost in combined <caption>: %q", got)
+	}
+	if !strings.Contains(got, "The following table summarizes the quarterly sales performance") {
+		t.Errorf("second caption sentence lost in combined <caption>: %q", got)
+	}
+}

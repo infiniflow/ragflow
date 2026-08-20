@@ -99,39 +99,78 @@ func TestPipelineParity14InterleavedParagraphDropped(t *testing.T) {
 // Scope: only PDFs that actually carry a DLA "table caption" box (06/14/18).
 // For those, Go now emits <caption>; the emitted text is real PDF content, so
 // it must also appear somewhere in Python's full extracted text (proving Go
-// did not fabricate it). Go and Python CHOOSE different caption wording (a
-// caption-selection divergence — a separate, accepted go_intentional residual),
-// so we assert Go's EMITTED caption text, NOT byte-equality with Python's
-// <caption>. 13_crosspage_table has no DLA caption box, so MergeCaptions has
-// nothing to emit for it; its <caption> divergence is a separate DLA-labeling
-// issue and is out of scope here (tracked in known_diffs.json
-// table-html-emission-format).
+// did not fabricate it). Go and Python CHOOSE/ORDER caption sentences
+// differently (a caption-selection divergence — a separate, accepted
+// go_intentional residual), so we assert each emitted caption SENTENCE, not
+// the whole combined string byte-equally. 13_crosspage_table has no DLA
+// caption box, so MergeCaptions has nothing to emit for it; its <caption>
+// divergence is a separate DLA-labeling issue and is out of scope here
+// (tracked in known_diffs.json table-html-emission-format).
+//
+// Two regression guards:
+//  1. VALID HTML: no <table> may contain more than one <caption> (HTML allows
+//     only one; extras are dropped by browsers/Markdown converters). A table
+//     with caption text both above and below used to emit multiple <caption>
+//     elements — that is the bug this guard locks against.
+//  2. RETENTION: every caption sentence Go extracted must survive in the
+//     output AND be real PDF content (present in Python's full text).
 func TestPipelineParityCaptionEmitted(t *testing.T) {
 	pdfs := []string{
 		"06_table_content.pdf",
 		"14_text_table_interleaved.pdf",
 		"18_table_caption.pdf",
 	}
+	// Expected caption sentences Go extracts for each PDF (whitespace collapsed).
+	// These are the DLA "table caption" box texts; Go combines them into one
+	// <caption> per table. They differ in wording/order from Python's <caption>
+	// (selection divergence) but must all be retained as real content.
+	expected := map[string][]string{
+		"06_table_content.pdf": {
+			"Table 1: Quarterly sales by product category (in USD)",
+			"The following table summarizes the quarterly sales performance across different product categories.",
+		},
+		"14_text_table_interleaved.pdf": {
+			"Table 2: Satisfaction Analysis continues with additional metrics.",
+			"Analysis continues with additional metrics.",
+		},
+		"18_table_caption.pdf": {
+			"Table 1: Product specification comparison (2024 Q2)",
+			"Product Specifications",
+		},
+	}
 	captionRe := regexp.MustCompile(`(?is)<caption>(.*?)</caption>`)
+	tableRe := regexp.MustCompile(`(?is)<table>.*?</table>`)
 	wsRe := regexp.MustCompile(`\s+`)
 	for _, name := range pdfs {
 		t.Run(name, func(t *testing.T) {
 			goText, pyText := replayPipelineText(t, name)
+			// Guard 1: valid HTML — at most one <caption> per <table>.
+			for _, tbl := range tableRe.FindAllString(goText, -1) {
+				if n := strings.Count(tbl, "<caption>"); n > 1 {
+					t.Errorf("REGRESSION table-html-emission-format: a <table> contains %d <caption> elements (HTML allows only one; extras are dropped by consumers): %q", n, tbl)
+				}
+			}
 			caps := captionRe.FindAllStringSubmatch(goText, -1)
 			if len(caps) == 0 {
 				t.Fatalf("REGRESSION table-html-emission-format: Go emitted NO <caption> for %s — the standalone caption section was dropped (Python keeps caption text)", name)
 			}
+			// Guard 2: every expected sentence retained AND real content.
+			var allGo strings.Builder
 			for _, c := range caps {
-				caption := strings.TrimSpace(wsRe.ReplaceAllString(c[1], " "))
-				if caption == "" {
-					t.Errorf("REGRESSION table-html-emission-format: Go emitted an EMPTY <caption> for %s", name)
-					continue
+				allGo.WriteString(wsRe.ReplaceAllString(strings.TrimSpace(c[1]), " "))
+				allGo.WriteByte(' ')
+			}
+			goMerged := allGo.String()
+			for _, w := range expected[name] {
+				want := wsRe.ReplaceAllString(strings.TrimSpace(w), " ")
+				if !strings.Contains(goMerged, want) {
+					t.Errorf("REGRESSION table-html-emission-format: Go dropped caption sentence %q for %s", w, name)
 				}
-				if !strings.Contains(pyText, caption) {
-					t.Errorf("REGRESSION table-html-emission-format: Go's emitted caption %q for %s does not appear in Python's extracted text — caption text may be fabricated, not real PDF content", caption, name)
+				if !strings.Contains(pyText, want) {
+					t.Errorf("REGRESSION table-html-emission-format: Go's caption sentence %q for %s not found in Python text — may be fabricated, not real PDF content", w, name)
 				}
 			}
-			t.Logf("%s: Go emits %d <caption> block(s), all real content (present in Python text)", name, len(caps))
+			t.Logf("%s: Go emits %d <caption> block(s), all sentences retained and real", name, len(caps))
 		})
 	}
 }

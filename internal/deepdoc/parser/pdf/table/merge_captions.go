@@ -9,6 +9,12 @@ import (
 
 func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
+	// Group caption texts by the target section index they attach to, so
+	// multiple caption boxes for the SAME table/figure collapse into a single
+	// <caption> element. HTML allows only one <caption> per <table>; injecting
+	// one per box would emit invalid HTML whose extra <caption>s consumers
+	// (browsers, HTML→Markdown converters) silently drop — a real content loss.
+	byTarget := make(map[int][]string)
 	for i, s := range sections {
 		captionType := CaptionKind(s)
 		if captionType == "" {
@@ -21,7 +27,7 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 			// caption section. Retaining the caption text closes the previous
 			// content-loss go_bug table-html-emission-format; it is NOT a
 			// table-assembly change (cell content/structure are untouched).
-			injectCaption(&sections[target], s.Text)
+			byTarget[target] = append(byTarget[target], s.Text)
 			captions = append(captions, i)
 			continue
 		}
@@ -35,6 +41,10 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		if captionType != pdf.LayoutTypeFigure {
 			captions = append(captions, i)
 		}
+	}
+	// Inject one combined <caption> per target (all its caption sentences).
+	for idx, texts := range byTarget {
+		injectCaption(&sections[idx], texts)
 	}
 	// Remove caption sections in reverse order.
 	n := len(sections)
@@ -141,17 +151,30 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 	return bestIdx, bestDist
 }
 
-// injectCaption inserts a <caption> element immediately after the table's
-// opening <table> tag (matching Python's __html_table), retaining the caption
-// text inside the table HTML instead of losing it as a dropped standalone
-// section. If the table has no <table> tag it is prepended so the text is at
-// least preserved.
-func injectCaption(table *pdf.Section, caption string) {
-	text := strings.TrimSpace(caption)
-	if text == "" {
+// injectCaption concatenates the given caption texts (already grouped per
+// target by MergeCaptions) into a SINGLE <caption> element inserted
+// immediately after the table's opening <table> tag (matching Python's
+// __html_table). This keeps the caption text inside the table HTML instead of
+// losing it as a dropped standalone section, and emits valid HTML (one
+// <caption> per table) rather than one <caption> per caption box. If the
+// target has no <table> tag the <caption> is prepended so the text is at least
+// preserved.
+func injectCaption(table *pdf.Section, captions []string) {
+	var b strings.Builder
+	for _, c := range captions {
+		t := strings.TrimSpace(c)
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(html.EscapeString(t))
+	}
+	if b.Len() == 0 {
 		return
 	}
-	escaped := "<caption>" + html.EscapeString(text) + "</caption>"
+	escaped := "<caption>" + b.String() + "</caption>"
 	if table.Text == "" {
 		table.Text = escaped
 		return
