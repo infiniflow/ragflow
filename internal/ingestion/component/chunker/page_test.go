@@ -21,16 +21,16 @@ import (
 	"testing"
 )
 
-// slideChunksOf drives PresentationChunker.Invoke and returns the emitted maps.
+// slideChunksOf drives PageChunker.Invoke and returns the emitted maps.
 func slideChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	t.Helper()
-	comp, err := NewPresentationChunker(nil)
+	comp, err := NewPageChunker(nil)
 	if err != nil {
-		t.Fatalf("NewPresentationChunker: %v", err)
+		t.Fatalf("NewPageChunker: %v", err)
 	}
 	out, err := comp.Invoke(context.Background(), nil, inputs)
 	if err != nil {
-		t.Fatalf("PresentationChunker.Invoke: %v", err)
+		t.Fatalf("PageChunker.Invoke: %v", err)
 	}
 	chunks, ok := out["chunks"].([]map[string]any)
 	if !ok {
@@ -39,10 +39,10 @@ func slideChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	return chunks
 }
 
-// TestPresentationChunker_OneChunkPerSlide ports rag/app/presentation.py's
+// TestPageChunker_OneChunkPerSlide ports rag/app/presentation.py's
 // contract: each slide becomes exactly one chunk, and per-slide metadata
 // (page_number, image) survives the chunker round-trip.
-func TestPresentationChunker_OneChunkPerSlide(t *testing.T) {
+func TestPageChunker_OneChunkPerSlide(t *testing.T) {
 	chunks := slideChunksOf(t, map[string]any{
 		"name":          "deck.pptx",
 		"output_format": "json",
@@ -98,8 +98,8 @@ func TestPresentationChunker_OneChunkPerSlide(t *testing.T) {
 	}
 }
 
-// TestPresentationChunker_Empty yields no chunks when there is no data.
-func TestPresentationChunker_Empty(t *testing.T) {
+// TestPageChunker_Empty yields no chunks when there is no data.
+func TestPageChunker_Empty(t *testing.T) {
 	chunks := slideChunksOf(t, map[string]any{
 		"name":          "deck.pptx",
 		"output_format": "json",
@@ -110,8 +110,8 @@ func TestPresentationChunker_Empty(t *testing.T) {
 	}
 }
 
-// TestPresentationChunker_NilInput yields no chunks.
-func TestPresentationChunker_NilInput(t *testing.T) {
+// TestPageChunker_NilInput yields no chunks.
+func TestPageChunker_NilInput(t *testing.T) {
 	chunks := slideChunksOf(t, nil)
 	if len(chunks) != 0 {
 		t.Fatalf("expected 0 chunks for nil input, got %d", len(chunks))
