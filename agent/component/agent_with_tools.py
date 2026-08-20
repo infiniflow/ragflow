@@ -82,6 +82,17 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
+            # The registered retrieval tool name has a long-standing typo
+            # ("search_my_dateset"), kept as-is for backward compatibility
+            # (see the Go implementation's internal/agent/tool/registry.go,
+            # which registers the same tool under both spellings for the
+            # same reason). LLMs frequently "auto-correct" the typo to the
+            # properly spelled "search_my_dataset" when generating a tool
+            # call, which previously failed this exact-name lookup and
+            # silently aborted the whole response. Alias the corrected
+            # spelling here too, mirroring the Go registry.
+            if original_name == "search_my_dateset":
+                self.tools[f"search_my_dataset_{idx}"] = cpn
         model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
         chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
