@@ -250,10 +250,19 @@ def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypa
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
-    assert "parsing_status" in payload["data"][0]
+    # The fix for #17595 spreads the counts onto the dataset entry
+    # directly (matches the documented `include_parsing_status` response
+    # contract) instead of nesting them under a synthetic `parsing_status`
+    # key. Each count lives at the same nesting level as `name`,
+    # `parser_id`, `document_count` etc.
+    assert "parsing_status" not in payload["data"][0]
     by_id = {r["id"]: r for r in payload["data"]}
-    assert by_id["kb-a"]["parsing_status"] == status_by_kb["kb-a"]
-    assert by_id["kb-b"]["parsing_status"] == status_by_kb["kb-b"]
+    assert by_id["kb-a"]["unstart_count"] == 3
+    assert by_id["kb-a"]["running_count"] == 1
+    assert by_id["kb-a"]["done_count"] == 7
+    assert by_id["kb-a"]["fail_count"] == 2
+    assert by_id["kb-b"]["cancel_count"] == 1
+    assert by_id["kb-b"]["done_count"] == 4
 
 
 def test_list_datasets_with_include_parsing_status_string_true(monkeypatch):
