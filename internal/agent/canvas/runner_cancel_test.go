@@ -72,7 +72,7 @@ func TestRunnerEmitsCancelledEvent(t *testing.T) {
 	r := NewRunner()
 	ctx, cancel := context.WithCancel(context.Background())
 	started := make(chan struct{})
-	events := r.Run(ctx, blockingRun(started), "canvas", "session", nil, map[string]any{})
+	events := r.Run(WithEventContext(ctx, context.Background()), blockingRun(started), "canvas", "session", nil, map[string]any{})
 	<-started
 	cancel()
 
@@ -98,4 +98,24 @@ func TestRunnerEmitsCancelledEvent(t *testing.T) {
 	if _, ok := <-events; ok {
 		t.Fatal("run event channel should close after cancellation event")
 	}
+}
+
+func TestRunnerDropsEventsAfterConsumerCancellation(t *testing.T) {
+	r := NewRunner()
+	runCtx := context.Background()
+	eventCtx, cancelEvents := context.WithCancel(context.Background())
+	runCtx = WithEventContext(runCtx, eventCtx)
+	started := make(chan struct{})
+	run := func(ctx context.Context, root map[string]any) (*CanvasState, error) {
+		close(started)
+		events := root["__events__"].(chan RunEvent)
+		for i := 0; i <= cap(events); i++ {
+			PushEvent(ctx, events, RunEvent{Type: "message"})
+		}
+		return nil, nil
+	}
+	events := r.Run(runCtx, run, "canvas", "session", nil, map[string]any{})
+	<-started
+	cancelEvents()
+	waitClosed(t, events)
 }
