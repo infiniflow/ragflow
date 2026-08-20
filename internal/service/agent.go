@@ -1675,6 +1675,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	// absent conversation row as a first touch regardless of who generated the
 	// id; there is still only one business identity (session_id).
 	if !sessionFound || newSession {
+		// The editable/released canvas can be a runtime replica from another
+		// conversation. A new session may reuse its graph, memory, and env state,
+		// but must never inherit conversation history or an execution path.
+		dsl = dslpkg.ResetForNewSession(dsl)
 		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow, userInput); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
