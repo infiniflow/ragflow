@@ -19,5 +19,6 @@ func parityLockedGridPDFs() map[string]bool {
 		"13_crosspage_table.pdf":        true,
 		"14_text_table_interleaved.pdf": true,
 		"18_table_caption.pdf":          true,
+		"1.pdf":                         true,
 	}
 }
