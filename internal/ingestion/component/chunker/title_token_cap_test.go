@@ -234,6 +234,48 @@ func TestEnforceTitleTokenCap_TokenizerZeroFallback(t *testing.T) {
 	assertCapInvariants(t, got, 20, body)
 }
 
+// TestHardSplitByTokens_EnglishRemainderStaysWhole pins the over-fragmentation
+// fix: a remainder that already satisfies the TOKEN cap must be kept whole even
+// when its RUNE count exceeds the cap (English text is ~4 runes/token). The
+// char stub (1 rune == 1 token) makes the two counts identical and masks this,
+// so this test uses a 3-runes-per-token stub.
+func TestHardSplitByTokens_EnglishRemainderStaysWhole(t *testing.T) {
+	savedNum, savedTrim := numTokens, trimToTokenLimit
+	// 3 runes == 1 token.
+	numTokens = func(s string) int {
+		if s == "" {
+			return 0
+		}
+		return (utf8.RuneCountInString(s) + 2) / 3
+	}
+	trimToTokenLimit = func(s string, limit int) string {
+		maxRunes := limit * 3
+		if utf8.RuneCountInString(s) <= maxRunes {
+			return s
+		}
+		return runePrefix(s, maxRunes)
+	}
+	defer func() { numTokens, trimToTokenLimit = savedNum, savedTrim }()
+
+	const cap = 100
+	// 600 runes == 200 tokens == exactly 2 cap units. The second unit's
+	// remainder (300 runes == 100 tokens) is within the cap and must NOT be
+	// re-cut on runes.
+	body := strings.Repeat("ab", 300)
+	got := hardSplitByTokens(body, cap)
+	if len(got) != 2 {
+		t.Fatalf("hardSplitByTokens produced %d pieces, want 2 (in-cap remainder must stay whole)", len(got))
+	}
+	if strings.Join(got, "") != body {
+		t.Errorf("hard-split not lossless: %d runes vs %d", utf8.RuneCountInString(strings.Join(got, "")), utf8.RuneCountInString(body))
+	}
+	for i, p := range got {
+		if n := numTokens(p); n > cap {
+			t.Errorf("piece %d exceeds cap: tokens=%d (cap=%d)", i, n, cap)
+		}
+	}
+}
+
 func TestEnforceTitleTokenCap_PlanAPositions(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()

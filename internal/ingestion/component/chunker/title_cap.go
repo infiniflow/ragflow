@@ -26,7 +26,6 @@ package chunker
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -44,19 +43,6 @@ var (
 	trimToTokenLimit = realTrimToTokenLimit
 )
 
-// titleSentenceBoundaryRe mirrors Python
-// rag/flow/chunker/_sentence_boundary.py:SENTENCE_BOUNDARY_RE, the exact
-// regex Python #18455 uses to re-split an oversized chunk. It covers the
-// Chinese/English period, exclamation mark, question mark, the Chinese
-// variants, and the newline, PLUS the English ". " (period + space) boundary.
-// The capturing group keeps the delimiter attached to the preceding sentence
-// so re-merged text preserves original boundaries.
-//
-// NOTE: this deliberately differs from token.go's sentenceDelimiter (which
-// lacks ". ") so the title-cap split matches Python exactly. Convergence with
-// the token path is tracked separately.
-var titleSentenceBoundaryRe = regexp.MustCompile(`([。!?？；！\n]|\. )`)
-
 // titleTokenCount counts tokens for text. numTokensFromString returns 0 when
 // the encoder is unavailable; in that case fall back to the rune count so the
 // cap is still enforced (mirrors Python #18455's character-count fallback).
@@ -73,12 +59,14 @@ func titleTokenCount(text string) int {
 
 // titleSentenceSplit splits text on sentence boundaries, keeping each
 // delimiter attached to the preceding sentence so the concatenation of the
-// returned pieces reproduces the original text exactly.
+// returned pieces reproduces the original text exactly. It uses the shared
+// sentenceBoundaryRe (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE),
+// which includes the English ". " boundary.
 func titleSentenceSplit(text string) []string {
 	if text == "" {
 		return nil
 	}
-	idxs := titleSentenceBoundaryRe.FindAllStringIndex(text, -1)
+	idxs := sentenceBoundaryRe.FindAllStringIndex(text, -1)
 	var out []string
 	prev := 0
 	for _, idx := range idxs {
@@ -126,14 +114,17 @@ func hardSplitByTokens(text string, cap int) []string {
 	var out []string
 	rest := text
 	for utf8.RuneCountInString(rest) > 0 {
+		// A remainder already within the token cap stays whole. This must be
+		// checked on TOKENS: for English text runes far exceed tokens, so
+		// comparing runes against the cap would over-fragment an in-cap tail.
+		if titleTokenCount(rest) <= cap {
+			out = append(out, rest)
+			break
+		}
 		head := trimToTokenLimit(rest, cap)
-		// No progress (tokenizer unavailable / already fits): fall back to a
+		// No progress (tokenizer unavailable / cannot shrink): fall back to a
 		// rune prefix so the loop always makes progress and the ceiling holds.
 		if head == "" || head == rest || !strings.HasPrefix(rest, head) {
-			if utf8.RuneCountInString(rest) <= cap {
-				out = append(out, rest)
-				break
-			}
 			head = runePrefix(rest, cap)
 			if head == "" || head == rest {
 				out = append(out, rest)
