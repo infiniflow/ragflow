@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -130,6 +131,44 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	}
 	if got != "自定义视觉提示" {
 		t.Fatalf("VLM user text = %q, want %q (image branch must read system_prompt)", got, "自定义视觉提示")
+	}
+}
+
+func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	drv := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["image"]["lang"] = "Chinese"
+	setups["image"]["system_prompt"] = ""
+
+	_, _, err := maybeDispatchImage(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeVISUAL,
+		"test.png",
+		[]byte("not-a-real-image"),
+		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+
+	got, ok := firstUserText(drv.captured)
+	if !ok {
+		t.Fatalf("no user text captured in VLM messages: %#v", drv.captured)
+	}
+	if !strings.Contains(got, "Respond in Japanese.") {
+		t.Fatalf("VLM user text = %q, want dataset language instruction", got)
+	}
+	if strings.Contains(got, "Respond in Chinese.") {
+		t.Fatalf("VLM user text = %q, setup fallback overrode dataset language", got)
 	}
 }
 
@@ -324,9 +363,13 @@ func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchAudio_DefaultOutputFormatJson covers Parser 2.11:
-// the default audio output_format must be "json" (matching Python
-// parser.py:232 and AllowedOutputFormat["audio"]={"json"}).
+// TestMaybeDispatchAudio_DefaultOutputFormatJson covers the
+// maybeDispatchAudio fallback: when an audio setup omits
+// output_format entirely, the dispatch defaults to "json" and wraps
+// the transcription as a JSON item. (The defaultSetups value is
+// "text" to mirror the Python audio setup in parser.py; this test
+// deliberately supplies an empty setup to exercise the fallback
+// inside the dispatch itself.)
 func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}
@@ -335,8 +378,9 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
-	setups := defaultSetups()
-	// Do NOT set output_format — exercise the default path.
+	// No output_format key — exercise the default path inside
+	// maybeDispatchAudio.
+	setups := map[string]schema.ParserSetup{"audio": {}}
 	res, dispatched, err := maybeDispatchAudio(
 		context.Background(),
 		nil,
@@ -357,17 +401,24 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: markdown
+// TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: Markdown
 // vision enhancement must also process items whose doc_type_kwd is "table"
 // (Python checks {"image","table"} in parser/utils.py:181), not only "image".
 // Before the fix the table item was skipped and never sent to the VLM.
 func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
 	origResolver := resolveTenantModelByType
-	defer func() { resolveTenantModelByType = origResolver }()
+	origPrompt := figureVisionPromptBuilder
+	defer func() {
+		resolveTenantModelByType = origResolver
+		figureVisionPromptBuilder = origPrompt
+	}()
 
 	drv := &imagePromptCaptureDriver{}
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+	figureVisionPromptBuilder = func(_, _, language string) (string, error) {
+		return "describe in " + language, nil
 	}
 
 	dispatched := parserDispatchResult{
@@ -383,7 +434,7 @@ func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
 		dao.DB,
 		utility.FileTypeMarkdown,
 		dispatched,
-		map[string]any{"tenant_id": "t1"},
+		map[string]any{"tenant_id": "t1", "lang": "Korean"},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchMarkdownVision: %v", err)
@@ -397,6 +448,10 @@ func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
 	// The table item must have been sent to the VLM and its description appended.
 	if got, _ := res.JSON[0]["text"].(string); got != "captured" {
 		t.Fatalf("table item text = %q, want %q (table items must be vision-enhanced)", got, "captured")
+	}
+	gotPrompt, ok := firstUserText(drv.captured)
+	if !ok || gotPrompt != "describe in Korean" {
+		t.Fatalf("VLM user text = %q, want dataset language propagated", gotPrompt)
 	}
 }
 

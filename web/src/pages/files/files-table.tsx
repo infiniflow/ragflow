@@ -52,8 +52,7 @@ import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
-
-declare const __API_PROXY_SCHEME__: string;
+import { isGoDatasetBackend } from '../../utils/api-proxy-scheme';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -104,13 +103,7 @@ export function FilesTable({
   } = useRenameCurrentFile();
 
   // Check if skills feature is enabled (only in hybrid or go mode)
-  const isSkillsEnabled = useMemo(() => {
-    const scheme =
-      typeof __API_PROXY_SCHEME__ !== 'undefined'
-        ? __API_PROXY_SCHEME__
-        : 'python';
-    return scheme === 'hybrid' || scheme === 'go';
-  }, []);
+  const isSkillsEnabled = useMemo(() => isGoDatasetBackend(), []);
 
   // Sort files with skills folder first, then by time
   // Filter out skills folder if not in hybrid/go mode

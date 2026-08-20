@@ -5,6 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import {
   CheckIcon,
   ChevronDown,
+  TriangleAlert,
   WandSparkles,
   XCircle,
   XIcon,
@@ -377,8 +378,20 @@ export const MultiSelect = React.forwardRef<
                           {IconComponent && (
                             <IconComponent className="h-4 w-4" />
                           )}
-                          <div className="max-w-28 text-ellipsis overflow-hidden">
-                            {option?.label}
+                          {/* A selected value with no matching option (e.g. the
+                              entity no longer exists) gets a warning marker and
+                              falls back to the raw value so the badge stays
+                              readable and removable. */}
+                          {!option && (
+                            <TriangleAlert className="h-4 w-4 flex-shrink-0 text-text-disabled" />
+                          )}
+                          <div
+                            className={cn(
+                              'max-w-28 text-ellipsis overflow-hidden',
+                              { 'text-text-disabled': !option },
+                            )}
+                          >
+                            {option?.label ?? value}
                           </div>
                           {canRemoveValue(value) && (
                             <XCircle

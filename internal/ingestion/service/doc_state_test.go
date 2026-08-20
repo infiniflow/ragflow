@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	taskpkg "ragflow/internal/ingestion/task"
 )
@@ -52,7 +53,7 @@ func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string,
 	return nil
 }
 
-func (s *stubDocStateSvc) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
+func (s *stubDocStateSvc) ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
 	s.incrementCalled = true
 	s.gotDocID = docID
 	s.gotKbID = kbID
@@ -174,5 +175,110 @@ func TestDocStateUpdater_IncrementArgs(t *testing.T) {
 	}
 	if svc.gotDuration != 0 {
 		t.Fatalf("duration=%f, want 0", svc.gotDuration)
+	}
+}
+
+func TestDocStateUpdater_AppliesBuiltInMetadata(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{"category": "finance"}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:               "doc-1",
+		DocName:             "annual-report.pdf",
+		AutoMetadataEnabled: true,
+		BuiltInMetadataConfig: []any{
+			map[string]any{"key": "update_time", "type": "time"},
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+		ChunkCount: 1, TokenConsumption: 10,
+	})
+	if svc.metaData["file_name"] != "annual-report.pdf" {
+		t.Errorf("file_name = %v, want annual-report.pdf", svc.metaData["file_name"])
+	}
+	updateTime, ok := svc.metaData["update_time"].(string)
+	if !ok {
+		t.Fatalf("update_time = %T, want string", svc.metaData["update_time"])
+	}
+	if _, err := time.Parse("2006-01-02 15:04:05", updateTime); err != nil {
+		t.Errorf("update_time = %q, want 2006-01-02 15:04:05 format", updateTime)
+	}
+	if svc.metaData["category"] != "finance" {
+		t.Errorf("existing metadata must be preserved: category = %v", svc.metaData["category"])
+	}
+}
+
+func TestDocStateUpdater_BuiltInMetadataGatedOff(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:                 "doc-1",
+		DocName:               "annual-report.pdf",
+		AutoMetadataEnabled:   false,
+		BuiltInMetadataConfig: []any{map[string]any{"key": "file_name", "type": "string"}},
+		ChunkCount:            1, TokenConsumption: 10,
+	})
+	if _, ok := svc.metaData["file_name"]; ok {
+		t.Errorf("built-in metadata must not be applied when auto-metadata is disabled: %v", svc.metaData)
+	}
+}
+
+func TestDocStateUpdater_BuiltInMetadataOverwritesExisting(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{"update_time": "2020-01-01 00:00:00"}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:                 "doc-1",
+		DocName:               "annual-report.pdf",
+		AutoMetadataEnabled:   true,
+		BuiltInMetadataConfig: []any{map[string]any{"key": "update_time", "type": "time"}},
+		ChunkCount:            1, TokenConsumption: 10,
+	})
+	if svc.metaData["update_time"] == "2020-01-01 00:00:00" {
+		t.Errorf("built-in update_time must overwrite the stored value: %v", svc.metaData["update_time"])
+	}
+	if _, ok := svc.metaData["update_time"].(string); !ok {
+		t.Fatalf("update_time = %T, want string", svc.metaData["update_time"])
+	}
+}
+
+func TestDocStateUpdater_BuiltInMetadataEmptyConfig(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID: "doc-1", DocName: "annual-report.pdf",
+		AutoMetadataEnabled: true,
+		ChunkCount:          1, TokenConsumption: 10,
+	})
+	if len(svc.metaData) != 0 {
+		t.Errorf("empty built-in config must be a no-op, got %v", svc.metaData)
+	}
+}
+
+func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:               "doc-1",
+		DocName:             "report.pdf",
+		AutoMetadataEnabled: false,
+		BuiltInMetadataConfig: []any{
+			map[string]any{"key": "file_name", "type": "string"},
+			map[string]any{"key": "update_time", "type": "time"},
+		},
+		Metadata:         map[string]any{"author": "Alice"},
+		ChunkCount:       1,
+		TokenConsumption: 1,
+	})
+	if _, ok := svc.metaData["file_name"]; ok {
+		t.Fatalf("built_in must not be written when enabled=false, got %v", svc.metaData)
+	}
+	if _, ok := svc.metaData["update_time"]; ok {
+		t.Fatalf("built_in must not be written when enabled=false, got %v", svc.metaData)
+	}
+	if svc.metaData["author"] != "Alice" {
+		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
 	}
 }

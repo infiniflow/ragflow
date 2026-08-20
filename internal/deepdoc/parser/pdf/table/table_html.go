@@ -8,6 +8,13 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
+// RowsToHTML renders a table grid to HTML. The output is intentionally
+// compact (no inter-tag whitespace) and the caption is html-escaped. This
+// diverges from Python's __html_table, which emits newlines between rows and
+// leaves the caption unescaped; the difference is HTML serialization only and
+// never affects cell content (gridSim=100% in the parity harness). Registered
+// as go_intentional in table/testdata/parity/known_diffs.json
+// (rule "table-html-emission-format").
 func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, spanInfo map[[2]int][2]int, covered map[[2]int]bool) string {
 	var b strings.Builder
 	b.WriteString("<table>")
@@ -96,13 +103,22 @@ func SimpleRowsToHTML(rows [][]string) string {
 	return b.String()
 }
 
+// RowsToStrings converts a grid to a string matrix. Cells covered by a span
+// (Label contains "covered") are omitted, matching Python's rendered output,
+// which drops covered cells entirely (HTML <td> skipped; desc_table sees
+// tbl[r][c] = None) — so a covered cell never appears in the row. Span-free
+// grids are unaffected.
 func RowsToStrings(rows [][]pdf.TSRCell) [][]string {
 	out := make([][]string, len(rows))
 	for ri, row := range rows {
-		out[ri] = make([]string, len(row))
-		for ci, c := range row {
-			out[ri][ci] = c.Text
+		var cells []string
+		for _, c := range row {
+			if strings.Contains(c.Label, "covered") {
+				continue
+			}
+			cells = append(cells, c.Text)
 		}
+		out[ri] = cells
 	}
 	return out
 }

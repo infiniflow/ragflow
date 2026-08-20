@@ -96,7 +96,7 @@ type WikiPreset struct {
 	ID          string `json:"id"`
 	Topic       string `json:"topic"`
 	Instruction string `json:"instruction"`
-	PageExample string `json:"page_example"`
+	Example     string `json:"example"`
 }
 
 // CompilationTemplateService implements the read-side compilation template
@@ -175,7 +175,7 @@ func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
 			ID:          strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())),
 			Topic:       strings.TrimSpace(yamlStr(doc["topic"])),
 			Instruction: yamlStr(doc["instruction"]),
-			PageExample: yamlStr(doc["page_example"]),
+			Example:     yamlStr(doc["example"]),
 		})
 	}
 	return presets, nil
@@ -210,8 +210,17 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 	}
 	config, hasConfig := req["config"]
 	if hasConfig {
-		configMap, ok := config.(map[string]interface{})
-		if !ok {
+		// config may arrive as map[string]interface{} (raw payloads) or as
+		// entity.JSONMap (payloads built from a typed GroupTemplate, whose Config
+		// field is JSONMap). A bare type assertion on the former would reject the
+		// latter because JSONMap is a distinct named type, so normalize both.
+		var configMap map[string]interface{}
+		switch c := config.(type) {
+		case map[string]interface{}:
+			configMap = c
+		case entity.JSONMap:
+			configMap = map[string]interface{}(c)
+		default:
 			return errors.New("invalid template config")
 		}
 		if len(fmt.Sprint(configMap["global_rules"])) > 4096 {

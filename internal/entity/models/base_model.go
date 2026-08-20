@@ -400,6 +400,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		modelResponse.Name = modelName
 		if modelEntity != nil {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
+			modelResponse.MaxBatchSize = modelEntity.MaxBatchSize
 			modelResponse.Dimensions = modelEntity.Dimensions
 			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
@@ -514,6 +515,10 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 
 		if cfg.TopP != nil {
 			reqBody["top_p"] = *cfg.TopP
+		}
+
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
 		}
 
 		if cfg.Stop != nil {

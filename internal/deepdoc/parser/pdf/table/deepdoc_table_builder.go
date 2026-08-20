@@ -132,9 +132,14 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		grid[first.r][first.c].X1 = sp.X1
 		grid[first.r][first.c].Y1 = sp.Y1
 		grid[first.r][first.c].Label = sp.Label
-		for _, idx := range covered[1:] {
-			grid[idx.r][idx.c] = pdf.TSRCell{}
-		}
+		// The remaining covered cells KEEP their row×column bbox. Python's
+		// construct_table assigns every box to a cell by its TSR row/column
+		// label (R/C) regardless of spanning cells, then __cal_spans folds the
+		// covered cells' text into the span origin cell at render time. If Go
+		// zeroed these bboxes here, FillCellTextFromBoxesWithRows would skip
+		// them, their text would never reach the span cell, and orphan-row/
+		// column cleanup would drop the covered rows/columns — the
+		// dell/prodeploy/screenshot real-PDF parity gap (11→6 rows).
 	}
 
 	return grid

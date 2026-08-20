@@ -46,7 +46,7 @@ def test_fun_asr_flash_uses_native_request_format(tmp_path):
 
 
 def test_qwen_audio_asr_keeps_existing_dashscope_path():
-    response = {"output": {"choices": [{"message": MagicMock(content=[{"text": "legacy text"}])}]}}
+    response = {"output": {"choices": [{"message": {"content": [{"text": "legacy text"}]}}]}}
 
     with patch("dashscope.MultiModalConversation.call", return_value=response) as call:
         model = QWenSeq2txt("test-key", "qwen-audio-asr")

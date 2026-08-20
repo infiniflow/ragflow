@@ -82,10 +82,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -96,23 +94,9 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 const ComponentNameTokenizer = "Tokenizer"
-
-// embeddingBatchSize returns the embedding batch size, matching Python's
-// settings.EMBEDDING_BATCH_SIZE. Reads TOKENIZER_EMBEDDING_BATCH_SIZE env
-// var; defaults to 16. Invalid / non-positive values fall back to the
-// default (diff Tokenizer Omission-3).
-func embeddingBatchSize() int {
-	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return 16
-}
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
 // upstream document name before tokenizing it. Mirrors the python
@@ -135,6 +119,7 @@ type EmbeddingResult struct {
 // Embedder is the testability seam for the embedding branch.
 type Embedder interface {
 	MaxTokens() int
+	BatchSize() int
 	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
@@ -338,13 +323,13 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	normalizeChunkTextFallback(chunks)
 
-	// Diff Tokenizer-8: chunk_order_int must be set on all paths
-	// (Python sets it unconditionally). tokenizeChunks also sets it
-	// for the full_text path; this covers the embedding-only path.
+	// chunk_order_int is the position of the chunk in the (post-filter) reading
+	// sequence. It is set unconditionally on every surviving chunk so that all
+	// retrievable chunks carry a stable reading-order index on every path, not
+	// just chunks+full_text. Because it enumerates the slice after filtering,
+	// the values are contiguous and 0-based within Go.
 	for i := range chunks {
-		if chunks[i].ChunkOrderInt == nil {
-			chunks[i].ChunkOrderInt = intPtr(i)
-		}
+		chunks[i].ChunkOrderInt = intPtr(i)
 	}
 
 	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
@@ -359,6 +344,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		"output_format": "chunks",
 		"chunks":        schema.ChunkDocsToMaps(chunks),
 	}
+	copyPipelineControlValues(out, inputs)
 
 	// Embedding requires a KB: the embedder (and its embd_id) is configured
 	// on the knowledgebase, so without kb_id there is nothing to resolve
@@ -382,6 +368,14 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Int("output_chunks", len(chunks)),
 	)
 	return out, nil
+}
+
+func copyPipelineControlValues(output, input map[string]any) {
+	for _, key := range []string{"wiki_active_map_states"} {
+		if value, exists := input[key]; exists {
+			output[key] = value
+		}
+	}
 }
 
 func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
@@ -428,6 +422,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		tokenCount  int
 		hasTitleVec bool
 	)
+	// go_intentional (A3): when the upstream name is empty we skip title
+	// weighting entirely (hasTitleVec stays false, so the merged vector is the
+	// content vector alone). From the end-user perspective an empty title must
+	// not contribute the filename embedding weight; the Python DSL instead
+	// computes 0.1*emb(""), injecting an undefined bias into every chunk. Go's
+	// skip is the correct behavior (go_intentional). Do NOT "align" this to
+	// the DSL.
 	if trimmedName == "" {
 		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
@@ -448,8 +449,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	}
 
 	contentResults := make([]EmbeddingResult, 0, len(texts))
-	for start := 0; start < len(texts); start += embeddingBatchSize() {
-		end := start + embeddingBatchSize()
+	batchSize := embedder.BatchSize()
+	if batchSize <= 0 {
+		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
+	}
+	for start := 0; start < len(texts); start += batchSize {
+		end := start + batchSize
 		if end > len(texts) {
 			end = len(texts)
 		}
@@ -570,26 +575,20 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 	default:
 		raw = cloneChunkDocs(in.JSONResult)
 	}
-	// Discard zero-value ChunkDocs (no text, no content_with_weight, no
-	// image, no summary) so they don't produce phantom embeddings
-	// downstream. Python's pipeline filters none-chunks before the
-	// tokenizer.
+	// Keep only chunks that have retrievable content: a chunk is dropped only
+	// when both text and content_with_weight are empty. The ContentWithWeight
+	// guard preserves the Parser path, whose blocks carry content_with_weight
+	// without text; normalizeChunkTextFallback backfills text afterwards, so
+	// this guard is required to avoid dropping legitimate Parser blocks before
+	// the backfill runs.
 	filtered := raw[:0]
 	for _, ck := range raw {
-		if isPhantomChunk(ck) {
+		if ck.Text == "" && ck.ContentWithWeight == "" {
 			continue
 		}
 		filtered = append(filtered, ck)
 	}
 	return filtered
-}
-
-// isPhantomChunk returns true when a ChunkDoc has no usable content for
-// downstream tokenization or embedding. A chunk carrying only a Summary
-// (no Text/Image/ContentWithWeight) is kept — tokenizeChunks tokenizes the
-// Summary in that case. Mirrors Python's none-chunk filtering.
-func isPhantomChunk(ck schema.ChunkDoc) bool {
-	return ck.Text == "" && ck.Image == "" && ck.ContentWithWeight == "" && ck.Summary == ""
 }
 
 func textPayloadToChunks(payload *string) []schema.ChunkDoc {
@@ -671,7 +670,6 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 	tok := tokenizer.New(language)
 	for i := range chunks {
 		ck := &chunks[i]
-		ck.ChunkOrderInt = intPtr(i)
 		titleTk, err := tok.Tokenize(titleStem)
 		if err != nil {
 			return fmt.Errorf("tokenizer: title tokenize: %w", err)
@@ -698,7 +696,12 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			if err = ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
+			// Split keywords on the ENGLISH COMMA ONLY. The keyword_prompt
+			// contract specifies "delimited by ENGLISH COMMA", so CJK commas,
+			// semicolons and newlines stay part of the keyword rather than
+			// acting as separators. strings.Split also preserves empty
+			// elements, matching Python's "a,,b".split(",") == ["a","","b"].
+			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tok.Tokenize(kw)
@@ -783,6 +786,13 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 
 // shouldHaveEmbedding reports whether the tokenizer must attach embedding
 // vectors: the search method requests embedding AND a KB is present.
+//
+// go_intentional (A4): the kbID != "" guard is deliberate. Each dataset
+// configures its own embedding model, so an empty kb_id (e.g. a canvas-debug
+// dry run) must NOT fall back to the tenant's default embedding model — doing
+// so would produce vectors a dataset cannot actually use at retrieval time.
+// This is a deliberate, go_intentional divergence. Do NOT "align" this to a
+// path that injects a default embedding.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
 	return contains(searchMethods, "embedding") && kbID != ""
 }

@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import xxhash
 
-from agent.component.llm import LLMParam, LLM
+from agent.component.llm import LLM, LLMParam
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -28,7 +28,6 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from common.constants import LLMType
 from common.token_utils import num_tokens_from_string
-from rag.nlp import naive_merge
 from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
     load_active_templates,
@@ -37,6 +36,7 @@ from rag.advanced_rag.knowlege_compile.runner import (
     split_tree_templates,
 )
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.nlp import naive_merge
 
 
 class CompilerParam(ProcessParamBase, LLMParam):
@@ -370,6 +370,7 @@ class Compiler(ProcessBase, LLM):
         tenant_id: str,
         kb_id: str,
         doc_id: str,
+        doc_name: str,
     ) -> None:
         """Build and persist tree graphs from the pipeline's in-memory chunks.
 
@@ -452,6 +453,7 @@ class Compiler(ProcessBase, LLM):
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     embedding_model,
                     compilation_template_id=template_id,
                 )
@@ -460,6 +462,7 @@ class Compiler(ProcessBase, LLM):
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     compile_kwd="tree",
                     compilation_template_id=template_id,
                 )
@@ -468,13 +471,23 @@ class Compiler(ProcessBase, LLM):
                 continue
 
             try:
-                from rag.advanced_rag.knowlege_compile.dataset_nav import upsert_dataset_nav_doc
+                from rag.advanced_rag.knowlege_compile.dataset_nav import (
+                    build_nav_graph_text,
+                    upsert_dataset_nav_doc,
+                )
 
+                # Carry the FULL entity descriptions into the parse-time
+                # nav_doc as graph_content (graph_text from the RAPTOR graph),
+                # without changing the nav clustering input. The `title` keeps
+                # using tree["title"] -- exactly what upsert_dataset_nav_doc
+                # used to derive from `tree` before this change -- so the parse
+                # cluster-title logic is unchanged.
+                _, nav_graph_text = build_nav_graph_text(after_graph)
                 await upsert_dataset_nav_doc(
                     tenant_id,
                     kb_id,
                     doc_id,
-                    tree,
+                    {"title": tree.get("title"), "graph_text": nav_graph_text},
                     embd_mdl=embedding_model,
                     chat_mdl=chat_mdl_by_tid[template_id],
                 )
@@ -516,6 +529,11 @@ class Compiler(ProcessBase, LLM):
 
         tenant_id = self._canvas.get_tenant_id()
         doc_id = self._canvas._doc_id
+        doc_name = ""
+        if doc_id:
+            found, document = DocumentService.get_by_id(doc_id)
+            if found and document:
+                doc_name = document.name
         kb_id = getattr(self._canvas, "_kb_id", None) or DocumentService.get_knowledgebase_id(doc_id)
         language = self._compile_language(kwargs)
 
@@ -592,13 +610,7 @@ class Compiler(ProcessBase, LLM):
 
         should_rechunk = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
         target_token_size = self._PARSER_CANDIDATE_TOKEN_SIZE if should_rechunk else self._PARSER_TEXT_CHUNK_TOKEN_SIZE
-        if output_format == "chunks":
-            chunks = self._normalize_upstream_chunks(
-                kwargs,
-                split_json_text=should_rechunk,
-                target_token_size=target_token_size,
-            )
-        elif output_format in {"markdown", "text", "html"}:
+        if output_format == "chunks" or output_format in {"markdown", "text", "html"}:
             chunks = self._normalize_upstream_chunks(
                 kwargs,
                 split_json_text=should_rechunk,
@@ -619,7 +631,7 @@ class Compiler(ProcessBase, LLM):
 
         for idx, ck in enumerate(chunks):
             ck["doc_id"] = doc_id
-            ck["id"] = xxhash.xxh64(f"{ck['text']}\x00{ck['doc_id']}\x00{idx}".encode("utf-8")).hexdigest()
+            ck["id"] = xxhash.xxh64(f"{ck['text']}\x00{ck['doc_id']}\x00{idx}".encode()).hexdigest()
 
         if self._canvas._kb_id:
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)
@@ -650,6 +662,7 @@ class Compiler(ProcessBase, LLM):
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
             )
 
         if non_tree_templates:
@@ -681,6 +694,7 @@ class Compiler(ProcessBase, LLM):
                     tenant_id=tenant_id,
                     kb_id=kb_id,
                     doc_id=doc_id,
+                    doc_name=doc_name,
                     language=language,
                     chunk_batches=_chunk_batches(),
                     progress_cb=self._compile_progress,

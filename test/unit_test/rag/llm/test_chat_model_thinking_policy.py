@@ -73,6 +73,33 @@ def test_qwen3_preview_ignores_disabled_thinking():
     assert kwargs["extra_body"]["enable_thinking"] is True
 
 
+def test_qwen3_24t_a95b_forces_thinking_true():
+    """qwen3.8-2.4t-a95b (flagship reasoning model) only accepts enable_thinking=True."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3.8-2.4t-a95b",
+        backend="base",
+        gen_conf={},
+        request_kwargs={},
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"]["enable_thinking"] is True
+
+
+def test_qwen3_24t_a95b_ignores_disabled_thinking():
+    """Even with thinking=disabled, qwen3.8-2.4t-a95b still forces enable_thinking=True."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3.8-2.4t-a95b",
+        backend="base",
+        gen_conf={"thinking": "disabled", "temperature": 0.2},
+        request_kwargs={},
+    )
+
+    assert "thinking" not in gen_conf
+    assert gen_conf == {"temperature": 0.2}
+    assert kwargs["extra_body"]["enable_thinking"] is True
+
+
 @pytest.mark.parametrize(
     "provider",
     [SupportedLiteLLMProvider.Tongyi_Qianwen, SupportedLiteLLMProvider.Dashscope],
@@ -159,6 +186,43 @@ def test_glm_thinking_maps_to_zhipu_payload():
 
     assert kwargs == {}
     assert gen_conf["thinking"] == {"type": "enabled"}
+
+
+def test_deepseek_thinking_disabled_via_extra_body():
+    # litellm 1.82.x DeepSeek transformation drops `thinking` from the top
+    # level (only {"type": "enabled"} survives) and rejects reasoning_effort
+    # alongside thinking: disabled. The toggle must be carried in extra_body
+    # and any reasoning_effort stripped. When unspecified, default to disabled.
+    for gen_input in (
+        {"thinking": "disabled", "reasoning_effort": "high"},
+        {"thinking": "default"},
+        {"temperature": 0.5},
+    ):
+        gen_conf, kwargs = _apply_model_family_policies(
+            "deepseek-v4-flash",
+            backend="litellm",
+            provider=SupportedLiteLLMProvider.DeepSeek,
+            gen_conf=dict(gen_input),
+            request_kwargs={},
+        )
+        assert kwargs == {}
+        assert "thinking" not in gen_conf
+        assert "reasoning_effort" not in gen_conf
+        assert gen_conf["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_thinking_enabled_via_extra_body():
+    gen_conf, kwargs = _apply_model_family_policies(
+        "deepseek-v4-flash",
+        backend="litellm",
+        provider=SupportedLiteLLMProvider.DeepSeek,
+        gen_conf={"thinking": "enabled"},
+        request_kwargs={},
+    )
+
+    assert kwargs == {}
+    assert "thinking" not in gen_conf
+    assert gen_conf["extra_body"]["thinking"] == {"type": "enabled"}
 
 
 def test_litellm_provider_body_fields_move_to_extra_body_before_drop_params():

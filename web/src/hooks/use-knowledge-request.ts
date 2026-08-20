@@ -1,5 +1,22 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
 import { GenerateType, ParseType } from '@/constants/knowledge';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
@@ -119,6 +136,7 @@ export const useTestRetrieval = () => {
       page: 1,
       doc_ids: filterValue.doc_ids,
       highlight: true,
+      include_knowledge_compilation: false,
     };
   }, [filterValue, knowledgeBaseId, values]);
 
@@ -726,13 +744,15 @@ export const useUpdateArtifactPage = () => {
       );
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
-        queryClient.invalidateQueries({
-          queryKey: ArtifactKeys.detail(
-            knowledgeBaseId,
-            params.pageType,
-            params.slug,
-          ),
-        });
+        const detailKey = ArtifactKeys.detail(
+          knowledgeBaseId,
+          params.pageType,
+          params.slug,
+        );
+        if (data.data) {
+          queryClient.setQueryData(detailKey, data.data);
+        }
+        await queryClient.invalidateQueries({ queryKey: detailKey });
       }
       return data;
     },
@@ -964,7 +984,14 @@ export const useRunArtifactIndex = (kind: string) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.RunArtifactIndex],
     mutationFn: async () => {
-      const { data } = await runIndex(knowledgeBaseId, 'artifact');
+      // Go/hybrid: wiki compilation is auto-driven by the scheduler; there is no
+      // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
+      // update can't be mistaken for a real re-merge (the UI hides/disables the
+      // update control — plan v4.1 §4.2).
+      if (isGoDatasetBackend()) {
+        throw new Error(i18n.t('message.compileNotSupported'));
+      }
+      const { data } = await runIndex(knowledgeBaseId, 'wiki');
       if (data?.code === 0) {
         message.success(i18n.t('message.operated'));
         queryClient.invalidateQueries({
@@ -1118,9 +1145,9 @@ export const useSelectKnowledgeOptions = () => {
 };
 
 /**
- * Fetch datasets by a set of IDs. Used to resolve the names of
- * already-selected datasets that are not present in the first page of
- * the paginated list so they can be echoed back in the form field.
+ * Fetch datasets by a set of IDs. Used to resolve already-selected datasets
+ * that are not present in the first page of the paginated list, e.g. to echo
+ * their names in a form field. For staleness checks see `useStaleDatasetIds`.
  */
 export const useFetchDatasetsByIds = (ids: string[]) => {
   const sortedIds = useMemo(() => [...ids].sort(), [ids]);
@@ -1135,6 +1162,29 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
   });
 
   return { data, loading };
+};
+
+/**
+ * Resolve which of the given persisted dataset ids have gone stale — the
+ * dataset no longer exists or has been emptied of chunks. The set stays
+ * empty while the lookup is in flight so consumers can hold off validation
+ * until it settles; `settled` flips true once the lookup has finished.
+ */
+export const useStaleDatasetIds = (datasetIds?: string[]) => {
+  const persistedIds = useMemo(() => datasetIds ?? [], [datasetIds]);
+  const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
+
+  const staleDatasetIds = useMemo(() => {
+    if (loading) {
+      return new Set<string>();
+    }
+    const usableIds = new Set(
+      (datasets ?? []).filter((x) => x.chunk_count > 0).map((x) => x.id),
+    );
+    return new Set(persistedIds.filter((id) => !usableIds.has(id)));
+  }, [datasets, loading, persistedIds]);
+
+  return { staleDatasetIds, settled: !loading };
 };
 
 //#region tags

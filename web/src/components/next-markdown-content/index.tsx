@@ -1,5 +1,22 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { SafeImg } from '@/components/safe-img';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
@@ -11,6 +28,7 @@ import Markdown, { defaultUrlTransform } from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -19,11 +37,13 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -172,7 +192,11 @@ function MarkdownContent({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
@@ -184,11 +208,13 @@ function MarkdownContent({
     const thinkSummary = loading
       ? `${t('chat.thinking')}...`
       : t('chat.thought');
-    return pipe(
-      (value: string) => replaceThinkToSection(value, thinkSummary),
-      replaceRetrievingToSection,
-      preprocessLaTeX,
-    )(nextText);
+    return unescapeAngleBrackets(
+      pipe(
+        (value: string) => replaceThinkToSection(value, thinkSummary),
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+      )(nextText),
+    );
   }, [content, loading, t]);
 
   useEffect(() => {
@@ -200,15 +226,16 @@ function MarkdownContent({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
+        if (fileExtension !== 'pdf') {
           if (!documentUrl) {
             return;
           }
-          window.open(documentUrl, '_blank');
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else {
           clickDocumentButton?.(documentId, chunk);
         }
@@ -318,7 +345,7 @@ function MarkdownContent({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                   className="text-ellipsis text-wrap"
@@ -364,7 +391,12 @@ function MarkdownContent({
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         urlTransform={(url, key) => {
           if (
@@ -394,7 +426,7 @@ function MarkdownContent({
                 </a>
               );
             },
-            img({ src, alt, ...props }: any) {
+            img({ src, alt, title }: any) {
               if (isArtifactUrl(src)) {
                 return (
                   <ArtifactImage
@@ -404,16 +436,7 @@ function MarkdownContent({
                   />
                 );
               }
-              return (
-                <span className={styles.artifactImageWrapper}>
-                  <img
-                    src={src}
-                    alt={alt || ''}
-                    className={styles.artifactImage}
-                    {...omit(props, 'node')}
-                  />
-                </span>
-              );
+              return <SafeImg src={src} alt={alt} title={title} />;
             },
             code(props: any) {
               const { children, className, ...rest } = props;

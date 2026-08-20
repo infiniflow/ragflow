@@ -37,7 +37,8 @@ func TestManagerClient_MapsStructuredResultToSandboxResponse(t *testing.T) {
 	mgr.SetProvider(managerClientStubProvider{})
 
 	client := &ManagerClient{manager: mgr}
-	resp, err := client.ExecuteCode(context.Background(), agenttool.SandboxRequest{
+	ctx := t.Context()
+	resp, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{
 		Lang:   "python",
 		Script: "def main(): return 16",
 	})
@@ -57,7 +58,8 @@ func TestManagerClient_MapsLegacyResultKeyToSandboxResponse(t *testing.T) {
 	mgr.SetProvider(managerClientResultKeyProvider{})
 
 	client := &ManagerClient{manager: mgr}
-	resp, err := client.ExecuteCode(context.Background(), agenttool.SandboxRequest{
+	ctx := t.Context()
+	resp, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{
 		Lang:   "python",
 		Script: "def main(): return 16",
 	})

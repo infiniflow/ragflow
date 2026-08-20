@@ -17,7 +17,6 @@
 package sandbox
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -50,9 +49,11 @@ func TestSelfManaged_HealthCheck_OK(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
+	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
-	if err := p.HealthCheck(context.Background()); err != nil {
+	if err := p.HealthCheck(ctx); err != nil {
 		t.Fatalf("HealthCheck: %v", err)
 	}
 }
@@ -63,9 +64,10 @@ func TestSelfManaged_HealthCheck_Fail(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck on 500: got nil error, want one")
 	}
 }
@@ -86,9 +88,10 @@ func TestSelfManaged_Initialize(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
-	if err := p.Initialize(context.Background()); err != nil {
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	if !p.isInitialized() {
@@ -103,9 +106,10 @@ func TestSelfManaged_Initialize_HealthFails(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize on 500 healthz: got nil error, want one")
 	}
 }
@@ -114,7 +118,8 @@ func TestSelfManaged_CreateInstance(t *testing.T) {
 	t.Parallel()
 	p := newSelfManagedForTest("http://example.invalid:9999")
 	p.initialized = true // bypass probe for unit testing
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
@@ -133,7 +138,8 @@ func TestSelfManaged_CreateInstance_UnsupportedLanguage(t *testing.T) {
 	t.Parallel()
 	p := newSelfManagedForTest("http://example.invalid:9999")
 	p.initialized = true
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	ctx := t.Context()
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -153,14 +159,15 @@ func TestSelfManaged_ExecuteCode(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
 	p.initialized = true
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	result, err := p.ExecuteCode(context.Background(), inst, "def main(): return 1+1", "python", 10, nil)
+	result, err := p.ExecuteCode(ctx, inst, "def main(): return 1+1", "python", 10, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
@@ -209,14 +216,15 @@ func TestSelfManaged_ExecuteCode_JSWrapped(t *testing.T) {
 		handleRun(t, w, r, "ok", "")
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
 	p.initialized = true
-	inst, err := p.CreateInstance(context.Background(), "nodejs")
+	inst, err := p.CreateInstance(ctx, "nodejs")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	_, err = p.ExecuteCode(context.Background(), inst, "async function main() {}", "javascript", 5, nil)
+	_, err = p.ExecuteCode(ctx, inst, "async function main() {}", "javascript", 5, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
@@ -262,14 +270,15 @@ func TestSelfManaged_ExecuteCode_PrefersHTTPResultField(t *testing.T) {
 		}`))
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
 	p.initialized = true
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	result, err := p.ExecuteCode(context.Background(), inst, "def main(): return 16", "python", 10, nil)
+	result, err := p.ExecuteCode(ctx, inst, "def main(): return 16", "python", 10, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
@@ -292,11 +301,12 @@ func TestSelfManaged_ExecuteCode_Non200(t *testing.T) {
 		_, _ = w.Write([]byte("bad code"))
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
 	p.initialized = true
-	inst, _ := p.CreateInstance(context.Background(), "python")
-	_, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil)
+	inst, _ := p.CreateInstance(ctx, "python")
+	_, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil)
 	if err == nil {
 		t.Errorf("ExecuteCode on 400: got nil error, want one")
 	}
@@ -307,10 +317,11 @@ func TestSelfManaged_ExecuteCode_Non200(t *testing.T) {
 
 func TestSelfManaged_ExecuteCode_NotInitialized(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 	p := newSelfManagedForTest("http://example.invalid:9999")
 	// do NOT set initialized
 	inst := &SandboxInstance{InstanceID: "x"}
-	_, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil)
+	_, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil)
 	if err == nil {
 		t.Errorf("ExecuteCode on uninitialized: got nil error, want one")
 	}
@@ -318,10 +329,11 @@ func TestSelfManaged_ExecuteCode_NotInitialized(t *testing.T) {
 
 func TestSelfManaged_ExecuteCode_UnsupportedLanguage(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 	p := newSelfManagedForTest("http://example.invalid:9999")
 	p.initialized = true
-	inst, _ := p.CreateInstance(context.Background(), "python")
-	_, err := p.ExecuteCode(context.Background(), inst, "x", "ruby", 5, nil)
+	inst, _ := p.CreateInstance(ctx, "python")
+	_, err := p.ExecuteCode(ctx, inst, "x", "ruby", 5, nil)
 	if err == nil {
 		t.Errorf("ExecuteCode(ruby): got nil error, want one")
 	}
@@ -329,9 +341,10 @@ func TestSelfManaged_ExecuteCode_UnsupportedLanguage(t *testing.T) {
 
 func TestSelfManaged_DestroyInstance_Noop(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 	p := newSelfManagedForTest("http://example.invalid:9999")
 	p.initialized = true
-	if err := p.DestroyInstance(context.Background(), &SandboxInstance{InstanceID: "x"}); err != nil {
+	if err := p.DestroyInstance(ctx, &SandboxInstance{InstanceID: "x"}); err != nil {
 		t.Errorf("DestroyInstance: %v", err)
 	}
 }
@@ -378,7 +391,7 @@ func TestNewSelfManagedProviderFromEnv_BaseImages(t *testing.T) {
 		t.Errorf("nodejs baseImage = (%q, %v); want (\"\", true)", got, ok)
 	}
 
-	// Case 3: only python set. nodejs slot must be empty.
+	// Case 3: only python set. Node.js slot must be empty.
 	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "only-python:latest")
 	t.Setenv("SANDBOX_BASE_NODEJS_IMAGE", "")
 	p3 := newSelfManagedProviderFromEnv()
@@ -402,6 +415,7 @@ func TestSelfManaged_ExecuteCode_PassesBaseImage(t *testing.T) {
 		handleRun(t, w, r, "ok", "")
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
 	p.initialized = true
@@ -409,15 +423,15 @@ func TestSelfManaged_ExecuteCode_PassesBaseImage(t *testing.T) {
 		"python": "custom-python:v1",
 		"nodejs": "",
 	}
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "def main(): return 1", "python", 10, nil); err != nil {
+	if _, err = p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 10, nil); err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+	if err = json.Unmarshal(capturedBody, &payload); err != nil {
 		t.Fatalf("decode: %v (raw=%s)", err, capturedBody)
 	}
 	if got := payload["base_image"]; got != "custom-python:v1" {
@@ -438,6 +452,7 @@ func TestSelfManaged_ExecuteCode_OmitsEmptyBaseImage(t *testing.T) {
 		handleRun(t, w, r, "ok", "")
 	}))
 	defer srv.Close()
+	ctx := t.Context()
 
 	p := newSelfManagedForTest(srv.URL)
 	p.initialized = true
@@ -445,15 +460,15 @@ func TestSelfManaged_ExecuteCode_OmitsEmptyBaseImage(t *testing.T) {
 		"python": "", // operator did not override
 		"nodejs": "",
 	}
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "def main(): return 1", "python", 10, nil); err != nil {
+	if _, err = p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 10, nil); err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+	if err = json.Unmarshal(capturedBody, &payload); err != nil {
 		t.Fatalf("decode: %v (raw=%s)", err, capturedBody)
 	}
 	if _, present := payload["base_image"]; present {

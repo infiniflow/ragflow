@@ -1,6 +1,7 @@
 // Package wiki implements the "wiki" variant of KnowledgeCompiler: a
 // document artifact pipeline MAP -> REDUCE -> PLAN -> REFINE that produces a
-// wiki-style page (and supporting section products) with in-memory state only.
+// wiki-style page (and supporting section products). MAP results may be reused
+// from the immutable per-chunk version store; later stages remain in memory.
 // The stage semantics are aligned with the Python wiki.py design, but the Go
 // port keeps all intermediate artifacts in memory instead of persisting them to
 // ES between stages.
@@ -16,10 +17,76 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
+	"ragflow/internal/agent/runtime"
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
+
+	"go.uber.org/zap"
 )
+
+// batchSubmitter fans out the MAP-stage extraction jobs on the process-wide
+// knowledge-compilation pool. It is injected by the knowledge_compiler wiring
+// so every variant shares one vCPU-sized concurrency bound; when nil the
+// batches run sequentially (the historic default).
+var batchSubmitter func(ctx context.Context, jobs []func() error) error
+
+// SetBatchSubmitter installs the shared-pool fan-out used by Run's MAP stage.
+// Pass nil to revert to serial execution.
+func SetBatchSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	batchSubmitter = submit
+}
+
+// runBatches mirrors the other compiler variants: concurrent under the wired
+// global compiler pool, or serial when no submitter is set. The first error is
+// returned after all jobs settle; the global pool is never StopWait'd.
+func runBatches(ctx context.Context, jobs []func() error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if batchSubmitter != nil {
+		return batchSubmitter(ctx, jobs)
+	}
+	for _, j := range jobs {
+		if err := j(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// wikiMapTokenBudget is the input-token budget per MAP extraction batch. It is
+// intentionally well below the chat model's context window so the LLM has
+// generous room to emit the entity/concept/claim/relation/topic JSON without
+// hitting the output-token limit and truncating the payload.
+const wikiMapTokenBudget = 2048
+
+const wikiRefineProgressStep = 5
+
+// wikiMapMaxTokens derives the extraction output budget from the model's
+// context length and the per-batch input budget: once the batch has consumed
+// wikiMapTokenBudget input tokens, the rest of the window is handed to the
+// output — but never below the input budget itself, so a small-input batch can
+// still get a proportionally large extraction payload. modelContextLen is the
+// model's total context window in tokens (0 means unknown).
+func wikiMapMaxTokens(modelContextLen int) int {
+	if modelContextLen <= 0 {
+		modelContextLen = common.DefaultLLMContextLength
+	}
+	return max(modelContextLen-wikiMapTokenBudget, wikiMapTokenBudget)
+}
+
+// wikiRefineMaxTokens gives the page writer (REFINE step) a generous but
+// bounded output cap so a long page body is not cut off mid-stream by a small
+// default completion limit. It reuses the map/extraction budget derivation:
+// once the input budget is consumed, the rest of the model window is handed to
+// the output. modelContextLen is the model's total context window in tokens (0
+// means unknown).
+func wikiRefineMaxTokens(modelContextLen int) int {
+	return wikiMapMaxTokens(modelContextLen)
+}
 
 type wikiPipeline struct {
 	ctx       context.Context
@@ -35,6 +102,22 @@ type wikiPipeline struct {
 	reduced     wikiExtract
 	plan        wikiPlan
 	pages       []wikiPageResult
+	// planBudget is the resolved global page budget for the current planning
+	// run (target approx + hard cap).
+	planBudget wikiPlanBudget
+	// planCapacityExcluded counts the planned pages dropped to fit the global
+	// hard cap; testable and reported for observability.
+	planCapacityExcluded int
+	neighborCache        map[string]*common.WikiPageCandidate
+	incremental          bool
+	activeStateKey       string
+	previousActiveState  wikiMapActiveSnapshot
+	nextActiveState      wikiMapActiveSnapshot
+	affectedPageSlugs    map[string]struct{}
+	removedPageSlugs     []string
+	mapChanged           bool
+	affectedTerms        map[string]struct{}
+	pendingActiveState   *common.WikiMapActiveState
 }
 
 type wikiExtract struct {
@@ -43,6 +126,17 @@ type wikiExtract struct {
 	Claims    []wikiClaim    `json:"claims"`
 	Relations []wikiRelation `json:"relations"`
 	Topics    []string       `json:"topics"`
+	Mode      string         `json:"mode,omitempty"`
+}
+
+type wikiMapActiveSnapshot struct {
+	Chunks map[string]wikiMapActiveChunk `json:"chunks"`
+	Plan   []wikiPlanPage                `json:"plan"`
+}
+
+type wikiMapActiveChunk struct {
+	Key     string      `json:"key"`
+	Extract wikiExtract `json:"extract"`
 }
 
 type wikiEntity struct {
@@ -100,8 +194,34 @@ type wikiPlanPage struct {
 	Priority    int               `json:"priority"`
 	Lead        string            `json:"lead"`
 	Sections    []wikiPlanSection `json:"sections"`
+	// MentionCount is an internal (non-serialized) signal used for the
+	// deterministic page selection when the merged plan exceeds the global hard
+	// cap. It is computed from the reduced extract, not read from JSON.
+	MentionCount int    `json:"-"`
+	PlanGroup    string `json:"plan_group,omitempty"`
 }
 
+// Reconciliation thresholds. These are a deliberate Go-specific refinement of
+// the Python wiki.py contract, NOT a byte-for-byte alignment:
+//
+// Python `_wiki_reconcile_with_kb` (wiki.py:1900-1957) queries KNN with
+// `extra_options={"similarity": update_threshold}` (update_threshold=0.95), so
+// candidates below that threshold are normally filtered out at retrieval and
+// the item becomes CREATE directly. Its MAYBE band ([maybe=0.60, update=0.95))
+// is only reachable when a backend still returns low-score candidates despite
+// the similarity filter.
+//
+// Go's `FindSimilarPages` returns top-K candidates without a similarity floor,
+// so it genuinely sees low-score candidates Python never does. To exploit that
+// richer signal we keep a real two-band decision:
+//
+//   - Score >= update_threshold (0.92)           -> direct UPDATE
+//   - Score <  maybe_threshold (0.78)            -> CREATE (no match)
+//   - Score in [maybe, update)                   -> title/topic/entity overlap
+//     heuristic first (direct UPDATE), else MAYBE resolved by the LLM.
+//
+// The title/topic/entity overlap straight-to-UPDATE shortcut is a Go-only
+// enhancement; it is NOT a Python-aligned behavior. Keep it documented as such.
 const (
 	wikiPlanUpdateThreshold = 0.92
 	wikiPlanMaybeThreshold  = 0.78
@@ -116,21 +236,48 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if docID == "" {
 		docID = "unknown"
 	}
+	appcommon.Info("wiki: Run start",
+		zap.String("dataset_id", deps.DatasetID),
+		zap.String("doc_id", docID),
+		zap.Int("chunks", len(inputs.Chunks)),
+		zap.Bool("chat_ready", deps.Chat != nil),
+		zap.Bool("embed_ready", deps.Embed != nil))
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki Started: input_chunks=%d", len(inputs.Chunks)))
 	p := &wikiPipeline{
-		ctx:       ctx,
-		deps:      deps,
-		param:     param,
-		inputs:    inputs,
-		docID:     docID,
-		tenantID:  deps.TenantID,
-		datasetID: deps.DatasetID,
-		llmID:     llmID,
+		ctx:               ctx,
+		deps:              deps,
+		param:             param,
+		inputs:            inputs,
+		docID:             docID,
+		tenantID:          deps.TenantID,
+		datasetID:         deps.DatasetID,
+		llmID:             llmID,
+		neighborCache:     make(map[string]*common.WikiPageCandidate),
+		affectedPageSlugs: make(map[string]struct{}),
+	}
+	if incremental, ok := inputs.VariantSpecific["wiki_incremental"].(bool); ok {
+		p.incremental = incremental
 	}
 	if err := p.run(); err != nil {
+		appcommon.Error("wiki: Run pipeline failed", err,
+			zap.String("dataset_id", deps.DatasetID),
+			zap.String("doc_id", docID))
 		return common.Outputs{}, err
 	}
+	appcommon.Info("wiki: pipeline done",
+		zap.String("dataset_id", deps.DatasetID),
+		zap.String("doc_id", docID),
+		zap.Int("extracted_entities", len(p.reduced.Entities)),
+		zap.Int("plan_pages", len(p.plan.Pages)),
+		zap.Int("refined_pages", len(p.pages)))
 
 	products := buildWikiPageProducts(p.tenantID, p.docID, p.pages)
+	pageProducts, sectionProducts := countWikiProducts(products)
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki Done: input_chunks=%d output_products=%d wiki_pages=%d wiki_sections=%d", len(inputs.Chunks), len(products), pageProducts, sectionProducts))
+	appcommon.Info("wiki: built page products",
+		zap.String("dataset_id", deps.DatasetID),
+		zap.String("doc_id", docID),
+		zap.Int("products", len(products)))
 	for i := range products {
 		if products[i].Meta == nil {
 			products[i].Meta = map[string]any{}
@@ -187,199 +334,692 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	out := common.Outputs{
 		Products:          prod,
 		DuplicatesDropped: stats.DuplicatesDropped,
+		AffectedPageSlugs: sortedStringSet(p.affectedPageSlugs),
+		RemovedPageSlugs:  append([]string(nil), p.removedPageSlugs...),
+	}
+	if p.pendingActiveState != nil {
+		out.WikiActiveStates = append(out.WikiActiveStates, *p.pendingActiveState)
 	}
 	return out, nil
 }
 
+// runKey returns a stable identity for this wiki run's log lines. In a
+// per-document run docID is populated; in a dataset-level run (the
+// knowledge_compile aggregator) docID is empty, so fall back to a dataset
+// scope prefix. This avoids masking which dataset a MAP/REDUCE pass ran for
+// behind an uninformative "unknown".
+func (p *wikiPipeline) runKey() string {
+	if p.docID != "" {
+		return p.docID
+	}
+	if p.datasetID != "" {
+		return "dataset:" + p.datasetID
+	}
+	return "unknown"
+}
+
 func (p *wikiPipeline) run() error {
 	if len(p.inputs.Chunks) == 0 {
+		runtime.ReportProgressMessage(p.ctx, "Compiler", "Wiki Empty: input_chunks=0 output_products=0")
 		return nil
 	}
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki MAP Started: input_chunks=%d", len(p.inputs.Chunks)))
 	if err := p.runMap(); err != nil {
 		return err
 	}
-	p.reduced = reduceExtracts(p.mapExtracts)
-	plan, err := p.runPlan()
-	if err != nil {
-		return err
+	appcommon.Info("wiki: MAP done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("batches", len(p.mapExtracts)),
+		zap.Int("raw_entities", countExtractEntities(p.mapExtracts)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki MAP Done: input_chunks=%d output_batches=%d entities=%d concepts=%d claims=%d relations=%d topics=%d", len(p.inputs.Chunks), len(p.mapExtracts), countExtractEntities(p.mapExtracts), countExtractConcepts(p.mapExtracts), countExtractClaims(p.mapExtracts), countExtractRelations(p.mapExtracts), countExtractTopics(p.mapExtracts)))
+	appcommon.Debug("wiki: MAP intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("batches", len(p.mapExtracts)),
+		zap.Strings("entities", extractEntitiesDebug(p.mapExtracts)),
+		zap.Strings("concepts", extractConceptDebug(p.mapExtracts)),
+		zap.Strings("claims", extractClaimDebug(p.mapExtracts)),
+		zap.Strings("relations", extractRelationDebug(p.mapExtracts)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REDUCE Started: input_entities=%d input_concepts=%d input_claims=%d input_relations=%d", countExtractEntities(p.mapExtracts), countExtractConcepts(p.mapExtracts), countExtractClaims(p.mapExtracts), countExtractRelations(p.mapExtracts)))
+	reduced := reduceExtracts(p.mapExtracts)
+	p.reduced = reduced
+	appcommon.Debug("wiki: REDUCE exact done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Strings("entities", entitiesDebug(reduced.Entities)),
+		zap.Strings("concepts", conceptsDebug(reduced.Concepts)),
+		zap.Int("claims", len(reduced.Claims)),
+		zap.Strings("relations", relationsDebug(reduced.Relations)))
+	// Layer embedding + LLM disambiguation onto the exact-merged entities
+	// (REDUCE enhancement; concepts keep exact dedup). Degrades to a no-op when
+	// the embedder/chat seams are unavailable.
+	preDedup := reduced.Entities
+	p.reduced.Entities = p.dedupeEntities(preDedup)
+	appcommon.Debug("wiki: REDUCE embedding+LLM dedup done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("pre_dedup_entities", len(preDedup)),
+		zap.Int("post_dedup_entities", len(p.reduced.Entities)),
+		zap.Strings("pre_dedup_names", entityNamesDebug(preDedup)),
+		zap.Strings("post_dedup_names", entityNamesDebug(p.reduced.Entities)),
+		zap.Strings("post_dedup_entities", entitiesDebug(p.reduced.Entities)))
+	appcommon.Info("wiki: REDUCE done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("entities", len(p.reduced.Entities)),
+		zap.Int("claims", len(p.reduced.Claims)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REDUCE Done: output_entities=%d output_concepts=%d output_claims=%d output_relations=%d", len(p.reduced.Entities), len(p.reduced.Concepts), len(p.reduced.Claims), len(p.reduced.Relations)))
+	// PLAN (B-mode only): LLM-based page plan + reconcile against existing pages.
+	// Mode A (param.PlanEnabled() == false, the default) skips the planner entirely — every
+	// extracted entity/concept becomes its own flat page (1 identity = 1 page), so
+	// the wiki is a flat encyclopedia without PLAN-grouped pages. See buildModeAPlan.
+	var plan wikiPlan
+	var err error
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki PLAN Started: input_entities=%d input_concepts=%d input_relations=%d", len(p.reduced.Entities), len(p.reduced.Concepts), len(p.reduced.Relations)))
+	if p.param.PlanEnabled() {
+		plan, err = p.runPlan()
+		if err != nil {
+			return err
+		}
+		appcommon.Info("wiki: PLAN (B-mode) done", zap.String("dataset_id", p.datasetID), zap.String("doc_id", p.runKey()), zap.Int("plan_pages", len(plan.Pages)))
+	} else {
+		// wiki_incremental port (T1 + M1 Mode A): deterministic flat plan from the
+		// reduced graph. No LLM, no reconcile.
+		plan = p.buildModeAPlan()
+		appcommon.Info("wiki: PLAN (A-mode flat) done", zap.String("dataset_id", p.datasetID), zap.String("doc_id", p.runKey()), zap.Int("plan_pages", len(plan.Pages)))
 	}
 	p.plan = plan
+	p.selectAffectedPages(plan.Pages)
+	appcommon.Info("wiki: PLAN done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("plan_pages", len(plan.Pages)),
+		zap.Int("capacity_excluded", p.planCapacityExcluded))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki PLAN Done: output_pages=%d topics=%d", len(plan.Pages), countPlanTopics(plan.Pages)))
+	appcommon.Debug("wiki: PLAN intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.String("plan_title", plan.Title),
+		zap.String("plan_slug", plan.Slug),
+		zap.Int("plan_pages", len(plan.Pages)),
+		zap.Int("capacity_excluded", p.planCapacityExcluded),
+		zap.Strings("pages", planPagesDebug(plan.Pages)))
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Started: input_pages=%d", len(p.plan.Pages)))
 	pages, err := p.runRefine()
 	if err != nil {
 		return err
 	}
 	p.pages = pages
+	activeState, err := p.buildActiveMapState(plan.Pages)
+	if err != nil {
+		return err
+	}
+	if activeState != nil {
+		p.pendingActiveState = activeState
+	}
+	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Done: input_pages=%d output_pages=%d", len(p.plan.Pages), len(pages)))
+	appcommon.Info("wiki: REFINE done",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("refined_pages", len(pages)))
+	appcommon.Debug("wiki: REFINE intermediate",
+		zap.String("dataset_id", p.datasetID),
+		zap.String("doc_id", p.runKey()),
+		zap.Int("refined_pages", len(pages)),
+		zap.Strings("pages", pageResultsDebug(pages)))
 	return nil
 }
 
+// countExtractEntities sums the entity count across a list of map extracts.
+func countExtractEntities(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Entities)
+	}
+	return n
+}
+
+func countExtractConcepts(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Concepts)
+	}
+	return n
+}
+
+func countExtractClaims(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Claims)
+	}
+	return n
+}
+
+func countExtractRelations(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Relations)
+	}
+	return n
+}
+
+func countExtractTopics(extracts []wikiExtract) int {
+	n := 0
+	for _, e := range extracts {
+		n += len(e.Topics)
+	}
+	return n
+}
+
+func countPlanTopics(pages []wikiPlanPage) int {
+	topics := make(map[string]struct{})
+	for _, page := range pages {
+		topic := strings.TrimSpace(page.Topic)
+		if topic != "" {
+			topics[topic] = struct{}{}
+		}
+	}
+	return len(topics)
+}
+
+func countWikiProducts(products []common.Product) (pages, sections int) {
+	for _, product := range products {
+		kind, _ := product.Meta["kind"].(string)
+		switch kind {
+		case "page":
+			pages++
+		case "section":
+			sections++
+		}
+	}
+	return pages, sections
+}
+
+// --- Debug helpers: compact per-item descriptors for the stage-intermediate
+// logs in run(). They deliberately record only identity-level fields (name /
+// slug / type / aliases / endpoints), never full content or embedding vectors,
+// so a batch with many entities stays readable and does not blow the log line.
+
+func entityDebug(e wikiEntity) string {
+	if len(e.Aliases) == 0 {
+		return fmt.Sprintf("%s(%s)", e.Name, e.Type)
+	}
+	return fmt.Sprintf("%s(%s){aliases:%s}", e.Name, e.Type, strings.Join(e.Aliases, ","))
+}
+
+func conceptDebug(c wikiConcept) string {
+	return c.Term
+}
+
+func claimDebug(c wikiClaim) string {
+	return c.Subject + ": " + c.Statement
+}
+
+func relationDebug(r wikiRelation) string {
+	return fmt.Sprintf("%s-[%s]->%s", r.From, r.Type, r.To)
+}
+
+func extractEntitiesDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, e := range ex.Entities {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, entityDebug(e)))
+		}
+	}
+	return out
+}
+
+func extractConceptDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, c := range ex.Concepts {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, conceptDebug(c)))
+		}
+	}
+	return out
+}
+
+func extractClaimDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, c := range ex.Claims {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, claimDebug(c)))
+		}
+	}
+	return out
+}
+
+func extractRelationDebug(extracts []wikiExtract) []string {
+	var out []string
+	for bi, ex := range extracts {
+		for _, r := range ex.Relations {
+			out = append(out, fmt.Sprintf("batch%d:%s", bi, relationDebug(r)))
+		}
+	}
+	return out
+}
+
+func entitiesDebug(es []wikiEntity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, entityDebug(e))
+	}
+	return out
+}
+
+func entityNamesDebug(es []wikiEntity) []string {
+	out := make([]string, 0, len(es))
+	for _, e := range es {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+func conceptsDebug(cs []wikiConcept) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, conceptDebug(c))
+	}
+	return out
+}
+
+func relationsDebug(rs []wikiRelation) []string {
+	out := make([]string, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, relationDebug(r))
+	}
+	return out
+}
+
+func planPagesDebug(pages []wikiPlanPage) []string {
+	out := make([]string, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, fmt.Sprintf("%s:%s(%s) prio=%d related=%s",
+			p.Slug, p.Title, p.PageType, p.Priority, strings.Join(p.RelatedKB, ",")))
+	}
+	return out
+}
+
+func pageResultsDebug(pages []wikiPageResult) []string {
+	out := make([]string, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, fmt.Sprintf("%s:%s(%s) outlinks=%s",
+			p.Slug, p.Title, p.PageType, strings.Join(p.Outlinks, ",")))
+	}
+	return out
+}
+
 func (p *wikiPipeline) runMap() error {
-	batches := common.PackBatches(p.inputs.Chunks, 4096, p.deps.Tokenizer)
-	for _, batch := range batches {
-		if err := p.ctx.Err(); err != nil {
-			return err
+	if p.deps.WikiMapVersions != nil {
+		err := p.runVersionedMap()
+		for i := range p.mapExtracts {
+			p.mapExtracts[i].Mode = p.wikiMode()
 		}
-		extract, err := p.mapBatch(batch)
-		if err != nil {
-			return err
-		}
-		p.mapExtracts = append(p.mapExtracts, extract)
+		return err
+	}
+	// Keep each batch small enough that the LLM's entity/relation JSON output
+	// for the batch stays well under the model's output-token limit. 2048 input
+	// tokens per batch (was a hard-coded 4096) leaves generous headroom for the
+	// extraction payload; oversize batches caused truncated, unparseable JSON
+	// (unexpected end of JSON input) on the real pipeline.
+	batches := common.PackBatches(p.inputs.Chunks, wikiMapTokenBudget, p.deps.Tokenizer)
+	extracts, err := runMapBatches(p.ctx, batches, p.mapBatch)
+	if err != nil {
+		return err
+	}
+	p.mapExtracts = append(p.mapExtracts, extracts...)
+	for i := range p.mapExtracts {
+		p.mapExtracts[i].Mode = p.wikiMode()
 	}
 	return nil
+}
+
+func (p *wikiPipeline) wikiMode() string {
+	if p.param.PlanEnabled() {
+		return "topic"
+	}
+	return "entity"
+}
+
+func runMapBatches(
+	ctx context.Context,
+	batches [][]common.Chunk,
+	mapBatch func([]common.Chunk) (wikiExtract, error),
+) ([]wikiExtract, error) {
+	if len(batches) == 0 {
+		return nil, nil
+	}
+	extracts := make([]wikiExtract, len(batches))
+	jobs := make([]func() error, 0, len(batches))
+	for i, batch := range batches {
+		i, batch := i, batch
+		jobs = append(jobs, func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			extract, err := mapBatch(batch)
+			if err != nil {
+				return err
+			}
+			// Distinct slice index per batch keeps results stable without locks.
+			extracts[i] = extract
+			return nil
+		})
+	}
+	if err := runBatches(ctx, jobs); err != nil {
+		return nil, err
+	}
+	return extracts, nil
 }
 
 func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 	parserConfig, _ := p.inputs.VariantSpecific["parser_config"].(map[string]any)
 	user, _ := buildWikiMapPrompt(p.docID, batch, parserConfig, p.param.Language)
+	// Give the extraction step a generous output budget so the entity/relation
+	// JSON is not silently truncated by the model's default output cap (that
+	// produced "unexpected end of JSON input" from GenJSON). The output budget is
+	// tied to the per-batch input budget: once the batch consumes
+	// wikiMapTokenBudget tokens of the model's context, the remainder is left
+	// for the extraction payload (and never less than the input budget itself).
+	mt := wikiMapMaxTokens(p.deps.ModelContextLen)
 	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiMapSystem,
 		UserPrompt:   user,
+		MaxTokens:    &mt,
 	})
 	if err != nil {
 		return wikiExtract{}, err
 	}
-	return parseWikiExtract(raw), nil
+	extract := parseWikiExtract(raw)
+	extract.Mode = p.wikiMode()
+	return extract, nil
 }
 
 func (p *wikiPipeline) runPlan() (wikiPlan, error) {
+	if p.wikiMode() == "topic" && p.deps.Embed != nil {
+		return p.runTopicPlan()
+	}
+	return p.runLegacyPlan()
+}
+
+func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 	batches := packWikiPlanBatches(p.reduced, wikiPlanTokenBudget)
 	if len(batches) == 0 {
 		batches = []wikiExtract{p.reduced}
 	}
-	plans := make([]wikiPlan, 0, len(batches))
+	totalItems := 0
+	for _, b := range batches {
+		totalItems += wikiExtractItemCount(b)
+	}
+	p.planBudget = deriveWikiPlanBudget(p.deps.ModelContextLen, totalItems)
+	// Quota allocation must use the achievable cap (min(Target, Max)): when the
+	// model's output capacity is smaller than the item-count-derived target, the
+	// planner must be asked for at most Max pages so the sum of per-batch
+	// max_pages never exceeds the capacity that can actually be emitted. Using
+	// Target here would re-introduce the truncated-JSON risk the budget exists
+	// to eliminate.
+	quotas := allocatePlanQuotas(batches, p.planBudget.Cap())
+
+	// approvedReduced is the set of items that actually got a non-zero quota.
+	// It is what the fallback/normalization may reference so zero-quota items
+	// can never leak back into the plan via buildWikiFallbackPages.
+	approved := wikiExtract{}
+	plans := make([]wikiPlan, len(batches))
+	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
-		plan, err := p.runPlanBatch(batch, i+1, len(batches))
-		if err != nil {
-			return wikiPlan{}, err
+		i, batch := i, batch
+		quota := quotas[i]
+		if quota <= 0 {
+			// Zero-quota batch: no planner call and no fallback page. It is
+			// intentionally left as the zero wikiPlan{} so the merge sees no
+			// pages from it.
+			continue
 		}
-		plans = append(plans, plan)
+		approved.Entities = append(approved.Entities, batch.Entities...)
+		approved.Concepts = append(approved.Concepts, batch.Concepts...)
+		approved.Claims = append(approved.Claims, batch.Claims...)
+		approved.Relations = append(approved.Relations, batch.Relations...)
+		approved.Topics = append(approved.Topics, batch.Topics...)
+		jobs = append(jobs, func() error {
+			if err := p.ctx.Err(); err != nil {
+				return err
+			}
+			plan, err := p.runPlanBatch(batch, i+1, len(batches), quota, p.planBudget.MaxTokens)
+			if err != nil {
+				return err
+			}
+			// Distinct slice index keeps results stable without locks.
+			plans[i] = plan
+			return nil
+		})
 	}
-	if len(plans) == 1 {
-		plan := normalizeWikiPlan(plans[0], p.docID, p.reduced)
-		return p.reconcilePlan(plan)
+	if err := runBatches(p.ctx, jobs); err != nil {
+		return wikiPlan{}, err
 	}
-	plan, err := p.mergePlanCandidates(plans)
+
+	merged := p.mergePlanCandidates(plans, approved)
+	var excluded int
+	merged.Pages, excluded = truncatePlanPagesByCap(merged.Pages, p.planBudget.Max, approved)
+	p.planCapacityExcluded += excluded
+	merged.Pages = normalizeWikiPlanPageLinks(merged.Pages)
+	reconciled, err := p.reconcilePlan(merged)
 	if err != nil {
 		return wikiPlan{}, err
 	}
-	return p.reconcilePlan(plan)
+	// reconcilePlan rewrites page.Slug to the matched existing page's slug, which
+	// can re-introduce self-referential or plan-absent related links; normalize
+	// once more so stale links don't reach the stored pages.
+	reconciled.Pages = normalizeWikiPlanPageLinks(reconciled.Pages)
+	return reconciled, nil
 }
 
+// runRefine fans the REFINE stage out to page-level jobs on the shared compiler
+// pool, mirroring the P1 error model: all jobs are submitted, awaited, and the
+// first error is returned; each job checks ctx before starting. Results are
+// written to pre-allocated per-index slots so the output is in normalized-plan
+// order regardless of completion order (no concurrent append to a shared slice).
+// When no submitter is wired, jobs run serially (historic default).
 func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
-	pages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
-	if len(pages) == 0 {
+	allPages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
+	if len(allPages) == 0 {
 		return nil, nil
 	}
+	pages := allPages
+	if p.incremental {
+		pages = pages[:0:0]
+		for _, page := range allPages {
+			if _, affected := p.affectedPageSlugs[page.Slug]; affected {
+				pages = append(pages, page)
+			}
+		}
+	}
 	pageTitles := map[string]string{}
-	allPlanSlugs := make([]string, 0, len(pages))
-	for _, page := range pages {
+	slugToPageType := map[string]string{}
+	allPlanSlugs := make([]string, 0, len(allPages))
+	for _, page := range allPages {
 		if page.Slug == "" {
 			continue
 		}
 		allPlanSlugs = append(allPlanSlugs, page.Slug)
 		pageTitles[page.Slug] = page.Title
+		// Every planned page carries its type (entity/concept/...); the link
+		// renderer needs it so artifact/<kb>/<page_type>/<slug> links are
+		// clickable (frontend parseWikiLinkHref only matches entity|concept).
+		if pt := strings.TrimSpace(page.PageType); pt != "" {
+			slugToPageType[page.Slug] = pt
+		}
 	}
 	entityLookup := buildWikiEntityLookup(p.reduced.Entities)
 	conceptLookup := buildWikiConceptLookup(p.reduced.Concepts)
-	results := make([]wikiPageResult, 0, len(pages))
-	for _, planItem := range pages {
-		if p.ctx.Err() != nil {
-			return nil, p.ctx.Err()
-		}
-		evidence := assembleWikiPageEvidence(planItem, p.reduced.Claims, entityLookup, conceptLookup)
-		sourceChunkIDs := collectWikiEvidenceChunkIDs(evidence)
-		sourceContext := buildSourceContext(p.inputs.Chunks, sourceChunkIDs)
-		if strings.TrimSpace(sourceContext) == "" {
-			sourceContext = buildSourceContext(p.inputs.Chunks, p.reduced.sourceChunkIDs())
-		}
-		available := make([]string, 0, len(allPlanSlugs))
-		for _, slug := range allPlanSlugs {
-			if slug != planItem.Slug {
-				available = append(available, "- [["+slug+"]]")
+
+	results := make([]wikiPageResult, len(pages))
+	jobs := make([]func() error, 0, len(pages))
+	var progressMu sync.Mutex
+	completed := 0
+	for i, planItem := range pages {
+		i, planItem := i, planItem
+		jobs = append(jobs, func() error {
+			if err := p.ctx.Err(); err != nil {
+				return err
 			}
-		}
-		if len(available) == 0 {
-			available = []string{"(none — this is the only page)"}
-		}
-		var existing *common.WikiPageCandidate
-		var err error
-		if strings.EqualFold(planItem.Action, "UPDATE") && p.deps.WikiPages != nil {
-			existing, err = p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, planItem.Slug)
+			res, err := p.runRefinePage(planItem, allPlanSlugs, pageTitles, slugToPageType, entityLookup, conceptLookup)
 			if err != nil {
-				return nil, err
+				return err
 			}
-		}
-		existingSection := ""
-		existingRaw := ""
-		if existing != nil {
-			existingRaw = firstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
-			if strings.TrimSpace(existingRaw) != "" {
-				existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
+			results[i] = res
+			progressMu.Lock()
+			completed++
+			if shouldReportRefineProgress(completed, len(pages)) {
+				runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Progress: completed_pages=%d total_pages=%d", completed, len(pages)))
 			}
-		}
-		user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
-			"action":           firstNonEmpty(planItem.Action, "CREATE"),
-			"slug":             planItem.Slug,
-			"title":            firstNonEmpty(planItem.Title, planItem.Slug),
-			"page_type":        firstNonEmpty(planItem.PageType, "concept"),
-			"all_plan_slugs":   strings.Join(available, "\n"),
-			"existing_section": existingSection,
-			"source_context":   sourceContext,
-			"evidence_count":   fmt.Sprintf("%d", len(evidence)),
-			"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
+			progressMu.Unlock()
+			return nil
 		})
-		resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
-			LLMID:        p.llmID,
-			SystemPrompt: buildWikiRefineWriterSystem(""),
-			UserPrompt:   user,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if resp == nil {
-			return nil, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
-		}
-		contentRaw := strings.TrimSpace(firstNonEmpty(resp.Content))
-		if contentRaw == "" {
-			contentRaw = "# " + firstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
-		}
-		if strings.TrimSpace(existingRaw) != "" {
-			contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
-			if err != nil {
-				return nil, err
-			}
-		}
-		contentRendered, outlinks := transformWikiLinks(contentRaw, firstNonEmpty(p.datasetID, p.docID), pageTitles)
-		sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
-		summary := firstParagraph(contentRendered)
-		if summary == "" {
-			summary = firstNonEmpty(planItem.Title, planItem.Slug)
-		}
-		topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
-		results = append(results, wikiPageResult{
-			Slug:           planItem.Slug,
-			Title:          firstNonEmpty(planItem.Title, planItem.Slug),
-			PageType:       firstNonEmpty(planItem.PageType, "concept"),
-			Topic:          topic,
-			Action:         firstNonEmpty(planItem.Action, "CREATE"),
-			EntityNames:    uniqueStrings(planItem.EntityNames),
-			RelatedKBPages: uniqueStrings(planItem.RelatedKB),
-			ContentRaw:     contentRaw,
-			Content:        contentRendered,
-			Summary:        summary,
-			Outlinks:       outlinks,
-			SourceChunkIDs: sourceChunkIDs,
-			SourceDocIDs:   sourceDocIDs,
-		})
+	}
+	if err := runBatches(p.ctx, jobs); err != nil {
+		return nil, err
 	}
 	return results, nil
 }
 
-func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal int) (wikiPlan, error) {
+func shouldReportRefineProgress(completed, total int) bool {
+	return completed > 0 && total > 0 && (completed%wikiRefineProgressStep == 0 || completed == total)
+}
+
+// runRefinePage generates one page result from a normalized plan page. UPDATE
+// merge, evidence assembly, and source-context building are unchanged; this is
+// the per-page unit that runRefine fans out.
+func (p *wikiPipeline) runRefinePage(
+	planItem wikiPlanPage,
+	allPlanSlugs []string,
+	pageTitles map[string]string,
+	slugToPageType map[string]string,
+	entityLookup map[string]wikiExtractItem,
+	conceptLookup map[string]wikiExtractItem,
+) (wikiPageResult, error) {
+	evidence := assembleWikiPageEvidence(planItem, p.reduced.Claims, entityLookup, conceptLookup)
+	sourceChunkIDs := collectWikiEvidenceChunkIDs(evidence)
+	sourceContext := buildSourceContext(p.inputs.Chunks, sourceChunkIDs)
+	if strings.TrimSpace(sourceContext) == "" {
+		sourceContext = buildSourceContext(p.inputs.Chunks, p.reduced.sourceChunkIDs())
+	}
+	available := make([]string, 0, len(allPlanSlugs))
+	for _, slug := range allPlanSlugs {
+		if slug != planItem.Slug {
+			available = append(available, "- [["+slug+"]]")
+		}
+	}
+	if len(available) == 0 {
+		available = []string{"(none — this is the only page)"}
+	}
+	var existing *common.WikiPageCandidate
+	var err error
+	if strings.EqualFold(planItem.Action, "UPDATE") && p.deps.WikiPages != nil {
+		existing, err = p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, planItem.Slug)
+		if err != nil {
+			return wikiPageResult{}, err
+		}
+	}
+	existingSection := ""
+	existingRaw := ""
+	if existing != nil {
+		existingRaw = firstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
+		if strings.TrimSpace(existingRaw) != "" {
+			existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
+		}
+	}
+	user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
+		"action":           firstNonEmpty(planItem.Action, "CREATE"),
+		"slug":             planItem.Slug,
+		"title":            firstNonEmpty(planItem.Title, planItem.Slug),
+		"page_type":        firstNonEmpty(planItem.PageType, "concept"),
+		"all_plan_slugs":   strings.Join(available, "\n"),
+		"related_kb_pages": formatWikiRelatedKB(planItem.RelatedKB, pageTitles),
+		"existing_section": existingSection,
+		"source_context":   sourceContext,
+		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
+		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
+	})
+	// wikiRefineMaxTokens gives the page writer a generous but bounded output
+	// cap so a long page is not cut off mid-stream by a small default completion
+	// limit (which would yield an unusable/cut page body).
+	rmt := wikiRefineMaxTokens(p.deps.ModelContextLen)
+	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
+		LLMID:        p.llmID,
+		SystemPrompt: buildWikiRefineWriterSystem(""),
+		UserPrompt:   user,
+		MaxTokens:    &rmt,
+	})
+	if err != nil {
+		return wikiPageResult{}, err
+	}
+	if resp == nil {
+		return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
+	}
+	contentRaw := strings.TrimSpace(firstNonEmpty(resp.Content))
+	if contentRaw == "" {
+		contentRaw = "# " + firstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+	}
+	if strings.TrimSpace(existingRaw) != "" {
+		contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
+		if err != nil {
+			return wikiPageResult{}, err
+		}
+	}
+	contentRendered, outlinks := transformWikiLinks(contentRaw, firstNonEmpty(p.datasetID, p.docID), pageTitles, slugToPageType)
+	// wiki_incremental port (O2): deterministically guarantee a "See also"
+	// cross-link section from RelatedKB. transformWikiLinks/resolveSlug drop
+	// links whose target cannot be resolved to a known slug, so an LLM-authored
+	// page could silently lose every RelatedKB edge. We append the related pages
+	// AFTER transformWikiLinks and do NOT re-run the resolver, so dead links are
+	// bypassed and the missing target does not drop the edge — each RelatedKB
+	// full-slug is linked once, only if not already present in Outlinks.
+	contentRendered, outlinks = appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
+	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
+	summary := firstParagraph(contentRendered)
+	if summary == "" {
+		summary = firstNonEmpty(planItem.Title, planItem.Slug)
+	}
+	topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
+	return wikiPageResult{
+		Slug:           planItem.Slug,
+		Title:          firstNonEmpty(planItem.Title, planItem.Slug),
+		PageType:       firstNonEmpty(planItem.PageType, "concept"),
+		Topic:          topic,
+		Action:         firstNonEmpty(planItem.Action, "CREATE"),
+		EntityNames:    uniqueStrings(planItem.EntityNames),
+		RelatedKBPages: uniqueStrings(planItem.RelatedKB),
+		ContentRaw:     contentRaw,
+		Content:        contentRendered,
+		Summary:        summary,
+		Outlinks:       outlinks,
+		SourceChunkIDs: sourceChunkIDs,
+		SourceDocIDs:   sourceDocIDs,
+		PlanGroup:      planItem.PlanGroup,
+	}, nil
+}
+
+// maxPagesForBatch is the per-batch planner ceiling. It is the allocated quota
+// (a fraction of the global target) directly: the quota is already bounded by
+// target <= max <= output-token capacity, so no separate static cap is needed.
+// A zero/negative quota yields 1 so runPlanBatch is never told "0 pages". The
+// old static wikiPlanMaxPagesPerBatch cap is gone: capping a large quota at 8
+// would make the P0 target unreachable for a single high-quota batch.
+func maxPagesForBatch(quota int) int {
+	if quota < 1 {
+		return 1
+	}
+	return quota
+}
+
+func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, quota, maxTokens int) (wikiPlan, error) {
 	user := renderWikiTemplate(wikiPlanBatchUserTemplate, map[string]string{
 		"doc_id":      p.docID,
 		"batch_index": fmt.Sprintf("%d", batchIndex),
 		"batch_total": fmt.Sprintf("%d", batchTotal),
+		"max_pages":   fmt.Sprintf("%d", maxPagesForBatch(quota)),
 		"entities":    mustJSON(batch.Entities),
 		"concepts":    mustJSON(batch.Concepts),
 		"claims":      mustJSON(batch.Claims),
@@ -390,6 +1030,7 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal in
 		LLMID:        p.llmID,
 		SystemPrompt: wikiPlanSystem,
 		UserPrompt:   user,
+		MaxTokens:    &maxTokens,
 	})
 	if err != nil {
 		return wikiPlan{}, err
@@ -397,20 +1038,52 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal in
 	return parseWikiPlan(raw, p.docID, batch), nil
 }
 
-func (p *wikiPipeline) mergePlanCandidates(plans []wikiPlan) (wikiPlan, error) {
-	user := renderWikiTemplate(wikiPlanMergeUserTemplate, map[string]string{
-		"doc_id":     p.docID,
-		"candidates": mustPrettyJSON(plans),
-	})
-	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
-		LLMID:        p.llmID,
-		SystemPrompt: wikiPlanSystem,
-		UserPrompt:   user,
-	})
-	if err != nil {
-		return wikiPlan{}, err
+// mergePlanCandidates merges per-batch plans into one plan. reduced is the item
+// set the merged plan is allowed to reference (fallback/normalization); in the
+// quota-filtered PLAN path this is the approved (non-zero-quota) set so items
+// from skipped batches can never leak back in via fallback pages.
+func (p *wikiPipeline) mergePlanCandidates(plans []wikiPlan, reduced wikiExtract) wikiPlan {
+	merged := wikiPlan{}
+	mergedEntities := map[string]bool{}
+	mergedRelated := map[string]bool{}
+	for _, plan := range plans {
+		if merged.Title == "" {
+			merged.Title = strings.TrimSpace(plan.Title)
+		}
+		if merged.Slug == "" {
+			merged.Slug = strings.TrimSpace(plan.Slug)
+		}
+		if merged.Lead == "" {
+			merged.Lead = strings.TrimSpace(plan.Lead)
+		}
+		if merged.PageType == "" {
+			merged.PageType = strings.TrimSpace(plan.PageType)
+		}
+		if merged.Topic == "" {
+			merged.Topic = strings.TrimSpace(plan.Topic)
+		}
+		if len(merged.Sections) == 0 && len(plan.Sections) > 0 {
+			merged.Sections = append([]wikiPlanSection(nil), plan.Sections...)
+		}
+		merged.Pages = append(merged.Pages, plan.Pages...)
+		for _, name := range plan.Entities {
+			name = strings.TrimSpace(name)
+			if name != "" && !mergedEntities[name] {
+				mergedEntities[name] = true
+				merged.Entities = append(merged.Entities, name)
+			}
+		}
+		for _, slug := range plan.Related {
+			slug = strings.TrimSpace(slug)
+			if slug != "" && !mergedRelated[slug] {
+				mergedRelated[slug] = true
+				merged.Related = append(merged.Related, slug)
+			}
+		}
 	}
-	return normalizeWikiPlan(parseWikiPlan(raw, p.docID, p.reduced), p.docID, p.reduced), nil
+	merged = normalizeWikiPlan(merged, p.docID, reduced)
+	merged.Pages = normalizeWikiPlanPageLinks(merged.Pages)
+	return merged
 }
 
 func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
@@ -452,15 +1125,28 @@ func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
 		page.Slug = firstNonEmpty(existing.Slug, page.Slug)
 		page.Title = firstNonEmpty(existing.Title, page.Title)
 		page.PageType = firstNonEmpty(existing.PageType, page.PageType)
-		page.Topic = firstNonEmpty(existing.Topic, page.Topic)
+		if existing.RoutedTopic != "" {
+			page.Topic = existing.RoutedTopic
+		} else {
+			page.Topic = firstNonEmpty(existing.Topic, page.Topic)
+		}
 		page.RelatedKB = mergeStrings(page.RelatedKB, existing.RelatedKBPages)
-		page.EntityNames = mergeStrings(page.EntityNames, existing.EntityNames)
+		if len(existing.RoutedEntityNames) > 0 {
+			// An explicit route membership set is authoritative: this is a
+			// migration, so do not union members that the LLM removed.
+			page.EntityNames = uniqueStrings(existing.RoutedEntityNames)
+		} else {
+			page.EntityNames = mergeStrings(page.EntityNames, existing.EntityNames)
+		}
 		plan.Pages[idx] = page
 	}
 	plan.Pages = normalizeWikiPlanPages(plan.Pages, p.reduced)
 	return plan, nil
 }
 
+// reconcilePlanPage decides UPDATE / CREATE for one planned page against the
+// existing wiki-page store. See the threshold block above for how the band and
+// the overlap heuristic relate to Python's wiki.py contract.
 func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) (*common.WikiPageCandidate, error) {
 	if p.deps.WikiPages == nil {
 		return nil, nil
@@ -474,6 +1160,11 @@ func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) 
 	if err != nil || len(cands) == 0 {
 		return nil, err
 	}
+	// Topic incremental routing uses more than page-vector similarity: pages
+	// linked from the KNN candidates are added as semantic neighbors, so a
+	// related page whose title is not embedding-similar can still be considered
+	// by the LLM route decision.
+	cands = p.expandTopicNeighborCandidates(page, cands)
 	cands = rerankWikiPlanCandidates(page, cands)
 	targetNames := normalizedStringSet(page.EntityNames)
 	pageTitle := normKey(page.Title)
@@ -499,6 +1190,110 @@ func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) 
 		return p.resolveMaybePlanPage(page, maybe)
 	}
 	return nil, nil
+}
+
+func (p *wikiPipeline) expandTopicNeighborCandidates(page wikiPlanPage, candidates []common.WikiPageCandidate) []common.WikiPageCandidate {
+	if p.deps.WikiPages == nil {
+		return candidates
+	}
+	if p.neighborCache == nil {
+		p.neighborCache = make(map[string]*common.WikiPageCandidate)
+	}
+	out := append([]common.WikiPageCandidate(nil), candidates...)
+	seen := make(map[string]struct{}, len(out))
+	for _, candidate := range out {
+		seen[candidate.Slug] = struct{}{}
+	}
+	for _, candidate := range candidates {
+		for _, slug := range candidate.RelatedKBPages {
+			if len(out) >= len(candidates)+wikiTopicNeighborMax {
+				break
+			}
+			slug = strings.TrimSpace(slug)
+			if slug == "" {
+				continue
+			}
+			if _, exists := seen[slug]; exists {
+				continue
+			}
+			var neighbor *common.WikiPageCandidate
+			if cached, ok := p.neighborCache[slug]; ok {
+				neighbor = cached
+			} else {
+				loaded, err := p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, slug)
+				if err != nil {
+					p.neighborCache[slug] = nil
+					continue
+				}
+				neighbor = loaded
+				p.neighborCache[slug] = loaded
+			}
+			if neighbor == nil {
+				continue
+			}
+			seen[neighbor.Slug] = struct{}{}
+			neighbor.Score = candidate.Score * 0.95
+			out = append(out, *neighbor)
+		}
+	}
+	if store, ok := p.deps.WikiPages.(common.WikiPageCooccurrenceStore); ok {
+		if chunks := p.sourceChunksForPlanPage(page); len(chunks) > 0 {
+			cooccurring, err := store.FindPagesBySourceChunks(p.ctx, p.tenantID, p.datasetID, chunks, wikiPlanSearchTopK)
+			if err == nil {
+				for _, candidate := range cooccurring {
+					if candidate.Slug == "" {
+						continue
+					}
+					if _, exists := seen[candidate.Slug]; exists {
+						continue
+					}
+					candidate.Score = 0.68
+					seen[candidate.Slug] = struct{}{}
+					out = append(out, candidate)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (p *wikiPipeline) sourceChunksForPlanPage(page wikiPlanPage) []string {
+	names := normalizedStringSet(page.EntityNames)
+	for _, name := range []string{page.Title, page.Topic} {
+		if key := normKey(name); key != "" {
+			names[key] = struct{}{}
+		}
+	}
+	chunks := make([]string, 0)
+	for _, entity := range p.reduced.Entities {
+		if _, ok := names[normKey(entity.Name)]; ok {
+			chunks = append(chunks, entity.SourceChunkIDs...)
+		}
+	}
+	for _, concept := range p.reduced.Concepts {
+		if _, ok := names[normKey(concept.Term)]; ok {
+			chunks = append(chunks, concept.SourceChunkIDs...)
+		}
+	}
+	for _, claim := range p.reduced.Claims {
+		if _, ok := names[normKey(claim.Subject)]; ok {
+			chunks = append(chunks, claim.SourceChunkIDs...)
+		}
+	}
+	for _, relation := range p.reduced.Relations {
+		if _, fromOK := names[normKey(relation.From)]; fromOK {
+			chunks = append(chunks, relation.SourceChunkIDs...)
+			continue
+		}
+		if _, toOK := names[normKey(relation.To)]; toOK {
+			chunks = append(chunks, relation.SourceChunkIDs...)
+		}
+	}
+	chunks = uniqueStrings(chunks)
+	if len(chunks) > wikiTopicSourceChunkMax {
+		chunks = chunks[:wikiTopicSourceChunkMax]
+	}
+	return chunks
 }
 
 func rerankWikiPlanCandidates(page wikiPlanPage, candidates []common.WikiPageCandidate) []common.WikiPageCandidate {
@@ -568,6 +1363,12 @@ func (p *wikiPipeline) resolveMaybePlanPage(page wikiPlanPage, candidates []comm
 	}
 	for i := range candidates {
 		if candidates[i].Slug == slug {
+			if topic := strings.TrimSpace(firstString(raw["topic"])); topic != "" {
+				candidates[i].RoutedTopic = topic
+			}
+			if names := parseWikiStrings(raw["entity_names"]); len(names) > 0 {
+				candidates[i].RoutedEntityNames = names
+			}
 			return &candidates[i], nil
 		}
 	}
@@ -667,7 +1468,7 @@ func wikiMarkdownDropsContent(mergedMD, sourceMD string) bool {
 }
 
 func wikiMarkdownTitle(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
@@ -906,17 +1707,34 @@ func normalizeWikiPlan(plan wikiPlan, docID string, reduced wikiExtract) wikiPla
 }
 
 func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPlanPage {
-	existing := map[string]wikiPlanPage{}
+	// existing maps a plan slug to its index in out (exact-slug dedup); byTitle
+	// additionally collapses pages that share the same page_type + normalized
+	// title, so a single batch never yields two "吕布" pages whose slugs only
+	// differ in transliteration (lu-bu vs lv-bu). Scheme A (§5 of the duplicates
+	// research): page identity is page_type/slug, so the key is page-type-scoped
+	// (a same-title concept and topic may legitimately coexist) and the first
+	// page seen (LLM emission order) is kept, folding the duplicate's RelatedKB
+	// into the survivor so its outlinks are not silently dropped.
+	existing := map[string]int{}
+	byTitle := map[string]int{}
 	out := make([]wikiPlanPage, 0, len(pages))
 	for _, page := range pages {
 		page = normalizeWikiPlanPage(page)
 		if page.Slug == "" {
 			continue
 		}
-		if _, ok := existing[page.Slug]; ok {
+		if idx, ok := existing[page.Slug]; ok {
+			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
 		}
-		existing[page.Slug] = page
+		key := wikiTitleKey(page.PageType, page.Title)
+		if idx, ok := byTitle[key]; ok {
+			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
+			continue
+		}
+		idx := len(out)
+		byTitle[key] = idx
+		existing[page.Slug] = idx
 		out = append(out, page)
 	}
 	fallback := buildWikiFallbackPages(reduced)
@@ -925,7 +1743,10 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			if page.Slug == "" {
 				continue
 			}
-			existing[page.Slug] = page
+			page = normalizeWikiPlanPage(page)
+			idx := len(out)
+			byTitle[wikiTitleKey(page.PageType, page.Title)] = idx
+			existing[page.Slug] = idx
 			out = append(out, page)
 		}
 	}
@@ -943,6 +1764,34 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 	return out
 }
 
+func normalizeWikiPlanPageLinks(pages []wikiPlanPage) []wikiPlanPage {
+	if len(pages) == 0 {
+		return nil
+	}
+	valid := make(map[string]bool, len(pages))
+	for _, page := range pages {
+		if slug := strings.TrimSpace(page.Slug); slug != "" {
+			valid[slug] = true
+		}
+	}
+	out := make([]wikiPlanPage, 0, len(pages))
+	for _, page := range pages {
+		related := make([]string, 0, len(page.RelatedKB))
+		seen := map[string]bool{}
+		for _, slug := range page.RelatedKB {
+			slug = strings.TrimSpace(slug)
+			if slug == "" || slug == page.Slug || !valid[slug] || seen[slug] {
+				continue
+			}
+			seen[slug] = true
+			related = append(related, slug)
+		}
+		page.RelatedKB = related
+		out = append(out, page)
+	}
+	return out
+}
+
 func normalizeWikiPlanPage(page wikiPlanPage) wikiPlanPage {
 	page.Action = strings.ToUpper(strings.TrimSpace(page.Action))
 	if page.Action == "" {
@@ -952,6 +1801,11 @@ func normalizeWikiPlanPage(page wikiPlanPage) wikiPlanPage {
 	if page.Slug == "" {
 		page.Slug = slugify(page.Title)
 	}
+	// Canonicalize the slug to the hyphen style used by slug_kwd / outlinks /
+	// artifact links. The LLM freely mixes "dong_zhuo" and "dong-zhuo", so this
+	// single choke point makes plan slugs, slugToPageType/pageTitles keys and
+	// the writer's bare/full reverse index all agree.
+	page.Slug = normalizeWikiSlugHyphens(page.Slug)
 	page.Title = strings.TrimSpace(page.Title)
 	if page.Title == "" {
 		page.Title = page.Slug
@@ -990,6 +1844,89 @@ func normalizeWikiPlanSections(sections []wikiPlanSection) []wikiPlanSection {
 		return []wikiPlanSection{{Heading: "Overview", Points: nil}}
 	}
 	return out
+}
+
+// wikiTitleKey returns the Scheme-A dedup key for a planned page: page_type
+// scoped to the normalized title. Two pages collapse only when both their type
+// and their (case/whitespace-normalized) title match — a same-title concept and
+// topic stay distinct because page identity is page_type/slug.
+func wikiTitleKey(pageType, title string) string {
+	return strings.TrimSpace(pageType) + "\x00" + normKey(title)
+}
+
+// buildModeAPlan synthesizes a FLAT wiki plan (Mode A) directly from the reduced
+// extract graph — no LLM planner, no reconcile. Every extracted entity and
+// concept becomes its own canonical page (1 identity = 1 page), slugged as
+// "entity/<slug>" / "concept/<slug>". Cross-links (RelatedKB) are derived purely
+// from the reduced relations: each relation end is mapped to its full-slug page
+// and the counterpart is added to the page's RelatedKB. This is the deterministic
+// counterpart of Python's no_plan wiki mode.
+func (p *wikiPipeline) buildModeAPlan() wikiPlan {
+	reduced := p.reduced
+	// Build the full-slug index for every entity/concept so relation endpoints
+	// (which are bare names) resolve to canonical pages.
+	fullSlugFor := func(name, pageType string) string {
+		return pageType + "/" + normalizeWikiSlugHyphens(slugify(name))
+	}
+	slugToIndex := map[string]int{}
+	var pages []wikiPlanPage
+	addPage := func(slug, title, pageType string, entityNames []string) {
+		if _, ok := slugToIndex[slug]; ok {
+			return
+		}
+		page := wikiPlanPage{
+			Action:      "CREATE",
+			Slug:        slug,
+			Title:       title,
+			PageType:    pageType,
+			Topic:       title,
+			EntityNames: entityNames,
+			Priority:    len(pages) + 1,
+		}
+		slugToIndex[slug] = len(pages)
+		pages = append(pages, page)
+	}
+	for _, e := range reduced.Entities {
+		name := strings.TrimSpace(e.Name)
+		if name == "" {
+			continue
+		}
+		slug := fullSlugFor(name, "entity")
+		addPage(slug, name, "entity", []string{name})
+	}
+	for _, c := range reduced.Concepts {
+		term := strings.TrimSpace(c.Term)
+		if term == "" {
+			continue
+		}
+		slug := fullSlugFor(term, "concept")
+		addPage(slug, term, "concept", []string{term})
+	}
+	// Resolve relations into RelatedKB (full-slug cross-links) on both endpoints.
+	for _, rel := range reduced.Relations {
+		from := strings.TrimSpace(rel.From)
+		to := strings.TrimSpace(rel.To)
+		if from == "" || to == "" {
+			continue
+		}
+		fromSlug := fullSlugFor(from, "entity")
+		toSlug := fullSlugFor(to, "entity")
+		if fromSlug == toSlug {
+			continue
+		}
+		if i, ok := slugToIndex[fromSlug]; ok {
+			pages[i].RelatedKB = append(pages[i].RelatedKB, toSlug)
+		}
+		if i, ok := slugToIndex[toSlug]; ok {
+			pages[i].RelatedKB = append(pages[i].RelatedKB, fromSlug)
+		}
+	}
+	for i := range pages {
+		pages[i].RelatedKB = uniqueStrings(pages[i].RelatedKB)
+	}
+	plan := wikiPlan{Pages: pages}
+	plan.Pages = normalizeWikiPlanPages(plan.Pages, reduced)
+	return plan
 }
 
 func buildWikiFallbackPages(reduced wikiExtract) []wikiPlanPage {
@@ -1589,12 +2526,91 @@ var (
 	wikiArtifactMarkdownLink = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 )
 
-func transformWikiLinks(content, kbID string, pageTitles map[string]string) (string, []string) {
+// pageTypeOf resolves the page_type for a slug so rendered internal links use
+// the artifact/<kb>/<page_type>/<slug> form the frontend wiki-link parser
+// requires (it only matches entity|concept). Unknown links fall back to "page".
+func pageTypeOf(slug string, slugToPageType map[string]string) string {
+	if pt := strings.TrimSpace(slugToPageType[slug]); pt != "" {
+		return pt
+	}
+	if strings.Contains(slug, "/") {
+		// Slugs may already carry a <page_type>/<name> prefix; reuse it.
+		first := strings.SplitN(slug, "/", 2)[0]
+		if first == "entity" || first == "concept" || first == "topic" {
+			return first
+		}
+	}
+	return "page"
+}
+
+// wikiSlugResolver resolves a wikitext slug (a bare "name" or a full
+// "<page_type>/<slug>") to the canonical hyphen full-slug used as the page
+// identifier (slug_kwd), mirroring Python's _wiki_resolve_dead_slug: plain
+// names / titles are reverse-mapped to the full pid. An empty result means the
+// target is not a known page and must not be emitted as a link or graph edge.
+type wikiSlugResolver struct {
+	slugToPageType map[string]string
+	bareToSlug     map[string]string
+	titleToSlug    map[string]string
+}
+
+// newWikiSlugResolver builds the reverse lookup maps from the available-page
+// index. Plan slugs are canonicalized to the hyphen style upstream
+// (normalizeWikiPlanPage -> normalizeWikiSlugHyphens), so slugToPageType /
+// pageTitles keys are already hyphen full-slugs. LLM-authored wikitext links may
+// still carry underscores (e.g. "dong_zhuo"); normalize both sides to hyphens so
+// the reverse lookup matches.
+func newWikiSlugResolver(pageTitles, slugToPageType map[string]string) *wikiSlugResolver {
+	r := &wikiSlugResolver{
+		slugToPageType: slugToPageType,
+		bareToSlug:     map[string]string{},
+		titleToSlug:    map[string]string{},
+	}
+	for fullSlug := range slugToPageType {
+		r.bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(fullSlug))] = fullSlug
+	}
+	for fullSlug, title := range pageTitles {
+		if t := strings.TrimSpace(title); t != "" {
+			r.titleToSlug[t] = fullSlug
+		}
+	}
+	return r
+}
+
+// resolve returns the canonical hyphen full-slug for target, or "" when the
+// target is not a known page (dead link). The result is always emitted in the
+// canonical hyphen form so outlinks_kwd and slug_kwd agree in format.
+func (r *wikiSlugResolver) resolve(target string) string {
+	slug := strings.TrimSpace(target)
+	if slug == "" {
+		return ""
+	}
+	if _, ok := r.slugToPageType[slug]; ok {
+		return normalizeWikiSlugHyphens(slug)
+	}
+	if full, ok := r.bareToSlug[normalizeWikiSlugHyphens(lastPathSlug(slug))]; ok {
+		return normalizeWikiSlugHyphens(full)
+	}
+	if full, ok := r.titleToSlug[slug]; ok {
+		return normalizeWikiSlugHyphens(full)
+	}
+	return ""
+}
+
+func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
 	kbID = strings.TrimSpace(kbID)
+	resolver := newWikiSlugResolver(pageTitles, slugToPageType)
+	resolveSlug := resolver.resolve
 	seen := map[string]bool{}
 	var outlinks []string
 	track := func(slug string) {
-		slug = strings.TrimSpace(slug)
+		slug = resolveSlug(slug)
+		// Emit the canonical hyphen full-slug so outlinks_kwd and slug_kwd
+		// always agree in format (guards against a resolved slug that still
+		// carries underscores, e.g. from an old existing page).
+		if slug != "" {
+			slug = normalizeWikiSlugHyphens(slug)
+		}
 		if slug == "" || seen[slug] {
 			return
 		}
@@ -1635,13 +2651,35 @@ func transformWikiLinks(content, kbID string, pageTitles map[string]string) (str
 		}
 		return ""
 	}
+	// link renders artifact/<kb>/<page_type>/<slug> so the frontend wiki-link
+	// parser (artifact/<kb>/<page_type>/<slug>, page_type in {entity,concept})
+	// can resolve and navigate to the target page. Slugs may already carry a
+	// <page_type>/<name> prefix, in which case that prefix is reused as the
+	// page_type and the name is emitted as the bare slug.
+	link := func(label, slug string) string {
+		fullSlug := resolveSlug(slug)
+		if fullSlug == "" {
+			// Unresolved (dead) slug: keep the label as plain text so the
+			// frontend does not render a broken artifact link.
+			return strings.TrimSpace(label)
+		}
+		bareSlug := fullSlug
+		pageType := pageTypeOf(fullSlug, slugToPageType)
+		if idx := strings.Index(fullSlug, "/"); idx >= 0 && fullSlug[:idx] == pageType {
+			bareSlug = fullSlug[idx+1:]
+		}
+		if pageType == "" {
+			pageType = "page"
+		}
+		return "[" + label + "](artifact/" + kbID + "/" + pageType + "/" + bareSlug + ")"
+	}
 	rewriteMD := func(label, href string) string {
 		slug := artifactSlug(href)
 		if slug == "" {
 			return "[" + label + "](" + href + ")"
 		}
 		track(slug)
-		return "[" + displayText(label, slug) + "](artifact/" + kbID + "/" + slug + ")"
+		return link(displayText(label, slug), slug)
 	}
 	out := wikiArtifactMarkdownLink.ReplaceAllStringFunc(content, func(match string) string {
 		sub := wikiArtifactMarkdownLink.FindStringSubmatch(match)
@@ -1657,7 +2695,7 @@ func transformWikiLinks(content, kbID string, pageTitles map[string]string) (str
 		}
 		slug := strings.TrimSpace(sub[1])
 		track(slug)
-		return "[" + sub[2] + "](artifact/" + kbID + "/" + slug + ")"
+		return link(sub[2], slug)
 	})
 	out = wikiWikilinkSimpleRe.ReplaceAllStringFunc(out, func(match string) string {
 		sub := wikiWikilinkSimpleRe.FindStringSubmatch(match)
@@ -1666,9 +2704,110 @@ func transformWikiLinks(content, kbID string, pageTitles map[string]string) (str
 		}
 		slug := strings.TrimSpace(sub[1])
 		track(slug)
-		return "[" + displayText(slug, slug) + "](artifact/" + kbID + "/" + slug + ")"
+		return link(displayText(slug, slug), slug)
 	})
+	// rawLinks counts the model-authored wikilinks in the source content. It
+	// must be counted against content, not out: by this point every [[...]] has
+	// been rewritten to Markdown, so counting on out would always report zero.
+	rawLinks := wikiWikilinkSimpleRe.FindAllString(content, -1)
+	appcommon.Info("knowledge_compiler: transformWikiLinks resolved outlinks",
+		zap.Int("raw_wikilinks", len(rawLinks)),
+		zap.Int("resolved_outlinks", len(outlinks)),
+		zap.Strings("sample_resolved", firstN(outlinks, 5)),
+		zap.Strings("sample_raw", firstN(rawLinks, 5)))
 	return out, outlinks
+}
+
+// formatWikiRelatedKB renders the RelatedKB page list for the refine-writer
+// prompt (O1): one "- [[<slug>]]" bullet per related full-slug, with the page
+// title as display text when known. It is a prompt hint only — the authoritative
+// See-also section is appended deterministically by appendWikiSeeAlso after the
+// LLM output is transformed.
+func formatWikiRelatedKB(related []string, pageTitles map[string]string) string {
+	if len(related) == 0 {
+		return "(none)"
+	}
+	var b strings.Builder
+	for _, slug := range related {
+		slug = strings.TrimSpace(slug)
+		if slug == "" {
+			continue
+		}
+		canon := normalizeWikiSlugHyphens(slug)
+		if title := strings.TrimSpace(pageTitles[canon]); title != "" {
+			b.WriteString("- [[" + canon + "|" + title + "]]\n")
+		} else {
+			b.WriteString("- [[" + canon + "]]\n")
+		}
+	}
+	if b.Len() == 0 {
+		return "(none)"
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// appendWikiSeeAlso guarantees a cross-link section from RelatedKB (O2). It runs
+// AFTER transformWikiLinks, which drops dead links (targets that cannot be
+// resolved). To avoid losing every RelatedKB edge when a target is missing, we do
+// NOT re-run the resolver here: each RelatedKB full-slug is linked once as
+// artifact/<kb>/<page_type>/<slug>, only if it is not already present in
+// outlinks. This bypasses the dead-link drop and keeps the graph edge.
+func appendWikiSeeAlso(content string, outlinks, related []string, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
+	if len(related) == 0 {
+		return content, outlinks
+	}
+	resolver := newWikiSlugResolver(pageTitles, slugToPageType)
+	have := make(map[string]bool, len(outlinks))
+	for _, o := range outlinks {
+		have[normalizeWikiSlugHyphens(o)] = true
+	}
+	var bullets []string
+	for _, slug := range related {
+		// Resolve the RelatedKB target against the current page index. An
+		// unresolved target is not a known page: omit it entirely (no broken
+		// artifact link) and do NOT append it to outlinks, so no phantom graph
+		// edge is persisted for a page that was never compiled.
+		canon := resolver.resolve(slug)
+		if canon == "" || have[canon] {
+			continue
+		}
+		have[canon] = true
+		bareSlug := canon
+		pageType := pageTypeOf(canon, slugToPageType)
+		if idx := strings.Index(canon, "/"); idx >= 0 && canon[:idx] == pageType {
+			bareSlug = canon[idx+1:]
+		}
+		if pageType == "" {
+			pageType = "page"
+		}
+		label := pageTitles[canon]
+		if label == "" {
+			label = strings.Title(strings.ReplaceAll(lastPathSlug(canon), "-", " "))
+		}
+		bullets = append(bullets, "- ["+label+"](artifact/"+kbID+"/"+pageType+"/"+bareSlug+")")
+		outlinks = append(outlinks, canon)
+	}
+	if len(bullets) == 0 {
+		return content, outlinks
+	}
+	// Append a "See also" section if one is not already present; otherwise add
+	// the bullets under the existing "See also" heading.
+	body := strings.TrimRight(content, "\n")
+	if seeAlsoRe.MatchString(body) {
+		return body + "\n" + strings.Join(bullets, "\n") + "\n", outlinks
+	}
+	return body + "\n\n## See also\n\n" + strings.Join(bullets, "\n") + "\n", outlinks
+}
+
+// seeAlsoRe matches a Markdown "See also" heading (case-insensitive) so we can
+// append related links under an existing section instead of duplicating it.
+var seeAlsoRe = regexp.MustCompile(`(?m)^#{1,6}\s*see\s*also\s*$`)
+
+func firstN(s []string, n int) []string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func lastPathSlug(slug string) string {
@@ -1872,15 +3011,6 @@ func (p *wikiPipeline) maybeSourceIDs() []string {
 		out = append(out, id)
 	}
 	return out
-}
-
-func (p *wikiPipeline) runMapBatch(batch []common.Chunk) error {
-	extract, err := p.mapBatch(batch)
-	if err != nil {
-		return err
-	}
-	p.mapExtracts = append(p.mapExtracts, extract)
-	return nil
 }
 
 // dedupHistorical drops products that are near-duplicates of existing historical

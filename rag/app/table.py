@@ -19,6 +19,7 @@ import csv
 import io
 import logging
 import re
+from datetime import datetime
 from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
@@ -364,32 +365,66 @@ def column_data_type(arr):
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]+$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
-            counts["int"] += 1
-            if int(str(a)) > 2**63 - 1:
+        if isinstance(a, float) and pd.isna(a):
+            continue  # skip NaN
+        # Check native Python type first (from openpyxl via pandas DataFrame)
+        if isinstance(a, bool):
+            counts["bool"] += 1
+            continue
+        if isinstance(a, (int, np.integer)):
+            if int(a) > 2**63 - 1:
                 float_flag = True
                 break
-        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
+            counts["int"] += 1
+            continue
+        if isinstance(a, (float, np.floating)):
             counts["float"] += 1
-        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
+            continue
+        if isinstance(a, datetime):
+            if pd.isna(a):
+                continue  # skip pd.NaT
+            counts["datetime"] += 1
+            continue
+        # Fallback to string-based regex matching
+        s = str(a)
+        if re.match(r"[+-]?[0-9]+$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+            counts["int"] += 1
+            if int(s) > 2**63 - 1:
+                float_flag = True
+                break
+        elif re.match(r"[+-]?[0-9]+\.[0-9]*$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+            counts["float"] += 1
+        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", s, flags=re.IGNORECASE):
             counts["bool"] += 1
-        elif trans_datatime(str(a)):
+        elif trans_datatime(s):
             counts["datetime"] += 1
         else:
             counts["text"] += 1
     if float_flag:
         ty = "float"
     else:
-        counts = sorted(counts.items(), key=lambda x: x[1] * -1)
+        # When counts tie, prefer types that lose less data:
+        # text (lossless) > datetime > float > int > bool
+        type_priority = {"text": 0, "datetime": 1, "float": 2, "int": 3, "bool": 4}
+        counts = sorted(counts.items(), key=lambda x: (x[1] * -1, type_priority[x[0]]))
         ty = counts[0][0]
     for i in range(len(arr)):
         if arr[i] is None:
+            continue
+        if isinstance(arr[i], float) and pd.isna(arr[i]):
+            arr[i] = None
+            continue
+        if isinstance(arr[i], datetime) and pd.isna(arr[i]):
+            arr[i] = None
             continue
         try:
             arr[i] = trans[ty](str(arr[i]))
         except Exception as e:
             arr[i] = None
             logging.warning(f"Column {i}: {e}")
+            # Keep original value from openpyxl/pandas instead of dropping to None.
+            # This preserves cells (e.g. text in numeric columns) that would
+            # otherwise be silently discarded by forced column-level conversion.
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -512,10 +547,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [i for i in range(len(clmns)) if column_roles.get(clmns[i], "both") in ("metadata", "both")]
-        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
             field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in stored_indices}
         else:
             field_map = {clmns_map[i][0]: clmns_map[i][1] for i in stored_indices}
+        if settings.DOC_ENGINE_GAUSSDB:
+            field_map = {py_clmns[i].lower(): str(clmns[i]) for i in stored_indices}
         logging.debug(f"Field map (sheet): {field_map}")
         sheet_specs.append(
             {
@@ -573,12 +610,21 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 if role in ("indexing", "vectorize", "both"):
                     text_fields.append((col_name, row[col_name]))
                 if role in ("metadata", "both"):
-                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+                    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
                         stored[str(col_name)] = row[col_name]
                     else:
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
-                            stored[fld] = row[col_name]
+                            val = row[col_name]
+                            # If a string value ended up in a non-text column,
+                            # it was preserved from a failed conversion in
+                            # column_data_type. Skip storing in the typed ES
+                            # field to avoid type mapping errors; the value is
+                            # already in text_fields for chunk content.
+                            if isinstance(val, str):
+                                pass
+                            else:
+                                stored[fld] = val
                         else:
                             cell = row[col_name]
                             stored[fld] = rag_tokenizer.tokenize(cell)
@@ -587,7 +633,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                                 stored[f"{py_clmns[j].lower()}_raw"] = raw_s
             if not text_fields and not stored:
                 continue
-            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+            if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
                 if stored:
                     d["chunk_data"] = stored
             else:
@@ -598,7 +644,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk content_with_weight length: {len(d.get('content_with_weight', '') or '')}")
                 _cd = d.get("chunk_data")
                 logger.debug(f"[TABLE_PARSER_DEBUG] Chunk chunk_data keys: {list(_cd.keys()) if isinstance(_cd, dict) else 'N/A'}")
-                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB):
+                if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB):
                     _extra = [k for k in d if k not in ("docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks")]
                     logger.debug(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)

@@ -27,6 +27,7 @@ Guards against:
   append instead of using a projected-total check.
 """
 
+import itertools
 import re
 
 import pytest
@@ -149,23 +150,24 @@ def test_empty_delimiter_falls_back_to_token_size_merge():
 
 
 @pytest.mark.p2
-def test_overlap_prefix_is_counted_in_token_budget():
-    # With overlap, each chunk = overlap-prefix + new content. The proactive
-    # projected-total check rejects a section that, even after prepending the
-    # overlap prefix, would exceed chunk_token_num; the overlap is dropped at
-    # that boundary instead of letting the chunk overshoot. Pre-fix, the prefix
-    # tokens were not counted, so the per-chunk budget check fired late and
-    # chunks systematically overshot chunk_token_num (observed up to 63).
+def test_overlap_prefix_is_never_dropped_at_overflow():
+    # With overlap, each chunk = overlap-prefix + new content. The unified
+    # strategy applies the overlap UNCONDITIONALLY at every boundary: it is
+    # never dropped for not fitting the budget, so context stays continuous
+    # across boundaries even when the chunk overshoots chunk_token_num by the
+    # overlap amount.
     sentences = [" ".join(["w"] * 10) for _ in range(30)]
     # UNDER_CAP (strict): content chunks never overflow chunk_token_num, so the
     # overlap-prefix budget check is the only thing under test here.
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    # Each content chunk stays within the budget. Sentences are 10 tokens, the
-    # budget is 50, so a 5-sentence chunk is exactly 50; a 10-token overlap
-    # prefix (20% of 50) would push it to 60 and is therefore dropped at the
-    # boundary rather than letting the chunk overshoot.
-    assert all(_tok(c) <= 50 for c in chunks)
+    # The overlap prefix is always present at every boundary: each chunk (after
+    # the first) starts with the tail of the previous chunk.
+    for prev, cur in itertools.pairwise(chunks):
+        cut = int(len(prev) * (100 - 20) / 100.0)
+        assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
+    # And because the prefix is never dropped, some chunks exceed the budget.
+    assert any(_tok(c) > 50 for c in chunks)
 
 
 # --------------------------------------------------------------------------- #
@@ -281,14 +283,19 @@ def test_strict_cap_no_overlap_packs_to_budget():
 
 
 @pytest.mark.p2
-def test_strict_cap_with_overlap_drops_overlap_at_overflow_boundary():
+def test_strict_cap_overlap_never_dropped_at_overflow_boundary():
     # UNDER_CAP chunks are exactly 20 tokens (two 10-token sentences). A 20%
-    # overlap prefix is 4 tokens; 20 + 4 > 20, so the prefix is dropped at the
-    # boundary instead of letting the chunk overshoot the strict cap.
+    # overlap prefix is 4 tokens; 20 + 4 > 20, so under the old fit-check the
+    # prefix was dropped. The unified strategy applies it UNCONDITIONALLY, so
+    # the chunk overshoots the strict cap by the overlap amount rather than
+    # losing boundary context.
     sentences = [" ".join(["w"] * 10) for _ in range(20)]
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    assert all(_tok(c) <= 20 for c in chunks)
+    for prev, cur in itertools.pairwise(chunks):
+        cut = int(len(prev) * (100 - 20) / 100.0)
+        assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
+    assert any(_tok(c) > 20 for c in chunks)
 
 
 @pytest.mark.p2
@@ -316,7 +323,7 @@ def test_strict_cap_overlap_chosen_when_it_fits():
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert all(_tok(c) <= 20 for c in chunks)
     overlap_seen = False
-    for a, b in zip(chunks, chunks[1:]):
+    for a, b in itertools.pairwise(chunks):
         a_tokens = a.split()
         b_tokens = b.split()
         if a_tokens and b_tokens and any(t in b_tokens for t in a_tokens):

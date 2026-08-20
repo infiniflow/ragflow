@@ -111,7 +111,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if !exists {
 		return nil
 	}
-	if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
 	return nil
@@ -273,7 +273,12 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	successCount := 0
 	for _, doc := range docs {
 		if cancelErr := s.CancelDocParse(ctx, doc); cancelErr != nil {
-			errs = append(errs, cancelErr.Error())
+			if errors.Is(cancelErr, errParseNotRunning) {
+				// Mirror the Python /documents/stop endpoint's message.
+				errs = append(errs, "Can't stop parsing document that has not started or already completed")
+			} else {
+				errs = append(errs, cancelErr.Error())
+			}
 			continue
 		}
 		successCount++
@@ -330,19 +335,38 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	return docs, nil
 }
 
+// errParseNotRunning is returned by CancelDocParse when the document is not in
+// a cancelable state: its run status is neither RUNNING nor CANCEL and it has
+// no in-flight ingestion task. Callers map it to their endpoint-specific
+// message (the Python /documents/ingest and /documents/stop messages differ).
+var errParseNotRunning = errors.New("parse task is not in running status")
+
 // CancelDocParse stops the ingestion task for the document by calling
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
+// It mirrors the Python cancel precondition: only a document whose run status
+// is RUNNING or CANCEL, or one with an in-flight ingestion task
+// (CREATED/RUNNING/STOPPING), can be canceled; otherwise errParseNotRunning
+// is returned. A missing ingestion task is not an error by itself — cancel is
+// then a no-op on the task side, matching Python's cancel_all_task_of.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
 	}
-	if task == nil {
-		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
+
+	docRun := ""
+	if doc.Run != nil {
+		docRun = *doc.Run
+	}
+	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.RUNNING || task.Status == common.STOPPING)
+	if docRun != string(entity.TaskStatusRunning) && docRun != string(entity.TaskStatusCancel) && !inFlight {
+		return errParseNotRunning
 	}
 
-	if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
-		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
+	if task != nil {
+		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
+			return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
+		}
 	}
 
 	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
@@ -381,7 +405,7 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
 			s.deleteChunkImages(ctx, doc, indexName)
-			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 				return err
 			}
 		}
@@ -493,16 +517,11 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		return errors.New("database error (Document update)")
 	}
 
-	if s.docEngine == nil {
-		return nil
+	if s.docEngine != nil {
+		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+			return err
+		}
 	}
-
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	return s.docEngine.UpdateChunks(
-		ctx,
-		map[string]interface{}{"doc_id": doc.ID},
-		map[string]interface{}{"available_int": status},
-		indexName,
-		doc.KbID,
-	)
+	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	return nil
 }

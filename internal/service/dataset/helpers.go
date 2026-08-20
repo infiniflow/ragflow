@@ -253,20 +253,64 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	if next == nil {
 		next = entity.JSONMap{}
 	}
-	for _, key := range []string{"metadata", "built_in_metadata", "enable_metadata"} {
-		if incoming != nil {
-			if value, ok := incoming[key]; ok {
-				next[key] = value
-				continue
-			}
-		}
-		if existing != nil {
-			if value, ok := existing[key]; ok {
-				next[key] = value
-			}
+	var mm map[string]any
+	if incoming != nil {
+		if v, ok := incoming["metadata"].(map[string]any); ok {
+			mm = v
 		}
 	}
+	if mm == nil && existing != nil {
+		if v, ok := existing["metadata"].(map[string]any); ok {
+			mm = v
+		}
+	}
+	if mm != nil {
+		next["metadata"] = mm
+	}
 	return next
+}
+
+func parserConfigJSONMap(value interface{}) entity.JSONMap {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case entity.JSONMap:
+		return typed
+	case map[string]interface{}:
+		return entity.JSONMap(typed)
+	default:
+		return nil
+	}
+}
+
+func cloneJSONMap(source entity.JSONMap) entity.JSONMap {
+	if source == nil {
+		return nil
+	}
+	cloned := make(entity.JSONMap, len(source))
+	for key, value := range source {
+		cloned[key] = cloneJSONValue(value)
+	}
+	return cloned
+}
+
+func cloneJSONValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		nested := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			nested[key] = cloneJSONValue(item)
+		}
+		return nested
+	case []interface{}:
+		nested := make([]interface{}, len(typed))
+		for idx, item := range typed {
+			nested[idx] = cloneJSONValue(item)
+		}
+		return nested
+	default:
+		return typed
+	}
 }
 
 func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {

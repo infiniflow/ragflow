@@ -279,7 +279,7 @@ func TestRAGconEmbed(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newRAGconForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newRAGconForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestRAGconRerank(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "rerank-v1"
-	resp, err := newRAGconForTest(srv.URL).Rerank(ctx, &model, "q", []string{"doc0", "doc1"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
+	resp, err := newRAGconForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"doc0", "doc1"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}

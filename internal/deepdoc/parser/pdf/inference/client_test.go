@@ -50,8 +50,8 @@ func TestDeepDocHTTP_DLA(t *testing.T) {
 			t.Fatalf("missing 'request' multipart field: %v", err)
 		}
 		defer file.Close()
-		if !strings.HasSuffix(header.Filename, ".jpeg") {
-			t.Errorf("filename = %q, want *.jpeg", header.Filename)
+		if !strings.HasSuffix(header.Filename, ".png") {
+			t.Errorf("filename = %q, want *.png", header.Filename)
 		}
 
 		// Return canned DLA response: one table region (classId=5).
@@ -124,11 +124,11 @@ func TestDeepDocHTTP_OCRDetect(t *testing.T) {
 		if op := r.FormValue("operator"); op != "det" {
 			t.Errorf("operator = %q, want 'det'", op)
 		}
-		// Verify image is JPEG (not PNG).
+		// Verify image is PNG (not JPEG).
 		file, header, _ := r.FormFile("request")
 		defer file.Close()
-		if !strings.HasSuffix(header.Filename, ".jpeg") {
-			t.Errorf("filename = %q, want *.jpeg", header.Filename)
+		if !strings.HasSuffix(header.Filename, ".png") {
+			t.Errorf("filename = %q, want *.png", header.Filename)
 		}
 
 		// Return canned OCR detect response: 1 quad box.

@@ -121,6 +121,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	// unique within the tenant.
 	name = d.dedupeDatasetName(ctx, name, tenantID)
 
+	parserConfig = service.ApplyComponentScopedParserConfig(
+		parserConfig,
+		tenant.LLMID,
+	)
+
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
 		Name:         name,
@@ -256,7 +261,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	successCount := 0
 	errorsList := make([]string, 0)
 	for _, kb := range kbs {
-		if err := d.deleteDataset(tenantID, kb); err != nil {
+		if err := d.deleteDataset(ctx, tenantID, kb); err != nil {
 			errorsList = append(errorsList, err.Error())
 			common.Warn("deleteDataset failed", zap.String("kb_id", kb.ID), zap.Error(err))
 			continue
@@ -270,7 +275,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
+func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb *entity.Knowledgebase) error {
 	// Collect document IDs first so engine cleanup can run before the
 	// transaction (engine ops are not transactional).
 	var documents []entity.Document
@@ -279,7 +284,7 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 	}
 	docIDs := extractDocIDs(documents)
 	if len(docIDs) > 0 {
-		d.deleteDatasetEngineData(kb, docIDs)
+		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
 
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
@@ -521,6 +526,21 @@ func stringPtrIfNotEmpty(s string) *string {
 }
 
 // extractDocIDs returns the document IDs from a slice of documents.
+// datasetIndexTaskIDs returns the deduplicated set of dataset-level index task
+// ids recorded on the KB (graphrag/raptor/mindmap legacy task fields). It is
+// used by deleteDataset to clear residual entity.Task rows when a KB is deleted.
+// Kept here because it belongs to the dataset delete lifecycle, not the retired
+// RunIndex scheduling path.
+func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
+	taskIDs := make([]string, 0, 3)
+	for _, taskID := range []*string{kb.GraphragTaskID, kb.RaptorTaskID, kb.MindmapTaskID} {
+		if taskID != nil && *taskID != "" {
+			taskIDs = append(taskIDs, *taskID)
+		}
+	}
+	return common.Deduplicate(taskIDs)
+}
+
 func extractDocIDs(docs []entity.Document) []string {
 	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {
@@ -532,11 +552,10 @@ func extractDocIDs(docs []entity.Document) []string {
 // deleteDatasetEngineData cleans up engine-level chunks and metadata for all
 // documents in a dataset being deleted. Called before the DB transaction
 // because engine operations are not transactional.
-func (d *DatasetService) deleteDatasetEngineData(kb *entity.Knowledgebase, docIDs []string) {
+func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity.Knowledgebase, docIDs []string) {
 	if d.docEngine == nil || len(docIDs) == 0 {
 		return
 	}
-	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 
 	if _, err := d.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docIDs}, indexName, kb.ID); err != nil {

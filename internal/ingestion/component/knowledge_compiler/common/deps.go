@@ -28,6 +28,10 @@ type ChatRequest struct {
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
+	// DisableRetry tells the production ChatInvoker that the caller owns
+	// transient-error retries (GenJSON is such a caller). It is internal
+	// plumbing and is not part of the user-facing model request.
+	DisableRetry bool
 }
 
 // ChatResponse holds the LLM's text answer.
@@ -67,17 +71,26 @@ type HistoricalKNN interface {
 
 // WikiPageCandidate is one existing wiki page returned from the backing store.
 type WikiPageCandidate struct {
-	ID             string
-	Slug           string
-	Title          string
-	PageType       string
-	Topic          string
-	Summary        string
-	ContentMD      string
-	ContentMDRaw   string
-	EntityNames    []string
+	ID           string
+	Slug         string
+	Title        string
+	PageType     string
+	Topic        string
+	PlanGroup    string
+	Summary      string
+	ContentMD    string
+	ContentMDRaw string
+	EntityNames  []string
+	// RoutedEntityNames is populated only when the topic route LLM explicitly
+	// returns a new membership set. An empty value means preserve the existing
+	// membership for backward-compatible direct-match routing.
+	RoutedEntityNames []string
+	// RoutedTopic is the topic selected by the topic route LLM. Empty means
+	// preserve the existing topic value.
+	RoutedTopic    string
 	RelatedKBPages []string
 	Outlinks       []string
+	SourceChunkIDs []string
 	Score          float64
 }
 
@@ -89,6 +102,53 @@ type WikiPageStore interface {
 	GetPageBySlug(ctx context.Context, tenantID, datasetID, slug string) (*WikiPageCandidate, error)
 }
 
+// WikiPageCooccurrenceStore is an optional recall signal for topic routing.
+// It returns pages whose source evidence contains one of the supplied chunks.
+type WikiPageCooccurrenceStore interface {
+	FindPagesBySourceChunks(ctx context.Context, tenantID, datasetID string, chunkIDs []string, k int) ([]WikiPageCandidate, error)
+}
+
+// WikiMapVersion identifies one immutable MAP extraction for a source chunk
+// version. Key is a deterministic digest over the remaining identity fields;
+// Payload is the variant-owned JSON representation of the extraction.
+type WikiMapVersion struct {
+	Key                 string
+	TenantID            string
+	DatasetID           string
+	DocumentID          string
+	ChunkID             string
+	ContentHash         string
+	TemplateFingerprint string
+	LLMFingerprint      string
+	Payload             []byte
+}
+
+// WikiMapVersionStore persists immutable, reusable Wiki MAP results. Removing
+// or disabling a source chunk does not delete its historical versions; the
+// dataset semantic compiler decides which versions are active.
+type WikiMapVersionStore interface {
+	GetWikiMapVersions(ctx context.Context, tenantID, datasetID string, keys []string) (map[string][]byte, error)
+	PutWikiMapVersions(ctx context.Context, versions []WikiMapVersion) error
+}
+
+// WikiMapActiveState is the mutable pointer to the chunk/hash MAP versions and
+// page plan used by the latest successful document Wiki compile. Payload is
+// owned by the wiki variant so the storage layer remains schema-independent.
+type WikiMapActiveState struct {
+	Key        string
+	TenantID   string
+	DatasetID  string
+	DocumentID string
+	Payload    []byte
+}
+
+// WikiMapActiveStateStore persists the active MAP/plan snapshot separately
+// from immutable WikiMapVersion history.
+type WikiMapActiveStateStore interface {
+	GetWikiMapActiveState(ctx context.Context, tenantID, datasetID, key string) ([]byte, error)
+	PutWikiMapActiveState(ctx context.Context, state WikiMapActiveState) error
+}
+
 // RedisClient is injected only for the datasetnav variant (M8).
 type RedisClient interface {
 	// Minimal lock surface; full API added in M8.
@@ -98,18 +158,27 @@ type RedisClient interface {
 // interfaces so tests inject stubs; production wiring lives in
 // internal/ingestion/task (see PORT_PLAN.md §4 dependency injection seam).
 type Deps struct {
-	Chat          ChatInvoker
-	Embed         Embedder
-	Tokenizer     Tokenizer
-	HistoricalKNN HistoricalKNN // optional (wiki)
-	WikiPages     WikiPageStore // optional (wiki)
-	Redis         RedisClient   // optional (datasetnav)
-	TenantID      string
-	DatasetID     string
-	// LLMMaxLength is the chat model's context window in tokens. RAPTOR uses it
-	// to truncate each cluster's texts so the summary prompt fits the window
-	// (mirrors Python self._llm_model.max_length).
-	LLMMaxLength int
+	Chat            ChatInvoker
+	Embed           Embedder
+	Tokenizer       Tokenizer
+	HistoricalKNN   HistoricalKNN       // optional (wiki)
+	WikiPages       WikiPageStore       // optional (wiki)
+	WikiMapVersions WikiMapVersionStore // optional (wiki version cache)
+	Redis           RedisClient         // optional (datasetnav)
+	TenantID        string
+	DatasetID       string
+	// ModelContextLen is the chat model's context window in tokens
+	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
+	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
+	// quotas (mirrors Python self._llm_model.max_length).
+	ModelContextLen int
+	// ModelMaxOutput is the chat model's generation cap (max_output), the most
+	// tokens one LLM response may emit. Cross-document merge judging packs many
+	// pairs into a single call, so the caller must cap the batch by both the
+	// input window (ModelContextLen) and this output cap; otherwise a large
+	// candidate set can overflow the model's max_output and it returns a
+	// truncated/non-JSON reply. Mirrors Python's max_tokens generation config.
+	ModelMaxOutput int
 }
 
 // DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.

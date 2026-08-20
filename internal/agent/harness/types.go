@@ -26,7 +26,13 @@ type RouteDecision struct {
 	QuestionType          string // factual | comparative | analytical | procedural | exploratory | verification | summarization
 	RequiresDecomposition bool
 	ExecutionStrategy     string // direct_search | decompose_and_search | agentic_research | deep_research
-	Reasoning             string
+	// SuggestsCompilation is the compiled-artifact type the route suggests using
+	// for retrieval: "" (none) | "toc" | "graph" | "wiki". Mirrors Python's
+	// route `suggests_compilation`. It is preserved so the production runner can
+	// prefer a compiled wiki/graph tool when the bound KBs actually carry the
+	// artifact, and fall back to general hybrid search otherwise.
+	SuggestsCompilation string
+	Reasoning           string
 }
 
 // ClaimTarget mirrors Python ClaimTarget.
@@ -62,15 +68,36 @@ type ExecutionStrategy struct {
 	FallbackToDirectLLM   bool
 	RequiresSelectiveGen  bool
 	AllowsReplan          bool
+	// Decision-ladder thresholds (Sufficient Context redesign). CHigh/CLow gate
+	// full vs. caveated answer from aggregated agent confidence; LLMFloor is the
+	// minimum AutoRater confidence before a reconcile/re-investigation.
+	CHigh    float64
+	CLow     float64
+	LLMFloor float64
+	// AllowsReconcile mirrors Python allows_reconcile: whether the mode may force
+	// a re-investigation when confidence is low (medium=false).
+	AllowsReconcile bool
+	// AllowsDynamicClaims mirrors Python allows_dynamic_claims: ultra only.
+	AllowsDynamicClaims bool
 }
 
 // AgentResult mirrors Python AgentResult.
 type AgentResult struct {
-	ClaimID     string
-	Report      string
-	IsVerified  bool
-	Confidence  float64
-	EvidenceIDs []int
+	ClaimID          string
+	Report           string
+	IsVerified       bool
+	Confidence       float64
+	EvidenceIDs      []int
+	Gaps             []string
+	DiscoveredClaims []string
+	// Grounded lists the key assertions the agent claims are evidence-backed
+	// (Python schema field `grounded`). Unused at the code level while the
+	// lexical grounded-fact check is disabled (_ENABLE_NER_GROUNDED=False);
+	// reserved for the grounded review path.
+	Grounded []string
+	// Numbers lists the distinct figures the agent *disclosed* in its report,
+	// used for multi-source numeric-conflict detection (Python `numbers`).
+	Numbers []string
 }
 
 // ClaimCrossCheckResult mirrors Python ClaimCrossCheckResult.
@@ -97,6 +124,12 @@ type SufficiencyVerdict struct {
 	MissingClaims    []string
 	Feedback         string
 	OverallReason    string
+	// Decision-ladder inputs (Sufficient Context redesign):
+	//   - HardViolations: claim IDs with a code-proven evidence gap that veto a
+	//     full answer even when the AutoRater says sufficient.
+	//   - AgentConfidence: mean self-confidence over the trusted claim subset.
+	HardViolations  []string
+	AgentConfidence float64
 }
 
 // OrchestratorContext mirrors Python OrchestratorContext.
@@ -119,6 +152,7 @@ var THINKING_MODES = map[string]ExecutionStrategy{
 		MaxOrchestratorCycles: 3, MaxAgentCycles: 0, MaxParallelAgents: 1,
 		AvailableTools: []string{"hybrid_search"}, SufficiencyThreshold: 0.75, PartialThreshold: 0.40,
 		RequiresSelectiveGen: true,
+		CHigh:                0.75, CLow: 0.45, LLMFloor: 0.55, AllowsReconcile: false,
 	},
 	"high": {
 		Label: "high", Strategy: "agentic_research", RequiresDecomposition: true,
@@ -129,6 +163,7 @@ var THINKING_MODES = map[string]ExecutionStrategy{
 		},
 		SufficiencyThreshold: 0.65, PartialThreshold: 0.30,
 		RequiresSelectiveGen: true, AllowsReplan: true,
+		CHigh: 0.70, CLow: 0.40, LLMFloor: 0.50, AllowsReconcile: true,
 	},
 	"ultra": {
 		Label: "ultra", Strategy: "deep_research", RequiresDecomposition: true,
@@ -141,6 +176,7 @@ var THINKING_MODES = map[string]ExecutionStrategy{
 		},
 		SufficiencyThreshold: 0.55, PartialThreshold: 0.20, FallbackToDirectLLM: true,
 		RequiresSelectiveGen: true, AllowsReplan: true,
+		CHigh: 0.65, CLow: 0.35, LLMFloor: 0.45, AllowsReconcile: true, AllowsDynamicClaims: true,
 	},
 }
 

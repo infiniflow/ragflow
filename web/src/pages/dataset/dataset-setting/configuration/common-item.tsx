@@ -245,43 +245,6 @@ export function EnableAutoGenerateItem() {
   );
 }
 
-export function EnableTocToggle() {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-
-  return (
-    <FormField
-      control={form.control}
-      name={'parser_config.toc_extraction'}
-      render={({ field }) => (
-        <FormItem className="items-center space-y-0">
-          <div className="flex items-center">
-            <FormLabel
-              tooltip={t('tocExtractionTip')}
-              className="text-sm  whitespace-wrap w-1/4"
-            >
-              {t('tocExtraction')}
-            </FormLabel>
-            <div className="text-muted-foreground w-3/4">
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  data-testid="ds-settings-parser-page-index-switch"
-                />
-              </FormControl>
-            </div>
-          </div>
-          <div className="flex pt-1">
-            <div className="w-1/4"></div>
-            <FormMessage />
-          </div>
-        </FormItem>
-      )}
-    />
-  );
-}
-
 export function ImageContextWindow() {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();

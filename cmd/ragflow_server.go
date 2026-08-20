@@ -30,6 +30,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
 	"ragflow/internal/handler"
+	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
@@ -41,6 +42,7 @@ import (
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/service/wikisearch"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
@@ -357,7 +359,7 @@ func main() {
 	}
 
 	// Initialize doc engine
-	if err = engine.InitDocEngine(); err != nil {
+	if err = engine.InitDocEngine(ctx); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
@@ -554,11 +556,27 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.
 	globalConfig := server.GetConfig()
-	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestorCfg := globalConfig.GetIngestorConfig()
+	const maxIngestorConcurrency = int32(1<<30 - 1)
+	if ingestorCfg.MaxConcurrentWorkers > int(maxIngestorConcurrency) {
+		return fmt.Errorf("ingestor max_concurrent_workers %d exceeds maximum %d", ingestorCfg.MaxConcurrentWorkers, maxIngestorConcurrency)
+	}
+	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
+	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
+	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
+	ingestor := ingestion.NewIngestor(*args.name, int32(ingestorCfg.MaxConcurrentWorkers), []string{"pdf", "docx", "txt"})
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
 	)
+	// The dataset-level knowledge-compile consumer (tree/structure products) upserts
+	// into the dataset-nav tree, so the Ingestor must install the same ES-backed
+	// NavService the API server installs. Without this, nav.GetNavService() returns
+	// nil and tree/structure products are dropped (the consumer logs "nav service
+	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
+	// The embedder resolves the tenant's embedding model on demand, so both
+	// Search and UpsertDoc can embed queries/summaries automatically.
+	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(service.NewModelProviderService(), "")))
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by processMessage -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
@@ -615,15 +633,12 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
-	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs, time.Duration(syncerConfig.SyncInterval)*time.Second)
+	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
 
-	go func() {
-		err := fileSyncer.Start()
-		if err != nil {
-			common.Error("Failed to initialize file syncer", err)
-			return
-		}
-	}()
+	if err := fileSyncer.StartContext(ctx); err != nil {
+		common.Error("Failed to initialize file syncer", err)
+		return err
+	}
 
 	common.Info("\n     _______ __        _____\n" +
 		"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
@@ -850,6 +865,14 @@ func startServer(ctx context.Context) {
 	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
 	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(modelProviderService, "")))
 
+	// Install the compiled-wiki search service. It is backed directly by the
+	// document engine: QueryPages filters the tenant-scoped index to
+	// compile_kwd="wiki_page" (+ supported kinds) so ordinary source chunks are
+	// never relabeled as wiki pages, and BackfillChunks fetches original chunks
+	// by id. When the engine is unavailable the service degrades to empty so the
+	// agent falls back to hybrid search (no failing call).
+	wikisearch.SetService(wikisearch.NewEngineService(engine.Get()))
+
 	// Initialize router
 	r := router.NewRouter(authHandler,
 		userHandler,
@@ -901,7 +924,10 @@ func startServer(ctx context.Context) {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	channels.Start(ctx)
+	_, err := channels.Start(ctx)
+	if err != nil {
+		common.Fatal("Fail to start chat-channel", zap.Error(err))
+	}
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
 

@@ -27,7 +27,7 @@ import (
 // citationPromptText is the citation-instruction template, mirrored
 // from rag/prompts/citation_prompt.md.
 //
-// The full markdown (123 lines) is preserved so the LLM receives the
+// The full Markdown (123 lines) is preserved so the LLM receives the
 // same instruction set as the Python engine. Trim or extend here only
 // after a corresponding change in citation_prompt.md.
 //

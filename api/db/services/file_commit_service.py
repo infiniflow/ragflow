@@ -803,6 +803,49 @@ class FileCommitService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete_page_history(cls, kb_id: str, page_type: str, slug: str) -> int:
+        """Delete all stored versions for one Wiki page.
+
+        Wiki versions are represented by a ``FileCommit`` plus its single
+        ``FileCommitItem``.  They are not workspace commits, so removing the
+        page must remove both rows instead of leaving an orphaned history
+        that can reappear when the same slug is generated again.
+        """
+        file_id = _wiki_file_id(kb_id, slug)
+        commit_ids = [
+            row.commit_id
+            for row in FileCommitItem.select(FileCommitItem.commit_id).where((FileCommitItem.file_id == file_id) & (FileCommitItem.slug_kwd == slug) & (FileCommitItem.page_type_kwd == page_type))
+        ]
+        if not commit_ids:
+            return 0
+
+        with DB.atomic():
+            FileCommitItem.delete().where(FileCommitItem.commit_id.in_(commit_ids)).execute()
+            deleted = FileCommit.delete().where((FileCommit.folder_id == kb_id) & FileCommit.id.in_(commit_ids)).execute()
+        return deleted
+
+    @classmethod
+    @DB.connection_context()
+    def delete_all_page_history(cls, kb_id: str) -> int:
+        """Delete all Wiki page versions belonging to a knowledge base."""
+        commit_ids = [
+            row.commit_id
+            for row in (
+                FileCommitItem.select(FileCommitItem.commit_id)
+                .join(FileCommit, on=(FileCommit.id == FileCommitItem.commit_id))
+                .where((FileCommit.folder_id == kb_id) & FileCommitItem.slug_kwd.is_null(False) & FileCommitItem.page_type_kwd.is_null(False))
+            )
+        ]
+        if not commit_ids:
+            return 0
+
+        with DB.atomic():
+            FileCommitItem.delete().where(FileCommitItem.commit_id.in_(commit_ids)).execute()
+            deleted = FileCommit.delete().where((FileCommit.folder_id == kb_id) & FileCommit.id.in_(commit_ids)).execute()
+        return deleted
+
+    @classmethod
+    @DB.connection_context()
     def list_page_commits(
         cls,
         tenant_id: str,

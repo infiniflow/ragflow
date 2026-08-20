@@ -38,6 +38,22 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 		parserConfig = entity.JSONMap{}
 	}
 	parserConfig["metadata"] = metadata
+	kb, kbErr := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if kbErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+	if kb == nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
+	if tenantErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+	llmID := ""
+	if tenant != nil {
+		llmID = tenant.LLMID
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
@@ -69,9 +85,12 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
+	_, enabled, metadata, builtInMetadata := modularMetadataConfig(kb.ParserConfig)
+
 	return map[string]interface{}{
-		"metadata":          parserConfigValueOrEmptyList(kb.ParserConfig, "metadata"),
-		"built_in_metadata": parserConfigValueOrEmptyList(kb.ParserConfig, "built_in_metadata"),
+		"enabled":           enabled,
+		"metadata":          metadata,
+		"built_in_metadata": builtInMetadata,
 	}, common.CodeSuccess, nil
 }
 
@@ -112,15 +131,77 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	if parserConfig == nil {
 		parserConfig = entity.JSONMap{}
 	}
-	parserConfig["metadata"] = metadata
-	parserConfig["built_in_metadata"] = builtInMetadata
+	present, currentEnabled, _, _ := modularMetadataConfig(parserConfig)
+	enabled := false
+	switch {
+	case req.Enabled != nil:
+		enabled = *req.Enabled
+	case present:
+		enabled = currentEnabled
+	default:
+		enabled = len(metadata) > 0 || len(builtInMetadata) > 0
+	}
+	if req.Enabled == nil && len(metadata) == 0 && len(builtInMetadata) == 0 {
+		enabled = false
+	}
+	parserConfig["metadata"] = map[string]any{
+		"enabled":           enabled,
+		"metadata":          metadata,
+		"built_in_metadata": builtInMetadata,
+	}
+	delete(parserConfig, "enable_metadata")
+	delete(parserConfig, "built_in_metadata")
+	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
+	if tenantErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+	llmID := ""
+	if tenant != nil {
+		llmID = tenant.LLMID
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
 		return nil, common.CodeServerError, errors.New("update auto-metadata error.(Database error)")
 	}
 
 	return map[string]interface{}{
+		"enabled":           enabled,
 		"metadata":          metadata,
 		"built_in_metadata": builtInMetadata,
 	}, common.CodeSuccess, nil
+}
+
+// modularMetadataConfig reads the modular dataset-level metadata object
+// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. Missing
+// or malformed config yields a disabled, empty result.
+func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
+	if parserConfig == nil {
+		return false, false, []any{}, []any{}
+	}
+	metaObj, ok := parserConfig["metadata"].(map[string]any)
+	if !ok {
+		return false, false, []any{}, []any{}
+	}
+	enabled, _ := metaObj["enabled"].(bool)
+	metadata := anyOrEmptyList(metaObj["metadata"])
+	builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+	return true, enabled, metadata, builtIn
+}
+
+func anyOrEmptyList(value any) []any {
+	if value == nil {
+		return []any{}
+	}
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	if list, ok := value.([]map[string]any); ok {
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return []any{}
 }

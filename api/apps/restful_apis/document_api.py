@@ -61,7 +61,7 @@ from api.utils.api_utils import (
     get_error_argument_result,
     check_duplicate_ids,
 )
-from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
     UpdateDocumentReq,
     format_validation_error_message,
@@ -352,6 +352,11 @@ async def metadata_summary(dataset_id, tenant_id):
     # Get doc_ids from query parameters (comma-separated string)
     doc_ids_param = request.args.get("doc_ids", "")
     doc_ids = doc_ids_param.split(",") if doc_ids_param else None
+    try:
+        validate_rest_api_ids(doc_ids, "doc_ids")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+
     try:
         summary = DocMetadataService.get_metadata_summary(dataset_id, doc_ids)
         return get_result(data={"summary": summary})
@@ -930,6 +935,10 @@ def _get_docs_with_request(req, dataset_id: str):
         return RetCode.DATA_ERROR, f"you don't own the document {doc_name}", [], 0
 
     doc_ids = q.getlist("ids")
+    try:
+        validate_rest_api_ids(doc_ids)
+    except ValueError as e:
+        return RetCode.ARGUMENT_ERROR, str(e), [], 0
     if doc_id and len(doc_ids) > 0:
         return RetCode.DATA_ERROR, f"Should not provide both 'id':{doc_id} and 'ids'{doc_ids}"
     if len(doc_ids) > 0:
@@ -1318,8 +1327,12 @@ def list_thumbnails():
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
 
     try:
-        docs = DocumentService.get_thumbnails(doc_ids)
+        validate_rest_api_ids(doc_ids, "doc_ids")
+    except ValueError as e:
+        return get_error_argument_result(str(e))
 
+    try:
+        docs = DocumentService.get_thumbnails(doc_ids)
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"

@@ -344,6 +344,9 @@ jobs:
           # fetched at the later "Build ragflow:nightly" step). Best-effort: if
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
+          # tiktoken is already installed in runner
+          mkdir -p ragflow_deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
             mkdir -p ragflow_deps
             if command -v curl >/dev/null 2>&1; then
@@ -408,9 +411,9 @@ jobs:
         working-directory: docker
         run: |
           set -euo pipefail
-          # install ss
           sudo chmod 1777 /tmp
-          sudo apt update && sudo apt install -y iproute2
+          ## ss already installed
+          ##sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
@@ -620,7 +623,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -960,6 +963,9 @@ jobs:
           # fetched at the later "Build ragflow:nightly" step). Best-effort: if
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
+          # tiktoken is already installed in runner
+          mkdir -p ragflow_deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
             mkdir -p ragflow_deps
             if command -v curl >/dev/null 2>&1; then
@@ -1024,9 +1030,9 @@ jobs:
         working-directory: docker
         run: |
           set -euo pipefail
-          # install ss
           sudo chmod 1777 /tmp
-          sudo apt update && sudo apt install -y iproute2
+          ## ss already installed
+          ##sudo apt update && sudo apt install -y iproute2
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}-${API_PROXY_SCHEME}"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
@@ -1236,7 +1242,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"

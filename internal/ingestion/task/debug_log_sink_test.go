@@ -264,7 +264,7 @@ type traceChunkComponent struct{}
 func (traceChunkComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Use the real component output shape ([]map[string]any as produced by
 	// ChunkDocsToMaps) so the end-to-end strip/recurse path for []map[string]any
-	// is actually exercised — a []any stub hides the deepCopyStrip type gap.
+	// is actually exercised — a []any stub hides the deepCopy type gap.
 	return map[string]any{
 		"chunks": []map[string]any{
 			{"text": "real chunk", "vector": []float64{0.5}},

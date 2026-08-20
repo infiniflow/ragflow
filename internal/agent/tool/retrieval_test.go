@@ -29,10 +29,11 @@ import (
 )
 
 func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	out, err := rt.InvokableRun(context.Background(), `{"query":"hello","dataset_ids":["kb-1"]}`)
+	out, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
 	if err == nil {
 		t.Fatal("expected stub error, got nil")
 	}
@@ -54,9 +55,10 @@ func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
 }
 
 func TestRetrieval_RejectsUseKG(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 	rt := NewRetrievalTool()
-	out, err := rt.InvokableRun(context.Background(), `{"query":"x","use_kg":true}`)
+	out, err := rt.InvokableRun(ctx, `{"query":"x","use_kg":true}`)
 	if !errors.Is(err, ErrGraphRAGNotSupported) {
 		t.Fatalf("err = %v, want ErrGraphRAGNotSupported", err)
 	}
@@ -66,10 +68,11 @@ func TestRetrieval_RejectsUseKG(t *testing.T) {
 }
 
 func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	info, err := rt.Info(context.Background())
+	info, err := rt.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -102,10 +105,11 @@ func TestRetrieval_InfoMatchesPythonMeta(t *testing.T) {
 }
 
 func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	out, err := rt.InvokableRun(context.Background(), "")
+	out, err := rt.InvokableRun(ctx, "")
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -126,7 +130,7 @@ func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
@@ -146,7 +150,7 @@ func TestRetrieval_PassesUserIDWhenTenantIDMissing(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
@@ -183,7 +187,9 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
 
-	_, err = rt.InvokableRun(context.Background(), `{"query":"hello"}`)
+	ctx := t.Context()
+
+	_, err = rt.InvokableRun(ctx, `{"query":"hello"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -226,7 +232,8 @@ func TestRetrieval_ExplicitZeroSimilarityArgsOverrideDefaults(t *testing.T) {
 		SimilarityThreshold:      &similarityThreshold,
 		KeywordsSimilarityWeight: &keywordsSimilarityWeight,
 	})
-	_, err := retrievalTool.InvokableRun(context.Background(), `{"query":"hello","similarity_threshold":0,"keywords_similarity_weight":0}`)
+	ctx := t.Context()
+	_, err := retrievalTool.InvokableRun(ctx, `{"query":"hello","similarity_threshold":0,"keywords_similarity_weight":0}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -274,9 +281,10 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 
 func TestRetrieval_UsesEmptyResponseForEmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	rt := NewRetrievalToolWithDefaults(retrievalArgs{EmptyResponse: "No query or result."})
-	out, err := rt.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := rt.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -314,7 +322,7 @@ func TestRetrieval_ResolvesCanvasVariables(t *testing.T) {
 	state.SetVar("source", "ids", []any{"kb-1", "kb-2"})
 	state.SetVar("source", "query", "semantic question")
 	state.SetVar("source", "value", "2026")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	ids, err := resolveRetrievalDatasetIDs(ctx, []string{"source@ids"})
 	if err != nil {
@@ -347,17 +355,18 @@ func TestRetrieval_OmitsUnsetEmptyResponseFromArguments(t *testing.T) {
 }
 
 func TestRetrieval_UsesEmptyResponseWhenSearchHasNoChunks(t *testing.T) {
+	ctx := t.Context()
 	prev := GetRetrievalService()
 	SetRetrievalService(staticRetrievalService{})
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	rt := NewRetrievalToolWithDefaults(retrievalArgs{DatasetIDs: []string{"kb-1"}, EmptyResponse: "No matching chunk."})
-	out, err := rt.InvokableRun(context.Background(), `{"query":"love"}`)
+	out, err := rt.InvokableRun(ctx, `{"query":"love"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var result retrievalResult
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
+	if err = json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if result.FormalizedContent != "No matching chunk." {
@@ -384,13 +393,14 @@ func TestRetrieval_IgnoresCanvasMetadataNodeParams(t *testing.T) {
 }
 
 func TestRetrieval_ModelArgsOverrideNodeDatasetIDs(t *testing.T) {
+	ctx := t.Context()
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}
 	SetRetrievalService(svc)
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	rt := NewRetrievalToolWithDefaults(retrievalArgs{DatasetIDs: []string{"kb-default"}, TopN: 3})
-	_, err := rt.InvokableRun(context.Background(), `{"query":"hello","dataset_ids":["kb-call"],"top_n":5}`)
+	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-call"],"top_n":5}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -421,7 +431,7 @@ func TestRetrieval_RecordsFrontendReferencePayload(t *testing.T) {
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	state := runtime.NewCanvasState("run-1", "task-1")
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)

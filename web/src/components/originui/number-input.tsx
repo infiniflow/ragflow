@@ -31,6 +31,7 @@ const NumberInput = forwardRef<
     className,
     value: initialValue,
     onChange,
+    onBlur: onBlurProp,
     height,
     min = 0,
     max = Infinity,
@@ -83,23 +84,48 @@ const NumberInput = forwardRef<
     }
 
     if (!isNaN(newValue)) {
-      if (newValue > max || newValue < min) {
-        return;
-      }
+      // Show the raw typed value as-is, even when it falls outside [min, max]
+      // (e.g. deleting "1024" → "102" when min=512), so the controlled input
+      // never snaps back mid-edit. Out-of-range values are not propagated to
+      // the form; handleBlur clamps them into range on focus loss.
       setValue(newValue);
-      onChange?.(newValue);
+      if (newValue >= min && newValue <= max) {
+        onChange?.(newValue);
+      }
     }
   };
 
-  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(() => {
-    if (isNumber(value)) {
-      onChange?.(value);
-    } else {
-      const previousValue = valueRef.current ?? min;
-      setValue(previousValue);
-      onChange?.(previousValue);
-    }
-  }, [min, onChange, value]);
+  const handleBlur: FocusEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      if (isNumber(value)) {
+        let finalValue = value;
+        if (value < min) {
+          finalValue = min;
+        } else if (value > max) {
+          finalValue = max;
+        }
+        if (finalValue !== value) {
+          setValue(finalValue);
+        }
+        onChange?.(finalValue);
+      } else {
+        const previousValue = valueRef.current ?? min;
+        let finalValue = previousValue;
+        if (previousValue < min) {
+          finalValue = min;
+        } else if (previousValue > max) {
+          finalValue = max;
+        }
+        setValue(finalValue);
+        onChange?.(finalValue);
+      }
+      // Keep the caller's blur notification (e.g. react-hook-form's
+      // field.onBlur) alive — it is destructured out of props so that the
+      // spread below cannot silently replace this handler.
+      onBlurProp?.(e);
+    },
+    [min, max, onChange, onBlurProp, value],
+  );
 
   const style = useMemo(
     () => ({
