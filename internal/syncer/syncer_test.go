@@ -455,6 +455,45 @@ func TestNATSSchedulerStartupPaginatesScheduledTasks(t *testing.T) {
 	}
 }
 
+func TestListScheduledTasksPaginatesNullUpdateTime(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-0", dao.TaskTypeSync)
+	insertSyncLog(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	insertSyncLog(t, db, "conn-1", "kb-1", "task-2", dao.TaskTypeSync)
+	if err := db.Model(&entity.SyncLogs{}).
+		Where("id IN ?", []string{"task-0", "task-1", "task-2"}).
+		UpdateColumns(map[string]any{"update_time": gorm.Expr("NULL"), "update_date": gorm.Expr("NULL")}).Error; err != nil {
+		t.Fatalf("clear update timestamps: %v", err)
+	}
+
+	taskDAO := dao.NewSyncTaskDAO(db)
+	firstPage, err := taskDAO.ListScheduledTasks(t.Context(), 2, nil)
+	if err != nil {
+		t.Fatalf("list first page: %v", err)
+	}
+	if len(firstPage) != 2 {
+		t.Fatalf("first page length = %d, want 2", len(firstPage))
+	}
+	cursor := firstPage[len(firstPage)-1].Cursor()
+	secondPage, err := taskDAO.ListScheduledTasks(t.Context(), 2, &cursor)
+	if err != nil {
+		t.Fatalf("list second page: %v", err)
+	}
+
+	seen := map[string]struct{}{}
+	for _, task := range append(firstPage, secondPage...) {
+		seen[task.ID] = struct{}{}
+	}
+	if len(seen) != 3 {
+		t.Fatalf("listed unique tasks = %d, want 3", len(seen))
+	}
+	for _, taskID := range []string{"task-0", "task-1", "task-2"} {
+		if _, ok := seen[taskID]; !ok {
+			t.Fatalf("task %s was not listed", taskID)
+		}
+	}
+}
+
 // TestNATSSchedulerStartupDelaysFreshScheduledTask verifies startup keeps refresh windows without periodic DB scans.
 func TestNATSSchedulerStartupDelaysFreshScheduledTask(t *testing.T) {
 	db := setupSyncerDB(t)

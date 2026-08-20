@@ -122,10 +122,10 @@ func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int, cursor 
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
 		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune})
 	if cursor != nil {
-		query = query.Where("sync_logs.update_time < ? OR (sync_logs.update_time = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
+		query = query.Where("COALESCE(sync_logs.update_time, 0) < ? OR (COALESCE(sync_logs.update_time, 0) = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
 	}
 	if err := query.
-		Order("sync_logs.update_time DESC, sync_logs.id DESC").
+		Order("COALESCE(sync_logs.update_time, 0) DESC, sync_logs.id DESC").
 		Limit(limit).
 		Scan(&rows).Error; err != nil {
 		return nil, err
