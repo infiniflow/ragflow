@@ -36,14 +36,18 @@
 //     id. Persist the id so the next call can resume via
 //     compose.ResumeWithData (signalled through root:
 //     __resume_interrupt_id__ + __resume_data__).
-//  3. Cancel / timeout (errors.Is(err, context.Canceled) etc.):
-//     silently close. The HTTP handler has already detached.
+//  3. Cancellation (errors.Is(err, context.Canceled)):
+//     emit `cancelled` so protocol adapters do not mistake an aborted run
+//     for a successful empty completion. The HTTP handler may already have
+//     detached; in that case the event is simply dropped by the forwarding
+//     layer.
 //  4. Other errors: emit `error` event with the err.Error() string.
 //
 // SSE wire contract (matches the handler envelope):
 //   - RunEvent.Type == "message"          → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
 //   - RunEvent.Type == "error"            → {message: <string>}
+//   - RunEvent.Type == "cancelled"        → {message: <string>}
 package canvas
 
 import (
@@ -133,6 +137,11 @@ type WaitingForUserEvent struct {
 
 // ErrorEvent is the JSON payload for Type=="error" frames.
 type ErrorEvent struct {
+	Message string `json:"message"`
+}
+
+// CancelledEvent is the JSON payload for Type=="cancelled" frames.
+type CancelledEvent struct {
 	Message string `json:"message"`
 }
 
@@ -276,6 +285,13 @@ func (r *Runner) Run(
 		_, runErr := safeInvoke(ctx, run, root)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) {
+				push(out, RunEvent{
+					Type:      "cancelled",
+					Data:      safeEventJSON(CancelledEvent{Message: "Agent run was cancelled."}),
+					MessageID: messageID,
+					CreatedAt: nowUnix(),
+					SessionID: sessionID,
+				})
 				return
 			}
 			if ctxs := ExtractInterruptContexts(runErr); len(ctxs) > 0 {

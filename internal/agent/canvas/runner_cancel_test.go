@@ -6,6 +6,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -64,5 +65,37 @@ func TestRunnerParentContextCancelsManagedRun(t *testing.T) {
 	case <-returned:
 	case <-time.After(time.Second):
 		t.Fatal("RunFunc was left running after parent context cancellation")
+	}
+}
+
+func TestRunnerEmitsCancelledEvent(t *testing.T) {
+	r := NewRunner()
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	events := r.Run(ctx, blockingRun(started), "canvas", "session", nil, map[string]any{})
+	<-started
+	cancel()
+
+	select {
+	case ev, ok := <-events:
+		if !ok {
+			t.Fatal("run event channel closed without a cancellation event")
+		}
+		if ev.Type != "cancelled" {
+			t.Fatalf("event type = %q, want cancelled", ev.Type)
+		}
+		var payload CancelledEvent
+		if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+			t.Fatalf("decode cancellation event: %v", err)
+		}
+		if payload.Message != "Agent run was cancelled." {
+			t.Errorf("cancellation message = %q, want default message", payload.Message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cancellation event")
+	}
+
+	if _, ok := <-events; ok {
+		t.Fatal("run event channel should close after cancellation event")
 	}
 }

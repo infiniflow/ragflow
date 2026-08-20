@@ -57,6 +57,7 @@ type openAICompatStreamDelta struct {
 	ToolCalls      any    `json:"tool_calls"`
 	Reference      any    `json:"reference,omitempty"`
 	Error          any    `json:"error,omitempty"`
+	Cancelled      any    `json:"cancelled,omitempty"`
 	WaitingForUser any    `json:"waiting_for_user,omitempty"`
 }
 
@@ -163,6 +164,13 @@ func (h *AgentHandler) streamOpenAICompat(
 			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
 			_ = writeOpenAICompatSSE(c, chunk)
 			return
+		case "cancelled":
+			message := openAICompatRunEventMessage(ev, "Agent run was cancelled.")
+			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "cancelled")
+			chunk.Choices[0].Delta.Cancelled = map[string]string{"message": message}
+			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
+			_ = writeOpenAICompatSSE(c, chunk)
+			return
 		}
 
 		if ev.Type != "message" && ev.Type != "message_end" {
@@ -231,6 +239,12 @@ func collectOpenAICompatCompletion(
 				message += " " + waiting.Tips
 			}
 			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, message)
+		}
+		if ev.Type == "cancelled" {
+			return openAICompatCompletion{}, common.NewCodedError(
+				common.CodeConflict,
+				openAICompatRunEventMessage(ev, "Agent run was cancelled."),
+			)
 		}
 		if ev.Type != "message" && ev.Type != "message_end" {
 			continue
