@@ -1740,7 +1740,7 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 		return
 	}
 	key := c.Param("key")
-	if username == "" || key == "" {
+	if key == "" {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Username and key are required")
 		return
 	}

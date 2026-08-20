@@ -272,7 +272,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 func getUserName(c *gin.Context) (string, error) {
 	username := c.Param("username")
 	if username == "" {
-		err := errors.New("Username is required")
+		err := errors.New("username is required")
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return "", err
 	}
@@ -467,7 +467,7 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 		return
 	}
 	key := c.Param("token")
-	if username == "" || key == "" {
+	if key == "" {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Username and key are required")
 		return
 	}
