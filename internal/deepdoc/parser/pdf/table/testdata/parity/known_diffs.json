@@ -177,6 +177,30 @@
       ],
       "permanent": true,
       "reason": "table_rotation_test.pdf contains three physical tables: page 1 has two tables (grey header 'Header A/B/C', blue header), page 2 has the blue-header table rotated 90 degrees clockwise. Go emits three TableItems (6x3 + 6x3 + 3x6, 15 grid rows total); the rotated table is content-correct (each row = Cell 4A, Cell 3A, Cell 2A, Cell 1A, Header A, plus one padding column). Python's golden emits TWO tables: the first 5x3 is close, but the second is an 8x7 grid that MERGES the page-1 blue-header table with the page-2 rotated table — first 5 rows padded to 7 columns (4 empty columns + 3 data columns), last 3 rows the rotated content, with garbled cell text on both sides ('Header B Cell 1B', 'Cell 2A Cell 3A') inherited from the shared TSR dump (OCR box vs TSR cell boundary offset). The divergence is therefore TABLE SEGMENTATION + column-count, NOT Go cell-content error: Go's split matches the physical PDF structure, and the residual text misplacement is identical on both sides (same TSR input), not a Go assembly bug. Because the cell TEXT is identical on both sides, the old shape-blind gridSim reads 100% — it could NOT see the 15x[...3x12,6x3] vs 13x[3x5,7x8] structural gap. The harness now adds a SHAPE-AWARE structure metric (gridStructureSimilarity): gridSim=100% AND structSim=100% is required for a PDF to be 'content matched' (html-divergent); a go_intentional PDF whose structSim<100 (like this one, structSim=35.7%) is classified INTENTIONAL instead of being hidden under gridSim=100%. Python's merged 8x7 grid is a segmentation defect; Go's split is deliberately retained."
+    },
+    {
+      "id": "table-span-follow-tsr-geometry",
+      "tag": "go_intentional",
+      "kind": "span_coverage",
+      "applies_to": [
+        "screenshot.pdf",
+        "asset-recovery-services-sd-zh-tw.pdf",
+        "asset-recovery-services-data-sanitization-for-enterprise-and-data-destruction-for-enterprise-sb-zh-tw.pdf",
+        "data-migration-services-for-cloud-sb-zh-tw.pdf",
+        "BookRAG A Hierarchical Structure-aware Index-based Approach.pdf",
+        "qa.pdf",
+        "lazards-lcoeplus-june-2025.pdf",
+        "prodeploy-plus-dell-powervault-jbod-2u-4u-expansion-for-servers-sb-zh-tw.pdf"
+      ],
+      "fields": [
+        "GroupCells",
+        "CalSpans",
+        "MarkCoveredCells",
+        "goTableRows",
+        "RowsToStrings"
+      ],
+      "permanent": true,
+      "reason": "These real-PDF tables carry TSR-detected 'table spanning cell' components (verified against the physical documents: screenshot's double-layer 泡点MPa column spans 4 rows; lazards' multi-level column-group headers span columns; dell/asset-recovery/prodeploy marketing templates merge the 服務附件/排除項目 column across rows; asset-recovery-sd's cross-page Terms table merges its first column rows 1-2 and first row cols 2-3). Go's GroupCells labels the span-origin cell 'table spanning cell', keeps every covered cell's row x column bbox, CalSpans folds the covered text into the span cell and tags covered cells, and downstream (goTableRows / RowsToStrings) drops covered cells so per-row column counts follow the span geometry. Python's __cal_spans only folds when a BOX carries an SP annotation, assigned by find_overlapped_with_threshold(box, spans, thr=0.3); when no box in the merged region overlaps the span component by >=30% (empty merged region, or small text boxes inside a large span bbox), Python emits NO colspan/rowspan and renders a flat grid with the merged columns repeated as empty cells. For these PDFs the Python golden shows zero colspan while the TSR spans are real, so Go's structure (merged cells, fewer columns per covered row) is judged at least as good as Python's flat grid. Deliberate divergence, not a regression target."
     }
   ]
 }
