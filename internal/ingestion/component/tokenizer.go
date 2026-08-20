@@ -390,16 +390,24 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		return nil, 0, fmt.Errorf("tokenizer: embedding requested but encoder resolution returned nil")
 	}
 
+	// Prefer summary for embedding (mirrors Python task_executor.py:858: questions > summary > text).
 	texts := make([]string, 0, len(chunks))
 	pairs := make([]int, 0, len(chunks))
 	for i, ck := range chunks {
-		raw := concatFields(ck, c.param.Fields)
+		var raw string
+		if q := strings.TrimSpace(ck.Questions); q != "" {
+			raw = q
+		} else if s := strings.TrimSpace(ck.Summary); s != "" {
+			raw = s
+		} else {
+			raw = concatFields(ck, c.param.Fields)
+		}
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
 		txt = strings.TrimSpace(txt)
-		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		if txt == "" {
 			continue
 		}
+		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		texts = append(texts, trunc)
 		pairs = append(pairs, i)
 	}

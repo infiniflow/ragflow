@@ -814,3 +814,152 @@ func TestTextPayloadToChunks_B1B2(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+func TestTokenizer_Embedding_PrefersSummaryOverText(t *testing.T) {
+	_, stub := withStubEmbedder(t, 4)
+	comp, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := comp.(*TokenizerComponent)
+
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "original text that should be ignored", "summary": "concise summary for embedding"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 2 {
+		t.Fatalf("expected 2 embed calls (title + content), got %d", len(stub.callInputs))
+	}
+	got := stub.callInputs[1][0]
+	if got != "concise summary for embedding" {
+		t.Errorf("embedding text = %q, want summary", got)
+	}
+}
+
+func TestTokenizer_Embedding_WhitespaceSummaryFallsBackToText(t *testing.T) {
+	_, stub := withStubEmbedder(t, 4)
+	comp, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := comp.(*TokenizerComponent)
+
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "fallback text", "summary": "   "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 2 {
+		t.Fatalf("expected 2 embed calls, got %d", len(stub.callInputs))
+	}
+	got := stub.callInputs[1][0]
+	if got != "fallback text" {
+		t.Errorf("whitespace summary should fallback to text, got %q", got)
+	}
+}
+
+func TestTokenizer_Embedding_PrefersQuestionsOverSummary(t *testing.T) {
+	_, stub := withStubEmbedder(t, 4)
+	comp, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := comp.(*TokenizerComponent)
+
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "text", "summary": "summary", "questions": "what is ragflow?"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 2 {
+		t.Fatalf("expected 2 embed calls, got %d", len(stub.callInputs))
+	}
+	got := stub.callInputs[1][0]
+	if got != "what is ragflow?" {
+		t.Errorf("questions should take priority over summary, got %q", got)
+	}
+}
+
+func TestTokenizer_Embedding_FallsBackToTextWhenNoSummary(t *testing.T) {
+	_, stub := withStubEmbedder(t, 4)
+	comp, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := comp.(*TokenizerComponent)
+
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "plain text only"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 2 {
+		t.Fatalf("expected 2 embed calls, got %d", len(stub.callInputs))
+	}
+	got := stub.callInputs[1][0]
+	if got != "plain text only" {
+		t.Errorf("expected text fallback, got %q", got)
+	}
+}
+
+func TestTokenizer_Embedding_WhitespaceQuestionsFallsBackToSummary(t *testing.T) {
+	_, stub := withStubEmbedder(t, 4)
+	comp, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	c := comp.(*TokenizerComponent)
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"name":          "doc.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "text", "summary": "summary value", "questions": "   "},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 2 {
+		t.Fatalf("expected 2 embed calls, got %d", len(stub.callInputs))
+	}
+	got := stub.callInputs[1][0]
+	if got != "summary value" {
+		t.Errorf("whitespace questions should fallback to summary, got %q", got)
+	}
+}
