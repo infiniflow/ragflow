@@ -88,7 +88,7 @@ func TestOllamaChatMapsMultimodalImages(t *testing.T) {
 			return
 		}
 		assertOllamaMultimodalRequest(t, body, false)
-		_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
 	}))
 	defer srv.Close()
 
@@ -118,7 +118,7 @@ func TestOllamaStreamingChatMapsMultimodalImages(t *testing.T) {
 			return
 		}
 		assertOllamaMultimodalRequest(t, body, true)
-		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":false}\n{\"done\":true}\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
 	}))
 	defer srv.Close()
 
