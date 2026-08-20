@@ -37,6 +37,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_cloud_storage", NewGoogleCloudStorageConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
+	registerBuiltIn(registry, "jira", NewJiraConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
 	registerBuiltIn(registry, "notion", NewNotionConnector)
 	registerBuiltIn(registry, "rest_api", NewRestAPIConnector)
