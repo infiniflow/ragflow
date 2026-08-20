@@ -1093,10 +1093,6 @@ func (w engineWriter) ProjectWikiGraph(ctx context.Context, tenant, kb string) e
 	if err != nil {
 		return err
 	}
-	// Telemetry: confirm how many merged wiki_page rows survived WriteMerged.
-	// If this is 0 while WriteMerged reported wiki_page:N, the merged rows are
-	// not queryable under (compile_kwd=wiki_page AND available_int=1) — point at the
-	// stored field values, not a downstream delete.
 	common.Info("knowledge_compile: ProjectWikiGraph load",
 		zap.String("kb_id", kb),
 		zap.Int("merged_wiki_pages_loaded", len(pages)))
