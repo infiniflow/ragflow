@@ -19,11 +19,12 @@ package connector
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/dao"
 	"sync"
 )
 
 // Factory creates a connector for a task context.
-type Factory func(ctx context.Context, taskContext any) (Connector, error)
+type Factory func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error)
 
 // ConfigFactory creates a connector from raw connector config.
 type ConfigFactory func(config map[string]any) (Connector, error)
@@ -58,24 +59,8 @@ func (r *Registry) RegisterConfigFactory(source string, factory ConfigFactory) {
 }
 
 // Open creates a connector for a task context.
-func (r *Registry) Open(ctx context.Context, taskContext any) (Connector, error) {
-	row, ok := taskContext.(interface{ ConnectorSource() string })
-	if ok {
-		return r.openSource(ctx, row.ConnectorSource(), taskContext)
-	}
-	sourceProvider, ok := taskContext.(interface{ Source() string })
-	if ok {
-		return r.openSource(ctx, sourceProvider.Source(), taskContext)
-	}
-	rowContext, ok := taskContext.(struct{ Connector struct{ Source string } })
-	if ok {
-		return r.openSource(ctx, rowContext.Connector.Source, taskContext)
-	}
-	source := ""
-	if value, ok := any(taskContext).(interface{ GetSource() string }); ok {
-		source = value.GetSource()
-	}
-	return r.openSource(ctx, source, taskContext)
+func (r *Registry) Open(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
+	return r.openSource(ctx, taskContext.Connector.Source, taskContext)
 }
 
 // OpenFromConfig builds a connector from a raw config map.
@@ -90,7 +75,7 @@ func (r *Registry) OpenFromConfig(source string, config map[string]any) (Connect
 }
 
 // openSource creates a connector for a known source.
-func (r *Registry) openSource(ctx context.Context, source string, taskContext any) (Connector, error) {
+func (r *Registry) openSource(ctx context.Context, source string, taskContext dao.SyncTaskContext) (Connector, error) {
 	r.mu.RLock()
 	factory := r.factories[source]
 	r.mu.RUnlock()

@@ -18,7 +18,6 @@ package connector
 
 import (
 	"context"
-	"fmt"
 
 	"ragflow/internal/dao"
 )
@@ -53,11 +52,7 @@ func registerBuiltIn[T Connector](registry *Registry, source string, factory fun
 	registry.RegisterConfigFactory(source, func(config map[string]any) (Connector, error) {
 		return factory(config)
 	})
-	registry.Register(source, func(ctx context.Context, taskContext any) (Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, fmt.Errorf("%s connector received an invalid task context", source)
-		}
-		return factory(map[string]any(row.Connector.Config))
+	registry.Register(source, func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
+		return factory(map[string]any(taskContext.Connector.Config))
 	})
 }
