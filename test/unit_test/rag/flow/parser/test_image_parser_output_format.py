@@ -136,8 +136,7 @@ def test_image_parser_emits_json_payload():
         )
 
 
-@pytest.mark.parametrize("conf_output_format", ["text", "json", "html", "markdown"])
-def test_image_parser_runtime_output_format_is_user_config_independent(conf_output_format):
+def test_image_parser_runtime_output_format_is_user_config_independent():
     """Even if a user configures ``image.output_format='text'``, the runtime must still emit ``'json'``.
 
     This is the user-visible behaviour behind #16835. The DSL example file
@@ -156,12 +155,10 @@ def test_image_parser_runtime_output_format_is_user_config_independent(conf_outp
         pytest.fail(
             "Parser._image's set_output('output_format', ...) second arg must "
             f"be a hardcoded string literal; got {type(value_arg).__name__}: "
-            f"{ast.dump(value_arg)}. A user-configurable value of "
-            f"{conf_output_format!r} would still break #16835."
+            f"{ast.dump(value_arg)}. A user-configurable value would still break #16835."
         )
 
     assert value_arg.value == "json", (
-        f"user set setups['image']['output_format']={conf_output_format!r} but "
-        f"the runtime must still emit 'json' so the chunker routes to the "
+        f"the runtime must emit 'json' so the chunker routes to the "
         f"JSON branch and reads the OCR/VLM payload. Got {value_arg.value!r}."
     )
