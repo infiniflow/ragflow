@@ -444,6 +444,14 @@ func (TitleChunkerParam) Defaults() TitleChunkerParam {
 // expressible in pure-data terms: when Method == "hierarchy" the
 // hierarchy depth and level config must be present.
 func (p *TitleChunkerParam) Validate() error {
+	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
+	// integer in [128, 8000] (mirrors Python title_chunker #18455). Checked
+	// BEFORE the method switch so an unset method cannot bypass the range.
+	if p.ChunkTokenCap != 0 {
+		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
+			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
+		}
+	}
 	switch p.Method {
 	case "hierarchy", "group":
 	case "":
@@ -459,13 +467,6 @@ func (p *TitleChunkerParam) Validate() error {
 	}
 	if p.Method == "hierarchy" && (p.Hierarchy == nil || *p.Hierarchy <= 0) {
 		return errRequiredField{Field: "hierarchy"}
-	}
-	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
-	// integer in [128, 8000] (mirrors Python title_chunker #18455).
-	if p.ChunkTokenCap != 0 {
-		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
-			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
-		}
 	}
 	return nil
 }

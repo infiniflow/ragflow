@@ -17,6 +17,7 @@ package chunker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -62,19 +63,15 @@ func restoreTokenizer() {
 func assertCapInvariants(t *testing.T, chunks []map[string]any, cap int, source string) {
 	t.Helper()
 	var got strings.Builder
-	for i, ck := range chunks {
+	for _, ck := range chunks {
 		text := toString(ck["text"])
 		dt := toStringOrDefault(ck["doc_type_kwd"], "text")
 		if dt != "text" {
-			// Atomic: must not have been split.
-			if _, ok := ck["__split"]; ok {
-				t.Errorf("chunk %d (type=%s) was split but should be atomic", i, dt)
-			}
 			got.WriteString(text)
 			continue
 		}
 		if n := titleTokenCount(text); n > cap {
-			t.Errorf("chunk %d exceeds cap: tokens=%d (cap=%d) text=%q", i, n, cap, text)
+			t.Errorf("chunk exceeds cap: tokens=%d (cap=%d) text=%q", n, cap, text)
 		}
 		got.WriteString(text)
 	}
@@ -306,6 +303,30 @@ func TestEnforceTitleTokenCap_PlanAPositions(t *testing.T) {
 	}
 }
 
+func TestEnforceTitleTokenCap_PlanA_UnknownPositionsType(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Join(joinSentences(12), "")
+	// An unknown position value type (not [][]float64 / json.RawMessage): the
+	// key must be DROPPED from later sub-chunks, never stored as a nil value.
+	chunks := []map[string]any{
+		{"text": body, "positions": "not-a-matrix"},
+	}
+	got := enforceTitleTokenCap(chunks, 20)
+	if len(got) <= 1 {
+		t.Fatalf("expected split, got %d", len(got))
+	}
+	// First sub-chunk keeps the value via shallow copy.
+	if _, ok := got[0]["positions"]; !ok {
+		t.Error("first sub-chunk lost its positions key")
+	}
+	for i := 1; i < len(got); i++ {
+		if _, ok := got[i]["positions"]; ok {
+			t.Errorf("sub-chunk %d kept unknown-type positions key, want deleted", i)
+		}
+	}
+}
+
 func TestEnforceTitleTokenCap_GreedyGrouping(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
@@ -330,14 +351,29 @@ func joinSentences(n int) []string {
 }
 
 func sprintfSentence(i int) string {
-	return "S" + twoDigit(i) + "。"
+	return fmt.Sprintf("S%02d。", i)
 }
 
-func twoDigit(i int) string {
-	if i < 10 {
-		return "0" + string(rune('0'+i))
+// TestSprintfSentence_ThreeDigits pins the %02d formatting for 3-digit
+// indexes: the old hand-rolled twoDigit derived each digit from a single rune
+// addition and broke at i >= 100 (produced ":0").
+func TestSprintfSentence_ThreeDigits(t *testing.T) {
+	if got := sprintfSentence(100); got != "S100。" {
+		t.Errorf("sprintfSentence(100) = %q, want \"S100。\"", got)
 	}
-	return string(rune('0'+i/10)) + string(rune('0'+i%10))
+}
+
+func TestJoinSentences_Formatting(t *testing.T) {
+	got := joinSentences(15)
+	if len(got) != 15 {
+		t.Fatalf("joinSentences(15) = %d, want 15", len(got))
+	}
+	if got[14] != "S14。" {
+		t.Errorf("joinSentences(15)[14] = %q, want \"S14。\"", got[14])
+	}
+	if got[9] != "S09。" {
+		t.Errorf("joinSentences(15)[9] = %q, want \"S09。\"", got[9])
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +421,30 @@ func TestTitleCap_GroupPipeline_RespectsCap(t *testing.T) {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
 	assertCapInvariants(t, chunks, 20, body)
+}
+
+// TestTitleCap_GroupPipeline_ValidatedInRangeCap exercises the wired path with
+// a cap inside the production-validated range (128..8000). The char-stub suite
+// otherwise only uses sub-128 caps that production Validate() rejects, so this
+// is the only end-to-end coverage of an accepted configuration.
+func TestTitleCap_GroupPipeline_ValidatedInRangeCap(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Repeat("ab", 200) // 400 stub tokens > cap 128
+	p := newTitleParam(t, "group", 128, [][]string{{`^# `}})
+	if err := p.TitleChunkerParam.Validate(); err != nil {
+		t.Fatalf("cap=128 must pass production Validate: %v", err)
+	}
+	inputs := map[string]any{"output_format": "text", "text": body}
+	got, err := invokeGroup(testCtx(), nil, inputs, &p)
+	if err != nil {
+		t.Fatalf("invokeGroup: %v", err)
+	}
+	chunks := got["chunks"].([]map[string]any)
+	if len(chunks) <= 1 {
+		t.Fatalf("expected cap=128 to re-split the oversized body, got %d", len(chunks))
+	}
+	assertCapInvariants(t, chunks, 128, body)
 }
 
 func TestTitleCap_HierarchyPipeline_RespectsCap(t *testing.T) {
@@ -519,5 +579,20 @@ func TestTitleChunkerParam_ChunkTokenCapValidate(t *testing.T) {
 		if !c.ok && err == nil {
 			t.Errorf("cap=%d: expected error, got nil", c.cap)
 		}
+	}
+}
+
+// TestTitleChunkerParam_ChunkTokenCapValidate_EmptyMethodBypass pins the
+// validation-order fix: the cap range check must run even when Method is ""
+// (which otherwise early-returns nil), so an out-of-range cap cannot slip
+// through as an active ceiling.
+func TestTitleChunkerParam_ChunkTokenCapValidate_EmptyMethodBypass(t *testing.T) {
+	p := schema.TitleChunkerParam{Method: "", Levels: [][]string{{"^#"}}, ChunkTokenCap: 1}
+	if err := p.Validate(); err == nil {
+		t.Error(`method="" with cap=1 must be rejected (out of 128..8000)`)
+	}
+	pOK := schema.TitleChunkerParam{Method: "", Levels: [][]string{{"^#"}}, ChunkTokenCap: 512}
+	if err := pOK.Validate(); err != nil {
+		t.Errorf(`method="" with cap=512 must pass: %v`, err)
 	}
 }

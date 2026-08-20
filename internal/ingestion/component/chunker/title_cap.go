@@ -202,22 +202,21 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		return []map[string]any{chunk}
 	}
 
-	hasPDF := hasKey(chunk, "_pdf_positions")
-	hasPos := hasKey(chunk, "positions")
-
 	out := make([]map[string]any, 0, len(finalGroups))
 	for i, g := range finalGroups {
 		sub := shallowCopyChunk(chunk)
 		sub["text"] = g
-		// Plan A: only the first sub-chunk keeps the position matrix.
+		// Plan A: only the first sub-chunk keeps the position matrix; later
+		// sub-chunks carry an empty matrix of the same type, or drop the key
+		// when the source type is unknown.
 		if i > 0 {
-			if hasPDF {
-				sub["_pdf_positions"] = emptyPositionsLike(chunk["_pdf_positions"])
+			if empty, ok := emptyPositionsLike(chunk["_pdf_positions"]); ok {
+				sub["_pdf_positions"] = empty
 			} else {
 				delete(sub, "_pdf_positions")
 			}
-			if hasPos {
-				sub["positions"] = emptyPositionsLike(chunk["positions"])
+			if empty, ok := emptyPositionsLike(chunk["positions"]); ok {
+				sub["positions"] = empty
 			} else {
 				delete(sub, "positions")
 			}
@@ -238,24 +237,19 @@ func shallowCopyChunk(c map[string]any) map[string]any {
 	return m
 }
 
-// hasKey reports whether c carries a non-nil value for key.
-func hasKey(c map[string]any, key string) bool {
-	v, ok := c[key]
-	return ok && v != nil
-}
-
 // emptyPositionsLike returns an empty coordinate array of the same Go type as
 // the source value (mergePositionMatrix produces [][]float64; tests may feed
 // json.RawMessage), so a Plan-A sub-chunk's position field stays type-consistent
-// with the first sub-chunk's.
-func emptyPositionsLike(v any) any {
+// with the first sub-chunk's. The second result is false for unknown types;
+// the caller then DELETES the key instead of storing a nil-valued one.
+func emptyPositionsLike(v any) (any, bool) {
 	switch v.(type) {
 	case [][]float64:
-		return [][]float64{}
+		return [][]float64{}, true
 	case json.RawMessage:
-		return json.RawMessage("[]")
+		return json.RawMessage("[]"), true
 	default:
-		return nil
+		return nil, false
 	}
 }
 

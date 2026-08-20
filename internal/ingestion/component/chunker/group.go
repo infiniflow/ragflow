@@ -128,9 +128,10 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 // sections, merge adjacent text records, build chunks, enforce the token cap
 // (title family only), and perform on-demand PDF cropping. GroupTitleChunker
 // feeds records in input order; ManualChunker feeds them after a (page, top,
-// left) resort. Sharing this body guarantees both strategies emit byte-identical
-// output for coordinate-free input (the docx manual branch) — the no-regression
-// contract locked by TestManualChunker_NoPositionsEqualsGroupChunker.
+// left) resort. Sharing this body keeps both strategies byte-identical for
+// coordinate-free input as long as no built chunk exceeds the token cap
+// (TestManualChunker_NoPositionsEqualsGroupChunker); once one does, only
+// GroupTitleChunker re-splits it (ManualChunker is exempt).
 //
 // tokenCap is the title-family token ceiling (chunk_token_cap). ManualChunker
 // must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
