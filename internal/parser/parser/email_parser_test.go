@@ -116,6 +116,102 @@ func TestEmailParser_EmlText(t *testing.T) {
 	}
 }
 
+// TestEmailParser_EmlTextChunkText covers the KB chunk-quality bug behind
+// Feishu issue om_x100b675dcd7a18a4c2cbfff662a404e: the text output of an
+// .eml with an RFC 2047 encoded subject, transport headers (DKIM/ARC/
+// Received) and an HTML part used to carry (1) the flattened metadata dump,
+// (2) the raw "=?utf-8?B?...?=" subject blob and (3) shredded HTML markup —
+// all of which ended up in chunks. The text output must instead skip the
+// metadata dump, decode the subject, and flatten the HTML part to its
+// visible text. The JSON output keeps metadata and raw text_html unchanged.
+func TestEmailParser_EmlTextChunkText(t *testing.T) {
+	ctx := t.Context()
+	// "=?utf-8?B?5bim6ZmE5Lu255qEZW1haWw=?=" decodes to "带附件的email";
+	// "=?utf-8?B?5a6J?=" decodes to "安".
+	raw := strings.Join([]string{
+		"From: =?utf-8?B?5a6J?= <asiro@qq.com>",
+		"To: someone@test.com",
+		"Subject: =?utf-8?B?5bim6ZmE5Lu255qEZW1haWw=?=",
+		"DKIM-Signature: v=1; a=rsa-sha256; b=abc123",
+		"ARC-Seal: i=1; cv=none",
+		"Received: from mail.example.com by mx.example.com",
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/alternative; boundary=altbound",
+		"",
+		"--altbound",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"带附件的email",
+		"--altbound",
+		"Content-Type: text/html; charset=utf-8",
+		"",
+		`<div><img style="width:100%" src="http://example.com/x.png"><div>带附件的email</div></div>`,
+		"--altbound--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "text",
+		"fields":        []string{"from", "to", "subject", "body"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+
+	// (1) No transport-header dump.
+	for _, noise := range []string{"metadata:", "dkim-signature", "arc-seal", "received:"} {
+		if strings.Contains(strings.ToLower(result.Text), noise) {
+			t.Errorf("text output contains header noise %q: %q", noise, result.Text)
+		}
+	}
+	// (2) Subject/from decoded from RFC 2047.
+	if !strings.Contains(result.Text, "subject:带附件的email") {
+		t.Errorf("subject not decoded: %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "from:安 <asiro@qq.com>") {
+		t.Errorf("from not decoded: %q", result.Text)
+	}
+	if strings.Contains(result.Text, "=?utf-8?") {
+		t.Errorf("raw encoded-word leaked into text: %q", result.Text)
+	}
+	// (3) HTML part flattened to visible text, no markup.
+	for _, tag := range []string{"<div", "<img", "style="} {
+		if strings.Contains(result.Text, tag) {
+			t.Errorf("raw HTML markup %q leaked into text: %q", tag, result.Text)
+		}
+	}
+	// HTML part must actually contribute its visible text: subject + plain
+	// body + html body = exactly 3 occurrences of the body string.
+	if c := strings.Count(result.Text, "带附件的email"); c != 3 {
+		t.Errorf("expected subject+plain+html body text, got %d occurrences in: %q", c, result.Text)
+	}
+	if !strings.Contains(result.Text, "text_html:带附件的email") {
+		t.Errorf("html body text missing from text_html: %q", result.Text)
+	}
+
+	// JSON output keeps the full metadata and raw text_html.
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"fields":        []string{"from", "to", "subject", "body"},
+	})
+	jres := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if jres.Err != nil {
+		t.Fatalf("unexpected error: %v", jres.Err)
+	}
+	item := jres.JSON[0]
+	if _, ok := item["metadata"].(map[string]any); !ok {
+		t.Errorf("json output must keep metadata: %#v", item)
+	}
+	if v, _ := item["text_html"].(string); !strings.Contains(v, "<img") {
+		t.Errorf("json output must keep raw text_html: %q", v)
+	}
+	if v, _ := item["subject"].(string); v != "带附件的email" {
+		t.Errorf("json subject not decoded: %q", v)
+	}
+}
+
 // TestEmailParser_MsgSupported parses a real Outlook .msg fixture and verifies
 // the Go output aligns with the Python flow parser _email() .msg branch
 // (rag/flow/parser/parser.py). Replaces the old "MsgNotSupported" test now that
@@ -900,11 +996,11 @@ func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
 				t.Errorf("[json] nested body not found as separate item: %#v", result.JSON)
 			}
 		} else {
-			// Text mode: the outer email's own metadata is flattened once;
-			// the nested email must NOT add a second "metadata:{" segment.
-			if c := strings.Count(result.Text, "metadata:{"); c != 1 {
-				t.Errorf("[text] expected exactly 1 metadata:{ segment (outer only), got %d in: %q",
-					c, result.Text)
+			// Text mode: metadata (transport headers) is never flattened
+			// into chunkable text — not for the outer email, and not for
+			// the nested re-parse (which always requests JSON output).
+			if strings.Contains(result.Text, "metadata:") {
+				t.Errorf("[text] metadata must not leak into text output: %q", result.Text)
 			}
 		}
 	}
