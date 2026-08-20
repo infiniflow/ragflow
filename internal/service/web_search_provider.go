@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,13 +33,25 @@ const (
 	webSearchProviderTavily = "tavily"
 	webSearchProviderQuerit = "querit"
 	webSearchProviderSerply = "serply"
+	webSearchProviderYouCom = "youcom"
 	queritWebSearchEndpoint = "https://api.querit.ai/v1/search"
 	serplyWebSearchEndpoint = "https://api.serply.io/v1/search/"
+	// You.com serves the same response shape from two endpoints. The keyless
+	// one is rate-limited but needs no credentials; the keyed one lifts those
+	// limits. The keyless endpoint rejects an X-API-Key header, so the endpoint
+	// and the headers are always chosen together.
+	youComWebSearchEndpoint        = "https://api.you.com/v1/search"
+	youComKeylessWebSearchEndpoint = "https://api.you.com/v1/agents/search"
+	youComWebSearchResultCount     = 6
+	// Identifies RAGFlow to You.com. On the keyless endpoint there is no key to
+	// attribute traffic to, so this is the only signal available.
+	youComWebSearchUserAgent = "RAGFlow youdotcom-integration/infiniflow-ragflow"
 )
 
 var (
 	queritWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 	serplyWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	youComWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 )
 
 type webSearchProviderConfig struct {
@@ -61,6 +74,9 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 	}
 
 	apiKeyField := ""
+	// You.com is usable with no credentials at all; every other provider here
+	// requires a key before it can be selected.
+	keyOptional := false
 	switch provider {
 	case webSearchProviderTavily:
 		apiKeyField = "tavily_api_key"
@@ -68,13 +84,16 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "querit_api_key"
 	case webSearchProviderSerply:
 		apiKeyField = "serply_api_key"
+	case webSearchProviderYouCom:
+		apiKeyField = "youcom_api_key"
+		keyOptional = true
 	default:
 		return nil
 	}
 
 	apiKey, _ := promptConfig[apiKeyField].(string)
 	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
+	if apiKey == "" && !keyOptional {
 		return nil
 	}
 	return &webSearchProviderConfig{
@@ -110,6 +129,14 @@ func (s *ChatPipelineService) retrieveWebSearch(
 			provider.APIKey,
 			question,
 		)
+	case webSearchProviderYouCom:
+		return retrieveYouComWebSearch(
+			ctx,
+			youComWebSearchHTTPClient,
+			youComEndpointFor(provider.APIKey),
+			provider.APIKey,
+			question,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported web search provider %q", provider.Provider)
 	}
@@ -139,6 +166,14 @@ func (dr *DeepResearcher) retrieveWebSearch(
 			ctx,
 			serplyWebSearchHTTPClient,
 			serplyWebSearchEndpoint,
+			provider.APIKey,
+			query,
+		)
+	case webSearchProviderYouCom:
+		return retrieveYouComWebSearch(
+			ctx,
+			youComWebSearchHTTPClient,
+			youComEndpointFor(provider.APIKey),
 			provider.APIKey,
 			query,
 		)
@@ -375,4 +410,132 @@ func decodeSerplyWebSearchResults(responseBody []byte) ([]serplyWebSearchResult,
 		return nil, fmt.Errorf("serply: response field results must be an array: %w", err)
 	}
 	return results, nil
+}
+
+type youComWebSearchResult struct {
+	URL         string   `json:"url"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Snippets    []string `json:"snippets"`
+}
+
+type youComWebSearchResponse struct {
+	Results struct {
+		Web  []youComWebSearchResult `json:"web"`
+		News []youComWebSearchResult `json:"news"`
+	} `json:"results"`
+}
+
+// youComEndpointFor picks the keyless endpoint when no key is configured. The
+// keyless endpoint rejects an X-API-Key header, so callers must never send a
+// key to it.
+func youComEndpointFor(apiKey string) string {
+	if strings.TrimSpace(apiKey) == "" {
+		return youComKeylessWebSearchEndpoint
+	}
+	return youComWebSearchEndpoint
+}
+
+// youComContent prefers the extracted page passages. News hits carry only a
+// description.
+func youComContent(result youComWebSearchResult) string {
+	passages := make([]string, 0, len(result.Snippets))
+	for _, snippet := range result.Snippets {
+		if strings.TrimSpace(snippet) != "" {
+			passages = append(passages, snippet)
+		}
+	}
+	if len(passages) > 0 {
+		return strings.Join(passages, "\n")
+	}
+	return strings.TrimSpace(result.Description)
+}
+
+func retrieveYouComWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("youcom: new request: %w", err)
+	}
+	queryParams := request.URL.Query()
+	queryParams.Set("query", query)
+	queryParams.Set("count", strconv.Itoa(youComWebSearchResultCount))
+	request.URL.RawQuery = queryParams.Encode()
+
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", youComWebSearchUserAgent)
+	if trimmedKey := strings.TrimSpace(apiKey); trimmedKey != "" {
+		request.Header.Set("X-API-Key", trimmedKey)
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("youcom: do request: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("youcom: status %d", response.StatusCode)
+	}
+
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("youcom: read response: %w", err)
+	}
+
+	var decoded youComWebSearchResponse
+	if err := json.Unmarshal(responseBody, &decoded); err != nil {
+		return nil, fmt.Errorf("youcom: decode response: %w", err)
+	}
+
+	// `count` applies per response section, so web and news together can exceed
+	// it. Web results lead; the merged list is trimmed back afterwards.
+	merged := make([]youComWebSearchResult, 0, len(decoded.Results.Web)+len(decoded.Results.News))
+	merged = append(merged, decoded.Results.Web...)
+	merged = append(merged, decoded.Results.News...)
+
+	chunks := make([]map[string]interface{}, 0, len(merged))
+	docAggs := make([]interface{}, 0, len(merged))
+	for _, result := range merged {
+		if len(chunks) >= youComWebSearchResultCount {
+			break
+		}
+		content := youComContent(result)
+		if content == "" {
+			continue
+		}
+		chunkID := "youcom-" + result.URL
+		chunks = append(chunks, map[string]interface{}{
+			"chunk_id":            chunkID,
+			"content_ltks":        tokenizeText(content),
+			"content_with_weight": content,
+			"doc_id":              chunkID,
+			"docnm_kwd":           result.Title,
+			"kb_id":               []interface{}{},
+			"important_kwd":       []interface{}{},
+			"image_id":            "",
+			"similarity":          float64(1),
+			"vector_similarity":   float64(1),
+			"term_similarity":     float64(0),
+			"vector":              []float64{},
+			"positions":           []interface{}{},
+			"url":                 result.URL,
+		})
+		docAggs = append(docAggs, map[string]interface{}{
+			"doc_name": result.Title,
+			"doc_id":   chunkID,
+			"count":    1,
+			"url":      result.URL,
+		})
+	}
+
+	return map[string]interface{}{
+		"chunks":   chunks,
+		"doc_aggs": docAggs,
+	}, nil
 }
