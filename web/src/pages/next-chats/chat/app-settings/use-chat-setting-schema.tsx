@@ -36,11 +36,13 @@ export function useChatSettingSchema() {
     tavily_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
     serply_api_key: z.string().optional(),
+    youcom_api_key: z.string().optional(),
     web_search_provider: z
       .enum([
         WebSearchProvider.Tavily,
         WebSearchProvider.Querit,
         WebSearchProvider.Serply,
+        WebSearchProvider.YouCom,
       ])
       .optional(),
     reasoning: z.boolean().optional(),

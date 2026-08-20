@@ -99,6 +99,11 @@ type TextBox struct {
 	LayoutNo    string
 	ColID       int
 	R           int
+	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
+	// ocrMergeChars), as opposed to one built from embedded PDF chars
+	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
+	// so char-path digital PDFs are never silently de-duplicated.
+	IsOCR bool
 	// Post-TSR table annotation fields (Python: R/H/C/SP tags)
 	RTop, RBott   float64
 	HTop, HBott   float64

@@ -164,6 +164,24 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights map[int]float6
 					anchor.Grid = padGridCols(rebuilt, uniCols)
 				}
 			}
+			// Re-run the post-GroupCells cleanup that processOneTable would
+			// otherwise have applied per-page: stackGrids rebuilds the grid
+			// from raw (un-cleaned) per-page cells, so the empty / orphan
+			// cleanup done inside ConstructTable never runs on the merged
+			// grid. Without it, an extra "table row" detected next to a
+			// "table projected row header" on a cross-page continuation
+			// page (e.g. 13_crosspage_table.pdf page 2 y0=885) leaks into
+			// the merged grid as a row of empty cells, inflating
+			// item.Grid and breaking gridSim against Python's box.R
+			// grouping which never produces such a row. See
+			// table_construct.go dropAllEmptyRows for the matching
+			// per-page fix.
+			if len(anchor.Grid) > 0 && HasText(anchor.Grid) {
+				anchor.Grid = DropAllEmptyRows(anchor.Grid)
+				anchor.Grid = CleanupOrphanColumns(anchor.Grid)
+				anchor.Grid = CleanupOrphanRows(anchor.Grid)
+				anchor.Rows = RowsToStrings(anchor.Grid)
+			}
 		}
 		result = append(result, anchor)
 	}

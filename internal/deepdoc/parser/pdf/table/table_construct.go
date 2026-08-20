@@ -59,6 +59,19 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		// column cleanup, leaving it stale; item.Grid also went stale because
 		// CleanupOrphanRows returns a re-sliced header).
 		rows = CleanupOrphanColumns(rows)
+		// Drop all-empty rows. Python's construct_table groups boxes by their
+		// R annotation (tbl[i] is the boxes for row i; a TSR row with no
+		// overlapping box contributes no row). Its HTML emitter also skips
+		// rows whose rendered HTML stays at "<tr>" (no cell wrote anything).
+		// Go's grid is a TSR-row cross-product, so an extra "table row" that
+		// the model emits alongside a "table projected row header" (or any
+		// other TSR component with no OCR/text overlap) leaks through as a
+		// 5-cell row of empty strings, inflating item.Rows and the HTML. See
+		// 13_crosspage_table.pdf page 2: y0=885 "table row" sits on top of
+		// a "table projected row header" with no box overlap and survives
+		// every TSR cleanup pass. Drop it here so rows/Rows/HTML all match
+		// Python.
+		rows = DropAllEmptyRows(rows)
 		rows = CleanupOrphanRows(rows)
 		hdrs := HeaderSetWithBlockType(rows, boxes)
 		if item != nil {
@@ -362,6 +375,30 @@ func CleanupOrphanRows(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 		nRows--
 	}
 	return rows
+}
+
+// DropAllEmptyRows removes rows whose cells are all whitespace/empty.
+// Python's construct_table never emits a row that has no boxes assigned
+// to any (R,C), so the parity target is to keep only rows that contribute
+// at least one non-empty cell. Runs BEFORE CleanupOrphanRows so the
+// downstream "exactly one populated cell" check is not silently masking
+// a TSR false positive (e.g. a duplicate row component detected on top
+// of a "table projected row header").
+func DropAllEmptyRows(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
+	out := make([][]pdf.TSRCell, 0, len(rows))
+	for _, r := range rows {
+		empty := true
+		for j := range r {
+			if strings.TrimSpace(r[j].Text) != "" {
+				empty = false
+				break
+			}
+		}
+		if !empty {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // mergeOrphanCell appends the lone cell at (from, col) into the target cell at

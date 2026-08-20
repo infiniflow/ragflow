@@ -1706,6 +1706,23 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["has_web_search_provider"] is True
 
+    # You.com is keyless, so selecting it enables the flag with no key set.
+    youcom_dialog = SimpleNamespace(
+        name="My You.com Bot",
+        icon="avatar.png",
+        tenant_id="tenant-1",
+        status="1",
+        llm_id="",
+        prompt_config={
+            "prologue": "Hello!",
+            "web_search_provider": "youcom",
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, youcom_dialog))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-youcom"))
+    assert res["code"] == 0
+    assert res["data"]["has_web_search_provider"] is True
+
 
 @pytest.mark.p2
 def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):

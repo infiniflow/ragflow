@@ -42,12 +42,10 @@ export const useFetchKnowledgeConfigurationOnMount = (
         ...knowledgeDetails.parser_config?.raptor,
         clustering_method:
           knowledgeDetails.parser_config?.raptor?.ext?.clustering_method,
-        use_raptor: true,
       },
       graphrag: {
         ...form.formState?.defaultValues?.parser_config?.graphrag,
         ...knowledgeDetails.parser_config?.graphrag,
-        use_graphrag: true,
       },
     };
     const formValues = {
