@@ -28,6 +28,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const scheduledTaskStartupPageSize = 4096
+
 // TaskEnvelope is the only payload sent through the task queue.
 type TaskEnvelope struct {
 	TaskID        string
@@ -129,17 +131,24 @@ func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
 		return err
 	}
 
-	tasks, err := s.taskDAO.ListScheduledTasks(ctx, 4096)
-	if err != nil {
-		return err
-	}
-
-	for _, task := range tasks {
-		if err = s.ScheduleTask(ctx, task); err != nil {
+	for offset := 0; ; offset += scheduledTaskStartupPageSize {
+		tasks, err := s.taskDAO.ListScheduledTasks(ctx, scheduledTaskStartupPageSize, offset)
+		if err != nil {
 			return err
 		}
+		if len(tasks) == 0 {
+			return nil
+		}
+
+		for _, task := range tasks {
+			if err = s.ScheduleTask(ctx, task); err != nil {
+				return err
+			}
+		}
+		if len(tasks) < scheduledTaskStartupPageSize {
+			return nil
+		}
 	}
-	return nil
 }
 
 // ScheduleTask publishes a due scheduled task or arms a one-shot timer.

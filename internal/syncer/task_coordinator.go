@@ -30,7 +30,7 @@ const connectorLockSafetyMargin = 5 * time.Second
 // ConnectorRegistry opens registered connectors by source.
 type ConnectorRegistry interface {
 	// Open creates a connector for a task context.
-	Open(ctx context.Context, taskContext service.SyncTaskContext) (syncerconnector.Connector, error)
+	Open(ctx context.Context, taskContext dao.SyncTaskContext) (syncerconnector.Connector, error)
 }
 
 // TaskCoordinator owns one task execution window.

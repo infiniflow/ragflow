@@ -19,6 +19,7 @@ package syncer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -189,6 +190,18 @@ func (b *fakeSyncTaskBroker) publishedIDs() []string {
 	defer b.mu.Unlock()
 	return append([]string(nil), b.published...)
 }
+
+type closingLocker struct {
+	db *gorm.DB
+}
+
+func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool) {
+	sqlDB, _ := l.db.DB()
+	_ = sqlDB.Close()
+	return ConnectorLockLease{}, false
+}
+
+func (l closingLocker) Unlock(connectorID, kbID string) {}
 
 // DeleteDocument records one delete.
 func (d *fakeDeleter) DeleteDocument(ctx context.Context, docID string) error {
@@ -397,6 +410,39 @@ func TestNATSSchedulerPublishesDueTasksWithoutClaiming(t *testing.T) {
 	}
 	if task.Status != dao.SyncStatusSchedule {
 		t.Fatalf("status = %s, want schedule", task.Status)
+	}
+}
+
+// TestNATSSchedulerStartupPaginatesScheduledTasks verifies startup reconciliation publishes every scheduled task.
+func TestNATSSchedulerStartupPaginatesScheduledTasks(t *testing.T) {
+	db := setupSyncerDB(t)
+	total := scheduledTaskStartupPageSize + 1
+	for i := 0; i < total; i++ {
+		taskID := fmt.Sprintf("task-%04d", i)
+		if i == 0 {
+			insertTaskContext(t, db, "conn-1", "kb-1", taskID, dao.TaskTypeSync)
+			continue
+		}
+		insertSyncLog(t, db, "conn-1", "kb-1", taskID, dao.TaskTypeSync)
+	}
+
+	taskDAO := dao.NewSyncTaskDAO(db)
+	broker := &fakeSyncTaskBroker{}
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
+
+	if err := scheduler.publishStartupTasks(t.Context()); err != nil {
+		t.Fatalf("publish startup tasks: %v", err)
+	}
+	got := broker.publishedIDs()
+	if len(got) != total {
+		t.Fatalf("published tasks = %d, want %d", len(got), total)
+	}
+	seen := make(map[string]struct{}, len(got))
+	for _, taskID := range got {
+		seen[taskID] = struct{}{}
+	}
+	if len(seen) != total {
+		t.Fatalf("published unique tasks = %d, want %d", len(seen), total)
 	}
 }
 
@@ -652,6 +698,21 @@ func TestNATSTaskWorkerRetriesStillScheduledUnclaimedTask(t *testing.T) {
 	scheduler.timerMu.Unlock()
 	if timer == nil {
 		t.Fatalf("scheduled prune retry timer was not registered")
+	}
+}
+
+func TestNATSTaskWorkerNacksWhenLockContentionRescheduleFails(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, nil, closingLocker{db: db})
+
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
+
+	if handle.acks != 0 || handle.nacks != 1 {
+		t.Fatalf("settlement acks=%d nacks=%d, want nack without ack", handle.acks, handle.nacks)
 	}
 }
 

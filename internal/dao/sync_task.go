@@ -96,8 +96,8 @@ type ScheduledSyncTask struct {
 	ConnectorConfig      entity.JSONMap
 }
 
-// ListScheduledTasks returns scheduled tasks with connector scheduling settings.
-func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int) ([]ScheduledSyncTask, error) {
+// ListScheduledTasks returns one page of scheduled tasks with connector scheduling settings.
+func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit, offset int) ([]ScheduledSyncTask, error) {
 	var rows []dueSyncTaskRow
 	if err := d.db.WithContext(ctx).
 		Model(&entity.SyncLogs{}).
@@ -106,8 +106,9 @@ func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int) ([]Sche
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
 		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune}).
-		Order("sync_logs.update_time DESC").
+		Order("sync_logs.update_time DESC, sync_logs.id DESC").
 		Limit(limit).
+		Offset(offset).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
