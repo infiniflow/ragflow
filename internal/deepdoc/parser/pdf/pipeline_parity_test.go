@@ -33,12 +33,16 @@ import (
 //
 // Result classification (both sims are always reported):
 //   - textSim==100% -> PASS (fully aligned, includes table HTML byte-identical)
-//   - table PDF, gridSim==100% but textSim<100% -> GRID_OK: cell content
-//     matches Python, the residual gap is the HTML serialization layer only.
-//     Reported separately (not labeled PASS) and not counted as a content
-//     failure; classified as go_intentional/go_bug via known_diffs.json.
-//   - table PDF, gridSim<100% (or non-table textSim<100%) -> FAIL: Go assembly
-//     content genuinely diverges from Python.
+//   - table PDF, gridSim==100% AND structSim==100% but textSim<100% ->
+//     NONCELL_TEXT: cell content AND structure match Python, the residual gap
+//     is non-cell-text (caption/body paragraph Go omits, and/or HTML tag/format
+//     differences). Reported separately (not labeled PASS) and not counted as a
+//     content failure; classified as go_intentional/go_bug via known_diffs.json.
+//   - table PDF, gridSim<100% OR structSim<100% (or non-table textSim<100%) ->
+//     FAIL if not exempted by a go_intentional rule; INTENTIONAL if a
+//     go_intentional rule names this exact PDF (Go judged at least as good as
+//     Python, e.g. table segmentation). Any genuine Go content regression is a
+//     FAIL.
 func TestPipelineParity(t *testing.T) {
 	charspyDir := filepath.Join("testdata", "charspy")
 	pyTextDir := filepath.Join("testdata", "output", "py", "ocr", "text")
@@ -88,7 +92,7 @@ func TestPipelineParity(t *testing.T) {
 	// keyed on the analyzer type, so non-replay parses are unaffected.
 	RegisterReplayTableBuilder()
 
-	total, passed, htmlDivergent, intentional, failed := 0, 0, 0, 0, 0
+	total, passed, noncellText, intentional, failed := 0, 0, 0, 0, 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -163,10 +167,12 @@ func TestPipelineParity(t *testing.T) {
 		sim := tool.CharSimilarity(goText.String(), tool.StripMeta(string(pyData)))
 
 		// Phase 2: tables are built from Python's replayed TSR, so compare the
-		// reconstructed grid content (cell text) rather than the rendered HTML
-		// (which differs in whitespace/join/header markup). Grid content parity
-		// isolates Go's GroupCells + FillCellTextFromBoxes assembly; HTML-only
-		// differences are expected and not a Go logic bug.
+		// reconstructed grid content (cell text) rather than the rendered HTML.
+		// Grid content parity (gridSim + structSim) isolates Go's GroupCells +
+		// FillCellTextFromBoxes assembly. When gridSim AND structSim are 100%
+		// but textSim<100%, the residual gap is NON-CELL-TEXT: a <caption> Go
+		// omits, an interleaved body paragraph Go drops, and/or HTML tag/format
+		// differences — none of which is a table-cell-assembly bug.
 		pyRows, pyHasTables := loadPythonTables(t, filepath.Join(tablesDir, name+".json"))
 		goRows := goTableRows(result)
 		goHasTables := len(goRows) > 0
@@ -192,12 +198,19 @@ func TestPipelineParity(t *testing.T) {
 			structureSim, shapeDetail := gridStructureSimilarity(goRows, pyRows)
 			// Full content parity = identical cell text AND identical
 			// structure. Only then is the residual textSim gap purely the
-			// HTML serialization layer, reported as GRID_OK (html-divergent).
+			// non-cell-text layer (caption/body/format outside table cells),
+			// reported as NONCELL_TEXT.
 			contentMatch := gridSim >= 100.0 && structureSim >= 100.0
 			if contentMatch {
-				htmlDivergent++
-				status = "GRID_OK"
-				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (HTML-format divergence)", gridSim, structureSim, shapeDetail, sim)
+				// Cells + structure match Python, but the full text still
+				// diverges — the gap is OUTSIDE table cells: caption text
+				// Go omits, an interleaved body paragraph Go drops, and/or
+				// HTML tag/format differences. Label it noncell-text (not
+				// "html-divergent", which wrongly implies content matches)
+				// so the divergence is named and not hidden.
+				noncellText++
+				status = "NONCELL_TEXT"
+				detail = fmt.Sprintf("gridSim=%.1f%% structSim=%.1f%% (%s) textSim=%.1f%% (non-cell-text divergence: caption/body/format outside table cells)", gridSim, structureSim, shapeDetail, sim)
 			} else if intentionalPDF(name) {
 				// go_intentional rule covers this PDF: the divergence (cell
 				// content and/or structure) is a documented, deliberate one
@@ -239,7 +252,7 @@ func TestPipelineParity(t *testing.T) {
 	if total == 0 {
 		t.Skip("no charspy/ files found")
 	}
-	t.Logf("Pipeline parity: aligned=%d html-divergent=%d intentional=%d failed=%d total=%d", passed, htmlDivergent, intentional, failed, total)
+	t.Logf("Pipeline parity: aligned=%d noncell-text=%d intentional=%d failed=%d total=%d", passed, noncellText, intentional, failed, total)
 	if failed > 0 {
 		t.Errorf("%d parity failures — Go pipeline content differs from Python (grid/text)", failed)
 	}

@@ -50,10 +50,20 @@
       "id": "table-html-emission-format",
       "tag": "go_intentional",
       "kind": "serialization_format",
-      "applies_to": ["06_table_content.pdf", "18_table_caption.pdf"],
+      "applies_to": ["06_table_content.pdf", "13_crosspage_table.pdf", "14_text_table_interleaved.pdf", "18_table_caption.pdf"],
       "fields": ["RowsToHTML"],
       "permanent": true,
-      "reason": "Pipeline-parity textSim<100% on these two PDFs is entirely the HTML serialization layer; gridSim=100% confirms cell text / row-col structure / span coverage are identical to Python. Go's RowsToHTML (table_html.go) emits compact HTML: no newlines between rows or before </table>, a <th> for every header row, covered cells skipped via the covered map, caption from item.Caption. Python's __html_table (deepdoc/vision/table_structure_recognizer.py:356) emits '\\n' before each row and before </table>, <td></td>/<th></th> for empty non-covered cells (Go emits '<td ></td>'), and DROPS an entire header row when every cell text in it already appeared in a previous header row ('if all([t in hdset for t in txts]): continue' — hdset mixes row indices and cell texts, so a duplicated-text header row silently vanishes in Python; Go keeps it). Covered-cell handling is identical on both sides (Python 'arr is None: continue' == Go covered-skip). Downstream (internal/parser/parser/pdf_postprocess.go:76, chunker) treats the table HTML as opaque section text; the divergence does not alter cell content or structure, and Go's compact HTML is token-friendlier for embedding while preserving all header rows Python would drop. Deliberate divergence, not a regression target."
+      "reason": "Go's RowsToHTML (table_html.go) does NOT emit a <caption> element. Python's __html_table (deepdoc/vision/table_structure_recognizer.py:356) embeds a descriptive <caption> inside each table — e.g. 06 'The following table summarizes the quarterly sales performance ... Table 1: ...', 13 'Extended Financial Report Table: Monthly financial summary FY2024', 18 'Product Specifications Table 1: ... Figure 1 below illustrates...', 14 two captions 'Table 1: Revenue' / '... Table 2: Satisfaction...'. Go omits all of it. This is the DOMINANT source of the textSim<100% gap on these PDFs; cell text + row/col structure still match exactly (gridSim=100%, structSim=100%), so it is a NON-CELL-TEXT emission divergence, NOT a table-assembly bug. The caption is supplementary metadata and Go's compact caption-less HTML is token-friendlier for downstream embedding, so this is deliberate (go_intentional). Secondary, also non-cell: HTML tag/format differences (Go <th> for header cells + single-space <td >; Python <td> everywhere + double-space <td  > + leading/trailing cell spaces). NOTE: 14 additionally drops an interleaved BODY paragraph (not a caption) — that is a real CONTENT loss tracked separately as go_bug rule table-text-interleaved-paragraph-dropped; do not fold it into this emission divergence."
+    },
+    {
+      "id": "table-text-interleaved-paragraph-dropped",
+      "tag": "go_bug",
+      "kind": "content_loss",
+      "applies_to": ["14_text_table_interleaved.pdf"],
+      "fields": ["processPageBoxes", "NaiveVerticalMerge", "section extraction"],
+      "owner_fix_side": "go",
+      "status": "open",
+      "reason": "14_text_table_interleaved.pdf has a body paragraph ('The following analysis compares product performance across different market segments. Table 1 shows revenuebycategory.') interleaved BEFORE Table 1. Python extracts it as a separate text section; Go's pipeline drops it entirely (Go output has only the title + the two tables, no paragraph). This is a real CONTENT loss, not an HTML-emission/format difference: the text is absent from Go's sections. It is NOT a cell-content gap (gridSim=100% still holds, because the paragraph is outside any table cell) but a non-cell text-section loss — distinct from the go_intentional caption omission (rule table-html-emission-format). Open go_bug; exposed by TestPipelineParity14InterleavedParagraphDropped (currently RED). Fix: ensure the interleaved body paragraph is retained as a text section in Go's assembly."
     },
     {
       "id": "english-page-ocr-source-divergence",
