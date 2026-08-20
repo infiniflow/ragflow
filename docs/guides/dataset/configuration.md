@@ -30,16 +30,20 @@ The parsing method determines how a dataset processes uploaded documents and how
 
 **Built-in** means using RAGFlow's built-in document parsing capabilities. Users can choose a suitable parsing method based on the document type. The system then reads document content, splits it into chunks, and generates the structure required for retrieval according to the selected method.
 
-- **General**: General parsing method, suitable for regular documents such as plain text, PDF, and Word files.
-- **Q&A**: Q&A parsing method, suitable for documents organized as questions and answers.
-- **Manual**: Manual parsing method, suitable for product manuals, operation guides, policy descriptions, and other documents with clear hierarchy.
-- **Table**: Table parsing method, suitable for Excel, CSV, and other documents mainly composed of tabular data.
-- **Paper**: Paper parsing method, suitable for papers, research reports, and other structured academic documents.
-- **Book**: Book parsing method, suitable for books, long articles, and other long documents with chapter structures.
-- **Laws**: Legal document parsing method, suitable for laws, regulations, ordinances, rules, and other documents with clause structures.
-- **Presentation**: Presentation parsing method, suitable for PPT, PPTX, and other presentation files.
-- **One**: Whole-document parsing method. It treats all content in a document as one chunk and does not further split it according to regular rules. This is suitable when the complete document content needs to be preserved.
-- **Tag**: Tag-set parsing method. After this method is selected, the current dataset acts as a tag set that can be used by other datasets. It is mainly used to add tags to chunks in other datasets to assist later retrieval.
+The following built-in parsing methods are available:
+
+- **General**: A general-purpose parsing method suitable for most conventional documents. It identifies document content and creates chunks according to the configured chunking rules.
+- **Q&A**: Designed for data organized as question-answer pairs. Each Q&A pair is treated as an individual chunk.
+- **Manual**: Designed for PDFs with a clear hierarchical section structure, such as product manuals and operation guides. Documents are chunked based on their section structure.
+- **Table**: Designed for structured tabular data such as XLSX and CSV/TXT files. Each row is typically treated as an individual chunk.
+- **Paper**: Designed for PDF papers, research reports, and other academic documents. Documents are chunked based on structural elements such as abstracts, sections, and subsections.
+- **Book**: Designed for DOCX, PDF, and TXT books or other long documents with a chapter-based structure.
+- **Laws**: Designed for legal documents in DOCX, PDF, and TXT formats. Chunk boundaries are identified based on the structural characteristics of legal documents.
+- **Presentation**: Designed for presentations in PDF and PPTX formats. Each page or slide is typically treated as an individual chunk.
+- **One**: Treats the entire document as a single chunk. This method is suitable for relatively short documents when the complete context needs to be preserved.
+- **Tag**: Used to create a tag set. A dataset using this method provides tags for chunks and queries in other datasets and does not directly participate in the RAG retrieval process.
+
+> **Tip:** On the built-in parsing configuration page, click **Built-in pipeline introduction** on the right to view the supported file formats, detailed chunking rules, and examples for each parsing method.
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
 
