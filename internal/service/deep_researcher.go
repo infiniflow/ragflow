@@ -226,6 +226,12 @@ func (dr *DeepResearcher) _research(
 		return "", nil
 	}
 
+	// Stop the recursion quickly once the request is canceled so a
+	// cancellation drains the tree instead of doing more retrieval work.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	if callback != nil {
 		callback(fmt.Sprintf("Searching by `%s`...", query))
 	}
@@ -329,6 +335,11 @@ func (dr *DeepResearcher) _research(
 	select {
 	case <-done:
 	case <-ctx.Done():
+		// Sub-research goroutines invoke the progress callback, which
+		// writes to the caller's channel; do not orphan them. Draining
+		// here guarantees no callback fires after Research returns
+		// (mirrors Python's asyncio.gather cancellation semantics).
+		wg.Wait()
 		return retContent, ctx.Err()
 	}
 

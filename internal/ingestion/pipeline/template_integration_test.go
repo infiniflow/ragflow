@@ -722,9 +722,6 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "QAChunker") {
 				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
 			}
-			if templateUsesComponent(t, templateBytes, "TagChunker") {
-				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
-			}
 			if templateUsesComponent(t, templateBytes, "Compiler") {
 				t.Skip("template uses Compiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
 			}

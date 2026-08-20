@@ -1321,7 +1321,7 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
-    suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
+    suffix = EmptyStringCharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     content_hash = CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True)
 
@@ -1895,6 +1895,7 @@ GAUSSDB_EMPTY_STRING_COMPATIBLE_COLUMNS = (
     ("dialog", ("llm_id", "rerank_id")),
     ("memory", ("embd_id", "llm_id")),
     ("file", ("source_type",)),
+    ("document", ("suffix",)),
     ("system_settings", ("value",)),
     ("task", ("task_type",)),
     ("sync_logs", ("error_msg", "full_exception_trace")),
@@ -2395,7 +2396,7 @@ def migrate_db():
     alter_db_add_column(migrator, "mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict))
     alter_db_rename_column(migrator, "task", "process_duation", "process_duration")
     alter_db_rename_column(migrator, "document", "process_duation", "process_duration")
-    alter_db_add_column(migrator, "document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
+    alter_db_add_column(migrator, "document", "suffix", EmptyStringCharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
