@@ -366,7 +366,7 @@ def fix_missing_tokenized_memory():
 
 def judge_system_prompt_is_default(system_prompt: str, memory_type: int | list[str]):
     memory_type_list = memory_type if isinstance(memory_type, list) else get_memory_type_human(memory_type)
-    return system_prompt == PromptAssembler.assemble_system_prompt({"memory_type": memory_type_list})
+    return PromptAssembler.is_default_system_prompt(system_prompt, {"memory_type": memory_type_list})
 
 
 async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
