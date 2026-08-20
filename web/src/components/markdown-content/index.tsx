@@ -27,6 +27,7 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -83,7 +84,12 @@ const rehypeWrapReference = () => {
   };
 };
 
-const MarkdownRehypePlugins = [rehypeRaw, rehypeWrapReference, rehypeKatex];
+const MarkdownRehypePlugins = [
+  rehypeRaw,
+  RehypeSanitizeAssistantMarkdown,
+  rehypeWrapReference,
+  rehypeKatex,
+];
 
 const MarkdownParagraph = ({ children, ...props }: any) => (
   <p {...props}>{children}</p>
