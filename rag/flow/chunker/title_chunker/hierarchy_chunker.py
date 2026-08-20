@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 from rag.flow.chunker.title_chunker.common import (
+    BODY_LEVEL,
     BaseTitleChunker,
     resolve_target_level,
 )
@@ -84,8 +85,10 @@ class HierarchyTitleChunker(BaseTitleChunker):
         record_groups = []
         text_records = []
         text_levels = []
+        context_boundary = 0
 
         def flush_text_records():
+            nonlocal context_boundary
             if not text_records:
                 return
 
@@ -95,16 +98,21 @@ class HierarchyTitleChunker(BaseTitleChunker):
             else:
                 root = _ChunkNode(0)
                 root.build_tree(list(zip(text_levels, range(len(text_records)))), target_level)
-                record_groups.extend(
-                    [text_records[index] for index in path]
-                    for path in root.get_paths(
-                        target_level,
-                        self.param.include_heading_content,
-                    )
-                    if path
-                )
+                for path in root.get_paths(
+                    target_level,
+                    self.param.include_heading_content,
+                ):
+                    if not path:
+                        continue
+                    if any(index >= context_boundary for index in path):
+                        record_groups.append([text_records[index] for index in path])
+            heading_records = [rec for rec, lvl in zip(text_records, text_levels) if 0 < lvl < BODY_LEVEL]
+            heading_levels = [lvl for lvl in text_levels if 0 < lvl < BODY_LEVEL]
             text_records.clear()
             text_levels.clear()
+            text_records.extend(heading_records)
+            text_levels.extend(heading_levels)
+            context_boundary = len(text_records)
 
         for record, level in zip(line_records, resolved["levels"]):
             if record["doc_type_kwd"] == "text":

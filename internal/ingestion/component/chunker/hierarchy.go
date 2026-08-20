@@ -177,6 +177,14 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	// non-text record as its own single-record group. A final flush
 	// handles the trailing run.
 	//
+	// Heading context is preserved across media-chunk flushes: after
+	// flushing, heading records (level < bodyLevel) are retained as a
+	// prefix of the next run so that body text after an image/table
+	// keeps its ancestor heading path. The contextBoundary marks how
+	// many leading records in the current run are retained headings;
+	// DFS paths that contain only retained records (no new content) are
+	// skipped to avoid emitting duplicate heading-only chunks.
+	//
 	// The target level is resolved per run via
 	// resolve_target_level(text_levels, hierarchy) — the exact call
 	// python makes inside flush_text_records (Gap H: the hierarchy
@@ -184,6 +192,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	var recordGroups [][]lineRecord
 	var textRun []lineRecord
 	var textLevels []int
+	contextBoundary := 0
 
 	flush := func() {
 		if len(textRun) == 0 {
@@ -213,6 +222,16 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 				if len(path) == 0 {
 					continue
 				}
+				hasNew := false
+				for _, idx := range path {
+					if idx >= contextBoundary {
+						hasNew = true
+						break
+					}
+				}
+				if !hasNew {
+					continue
+				}
 				grp := make([]lineRecord, len(path))
 				for k, idx := range path {
 					grp[k] = textRun[idx]
@@ -220,8 +239,17 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 				recordGroups = append(recordGroups, grp)
 			}
 		}
-		textRun = textRun[:0]
-		textLevels = textLevels[:0]
+		var headingRun []lineRecord
+		var headingLevels []int
+		for j := range textRun {
+			if textLevels[j] > 0 && textLevels[j] < bodyLevel {
+				headingRun = append(headingRun, textRun[j])
+				headingLevels = append(headingLevels, textLevels[j])
+			}
+		}
+		textRun = headingRun
+		textLevels = headingLevels
+		contextBoundary = len(textRun)
 	}
 
 	for i, rec := range records {
