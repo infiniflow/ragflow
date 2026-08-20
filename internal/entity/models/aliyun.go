@@ -505,6 +505,10 @@ func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 	return &TTSResponse{Audio: audio, MediaType: "audio/wav"}, nil
 }
 
+// aliyunTTSAudioMaxBytes caps a synthesized audio download. DashScope TTS
+// audio is far smaller; this only guards against runaway responses.
+const aliyunTTSAudioMaxBytes int64 = 64 << 20 // 64 MiB
+
 // downloadAliyunTTSAudio fetches the synthesized audio file referenced by a
 // DashScope TTS response.
 func (a *AliyunModel) downloadAliyunTTSAudio(ctx context.Context, audioURL string) ([]byte, error) {
@@ -518,12 +522,15 @@ func (a *AliyunModel) downloadAliyunTTSAudio(ctx context.Context, audioURL strin
 	}
 	defer resp.Body.Close()
 
-	audio, err := io.ReadAll(resp.Body)
+	audio, err := io.ReadAll(io.LimitReader(resp.Body, aliyunTTSAudioMaxBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read aliyun TTS audio: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to download aliyun TTS audio: %s", resp.Status)
+	}
+	if int64(len(audio)) > aliyunTTSAudioMaxBytes {
+		return nil, fmt.Errorf("aliyun TTS audio download exceeds %d bytes", aliyunTTSAudioMaxBytes)
 	}
 	if len(audio) == 0 {
 		return nil, fmt.Errorf("aliyun TTS audio download is empty")

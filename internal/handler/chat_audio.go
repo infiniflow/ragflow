@@ -16,6 +16,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -88,6 +89,10 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 
 	segments := ttsSegmentSplitRegex.Split(req.Text, -1)
 	headerWritten := false
+	// mediaType locks the media type of the first successfully synthesized
+	// segment; later segments of a different type are skipped so the
+	// response never mixes encodings under a single Content-Type.
+	mediaType := ""
 	// WAV segments cannot be concatenated byte-wise (each carries its own
 	// RIFF header), so they are accumulated as raw PCM and re-wrapped into
 	// a single WAV before being written.
@@ -109,7 +114,20 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if resp == nil || len(resp.Audio) == 0 {
 			continue
 		}
-		if resp.MediaType == "audio/wav" {
+		segMediaType := resp.MediaType
+		if segMediaType == "" {
+			segMediaType = "audio/mpeg"
+		}
+		if mediaType == "" {
+			mediaType = segMediaType
+		} else if segMediaType != mediaType {
+			common.Warn("chat TTS segment media type differs from the first segment, skipping",
+				zap.Int("segmentIndex", i),
+				zap.String("segmentMediaType", segMediaType),
+				zap.String("mediaType", mediaType))
+			continue
+		}
+		if segMediaType == "audio/wav" {
 			format, pcm, werr := splitWAV(resp.Audio)
 			if werr != nil {
 				common.Warn("chat TTS wav segment unparsable",
@@ -119,6 +137,10 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 			}
 			if wavFmt == nil {
 				wavFmt = format
+			} else if !bytes.Equal(wavFmt.fmtChunk, format.fmtChunk) {
+				common.Warn("chat TTS wav segment format differs from the first segment, skipping",
+					zap.Int("segmentIndex", i))
+				continue
 			}
 			wavPCM = append(wavPCM, pcm...)
 			continue
@@ -126,10 +148,6 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if !headerWritten {
 			// Commit the audio headers only once the first chunk is available,
 			// so a fully failed synthesis can still return a JSON error status.
-			mediaType := resp.MediaType
-			if mediaType == "" {
-				mediaType = "audio/mpeg"
-			}
 			writeAudioHeaders(mediaType)
 			headerWritten = true
 		}

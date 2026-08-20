@@ -63,7 +63,8 @@ func splitWAV(b []byte) (*wavFormat, []byte, error) {
 // chunk (encoding, sample rate, channel count).
 func buildWAV(f *wavFormat, pcm []byte) []byte {
 	fmtSize := len(f.fmtChunk)
-	total := 4 + (8 + fmtSize + fmtSize&1) + (8 + len(pcm))
+	dataPad := len(pcm) & 1
+	total := 4 + (8 + fmtSize + fmtSize&1) + (8 + len(pcm) + dataPad)
 
 	out := make([]byte, 0, 8+total)
 	out = append(out, "RIFF"...)
@@ -78,5 +79,8 @@ func buildWAV(f *wavFormat, pcm []byte) []byte {
 	out = append(out, "data"...)
 	out = binary.LittleEndian.AppendUint32(out, uint32(len(pcm)))
 	out = append(out, pcm...)
+	if dataPad == 1 {
+		out = append(out, 0)
+	}
 	return out
 }

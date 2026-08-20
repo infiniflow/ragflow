@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -320,6 +321,10 @@ func newAliyunTTSTestServer(t *testing.T, requestBody chan<- map[string]interfac
 			_, _ = w.Write([]byte("fake-wav-bytes"))
 			return
 		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -332,7 +337,9 @@ func newAliyunTTSTestServer(t *testing.T, requestBody chan<- map[string]interfac
 			requestBody <- body
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"output":{"audio":{"url":%q},"finish_reason":"stop"},"request_id":"req-1"}`, server.URL+"/audio.wav")
+		if _, err := fmt.Fprintf(w, `{"output":{"audio":{"url":%q},"finish_reason":"stop"},"request_id":"req-1"}`, server.URL+"/audio.wav"); err != nil {
+			t.Errorf("failed to write TTS response: %v", err)
+		}
 	}))
 	t.Cleanup(server.Close)
 	return server
@@ -425,6 +432,45 @@ func TestAliyunAudioSpeechHonorsExplicitVoiceAndLanguage(t *testing.T) {
 	}
 	if got := input["language_type"]; got != "English" {
 		t.Errorf("language_type = %v, want English", got)
+	}
+}
+
+func TestAliyunAudioSpeechRejectsOversizedAudio(t *testing.T) {
+	withSSRFBypass(t)
+	oversized := make([]byte, aliyunTTSAudioMaxBytes+1)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "audio/wav")
+			_, _ = w.Write(oversized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := fmt.Fprintf(w, `{"output":{"audio":{"url":%q},"finish_reason":"stop"},"request_id":"req-1"}`, server.URL+"/audio.wav"); err != nil {
+			t.Errorf("failed to write TTS response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: aliyunTTSTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-tts-flash"
+	text := "hello"
+
+	_, err := model.AudioSpeech(
+		ctx,
+		&modelName,
+		&text,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Format: "mp3"},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("error = %v, want oversized audio error", err)
 	}
 }
 

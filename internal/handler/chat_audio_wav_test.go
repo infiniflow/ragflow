@@ -43,6 +43,12 @@ func TestSplitWAVRoundTrip(t *testing.T) {
 		t.Errorf("pcm = %v, want %v", gotPCM, pcm)
 	}
 	rebuilt := buildWAV(format, gotPCM)
+	if len(rebuilt)%2 != 0 {
+		t.Errorf("rebuilt WAV length = %d, want even (RIFF chunks are 2-byte aligned)", len(rebuilt))
+	}
+	if got := binary.LittleEndian.Uint32(rebuilt[4:8]); got != uint32(len(rebuilt)-8) {
+		t.Errorf("RIFF size = %d, want %d", got, len(rebuilt)-8)
+	}
 	format2, pcm2, err := splitWAV(rebuilt)
 	if err != nil {
 		t.Fatalf("splitWAV(rebuilt): %v", err)
