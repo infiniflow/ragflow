@@ -106,6 +106,16 @@ ragflow:
   deployment:
     strategy:
     resources:
+
+  # Container port for nginx. Use 8080 where the pod runs non-root; the Service
+  # keeps exposing 80 either way.
+  http:
+    port: 80
+
+  # See README.md for an OpenShift example.
+  podSecurityContext: {}
+  securityContext: {}
+
   service:
     # Use LoadBalancer to expose the web interface externally
     type: ClusterIP
@@ -133,6 +143,13 @@ infinity:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext:
+    capabilities:
+      add:
+        - "NET_BIND_SERVICE"
+    seccompProfile:
+      type: RuntimeDefault
   service:
     type: ClusterIP
 
@@ -143,6 +160,12 @@ elasticsearch:
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
+    # `fixPermissions` chowns as root, `sysctl` runs privileged. Restricted
+    # policies deny both; disable them and rely on fsGroup plus `config` below.
+    fixPermissions:
+      enabled: true
+    sysctl:
+      enabled: true
     alpine:
       repository: alpine
       tag: latest
@@ -154,12 +177,23 @@ elasticsearch:
   storage:
     className:
     capacity: 20Gi
+  # Extra elasticsearch.yml settings, merged over the chart defaults. Replaces
+  # the sysctl init container with e.g. `node.store.allow_mmap: "false"`.
+  config: {}
   deployment:
     strategy:
     resources:
       requests:
         cpu: "4"
         memory: "16Gi"
+  podSecurityContext: {}
+  # Restricted policies reject IPC_LOCK and a fixed runAsUser.
+  securityContext:
+    capabilities:
+      add:
+        - "IPC_LOCK"
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
   service:
     type: ClusterIP
 
@@ -170,6 +204,11 @@ opensearch:
     pullPolicy: IfNotPresent
     pullSecrets: []
   initContainers:
+    # See the elasticsearch.initContainers comment above.
+    fixPermissions:
+      enabled: true
+    sysctl:
+      enabled: true
     alpine:
       repository: alpine
       tag: latest
@@ -181,12 +220,21 @@ opensearch:
   storage:
     className:
     capacity: 20Gi
+  # Extra opensearch.yml settings, merged over the chart defaults.
+  config: {}
   deployment:
     strategy:
     resources:
       requests:
         cpu: "4"
         memory: "16Gi"
+  podSecurityContext: {}
+  securityContext:
+    capabilities:
+      add:
+        - "IPC_LOCK"
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
   service:
     type: ClusterIP
 
@@ -203,6 +251,8 @@ minio:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext: {}
   service:
     type: ClusterIP
 
@@ -219,6 +269,8 @@ mysql:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext: {}
   service:
     type: ClusterIP
 
@@ -242,6 +294,8 @@ redis:
   deployment:
     strategy:
     resources:
+  podSecurityContext: {}
+  securityContext: {}
   service:
     type: ClusterIP
 

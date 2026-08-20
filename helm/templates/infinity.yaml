@@ -52,6 +52,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- end }}
+      {{- with (include "ragflow.compactYaml" .Values.infinity.podSecurityContext) }}
+      securityContext:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
       - name: infinity
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.infinity.image.repository) }}:{{ .Values.infinity.image.tag }}
@@ -75,12 +79,10 @@ spec:
         resources:
           {{- . | toYaml | nindent 10 }}
         {{- end }}
+        {{- with (include "ragflow.compactYaml" .Values.infinity.securityContext) }}
         securityContext:
-          capabilities:
-            add:
-              - "NET_BIND_SERVICE"
-          seccompProfile:
-            type: RuntimeDefault
+          {{- . | nindent 10 }}
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /admin/node/current

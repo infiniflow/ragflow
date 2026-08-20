@@ -1,0 +1,56 @@
+# Overlay for OpenShift's restricted-v2 SCC and any cluster enforcing the
+# "restricted" Pod Security Standard. Read helm/README.md first: MySQL still
+# needs an image that tolerates an arbitrary UID.
+#
+#   helm upgrade --install ragflow ./helm -n ragflow \
+#     -f ./helm/values-openshift.yaml
+
+ragflow:
+  http:
+    port: 8080
+  # `null` removes a key values.yaml sets, since Helm merges the two maps.
+  securityContext: &restricted
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: null
+    capabilities:
+      add: null
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+infinity:
+  securityContext: *restricted
+
+elasticsearch:
+  initContainers:
+    fixPermissions:
+      enabled: false
+    sysctl:
+      enabled: false
+  config:
+    # Replaces the vm.max_map_count sysctl.
+    node.store.allow_mmap: "false"
+  securityContext: *restricted
+
+opensearch:
+  initContainers:
+    fixPermissions:
+      enabled: false
+    sysctl:
+      enabled: false
+  config:
+    node.store.allow_mmap: "false"
+  securityContext: *restricted
+
+minio:
+  securityContext: *restricted
+
+redis:
+  securityContext: *restricted
+
+# The upstream `mysql` image assumes UID 999. Use an external database or an
+# image that tolerates an arbitrary UID, e.g. registry.redhat.io/rhel9/mysql-84.
+mysql:
+  securityContext: *restricted

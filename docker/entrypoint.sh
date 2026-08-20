@@ -158,6 +158,26 @@ for arg in "$@"; do
 done
 
 # -----------------------------------------------------------------------------
+# An arbitrary UID (OpenShift restricted-v2) has no passwd entry, so every
+# getpwuid() lookup fails until one is added.
+# -----------------------------------------------------------------------------
+function ensure_passwd_entry() {
+    local uid
+    uid="$(id -u)"
+    if getent passwd "${uid}" > /dev/null 2>&1; then
+        return 0
+    fi
+    if [ ! -w /etc/passwd ]; then
+        echo "UID ${uid} has no passwd entry and /etc/passwd is not writable; continuing anyway."
+        return 0
+    fi
+    echo "ragflow:x:${uid}:0:RAGFlow:${HOME:-/ragflow}:/sbin/nologin" >> /etc/passwd
+    echo "Added passwd entry for UID ${uid}."
+}
+
+ensure_passwd_entry
+
+# -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
 # -----------------------------------------------------------------------------
 CONF_DIR="/ragflow/conf"
@@ -185,24 +205,34 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # -----------------------------------------------------------------------------
-# Select Nginx Configuration based on API_PROXY_SCHEME
+# Render the Nginx configuration into ${NGINX_RUNTIME_DIR}. Unlike /etc/nginx,
+# it stays writable under an arbitrary UID. Port 80 needs root.
 # -----------------------------------------------------------------------------
 NGINX_CONF_DIR="/etc/nginx/conf.d"
-if [ -n "$API_PROXY_SCHEME" ]; then
-    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.hybrid"
-    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.golang (default)"
-    else
-        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-        echo "Applied nginx config: ragflow.conf.python"
-    fi
+NGINX_RUNTIME_DIR="${NGINX_RUNTIME_DIR:-/ragflow/nginx}"
+if [ "$(id -u)" -eq 0 ]; then
+    NGINX_LISTEN_PORT="${NGINX_LISTEN_PORT:-80}"
 else
-    # Default to python backend
-    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
-    echo "Default: applied nginx config: ragflow.conf.python"
+    NGINX_LISTEN_PORT="${NGINX_LISTEN_PORT:-8080}"
+fi
+
+case "${API_PROXY_SCHEME}" in
+    hybrid) NGINX_SERVER_CONF="ragflow.conf.hybrid" ;;
+    go)     NGINX_SERVER_CONF="ragflow.conf.golang" ;;
+    *)      NGINX_SERVER_CONF="ragflow.conf.python" ;;
+esac
+
+mkdir -p "$NGINX_RUNTIME_DIR/conf.d" "$NGINX_RUNTIME_DIR/tmp"
+sed -E "s|^([[:space:]]*)listen[[:space:]]+80[[:space:]]*;|\1listen ${NGINX_LISTEN_PORT};|" \
+    "$NGINX_CONF_DIR/$NGINX_SERVER_CONF" > "$NGINX_RUNTIME_DIR/conf.d/ragflow.conf"
+echo "Applied nginx config: $NGINX_SERVER_CONF (listening on ${NGINX_LISTEN_PORT})"
+
+cp -f /etc/nginx/nginx.conf "$NGINX_RUNTIME_DIR/nginx.conf"
+# Relative `include` paths resolve against the main config's directory.
+cp -f /etc/nginx/proxy.conf "$NGINX_RUNTIME_DIR/proxy.conf"
+if [ "$(id -u)" -ne 0 ]; then
+    # Only honoured as root, and warns on every start otherwise.
+    sed -i -E "/^[[:space:]]*user[[:space:]]/d" "$NGINX_RUNTIME_DIR/nginx.conf"
 fi
 
 # -----------------------------------------------------------------------------
@@ -288,7 +318,7 @@ fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
-    /usr/sbin/nginx -c /etc/nginx/nginx.conf
+    /usr/sbin/nginx -c "$NGINX_RUNTIME_DIR/nginx.conf"
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
         while true; do

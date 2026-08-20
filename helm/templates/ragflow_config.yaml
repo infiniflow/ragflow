@@ -65,8 +65,8 @@ data:
     user  root;
     worker_processes  auto;
 
-    error_log  /var/log/nginx/error.log notice;
-    pid        /var/run/nginx.pid;
+    error_log  /dev/stderr notice;
+    pid        /ragflow/nginx/nginx.pid;
 
     events {
         worker_connections  1024;
@@ -80,7 +80,13 @@ data:
                         '$status $body_bytes_sent "$http_referer" '
                         '"$http_user_agent" "$http_x_forwarded_for"';
 
-        access_log  /var/log/nginx/access.log  main;
+        access_log  /dev/stdout  main;
+
+        client_body_temp_path  /ragflow/nginx/tmp/client_body;
+        proxy_temp_path        /ragflow/nginx/tmp/proxy;
+        fastcgi_temp_path      /ragflow/nginx/tmp/fastcgi;
+        uwsgi_temp_path        /ragflow/nginx/tmp/uwsgi;
+        scgi_temp_path         /ragflow/nginx/tmp/scgi;
 
         sendfile        on;
         #tcp_nopush     on;
@@ -90,5 +96,5 @@ data:
         #gzip  on;
         client_max_body_size 128M;
 
-        include /etc/nginx/conf.d/ragflow.conf;
+        include /ragflow/nginx/conf.d/ragflow.conf;
     }

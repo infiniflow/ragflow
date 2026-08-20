@@ -51,11 +51,19 @@ spec:
         {{- end }}
       {{- end }}
       terminationGracePeriodSeconds: 60
+      {{- with (include "ragflow.compactYaml" .Values.redis.podSecurityContext) }}
+      securityContext:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
         - name: redis
           image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.redis.image.repository) }}:{{ .Values.redis.image.tag }}
           {{- with .Values.redis.image.pullPolicy }}
           imagePullPolicy: {{ . }}
+          {{- end }}
+          {{- with (include "ragflow.compactYaml" .Values.redis.securityContext) }}
+          securityContext:
+            {{- . | nindent 12 }}
           {{- end }}
           command:
             - "sh"

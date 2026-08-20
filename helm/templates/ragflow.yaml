@@ -35,18 +35,29 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- end }}
+      {{- with (include "ragflow.compactYaml" .Values.ragflow.podSecurityContext) }}
+      securityContext:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
       - name: ragflow
         image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
         {{- with .Values.ragflow.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
+        {{- with (include "ragflow.compactYaml" .Values.ragflow.securityContext) }}
+        securityContext:
+          {{- . | nindent 10 }}
+        {{- end }}
         {{- if .Values.ragflow.admin.enabled }}
         args:
           - "--enable-adminserver"
         {{- end }}
+        env:
+          - name: NGINX_LISTEN_PORT
+            value: {{ .Values.ragflow.http.port | quote }}
         ports:
-          - containerPort: 80
+          - containerPort: {{ .Values.ragflow.http.port }}
             name: http
           - containerPort: 9380
             name: http-api

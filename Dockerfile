@@ -84,7 +84,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 # Copy nginx configuration for frontend serving
 # OpenResty installs to /usr/local/openresty/nginx/; create /etc/nginx/ symlink tree
-RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
+RUN mkdir -p /etc/nginx/conf.d /var/log/nginx /ragflow/nginx/conf.d /ragflow/nginx/tmp
 
 COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
 COPY docker/nginx/ragflow.conf.golang \
@@ -115,5 +115,31 @@ COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 
 # Set environment variables
 ENV HF_ENDPOINT=https://hf-mirror.com
+
+# Run under an arbitrary UID (OpenShift restricted-v2): it gets group 0 only, no
+# passwd entry and no access to /root.
+ENV HOME=/ragflow \
+    NLTK_DATA=/ragflow/nltk_data \
+    XDG_CACHE_HOME=/ragflow/.cache \
+    XDG_CONFIG_HOME=/ragflow/.config
+
+RUN set -eux; \
+    writable="/ragflow/conf /ragflow/logs /ragflow/nginx /ragflow/nltk_data /ragflow/.cache /ragflow/.config /var/log/nginx"; \
+    for relpath in nltk_data .cache/stagehand .config/pip; do \
+        if [ -e "/root/${relpath}" ]; then \
+            mkdir -p "/ragflow/$(dirname "${relpath}")"; \
+            mv "/root/${relpath}" "/ragflow/${relpath}"; \
+        fi; \
+    done; \
+    mkdir -p ${writable}; \
+    chmod g=u /etc/passwd; \
+    # The venv interpreter is a symlink into uv's install under /root, which is
+    # 0700. Without this, python3 resolves to /usr/bin/python3 and every import
+    # of a project dependency fails.
+    chmod g+rx /root; \
+    # Not recursive: that would copy the virtualenv into this layer.
+    chgrp 0 /ragflow && chmod g=u /ragflow; \
+    chgrp -R 0 ${writable}; \
+    chmod -R g=u ${writable}
 
 ENTRYPOINT ["./entrypoint.sh"]
