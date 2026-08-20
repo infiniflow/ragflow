@@ -255,6 +255,10 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     pagination_utils_mod = ModuleType("api.utils.pagination_utils")
+    pagination_utils_mod.DEFAULT_PAGE = 1
+    pagination_utils_mod.DEFAULT_PAGE_SIZE = 30
+    pagination_utils_mod.validate_rest_api_ids = lambda ids, _kind: (list(dict.fromkeys(ids)), [])
+    pagination_utils_mod.validate_rest_api_page = lambda page: 1
     pagination_utils_mod.validate_rest_api_page_size = lambda *_args, **_kwargs: (1, 30)
     monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
@@ -497,6 +501,7 @@ def _load_chunk_module(monkeypatch):
             return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
     services_pkg.knowledgebase_service = kb_service_mod
 
@@ -847,3 +852,76 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
     assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_timeout_returns_error(monkeypatch):
+    """update_chunk returns a timeout error when the doc-store update
+    takes longer than the configured timeout (issue #18174)."""
+    import time
+
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.updated.clear()
+
+    def _slow_update(*_args, **_kwargs):
+        time.sleep(1)
+        return True
+
+    monkeypatch.setattr(module.settings.docStoreConn, "update", _slow_update)
+    monkeypatch.setattr(module, "UPDATE_CHUNK_TIMEOUT_SECONDS", 0.1)
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"content": "updated chunk"},
+    )
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "timed out" in res["message"].lower(), res
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_does_not_block_event_loop(monkeypatch):
+    """While update_chunk's blocking work runs in a worker thread, the
+    event loop can still process other coroutines (issue #18174)."""
+    import time
+
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.updated.clear()
+
+    started = False
+    completed = False
+
+    def _slow_update(*_args, **_kwargs):
+        nonlocal started, completed
+        started = True
+        time.sleep(0.3)
+        completed = True
+        return True
+
+    monkeypatch.setattr(module.settings.docStoreConn, "update", _slow_update)
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"content": "updated chunk"},
+    )
+
+    async def _check_responsiveness():
+        marker_advanced = False
+
+        async def _marker():
+            nonlocal marker_advanced
+            await asyncio.sleep(0.05)
+            marker_advanced = True
+
+        update_task = asyncio.create_task(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+        marker_task = asyncio.create_task(_marker())
+        await marker_task
+        assert marker_advanced, "event loop was blocked by update_chunk"
+        await update_task
+
+    _run(_check_responsiveness())
+    assert started and completed, "update_sync was not called"
