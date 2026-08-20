@@ -131,8 +131,9 @@ func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
 		return err
 	}
 
-	for offset := 0; ; offset += scheduledTaskStartupPageSize {
-		tasks, err := s.taskDAO.ListScheduledTasks(ctx, scheduledTaskStartupPageSize, offset)
+	var cursor *dao.ScheduledSyncTaskCursor
+	for {
+		tasks, err := s.taskDAO.ListScheduledTasks(ctx, scheduledTaskStartupPageSize, cursor)
 		if err != nil {
 			return err
 		}
@@ -148,6 +149,8 @@ func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
 		if len(tasks) < scheduledTaskStartupPageSize {
 			return nil
 		}
+		nextCursor := tasks[len(tasks)-1].Cursor()
+		cursor = &nextCursor
 	}
 }
 

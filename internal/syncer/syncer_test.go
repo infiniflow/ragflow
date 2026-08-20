@@ -168,14 +168,18 @@ type fakeSyncTaskBroker struct {
 	mu        sync.Mutex
 	published []string
 	handler   func(common.TaskHandle)
+	onPublish func(taskID string)
 }
 
 func (b *fakeSyncTaskBroker) InitSyncerStream() error   { return nil }
 func (b *fakeSyncTaskBroker) InitSyncerConsumer() error { return nil }
 func (b *fakeSyncTaskBroker) PublishSyncerTask(taskID string) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.published = append(b.published, taskID)
+	b.mu.Unlock()
+	if b.onPublish != nil {
+		b.onPublish(taskID)
+	}
 	return nil
 }
 func (b *fakeSyncTaskBroker) PublishSyncerTaskWakeup(taskID string) error {
@@ -419,15 +423,20 @@ func TestNATSSchedulerStartupPaginatesScheduledTasks(t *testing.T) {
 	total := scheduledTaskStartupPageSize + 1
 	for i := 0; i < total; i++ {
 		taskID := fmt.Sprintf("task-%04d", i)
-		if i == 0 {
-			insertTaskContext(t, db, "conn-1", "kb-1", taskID, dao.TaskTypeSync)
-			continue
-		}
-		insertSyncLog(t, db, "conn-1", "kb-1", taskID, dao.TaskTypeSync)
+		insertTaskContext(t, db, fmt.Sprintf("conn-%04d", i), fmt.Sprintf("kb-%04d", i), taskID, dao.TaskTypeSync)
 	}
 
 	taskDAO := dao.NewSyncTaskDAO(db)
-	broker := &fakeSyncTaskBroker{}
+	broker := &fakeSyncTaskBroker{onPublish: func(taskID string) {
+		claimed, err := taskDAO.ClaimTask(t.Context(), taskID, time.Now())
+		if err != nil {
+			t.Errorf("claim published task %s: %v", taskID, err)
+			return
+		}
+		if !claimed {
+			t.Errorf("published task %s was not claimable", taskID)
+		}
+	}}
 	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
 
 	if err := scheduler.publishStartupTasks(t.Context()); err != nil {

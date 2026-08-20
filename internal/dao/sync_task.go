@@ -96,19 +96,37 @@ type ScheduledSyncTask struct {
 	ConnectorConfig      entity.JSONMap
 }
 
+// ScheduledSyncTaskCursor identifies the last row from a scheduled task page.
+type ScheduledSyncTaskCursor struct {
+	UpdateTime int64
+	ID         string
+}
+
+// Cursor returns the keyset cursor for the task.
+func (t ScheduledSyncTask) Cursor() ScheduledSyncTaskCursor {
+	updateTime := int64(0)
+	if t.UpdateTime != nil {
+		updateTime = *t.UpdateTime
+	}
+	return ScheduledSyncTaskCursor{UpdateTime: updateTime, ID: t.ID}
+}
+
 // ListScheduledTasks returns one page of scheduled tasks with connector scheduling settings.
-func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit, offset int) ([]ScheduledSyncTask, error) {
+func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int, cursor *ScheduledSyncTaskCursor) ([]ScheduledSyncTask, error) {
 	var rows []dueSyncTaskRow
-	if err := d.db.WithContext(ctx).
+	query := d.db.WithContext(ctx).
 		Model(&entity.SyncLogs{}).
 		Select("sync_logs.*, connector.refresh_freq AS connector_refresh_freq, connector.prune_freq AS connector_prune_freq, connector.config AS connector_config").
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune}).
+		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune})
+	if cursor != nil {
+		query = query.Where("sync_logs.update_time < ? OR (sync_logs.update_time = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
+	}
+	if err := query.
 		Order("sync_logs.update_time DESC, sync_logs.id DESC").
 		Limit(limit).
-		Offset(offset).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
