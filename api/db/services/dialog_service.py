@@ -35,8 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.llm_service import LLMBundle
-from api.apps.restful_apis._generation_params import resolve_llm_setting
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
