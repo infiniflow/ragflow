@@ -21,6 +21,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
@@ -35,11 +36,16 @@ func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
-// ParseWithResult captures the office_oxide PlainText output for
-// the DOC family. Python parser.py routes .doc through tika;
-// the Go side uses office_oxide which supports DOC via PlainText.
-// OutputFormat="text" — the python side falls back to text for
-// legacy DOC files since structured extraction is unreliable.
+// ParseWithResult extracts text for the DOC family. The Go side uses
+// office_oxide, which supports legacy .doc. We prefer the structured IR
+// (flattened to plain text) and fall back to ToMarkdown, then to PlainText.
+//
+// Note: office_oxide's .doc reader only surfaces paragraph and (heuristically
+// detected) heading lines — it does NOT extract table or list structure from
+// legacy .doc (the table stream's PAP/TAP/LSTF are ignored; see
+// office_oxide issue #115). So this path normalizes paragraph/heading line
+// breaks but does not recover tables/lists. OutputFormat stays "text" to keep
+// the downstream contract unchanged.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "doc")
 	if err != nil {
@@ -47,9 +53,9 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	defer doc.Close()
 
-	text, err := doc.PlainText()
+	text, err := extractDocText(doc)
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("doc plain-text: %w", err)}
+		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
 	return ParseResult{
@@ -57,4 +63,38 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		File:         map[string]any{"name": filename, "format": "doc"},
 		Text:         text,
 	}
+}
+
+// extractDocText returns the best-effort plain text for a legacy .doc
+// document. office_oxide exposes three text views:
+//   - ToIRJSON: a structured DocumentIR, flattened to plain text via
+//     flattenDocIR. For .doc this only carries paragraph and (heuristic)
+//     heading lines — no table/list structure (office_oxide issue #115).
+//   - ToMarkdown: paragraphs separated by blank lines.
+//   - PlainText: the raw concatenated text.
+//
+// We return the longest non-empty view so a sparser view can never shadow a
+// more complete one (e.g. the IR flatten can be shorter than PlainText for
+// some documents). A failure at every stage degrades to the PlainText error,
+// preserving the original "no text at all" failure semantics.
+func extractDocText(doc *officeOxide.Document) (string, error) {
+	var best string
+	if irJSON, err := doc.ToIRJSON(); err == nil {
+		if t := flattenDocIR(irJSON); len(strings.TrimSpace(t)) > len(strings.TrimSpace(best)) {
+			best = t
+		}
+	}
+	if md, err := doc.ToMarkdown(); err == nil {
+		if len(strings.TrimSpace(md)) > len(strings.TrimSpace(best)) {
+			best = md
+		}
+	}
+	if plain, err := doc.PlainText(); err == nil {
+		if len(strings.TrimSpace(plain)) > len(strings.TrimSpace(best)) {
+			best = plain
+		}
+	} else if best == "" {
+		return "", err
+	}
+	return best, nil
 }
