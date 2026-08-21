@@ -41,7 +41,7 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 	if log.DocumentID != datasetLogDocumentID || log.TaskType != string(entity.PipelineTaskTypeWiki) {
 		t.Fatalf("unexpected dataset log identity: %+v", log)
 	}
-	if log.OperationStatus != common.COMPLETED || log.Progress != 1 {
+	if log.OperationStatus != "DONE" || log.Progress != 1 {
 		t.Fatalf("unexpected final state: status=%s progress=%v", log.OperationStatus, log.Progress)
 	}
 	if log.ProgressMsg == nil || !strings.Contains(*log.ProgressMsg, "2 affected page(s)") || !strings.Contains(*log.ProgressMsg, "completed") {

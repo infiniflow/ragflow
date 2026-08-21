@@ -21,6 +21,10 @@ import {
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -150,14 +154,22 @@ function RetrievalForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    FormSchema,
+    defaultValues?.dataset_ids,
+  );
+
   const form = useForm({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
 
   const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
 
   useWatchFormChange(node?.id, form);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <Form {...form}>

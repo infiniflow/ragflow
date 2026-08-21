@@ -131,8 +131,28 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // text is legal. The containment test is bound to the substring box (not just
 // the shorter-height box) so a physically taller box whose short text is a
 // substring of a neighbour is never silently dropped.
+//
+// The substring comparison is whitespace-insensitive: ocrMergeChars fills line
+// fragments with char-layer text that preserves the PDF's original spaces
+// ("- name: SSL_CERT_FILE", "⽂章 中 提到") while the containing paragraph OCR
+// box carries the recognizer's joined text ("-name: SSL_CERT_FILE",
+// "⽂章中提到"). Byte-wise matching would miss the fragment relation and the
+// inner box survives to NaiveVerticalMerge, which concatenates it into the
+// paragraph — duplicating text (the ocr_real text gaps: plugin-daemon,
+// RAG分词, 三国人物). Geometry (boxInside) remains the actual containment
+// proof; whitespace normalization only makes the fragment check robust to the
+// char-vs-OCR space divergence.
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
+	// Precompute the whitespace-normalized text once per box. The inner loop
+	// compares every OCR pair, so recomputing norm there would make the O(n²)
+	// loop O(n²·len) in the worst case (a large scan document hits ~3k boxes).
+	norm := make([]string, len(boxes))
+	for i, b := range boxes {
+		if b.IsOCR {
+			norm[i] = dedupNormText(strings.TrimSpace(b.Text))
+		}
+	}
 	for i := range boxes {
 		if drop[i] {
 			continue
@@ -151,21 +171,22 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 				continue
 			}
 			aj := strings.TrimSpace(boxes[j].Text)
-			if aj == "" || len(ai) == len(aj) {
+			if aj == "" || ai == aj {
 				continue
 			}
+			ni, nj := norm[i], norm[j]
 			// Collapse only when the SUBSTRING-text box is geometrically CONTAINED
 			// in the text-containing box. Binding the geometry to the actual
 			// substring (not merely the shorter-height box) avoids silently
 			// dropping a physically taller box whose short text happens to be a
 			// substring of a neighbour — OCR double-detection fragments are always
 			// the smaller, contained box, so the taller container is kept.
-			if len(ai) > len(aj) && strings.Contains(ai, aj) {
+			if len(ni) >= len(nj) && strings.Contains(ni, nj) {
 				// j's text is a substring of i's -> drop j only if j sits inside i.
 				if boxInside(boxes[j], boxes[i]) {
 					drop[j] = true
 				}
-			} else if len(aj) > len(ai) && strings.Contains(aj, ai) {
+			} else if len(nj) > len(ni) && strings.Contains(nj, ni) {
 				// i's text is a substring of j's -> drop i only if i sits inside j.
 				if boxInside(boxes[i], boxes[j]) {
 					drop[i] = true
@@ -184,14 +205,33 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	return out
 }
 
-// boxInside reports whether inner is fully contained within outer in Y and
-// overlaps it in X. It confirms an OCR substring fragment sits inside the box
-// whose text contains it (not merely shares a Y band at a different column).
+// dedupNormText strips all whitespace for substring comparison. Spaces are the
+// only divergence between the char-derived fragment text and the OCR box text,
+// and whitespace carries no content identity here — the containment geometry is
+// the real proof (see DedupSubstringOverlaps).
+func dedupNormText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// boxInside reports whether inner is FULLY contained within outer on BOTH
+// axes. It confirms an OCR substring fragment sits inside the box whose text
+// contains it — not merely sharing a Y band at a different column, nor poking
+// out horizontally beyond the container. Requiring horizontal containment
+// stops a whitespace-normalized substring match from dropping a box that
+// extends past the container's X range (e.g. an adjacent-column line whose
+// text happens to be a substring of the paragraph's).
 func boxInside(inner, outer pdf.TextBox) bool {
 	if inner.Top < outer.Top || inner.Bottom > outer.Bottom {
 		return false
 	}
-	if outer.X1 <= inner.X0 || inner.X1 <= outer.X0 {
+	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
 		return false
 	}
 	return true

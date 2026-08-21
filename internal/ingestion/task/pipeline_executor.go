@@ -19,6 +19,7 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/utility"
 	"sort"
@@ -646,16 +647,25 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		}
 	}
 
-	pipelineTitle := ""
-	var pipelineAvatar *string
-	if db != nil {
-		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
-			if canvas.Title != nil {
-				pipelineTitle = *canvas.Title
+	// Pipeline identity for the log row. A document without a user pipeline
+	// selection runs on a builtin registry pipeline: its canvasID is the
+	// parser_id, not a canvas row, so the log is titled with the document's
+	// parser_id, reuses the document thumbnail as avatar, and leaves
+	// pipeline_id empty.
+	pipelineTitle := doc.ParserID
+	pipelineAvatar := doc.Thumbnail
+	var pipelineID *string
+	if s.taskCtx.PipelineID != "" {
+		pipelineID = &s.canvasID
+		if db != nil {
+			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, s.canvasID); err == nil && canvas != nil {
+				if canvas.Title != nil {
+					pipelineTitle = *canvas.Title
+				}
+				pipelineAvatar = canvas.Avatar
+			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
+				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 			}
-			pipelineAvatar = canvas.Avatar
-		} else if err != nil {
-			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", s.canvasID, err))
 		}
 	}
 
@@ -680,7 +690,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		TenantID:        s.Tenant().ID,
 		KbID:            s.KB().ID,
 		DocumentID:      docID,
-		PipelineID:      &s.canvasID,
+		PipelineID:      pipelineID,
 		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,
