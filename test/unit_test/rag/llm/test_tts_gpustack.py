@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -52,3 +52,26 @@ def test_gpustack_tts_preserves_non_alias_voice_casing():
         list(provider.tts("hello", voice="Uncle_Fu"))
 
     assert send_request.call_args.args[1]["voice"] == "Uncle_Fu"
+
+
+def test_gpustack_tts_logs_stream_completion_after_audio_consumption():
+    provider = GPUStackTTS("sk-test", "qwen3-tts", base_url="http://gpustack:80")
+    response = MagicMock()
+    response.status_code = 200
+
+    with patch.object(provider, "_send_request", return_value=response), patch.object(provider, "_process_response", return_value=iter([b"audio"])), patch("rag.llm.tts_model.logger.info") as info:
+        assert list(provider.tts("hello", voice="aiden")) == [b"audio"]
+
+    logged_messages = [call.args[0] for call in info.call_args_list]
+    assert "GPUStack TTS response received for model %s with status %s" in logged_messages
+    assert "GPUStack TTS audio stream completed for model %s with status %s" in logged_messages
+
+
+def test_gpustack_tts_request_failure_log_omits_exception_text():
+    provider = GPUStackTTS("sk-test", "qwen3-tts", base_url="http://gpustack:80")
+
+    with patch.object(provider, "_send_request", side_effect=RuntimeError("secret response body")), patch("rag.llm.tts_model.logger.warning") as warning, pytest.raises(RuntimeError):
+        list(provider.tts("hello", voice="aiden"))
+
+    logged_parts = " ".join(str(arg) for call in warning.call_args_list for arg in call.args)
+    assert "secret response body" not in logged_parts

@@ -23,6 +23,7 @@ import struct
 import tempfile
 from abc import ABC
 from collections.abc import Mapping, Sequence
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import requests
@@ -511,10 +512,10 @@ class TencentCloudSeq2txt(Base):
 
 
 class GPUStackSeq2txt(Base):
-    """GPUStack speech-to-text adapter using its OpenAI-compatible API."""
+    """GPUStack speech-to-text adapter."""
 
     _FACTORY_NAME = "GPUStack"
-    _LANGUAGE_ALIASES = {
+    _LANGUAGE_ALIASES: ClassVar[dict[str, str]] = {
         "chinese": "zh",
         "中文": "zh",
         "zh_cn": "zh",
@@ -567,10 +568,11 @@ class GPUStackSeq2txt(Base):
             logger.info("GPUStack ASR request completed for model %s with status %s and empty response text", self.model_name, response.status_code)
             return "**ERROR**: Failed to retrieve transcription.", 0
         except requests.exceptions.RequestException as e:
-            logger.warning("GPUStack ASR request failed for model %s: %s", self.model_name, e)
+            response_status = getattr(getattr(e, "response", None), "status_code", "unknown")
+            logger.warning("GPUStack ASR request failed for model %s with status %s", self.model_name, response_status)
             return f"**ERROR**: {e!s}", 0
         except (TypeError, ValueError, KeyError, AttributeError) as e:
-            logger.warning("GPUStack ASR response parsing failed for model %s: %s", self.model_name, e)
+            logger.warning("GPUStack ASR response parsing failed for model %s", self.model_name)
             return f"**ERROR**: Invalid transcription response: {e!s}", 0
 
 

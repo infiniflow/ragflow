@@ -24,20 +24,27 @@ from rag.llm.sequence2txt_model import GPUStackSeq2txt
 pytestmark = pytest.mark.p2
 
 
-def test_gpustack_asr_transcription_uses_openai_compatible_endpoint(tmp_path):
+@pytest.mark.parametrize(
+    ("base_url", "expected_url"),
+    [
+        ("http://gpustack:80", "http://gpustack:80/v1/audio/transcriptions"),
+        ("http://gpustack:80/v1", "http://gpustack:80/v1/audio/transcriptions"),
+    ],
+)
+def test_gpustack_asr_transcription_uses_openai_compatible_endpoint(tmp_path, base_url, expected_url):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"RIFF-test-audio")
     response = MagicMock()
     response.json.return_value = {"text": "  hello from GPUStack  "}
 
     with patch("rag.llm.sequence2txt_model.requests.post", return_value=response) as post, patch("rag.llm.sequence2txt_model.num_tokens_from_string", return_value=3):
-        provider = GPUStackSeq2txt("sk-test", "qwen3-asr", "http://gpustack:80")
+        provider = GPUStackSeq2txt("sk-test", "qwen3-asr", base_url)
         text, token_count = provider.transcription(str(audio_path))
 
     assert text == "hello from GPUStack"
     assert token_count == 3
     post.assert_called_once()
-    assert post.call_args.kwargs["url"] == "http://gpustack:80/v1/audio/transcriptions"
+    assert post.call_args.kwargs["url"] == expected_url
     assert post.call_args.kwargs["data"]["model"] == "qwen3-asr"
     assert post.call_args.kwargs["data"]["language"] == "zh"
     assert post.call_args.kwargs["headers"] == {"Authorization": "Bearer sk-test"}
