@@ -145,8 +145,6 @@ func TestParseTaggerResponse_JSONRepair(t *testing.T) {
 }
 
 func TestParseCSVTagSource_Comma(t *testing.T) {
-	// A comma-delimited file maps to exactly two columns, so each line can
-	// carry only a single tag (tags are comma-separated within the 2nd col).
 	text := "RAGFlow tutorial,RAG\nsome text,LLM"
 	result := parseCSVTagSource(text)
 	if len(result) != 2 {
@@ -200,9 +198,6 @@ func TestParseCSVTagSource_Tab(t *testing.T) {
 }
 
 func TestParseCSVTagSource_Accumulation(t *testing.T) {
-	// Mirrors rag/app/tag.py txt semantics: lines that do not split into two
-	// columns are accumulated as body text and prepended to the next tagged
-	// line's content.
 	text := "intro paragraph\nmore body\nRAGFlow tutorial\tRAG,tutorial"
 	result := parseCSVTagSource(text)
 	if len(result) != 1 {
@@ -241,8 +236,6 @@ func stubXLSXBytes(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// capturingExtractorTagChat records the request it was given so tests can
-// assert on the exact messages sent to the LLM.
 type capturingExtractorTagChat struct {
 	req extractorChatRequest
 }
@@ -261,14 +254,9 @@ func pushCapturingTagChat(t *testing.T) *capturingExtractorTagChat {
 }
 
 func longChunkText() string {
-	return strings.Repeat("RAGFlow is an open source retrieval augmented generation engine. ", 10)
+	return strings.TrimSpace(strings.Repeat("RAGFlow is an open source retrieval augmented generation engine. ", 10))
 }
 
-// TestLlmtagChunk_MessageFit verifies that llmTagChunk trims the prompt to the
-// model's context window before sending, mirroring Python's message_fit_in in
-// content_tagging (generator.py:331). The tagger system prompt embeds the full
-// chunk text plus the whole tag set, so an oversized chunk must be trimmed
-// rather than rejected by the provider with "context length exceeded".
 func TestLlmtagChunk_MessageFit(t *testing.T) {
 	const budget = 20
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return budget })
@@ -281,28 +269,21 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
 	}
-	// The full chunk text must have been trimmed away from the system prompt.
 	if strings.Contains(capt.req.Messages[0].Content, longText) {
 		t.Fatal("system prompt was not trimmed to the context budget")
 	}
 	total := tokenizer.NumTokensFromString(capt.req.Messages[0].Content) +
 		tokenizer.NumTokensFromString(capt.req.Messages[1].Content)
-	// The budget is 97% of the resolved content_length (the override value),
-	// mirroring the agent's contextFitBudget; the margin keeps a fitted
-	// prompt inside the provider's real context limit.
 	if total > extractorContextFitBudget(budget) {
 		t.Fatalf("fitted messages total %d tokens exceeds the margin-adjusted budget %d", total, extractorContextFitBudget(budget))
 	}
 }
 
-// TestLlmtagChunk_NoContextLength_SkipsFit verifies the guard: when the model's
-// context length is unknown (extractorContextLength returns 0), the tagger
-// passes the prompt through untrimmed instead of erroring.
 func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	capt := pushCapturingTagChat(t)
 
@@ -311,7 +292,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -321,22 +302,46 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	}
 }
 
+func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
+	capt := pushCapturingTagChat(t)
+
+	idx := &MemoryTagIndex{
+		examples: []schema.TagLabel{
+			{Content: "real sample text one", Tags: []string{"NLP", "AI"}},
+			{Content: "real sample text two", Tags: []string{"Search"}},
+		},
+		allTags: map[string]float64{"NLP": 0.33, "AI": 0.33, "Search": 0.33},
+	}
+
+	chunk := map[string]any{"content_with_weight": "some content"}
+	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
+
+	if len(capt.req.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
+	}
+	// Verify that real sample content is present in prompt
+	promptContent := capt.req.Messages[0].Content
+	if !strings.Contains(promptContent, "real sample text one") && !strings.Contains(promptContent, "real sample text two") {
+		t.Fatalf("cold start fallback did not include real sample text: %s", promptContent)
+	}
+	// Verify fake mock example is NOT present
+	if strings.Contains(promptContent, "This is an example") {
+		t.Fatal("prompt contains fake example 'This is an example'")
+	}
+}
+
 func TestParseCSVQuoteAwareReader(t *testing.T) {
-	// A quoted content field containing a comma must not be split into extra
-	// columns: "RAGFlow, the guide",RAG is two fields, not three.
 	text := "\"RAGFlow, the guide\",RAG\nplain line,LLM"
 	result := parseCSVQuoteAwareReader(strings.NewReader(text))
 	if len(result) != 2 {
 		t.Fatalf("expected 2 examples, got %d", len(result))
 	}
-	// First line: quoted content keeps the comma -> content "RAGFlow, the guide", tags [RAG]
 	if result[0].Content != "RAGFlow, the guide" {
 		t.Errorf("content[0] = %q", result[0].Content)
 	}
 	if len(result[0].Tags) != 1 || result[0].Tags[0] != "RAG" {
 		t.Errorf("tags[0] = %v", result[0].Tags)
 	}
-	// Second line: plain comma split -> content "plain line", tags [LLM]
 	if result[1].Content != "plain line" {
 		t.Errorf("content[1] = %q", result[1].Content)
 	}
@@ -351,7 +356,6 @@ func TestParseXLSXTagSource(t *testing.T) {
 	if len(result) != 3 {
 		t.Fatalf("expected 3 examples (multi-sheet), got %d", len(result))
 	}
-	// Each row's first cell is content, second is comma-separated tags.
 	if result[0].Content != "RAGFlow guide" {
 		t.Errorf("content[0] = %q", result[0].Content)
 	}
@@ -367,8 +371,6 @@ func TestParseXLSXTagSource(t *testing.T) {
 }
 
 func TestParseCSVTagSource_EmptyTags(t *testing.T) {
-	// Mirrors rag/app/tag.py: a row with exactly two columns is appended even
-	// when the tag column is empty (beAdoc always appends for a 2-column row).
 	text := "content one\tRAG,tutorial\nsolo line\t"
 	result := parseCSVTagSource(text)
 	if len(result) != 2 {
@@ -377,9 +379,8 @@ func TestParseCSVTagSource_EmptyTags(t *testing.T) {
 	if len(result[0].Tags) != 2 {
 		t.Errorf("tags[0] = %v", result[0].Tags)
 	}
-	// Second row has an empty tag column -> still an example, with no tags.
 	if len(result[1].Tags) != 0 {
-		t.Errorf("tags[1] = %v, want empty (matches Python)", result[1].Tags)
+		t.Errorf("tags[1] = %v, want empty", result[1].Tags)
 	}
 	if result[1].Content != "solo line" {
 		t.Errorf("content[1] = %q", result[1].Content)
@@ -387,11 +388,9 @@ func TestParseCSVTagSource_EmptyTags(t *testing.T) {
 }
 
 func TestParseTagSourceByFilename(t *testing.T) {
-	// .xlsx -> multi-sheet, 2 columns per row.
 	if got, err := parseTagSourceByFilename(stubXLSXBytes(t), "tags.xlsx"); err != nil || len(got) != 3 {
 		t.Errorf("xlsx: expected 3 examples, got %d (err=%v)", len(got), err)
 	}
-	// .csv -> quote-aware comma parsing.
 	csvData := []byte("\"a, b\",RAG\nsimple,LLM")
 	if got, err := parseTagSourceByFilename(csvData, "tags.csv"); err != nil || len(got) != 2 {
 		t.Errorf("csv: expected 2 examples, got %d (err=%v)", len(got), err)
@@ -399,13 +398,10 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	if got, err := parseTagSourceByFilename(csvData, "tags.CSV"); err != nil || len(got) != 2 {
 		t.Errorf("csv (uppercase ext): expected 2 examples, got %d (err=%v)", len(got), err)
 	}
-	// .txt -> delimiter-detecting txt reader.
 	txtData := []byte("content one\tRAG,tutorial")
 	if got, err := parseTagSourceByFilename(txtData, "tags.txt"); err != nil || len(got) != 1 {
 		t.Errorf("txt: expected 1 example, got %d (err=%v)", len(got), err)
 	}
-	// Unsupported / no extension mirrors Python's NotImplementedError: the tag
-	// source is not parsed and an error is returned.
 	if _, err := parseTagSourceByFilename(txtData, "noextension"); err == nil {
 		t.Error("no extension: expected an error (unsupported extension)")
 	}
@@ -414,42 +410,35 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	}
 }
 
-func TestJaccardOverlap(t *testing.T) {
-	tests := []struct {
-		name     string
-		a, b     []string
-		expected float64
-	}{
-		{"identical", []string{"a", "b"}, []string{"a", "b"}, 1.0},
-		{"half overlap", []string{"a", "b"}, []string{"b", "c"}, 1.0 / 3.0},
-		{"no overlap", []string{"a", "b"}, []string{"c", "d"}, 0.0},
-		{"empty a", []string{}, []string{"a"}, 0.0},
-		{"empty b", []string{"a"}, []string{}, 0.0},
+func TestParseTaggerResponse_DotSanitization(t *testing.T) {
+	raw := `{"model.v1.0": 8, "rag_tech": 6, "rag.db.v2": 4}`
+	result := parseTaggerResponse(raw, 5)
+	if result == nil {
+		t.Fatal("expected non-nil result")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := jaccardOverlap(tt.a, tt.b)
-			if got != tt.expected {
-				t.Fatalf("jaccard(%v, %v) = %.4f, want %.4f", tt.a, tt.b, got, tt.expected)
-			}
-		})
+	if result["model_v1_0"] != 8 {
+		t.Fatalf("expected model_v1_0=8, got %d", result["model_v1_0"])
 	}
-}
+	if result["rag_tech"] != 6 {
+		t.Fatalf("expected rag_tech=6, got %d", result["rag_tech"])
+	}
+	if result["rag_db_v2"] != 4 {
+		t.Fatalf("expected rag_db_v2=4, got %d", result["rag_db_v2"])
+	}
+	for k := range result {
+		if strings.Contains(k, ".") {
+			t.Fatalf("found unescaped dot in tag key: %s", k)
+		}
+	}
 
-func TestBuildAllTagsProportions(t *testing.T) {
-	ts := []schema.TagLabel{
-		{Content: "a", Tags: []string{"RAG", "LLM"}},
-		{Content: "b", Tags: []string{"RAG", "open"}},
+	// Test collision preservation of higher score
+	collisionRaw := `{"model.v1.0": 3, "model_v1_0": 9, "tag.a": 8, "tag_a": 4}`
+	collisionResult := parseTaggerResponse(collisionRaw, 5)
+	if collisionResult["model_v1_0"] != 9 {
+		t.Fatalf("expected highest score 9 for model_v1_0 collision, got %d", collisionResult["model_v1_0"])
 	}
-	result := buildAllTagsProportions(ts)
-	if len(result) != 3 {
-		t.Fatalf("expected 3 tags, got %d", len(result))
-	}
-	if result["RAG"] <= result["LLM"] {
-		t.Fatalf("expected RAG proportion > LLM, got RAG=%.6f LLM=%.6f", result["RAG"], result["LLM"])
-	}
-	if result["LLM"] <= 0 {
-		t.Fatal("expected LLM proportion > 0")
+	if collisionResult["tag_a"] != 8 {
+		t.Fatalf("expected highest score 8 for tag_a collision, got %d", collisionResult["tag_a"])
 	}
 }
 
@@ -487,10 +476,6 @@ func TestJsonRepairExtract(t *testing.T) {
 	}
 }
 
-// TestParseTaggerResponse_LastThinkTag verifies that when the LLM
-// response contains multiple </think> tags, parseTaggerResponse strips
-// up to the LAST one (greedy, matching Python's re.sub), not just the
-// first (which would leave a residual think block).
 func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -530,6 +515,106 @@ func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
 				if _, ok := got[k]; !ok {
 					t.Errorf("expected key %q in result, got %v", k, got)
 				}
+			}
+		})
+	}
+}
+
+func TestGetChunkText_Enrichment(t *testing.T) {
+	tests := []struct {
+		name  string
+		chunk map[string]any
+		want  string
+	}{
+		{
+			name:  "nil chunk",
+			chunk: nil,
+			want:  "",
+		},
+		{
+			name:  "content only",
+			chunk: map[string]any{"content_with_weight": "simple body text"},
+			want:  "simple body text",
+		},
+		{
+			name:  "text fallback",
+			chunk: map[string]any{"text": "text fallback body"},
+			want:  "text fallback body",
+		},
+		{
+			name: "title extension stripped with content",
+			chunk: map[string]any{
+				"docnm_kwd":           "2026_Engineering_Bidding_Doc.pdf",
+				"content_with_weight": "contract guidelines",
+			},
+			want: "2026_Engineering_Bidding_Doc contract guidelines",
+		},
+		{
+			name: "title fallback chain docnm_kwd wins",
+			chunk: map[string]any{
+				"docnm_kwd":           "doc_name.docx",
+				"title_tks":           "ignored_title",
+				"content_with_weight": "body",
+			},
+			want: "doc_name body",
+		},
+		{
+			name: "title fallback to title_tks when docnm_kwd absent",
+			chunk: map[string]any{
+				"title_tks":           "parsed_title.txt",
+				"content_with_weight": "body",
+			},
+			want: "parsed_title body",
+		},
+		{
+			name: "important_kwd string slice",
+			chunk: map[string]any{
+				"important_kwd":       []string{"Bidding", "Tender"},
+				"content_with_weight": "body",
+			},
+			want: "Bidding Tender body",
+		},
+		{
+			name: "important_kwd any slice",
+			chunk: map[string]any{
+				"important_kwd":       []any{"Alpha", "Beta"},
+				"content_with_weight": "body",
+			},
+			want: "Alpha Beta body",
+		},
+		{
+			name: "important_kwd string",
+			chunk: map[string]any{
+				"important_kwd":       "SingleKey",
+				"content_with_weight": "body",
+			},
+			want: "SingleKey body",
+		},
+		{
+			name: "all sources combined",
+			chunk: map[string]any{
+				"docnm_kwd":           "Project_Tender_Specification.pdf",
+				"important_kwd":       []string{"Procurement", "Compliance"},
+				"content_with_weight": "All bidders must follow instructions.",
+			},
+			want: "Project_Tender_Specification Procurement Compliance All bidders must follow instructions.",
+		},
+		{
+			name: "all fields empty or whitespace",
+			chunk: map[string]any{
+				"docnm_kwd":           "   ",
+				"important_kwd":       []string{"  ", ""},
+				"content_with_weight": "   ",
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getChunkText(tt.chunk)
+			if got != tt.want {
+				t.Errorf("getChunkText() = %q, want %q", got, tt.want)
 			}
 		})
 	}

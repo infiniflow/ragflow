@@ -1931,3 +1931,48 @@ func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
 }
+
+func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "Bidding, Procurement"})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{
+				"docnm_kwd":           "Tender_Notice.pdf",
+				"content_with_weight": "General bidding notice content.",
+			},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+
+	kwds, ok := chunks[0]["important_kwd"].([]string)
+	if !ok || len(kwds) != 2 {
+		t.Fatalf("expected important_kwd populated with 2 keywords, got %v", chunks[0]["important_kwd"])
+	}
+
+	// Verify getChunkText on the resulting chunk merges title, extracted keywords, and content
+	chunkText := getChunkText(chunks[0])
+	if !strings.Contains(chunkText, "Tender_Notice") || !strings.Contains(chunkText, "Bidding") || !strings.Contains(chunkText, "Procurement") {
+		t.Fatalf("expected chunk text to contain title and extracted keywords, got %q", chunkText)
+	}
+}
