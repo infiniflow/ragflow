@@ -2480,6 +2480,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       removeTocTip:
         'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
       removeHeaderFooter: 'Remove header and footer',
+      extractAutomaticNumbering: 'Extract automatic numbering',
+      extractAutomaticNumberingTip:
+        'Extract numbers from automatically numbered headings.',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',

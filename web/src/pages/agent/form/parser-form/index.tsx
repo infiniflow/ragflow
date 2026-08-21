@@ -86,6 +86,7 @@ export const FormSchema = z.object({
       enable_multi_column: z.boolean().optional(),
       remove_toc: z.boolean().optional(),
       remove_header_footer: z.boolean().optional(),
+      extract_automatic_numbering: z.boolean().optional(),
       pages: z
         .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
         .optional(),
@@ -147,7 +148,7 @@ function ParserItem({
     >
       <div className="flex justify-between items-center">
         <span className="text-text-primary text-sm font-medium">
-          Parser {index + 1}
+          {t('flow.parser')} {index + 1}
         </span>
         {index > 0 && (
           <Button variant={'ghost'} onClick={() => remove(index)} ref={ref}>
@@ -216,6 +217,7 @@ const ParserForm = ({
       table_result_type: '',
       markdown_image_response_type: '',
       remove_header_footer: false,
+      extract_automatic_numbering: true,
       // preprocess: [],
     });
   }, [append]);
