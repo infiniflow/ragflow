@@ -274,7 +274,10 @@ perform_restore() {
             echo "  📋 Creating Docker volume: $volume"
             docker volume create "$volume"
         else
-            echo "  📋 Using existing Docker volume: $volume"
+            echo "  📋 Clearing existing Docker volume: $volume"
+            docker run --rm \
+                -v "$volume":/target \
+                alpine sh -c "find /target -mindepth 1 -delete"
         fi
 
         # Restore data
