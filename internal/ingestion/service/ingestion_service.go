@@ -1010,47 +1010,13 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		return
 	}
 	ctx = context.WithoutCancel(ctx)
-	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
-	if err != nil {
-		common.Warn(fmt.Sprintf("record terminal pipeline log: load task context for %s: %v", ingestionTask.ID, err))
-		return
+	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, taskpkg.PipelineLogInput{
+		KbID:       ingestionTask.DatasetID,
+		DocumentID: ingestionTask.DocumentID,
+		Status:     status,
+	}); err != nil {
+		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 	}
-
-	pipelineID := strings.TrimSpace(docTaskCtx.PipelineID)
-	parserID := strings.TrimSpace(docTaskCtx.Doc.ParserID)
-	canvasID := pipelineID
-	var dsl string
-	if canvasID == "" {
-		if parserID == "" {
-			common.Warn(fmt.Sprintf("record terminal pipeline log: no pipeline_id or parser_id for document %s", docTaskCtx.Doc.ID))
-			return
-		}
-		canvasID = parserID
-		dsl, err = pipelinepkg.LoadBuiltinDSL(parserID)
-		if err != nil {
-			common.Warn(fmt.Sprintf("record terminal pipeline log: load builtin DSL %s: %v", parserID, err))
-			return
-		}
-	} else {
-		canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
-		if err != nil {
-			common.Warn(fmt.Sprintf("record terminal pipeline log: load canvas %s: %v", canvasID, err))
-			return
-		}
-		raw, err := json.Marshal(canvas.DSL)
-		if err != nil {
-			common.Warn(fmt.Sprintf("record terminal pipeline log: marshal canvas %s DSL: %v", canvasID, err))
-			return
-		}
-		dsl = string(raw)
-	}
-
-	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, canvasID, 0)
-	if err != nil {
-		common.Warn(fmt.Sprintf("record terminal pipeline log: create executor for %s: %v", ingestionTask.ID, err))
-		return
-	}
-	executor.RecordPipelineLog(ctx, dao.DB, docTaskCtx.Doc.ID, dsl, status)
 }
 
 // Stop gracefully shuts down the ingestor. It cancels the root context so

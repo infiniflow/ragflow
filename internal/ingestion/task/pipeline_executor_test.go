@@ -316,6 +316,44 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	docName := "terminal.pdf"
+	run := "1"
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+		Document: entity.Document{
+			ID:           "doc-1",
+			KbID:         "kb-1",
+			ParserID:     "naive",
+			ParserConfig: entity.JSONMap{},
+			SourceType:   "local",
+			Type:         "pdf",
+			Name:         &docName,
+			Suffix:       ".pdf",
+			Run:          &run,
+		},
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "document_id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want explicit terminal status", log.OperationStatus)
+	}
+	if len(log.DSL) != 0 {
+		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
 func TestRecordPipelineLog_BuiltinUsesParserIDFallback(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
