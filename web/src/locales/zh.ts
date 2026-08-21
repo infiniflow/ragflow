@@ -1528,6 +1528,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       connectDialogTip:
         '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
       notConnected: '未关联助手',
+      connectTargetType: '目标类型',
+      targetAssistant: '聊天助手',
+      targetAgent: 'Agent',
+      selectAgent: '选择 Agent',
+      connectAgentTip:
+        '该渠道收到的消息将由所选 Agent 回复。清空选择即可解除关联。',
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',

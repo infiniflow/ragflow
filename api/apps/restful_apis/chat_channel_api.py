@@ -16,6 +16,7 @@
 import logging
 
 from api.apps import current_user, login_required
+from api.db.services.canvas_service import UserCanvasService
 from api.db.services.chat_channel_service import ChatChannelService
 from api.db.services.dialog_service import DialogService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
@@ -23,6 +24,24 @@ from common.constants import RetCode
 from common.misc_utils import get_uuid
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _validate_channel_target(req: dict, tenant_id: str):
+    """Validate the connected dialog/agent (if any) and return an error message or None."""
+    chat_id = req.get("chat_id") or None
+    agent_id = req.get("agent_id") or None
+    if chat_id and agent_id:
+        return "chat_id and agent_id are mutually exclusive"
+    if chat_id:
+        e, dia = DialogService.get_by_id(chat_id)
+        if not e:
+            return "Can't find this chat assistant!"
+        if dia.tenant_id != tenant_id:
+            return "no authorization"
+    if agent_id:
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return "no authorization"
+    return None
 
 
 def _chat_channel_auth_error(channel_id: str, user_id: str):
@@ -37,7 +56,20 @@ def _chat_channel_auth_error(channel_id: str, user_id: str):
 async def create_chat_channel():
     """Create a chat channel bot owned by the current tenant."""
     req = await get_request_json()
-    channel = {"id": get_uuid(), "tenant_id": current_user.id, "name": req["name"], "channel": req["channel"], "config": req.get("config") or {}, "chat_id": req.get("chat_id") or None}
+    error = _validate_channel_target(req, current_user.id)
+    if error == "no authorization":
+        return _chat_channel_auth_error(req.get("id") or "", current_user.id)
+    if error:
+        return get_data_error_result(message=error)
+    channel = {
+        "id": get_uuid(),
+        "tenant_id": current_user.id,
+        "name": req["name"],
+        "channel": req["channel"],
+        "config": req.get("config") or {},
+        "chat_id": req.get("chat_id") or None,
+        "agent_id": req.get("agent_id") or None,
+    }
     ChatChannelService.insert(**channel)
 
     e, conn = ChatChannelService.get_by_id(channel["id"])
@@ -81,15 +113,19 @@ async def update_chat_channel(channel_id):
     if isinstance(req, dict) and isinstance(req.get("data"), dict):
         req = req["data"]
 
-    # Validate the connected dialog (if provided) belongs to the channel's tenant.
-    if req.get("chat_id"):
-        e, dia = DialogService.get_by_id(req["chat_id"])
-        if not e:
-            return get_data_error_result(message="Can't find this chat assistant!")
-        if dia.tenant_id != conn.tenant_id:
-            return _chat_channel_auth_error(channel_id, current_user.id)
+    # Validate the connected dialog/agent (if provided) belongs to the channel's tenant.
+    error = _validate_channel_target(req, conn.tenant_id)
+    if error == "no authorization":
+        return _chat_channel_auth_error(channel_id, current_user.id)
+    if error:
+        return get_data_error_result(message=error)
 
-    update_fields = {fld: req[fld] for fld in ["name", "config", "chat_id"] if fld in req}
+    update_fields = {fld: req[fld] for fld in ["name", "config", "chat_id", "agent_id"] if fld in req}
+    # A channel links to exactly one target: setting one clears the other.
+    if update_fields.get("chat_id"):
+        update_fields["agent_id"] = None
+    if update_fields.get("agent_id"):
+        update_fields["chat_id"] = None
     if update_fields:
         ChatChannelService.update_by_id(channel_id, update_fields)
 

@@ -1738,6 +1738,7 @@ class ChatChannel(DataBaseModel):
     channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
     config = JSONField(null=False, default={}, help_text="Channel credential & settings")
     chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
+    agent_id = CharField(max_length=32, null=True, default=None, help_text="connected agent id", index=True)
     status = IntegerField(default=1, index=True)
 
     def __str__(self):
@@ -2467,6 +2468,7 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    alter_db_add_column(migrator, "chat_channel", "agent_id", CharField(max_length=32, null=True, help_text="connected agent id", index=True))
     # ---- FileCommit / FileCommitItem: artifact-page commit extension ----
     alter_db_add_column(migrator, "file_commit", "title", CharField(max_length=255, null=True))
     alter_db_add_column(migrator, "file_commit", "comments", TextField(null=True))
