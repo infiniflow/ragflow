@@ -119,7 +119,9 @@ func normalizePDFRunningText(text string) string {
 
 // removePDFRunningHeaderFooter drops sections whose normalized text repeats
 // in the same page zone (top 10% or bottom 10%) on at least half of the
-// document's pages — running headers, footers, and page numbers. The
+// document's pages — running headers, footers, and page numbers. Every
+// rendered page counts toward the total, including blank or image-only
+// pages that produced no sections. The
 // layout-type filter above only works when a DeepDoc inference service
 // (DEEPDOC_URL) types header/footer regions; in default deployments there
 // is none, every section stays "text", and 页眉页脚 removal silently does
@@ -132,14 +134,7 @@ func removePDFRunningHeaderFooter(result *deepdoctype.ParseResult) {
 	if len(sections) == 0 || len(result.PageHeight) == 0 {
 		return
 	}
-	pageSet := make(map[int]struct{}, len(result.PageHeight))
-	for i := range sections {
-		if len(sections[i].Positions) == 0 || len(sections[i].Positions[0].PageNumbers) == 0 {
-			continue
-		}
-		pageSet[sections[i].Positions[0].PageNumbers[0]] = struct{}{}
-	}
-	numPages := len(pageSet)
+	numPages := len(result.PageHeight)
 	if numPages < pdfMinPagesForHeaderFooter {
 		return
 	}
@@ -168,9 +163,9 @@ func removePDFRunningHeaderFooter(result *deepdoctype.ParseResult) {
 		}
 		var isHeader, isFooter bool
 		switch {
-		case top <= pageHeight*pdfHeaderZoneRatio && bottom <= pageHeight*0.5:
+		case bottom <= pageHeight*pdfHeaderZoneRatio:
 			isHeader = true
-		case bottom >= pageHeight*pdfFooterZoneRatio && top >= pageHeight*0.5:
+		case top >= pageHeight*pdfFooterZoneRatio:
 			isFooter = true
 		}
 		if !isHeader && !isFooter {
@@ -314,12 +309,10 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 			break
 		}
 		// Consume the remaining contiguous TOC entries (dot leaders or a
-		// trailing page number). Python's remove_contents_table stops at the
-		// first line sharing the first entry's 3-byte prefix, which leaves
-		// most of the table behind whenever every entry shares that prefix
-		// (e.g. "Chapter One ...", "Chapter Two ...", ...). When entries were
-		// consumed this way, skip the legacy prefix scan and resume the title
-		// scan; otherwise fall back to it for pattern-less TOCs.
+		// trailing page number). When entries were consumed this way,
+		// resume the title scan; otherwise run the prefix scan below,
+		// which cuts everything up to the first line sharing the first
+		// entry's 3-byte prefix and so handles pattern-less TOCs.
 		removedEntries := 0
 		for i < len(sections) && isPDFTOCEntry(sections[i].Text) {
 			sections = append(sections[:i], sections[i+1:]...)
