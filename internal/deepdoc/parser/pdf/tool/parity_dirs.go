@@ -31,13 +31,11 @@ type ParityDirs struct {
 // default variant ("" or "ocr") resolves to the built-in layout (charspy/,
 // output/py/ocr/...); a custom variant such as "ocr_real" moves every artifact
 // under a variant suffix (charspy_ocr_real/, output/py/ocr_real/...) so two
-// datasets never share a file.
-//
+// datasets never share a file.//
 // For a custom variant the root directory can be redirected via
 // BATCH_PARITY_DATA_ROOT (e.g. a shared directory outside the worktree so
 // multiple worktrees reuse one dump). The default variant always stays under
-// the local "testdata".
-func ParityDirsFor(variant string) ParityDirs {
+// the local "testdata".func ParityDirsFor(variant string) ParityDirs {
 	if variant == "" {
 		variant = "ocr"
 	}
@@ -61,6 +59,5 @@ func ParityDirsFor(variant string) ParityDirs {
 		TSRRaw:  filepath.Join(root, "output", "py", variant, "tsr_raw"),
 		OCR:     filepath.Join(root, "output", "py", variant, "ocr"),
 		Tables:  filepath.Join(root, "output", "py", variant, "tables"),
-		GoText:  filepath.Join(root, "output", "go", variant, "text"),
-	}
+		GoText:  filepath.Join(root, "output", "go", variant, "text"),	}
 }
