@@ -251,6 +251,16 @@ type slackUserNotFoundError struct{ message string }
 
 func (e *slackUserNotFoundError) Error() string { return e.message }
 
+// slackAPIError wraps a classified Slack API error with the raw error code so
+// callers can branch on the specific Slack failure.
+type slackAPIError struct {
+	code string
+	err  error
+}
+
+func (e *slackAPIError) Error() string { return e.err.Error() }
+func (e *slackAPIError) Unwrap() error { return e.err }
+
 // callAPI sends one Slack Web API call, retrying transient failures.
 func (c *SlackConnector) callAPI(ctx context.Context, method string, params url.Values, out any) error {
 	return c.retrySlack(ctx, func() error {
@@ -305,33 +315,39 @@ func (c *SlackConnector) callAPINoRetry(ctx context.Context, method string, para
 }
 
 func classifySlackAPIError(method, apiError string, body []byte) error {
+	var err error
 	switch apiError {
 	case "ratelimited":
-		return &slackTransientError{
+		err = &slackTransientError{
 			retryAfter:  slackRetryAfterSeconds("", body),
 			rateLimited: true,
 			message:     "Slack API rate limited",
 		}
 	case "invalid_auth":
-		return &ConnectorValidationError{Message: "Invalid Slack bot token (invalid_auth)."}
+		err = &ConnectorValidationError{Message: "Invalid Slack bot token (invalid_auth)."}
 	case "not_authed":
-		return &ConnectorMissingCredentialError{Message: "Invalid or expired Slack bot token (not_authed)."}
+		err = &ConnectorMissingCredentialError{Message: "Invalid or expired Slack bot token (not_authed)."}
 	case "missing_scope":
-		return &ConnectorValidationError{Message: "Slack bot token lacks the necessary OAuth scope to access this API (missing_scope)."}
+		err = &ConnectorValidationError{Message: "Slack bot token lacks the necessary OAuth scope to access this API (missing_scope)."}
 	case "not_in_channel":
-		return &ConnectorValidationError{Message: "Slack bot is not a member of the channel (not_in_channel)."}
+		err = &ConnectorValidationError{Message: "Slack bot is not a member of the channel (not_in_channel)."}
 	case "channel_not_found":
-		return &ConnectorValidationError{Message: "Slack channel not found (channel_not_found)."}
+		err = &ConnectorValidationError{Message: "Slack channel not found (channel_not_found)."}
 	case "user_not_found":
-		return &slackUserNotFoundError{message: "Slack user not found (user_not_found)."}
+		err = &slackUserNotFoundError{message: "Slack user not found (user_not_found)."}
 	case "method_not_supported_for_channel_type":
-		return &ConnectorValidationError{Message: "Slack method is not supported for this channel type."}
+		err = &ConnectorValidationError{Message: "Slack method is not supported for this channel type."}
 	default:
 		if apiError == "" {
-			return &ConnectorValidationError{Message: fmt.Sprintf("Slack API %s request failed without an error code", method)}
+			err = &ConnectorValidationError{Message: fmt.Sprintf("Slack API %s request failed without an error code", method)}
+		} else {
+			err = &ConnectorValidationError{Message: fmt.Sprintf("Slack API %s request failed: %s", method, apiError)}
 		}
-		return &ConnectorValidationError{Message: fmt.Sprintf("Slack API %s request failed: %s", method, apiError)}
 	}
+	if apiError == "" {
+		return err
+	}
+	return &slackAPIError{code: apiError, err: err}
 }
 
 func slackRetryAfterSeconds(header string, body []byte) time.Duration {
@@ -519,15 +535,68 @@ func (c *SlackConnector) getThread(ctx context.Context, channelID, threadTS stri
 	}
 }
 
-// joinChannel joins a channel so the bot can read its messages.
+// errSlackChannelUnavailable marks Slack channels that the bot cannot join so
+// callers can skip them instead of failing the whole sync/prune run.
+var errSlackChannelUnavailable = errors.New("slack channel unavailable")
+
+// slackUnjoinableErrors are conversations.join failure codes that mean the bot
+// cannot join the channel.
+var slackUnjoinableErrors = map[string]struct{}{
+	"is_archived":                           {},
+	"method_not_supported_for_channel_type": {},
+	"channel_not_found":                     {},
+	"restricted_action":                     {},
+}
+
+// joinChannel joins a channel so the bot can read its messages. Channels the
+// bot cannot join are wrapped in errSlackChannelUnavailable so callers can
+// skip them; unrelated API errors propagate unchanged. Automatic joins are
+// limited to the configured channels selection when one is present.
 func (c *SlackConnector) joinChannel(ctx context.Context, channel slackChannel) error {
 	if channel.IsMember {
+		return nil
+	}
+	if len(c.channels) > 0 && !slackChannelSelected(channel, c.channels, c.channelRegexEnabled) {
 		return nil
 	}
 	var resp struct {
 		slackAPIResponse
 	}
-	return c.callAPI(ctx, "conversations.join", url.Values{"channel": {channel.ID}}, &resp)
+	if err := c.callAPI(ctx, "conversations.join", url.Values{"channel": {channel.ID}}, &resp); err != nil {
+		var apiErr *slackAPIError
+		if errors.As(err, &apiErr) {
+			if _, ok := slackUnjoinableErrors[apiErr.code]; ok {
+				return fmt.Errorf("%w: %v", errSlackChannelUnavailable, err)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+// slackChannelSelected reports whether a channel is part of the configured
+// channels selection (exact names, or regex patterns when enabled). An empty
+// selection matches every channel.
+func slackChannelSelected(channel slackChannel, configured []string, regexEnabled bool) bool {
+	if len(configured) == 0 {
+		return true
+	}
+	for _, pattern := range configured {
+		if regexEnabled {
+			re, err := regexp.Compile("^" + pattern + "$")
+			if err != nil {
+				continue
+			}
+			if re.MatchString(channel.Name) {
+				return true
+			}
+			continue
+		}
+		if channel.Name == pattern {
+			return true
+		}
+	}
+	return false
 }
 
 // displayName resolves a Slack user ID to a display name, caching results.
@@ -883,6 +952,9 @@ func (s *slackSyncSession) channelDocuments(ctx context.Context, channel slackCh
 	}
 	messages, err := s.connector.channelMessages(ctx, channel, oldest, latest)
 	if err != nil {
+		if errors.Is(err, errSlackChannelUnavailable) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -990,6 +1062,9 @@ func (s *slackPruneSession) Close() error {
 func (c *SlackConnector) pruneChannelDocuments(ctx context.Context, channel slackChannel) ([]SlimDocument, error) {
 	messages, err := c.channelMessages(ctx, channel, "", "")
 	if err != nil {
+		if errors.Is(err, errSlackChannelUnavailable) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return slackPruneDocuments(channel, messages), nil

@@ -864,3 +864,197 @@ func TestSlackConnectorRetriesTransientHistory(t *testing.T) {
 		t.Fatalf("C1 history calls = %d, want 2 (429 then success)", calls.Load())
 	}
 }
+
+func TestSlackConnectorOpenSyncSkipsUnjoinableChannel(t *testing.T) {
+	withSlackTestHooks(t)
+	joinCalls := &atomic.Int64{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth.test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.list", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackChannelsTwo))
+	})
+	mux.HandleFunc("/api/conversations.join", func(w http.ResponseWriter, r *http.Request) {
+		joinCalls.Add(1)
+		if r.FormValue("channel") == "C2" {
+			w.Write([]byte(`{"ok":false,"error":"is_archived"}`))
+			return
+		}
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.history", func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("channel") != "C1" {
+			w.Write([]byte(`{"ok":true,"messages":[],"has_more":false,"response_metadata":{"next_cursor":""}}`))
+			return
+		}
+		w.Write([]byte(slackHistoryBody(slackMsgPlain)))
+	})
+	mux.HandleFunc("/api/users.info", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackUserAlice()))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	connector := mustSlackConnector(t, server.URL, nil)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	defer session.Close()
+	documents := collectSlackDocuments(t, session)
+	if len(documents) != 1 || documents[0].SourceID != "C1__1700000000.000001" {
+		t.Fatalf("documents = %+v, want only C1", documents)
+	}
+	if joinCalls.Load() != 1 {
+		t.Fatalf("join calls = %d, want 1 (only C2)", joinCalls.Load())
+	}
+}
+
+func TestSlackConnectorOpenPruneSkipsUnjoinableChannel(t *testing.T) {
+	withSlackTestHooks(t)
+	joinCalls := &atomic.Int64{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth.test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.list", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackChannelsTwo))
+	})
+	mux.HandleFunc("/api/conversations.join", func(w http.ResponseWriter, r *http.Request) {
+		joinCalls.Add(1)
+		if r.FormValue("channel") == "C2" {
+			w.Write([]byte(`{"ok":false,"error":"method_not_supported_for_channel_type"}`))
+			return
+		}
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.history", func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("channel") != "C1" {
+			w.Write([]byte(`{"ok":true,"messages":[],"has_more":false,"response_metadata":{"next_cursor":""}}`))
+			return
+		}
+		w.Write([]byte(slackHistoryBody(slackMsgPlain)))
+	})
+	mux.HandleFunc("/api/users.info", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackUserAlice()))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	connector := mustSlackConnector(t, server.URL, nil)
+	session, err := connector.OpenPrune(context.Background(), PruneRequest{TaskID: "t1"})
+	if err != nil {
+		t.Fatalf("OpenPrune: %v", err)
+	}
+	defer session.Close()
+	var slim []SlimDocument
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		slim = append(slim, batch.Documents...)
+	}
+	if len(slim) != 1 || slim[0].SourceID != "C1__1700000000.000001" {
+		t.Fatalf("slim documents = %+v, want only C1", slim)
+	}
+}
+
+func TestSlackConnectorJoinPropagatesUnrelatedErrors(t *testing.T) {
+	withSlackTestHooks(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth.test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true}`))
+	})
+	mux.HandleFunc("/api/conversations.list", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackChannelsTwo))
+	})
+	mux.HandleFunc("/api/conversations.join", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":false,"error":"invalid_auth"}`))
+	})
+	mux.HandleFunc("/api/conversations.history", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackHistoryBody(slackMsgPlain)))
+	})
+	mux.HandleFunc("/api/users.info", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(slackUserAlice()))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	connector := mustSlackConnector(t, server.URL, nil)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	defer session.Close()
+	// C2 is not a member, so join fails with invalid_auth, which is unrelated
+	// to channel availability and must abort the run.
+	var gotErr error
+	for {
+		_, nextErr := session.NextBatch(context.Background())
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			gotErr = nextErr
+			break
+		}
+	}
+	if gotErr == nil {
+		t.Fatalf("NextBatch: want error, got nil")
+	}
+	if errors.Is(gotErr, errSlackChannelUnavailable) {
+		t.Fatalf("NextBatch error = %v, want unrelated error to propagate unwrapped", gotErr)
+	}
+}
+
+func TestSlackConnectorJoinRestrictedToSelectedChannels(t *testing.T) {
+	withSlackTestHooks(t)
+	joinCalls := &atomic.Int64{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/conversations.join", func(w http.ResponseWriter, r *http.Request) {
+		joinCalls.Add(1)
+		w.Write([]byte(`{"ok":true}`))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	connector := mustSlackConnector(t, server.URL, map[string]any{"channels": "general"})
+	ctx := context.Background()
+	selected := slackChannel{ID: "C1", Name: "general", IsMember: false}
+	unselected := slackChannel{ID: "C9", Name: "random", IsMember: false}
+	if err := connector.joinChannel(ctx, unselected); err != nil {
+		t.Fatalf("joinChannel unselected: %v", err)
+	}
+	if joinCalls.Load() != 0 {
+		t.Fatalf("join calls after unselected channel = %d, want 0", joinCalls.Load())
+	}
+	if err := connector.joinChannel(ctx, selected); err != nil {
+		t.Fatalf("joinChannel selected: %v", err)
+	}
+	if joinCalls.Load() != 1 {
+		t.Fatalf("join calls after selected channel = %d, want 1", joinCalls.Load())
+	}
+
+	// Regex selection restricts joins the same way.
+	regexConnector := mustSlackConnector(t, server.URL, map[string]any{
+		"channels":              "gen.*",
+		"channel_regex_enabled": true,
+	})
+	if err := regexConnector.joinChannel(ctx, unselected); err != nil {
+		t.Fatalf("regex joinChannel unselected: %v", err)
+	}
+	if joinCalls.Load() != 1 {
+		t.Fatalf("join calls after regex unselected channel = %d, want 1", joinCalls.Load())
+	}
+	if err := regexConnector.joinChannel(ctx, selected); err != nil {
+		t.Fatalf("regex joinChannel selected: %v", err)
+	}
+	if joinCalls.Load() != 2 {
+		t.Fatalf("join calls after regex selected channel = %d, want 2", joinCalls.Load())
+	}
+}
